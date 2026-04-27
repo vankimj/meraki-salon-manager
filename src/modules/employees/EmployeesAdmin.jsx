@@ -4,6 +4,9 @@ import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
 import { useApp } from '../../context/AppContext';
 
+const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DEFAULT_WORK_DAY = { on: true, start: '09:00', end: '18:00' };
+
 function blankEmployee() {
   return {
     name: '', photo: '', active: true, sortOrder: 0, notes: '',
@@ -12,6 +15,7 @@ function blankEmployee() {
     instagram: '', facebook: '', tiktok: '', venmo: '', homepage: '',
     rateType: 'commission', commissionPct: '', hourlyRate: '',
     paymentPref: 'cash', paymentNotes: '',
+    workDays: {},
   };
 }
 
@@ -144,7 +148,12 @@ function EmployeeModal({ emp, isAdmin, onChange, onSave, onClose }) {
   const [saving, setSaving] = useState(false);
   const fileRef = useRef(null);
   const isNew   = !emp.id;
-  const TABS    = isAdmin ? ['profile', 'contact', 'social', 'compensation'] : ['profile', 'contact', 'social'];
+  const TABS    = isAdmin ? ['profile', 'contact', 'social', 'schedule', 'compensation'] : ['profile', 'contact', 'social', 'schedule'];
+
+  function patchWorkDay(day, patch) {
+    const current = emp.workDays?.[day] ?? DEFAULT_WORK_DAY;
+    onChange({ workDays: { ...(emp.workDays || {}), [day]: { ...current, ...patch } } });
+  }
 
   async function handlePhoto(e) {
     const file = e.target.files?.[0];
@@ -234,6 +243,38 @@ function EmployeeModal({ emp, isAdmin, onChange, onSave, onClose }) {
               <Field label="Address">
                 <input value={emp.address || ''} onChange={e => onChange({ address: e.target.value })} placeholder="123 Main St, City, State" style={inp} />
               </Field>
+            </>
+          )}
+
+          {/* ── Schedule ── */}
+          {tab === 'schedule' && (
+            <>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 14, lineHeight: 1.5 }}>
+                Days marked off are grayed out in the schedule view.
+              </div>
+              {WORK_DAYS.map(day => {
+                const d = emp.workDays?.[day] ?? DEFAULT_WORK_DAY;
+                return (
+                  <div key={day} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 34, fontSize: 13, fontWeight: 500, color: d.on ? '#333' : '#bbb' }}>{day}</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#888', cursor: 'pointer', userSelect: 'none', minWidth: 48 }}>
+                      <input type="checkbox" checked={d.on} onChange={e => patchWorkDay(day, { on: e.target.checked })} />
+                      {d.on ? 'On' : 'Off'}
+                    </label>
+                    {d.on ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                        <input type="time" value={d.start} onChange={e => patchWorkDay(day, { start: e.target.value })}
+                          style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+                        <span style={{ color: '#bbb', fontSize: 12 }}>–</span>
+                        <input type="time" value={d.end} onChange={e => patchWorkDay(day, { end: e.target.value })}
+                          style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 11, color: '#d0d0d0', marginLeft: 'auto' }}>not working</span>
+                    )}
+                  </div>
+                );
+              })}
             </>
           )}
 

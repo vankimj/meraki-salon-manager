@@ -4,6 +4,16 @@ import { fetchLogs, fetchEmployees } from '../../lib/firestore';
 import { formatTime } from '../../utils/helpers';
 import { seedDemoData, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
 
+const STORE_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DEFAULT_DAY_HOURS = { open: '09:00', close: '18:00', closed: false };
+
+function initStoreHours(settings) {
+  const saved = settings.storeHours || {};
+  const result = {};
+  STORE_DAYS.forEach(d => { result[d] = { ...DEFAULT_DAY_HOURS, ...saved[d] }; });
+  return result;
+}
+
 export default function Admin({ onClose }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, loadPendingRequests, updateSettings, signOut, isAdmin } = useApp();
   const [timeout,      setTimeoutVal]  = useState(settings.timeoutMin || 5);
@@ -14,9 +24,14 @@ export default function Admin({ onClose }) {
   const [walkInClose, setWalkInClose] = useState(settings.walkIn?.close  || '18:00');
   const [apptOpen,    setApptOpen]    = useState(settings.apptHours?.open  || '09:00');
   const [apptClose,   setApptClose]   = useState(settings.apptHours?.close || '20:00');
+  const [storeHours,   setStoreHours]  = useState(() => initStoreHours(settings));
   const [logs,    setLogs]       = useState(null);
   const [tab,     setTab]        = useState('users');
   const TABS = ['users', 'logs', 'settings'];
+
+  function patchStoreDay(day, patch) {
+    setStoreHours(prev => ({ ...prev, [day]: { ...prev[day], ...patch } }));
+  }
 
   useEffect(() => { if (tab === 'logs') loadLogs(); }, [tab]);
   useEffect(() => {
@@ -163,7 +178,35 @@ export default function Admin({ onClose }) {
                   timeoutMin: timeout,
                   walkIn:     { open: walkInOpen,  close: walkInClose },
                   apptHours:  { open: apptOpen,    close: apptClose   },
+                  storeHours,
                 })}>Save Settings</Btn>
+              </div>
+            </Section>
+
+            <Section title="🕐 Store Hours">
+              {STORE_DAYS.map((day, idx) => {
+                const h = storeHours[day];
+                return (
+                  <div key={day} style={{ padding: '9px 16px', borderTop: idx > 0 ? '1px solid #f0f0f0' : 'none', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 36, fontSize: 13, color: h.closed ? '#bbb' : '#333', fontWeight: 500 }}>{day}</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#888', cursor: 'pointer', userSelect: 'none' }}>
+                      <input type="checkbox" checked={!!h.closed} onChange={e => patchStoreDay(day, { closed: e.target.checked })} />
+                      Closed
+                    </label>
+                    {!h.closed && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+                        <input type="time" value={h.open}  onChange={e => patchStoreDay(day, { open:  e.target.value })}
+                          style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '5px 7px', fontSize: 12 }} />
+                        <span style={{ color: '#bbb', fontSize: 12 }}>–</span>
+                        <input type="time" value={h.close} onChange={e => patchStoreDay(day, { close: e.target.value })}
+                          style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '5px 7px', fontSize: 12 }} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <div style={{ padding: '10px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end' }}>
+                <Btn color="#3D95CE" onClick={() => updateSettings({ ...settings, storeHours })}>Save Hours</Btn>
               </div>
             </Section>
             <DemoSeedSection />

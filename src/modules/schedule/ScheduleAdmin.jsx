@@ -42,6 +42,24 @@ const STATUS_COLORS = {
   cancelled:   { bg: '#FEF2F2', border: '#EF4444', text: '#991b1b' },
 };
 
+const OVERLAY_KEY = 'meraki_visible_techs';
+
+function dayOfWeek(dateStr) {
+  return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+}
+
+function loadOverlay(allTechs) {
+  try {
+    const stored = JSON.parse(localStorage.getItem(OVERLAY_KEY));
+    if (Array.isArray(stored)) {
+      const existing = stored.filter(t => allTechs.includes(t));
+      const added    = allTechs.filter(t => !stored.includes(t));
+      return [...existing, ...added];
+    }
+  } catch {}
+  return [...allTechs];
+}
+
 function blankAppt(date, techName, startMins) {
   return {
     clientId: '',
@@ -79,8 +97,10 @@ export default function ScheduleAdmin() {
   const [clients,      setClients]     = useState([]);
   const [services,     setServices]    = useState([]);
   const [techs,        setTechs]       = useState(FALLBACK_TECHS);
-  const [techExtended, setTechExtended]= useState({});
-  const [showAll,      setShowAll]     = useState(false);
+  const [techExtended,     setTechExtended]     = useState({});
+  const [showAll,          setShowAll]          = useState(false);
+  const [visibleTechNames, setVisibleTechNames] = useState(null);
+  const [empWorkDays,      setEmpWorkDays]      = useState({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -96,10 +116,19 @@ export default function ScheduleAdmin() {
     fetchServices().then(s => setServices(s.filter(sv => sv.active !== false))).catch(() => {});
     fetchEmployees().then(emps => {
       const active = emps.filter(e => e.active !== false);
-      if (active.length) setTechs(active.map(e => e.name));
-      const ext = {};
-      active.forEach(e => { ext[e.name] = !!e.extendedHoursAllowed; });
-      setTechExtended(ext);
+      if (active.length) {
+        const names = active.map(e => e.name);
+        setTechs(names);
+        setVisibleTechNames(loadOverlay(names));
+        const ext = {};
+        const wd  = {};
+        active.forEach(e => {
+          ext[e.name] = !!e.extendedHoursAllowed;
+          wd[e.name]  = e.workDays || {};
+        });
+        setTechExtended(ext);
+        setEmpWorkDays(wd);
+      }
     }).catch(() => {});
   }, []);
 
@@ -142,6 +171,21 @@ export default function ScheduleAdmin() {
   function openView(appt) { setModal({ appt, original: appt, mode: 'view' }); }
   function openEdit(appt) { setModal({ appt: { ...appt }, original: appt, mode: 'edit' }); }
 
+  function toggleTechVisible(name) {
+    setVisibleTechNames(prev => {
+      const next = prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name];
+      if (next.length === 0) return prev;
+      localStorage.setItem(OVERLAY_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  const dow            = dayOfWeek(date);
+  const isStoreClosed  = !!settings.storeHours?.[dow]?.closed;
+  const displayTechs   = isTech && !showAll
+    ? techs.filter(t => t === myTechName)
+    : visibleTechNames ? techs.filter(t => visibleTechNames.includes(t)) : techs;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Date nav */}
@@ -166,6 +210,34 @@ export default function ScheduleAdmin() {
           style={{ marginLeft: 'auto', fontSize: 12, border: '1px solid #d8d8d8', borderRadius: 6, padding: '5px 8px', fontFamily: 'inherit', background: '#fafafa' }} />
       </div>
 
+      {/* Tech overlay filter pills */}
+      {(!isTech || showAll) && visibleTechNames && (
+        <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap', flexShrink: 0 }}>
+          {techs.map(t => {
+            const on = visibleTechNames.includes(t);
+            return (
+              <button key={t} onClick={() => toggleTechVisible(t)} style={{
+                fontSize: 11, padding: '3px 10px', borderRadius: 20,
+                border: `1px solid ${on ? '#3D95CE' : '#d8d8d8'}`,
+                background: on ? '#EBF4FB' : '#f5f5f5',
+                color: on ? '#1a5f8a' : '#bbb',
+                cursor: 'pointer', fontFamily: 'inherit', fontWeight: on ? 600 : 400,
+              }}>
+                {t}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Store closed banner */}
+      {isStoreClosed && (
+        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 14 }}>🚫</span>
+          <span style={{ fontSize: 12, color: '#991b1b', fontWeight: 500 }}>Salon is closed today — appointments can still be booked manually</span>
+        </div>
+      )}
+
       {/* Birthdays banner */}
       {birthdayClients.length > 0 && (
         <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
@@ -185,8 +257,9 @@ export default function ScheduleAdmin() {
         : <DayGrid
             date={date}
             appts={appts}
-            techs={isTech && !showAll ? techs.filter(t => t === myTechName) : techs}
+            techs={displayTechs}
             techExtended={techExtended}
+            empWorkDays={empWorkDays}
             slots={slots}
             dayStart={dayStart}
             walkInOpen={walkInOpen}
@@ -224,9 +297,10 @@ export default function ScheduleAdmin() {
 }
 
 // ── Day grid ──────────────────────────────────────────
-function DayGrid({ date, appts, techs, techExtended, slots, dayStart, walkInOpen, walkInClose, onSlotClick, onApptClick }) {
+function DayGrid({ date, appts, techs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, onSlotClick, onApptClick }) {
   const TIME_COL = 54;
   const TECH_COL = 120;
+  const dow = dayOfWeek(date);
 
   // appointment-only zone exists when appt hours extend beyond walk-in hours
   const hasApptOnlyZone = slots.some(m => m < walkInOpen || m >= walkInClose);
@@ -236,14 +310,20 @@ function DayGrid({ date, appts, techs, techExtended, slots, dayStart, walkInOpen
       {/* Header row */}
       <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 10, background: '#fafafa', borderBottom: '1px solid #e8e8e8' }}>
         <div style={{ width: TIME_COL, flexShrink: 0 }} />
-        {techs.map(tech => (
-          <div key={tech} style={{ width: TECH_COL, flexShrink: 0, padding: '8px 4px', fontSize: 11, fontWeight: 600, color: '#555', textAlign: 'center', borderLeft: '1px solid #f0f0f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {tech}
-            {hasApptOnlyZone && techExtended[tech] && (
-              <div style={{ fontSize: 8, color: '#3D95CE', fontWeight: 500, letterSpacing: '.03em' }}>extended</div>
-            )}
-          </div>
-        ))}
+        {techs.map(tech => {
+          const isOff = empWorkDays[tech]?.[dow]?.on === false;
+          return (
+            <div key={tech} style={{ width: TECH_COL, flexShrink: 0, padding: '8px 4px', fontSize: 11, fontWeight: 600, color: isOff ? '#bbb' : '#555', textAlign: 'center', borderLeft: '1px solid #f0f0f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? '#fafafa' : undefined }}>
+              {tech}
+              {isOff && (
+                <div style={{ fontSize: 8, color: '#d0d0d0', fontWeight: 500, letterSpacing: '.03em' }}>off today</div>
+              )}
+              {!isOff && hasApptOnlyZone && techExtended[tech] && (
+                <div style={{ fontSize: 8, color: '#3D95CE', fontWeight: 500, letterSpacing: '.03em' }}>extended</div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Time slots */}
@@ -271,20 +351,21 @@ function DayGrid({ date, appts, techs, techExtended, slots, dayStart, walkInOpen
 
             {/* Tech cells */}
             {techs.map(tech => {
-              const allowed = inWalkIn || techExtended[tech];
+              const isOff  = empWorkDays[tech]?.[dow]?.on === false;
+              const allowed = !isOff && (inWalkIn || techExtended[tech]);
               return (
                 <div
                   key={tech}
                   onClick={() => allowed && onSlotClick(tech, slotMins)}
                   style={{
                     width: TECH_COL, flexShrink: 0, borderLeft: '1px solid #f0f0f0',
-                    cursor: allowed ? 'pointer' : 'not-allowed',
+                    cursor: allowed ? 'pointer' : 'default',
                     position: 'relative',
-                    background: !inWalkIn
-                      ? (allowed ? 'rgba(61,149,206,.04)' : '#f4f4f4')
-                      : undefined,
+                    background: isOff
+                      ? 'repeating-linear-gradient(45deg,#fafafa,#fafafa 4px,#f4f4f4 4px,#f4f4f4 8px)'
+                      : (!inWalkIn ? (allowed ? 'rgba(61,149,206,.04)' : '#f4f4f4') : undefined),
                   }}
-                  title={allowed ? `${tech} · ${minsToStr(slotMins)}` : `${tech} · appointment-only hours`}
+                  title={isOff ? `${tech} · off today` : (allowed ? `${tech} · ${minsToStr(slotMins)}` : `${tech} · appointment-only hours`)}
                 >
                   {allowed && (
                     <div style={{ position: 'absolute', inset: 0, transition: 'background .1s' }}
