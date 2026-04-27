@@ -139,8 +139,8 @@ export default function ReportsAdmin() {
         <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>No completed appointments in this period.</div>
       ) : (
         <>
-          {/* KPI row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+          {/* KPI row — 4-col desktop, 2-col mobile via CSS class */}
+          <div className="kpi-grid">
             <KPICard label="Revenue"      value={fmt$(metrics.totalRevenue)} accent="#2D7A5F" />
             <KPICard label="Appointments" value={metrics.totalAppts.toLocaleString()} />
             <KPICard label="Avg Ticket"   value={fmt$(metrics.avgTicket)} />
@@ -155,8 +155,8 @@ export default function ReportsAdmin() {
             <RevenueChart byDay={metrics.byDay} startDate={startDate} endDate={endDate} />
           </Card>
 
-          {/* Tech + Services */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+          {/* Tech + Services — stacks to 1-col on narrow mobile */}
+          <div className="two-col-grid">
             <Card title="Revenue by Tech">
               <TechBars byTech={metrics.byTech} />
             </Card>

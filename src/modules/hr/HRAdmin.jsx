@@ -253,7 +253,8 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
       {loading ? (
         <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>Loading…</div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', overflow: 'hidden' }}>
+        <div className="scroll-x" style={{ borderRadius: 12, border: '1px solid #e8e8e8' }}>
+        <div style={{ background: '#fff', borderRadius: 12, minWidth: 560, overflow: 'hidden' }}>
           {/* Header */}
           <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '8px 16px', background: '#fafafa', borderBottom: '1px solid #e8e8e8', fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>
             <span>Tech</span>
@@ -342,6 +343,7 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
             <span style={{ textAlign: 'right', fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{fmt$(grandTotal)}</span>
             <span />
           </div>
+        </div>
         </div>
       )}
 

@@ -78,7 +78,7 @@ function AppShell() {
     boxShadow: '0 8px 40px rgba(0,0,0,.3)',
   } : {
     position: 'relative', display: 'flex', flexDirection: 'column',
-    alignSelf: 'stretch', width: '100%',
+    alignSelf: 'stretch', width: '100%', minHeight: '100dvh',
     overflow: 'hidden', background: '#f8f9fa',
   };
 
@@ -131,7 +131,7 @@ function AppShell() {
 export default function App() {
   return (
     <AppProvider>
-      <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eef0f3', overflow: 'hidden' }}>
+      <div style={{ width: '100vw', height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eef0f3', overflow: 'hidden' }}>
         <AppShell />
       </div>
     </AppProvider>
