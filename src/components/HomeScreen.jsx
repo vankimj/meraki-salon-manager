@@ -94,7 +94,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           <div style={{ textAlign: 'center', padding: '32px 20px' }}>
             <div style={{ fontSize: 13, color: '#aaa', marginBottom: 16 }}>Sign in to access management tools.</div>
             <button onClick={() => setShowAuth(true)}
-              style={{ fontSize: 14, fontWeight: 600, padding: '12px 32px', borderRadius: 12, border: 'none', background: '#3D95CE', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ fontSize: 17, fontWeight: 700, padding: '16px 48px', borderRadius: 14, border: 'none', background: '#3D95CE', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', width: '100%', maxWidth: 320 }}>
               Sign in
             </button>
           </div>
