@@ -2,7 +2,7 @@ import {
   doc, collection,
   getDoc, getDocs, setDoc, addDoc, deleteDoc, updateDoc,
   orderBy, where, query, limit,
-  onSnapshot, arrayUnion, increment,
+  onSnapshot, arrayUnion, increment, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { TENANT_ID } from './tenant';
@@ -178,6 +178,18 @@ export async function saveAppointment(id, data) {
 }
 
 export const deleteAppointment = (id) => deleteDoc(doc(APPTS_COL, id));
+
+export async function fetchRecurringGroup(groupId) {
+  const snap = await getDocs(query(APPTS_COL, where('recurringGroupId', '==', groupId)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function deleteRecurringGroup(groupId) {
+  const snap = await getDocs(query(APPTS_COL, where('recurringGroupId', '==', groupId)));
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+}
 
 export async function fetchClientAppointments(clientId) {
   const snap = await getDocs(query(APPTS_COL, where('clientId', '==', clientId), orderBy('date', 'desc'), limit(100)));

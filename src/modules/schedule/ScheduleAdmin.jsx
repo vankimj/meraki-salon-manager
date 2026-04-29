@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchAppointments, fetchAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import { useApp } from '../../context/AppContext';
@@ -123,6 +123,7 @@ export default function ScheduleAdmin() {
   const [weekLoading,      setWeekLoading]      = useState(false);
   const [showQueue,        setShowQueue]        = useState(false);
   const [queueEntries,     setQueueEntries]     = useState([]);
+  const [deleteDialog,     setDeleteDialog]     = useState(null); // appt with recurringGroupId
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -202,20 +203,35 @@ export default function ScheduleAdmin() {
 
   async function handleSave(appt, original) {
     try {
-      const dur  = appt.services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0) || 60;
-      const full = { ...appt, duration: dur };
+      const dur = appt.services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0) || 60;
+      const { recurrence, ...apptBase } = appt;
+      const full = { ...apptBase, duration: dur };
       const svcSummary = (full.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ') || 'no services';
       const totalPrice = (full.services || []).reduce((s, sv) => s + Number(sv.price || 0), 0);
       const logDetail  = `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} at ${appt.startTime} — ${svcSummary}${totalPrice > 0 ? ` ($${totalPrice.toFixed(2)})` : ''}`;
+
       if (appt.id) {
         const { id, createdAt, ...data } = full;
         await saveAppointment(id, data);
         logActivity('appt_updated', logDetail);
+      } else if (recurrence) {
+        const groupId = crypto.randomUUID();
+        for (let i = 0; i < recurrence.count; i++) {
+          await createAppointment({
+            ...full,
+            date: addDays(full.date, i * recurrence.weeks * 7),
+            recurringGroupId: groupId,
+            recurringIndex: i + 1,
+            recurringTotal: recurrence.count,
+          });
+        }
+        logActivity('appt_series_created', `${recurrence.count}× ${logDetail}`);
       } else {
         const newId = await createAppointment(full);
         full.id = newId;
         logActivity('appt_created', logDetail);
       }
+
       notifyAffectedTechs(original, full, gUser).catch(e => console.error('[Notif]', e));
       if (viewMode === 'week') { await loadWeek(); } else { await load(); }
       setModal(null);
@@ -223,11 +239,31 @@ export default function ScheduleAdmin() {
   }
 
   async function handleDelete(appt) {
+    if (appt.recurringGroupId) {
+      setDeleteDialog(appt);
+      return;
+    }
     if (!confirm(`Delete this appointment for ${appt.clientName || 'walk-in'}?`)) return;
     await deleteAppointment(appt.id);
     const svcNames = (appt.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ') || 'no services';
     logActivity('appt_deleted', `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} — ${svcNames}`);
     setAppts(a => a.filter(x => x.id !== appt.id));
+    setModal(null);
+  }
+
+  async function handleDeleteOne(appt) {
+    await deleteAppointment(appt.id);
+    logActivity('appt_deleted', `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} (series ${appt.recurringIndex}/${appt.recurringTotal})`);
+    setAppts(a => a.filter(x => x.id !== appt.id));
+    setDeleteDialog(null);
+    setModal(null);
+  }
+
+  async function handleDeleteSeries(appt) {
+    await deleteRecurringGroup(appt.recurringGroupId);
+    logActivity('appt_series_deleted', `${appt.clientName || 'walk-in'} recurring series (${appt.recurringTotal} appts)`);
+    if (viewMode === 'week') { await loadWeek(); } else { await load(); }
+    setDeleteDialog(null);
     setModal(null);
   }
 
@@ -503,6 +539,15 @@ function openNew(techName, slotMins) {
           appt={refund}
           onComplete={() => { setRefund(null); setModal(null); load(); }}
           onClose={() => setRefund(null)}
+        />
+      )}
+
+      {deleteDialog && (
+        <RecurringDeleteDialog
+          appt={deleteDialog}
+          onDeleteOne={() => handleDeleteOne(deleteDialog)}
+          onDeleteAll={() => handleDeleteSeries(deleteDialog)}
+          onCancel={() => setDeleteDialog(null)}
         />
       )}
     </div>
@@ -943,6 +988,11 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
                     ✓ Checked in
                   </span>
                 )}
+                {appt.recurringGroupId && (
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#f0f4ff', color: '#3D95CE', border: '1px solid #c7dff7' }}>
+                    🔁 {appt.recurringIndex}/{appt.recurringTotal}
+                  </span>
+                )}
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 6 }}>
@@ -1062,6 +1112,15 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
             )}
           </Field>
 
+          {/* Repeat — new appointments only */}
+          {!appt.id && !isView && (
+            <RepeatSection
+              recurrence={appt.recurrence}
+              date={appt.date}
+              onChange={onChange}
+            />
+          )}
+
           {/* Photos */}
           <PhotoSection
             photosBefore={appt.photosBefore || []}
@@ -1125,6 +1184,99 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
               </button>
             </>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Repeat (recurring series) ─────────────────────────
+function RepeatSection({ recurrence, date, onChange }) {
+  const enabled = !!recurrence;
+  const weeks   = recurrence?.weeks ?? 2;
+  const count   = recurrence?.count ?? 6;
+
+  function toggle() {
+    onChange({ recurrence: enabled ? null : { weeks: 2, count: 6 } });
+  }
+  function patch(delta) {
+    onChange({ recurrence: { weeks, count, ...delta } });
+  }
+
+  let endLabel = '';
+  if (enabled && date) {
+    const d = new Date(date + 'T12:00:00');
+    d.setDate(d.getDate() + (count - 1) * weeks * 7);
+    endLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+  const freqLabel = weeks === 1 ? 'weekly' : `every ${weeks} weeks`;
+
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: enabled ? 8 : 0 }}>
+        <label style={{ fontSize: 11, color: '#888' }}>🔁 Repeat</label>
+        <button onClick={toggle} style={{
+          width: 40, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0,
+          background: enabled ? '#2D7A5F' : '#d0d0d0', position: 'relative', transition: 'background .2s', flexShrink: 0,
+        }}>
+          <div style={{
+            width: 16, height: 16, borderRadius: '50%', background: '#fff',
+            position: 'absolute', top: 3, left: enabled ? 21 : 3, transition: 'left .2s',
+          }} />
+        </button>
+      </div>
+      {enabled && (
+        <div style={{ background: '#f0f7ff', borderRadius: 10, border: '1px solid #c7dff7', padding: '10px 12px' }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: '#5a8fba', fontWeight: 600, marginBottom: 4 }}>Frequency</div>
+              <select value={weeks} onChange={e => patch({ weeks: Number(e.target.value) })} style={{ ...inp, fontSize: 12, padding: '5px 8px' }}>
+                <option value={1}>Every week</option>
+                <option value={2}>Every 2 weeks</option>
+                <option value={3}>Every 3 weeks</option>
+                <option value={4}>Every 4 weeks</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 10, color: '#5a8fba', fontWeight: 600, marginBottom: 4 }}>Occurrences</div>
+              <select value={count} onChange={e => patch({ count: Number(e.target.value) })} style={{ ...inp, fontSize: 12, padding: '5px 8px' }}>
+                {[2,3,4,5,6,8,10,12,16,24,52].map(n => (
+                  <option key={n} value={n}>{n} appointments</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: '#1a5f8a', fontWeight: 500 }}>
+            Creates {count} appointments {freqLabel}, through {endLabel}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Recurring delete dialog ────────────────────────────
+function RecurringDeleteDialog({ appt, onDeleteOne, onDeleteAll, onCancel }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '90%', maxWidth: 340, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Delete recurring appointment</div>
+        <div style={{ fontSize: 13, color: '#888', marginBottom: 20, lineHeight: 1.5 }}>
+          This is appointment {appt.recurringIndex} of {appt.recurringTotal} in a series. What would you like to delete?
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={onDeleteOne}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #e8e8e8', background: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1a1a1a', textAlign: 'left' }}>
+            Just this appointment
+          </button>
+          <button onClick={onDeleteAll}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #fca5a5', background: '#fef2f2', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444', textAlign: 'left' }}>
+            All {appt.recurringTotal} in this series
+          </button>
+          <button onClick={onCancel}
+            style={{ padding: '8px', borderRadius: 10, border: 'none', background: 'none', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#aaa' }}>
+            Cancel
+          </button>
         </div>
       </div>
     </div>
