@@ -198,6 +198,12 @@ service cloud.firestore {
         allow read, write: if isBootstrapAdmin();
       }
 
+      // Walk-in / arrival queue: public read+create (kiosk); staff update/delete
+      match /waitlist/{entryId} {
+        allow read, create: if true;
+        allow update, delete: if isAuthenticated();
+      }
+
       // Tax forms (1099-NEC): admin manages all; authenticated users read their own (matched by email)
       match /taxForms/{formId} {
         allow read:                if isBootstrapAdmin() ||

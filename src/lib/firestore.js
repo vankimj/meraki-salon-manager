@@ -698,3 +698,35 @@ export async function fetchGoogleReviews() {
   const snap = await getDoc(tenantDoc('googleReviews'));
   return snap.exists() ? snap.data() : null;
 }
+
+// ── Walk-in / arrival queue ────────────────────────────
+const WAITLIST_COL = tenantCol('waitlist');
+
+function todayDateStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export async function addToWaitlist(data) {
+  return addDoc(WAITLIST_COL, { ...data, date: todayDateStr(), addedAt: new Date().toISOString(), status: 'waiting' });
+}
+
+export async function fetchTodayQueue() {
+  const snap = await getDocs(query(WAITLIST_COL, where('date', '==', todayDateStr()), orderBy('addedAt', 'asc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function subscribeQueue(date, callback) {
+  return onSnapshot(
+    query(WAITLIST_COL, where('date', '==', date), orderBy('addedAt', 'asc')),
+    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+  );
+}
+
+export async function updateWaitlistEntry(id, data) {
+  await updateDoc(doc(db, 'tenants', TENANT_ID, 'waitlist', id), { ...data, updatedAt: new Date().toISOString() });
+}
+
+export async function removeWaitlistEntry(id) {
+  await deleteDoc(doc(db, 'tenants', TENANT_ID, 'waitlist', id));
+}

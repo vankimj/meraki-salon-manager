@@ -21,6 +21,7 @@ import MarketingAdmin from './modules/marketing/MarketingAdmin';
 import ChatAdmin from './modules/chat/ChatAdmin';
 import CheckInScreen from './components/CheckInScreen';
 import BookingScreen from './components/BookingScreen';
+import QueueKiosk from './components/QueueKiosk';
 import HandbookModal from './components/HandbookModal';
 import ClientPortal from './components/ClientPortal';
 import SalonWebfront from './modules/webfront/SalonWebfront';
@@ -164,9 +165,11 @@ export default function App() {
   const params = new URLSearchParams(window.location.search);
   const checkinId = params.get('checkin');
   const isBooking = params.has('book');
+  const isQueue   = params.has('queue');
   const isWeb     = params.has('web') || window.location.search === '?web';
   if (checkinId) return <CheckInScreen apptId={checkinId} />;
   if (isBooking)  return <BookingScreen />;
+  if (isQueue)    return <QueueKiosk />;
   if (isWeb)      return <SalonWebfront />;
 
   return (

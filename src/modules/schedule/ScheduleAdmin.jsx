@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchAppointments, fetchAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import { useApp } from '../../context/AppContext';
@@ -70,12 +70,12 @@ function loadOverlay(allTechs) {
   return [...allTechs];
 }
 
-function blankAppt(date, techName, startMins) {
+function blankAppt(date, techName, startMins, clientName = '', serviceName = '') {
   return {
     clientId: '',
-    clientName: '',
+    clientName: clientName,
     techName: techName || '',
-    services: [{ name: '', duration: 60, price: '' }],
+    services: [{ name: serviceName, duration: 60, price: '' }],
     date: date,
     startTime: startMins != null
       ? `${String(Math.floor(startMins / 60)).padStart(2, '0')}:${String(startMins % 60).padStart(2, '0')}`
@@ -120,6 +120,8 @@ export default function ScheduleAdmin() {
   const [viewMode,         setViewMode]         = useState('day');
   const [weekAppts,        setWeekAppts]        = useState([]);
   const [weekLoading,      setWeekLoading]      = useState(false);
+  const [showQueue,        setShowQueue]        = useState(false);
+  const [queueEntries,     setQueueEntries]     = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -139,6 +141,12 @@ export default function ScheduleAdmin() {
   }, [weekStart]);
 
   useEffect(() => { if (viewMode === 'week') loadWeek(); }, [viewMode, loadWeek]);
+
+  // Real-time queue listener — always on so badge stays current
+  useEffect(() => {
+    const unsub = subscribeQueue(todayStr(), setQueueEntries);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -302,6 +310,26 @@ function openNew(techName, slotMins) {
           ))}
         </div>
 
+        {/* Queue button with waiting-count badge */}
+        {(() => {
+          const waiting = queueEntries.filter(e => e.status === 'waiting').length;
+          return (
+            <button onClick={() => setShowQueue(v => !v)} style={{
+              position: 'relative', fontSize: 12, padding: '5px 10px', borderRadius: 6, flexShrink: 0,
+              border: `1px solid ${showQueue ? '#2D7A5F' : '#d8d8d8'}`,
+              background: showQueue ? '#f0faf6' : '#fff',
+              color: showQueue ? '#2D7A5F' : '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: showQueue ? 600 : 400,
+            }}>
+              📋 Queue
+              {waiting > 0 && (
+                <span style={{ position: 'absolute', top: -5, right: -5, width: 17, height: 17, borderRadius: '50%', background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {waiting}
+                </span>
+              )}
+            </button>
+          );
+        })()}
+
         {isAdmin && (
           <button onClick={() => setShowHours(true)} title="Edit store hours"
             style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
@@ -310,6 +338,22 @@ function openNew(techName, slotMins) {
         )}
       </div>
       {showHours && <HoursModal settings={settings} updateSettings={updateSettings} onClose={() => setShowHours(false)} />}
+
+      {/* Queue panel */}
+      {showQueue && (
+        <QueuePanel
+          entries={queueEntries}
+          onSeat={entry => {
+            setShowQueue(false);
+            setDate(todayStr());
+            setViewMode('day');
+            setModal({ appt: blankAppt(todayStr(), entry.techName === 'Any' ? '' : entry.techName, null, entry.clientName, entry.serviceName), original: null, mode: 'edit' });
+            updateWaitlistEntry(entry.id, { status: 'seated' }).catch(() => {});
+          }}
+          onRemove={async entry => { await removeWaitlistEntry(entry.id).catch(() => {}); }}
+          onDone={async entry => { await updateWaitlistEntry(entry.id, { status: 'done' }).catch(() => {}); }}
+        />
+      )}
 
       {/* Tech overlay filter pills — day view only */}
       {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && (
@@ -459,6 +503,87 @@ function openNew(techName, slotMins) {
           onComplete={() => { setRefund(null); setModal(null); load(); }}
           onClose={() => setRefund(null)}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Queue panel ───────────────────────────────────────
+function QueuePanel({ entries, onSeat, onRemove, onDone }) {
+  const waiting  = entries.filter(e => e.status === 'waiting');
+  const arrived  = entries.filter(e => e.status === 'waiting' && e.hasAppointment);
+  const walkIns  = entries.filter(e => e.status === 'waiting' && e.isWalkIn);
+  const done     = entries.filter(e => ['seated','done','removed'].includes(e.status));
+
+  function waitTime(iso) {
+    const mins = Math.round((Date.now() - new Date(iso)) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m`;
+    return `${Math.floor(mins/60)}h ${mins%60}m`;
+  }
+
+  const kioskUrl = `${window.location.origin}/?queue`;
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, marginBottom: 12, overflow: 'hidden', flexShrink: 0 }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid #f0f0f0', background: '#fafafa', gap: 10 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', flex: 1 }}>
+          📋 Today's Queue
+          {waiting.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#fff', background: '#ef4444', borderRadius: 20, padding: '1px 7px' }}>{waiting.length}</span>}
+        </span>
+        <a href={kioskUrl} target="_blank" rel="noreferrer"
+          style={{ fontSize: 11, color: '#3D95CE', textDecoration: 'none', fontWeight: 600, padding: '4px 10px', border: '1px solid #3D95CE', borderRadius: 20 }}>
+          Open Kiosk ↗
+        </a>
+      </div>
+
+      {waiting.length === 0 && done.length === 0 ? (
+        <div style={{ padding: '20px 14px', fontSize: 12, color: '#bbb', textAlign: 'center' }}>Queue is empty — clients can add themselves at <strong style={{ color: '#3D95CE' }}>/?queue</strong></div>
+      ) : (
+        <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+          {waiting.map((entry, i) => (
+            <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: '1px solid #f5f5f5' }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: entry.hasAppointment ? '#EBF4FB' : '#f0faf6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: entry.hasAppointment ? '#1a5f8a' : '#2D7A5F', flexShrink: 0 }}>
+                {entry.hasAppointment ? '📅' : i + 1 - arrived.filter((_, j) => j < arrived.indexOf(entry)).length}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{entry.clientName}</span>
+                  {entry.hasAppointment && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: '#EBF4FB', color: '#1a5f8a', border: '1px solid #93C5FD' }}>Has appt</span>}
+                </div>
+                <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>
+                  {entry.serviceName || '—'}
+                  {entry.techName && entry.techName !== 'Any' ? ` · ${entry.techName}` : ' · Any tech'}
+                  <span style={{ marginLeft: 6, color: '#ccc' }}>· {waitTime(entry.addedAt)}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                {entry.isWalkIn && (
+                  <button onClick={() => onSeat(entry)}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #c6e8d5', background: '#f0faf6', color: '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Seat
+                  </button>
+                )}
+                {entry.hasAppointment && (
+                  <button onClick={() => onDone(entry)}
+                    style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ✓ Done
+                  </button>
+                )}
+                <button onClick={() => onRemove(entry)}
+                  style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+          {done.length > 0 && (
+            <div style={{ padding: '6px 14px', fontSize: 10, fontWeight: 600, color: '#ccc', textTransform: 'uppercase', letterSpacing: '.06em', borderTop: '1px solid #f5f5f5', background: '#fafafa' }}>
+              Completed today ({done.length})
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

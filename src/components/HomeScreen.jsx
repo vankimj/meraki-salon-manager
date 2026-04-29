@@ -124,21 +124,32 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           </div>
         )}
 
-        {/* Tip Flow launch — not shown to techs */}
+        {/* Kiosk launchers — not shown to techs */}
         {!isTech && (
           <div style={{ marginBottom: 10 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
               Kiosk
             </div>
-            <button onClick={() => navigate('tipflow')}
-              style={{ width: '100%', background: 'linear-gradient(135deg, #2D7A5F 0%, #3D95CE 100%)', border: 'none', borderRadius: 14, padding: '18px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', textAlign: 'left' }}>
-              <div style={{ fontSize: 28, flexShrink: 0 }}>💡</div>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Launch Tip Flow</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>Full-screen kiosk for front desk iPad</div>
-              </div>
-              <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.6)', fontSize: 20 }}>›</div>
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={() => navigate('tipflow')}
+                style={{ width: '100%', background: 'linear-gradient(135deg, #2D7A5F 0%, #3D95CE 100%)', border: 'none', borderRadius: 14, padding: '18px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', textAlign: 'left' }}>
+                <div style={{ fontSize: 28, flexShrink: 0 }}>💡</div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Launch Tip Flow</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>Full-screen kiosk for front desk iPad</div>
+                </div>
+                <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.6)', fontSize: 20 }}>›</div>
+              </button>
+              <button onClick={() => window.open('/?queue', '_blank')}
+                style={{ width: '100%', background: 'linear-gradient(135deg, #0e1c14 0%, #2D7A5F 100%)', border: 'none', borderRadius: 14, padding: '18px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', textAlign: 'left' }}>
+                <div style={{ fontSize: 28, flexShrink: 0 }}>🪑</div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Walk-in Queue Kiosk</div>
+                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>Self check-in for walk-ins & arrivals</div>
+                </div>
+                <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.6)', fontSize: 20 }}>↗</div>
+              </button>
+            </div>
           </div>
         )}
       </div>
