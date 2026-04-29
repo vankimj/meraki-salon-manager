@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
+import { BUILD_LABEL } from './lib/version';
 import Splash from './components/Splash';
 import Toast from './components/Toast';
 import HomeScreen from './components/HomeScreen';
@@ -13,14 +14,29 @@ import ServicesAdmin from './modules/services/ServicesAdmin';
 import EmployeesAdmin from './modules/employees/EmployeesAdmin';
 import ReportsAdmin from './modules/reports/ReportsAdmin';
 import HRAdmin from './modules/hr/HRAdmin';
+import GiftCardsAdmin from './modules/giftcards/GiftCardsAdmin';
+import MeetingsAdmin from './modules/meetings/MeetingsAdmin';
+import ProductsAdmin from './modules/products/ProductsAdmin';
+import MarketingAdmin from './modules/marketing/MarketingAdmin';
+import ChatAdmin from './modules/chat/ChatAdmin';
+import CheckInScreen from './components/CheckInScreen';
+import BookingScreen from './components/BookingScreen';
+import HandbookModal from './components/HandbookModal';
+import ClientPortal from './components/ClientPortal';
+import SalonWebfront from './modules/webfront/SalonWebfront';
 
 const MODULE_TITLES = {
-  schedule:  'Schedule',
-  clients:   'Clients',
-  services:  'Services',
-  employees: 'Employees',
-  reports:   'Reports',
-  hr:        'HR',
+  schedule:   'Schedule',
+  clients:    'Clients',
+  services:   'Services',
+  employees:  'Employees',
+  reports:    'Reports',
+  hr:         'HR',
+  giftcards:  'Gift Cards & Promos',
+  meetings:   'Meetings',
+  products:   'Products & Inventory',
+  marketing:  'Marketing',
+  chat:       'Messages',
 };
 
 function MagicLinkPrompt() {
@@ -62,7 +78,9 @@ function MagicLinkPrompt() {
 }
 
 function AppShell() {
-  const { slides, def, cur, magicLinkPending } = useApp();
+  const { slides, def, cur, magicLinkPending, handbookPending, isPortalUser } = useApp();
+
+  if (isPortalUser) return <ClientPortal />;
   const [view,      setView]      = useState('home'); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
   const [showAdmin, setShowAdmin] = useState(false);
 
@@ -100,10 +118,9 @@ function AppShell() {
         <>
           <Header
             slides={slides} cur={cur} def={def}
-            onOpenAdmin={() => setShowAdmin(true)}
             onHome={() => setView('home')}
           />
-          <TipFlow onOpenAdmin={() => setShowAdmin(true)} />
+          <TipFlow />
         </>
       )}
 
@@ -114,13 +131,28 @@ function AppShell() {
           {id === 'clients'   && <ClientsAdmin />}
           {id === 'services'  && <ServicesAdmin />}
           {id === 'employees' && <EmployeesAdmin />}
-          {id === 'reports'   && <ReportsAdmin />}
-          {id === 'hr'        && <HRAdmin />}
+          {id === 'reports'    && <ReportsAdmin />}
+          {id === 'hr'         && <HRAdmin />}
+          {id === 'giftcards'  && <GiftCardsAdmin />}
+          {id === 'meetings'   && <MeetingsAdmin />}
+          {id === 'products'   && <ProductsAdmin />}
+          {id === 'marketing'  && <MarketingAdmin />}
+          {id === 'chat'       && <ChatAdmin />}
         </ModuleShell>
       ))}
 
       {/* Admin settings overlay */}
       {showAdmin && <Admin onClose={() => setShowAdmin(false)} />}
+
+      {/* Version badge — fixed bottom-right, always visible */}
+      <div style={{ position: 'fixed', bottom: 'calc(6px + env(safe-area-inset-bottom, 0px))', right: 10, zIndex: 5, pointerEvents: 'none' }}>
+        <span style={{ fontSize: 9, color: '#bbb', letterSpacing: '.04em', background: 'rgba(255,255,255,.7)', padding: '2px 6px', borderRadius: 8, backdropFilter: 'blur(4px)' }}>
+          {BUILD_LABEL}
+        </span>
+      </div>
+
+      {/* Handbook signing — shown to non-admin staff on first login after publish */}
+      {handbookPending && <HandbookModal />}
 
       {/* Magic link completion — shown when user arrives via link on a different device */}
       {magicLinkPending && <MagicLinkPrompt />}
@@ -129,6 +161,14 @@ function AppShell() {
 }
 
 export default function App() {
+  const params = new URLSearchParams(window.location.search);
+  const checkinId = params.get('checkin');
+  const isBooking = params.has('book');
+  const isWeb     = params.has('web') || window.location.search === '?web';
+  if (checkinId) return <CheckInScreen apptId={checkinId} />;
+  if (isBooking)  return <BookingScreen />;
+  if (isWeb)      return <SalonWebfront />;
+
   return (
     <AppProvider>
       <div style={{ width: '100vw', height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eef0f3', overflow: 'hidden' }}>

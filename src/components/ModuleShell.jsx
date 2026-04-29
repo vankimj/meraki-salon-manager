@@ -1,4 +1,7 @@
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import FeedbackModal from './FeedbackModal';
+import UserMenu from './UserMenu';
 
 const MODULE_ICONS = {
   schedule:  '📅',
@@ -7,10 +10,16 @@ const MODULE_ICONS = {
   employees: '👩‍💼',
   reports:   '📊',
   hr:        '💼',
+  giftcards: '🎁',
+  meetings:  '🗓️',
+  products:  '🛍',
+  marketing: '📣',
+  chat:      '💬',
 };
 
 export default function ModuleShell({ view, title, onHome, onAdmin, children }) {
-  const { gUser, isAdmin, syncState } = useApp();
+  const { isAdmin, syncState } = useApp();
+  const [showFeedback, setShowFeedback] = useState(false);
   const syncColor = { syncing: '#f59e0b', ok: '#22c55e', err: '#ef4444', idle: '#ddd' }[syncState] || '#ddd';
   const icon = MODULE_ICONS[view] || '◆';
 
@@ -45,19 +54,22 @@ export default function ModuleShell({ view, title, onHome, onAdmin, children }) 
         </div>
 
         {/* Right side */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: syncColor, transition: 'background .3s', animation: syncState === 'syncing' ? 'pulse .8s infinite' : 'none' }} />
           {isAdmin && (
             <button onClick={onAdmin} title="Admin Settings"
-              style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid #e8e8e8', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 }}>
-              ⚙
+              style={{ height: 40, borderRadius: 20, border: 'none', background: '#2D7A5F', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(45,122,95,.35)' }}>
+              <span style={{ fontSize: 17 }}>⚙</span> Admin
             </button>
           )}
-          {gUser?.photoURL && (
-            <img src={gUser.photoURL} alt="" style={{ width: 30, height: 30, borderRadius: '50%', objectFit: 'cover' }} />
-          )}
+          <button onClick={() => setShowFeedback(true)} title="Report a bug or idea"
+            style={{ height: 40, borderRadius: 20, border: 'none', background: '#3D95CE', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(61,149,206,.35)' }}>
+            <span style={{ fontSize: 17 }}>💬</span> Feedback
+          </button>
+          <UserMenu />
         </div>
       </div>
+      {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
 
       {/* Content — safe-area padding at bottom for iPhone home indicator */}
       <div style={{

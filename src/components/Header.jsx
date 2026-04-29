@@ -7,7 +7,7 @@ const COL = <svg width={15} height={15} viewBox="0 0 15 15" fill="none" stroke="
 
 function isFS() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
 
-export default function Header({ slides, cur, def, onOpenAdmin, onHome }) {
+export default function Header({ slides, cur, def, onHome }) {
   const { gUser, syncState, isAdmin, signOut } = useApp();
   const [fs,        setFs]        = useState(false);
   const [showAuth,  setShowAuth]  = useState(false);
@@ -22,7 +22,6 @@ export default function Header({ slides, cur, def, onOpenAdmin, onHome }) {
 
   function handleUserChip() {
     if (!gUser) { setShowAuth(true); return; }
-    if (isAdmin) onOpenAdmin();
   }
 
   return (

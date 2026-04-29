@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
-import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest } from '../lib/firestore';
+import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats } from '../lib/firestore';
 import { migrateFromLegacy } from '../lib/migration';
 import { logActivity, setLoggerUser } from '../lib/logger';
 import { phSVG } from '../utils/helpers';
@@ -27,18 +27,24 @@ export function AppProvider({ children }) {
   const [gUser,           setGUser]           = useState(null);
   const [syncState,       setSyncState]       = useState('idle');
   const [toast,           setToast]           = useState(null);
+  const [toastAction,     setToastAction]     = useState(null);
   const [loaded,          setLoaded]          = useState(false);
   const [magicLinkPending,setMagicLinkPending]= useState(false);
+  const [handbookPending, setHandbookPending] = useState(false);
+  const [handbookDoc,     setHandbookDoc]     = useState(null);
+  const [portalClientId,    setPortalClientId]    = useState(null);
+  const [totalChatUnread,   setTotalChatUnread]   = useState(0);
 
   const logoutTimer    = useRef(null);
   const inactivityTimer= useRef(null);
   const toastTimer     = useRef(null);
 
   // ── Toast ──────────────────────────────────────────────
-  const showToast = useCallback((msg, dur = 2200) => {
+  const showToast = useCallback((msg, dur = 2200, action = null) => {
     setToast(msg);
+    setToastAction(action);
     clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), dur);
+    toastTimer.current = setTimeout(() => { setToast(null); setToastAction(null); }, dur);
   }, []);
 
   // ── Sync dot ───────────────────────────────────────────
@@ -99,16 +105,20 @@ export function AppProvider({ children }) {
         clearTimeout(logoutTimer.current);
         setGUser(null);
         setLoggerUser(null);
+        setPortalClientId(null);
       }
     });
   }, []); // eslint-disable-line
 
   async function checkUserAccess(user) {
     let currentUsers = users;
+    let currentTimeoutMin = settings.timeoutMin || 5;
     try {
       const data = await loadAll();
       currentUsers = data.users;
+      currentTimeoutMin = data.settings?.timeoutMin || currentTimeoutMin;
       setUsers(currentUsers);
+      setSettings(s => ({ ...s, ...data.settings }));
     } catch (_) {}
 
     if (ALLOWED_EMAILS.includes(user.email)) {
@@ -125,25 +135,25 @@ export function AppProvider({ children }) {
       }
       setGUser(user);
       setLoggerUser(user);
-      startLogoutTimer(user, settings.timeoutMin);
-      logActivity('user_login', 'admin');
-      // Run migration now that we're authenticated as admin, then reload fresh data
-      await migrateFromLegacy();
-      try {
-        const fresh = await loadAll();
-        if (fresh.slides?.length) {
-          setSlides(fresh.slides);
-          setDef(fresh.def);
-          setCur(fresh.def);
-          setUsers(fresh.users);
-          setSettings(s => ({ ...s, ...fresh.settings }));
-        }
-      } catch (_) {}
+      startLogoutTimer(user, currentTimeoutMin);
+      logActivity('user_login', `${user.email} (admin)`);
       return { ok: true };
     }
 
     const rec = currentUsers.find(u => u.email === user.email);
     if (!rec) {
+      // Check if this email belongs to a client (customer portal)
+      try {
+        const clientRecord = await fetchClientByEmail(user.email);
+        if (clientRecord) {
+          setGUser(user);
+          setLoggerUser(user);
+          setPortalClientId(clientRecord.id);
+          logActivity('portal_login', user.email);
+          return { ok: true };
+        }
+      } catch (_) {}
+
       // Write to requests collection (any authenticated user can write their own)
       try {
         await submitAccessRequest(user.uid, {
@@ -163,8 +173,21 @@ export function AppProvider({ children }) {
 
     setGUser(user);
     setLoggerUser(user);
-    startLogoutTimer(user, settings.timeoutMin);
-    logActivity('user_login', rec.role);
+    startLogoutTimer(user, currentTimeoutMin);
+    logActivity('user_login', `${user.email} (${rec.role})`);
+
+    // Check if this non-admin user needs to sign (or re-sign) the handbook
+    try {
+      const hbk = await fetchHandbook();
+      if (hbk?.content && hbk?.version) {
+        const sig = await fetchMyHandbookSig(user.uid);
+        if (!sig || sig.version !== hbk.version) {
+          setHandbookDoc(hbk);
+          setHandbookPending(true);
+        }
+      }
+    } catch {}
+
     return { ok: true };
   }
 
@@ -233,11 +256,24 @@ export function AppProvider({ children }) {
   const updateSettings = useCallback(async (next) => {
     setSettings(next);
     startLogoutTimer(gUser, next.timeoutMin);
-    logActivity('settings_saved', `timeout=${next.timeoutMin}min`);
+    logActivity('settings_saved', `timeout=${next.timeoutMin}min, PIN=${next.adminPin ? 'enabled' : 'disabled'}`);
     setSyncDot('syncing');
     try { await saveSettings(next); setSyncDot('ok'); showToast('Settings saved'); }
     catch { setSyncDot('err'); showToast('Save failed', 3000); }
   }, [gUser, startLogoutTimer, showToast]);
+
+  // ── Handbook signing ──────────────────────────────────
+  const signHandbook = useCallback(async () => {
+    if (!gUser || !handbookDoc) return;
+    await signHandbookDoc(gUser.uid, {
+      version: handbookDoc.version,
+      email:   gUser.email,
+      name:    gUser.displayName || gUser.email,
+    });
+    logActivity('handbook_signed', `v${handbookDoc.version} by ${gUser.email}`);
+    setHandbookPending(false);
+    setHandbookDoc(null);
+  }, [gUser, handbookDoc]);
 
   // ── Magic link auth ────────────────────────────────────
   async function doCompleteMagicLink(email) {
@@ -273,6 +309,15 @@ export function AppProvider({ children }) {
 
   const completeMagicLink = useCallback((email) => doCompleteMagicLink(email), []); // eslint-disable-line
 
+  // ── Chat unread badge ──────────────────────────────────
+  useEffect(() => {
+    if (!gUser || portalClientId) return;
+    const unsub = subscribeToChats(threads => {
+      setTotalChatUnread(threads.reduce((s, t) => s + (t.unreadStaff || 0), 0));
+    });
+    return unsub;
+  }, [gUser, portalClientId]); // eslint-disable-line
+
   // ── Sign in / out ──────────────────────────────────────
   const signIn = useCallback(async () => {
     try {
@@ -284,6 +329,20 @@ export function AppProvider({ children }) {
     }
   }, []); // eslint-disable-line
 
+  const switchAccount = useCallback(async () => {
+    clearTimeout(logoutTimer.current);
+    await fbSignOut(auth);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const result = await signInWithPopup(auth, provider);
+      return await checkUserAccess(result.user);
+    } catch (e) {
+      if (e.code !== 'auth/popup-closed-by-user') showToast('Sign-in failed: ' + e.message, 4000);
+      return { ok: false };
+    }
+  }, [showToast]); // eslint-disable-line
+
   const signOut = useCallback(async () => {
     logActivity('user_logout');
     clearTimeout(logoutTimer.current);
@@ -291,22 +350,26 @@ export function AppProvider({ children }) {
     showToast('Signed out');
   }, [showToast]);
 
-  const _rec       = gUser ? users.find(u => u.email === gUser.email) : null;
-  const isAdmin    = _rec?.role === 'admin';
-  const isReadOnly = ['admin', 'readonly'].includes(_rec?.role);
-  const isTech     = _rec?.role === 'tech';
-  const myTechName = _rec?.techName || null;
+  const _rec        = gUser ? users.find(u => u.email === gUser.email) : null;
+  const isAdmin     = _rec?.role === 'admin';
+  const isReadOnly  = ['admin', 'readonly'].includes(_rec?.role);
+  const isTech      = _rec?.role === 'tech';
+  const myTechName  = _rec?.techName || null;
+  const isPortalUser = !!portalClientId;
 
   return (
     <Ctx.Provider value={{
       slides, def, cur, setCur,
       users, settings,
-      gUser, syncState, toast, loaded,
+      gUser, syncState, toast, toastAction, loaded,
       isAdmin, isReadOnly, isTech, myTechName,
+      isPortalUser, portalClientId,
       showToast, resetInactivity, resetLogoutTimer,
       addSlide, updateSlide, deleteSlide, setDefault,
       grantAccess, grantPendingAccess, loadPendingRequests, updateSettings,
-      signIn, signOut, sendMagicLink, completeMagicLink, magicLinkPending,
+      signIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
+      handbookPending, handbookDoc, signHandbook,
+      totalChatUnread,
     }}>
       {children}
     </Ctx.Provider>
