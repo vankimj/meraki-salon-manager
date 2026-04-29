@@ -1,6 +1,6 @@
 const { onDocumentCreated } = require('firebase-functions/v2/firestore');
 const { onSchedule }       = require('firebase-functions/v2/scheduler');
-const { onCall, HttpsError }= require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError }= require('firebase-functions/v2/https');
 const { initializeApp }    = require('firebase-admin/app');
 const { getFirestore }     = require('firebase-admin/firestore');
 const { defineString }     = require('firebase-functions/params');
@@ -302,7 +302,9 @@ exports.sendReviewRequestEmail = onDocumentCreated(
     if (!clientEmail)     { await snap.ref.update({ error: 'no_email' });      return; }
     if (!googleReviewUrl) { await snap.ref.update({ error: 'no_review_url' }); return; }
 
-    const firstName = (clientName || 'there').split(' ')[0];
+    const firstName   = (clientName || 'there').split(' ')[0];
+    const reqId       = snap.id;
+    const trackUrl    = `https://us-central1-meraki-salon-manager.cloudfunctions.net/trackReviewClick?r=${reqId}`;
     const html = `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -319,7 +321,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
         other clients find us.
       </p>
       <div style="text-align:center;margin-bottom:24px;">
-        <a href="${googleReviewUrl}" style="display:inline-block;background:#f59e0b;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">
+        <a href="${trackUrl}" style="display:inline-block;background:#f59e0b;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">
           ⭐ Leave a Google Review
         </a>
         <p style="font-size:11px;color:#bbb;margin:10px 0 0;">It only takes 30 seconds and helps us so much 🙏</p>
@@ -1063,4 +1065,29 @@ exports.refreshGoogleReviews = onCall(async (request) => {
 
   console.log(`[GoogleReviews] Cached ${reviews.length} reviews · rating ${result.rating} (${result.user_ratings_total} total)`);
   return { count: reviews.length, rating: result.rating, total: result.user_ratings_total };
+});
+
+// Tracks when a client clicks the review link in their email, then redirects to Google.
+exports.trackReviewClick = onRequest({ cors: false }, async (req, res) => {
+  const reqId = req.query.r;
+  const db    = getFirestore();
+
+  let redirectTo = `https://g.page/r/review`; // fallback
+  try {
+    if (reqId) {
+      const ref  = db.doc(`tenants/${TENANT_ID}/reviewRequests/${reqId}`);
+      const snap = await ref.get();
+      if (snap.exists) {
+        const data = snap.data();
+        if (data.googleReviewUrl) redirectTo = data.googleReviewUrl;
+        if (!data.clickedAt) {
+          await ref.update({ clickedAt: new Date().toISOString() });
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[ReviewClick] Error:', e.message);
+  }
+
+  res.redirect(302, redirectTo);
 });

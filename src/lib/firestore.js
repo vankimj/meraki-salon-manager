@@ -509,6 +509,11 @@ export async function createReviewRequest(data) {
   await addDoc(REVIEW_REQUESTS_COL, { ...data, createdAt: new Date().toISOString(), sent: false });
 }
 
+export async function fetchReviewRequests(n = 200) {
+  const snap = await getDocs(query(REVIEW_REQUESTS_COL, orderBy('createdAt', 'desc'), limit(n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // ── Client portal ──────────────────────────────────────
 export async function fetchClientByEmail(email) {
   const normalized = email.trim().toLowerCase();

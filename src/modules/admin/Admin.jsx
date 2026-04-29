@@ -6,7 +6,8 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchAllForBackup, restoreFromBackup,
          fetchBookingConfig, saveBookingConfig,
          fetchWebfrontConfig, saveWebfrontConfig,
-         fetchReviewReceived } from '../../lib/firestore';
+         fetchReviewReceived, fetchReviewRequests,
+         saveReviewReceived } from '../../lib/firestore';
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedDemoData, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
@@ -29,9 +30,11 @@ export default function Admin({ onClose }) {
   const [tab,          setTab]          = useState('users');
   const [showFeedback, setShowFeedback] = useState(false);
   const [webfrontCfg,  setWebfrontCfg] = useState(null);
+  const [reviewsData,  setReviewsData]  = useState(null);
   const TABS = [
     { id: 'users',    label: 'Users'    },
     { id: 'notifs',   label: 'Notifs'   },
+    { id: 'reviews',  label: 'Reviews'  },
     { id: 'settings', label: 'Settings' },
     { id: 'webfront', label: 'Webfront' },
     { id: 'feedback', label: 'Feedback' },
@@ -43,6 +46,7 @@ export default function Admin({ onClose }) {
   useEffect(() => { if (tab === 'logs')     loadLogs(); },     [tab]);
   useEffect(() => { if (tab === 'feedback') loadFeedback(); }, [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'notifs')   loadNotifs(); },   [tab]); // eslint-disable-line
+  useEffect(() => { if (tab === 'reviews')  loadReviews(); },  [tab]); // eslint-disable-line
   useEffect(() => {
     if (tab === 'users') {
       setReqsLoading(true);
@@ -67,6 +71,14 @@ export default function Admin({ onClose }) {
     setFeedback(null);
     try { setFeedback(await fetchFeedback()); }
     catch { setFeedback([]); }
+  }
+
+  async function loadReviews() {
+    setReviewsData(null);
+    try {
+      const [requests, received] = await Promise.all([fetchReviewRequests(), fetchReviewReceived()]);
+      setReviewsData({ requests, received });
+    } catch { setReviewsData({ requests: [], received: [] }); }
   }
 
   async function handleFeedbackStatus(id, status) {
@@ -165,6 +177,13 @@ export default function Admin({ onClose }) {
 
         {tab === 'notifs' && (
           <NotifsTab items={notifs} onRefresh={loadNotifs} />
+        )}
+
+        {tab === 'reviews' && (
+          <ReviewsTab data={reviewsData} onRefresh={loadReviews} onMarkReceived={async (req) => {
+            await saveReviewReceived({ clientId: req.clientId, clientName: req.clientName, techName: req.techName, rating: 5, text: '', source: 'google', confirmedAt: new Date().toISOString() });
+            await loadReviews();
+          }} />
         )}
 
         {tab === 'webfront' && (
@@ -1181,6 +1200,104 @@ function WebfrontTab({ cfg, setCfg, employees }) {
 }
 
 // ── Notification Center ────────────────────────────────
+// ── Reviews Tab ───────────────────────────────────────
+function ReviewsTab({ data, onRefresh, onMarkReceived }) {
+  const [marking, setMarking] = useState(null);
+  const [filter,  setFilter]  = useState('all');
+
+  if (!data) return <Empty>Loading…</Empty>;
+
+  const { requests, received } = data;
+  const receivedIds = new Set(received.map(r => r.clientId).filter(Boolean));
+
+  const filtered = requests.filter(r => {
+    if (filter === 'pending')  return !r.clickedAt && !receivedIds.has(r.clientId);
+    if (filter === 'clicked')  return !!r.clickedAt && !receivedIds.has(r.clientId);
+    if (filter === 'received') return receivedIds.has(r.clientId);
+    return true;
+  });
+
+  const sent     = requests.length;
+  const clicked  = requests.filter(r => r.clickedAt).length;
+  const recvd    = received.length;
+  const clickPct = sent ? Math.round((clicked / sent) * 100) : 0;
+  const convPct  = sent ? Math.round((recvd   / sent) * 100) : 0;
+
+  async function handleMark(req) {
+    setMarking(req.id);
+    try { await onMarkReceived(req); } catch { /* noop */ }
+    setMarking(null);
+  }
+
+  const fmtDate = iso => iso ? new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+
+  return (
+    <div>
+      {/* Stats */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, padding: '14px 16px 2px' }}>
+        {[
+          { label: 'Requests sent',   value: sent,      accent: '#3D95CE' },
+          { label: `Clicked (${clickPct}%)`, value: clicked, accent: '#f59e0b' },
+          { label: `Reviewed (${convPct}%)`, value: recvd,   accent: '#2D7A5F' },
+        ].map(({ label, value, accent }) => (
+          <div key={label} style={{ background: '#fff', border: '1px solid #ebebeb', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: accent }}>{value}</div>
+            <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Filter + Refresh */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', flexWrap: 'wrap' }}>
+        {[['all','All'],['pending','Not clicked'],['clicked','Clicked'],['received','Reviewed']].map(([id, label]) => (
+          <button key={id} onClick={() => setFilter(id)}
+            style={{ padding: '5px 12px', borderRadius: 20, border: `1px solid ${filter === id ? '#2D7A5F' : '#e0e0e0'}`, background: filter === id ? '#f0faf6' : '#fff', color: filter === id ? '#2D7A5F' : '#555', fontSize: 12, fontWeight: filter === id ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {label}
+          </button>
+        ))}
+        <button onClick={onRefresh} style={{ marginLeft: 'auto', padding: '5px 12px', borderRadius: 20, border: '1px solid #e0e0e0', background: '#fafafa', color: '#555', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+          ↻ Refresh
+        </button>
+      </div>
+
+      {/* List */}
+      {filtered.length === 0
+        ? <Empty>No requests in this filter</Empty>
+        : filtered.map(req => {
+            const isReceived = receivedIds.has(req.clientId);
+            const wasClicked = !!req.clickedAt;
+            return (
+              <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid #f5f5f5', background: '#fff' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{req.clientName || 'Client'}</span>
+                    {req.techName && <span style={{ fontSize: 11, color: '#2D7A5F' }}>· {req.techName}</span>}
+                    {isReceived
+                      ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>✓ Reviewed</span>
+                      : wasClicked
+                        ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>Clicked</span>
+                        : <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#f8f9fa', color: '#aaa', border: '1px solid #e8e8e8' }}>Sent</span>
+                    }
+                  </div>
+                  <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
+                    Sent {fmtDate(req.createdAt)}
+                    {req.clickedAt ? ` · Clicked ${fmtDate(req.clickedAt)}` : ''}
+                  </div>
+                </div>
+                {!isReceived && (
+                  <button onClick={() => handleMark(req)} disabled={marking === req.id}
+                    style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #c6e8d5', background: '#f0faf6', color: '#2D7A5F', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                    {marking === req.id ? '…' : '✓ Mark reviewed'}
+                  </button>
+                )}
+              </div>
+            );
+          })
+      }
+    </div>
+  );
+}
+
 const NOTIF_META = {
   appt_added:      { icon: '📅', label: 'Appt added',       color: '#22c55e' },
   appt_removed:    { icon: '📅', label: 'Appt removed',     color: '#f59e0b' },

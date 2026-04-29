@@ -2,7 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { fetchClients, fetchAppointmentsByRange, fetchCampaigns, createCampaign,
          fetchEmployees, fetchServices, fetchPromoCodes,
-         fetchCampaignTemplates, saveCampaignTemplate, deleteCampaignTemplate } from '../../lib/firestore';
+         fetchCampaignTemplates, saveCampaignTemplate, deleteCampaignTemplate,
+         fetchReviewReceived } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 
 // ── Built-in templates ─────────────────────────────────
@@ -59,11 +60,14 @@ const BUILTIN_TEMPLATES = [
 ];
 
 const SEGMENTS = [
-  { id: 'all',      label: 'All clients',          desc: 'Everyone with an email address' },
-  { id: 'lapsed',   label: 'Lapsed clients',       desc: 'No appointment in the last N days' },
-  { id: 'birthday', label: 'Birthday this month',  desc: "Clients whose birthday falls this month" },
-  { id: 'tech',     label: "Tech's clients",        desc: 'Clients who visited a specific nail tech' },
-  { id: 'service',  label: 'Clients by service',   desc: 'Clients who received a specific service' },
+  { id: 'all',        label: 'All clients',          desc: 'Everyone with an email address' },
+  { id: 'lapsed',     label: 'Lapsed clients',       desc: 'No appointment in the last N days' },
+  { id: 'new_clients',label: 'New clients',           desc: 'First visit within the last N days' },
+  { id: 'top_clients',label: 'Top clients',           desc: 'Clients with at least N visits' },
+  { id: 'no_review',  label: 'Never reviewed',       desc: 'Clients who have never left a review' },
+  { id: 'birthday',   label: 'Birthday this month',  desc: "Clients whose birthday falls this month" },
+  { id: 'tech',       label: "Tech's clients",        desc: 'Clients who visited a specific nail tech' },
+  { id: 'service',    label: 'Clients by service',   desc: 'Clients who received a specific service' },
 ];
 
 function fmtNum(n) { return Number(n || 0).toLocaleString(); }
@@ -230,14 +234,18 @@ function CampaignModal({ onSend, onClose }) {
   const [tplName,     setTplName]     = useState('');
   const [activeTemplate, setActiveTemplate] = useState(null);
 
-  const [clients,     setClients]     = useState(null);
-  const [employees,   setEmployees]   = useState([]);
-  const [services,    setServices]    = useState([]);
-  const [promos,      setPromos]      = useState([]);
-  const [savedTpls,   setSavedTpls]   = useState([]);
-  const [recentAppts, setRecentAppts] = useState(null);
-  const [allAppts,    setAllAppts]    = useState(null);
-  const [sending,     setSending]     = useState(false);
+  const [clients,       setClients]       = useState(null);
+  const [employees,     setEmployees]     = useState([]);
+  const [services,      setServices]      = useState([]);
+  const [promos,        setPromos]        = useState([]);
+  const [savedTpls,     setSavedTpls]     = useState([]);
+  const [recentAppts,   setRecentAppts]   = useState(null);
+  const [allAppts,      setAllAppts]      = useState(null);
+  const [reviewedIds,   setReviewedIds]   = useState(null);
+  const [sending,       setSending]       = useState(false);
+  const [minVisits,     setMinVisits]     = useState(5);
+  const [newDays,       setNewDays]       = useState(30);
+  const [showRecipients,setShowRecipients]= useState(false);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => setClients([]));
@@ -258,13 +266,19 @@ function CampaignModal({ onSend, onClose }) {
   }, [segType, lapDays]); // eslint-disable-line
 
   useEffect(() => {
-    if (segType !== 'tech' && segType !== 'service') { setAllAppts(null); return; }
+    if (!['tech','service','new_clients','top_clients'].includes(segType)) { setAllAppts(null); return; }
     const end   = new Date().toISOString().slice(0, 10);
     const start = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
     setAllAppts(null);
     fetchAppointmentsByRange(start, end)
       .then(appts => setAllAppts(appts.filter(a => a.status !== 'cancelled')))
       .catch(() => setAllAppts([]));
+  }, [segType]); // eslint-disable-line
+
+  useEffect(() => {
+    if (segType !== 'no_review') { setReviewedIds(null); return; }
+    setReviewedIds(null);
+    fetchReviewReceived().then(recs => setReviewedIds(new Set(recs.map(r => r.clientId).filter(Boolean)))).catch(() => setReviewedIds(new Set()));
   }, [segType]); // eslint-disable-line
 
   const recipients = useMemo(() => {
@@ -292,8 +306,29 @@ function CampaignModal({ onSend, onClose }) {
       );
       return withEmail.filter(c => ids.has(c.id));
     }
+    if (segType === 'new_clients') {
+      if (allAppts === null) return null;
+      const cutoff = new Date(Date.now() - newDays * 86400000).toISOString().slice(0, 10);
+      // clients whose earliest appointment is within the window
+      const firstVisit = {};
+      allAppts.forEach(a => {
+        if (!a.clientId || !a.date) return;
+        if (!firstVisit[a.clientId] || a.date < firstVisit[a.clientId]) firstVisit[a.clientId] = a.date;
+      });
+      return withEmail.filter(c => firstVisit[c.id] && firstVisit[c.id] >= cutoff);
+    }
+    if (segType === 'top_clients') {
+      if (allAppts === null) return null;
+      const visitCount = {};
+      allAppts.forEach(a => { if (a.clientId) visitCount[a.clientId] = (visitCount[a.clientId] || 0) + 1; });
+      return withEmail.filter(c => (visitCount[c.id] || 0) >= minVisits);
+    }
+    if (segType === 'no_review') {
+      if (reviewedIds === null) return null;
+      return withEmail.filter(c => !reviewedIds.has(c.id));
+    }
     return withEmail;
-  }, [clients, segType, lapDays, recentAppts, techSel, serviceSel, allAppts]);
+  }, [clients, segType, lapDays, recentAppts, techSel, serviceSel, allAppts, newDays, minVisits, reviewedIds]);
 
   function applyTemplate(tpl) {
     setSubject(tpl.subject);
@@ -335,8 +370,9 @@ function CampaignModal({ onSend, onClose }) {
 
   const needsSelection = (segType === 'tech' && !techSel) || (segType === 'service' && !serviceSel);
   const loading        = !clients ||
-    (segType === 'lapsed' && recentAppts === null) ||
-    ((segType === 'tech' || segType === 'service') && allAppts === null);
+    (segType === 'lapsed'      && recentAppts === null) ||
+    (['tech','service','new_clients','top_clients'].includes(segType) && allAppts === null) ||
+    (segType === 'no_review'   && reviewedIds === null);
 
   const canSend = !sending && !loading && !needsSelection &&
     !!name.trim() && !!subject.trim() && !!body.trim() &&
@@ -346,9 +382,11 @@ function CampaignModal({ onSend, onClose }) {
     if (!canSend) return;
     setSending(true);
     const segmentParams = {};
-    if (segType === 'lapsed')   segmentParams.days        = lapDays;
-    if (segType === 'tech')     segmentParams.techName     = techSel;
-    if (segType === 'service')  segmentParams.serviceName  = serviceSel;
+    if (segType === 'lapsed')       segmentParams.days        = lapDays;
+    if (segType === 'tech')         segmentParams.techName    = techSel;
+    if (segType === 'service')      segmentParams.serviceName = serviceSel;
+    if (segType === 'new_clients')  segmentParams.days        = newDays;
+    if (segType === 'top_clients')  segmentParams.minVisits   = minVisits;
     await onSend({
       name: name.trim(), subject: subject.trim(), body: body.trim(),
       segmentType: segType, segmentParams,
@@ -418,7 +456,7 @@ function CampaignModal({ onSend, onClose }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {SEGMENTS.map(s => (
                 <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${segType === s.id ? '#2D7A5F' : '#e0e0e0'}`, background: segType === s.id ? '#f0faf6' : '#fff', cursor: 'pointer' }}>
-                  <input type="radio" name="seg" value={s.id} checked={segType === s.id} onChange={() => { setSegType(s.id); setTechSel(''); setServiceSel(''); }} style={{ accentColor: '#2D7A5F', flexShrink: 0 }} />
+                  <input type="radio" name="seg" value={s.id} checked={segType === s.id} onChange={() => { setSegType(s.id); setTechSel(''); setServiceSel(''); setShowRecipients(false); }} style={{ accentColor: '#2D7A5F', flexShrink: 0 }} />
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{s.label}</div>
                     <div style={{ fontSize: 11, color: '#aaa' }}>{s.desc}</div>
@@ -457,36 +495,74 @@ function CampaignModal({ onSend, onClose }) {
             </F>
           )}
 
+          {segType === 'new_clients' && (
+            <F label="First visit within (days)">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" min={1} max={365} value={newDays}
+                  onChange={e => setNewDays(Math.max(1, Number(e.target.value)))}
+                  style={{ ...inp, width: 90 }} />
+                <span style={{ fontSize: 12, color: '#888' }}>days ago</span>
+              </div>
+            </F>
+          )}
+
+          {segType === 'top_clients' && (
+            <F label="Minimum visits (last year)">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" min={1} max={100} value={minVisits}
+                  onChange={e => setMinVisits(Math.max(1, Number(e.target.value)))}
+                  style={{ ...inp, width: 90 }} />
+                <span style={{ fontSize: 12, color: '#888' }}>or more visits</span>
+              </div>
+            </F>
+          )}
+
           {/* Audience preview */}
-          <div style={{
-            background: (loading || needsSelection) ? '#f8f9fa' : recipients?.length ? '#f0faf6' : '#fef2f2',
-            border: `1px solid ${(loading || needsSelection) ? '#e8e8e8' : recipients?.length ? '#c6e8d5' : '#fca5a5'}`,
-            borderRadius: 8, padding: '10px 14px', marginBottom: 14,
-            display: 'flex', alignItems: 'center', gap: 10,
-          }}>
-            {loading ? (
-              <span style={{ fontSize: 12, color: '#aaa' }}>Computing audience…</span>
-            ) : needsSelection ? (
-              <span style={{ fontSize: 12, color: '#aaa' }}>
-                {segType === 'tech' ? 'Select a tech to preview audience.' : 'Select a service to preview audience.'}
-              </span>
-            ) : !recipients?.length ? (
-              <span style={{ fontSize: 12, color: '#ef4444' }}>No matching clients with an email address.</span>
-            ) : (
-              <>
-                <span style={{ fontSize: 22 }}>👥</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13 }}>
-                    <strong style={{ color: '#2D7A5F' }}>{recipients.length}</strong>
-                    <span style={{ color: '#555', marginLeft: 5 }}>recipients</span>
-                    {optedOutCount > 0 && <span style={{ color: '#bbb', fontSize: 11, marginLeft: 8 }}>· {optedOutCount} opted out</span>}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{
+              background: (loading || needsSelection) ? '#f8f9fa' : recipients?.length ? '#f0faf6' : '#fef2f2',
+              border: `1px solid ${(loading || needsSelection) ? '#e8e8e8' : recipients?.length ? '#c6e8d5' : '#fca5a5'}`,
+              borderRadius: showRecipients ? '8px 8px 0 0' : 8, padding: '10px 14px',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              {loading ? (
+                <span style={{ fontSize: 12, color: '#aaa' }}>Computing audience…</span>
+              ) : needsSelection ? (
+                <span style={{ fontSize: 12, color: '#aaa' }}>
+                  {segType === 'tech' ? 'Select a tech to preview audience.' : 'Select a service to preview audience.'}
+                </span>
+              ) : !recipients?.length ? (
+                <span style={{ fontSize: 12, color: '#ef4444' }}>No matching clients with an email address.</span>
+              ) : (
+                <>
+                  <span style={{ fontSize: 22 }}>👥</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13 }}>
+                      <strong style={{ color: '#2D7A5F' }}>{recipients.length}</strong>
+                      <span style={{ color: '#555', marginLeft: 5 }}>recipients</span>
+                      {optedOutCount > 0 && <span style={{ color: '#bbb', fontSize: 11, marginLeft: 8 }}>· {optedOutCount} opted out</span>}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                      {recipients.slice(0, 4).map(c => c.name?.split(' ')[0]).join(', ')}
+                      {recipients.length > 4 ? ` +${recipients.length - 4} more` : ''}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
-                    {recipients.slice(0, 4).map(c => c.name?.split(' ')[0]).join(', ')}
-                    {recipients.length > 4 ? ` +${recipients.length - 4} more` : ''}
+                  <button onClick={() => setShowRecipients(v => !v)}
+                    style={{ fontSize: 11, color: '#3D95CE', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                    {showRecipients ? 'Hide list ▲' : 'See list ▼'}
+                  </button>
+                </>
+              )}
+            </div>
+            {showRecipients && recipients?.length > 0 && (
+              <div style={{ border: '1px solid #c6e8d5', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: 180, overflowY: 'auto', background: '#fff' }}>
+                {recipients.map((c, i) => (
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderBottom: i < recipients.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                    <span style={{ fontSize: 12, color: '#333', flex: 1 }}>{c.name}</span>
+                    <span style={{ fontSize: 11, color: '#bbb' }}>{c.email}</span>
                   </div>
-                </div>
-              </>
+                ))}
+              </div>
             )}
           </div>
 
