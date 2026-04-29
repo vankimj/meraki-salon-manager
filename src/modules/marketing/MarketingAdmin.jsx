@@ -1,0 +1,622 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useApp } from '../../context/AppContext';
+import { fetchClients, fetchAppointmentsByRange, fetchCampaigns, createCampaign,
+         fetchEmployees, fetchServices, fetchPromoCodes,
+         fetchCampaignTemplates, saveCampaignTemplate, deleteCampaignTemplate } from '../../lib/firestore';
+import { logActivity } from '../../lib/logger';
+
+// ── Built-in templates ─────────────────────────────────
+const BUILTIN_TEMPLATES = [
+  {
+    id: '_reengagement',
+    name: 'Re-engagement',
+    icon: '💅',
+    subject: "We miss you, {firstName}! Come see us 💅",
+    body: "Hi {firstName},\n\nIt's been a while since your last visit, and we'd love to see you again!\n\nWe have exciting new styles and services to share. Book your appointment today and let us pamper you.\n\nWe hope to see you soon!\n— The Meraki Team",
+  },
+  {
+    id: '_birthday',
+    name: 'Birthday Treat',
+    icon: '🎂',
+    subject: "Happy Birthday, {firstName}! 🎂 A gift from Meraki",
+    body: "Hi {firstName},\n\nHappy Birthday! 🎉 We hope your special day is as fabulous as you are.\n\nAs a birthday gift from us to you, we'd love to treat you to something special. Come celebrate with us this month!\n\nWith love,\n— The Meraki Team",
+  },
+  {
+    id: '_referral',
+    name: 'Referral Ask',
+    icon: '💕',
+    subject: "Love your nails? Share the love, {firstName}! 💕",
+    body: "Hi {firstName},\n\nWe're so grateful to have amazing clients like you! If you've been happy with your experience at Meraki, we'd love for you to spread the word.\n\nRefer a friend to Meraki and help us grow our family. Your support means the world to us!\n\nThank you for being amazing,\n— The Meraki Team",
+  },
+  {
+    id: '_flash',
+    name: 'Flash Sale',
+    icon: '⚡',
+    subject: "⚡ Limited time offer just for you, {firstName}!",
+    body: "Hi {firstName},\n\nFor a limited time only, we have a special offer just for you!\n\nSpots are filling up fast — book now before this deal is gone.\n\nDon't miss out!\n— The Meraki Team",
+  },
+  {
+    id: '_newservice',
+    name: 'New Service',
+    icon: '🌟',
+    subject: "🌟 Exciting news from Meraki, {firstName}!",
+    body: "Hi {firstName},\n\nWe have exciting news — we've just added new services to our menu and we think you're going to love them!\n\nBe among the first to try something new. Book your appointment now.\n\nCan't wait to see you!\n— The Meraki Team",
+  },
+  {
+    id: '_seasonal',
+    name: 'Seasonal',
+    icon: '✨',
+    subject: "✨ Treat yourself this season, {firstName}!",
+    body: "Hi {firstName},\n\nThe season is here, and there's no better time to treat yourself!\n\nCome visit us at Meraki and let us take care of you. Book your appointment today — our schedule fills up fast!\n\nSee you soon,\n— The Meraki Team",
+  },
+  {
+    id: '_loyalty',
+    name: 'Loyalty Thanks',
+    icon: '🙏',
+    subject: "A heartfelt thank you, {firstName} 🙏",
+    body: "Hi {firstName},\n\nWe just wanted to take a moment to say thank you. Your loyalty means everything to us and we're so grateful to have you as part of the Meraki family.\n\nAs a small token of our appreciation, we have something special for you.\n\nWith gratitude,\n— The Meraki Team",
+  },
+];
+
+const SEGMENTS = [
+  { id: 'all',      label: 'All clients',          desc: 'Everyone with an email address' },
+  { id: 'lapsed',   label: 'Lapsed clients',       desc: 'No appointment in the last N days' },
+  { id: 'birthday', label: 'Birthday this month',  desc: "Clients whose birthday falls this month" },
+  { id: 'tech',     label: "Tech's clients",        desc: 'Clients who visited a specific nail tech' },
+  { id: 'service',  label: 'Clients by service',   desc: 'Clients who received a specific service' },
+];
+
+function fmtNum(n) { return Number(n || 0).toLocaleString(); }
+
+function buildPreviewHtml(bodyText, promoCode, promoLabel) {
+  const bodyHtml = (bodyText || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\{firstName\}/gi, 'there')
+    .replace(/\n/g, '<br>');
+  const promoBlock = promoCode ? `
+    <div style="margin:20px 0;background:#f0faf6;border:2px dashed #2D7A5F;border-radius:10px;padding:16px;text-align:center;">
+      <div style="font-size:11px;color:#2D7A5F;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;">Your Exclusive Promo Code</div>
+      <div style="font-size:26px;font-weight:800;color:#1a1a1a;letter-spacing:.12em;font-family:monospace,sans-serif;">${promoCode}</div>
+      ${promoLabel ? `<div style="font-size:12px;color:#888;margin-top:6px;">${promoLabel}</div>` : ''}
+    </div>` : '';
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
+      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">Meraki Nail Studio</div>
+      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Message from the team</div>
+    </div>
+    <div style="padding:24px;">
+      <p style="font-size:14px;line-height:1.75;color:#333;margin:0;">${bodyHtml}</p>
+      ${promoBlock}
+    </div>
+    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
+      <p style="font-size:11px;color:#bbb;margin:0;">Meraki Nail Studio · Columbus, OH</p>
+      <p style="font-size:10px;color:#ccc;margin:4px 0 0;">You're receiving this as a valued client. Reply to this email to unsubscribe.</p>
+    </div>
+  </div></body></html>`;
+}
+
+// ── Main view ──────────────────────────────────────────
+export default function MarketingAdmin() {
+  const { showToast, isAdmin } = useApp();
+  const [campaigns, setCampaigns] = useState(null);
+  const [modal,     setModal]     = useState(false);
+
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  async function load() {
+    try { setCampaigns(await fetchCampaigns()); }
+    catch { setCampaigns([]); }
+  }
+
+  async function handleSend(data) {
+    try {
+      await createCampaign(data);
+      logActivity('marketing_campaign_sent', `${data.name} — ${data.recipientCount} recipients`);
+      showToast(`Campaign queued — sending to ${data.recipientCount} clients`);
+      setModal(false);
+      load();
+    } catch (e) { showToast('Failed: ' + e.message, 3000); }
+  }
+
+  const totalSent    = (campaigns || []).reduce((s, c) => s + (c.sentCount || 0), 0);
+  const lastCampaign = campaigns?.length ? campaigns[0] : null;
+
+  if (!campaigns) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
+
+  return (
+    <div style={{ maxWidth: 860, margin: '0 auto', paddingBottom: 32 }}>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
+        <StatCard label="Total campaigns" value={campaigns.length} accent="#2D7A5F" />
+        <StatCard label="Emails sent"     value={fmtNum(totalSent)} accent="#3D95CE" />
+        <StatCard label="Last sent"       value={lastCampaign
+          ? new Date(lastCampaign.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+          : '—'} />
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+        {isAdmin && (
+          <button onClick={() => setModal(true)}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            + New Campaign
+          </button>
+        )}
+      </div>
+
+      {campaigns.length === 0
+        ? <Empty>No campaigns yet. Click "New Campaign" to start reaching clients.</Empty>
+        : (
+          <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+            {campaigns.map((c, i) => (
+              <CampaignRow key={c.id} campaign={c} last={i === campaigns.length - 1} />
+            ))}
+          </div>
+        )
+      }
+
+      {modal && <CampaignModal onSend={handleSend} onClose={() => setModal(false)} />}
+    </div>
+  );
+}
+
+// ── Campaign row ───────────────────────────────────────
+function CampaignRow({ campaign: c, last }) {
+  const [expanded, setExpanded] = useState(false);
+  const STATUS = {
+    pending: { bg: '#fffbeb', fg: '#92400e', label: 'Queued'  },
+    sending: { bg: '#eff6ff', fg: '#1d4ed8', label: 'Sending' },
+    done:    { bg: '#f0fdf4', fg: '#16a34a', label: 'Sent'    },
+    failed:  { bg: '#fef2f2', fg: '#ef4444', label: 'Failed'  },
+  };
+  const s        = STATUS[c.status] || STATUS.pending;
+  const segLabel = SEGMENTS.find(x => x.id === c.segmentType)?.label || c.segmentType || '—';
+  const date     = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+  return (
+    <div style={{ borderBottom: last ? 'none' : '1px solid #f0f0f0' }}>
+      <div onClick={() => setExpanded(x => !x)}
+        style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ width: 36, height: 36, borderRadius: 8, background: '#e8f4ee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📣</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{c.name}</span>
+            {c.promoCode && (
+              <span style={{ fontSize: 10, background: '#f0faf6', color: '#2D7A5F', border: '1px solid #c6e8d5', borderRadius: 6, padding: '1px 7px', fontWeight: 700, fontFamily: 'monospace' }}>{c.promoCode}</span>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: '#888' }}>
+            {segLabel}
+            {c.segmentParams?.techName    ? ` · ${c.segmentParams.techName}`    : ''}
+            {c.segmentParams?.serviceName ? ` · ${c.segmentParams.serviceName}` : ''}
+            {c.segmentParams?.days        ? ` (${c.segmentParams.days}d lapse)` : ''}
+            {' · '}{c.recipientCount || 0} recipients
+          </div>
+        </div>
+        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+          <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: s.bg, color: s.fg, letterSpacing: '.04em', textTransform: 'uppercase' }}>{s.label}</span>
+          {c.status === 'done' && (
+            <div style={{ fontSize: 10, color: '#aaa', marginTop: 3 }}>
+              ✓ {c.sentCount || 0} sent{c.failCount > 0 ? ` · ${c.failCount} failed` : ''}
+            </div>
+          )}
+          <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{date}</div>
+        </div>
+        <span style={{ fontSize: 10, color: '#bbb', marginLeft: 4 }}>{expanded ? '▲' : '▼'}</span>
+      </div>
+      {expanded && (
+        <div style={{ padding: '0 16px 14px 64px', borderTop: '1px solid #f8f8f8' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>{c.subject}</div>
+          <div style={{ fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', background: '#f8f9fa', borderRadius: 6, padding: '8px 10px' }}>{c.body}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Campaign modal ─────────────────────────────────────
+function CampaignModal({ onSend, onClose }) {
+  const { showToast } = useApp();
+  const [name,        setName]        = useState('');
+  const [segType,     setSegType]     = useState('all');
+  const [lapDays,     setLapDays]     = useState(60);
+  const [techSel,     setTechSel]     = useState('');
+  const [serviceSel,  setServiceSel]  = useState('');
+  const [promoSel,    setPromoSel]    = useState('');
+  const [subject,     setSubject]     = useState('');
+  const [body,        setBody]        = useState('');
+  const [showPreview, setShowPreview] = useState(false);
+  const [savingTpl,   setSavingTpl]   = useState(false);
+  const [tplName,     setTplName]     = useState('');
+  const [activeTemplate, setActiveTemplate] = useState(null);
+
+  const [clients,     setClients]     = useState(null);
+  const [employees,   setEmployees]   = useState([]);
+  const [services,    setServices]    = useState([]);
+  const [promos,      setPromos]      = useState([]);
+  const [savedTpls,   setSavedTpls]   = useState([]);
+  const [recentAppts, setRecentAppts] = useState(null);
+  const [allAppts,    setAllAppts]    = useState(null);
+  const [sending,     setSending]     = useState(false);
+
+  useEffect(() => {
+    fetchClients().then(setClients).catch(() => setClients([]));
+    fetchEmployees().then(emps => setEmployees(emps.filter(e => e.active !== false))).catch(() => {});
+    fetchServices().then(setServices).catch(() => {});
+    fetchPromoCodes().then(ps => setPromos(ps.filter(p => p.active))).catch(() => {});
+    fetchCampaignTemplates().then(setSavedTpls).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (segType !== 'lapsed') { setRecentAppts(null); return; }
+    const end   = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - lapDays * 86400000).toISOString().slice(0, 10);
+    setRecentAppts(null);
+    fetchAppointmentsByRange(start, end)
+      .then(appts => setRecentAppts(appts.filter(a => a.status !== 'cancelled')))
+      .catch(() => setRecentAppts([]));
+  }, [segType, lapDays]); // eslint-disable-line
+
+  useEffect(() => {
+    if (segType !== 'tech' && segType !== 'service') { setAllAppts(null); return; }
+    const end   = new Date().toISOString().slice(0, 10);
+    const start = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+    setAllAppts(null);
+    fetchAppointmentsByRange(start, end)
+      .then(appts => setAllAppts(appts.filter(a => a.status !== 'cancelled')))
+      .catch(() => setAllAppts([]));
+  }, [segType]); // eslint-disable-line
+
+  const recipients = useMemo(() => {
+    if (!clients) return null;
+    const withEmail = clients.filter(c => c.email && !c.marketingOptOut);
+    if (segType === 'all') return withEmail;
+    if (segType === 'birthday') {
+      const mm = new Date().toISOString().slice(5, 7);
+      return withEmail.filter(c => c.birthday && c.birthday.slice(5, 7) === mm);
+    }
+    if (segType === 'lapsed') {
+      if (recentAppts === null) return null;
+      const activeIds = new Set(recentAppts.map(a => a.clientId).filter(Boolean));
+      return withEmail.filter(c => !activeIds.has(c.id));
+    }
+    if (segType === 'tech') {
+      if (allAppts === null || !techSel) return null;
+      const ids = new Set(allAppts.filter(a => a.techName === techSel && a.clientId).map(a => a.clientId));
+      return withEmail.filter(c => ids.has(c.id));
+    }
+    if (segType === 'service') {
+      if (allAppts === null || !serviceSel) return null;
+      const ids = new Set(
+        allAppts.filter(a => a.clientId && (a.services || []).some(s => s.name === serviceSel)).map(a => a.clientId)
+      );
+      return withEmail.filter(c => ids.has(c.id));
+    }
+    return withEmail;
+  }, [clients, segType, lapDays, recentAppts, techSel, serviceSel, allAppts]);
+
+  function applyTemplate(tpl) {
+    setSubject(tpl.subject);
+    setBody(tpl.body);
+    setActiveTemplate(tpl.id);
+    setSavingTpl(false);
+  }
+
+  async function handleSaveTemplate() {
+    const n = tplName.trim() || name.trim();
+    if (!n || !subject.trim() || !body.trim()) return;
+    try {
+      const doc = await saveCampaignTemplate({ name: n, subject: subject.trim(), body: body.trim() });
+      const newTpl = { id: doc.id, name: n, subject: subject.trim(), body: body.trim() };
+      setSavedTpls(prev => [newTpl, ...prev]);
+      setActiveTemplate(doc.id);
+      setTplName('');
+      setSavingTpl(false);
+      logActivity('template_saved', n);
+      showToast('Template saved!');
+    } catch { showToast('Failed to save template', 3000); }
+  }
+
+  async function handleDeleteTemplate(tpl, e) {
+    e.stopPropagation();
+    if (!confirm(`Delete template "${tpl.name}"?`)) return;
+    try {
+      await deleteCampaignTemplate(tpl.id);
+      setSavedTpls(prev => prev.filter(t => t.id !== tpl.id));
+      if (activeTemplate === tpl.id) setActiveTemplate(null);
+      showToast('Template deleted');
+    } catch { showToast('Failed to delete', 3000); }
+  }
+
+  const selectedPromo = promos.find(p => p.id === promoSel) || null;
+  const promoLabel    = selectedPromo
+    ? (selectedPromo.type === 'percent' ? `${selectedPromo.value}% off` : `$${selectedPromo.value} off`)
+    : null;
+
+  const needsSelection = (segType === 'tech' && !techSel) || (segType === 'service' && !serviceSel);
+  const loading        = !clients ||
+    (segType === 'lapsed' && recentAppts === null) ||
+    ((segType === 'tech' || segType === 'service') && allAppts === null);
+
+  const canSend = !sending && !loading && !needsSelection &&
+    !!name.trim() && !!subject.trim() && !!body.trim() &&
+    (recipients?.length ?? 0) > 0;
+
+  async function submit() {
+    if (!canSend) return;
+    setSending(true);
+    const segmentParams = {};
+    if (segType === 'lapsed')   segmentParams.days        = lapDays;
+    if (segType === 'tech')     segmentParams.techName     = techSel;
+    if (segType === 'service')  segmentParams.serviceName  = serviceSel;
+    await onSend({
+      name: name.trim(), subject: subject.trim(), body: body.trim(),
+      segmentType: segType, segmentParams,
+      promoCode:  selectedPromo?.code  || null,
+      promoLabel: promoLabel           || null,
+      recipients: recipients.map(c => ({ clientId: c.id, name: c.name, email: c.email })),
+      recipientCount: recipients.length,
+      status: 'pending', sentCount: 0, failCount: 0,
+    });
+    setSending(false);
+  }
+
+  const allTemplates = [...BUILTIN_TEMPLATES, ...savedTpls];
+  const optedOutCount = clients ? clients.filter(c => c.email && c.marketingOptOut).length : 0;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>New Campaign</span>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+
+          {/* ── Template picker ── */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+              Templates
+              <span style={{ fontSize: 10, fontWeight: 400, color: '#ccc', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
+                {savedTpls.length > 0 ? `${BUILTIN_TEMPLATES.length} built-in · ${savedTpls.length} saved` : `${BUILTIN_TEMPLATES.length} built-in`}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+              {allTemplates.map(tpl => {
+                const active  = activeTemplate === tpl.id;
+                const builtin = tpl.id.startsWith('_');
+                return (
+                  <div key={tpl.id} onClick={() => applyTemplate(tpl)}
+                    style={{ flexShrink: 0, width: 110, padding: '10px 10px 8px', borderRadius: 10, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#f0faf6' : '#fafafa', cursor: 'pointer', position: 'relative' }}>
+                    <div style={{ fontSize: 20, marginBottom: 4 }}>{tpl.icon || '📄'}</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#2D7A5F' : '#333', lineHeight: 1.3 }}>{tpl.name}</div>
+                    {!builtin && (
+                      <button
+                        onClick={e => handleDeleteTemplate(tpl, e)}
+                        title="Delete template"
+                        style={{ position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.08)', color: '#aaa', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1 }}>
+                        ×
+                      </button>
+                    )}
+                    {!builtin && (
+                      <div style={{ fontSize: 9, color: '#bbb', marginTop: 3 }}>saved</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <F label="Campaign name">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Summer Promo, Re-engagement" style={inp} />
+          </F>
+
+          <F label="Audience">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {SEGMENTS.map(s => (
+                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${segType === s.id ? '#2D7A5F' : '#e0e0e0'}`, background: segType === s.id ? '#f0faf6' : '#fff', cursor: 'pointer' }}>
+                  <input type="radio" name="seg" value={s.id} checked={segType === s.id} onChange={() => { setSegType(s.id); setTechSel(''); setServiceSel(''); }} style={{ accentColor: '#2D7A5F', flexShrink: 0 }} />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{s.label}</div>
+                    <div style={{ fontSize: 11, color: '#aaa' }}>{s.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </F>
+
+          {segType === 'lapsed' && (
+            <F label="Lapsed after (days)">
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" min={1} max={730} value={lapDays}
+                  onChange={e => setLapDays(Math.max(1, Number(e.target.value)))}
+                  style={{ ...inp, width: 90 }} />
+                <span style={{ fontSize: 12, color: '#888' }}>days without a visit</span>
+              </div>
+            </F>
+          )}
+
+          {segType === 'tech' && (
+            <F label="Tech">
+              <select value={techSel} onChange={e => setTechSel(e.target.value)} style={inp}>
+                <option value="">Select a tech…</option>
+                {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
+              </select>
+            </F>
+          )}
+
+          {segType === 'service' && (
+            <F label="Service">
+              <select value={serviceSel} onChange={e => setServiceSel(e.target.value)} style={inp}>
+                <option value="">Select a service…</option>
+                {services.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+              </select>
+            </F>
+          )}
+
+          {/* Audience preview */}
+          <div style={{
+            background: (loading || needsSelection) ? '#f8f9fa' : recipients?.length ? '#f0faf6' : '#fef2f2',
+            border: `1px solid ${(loading || needsSelection) ? '#e8e8e8' : recipients?.length ? '#c6e8d5' : '#fca5a5'}`,
+            borderRadius: 8, padding: '10px 14px', marginBottom: 14,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            {loading ? (
+              <span style={{ fontSize: 12, color: '#aaa' }}>Computing audience…</span>
+            ) : needsSelection ? (
+              <span style={{ fontSize: 12, color: '#aaa' }}>
+                {segType === 'tech' ? 'Select a tech to preview audience.' : 'Select a service to preview audience.'}
+              </span>
+            ) : !recipients?.length ? (
+              <span style={{ fontSize: 12, color: '#ef4444' }}>No matching clients with an email address.</span>
+            ) : (
+              <>
+                <span style={{ fontSize: 22 }}>👥</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13 }}>
+                    <strong style={{ color: '#2D7A5F' }}>{recipients.length}</strong>
+                    <span style={{ color: '#555', marginLeft: 5 }}>recipients</span>
+                    {optedOutCount > 0 && <span style={{ color: '#bbb', fontSize: 11, marginLeft: 8 }}>· {optedOutCount} opted out</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                    {recipients.slice(0, 4).map(c => c.name?.split(' ')[0]).join(', ')}
+                    {recipients.length > 4 ? ` +${recipients.length - 4} more` : ''}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <F label="Subject line">
+            <input value={subject} onChange={e => { setSubject(e.target.value); setActiveTemplate(null); }} placeholder="e.g. 🎉 A special offer just for you!" style={inp} />
+          </F>
+
+          <F label="Message body">
+            <textarea value={body} onChange={e => { setBody(e.target.value); setActiveTemplate(null); }} rows={7}
+              style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
+              <div style={{ fontSize: 10, color: '#aaa' }}>
+                Use <code style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
+              </div>
+              {!savingTpl ? (
+                <button onClick={() => { setSavingTpl(true); setTplName(name.trim()); }}
+                  style={{ fontSize: 11, color: '#3D95CE', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }}>
+                  💾 Save as template
+                </button>
+              ) : (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    value={tplName}
+                    onChange={e => setTplName(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setSavingTpl(false); }}
+                    placeholder="Template name…"
+                    autoFocus
+                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #3D95CE', outline: 'none', fontFamily: 'inherit', width: 140 }}
+                  />
+                  <button onClick={handleSaveTemplate} disabled={!tplName.trim()}
+                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: tplName.trim() ? '#3D95CE' : '#d0d0d0', color: '#fff', cursor: tplName.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                    Save
+                  </button>
+                  <button onClick={() => setSavingTpl(false)}
+                    style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fafafa', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          </F>
+
+          <F label="Attach promo code (optional)">
+            <select value={promoSel} onChange={e => setPromoSel(e.target.value)} style={inp}>
+              <option value="">— None —</option>
+              {promos.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.code} · {p.type === 'percent' ? `${p.value}% off` : `$${p.value} off`}
+                  {p.endDate ? ` · expires ${p.endDate}` : ''}
+                </option>
+              ))}
+            </select>
+            {selectedPromo && (
+              <div style={{ fontSize: 11, color: '#2D7A5F', marginTop: 5, padding: '6px 10px', background: '#f0faf6', borderRadius: 6, border: '1px solid #c6e8d5' }}>
+                <strong style={{ fontFamily: 'monospace', fontSize: 13 }}>{selectedPromo.code}</strong> · {promoLabel} will appear as a highlighted block in the email.
+              </div>
+            )}
+          </F>
+
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={() => setShowPreview(true)} disabled={!subject.trim() && !body.trim()}
+              style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fafafa', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              👁 Preview
+            </button>
+            <button onClick={submit} disabled={!canSend}
+              style={{ flex: 2, padding: 11, borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+              {sending ? 'Queuing…' : loading ? 'Loading…' : needsSelection ? 'Select audience' : `Send to ${recipients?.length ?? 0} clients`}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {showPreview && (
+        <PreviewModal
+          subject={subject}
+          body={body}
+          promoCode={selectedPromo?.code || null}
+          promoLabel={promoLabel}
+          onClose={() => setShowPreview(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Email preview modal ────────────────────────────────
+function PreviewModal({ subject, body, promoCode, promoLabel, onClose }) {
+  const html = buildPreviewHtml(body, promoCode, promoLabel);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400 }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 540, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>Email Preview</div>
+            {subject && <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Subject: {subject}</div>}
+          </div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', background: '#f4f4f4' }}>
+          <iframe title="Email preview" srcDoc={html} style={{ width: '100%', minHeight: 480, border: 'none', display: 'block' }} sandbox="allow-same-origin" />
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid #f0f0f0', textAlign: 'center', flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: '#bbb' }}>"{'{firstName}'}" shown as "there" for preview</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({ label, value, accent }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: accent || '#1a1a1a' }}>{value}</div>
+    </div>
+  );
+}
+
+function Empty({ children }) {
+  return <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>{children}</div>;
+}
+
+function F({ label, children }) {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+const inp = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px', fontSize: 13, background: '#fafafa', outline: 'none' };
