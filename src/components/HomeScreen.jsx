@@ -15,7 +15,7 @@ const MODULES = [
   { id: 'giftcards', icon: '🎁', label: 'Gift Cards', desc: 'Gift cards & promo codes',  adminOnly: true  },
   { id: 'meetings',  icon: '🗓️', label: 'Meetings',  desc: 'Internal team meetings',    adminOnly: true  },
   { id: 'products',  icon: '🛍', label: 'Products',  desc: 'Retail inventory & stock',   adminOnly: true  },
-  { id: 'marketing', icon: '📣', label: 'Marketing', desc: 'Email campaigns & outreach',  adminOnly: true  },
+  { id: 'marketing', icon: '📣', label: 'Marketing', desc: 'Email campaigns & outreach',  adminOnly: true, proOnly: true },
   { id: 'chat',      icon: '💬', label: 'Messages',  desc: 'Client messages & replies',   adminOnly: false },
 ];
 
@@ -29,14 +29,20 @@ function greeting() {
 const PIN_LOCKED_VIEWS = new Set(['hr', 'reports']);
 
 export default function HomeScreen({ onNavigate, onAdmin }) {
-  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, activeTheme: t } = useApp();
+  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, activeTheme: t, showToast } = useApp();
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [pinTarget,    setPinTarget]    = useState(null);
   const unlockedRef = useRef(new Set());
   const canManage = isAdmin || isReadOnly;
+  const isPro = !settings?.plan || settings.plan === 'pro';
 
   function navigate(viewId) {
+    const mod = MODULES.find(m => m.id === viewId);
+    if (mod?.proOnly && !isPro) {
+      showToast('Upgrade to Pro to unlock Marketing campaigns.');
+      return;
+    }
     const pin = settings?.adminPin;
     if (pin && PIN_LOCKED_VIEWS.has(viewId) && !unlockedRef.current.has(viewId)) {
       setPinTarget(viewId);
@@ -120,7 +126,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               {MODULES.filter(m => !m.adminOnly || isAdmin).map(m => (
-                <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
+                <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} locked={m.proOnly && !isPro} />
               ))}
             </div>
           </>
@@ -251,15 +257,18 @@ function PinModal({ correctPin, onSuccess, onClose }) {
   );
 }
 
-function ModuleTile({ icon, label, desc, onClick, badge }) {
+function ModuleTile({ icon, label, desc, onClick, badge, locked }) {
   const [hover, setHover] = useState(false);
   return (
     <button
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ background: '#fff', border: `1.5px solid ${hover ? 'var(--tm-accent, #3D95CE)' : 'var(--tm-border, #e8e8e8)'}`, borderRadius: 14, padding: '16px 14px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'border-color .15s, box-shadow .15s', boxShadow: hover ? '0 4px 16px rgba(0,0,0,.1)' : '0 1px 4px rgba(0,0,0,.05)' }}
+      style={{ position: 'relative', background: locked ? '#fafafa' : '#fff', border: `1.5px solid ${locked ? '#e8e8e8' : hover ? 'var(--tm-accent, #3D95CE)' : 'var(--tm-border, #e8e8e8)'}`, borderRadius: 14, padding: '16px 14px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'border-color .15s, box-shadow .15s', boxShadow: hover ? '0 4px 16px rgba(0,0,0,.1)' : '0 1px 4px rgba(0,0,0,.05)', opacity: locked ? 0.7 : 1 }}
     >
+      {locked && (
+        <div style={{ position: 'absolute', top: 8, right: 8, background: '#7c3aed', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, letterSpacing: '.04em' }}>PRO</div>
+      )}
       <div style={{ position: 'relative', display: 'inline-block', marginBottom: 8 }}>
         <div style={{ fontSize: 26 }}>{icon}</div>
         {badge > 0 && (
@@ -268,7 +277,7 @@ function ModuleTile({ icon, label, desc, onClick, badge }) {
           </div>
         )}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: locked ? '#aaa' : '#1a1a1a', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>{desc}</div>
     </button>
   );

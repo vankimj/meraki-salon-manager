@@ -334,6 +334,8 @@ export default function Admin({ onClose }) {
                 Open the Calendar module and click the <strong>🕐 Hours</strong> button in the toolbar.
               </div>
             </Section>
+            <BrandingSection settings={settings} updateSettings={updateSettings} />
+            <UpgradeSection settings={settings} gUser={gUser} />
             <BackupRestoreSection />
             <ProductSeedSection />
             <DemoSeedSection />
@@ -1683,6 +1685,107 @@ function NotifRow({ item, last }) {
       {/* Time */}
       <div style={{ fontSize: 10, color: '#bbb', flexShrink: 0, textAlign: 'right', paddingTop: 2 }}>{timeStr}</div>
     </div>
+  );
+}
+
+// ── Branding ──────────────────────────────────────────────────────────────────
+function BrandingSection({ settings, updateSettings }) {
+  const [name,     setName]     = useState(settings.brandName     || '');
+  const [tagline,  setTagline]  = useState(settings.brandTagline  || '');
+  const [tagTop,   setTagTop]   = useState(settings.brandTaglineTop || '');
+  const [color,    setColor]    = useState(settings.brandColor    || '#2D7A5F');
+  const [logoUrl,  setLogoUrl]  = useState(settings.brandLogoUrl  || '');
+  const [saving,   setSaving]   = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    await updateSettings({ ...settings, brandName: name.trim() || null, brandTagline: tagline.trim() || null, brandTaglineTop: tagTop.trim() || null, brandColor: color, brandLogoUrl: logoUrl.trim() || null });
+    setSaving(false);
+  }
+
+  return (
+    <Section title="🎨 Brand &amp; Identity">
+      <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Salon name (shown on splash &amp; emails)</div>
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="Meraki"
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #e0e0e0', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Tagline (below name on splash)</div>
+            <input value={tagline} onChange={e => setTagline(e.target.value)} placeholder="Nail Studio"
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #e0e0e0', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit' }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Logo URL (optional)</div>
+            <input value={logoUrl} onChange={e => setLogoUrl(e.target.value)} placeholder="https://…/logo.png"
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #e0e0e0', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit' }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Brand color</div>
+            <input type="color" value={color} onChange={e => setColor(e.target.value)}
+              style={{ width: 44, height: 34, border: '1px solid #e0e0e0', borderRadius: 8, cursor: 'pointer', padding: 2 }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <Btn onClick={handleSave} color="#2D7A5F">{saving ? 'Saving…' : 'Save Branding'}</Btn>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// ── Plan & Billing ────────────────────────────────────────────────────────────
+function UpgradeSection({ settings, gUser }) {
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState('');
+  const plan = settings.plan || 'starter';
+
+  async function handleUpgrade() {
+    setLoading(true); setError('');
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions }     = await import('../../lib/firebase');
+      const fn  = httpsCallable(functions, 'createCheckoutSession');
+      const res = await fn({ plan: 'pro', successUrl: window.location.href + '?stripe=success', cancelUrl: window.location.href });
+      if (res.data?.url) window.location.href = res.data.url;
+    } catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  const PLAN_LABELS = { starter: 'Starter (Free)', pro: 'Pro', enterprise: 'Enterprise' };
+  const PLAN_COLORS = { starter: '#888', pro: '#2563eb', enterprise: '#7c3aed' };
+
+  return (
+    <Section title="💳 Plan &amp; Billing">
+      <div style={{ padding: '14px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, color: '#333' }}>Current plan</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: PLAN_COLORS[plan] || '#888', marginTop: 2 }}>{PLAN_LABELS[plan] || plan}</div>
+          </div>
+          {plan === 'starter' && (
+            <button onClick={handleUpgrade} disabled={loading}
+              style={{ background: loading ? '#ccc' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {loading ? 'Loading…' : 'Upgrade to Pro'}
+            </button>
+          )}
+          {plan !== 'starter' && (
+            <a href="https://billing.stripe.com/p/login/test" target="_blank" rel="noreferrer"
+              style={{ fontSize: 12, color: '#3D95CE' }}>Manage subscription →</a>
+          )}
+        </div>
+        {plan === 'starter' && (
+          <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>
+            Pro includes: unlimited staff, marketing campaigns, AI chatbot, full HR &amp; payroll tools — $49/mo.
+          </div>
+        )}
+        {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>{error}</div>}
+      </div>
+    </Section>
   );
 }
 

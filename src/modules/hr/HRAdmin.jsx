@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../../lib/firebase';
 import {
   fetchEmployees, fetchAppointmentsByRange,
   fetchBonuses, createBonus, deleteBonus,
@@ -11,6 +13,10 @@ import {
 import { EmpAvatar } from '../employees/EmployeesAdmin';
 import { logActivity } from '../../lib/logger';
 import { useApp } from '../../context/AppContext';
+
+const gustoGetAuthUrlFn    = httpsCallable(functions, 'gustoGetAuthUrl');
+const gustoSyncEmployeesFn = httpsCallable(functions, 'gustoSyncEmployees');
+const gustoSubmitPayrollFn = httpsCallable(functions, 'gustoSubmitPayroll');
 
 function todayStr() { return new Date().toISOString().slice(0, 10); }
 
@@ -272,6 +278,7 @@ export default function HRAdmin() {
           { id: 'reviews',  label: 'Reviews', badge: reviews.length || null },
           { id: 'handbook', label: 'Handbook' },
           { id: '1099s',    label: '1099s', badge: taxForms.length || null },
+          { id: 'gusto',    label: 'Gusto' },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{ padding: '8px 20px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid #1a1a1a' : '2px solid transparent', cursor: 'pointer' }}>
@@ -339,6 +346,13 @@ export default function HRAdmin() {
           settings={settings}
           onGenerate={handleGenerate1099s}
           onDelete={async id => { await deleteTaxForm(id); await loadTaxForms(); }}
+        />
+      )}
+
+      {tab === 'gusto' && (
+        <GustoTab
+          employees={employees.filter(e => e.active !== false)}
+          payrollRuns={payrollRuns}
         />
       )}
 
@@ -1571,6 +1585,149 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
         </div>
       )}
     </>
+  );
+}
+
+// ── Gusto tab ──────────────────────────────────────────
+function GustoTab({ employees, payrollRuns }) {
+  const { settings, showToast } = useApp();
+  const gusto = settings?.gusto;
+  const isConnected = !!(gusto?.accessToken);
+
+  const [syncing,    setSyncing]    = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [syncResult, setSyncResult] = useState(null); // { matched, updated }
+  const [submitting, setSubmitting] = useState(null); // runId
+
+  async function handleConnect() {
+    setConnecting(true);
+    try {
+      const { data } = await gustoGetAuthUrlFn();
+      window.open(data.url, '_blank', 'width=600,height=700,noopener');
+      showToast('Complete Gusto sign-in in the popup, then return here and refresh.');
+    } catch (e) {
+      showToast('Failed to get Gusto auth URL: ' + e.message, 4000);
+    } finally { setConnecting(false); }
+  }
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const { data } = await gustoSyncEmployeesFn();
+      setSyncResult(data);
+      showToast(`Synced ${data.updated} employee${data.updated !== 1 ? 's' : ''} from Gusto`);
+      logActivity('gusto_sync_employees', `matched ${data.matched}, updated ${data.updated}`);
+    } catch (e) {
+      showToast('Sync failed: ' + e.message, 4000);
+    } finally { setSyncing(false); }
+  }
+
+  async function handleSubmitPayroll(run) {
+    if (!confirm(`Submit payroll run (${fmtDateShort(run.startDate)} – ${fmtDateShort(run.endDate)}) to Gusto?`)) return;
+    setSubmitting(run.id);
+    try {
+      const { data } = await gustoSubmitPayrollFn({ runId: run.id });
+      showToast(`Payroll submitted to Gusto (ID: ${data.gustoPayrollId})`);
+      logActivity('gusto_submit_payroll', `run ${run.id} → Gusto ${data.gustoPayrollId}`);
+    } catch (e) {
+      showToast('Submission failed: ' + e.message, 4000);
+    } finally { setSubmitting(null); }
+  }
+
+  const gustoMatchedEmps = employees.filter(e => e.gustoId);
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      {/* Connection card */}
+      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '20px 20px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: '#f9f4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🦖</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>Gusto Payroll</div>
+            {isConnected ? (
+              <div style={{ fontSize: 12, color: '#16a34a', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
+                Connected · {gusto.companyName || 'Company linked'}
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>Not connected</div>
+            )}
+          </div>
+          {isConnected ? (
+            <button onClick={handleSync} disabled={syncing}
+              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d0d0d0', background: syncing ? '#f0f0f0' : '#fafafa', color: '#555', fontSize: 12, fontWeight: 600, cursor: syncing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              {syncing ? 'Syncing…' : '↺ Sync Employees'}
+            </button>
+          ) : (
+            <button onClick={handleConnect} disabled={connecting}
+              style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: connecting ? '#ccc' : '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: connecting ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              {connecting ? 'Opening…' : 'Connect Gusto'}
+            </button>
+          )}
+        </div>
+
+        {syncResult && (
+          <div style={{ marginTop: 14, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#166534' }}>
+            Sync complete — {syncResult.matched} employees matched, {syncResult.updated} updated with Gusto IDs.
+          </div>
+        )}
+      </div>
+
+      {/* Synced employees */}
+      {isConnected && (
+        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Employee sync status</span>
+            <span style={{ fontSize: 11, color: '#aaa' }}>{gustoMatchedEmps.length}/{employees.length} matched</span>
+          </div>
+          {employees.map((e, i) => (
+            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: i < employees.length - 1 ? '1px solid #f8f8f8' : 'none' }}>
+              <EmpAvatar emp={e} size={28} />
+              <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{e.name}</span>
+              {e.gustoId ? (
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '2px 8px' }}>✓ Linked</span>
+              ) : (
+                <span style={{ fontSize: 10, color: '#bbb', background: '#f8f8f8', borderRadius: 6, padding: '2px 8px' }}>Not matched</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Payroll runs → submit to Gusto */}
+      {isConnected && payrollRuns.length > 0 && (
+        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Submit payroll runs</span>
+          </div>
+          {payrollRuns.slice(0, 6).map((run, i) => (
+            <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: i < Math.min(payrollRuns.length, 6) - 1 ? '1px solid #f8f8f8' : 'none' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>
+                  {fmtDateShort(run.startDate)} – {fmtDateShort(run.endDate)}
+                </div>
+                <div style={{ fontSize: 11, color: '#aaa' }}>{run.techs.length} techs · {fmt$(run.grandTotal)}</div>
+              </div>
+              {run.gustoPayrollId ? (
+                <span style={{ fontSize: 10, fontWeight: 600, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 6, padding: '2px 8px' }}>Submitted</span>
+              ) : (
+                <button onClick={() => handleSubmitPayroll(run)} disabled={submitting === run.id}
+                  style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: 'none', background: submitting === run.id ? '#ccc' : '#7c3aed', color: '#fff', cursor: submitting === run.id ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                  {submitting === run.id ? 'Submitting…' : 'Submit →'}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!isConnected && (
+        <div style={{ textAlign: 'center', padding: '32px 0', color: '#bbb', fontSize: 13 }}>
+          Connect Gusto above to sync employees and submit payroll runs automatically.
+        </div>
+      )}
+    </div>
   );
 }
 

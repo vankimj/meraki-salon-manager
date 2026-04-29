@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { useApp } from '../context/AppContext';
 
 export default function Splash() {
+  const { settings } = useApp();
   const [fading, setFading] = useState(false);
   const [gone,   setGone]   = useState(false);
 
@@ -127,7 +129,7 @@ export default function Splash() {
         {/* ── Text stack (on top of SVG) ── */}
         <div style={{ position: 'relative', textAlign: 'center', userSelect: 'none' }}>
 
-          {/* "Nail" — small script above */}
+          {/* Brand tagline above name */}
           <div style={{
             fontFamily: '"Great Vibes", cursive',
             fontSize: 30,
@@ -136,10 +138,10 @@ export default function Splash() {
             marginBottom: -4,
             letterSpacing: '0.02em',
           }}>
-            Nail
+            {settings?.brandTaglineTop || 'Nail'}
           </div>
 
-          {/* "Meraki" — big bold script */}
+          {/* Brand name */}
           <div style={{
             fontFamily: '"Great Vibes", cursive',
             fontSize: 88,
@@ -148,13 +150,12 @@ export default function Splash() {
             textShadow: '0 2px 24px rgba(45,122,95,.5), 0 0 48px rgba(61,149,206,.3)',
             letterSpacing: '0.01em',
           }}>
-            Meraki
+            {settings?.brandName || 'Meraki'}
           </div>
 
-          {/* Thin separator line handled by SVG above */}
           <div style={{ height: 14 }} />
 
-          {/* "NAIL STUDIO" — small caps */}
+          {/* Brand tagline below name */}
           <div style={{
             fontFamily: '"Cinzel", serif',
             fontSize: 13,
@@ -163,7 +164,7 @@ export default function Splash() {
             letterSpacing: '0.32em',
             textTransform: 'uppercase',
           }}>
-            Nail Studio
+            {settings?.brandTagline || 'Nail Studio'}
           </div>
 
         </div>

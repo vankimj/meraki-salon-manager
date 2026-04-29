@@ -1441,3 +1441,302 @@ function buildWelcomeHtml(salonName, ownerEmail, tenantId, url) {
   </div>
 </div></body></html>`;
 }
+
+// ── Config params for new integrations ───────────────────────────────────────
+const twilioSid    = defineString('TWILIO_ACCOUNT_SID', { default: '' });
+const twilioToken  = defineString('TWILIO_AUTH_TOKEN',  { default: '' });
+const twilioFrom   = defineString('TWILIO_FROM',        { default: '' });
+const stripePriceId  = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
+const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
+const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
+const gustoClientId     = defineString('GUSTO_CLIENT_ID',     { default: '' });
+const gustoClientSecret = defineString('GUSTO_CLIENT_SECRET', { default: '' });
+const gustoRedirectUri  = defineString('GUSTO_REDIRECT_URI',  { default: '' });
+
+// ── SMS Campaigns (Twilio) ────────────────────────────────────────────────────
+exports.sendSMSCampaign = onDocumentCreated(
+  `tenants/{tenantId}/campaigns/{campaignId}`,
+  async (event) => {
+    const data     = event.data.data();
+    const tenantId = event.params.tenantId;
+    if (data.channel !== 'sms') return;
+    if (data.status !== 'pending') return;
+
+    const sid   = twilioSid.value();
+    const token = twilioToken.value();
+    const from  = twilioFrom.value();
+    if (!sid || !token || !from) {
+      await event.data.ref.update({ status: 'failed', error: 'twilio_not_configured' });
+      return;
+    }
+
+    const db     = getFirestore();
+    const client = require('twilio')(sid, token);
+
+    // Fetch clients matching the segment filter
+    const clientsSnap = await db.collection(`tenants/${tenantId}/clients`).get();
+    let clients = clientsSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(c => c.phone);
+
+    // Apply segment filter
+    if (data.segmentType === 'lapsed') {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - (data.segmentParams?.days || 60));
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      clients = clients.filter(c => !c.lastVisit || c.lastVisit < cutoffStr);
+    } else if (data.segmentType === 'tech') {
+      clients = clients.filter(c => c.preferredTech === data.segmentParams?.techName);
+    } else if (data.segmentType === 'birthday') {
+      const today = new Date();
+      const mm = String(today.getMonth() + 1).padStart(2, '0');
+      const dd = String(today.getDate()).padStart(2, '0');
+      clients = clients.filter(c => c.birthday && c.birthday.slice(5, 10) === `${mm}-${dd}`);
+    }
+
+    let sentCount = 0;
+    let failCount = 0;
+
+    for (const c of clients) {
+      const phone = normalizePhone(c.phone);
+      if (!phone) { failCount++; continue; }
+      const body = (data.smsBody || '')
+        .replace(/\{firstName\}/g, c.name?.split(' ')[0] || 'there')
+        .replace(/\{lastName\}/g,  c.name?.split(' ').slice(1).join(' ') || '');
+      try {
+        await client.messages.create({ body, from, to: phone });
+        sentCount++;
+      } catch { failCount++; }
+    }
+
+    await event.data.ref.update({
+      status: 'sent',
+      sentCount,
+      failCount,
+      sentAt: new Date().toISOString(),
+    });
+  }
+);
+
+function normalizePhone(raw) {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits[0] === '1') return `+${digits}`;
+  return null;
+}
+
+// ── Stripe Billing ────────────────────────────────────────────────────────────
+exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { plan, tenantId: tid, successUrl, cancelUrl } = request.data || {};
+  const tId = tid || TENANT_ID;
+
+  const key = stripeKey.value ? stripeKey.value() : null;
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+
+  const stripe   = require('stripe')(key);
+  const priceId  = plan === 'starter' ? stripeStarterPriceId.value() : stripePriceId.value();
+  if (!priceId)  throw new HttpsError('invalid-argument', `Price ID for plan "${plan}" not set`);
+
+  const db      = getFirestore();
+  const tenDoc  = await db.doc(`tenants/${tId}`).get();
+  const ownerEmail = tenDoc.exists ? tenDoc.data().ownerEmail : request.auth.token.email;
+
+  // Reuse existing Stripe customer if stored
+  let customerId = tenDoc.exists ? tenDoc.data().stripeCustomerId : null;
+  if (!customerId) {
+    const customer = await stripe.customers.create({ email: ownerEmail, metadata: { tenantId: tId } });
+    customerId = customer.id;
+    await db.doc(`tenants/${tId}`).set({ stripeCustomerId: customerId }, { merge: true });
+  }
+
+  const session = await stripe.checkout.sessions.create({
+    customer: customerId,
+    mode:     'subscription',
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: successUrl || 'https://tipflow.app/?stripe=success',
+    cancel_url:  cancelUrl  || 'https://tipflow.app/?stripe=cancel',
+    metadata: { tenantId: tId, plan },
+  });
+
+  return { url: session.url };
+});
+
+exports.stripeWebhook = onRequest(
+  { secrets: [stripeWebhookSecret] },
+  async (req, res) => {
+    const sig = req.headers['stripe-signature'];
+    const key = stripeKey.value ? stripeKey.value() : null;
+    if (!key) { res.status(500).send('Stripe not configured'); return; }
+
+    let event;
+    try {
+      const stripe = require('stripe')(key);
+      event = stripe.webhooks.constructEvent(req.rawBody, sig, stripeWebhookSecret.value());
+    } catch (e) {
+      res.status(400).send(`Webhook signature failed: ${e.message}`);
+      return;
+    }
+
+    const db = getFirestore();
+    const obj = event.data.object;
+
+    if (event.type === 'checkout.session.completed') {
+      const tenantId = obj.metadata?.tenantId;
+      const plan     = obj.metadata?.plan || 'pro';
+      if (tenantId) {
+        await db.doc(`tenants/${tenantId}/data/settings`).set({ plan }, { merge: true });
+        await db.doc(`tenants/${tenantId}`).set({ plan, stripeSubscriptionId: obj.subscription }, { merge: true });
+      }
+    }
+
+    if (event.type === 'customer.subscription.deleted') {
+      const snap = await db.collection('tenants')
+        .where('stripeSubscriptionId', '==', obj.id).limit(1).get();
+      if (!snap.empty) {
+        const tid = snap.docs[0].id;
+        await db.doc(`tenants/${tid}/data/settings`).set({ plan: 'starter' }, { merge: true });
+        await db.doc(`tenants/${tid}`).set({ plan: 'starter' }, { merge: true });
+      }
+    }
+
+    res.json({ received: true });
+  }
+);
+
+// ── Gusto Integration ─────────────────────────────────────────────────────────
+exports.gustoGetAuthUrl = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const clientId    = gustoClientId.value();
+  const redirectUri = gustoRedirectUri.value();
+  if (!clientId) throw new HttpsError('unavailable', 'Gusto not configured');
+  const state = request.auth.uid;
+  const url   = `https://api.gusto.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}`;
+  return { url };
+});
+
+exports.gustoOAuthCallback = onRequest({ cors: true }, async (req, res) => {
+  const { code, state: uid } = req.query;
+  if (!code) { res.status(400).send('Missing code'); return; }
+
+  const clientId     = gustoClientId.value();
+  const clientSecret = gustoClientSecret.value();
+  const redirectUri  = gustoRedirectUri.value();
+
+  try {
+    const tokenRes = await fetch('https://api.gusto.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri }),
+    });
+    const tokens = await tokenRes.json();
+    if (!tokens.access_token) throw new Error(tokens.error_description || 'Token exchange failed');
+
+    // Fetch Gusto company info
+    const meRes = await fetch('https://api.gusto.com/v1/me', {
+      headers: { Authorization: `Bearer ${tokens.access_token}` },
+    });
+    const me = await meRes.json();
+    const company = me.roles?.payroll_admin?.companies?.[0];
+
+    // Store auth + company in the tenant's settings
+    const db = getFirestore();
+    await db.doc(`tenants/${TENANT_ID}/data/settings`).set({
+      gusto: {
+        accessToken:  tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        companyId:    company?.id || '',
+        companyName:  company?.name || '',
+        connectedAt:  new Date().toISOString(),
+      },
+    }, { merge: true });
+
+    res.send('<html><body><script>window.opener?.postMessage("gusto_connected","*");window.close();</script><p>Gusto connected! You can close this window.</p></body></html>');
+  } catch (e) {
+    res.status(500).send(`Gusto auth failed: ${e.message}`);
+  }
+});
+
+exports.gustoSyncEmployees = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const db       = getFirestore();
+  const settings = (await db.doc(`tenants/${TENANT_ID}/data/settings`).get()).data();
+  const gusto    = settings?.gusto;
+  if (!gusto?.accessToken) throw new HttpsError('failed-precondition', 'Gusto not connected');
+
+  const empRes = await fetch(`https://api.gusto.com/v1/companies/${gusto.companyId}/employees?include=jobs,compensations`, {
+    headers: { Authorization: `Bearer ${gusto.accessToken}` },
+  });
+  if (!empRes.ok) throw new HttpsError('internal', `Gusto API error: ${empRes.status}`);
+  const gustoEmps = await empRes.json();
+
+  const localEmpsSnap = await db.collection(`tenants/${TENANT_ID}/employees`).get();
+  const localEmps     = localEmpsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  let synced = 0;
+  for (const ge of gustoEmps) {
+    const fullName = `${ge.first_name} ${ge.last_name}`.trim();
+    const local    = localEmps.find(e => e.name?.toLowerCase() === fullName.toLowerCase());
+    if (local) {
+      const comp = ge.compensations?.find(c => c.active);
+      await db.doc(`tenants/${TENANT_ID}/employees/${local.id}`).set({
+        gustoId:       ge.id,
+        gustoEmail:    ge.email || '',
+        payRate:       comp?.rate ? parseFloat(comp.rate) : local.payRate,
+        payType:       comp?.payment_unit?.toLowerCase() || local.payType,
+        updatedAt:     new Date().toISOString(),
+      }, { merge: true });
+      synced++;
+    }
+  }
+
+  return { synced, total: gustoEmps.length };
+});
+
+exports.gustoSubmitPayroll = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { payrollRunId } = request.data || {};
+  if (!payrollRunId) throw new HttpsError('invalid-argument', 'payrollRunId required');
+
+  const db       = getFirestore();
+  const settings = (await db.doc(`tenants/${TENANT_ID}/data/settings`).get()).data();
+  const gusto    = settings?.gusto;
+  if (!gusto?.accessToken) throw new HttpsError('failed-precondition', 'Gusto not connected');
+
+  const runSnap = await db.doc(`tenants/${TENANT_ID}/payrollRuns/${payrollRunId}`).get();
+  if (!runSnap.exists) throw new HttpsError('not-found', 'Payroll run not found');
+  const run = runSnap.data();
+
+  // Create an off-cycle payroll in Gusto
+  const payRes = await fetch(`https://api.gusto.com/v1/companies/${gusto.companyId}/payrolls`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${gusto.accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      off_cycle: true,
+      off_cycle_reason: 'Bonus',
+      start_date: run.startDate,
+      end_date:   run.endDate,
+      employee_compensations: (run.techs || [])
+        .filter(t => t.gustoId)
+        .map(t => ({
+          employee_id: t.gustoId,
+          payment_method: 'Direct Deposit',
+          fixed_compensations: [{ name: 'Commission', amount: String(t.total?.toFixed(2) || '0.00') }],
+        })),
+    }),
+  });
+
+  if (!payRes.ok) {
+    const err = await payRes.json().catch(() => ({}));
+    throw new HttpsError('internal', `Gusto payroll failed: ${JSON.stringify(err)}`);
+  }
+
+  const payroll = await payRes.json();
+  await db.doc(`tenants/${TENANT_ID}/payrollRuns/${payrollRunId}`).set({
+    gustoPayrollId: payroll.payroll_id || payroll.id,
+    gustoSubmittedAt: new Date().toISOString(),
+  }, { merge: true });
+
+  return { gustoPayrollId: payroll.payroll_id || payroll.id };
+});

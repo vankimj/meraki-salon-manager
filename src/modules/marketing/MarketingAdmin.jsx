@@ -149,7 +149,7 @@ export default function MarketingAdmin() {
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
         <StatCard label="Campaigns run"   value={campaigns.length}  accent="#2D7A5F" />
-        <StatCard label="Emails sent"     value={fmtNum(totalSent)} accent="#3D95CE" />
+        <StatCard label="Messages sent"    value={fmtNum(totalSent)} accent="#3D95CE" />
         <StatCard label="This month"      value={thisMonth}         accent="#7c3aed" />
         <StatCard label="Automations on"  value={`${autoActive} / 2`} accent={autoActive ? '#f59e0b' : '#ccc'}
           sub={autoActive === 0 ? 'Enable in Admin → Settings' : autoActive === 1 ? '1 active' : 'Birthday + Lapsed'} />
@@ -204,10 +204,13 @@ function CampaignRow({ campaign: c, last, onDelete, onClone }) {
     <div style={{ borderBottom: last ? 'none' : '1px solid #f0f0f0' }}>
       <div onClick={() => setExpanded(x => !x)}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}>
-        <div style={{ width: 36, height: 36, borderRadius: 8, background: '#e8f4ee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>📣</div>
+        <div style={{ width: 36, height: 36, borderRadius: 8, background: '#e8f4ee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{c.channel === 'sms' ? '💬' : '📣'}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{c.name}</span>
+            {c.channel === 'sms' && (
+              <span style={{ fontSize: 10, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>SMS</span>
+            )}
             {c.promoCode && (
               <span style={{ fontSize: 10, background: '#f0faf6', color: '#2D7A5F', border: '1px solid #c6e8d5', borderRadius: 6, padding: '1px 7px', fontWeight: 700, fontFamily: 'monospace' }}>{c.promoCode}</span>
             )}
@@ -257,6 +260,7 @@ function CampaignRow({ campaign: c, last, onDelete, onClone }) {
 // ── Campaign modal ─────────────────────────────────────
 function CampaignModal({ onSend, onClose, prefill = null }) {
   const { showToast, settings } = useApp();
+  const [channel,     setChannel]     = useState(prefill?.channel || 'email');
   const [name,        setName]        = useState(prefill ? `${prefill.name} (copy)` : '');
   const [segType,     setSegType]     = useState(prefill?.segmentType || 'all');
   const [lapDays,     setLapDays]     = useState(prefill?.segmentParams?.days || 60);
@@ -265,6 +269,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   const [promoSel,    setPromoSel]    = useState('');
   const [subject,     setSubject]     = useState(prefill?.subject || '');
   const [body,        setBody]        = useState(prefill?.body || '');
+  const [smsBody,     setSmsBody]     = useState(prefill?.smsBody || '');
   const [addCta,      setAddCta]      = useState(!!(prefill?.ctaUrl));
   const [ctaText,     setCtaText]     = useState(prefill?.ctaText || 'Book Your Appointment');
   const [ctaUrl,      setCtaUrl]      = useState(prefill?.ctaUrl || settings?.bookingUrl || '');
@@ -322,52 +327,53 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
   const recipients = useMemo(() => {
     if (!clients) return null;
-    const withEmail = clients.filter(c => c.email && !c.marketingOptOut);
-    if (segType === 'all') return withEmail;
+    const withContact = channel === 'sms'
+      ? clients.filter(c => c.phone && !c.marketingOptOut)
+      : clients.filter(c => c.email && !c.marketingOptOut);
+    if (segType === 'all') return withContact;
     if (segType === 'birthday') {
       const mm = new Date().toISOString().slice(5, 7);
-      return withEmail.filter(c => c.birthday && c.birthday.slice(5, 7) === mm);
+      return withContact.filter(c => c.birthday && c.birthday.slice(5, 7) === mm);
     }
     if (segType === 'lapsed') {
       if (recentAppts === null) return null;
       const activeIds = new Set(recentAppts.map(a => a.clientId).filter(Boolean));
-      return withEmail.filter(c => !activeIds.has(c.id));
+      return withContact.filter(c => !activeIds.has(c.id));
     }
     if (segType === 'tech') {
       if (allAppts === null || !techSel) return null;
       const ids = new Set(allAppts.filter(a => a.techName === techSel && a.clientId).map(a => a.clientId));
-      return withEmail.filter(c => ids.has(c.id));
+      return withContact.filter(c => ids.has(c.id));
     }
     if (segType === 'service') {
       if (allAppts === null || !serviceSel) return null;
       const ids = new Set(
         allAppts.filter(a => a.clientId && (a.services || []).some(s => s.name === serviceSel)).map(a => a.clientId)
       );
-      return withEmail.filter(c => ids.has(c.id));
+      return withContact.filter(c => ids.has(c.id));
     }
     if (segType === 'new_clients') {
       if (allAppts === null) return null;
       const cutoff = new Date(Date.now() - newDays * 86400000).toISOString().slice(0, 10);
-      // clients whose earliest appointment is within the window
       const firstVisit = {};
       allAppts.forEach(a => {
         if (!a.clientId || !a.date) return;
         if (!firstVisit[a.clientId] || a.date < firstVisit[a.clientId]) firstVisit[a.clientId] = a.date;
       });
-      return withEmail.filter(c => firstVisit[c.id] && firstVisit[c.id] >= cutoff);
+      return withContact.filter(c => firstVisit[c.id] && firstVisit[c.id] >= cutoff);
     }
     if (segType === 'top_clients') {
       if (allAppts === null) return null;
       const visitCount = {};
       allAppts.forEach(a => { if (a.clientId) visitCount[a.clientId] = (visitCount[a.clientId] || 0) + 1; });
-      return withEmail.filter(c => (visitCount[c.id] || 0) >= minVisits);
+      return withContact.filter(c => (visitCount[c.id] || 0) >= minVisits);
     }
     if (segType === 'no_review') {
       if (reviewedIds === null) return null;
-      return withEmail.filter(c => !reviewedIds.has(c.id));
+      return withContact.filter(c => !reviewedIds.has(c.id));
     }
-    return withEmail;
-  }, [clients, segType, lapDays, recentAppts, techSel, serviceSel, allAppts, newDays, minVisits, reviewedIds]);
+    return withContact;
+  }, [clients, channel, segType, lapDays, recentAppts, techSel, serviceSel, allAppts, newDays, minVisits, reviewedIds]);
 
   function applyTemplate(tpl) {
     setSubject(tpl.subject);
@@ -414,8 +420,8 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
     (segType === 'no_review'   && reviewedIds === null);
 
   const canSend = !sending && !loading && !needsSelection &&
-    !!name.trim() && !!subject.trim() && !!body.trim() &&
-    (recipients?.length ?? 0) > 0;
+    !!name.trim() && (recipients?.length ?? 0) > 0 &&
+    (channel === 'sms' ? !!smsBody.trim() : (!!subject.trim() && !!body.trim()));
 
   async function submit() {
     if (!canSend) return;
@@ -427,13 +433,16 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
     if (segType === 'new_clients')  segmentParams.days        = newDays;
     if (segType === 'top_clients')  segmentParams.minVisits   = minVisits;
     await onSend({
-      name: name.trim(), subject: subject.trim(), body: body.trim(),
+      name: name.trim(), channel,
+      subject:    channel === 'email' ? subject.trim() : null,
+      body:       channel === 'email' ? body.trim()    : null,
+      smsBody:    channel === 'sms'   ? smsBody.trim() : null,
       segmentType: segType, segmentParams,
-      promoCode:  selectedPromo?.code  || null,
-      promoLabel: promoLabel           || null,
-      ctaText:    addCta && ctaText.trim() ? ctaText.trim() : null,
-      ctaUrl:     addCta && ctaUrl.trim()  ? ctaUrl.trim()  : null,
-      recipients: recipients.map(c => ({ clientId: c.id, name: c.name, email: c.email })),
+      promoCode:  channel === 'email' && selectedPromo?.code  ? selectedPromo.code  : null,
+      promoLabel: channel === 'email' && promoLabel           ? promoLabel           : null,
+      ctaText:    channel === 'email' && addCta && ctaText.trim() ? ctaText.trim() : null,
+      ctaUrl:     channel === 'email' && addCta && ctaUrl.trim()  ? ctaUrl.trim()  : null,
+      recipients: recipients.map(c => ({ clientId: c.id, name: c.name, email: c.email || null, phone: c.phone || null })),
       recipientCount: recipients.length,
       status: 'pending', sentCount: 0, failCount: 0,
     });
@@ -441,7 +450,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   }
 
   const allTemplates = [...BUILTIN_TEMPLATES, ...savedTpls];
-  const optedOutCount = clients ? clients.filter(c => c.email && c.marketingOptOut).length : 0;
+  const optedOutCount = clients ? clients.filter(c => c.marketingOptOut).length : 0;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
@@ -455,8 +464,8 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
 
-          {/* ── Template picker ── */}
-          <div style={{ marginBottom: 18 }}>
+          {/* ── Template picker (email only) ── */}
+          {channel === 'email' && <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
               Templates
               <span style={{ fontSize: 10, fontWeight: 400, color: '#ccc', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
@@ -487,6 +496,16 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 );
               })}
             </div>
+          </div>}
+
+          {/* ── Channel toggle ── */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+            {[{ id: 'email', label: '✉️ Email' }, { id: 'sms', label: '💬 SMS' }].map(ch => (
+              <button key={ch.id} onClick={() => setChannel(ch.id)}
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${channel === ch.id ? '#2D7A5F' : '#e0e0e0'}`, background: channel === ch.id ? '#f0faf6' : '#fafafa', color: channel === ch.id ? '#2D7A5F' : '#888', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
+                {ch.label}
+              </button>
+            ))}
           </div>
 
           <F label="Campaign name">
@@ -607,87 +626,112 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
             )}
           </div>
 
-          <F label="Subject line">
-            <input value={subject} onChange={e => { setSubject(e.target.value); setActiveTemplate(null); }} placeholder="e.g. 🎉 A special offer just for you!" style={inp} />
-          </F>
+          {channel === 'email' && (
+            <>
+              <F label="Subject line">
+                <input value={subject} onChange={e => { setSubject(e.target.value); setActiveTemplate(null); }} placeholder="e.g. 🎉 A special offer just for you!" style={inp} />
+              </F>
 
-          <F label="Message body">
-            <textarea value={body} onChange={e => { setBody(e.target.value); setActiveTemplate(null); }} rows={7}
-              style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
-              <div style={{ fontSize: 10, color: '#aaa' }}>
-                Use <code style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
-              </div>
-              {!savingTpl ? (
-                <button onClick={() => { setSavingTpl(true); setTplName(name.trim()); }}
-                  style={{ fontSize: 11, color: '#3D95CE', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }}>
-                  💾 Save as template
-                </button>
-              ) : (
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                  <input
-                    value={tplName}
-                    onChange={e => setTplName(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setSavingTpl(false); }}
-                    placeholder="Template name…"
-                    autoFocus
-                    style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #3D95CE', outline: 'none', fontFamily: 'inherit', width: 140 }}
-                  />
-                  <button onClick={handleSaveTemplate} disabled={!tplName.trim()}
-                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: tplName.trim() ? '#3D95CE' : '#d0d0d0', color: '#fff', cursor: tplName.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
-                    Save
-                  </button>
-                  <button onClick={() => setSavingTpl(false)}
-                    style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fafafa', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    Cancel
-                  </button>
+              <F label="Message body">
+                <textarea value={body} onChange={e => { setBody(e.target.value); setActiveTemplate(null); }} rows={7}
+                  style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
+                  <div style={{ fontSize: 10, color: '#aaa' }}>
+                    Use <code style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
+                  </div>
+                  {!savingTpl ? (
+                    <button onClick={() => { setSavingTpl(true); setTplName(name.trim()); }}
+                      style={{ fontSize: 11, color: '#3D95CE', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '2px 0' }}>
+                      💾 Save as template
+                    </button>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input
+                        value={tplName}
+                        onChange={e => setTplName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveTemplate(); if (e.key === 'Escape') setSavingTpl(false); }}
+                        placeholder="Template name…"
+                        autoFocus
+                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #3D95CE', outline: 'none', fontFamily: 'inherit', width: 140 }}
+                      />
+                      <button onClick={handleSaveTemplate} disabled={!tplName.trim()}
+                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: tplName.trim() ? '#3D95CE' : '#d0d0d0', color: '#fff', cursor: tplName.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                        Save
+                      </button>
+                      <button onClick={() => setSavingTpl(false)}
+                        style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fafafa', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Cancel
+                      </button>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </F>
+              </F>
 
-          <F label="Attach promo code (optional)">
-            <select value={promoSel} onChange={e => setPromoSel(e.target.value)} style={inp}>
-              <option value="">— None —</option>
-              {promos.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.code} · {p.type === 'percent' ? `${p.value}% off` : `$${p.value} off`}
-                  {p.endDate ? ` · expires ${p.endDate}` : ''}
-                </option>
-              ))}
-            </select>
-            {selectedPromo && (
-              <div style={{ fontSize: 11, color: '#2D7A5F', marginTop: 5, padding: '6px 10px', background: '#f0faf6', borderRadius: 6, border: '1px solid #c6e8d5' }}>
-                <strong style={{ fontFamily: 'monospace', fontSize: 13 }}>{selectedPromo.code}</strong> · {promoLabel} will appear as a highlighted block in the email.
-              </div>
-            )}
-          </F>
+              <F label="Attach promo code (optional)">
+                <select value={promoSel} onChange={e => setPromoSel(e.target.value)} style={inp}>
+                  <option value="">— None —</option>
+                  {promos.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.code} · {p.type === 'percent' ? `${p.value}% off` : `$${p.value} off`}
+                      {p.endDate ? ` · expires ${p.endDate}` : ''}
+                    </option>
+                  ))}
+                </select>
+                {selectedPromo && (
+                  <div style={{ fontSize: 11, color: '#2D7A5F', marginTop: 5, padding: '6px 10px', background: '#f0faf6', borderRadius: 6, border: '1px solid #c6e8d5' }}>
+                    <strong style={{ fontFamily: 'monospace', fontSize: 13 }}>{selectedPromo.code}</strong> · {promoLabel} will appear as a highlighted block in the email.
+                  </div>
+                )}
+              </F>
 
-          <F label="Book now button (optional)">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: addCta ? 10 : 0 }}>
-              <div onClick={() => setAddCta(v => !v)}
-                style={{ width: 36, height: 20, borderRadius: 10, background: addCta ? '#2D7A5F' : '#d1d5db', position: 'relative', transition: 'background .2s', flexShrink: 0, cursor: 'pointer' }}>
-                <div style={{ position: 'absolute', top: 2, left: addCta ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+              <F label="Book now button (optional)">
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: addCta ? 10 : 0 }}>
+                  <div onClick={() => setAddCta(v => !v)}
+                    style={{ width: 36, height: 20, borderRadius: 10, background: addCta ? '#2D7A5F' : '#d1d5db', position: 'relative', transition: 'background .2s', flexShrink: 0, cursor: 'pointer' }}>
+                    <div style={{ position: 'absolute', top: 2, left: addCta ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
+                  </div>
+                  <span style={{ fontSize: 12, color: '#555' }}>Add a "Book Now" button to the email</span>
+                </label>
+                {addCta && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input value={ctaText} onChange={e => setCtaText(e.target.value)} placeholder="Button label"
+                      style={{ ...inp, flex: 1 }} />
+                    <input value={ctaUrl} onChange={e => setCtaUrl(e.target.value)} placeholder="https://…"
+                      style={{ ...inp, flex: 2 }} />
+                  </div>
+                )}
+              </F>
+            </>
+          )}
+
+          {channel === 'sms' && (
+            <F label="Text message">
+              <textarea value={smsBody} onChange={e => setSmsBody(e.target.value.slice(0, 320))} rows={4}
+                placeholder="Hi {firstName}, come visit us at Meraki! Book at meraki.tipflow.app"
+                style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
+                <div style={{ fontSize: 10, color: '#aaa' }}>
+                  Use <code style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
+                </div>
+                <span style={{ fontSize: 10, color: smsBody.length > 160 ? '#f59e0b' : '#bbb' }}>
+                  {smsBody.length}/160{smsBody.length > 160 ? ' (2 SMS)' : ''}
+                </span>
               </div>
-              <span style={{ fontSize: 12, color: '#555' }}>Add a "Book Now" button to the email</span>
-            </label>
-            {addCta && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input value={ctaText} onChange={e => setCtaText(e.target.value)} placeholder="Button label"
-                  style={{ ...inp, flex: 1 }} />
-                <input value={ctaUrl} onChange={e => setCtaUrl(e.target.value)} placeholder="https://…"
-                  style={{ ...inp, flex: 2 }} />
+              <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
+                Requires Twilio configured. Clients must have a phone number on file.
               </div>
-            )}
-          </F>
+            </F>
+          )}
 
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={() => setShowPreview(true)} disabled={!subject.trim() && !body.trim()}
-              style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fafafa', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              👁 Preview
-            </button>
+            {channel === 'email' && (
+              <button onClick={() => setShowPreview(true)} disabled={!subject.trim() && !body.trim()}
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fafafa', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                👁 Preview
+              </button>
+            )}
             <button onClick={submit} disabled={!canSend}
-              style={{ flex: 2, padding: 11, borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+              style={{ flex: channel === 'email' ? 2 : 1, padding: 11, borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit' }}>
               {sending ? 'Queuing…' : loading ? 'Loading…' : needsSelection ? 'Select audience' : `Send to ${recipients?.length ?? 0} clients`}
             </button>
           </div>
