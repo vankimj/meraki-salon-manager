@@ -37,6 +37,7 @@ export default function QueueKiosk() {
 
   // Arrival form
   const [arrName,  setArrName]  = useState('');
+  const [arrPhone, setArrPhone] = useState('');
 
   const nameRef = useRef(null);
   const arrRef  = useRef(null);
@@ -68,7 +69,7 @@ export default function QueueKiosk() {
   function reset() {
     setStep('welcome');
     setName(''); setPhone(''); setEmail(''); setSvcSel(''); setTechSel('Any');
-    setArrName(''); setPosition(null); setWorking(false);
+    setArrName(''); setArrPhone(''); setPosition(null); setWorking(false);
   }
 
   async function submitWalkIn() {
@@ -90,11 +91,12 @@ export default function QueueKiosk() {
   }
 
   async function submitArrival() {
-    if (!arrName.trim()) return;
+    if (!arrName.trim() || !arrPhone.trim()) return;
     setWorking(true);
     try {
       await addToWaitlist({
         clientName: arrName.trim(),
+        clientPhone: arrPhone.trim(),
         isWalkIn: false,
         hasAppointment: true,
         serviceName: '',
@@ -214,16 +216,19 @@ export default function QueueKiosk() {
 
   // ── Appointment arrival ─────────────────────────────────
   if (step === 'arrival') {
-    const canSubmit = arrName.trim() && !working;
+    const canSubmit = arrName.trim() && arrPhone.trim() && !working;
     return (
       <Shell narrow>
-        <SectionHeader title="Let us know you're here" subtitle="Enter your name and we'll let your tech know." />
+        <SectionHeader title="Let us know you're here" subtitle="A couple quick details so we can find your appointment." />
 
-        <KInput refEl={arrRef} value={arrName} onChange={setArrName}
-          onKeyDown={e => e.key === 'Enter' && canSubmit && submitArrival()}
-          placeholder="Your name" big />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <KInput refEl={arrRef} value={arrName} onChange={setArrName} placeholder="Your name *" big />
+          <KInput value={arrPhone} onChange={setArrPhone}
+            onKeyDown={e => e.key === 'Enter' && canSubmit && submitArrival()}
+            placeholder="Phone number *" inputMode="tel" big />
+        </div>
 
-        <ButtonRow style={{ marginTop: 16 }}>
+        <ButtonRow style={{ marginTop: 18 }}>
           <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Back</SecondaryButton>
           <PrimaryButton onClick={submitArrival} disabled={!canSubmit} tint={theme.accent}>
             {working ? 'Checking in…' : 'Check In'}
