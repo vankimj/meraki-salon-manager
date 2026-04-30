@@ -1121,7 +1121,13 @@ exports.chatWithSalon = onCall(
       svcByCategory[cat].push(s);
     });
     const svcText = Object.entries(svcByCategory).map(([cat, svcs]) => {
-      const lines = svcs.map(s => `    • ${s.name}${s.price ? ` — $${s.price}` : ''}${s.description ? ` (${s.description})` : ''}`).join('\n');
+      const lines = svcs.map(s => {
+        const price = s.basePrice ?? s.price;
+        const priceStr = price != null ? ` — ${s.priceFrom ? 'from ' : ''}$${price}` : '';
+        const dur = s.duration ?? s.durationMin;
+        const durStr = dur ? ` · ${dur}min${s.durationMin && !s.duration ? '+' : ''}` : '';
+        return `    • ${s.name}${priceStr}${durStr}${s.description ? ` (${s.description})` : ''}`;
+      }).join('\n');
       return `  ${cat}:\n${lines}`;
     }).join('\n\n');
 
