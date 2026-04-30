@@ -422,23 +422,22 @@ function Header({ step, cfg, gUser, client, onSignIn, onSignOut }) {
 function Step1Service({ services, selected, onSelect }) {
   const groups = groupByCategory(services);
   return (
-    <div>
+    <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <StepTitle>Choose a service</StepTitle>
       {groups.map(({ category, services: svcs }) => {
-        const color = CATEGORY_COLORS[category] || '#555';
-        const icon  = CATEGORY_ICONS[category]  || '💆';
+        const color = CATEGORY_COLORS[category] || '#1a1a1a';
         return (
-          <div key={category} style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
-                {icon}
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#333', letterSpacing: '.02em' }}>{category}</span>
-              <div style={{ flex: 1, height: 1, background: '#e8e8e8' }} />
+          <div key={category} style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #ececec' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px' }}>{category}</span>
+              <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 }}>
-              {svcs.map(s => (
-                <ServiceCard key={s.id} svc={s} color={color} selected={selected?.id === s.id} onSelect={() => onSelect(s)} />
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #ececec', overflow: 'hidden' }}>
+              {svcs.map((s, i) => (
+                <ServiceRow key={s.id} svc={s} color={color}
+                  selected={selected?.id === s.id}
+                  divider={i < svcs.length - 1}
+                  onSelect={() => onSelect(s)} />
               ))}
             </div>
           </div>
@@ -448,43 +447,45 @@ function Step1Service({ services, selected, onSelect }) {
   );
 }
 
-function ServiceCard({ svc, color, selected, onSelect }) {
-  const [imgErr, setImgErr] = useState(false);
-  const hasImg = svc.image && !imgErr;
+function ServiceRow({ svc, color, selected, divider, onSelect }) {
+  const [hover, setHover] = useState(false);
   return (
-    <button onClick={onSelect} style={{
-      display: 'flex', alignItems: 'stretch', textAlign: 'left', fontFamily: 'inherit',
-      background: '#fff', border: `1.5px solid ${selected ? color : '#e8e8e8'}`,
-      borderRadius: 14, overflow: 'hidden', cursor: 'pointer', width: '100%',
-      boxShadow: selected ? `0 0 0 2px ${color}30, 0 2px 8px rgba(0,0,0,.06)` : '0 1px 4px rgba(0,0,0,.05)',
-      transition: 'border-color .15s, box-shadow .15s',
-    }}>
-      {/* Color accent bar */}
-      <div style={{ width: 4, background: selected ? color : '#e8e8e8', flexShrink: 0, transition: 'background .15s' }} />
-      {/* Image */}
-      <div style={{ width: 80, height: 80, flexShrink: 0, background: '#f0f0f0', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {hasImg
-          ? <img src={svc.image} alt={svc.name} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : <span style={{ fontSize: 28 }}>{CATEGORY_ICONS[svc.category] || '💅'}</span>
-        }
-      </div>
-      {/* Text */}
-      <div style={{ flex: 1, padding: '12px 14px', minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 3 }}>{svc.name}</div>
+    <button onClick={onSelect}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        display: 'flex', alignItems: 'flex-start', gap: 16,
+        textAlign: 'left', fontFamily: 'inherit', width: '100%',
+        background: selected ? `${color}10` : hover ? '#fafafa' : '#fff',
+        border: 'none',
+        borderBottom: divider ? '1px solid #f1f1f1' : 'none',
+        cursor: 'pointer',
+        padding: '18px 20px',
+        transition: 'background .15s',
+      }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: svc.description ? 6 : 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px' }}>{svc.name}</span>
+          {selected && (
+            <span style={{ width: 18, height: 18, borderRadius: '50%', background: color, color: '#fff', fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</span>
+          )}
+        </div>
         {svc.description && (
-          <div style={{ fontSize: 12, color: '#888', lineHeight: 1.4, marginBottom: 5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-line' }}>
             {svc.description}
           </div>
         )}
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: color }}>{formatPrice(svc.basePrice, svc.priceFrom)}</span>
-          <span style={{ fontSize: 11, color: '#bbb' }}>·</span>
-          <span style={{ fontSize: 12, color: '#888' }}>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
+        <div style={{ marginTop: 8, fontSize: 12, color: '#999', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
         </div>
       </div>
-      {selected && (
-        <div style={{ width: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', color: color, fontSize: 18, flexShrink: 0, paddingRight: 8 }}>✓</div>
-      )}
+      <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, paddingTop: 2 }}>
+        <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
+          {formatPrice(svc.basePrice, svc.priceFrom)}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: color, background: `${color}14`, padding: '4px 12px', borderRadius: 20, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+          {selected ? 'Selected' : 'Book'}
+        </span>
+      </div>
     </button>
   );
 }
