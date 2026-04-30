@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchAppointments, fetchAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import { useApp } from '../../context/AppContext';
@@ -152,13 +152,23 @@ export default function ScheduleAdmin() {
   const [deleteDialog,     setDeleteDialog]     = useState(null); // appt with recurringGroupId
 
   const load = useCallback(async () => {
+    // Kept for places that still trigger an explicit reload (e.g. modal save error paths).
+    // The live subscription below is the primary source of truth.
     setLoading(true);
     try { setAppts(await fetchAppointments(date)); }
     catch (e) { console.error('[Schedule] load failed:', e); }
     finally { setLoading(false); }
   }, [date]);
 
-  useEffect(() => { load(); }, [load]);
+  // Real-time day-view subscription — appointment changes from any client appear within ~1s.
+  useEffect(() => {
+    setLoading(true);
+    const unsub = subscribeToAppointments(date, list => {
+      setAppts(list);
+      setLoading(false);
+    });
+    return unsub;
+  }, [date]);
 
   const weekStart = weekStartOf(date);
   const loadWeek = useCallback(async () => {
@@ -168,7 +178,16 @@ export default function ScheduleAdmin() {
     finally { setWeekLoading(false); }
   }, [weekStart]);
 
-  useEffect(() => { if (viewMode === 'week') loadWeek(); }, [viewMode, loadWeek]);
+  // Real-time week-view subscription — only active while in week mode.
+  useEffect(() => {
+    if (viewMode !== 'week') return;
+    setWeekLoading(true);
+    const unsub = subscribeToAppointmentsByRange(weekStart, addDays(weekStart, 6), list => {
+      setWeekAppts(list);
+      setWeekLoading(false);
+    });
+    return unsub;
+  }, [viewMode, weekStart]);
 
   // Real-time queue listener — always on so badge stays current
   useEffect(() => {

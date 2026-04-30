@@ -164,6 +164,26 @@ export async function fetchAppointments(date) {
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 }
 
+// Real-time subscription for a single date (Schedule day view).
+export function subscribeToAppointments(date, cb) {
+  const q = query(APPTS_COL, where('date', '==', date));
+  return onSnapshot(q, snap => {
+    const list = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    cb(list);
+  });
+}
+
+// Real-time subscription for a date range (Schedule week view).
+export function subscribeToAppointmentsByRange(startDate, endDate, cb) {
+  const q = query(APPTS_COL,
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  );
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+}
+
 export async function createAppointment(data) {
   const ref = await addDoc(APPTS_COL, {
     ...data,
