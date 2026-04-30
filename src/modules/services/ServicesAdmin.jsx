@@ -129,6 +129,58 @@ export default function ServicesAdmin() {
     setServices(s => s.map(x => x.id === svc.id ? { ...x, active: !x.active } : x));
   }
 
+  // Suggested option templates per service name. Keys are case-insensitive,
+  // hyphen-flexible service names; each template is an array of options
+  // expressed as deltas from the base (priceAdd / durationAdd).
+  // Names align with what merakinailstudio.glossgenius.com surfaces.
+  const SUGGESTED = {
+    'gel x':                   [{ name: 'Gel-X only',                 priceAdd:  0, durationAdd:  0 },
+                                { name: 'Gel-X with removal',         priceAdd: 10, durationAdd: 20 },
+                                { name: 'Gel-X + Manicure',           priceAdd: 25, durationAdd: 30 }],
+    'structured gel manicure': [{ name: 'Structured gel only',        priceAdd:  0, durationAdd:  0 },
+                                { name: 'Structured gel + removal',   priceAdd: 10, durationAdd: 20 },
+                                { name: 'Structured gel + manicure',  priceAdd: 20, durationAdd: 30 }],
+    'gel manicure':            [{ name: 'Gel manicure only',          priceAdd:  0, durationAdd:  0 },
+                                { name: 'Gel manicure + removal',     priceAdd: 10, durationAdd: 20 }],
+    'dip':                     [{ name: 'Dip only',                   priceAdd:  0, durationAdd:  0 },
+                                { name: 'Dip + removal',              priceAdd: 10, durationAdd: 20 },
+                                { name: 'Dip + manicure',             priceAdd: 25, durationAdd: 30 }],
+    'gel polish change':       [{ name: 'Polish change only',         priceAdd:  0, durationAdd:  0 },
+                                { name: 'Polish change + removal',    priceAdd: 10, durationAdd: 20 }],
+    'spa pedicure':            [{ name: 'Regular polish',             priceAdd:  0, durationAdd:  0 },
+                                { name: 'With gel polish',            priceAdd: 10, durationAdd: 15 }],
+    'signature pedicure':      [{ name: 'Regular polish',             priceAdd:  0, durationAdd:  0 },
+                                { name: 'With gel polish',            priceAdd: 10, durationAdd: 15 }],
+    'deluxe pedicure':         [{ name: 'Regular polish',             priceAdd:  0, durationAdd:  0 },
+                                { name: 'With gel polish',            priceAdd: 10, durationAdd: 15 }],
+  };
+
+  function normalizeKey(s) {
+    return (s || '').toLowerCase().replace(/[-_]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  async function applySuggestedOptions() {
+    const eligible = services.filter(s => SUGGESTED[normalizeKey(s.name)] && (!s.options || s.options.length === 0));
+    if (eligible.length === 0) {
+      showToast('No services need options — every match already has them.');
+      return;
+    }
+    const summary = eligible.map(s => `• ${s.name} — ${SUGGESTED[normalizeKey(s.name)].length} options`).join('\n');
+    if (!confirm(`Apply suggested options to ${eligible.length} service${eligible.length === 1 ? '' : 's'}?\n\n${summary}\n\nYou can edit each one in the service editor after.`)) return;
+    try {
+      for (const svc of eligible) {
+        const tpl = SUGGESTED[normalizeKey(svc.name)];
+        const opts = tpl.map((o, i) => ({ id: `opt_${svc.id}_${i}`, ...o }));
+        await saveService(svc.id, { options: opts });
+      }
+      const fresh = await fetchServices();
+      setServices(fresh);
+      showToast(`Applied options to ${eligible.length} service${eligible.length === 1 ? '' : 's'}`);
+    } catch (e) {
+      showToast('Failed: ' + (e.message || 'unknown'), 4000);
+    }
+  }
+
   const groups = groupByCategory(services);
   const activeCount = services.filter(s => s.active !== false).length;
 
@@ -146,6 +198,7 @@ export default function ServicesAdmin() {
           <span style={{ fontSize: 12, color: '#aaa' }}>{services.length} total · {activeCount} active</span>
           {undoStack.length > 0 && <Btn onClick={handleUndo}>↩ Undo</Btn>}
           {redoStack.length > 0 && <Btn onClick={handleRedo}>↪ Redo</Btn>}
+          {!isTech && <Btn color="#7c3aed" onClick={applySuggestedOptions}>↺ Apply suggested options</Btn>}
           {!isTech && <Btn color="#3D95CE" onClick={() => { setEditing(blankService()); setErrors({}); }}>+ Add Service</Btn>}
         </div>
       </div>
