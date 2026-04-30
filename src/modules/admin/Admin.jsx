@@ -18,7 +18,7 @@ import { seedProducts, clearSeedProducts } from '../../data/seedProducts';
 import FeedbackModal from '../../components/FeedbackModal';
 
 export default function Admin({ onClose }) {
-  const { gUser, users, settings, grantAccess, grantPendingAccess, loadPendingRequests, updateSettings, signOut, isAdmin, syncState } = useApp();
+  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
@@ -165,7 +165,7 @@ export default function Admin({ onClose }) {
                   : <Empty>No pending requests</Empty>
               }
             </Section>
-            <Section title="👥 Users">
+            <Section title="👥 Users" action={<AddMissingTechUsersBtn employees={employees} users={users} addTechUsersForEmployees={addTechUsersForEmployees} showToast={showToast} />}>
               {others.length ? others.map(u => (
                 <UserRow key={u.email} user={u}>
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -594,6 +594,37 @@ function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, savin
         <Btn color="var(--tm-accent, #3D95CE)" onClick={onSave}>{saving ? 'Saving…' : 'Save Appearance'}</Btn>
       </div>
     </Section>
+  );
+}
+
+function AddMissingTechUsersBtn({ employees, users, addTechUsersForEmployees, showToast }) {
+  const [working, setWorking] = useState(false);
+  const userEmails = new Set(users.map(u => (u.email || '').toLowerCase()));
+  const candidates = employees.filter(e => e.email && e.email.trim() && !userEmails.has(e.email.trim().toLowerCase()));
+  const noEmail   = employees.filter(e => !e.email || !e.email.trim());
+
+  if (candidates.length === 0) return null;
+
+  async function run() {
+    const summary = candidates.map(e => `• ${e.name} <${e.email}>`).join('\n');
+    const skipMsg = noEmail.length ? `\n\nSkipping ${noEmail.length} tech${noEmail.length === 1 ? '' : 's'} with no email on file:\n${noEmail.map(e => `• ${e.name}`).join('\n')}` : '';
+    if (!confirm(`Add ${candidates.length} tech user${candidates.length === 1 ? '' : 's'}?\n\n${summary}${skipMsg}`)) return;
+    setWorking(true);
+    try {
+      const res = await addTechUsersForEmployees(candidates);
+      showToast(`Added ${res.added} tech user${res.added === 1 ? '' : 's'}`);
+    } catch (e) {
+      showToast('Failed: ' + (e.message || 'unknown'), 4000);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <button onClick={run} disabled={working}
+      style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', cursor: working ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, opacity: working ? 0.6 : 1 }}>
+      {working ? 'Adding…' : `+ Add ${candidates.length} missing tech${candidates.length === 1 ? '' : 's'}`}
+    </button>
   );
 }
 

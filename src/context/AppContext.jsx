@@ -227,6 +227,40 @@ export function AppProvider({ children }) {
     catch (e) { setSyncDot('err'); showToast('Save failed: ' + e.message, 4000); }
   }, [users, showToast]);
 
+  // ── Bulk: create tech user records for missing employees ──
+  // Given a list of employees, creates a 'tech' user for each one whose
+  // email isn't already in the users array. Skips employees with no email
+  // (we can't grant access without a way for them to sign in).
+  const addTechUsersForEmployees = useCallback(async (employeeList) => {
+    const existingEmails = new Set(users.map(u => (u.email || '').toLowerCase()));
+    const candidates = (employeeList || []).filter(e =>
+      e.email && e.email.trim() && !existingEmails.has(e.email.trim().toLowerCase())
+    );
+    if (candidates.length === 0) return { added: 0, skipped: 0 };
+
+    const skipped = (employeeList || []).filter(e => !e.email || !e.email.trim()).length;
+    const newUsers = candidates.map(e => ({
+      email:     e.email.trim(),
+      name:      e.name || e.email,
+      picture:   e.photo || '',
+      role:      'tech',
+      techName:  e.name || null,
+      grantedAt: new Date().toISOString(),
+    }));
+    const updated = [...users, ...newUsers];
+    setUsers(updated);
+    setSyncDot('syncing');
+    try {
+      await saveUsers(updated);
+      setSyncDot('ok');
+      logActivity('tech_users_bulk_added', `${newUsers.length} techs: ${newUsers.map(u => u.techName || u.email).join(', ')}`);
+      return { added: newUsers.length, skipped };
+    } catch (e) {
+      setSyncDot('err');
+      throw e;
+    }
+  }, [users]);
+
   // ── Pending access requests ────────────────────────────
   const loadPendingRequests = useCallback(() => fetchAccessRequests(), []);
 
@@ -393,7 +427,7 @@ export function AppProvider({ children }) {
       isPortalUser, portalClientId,
       showToast, resetInactivity, resetLogoutTimer,
       addSlide, updateSlide, deleteSlide, setDefault,
-      grantAccess, grantPendingAccess, loadPendingRequests, updateSettings,
+      grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings,
       signIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
       handbookPending, handbookDoc, signHandbook,
       totalChatUnread,
