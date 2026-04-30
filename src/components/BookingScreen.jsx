@@ -487,12 +487,20 @@ function ServiceRow({ svc, color, selected, divider, onSelect }) {
           <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
         </div>
       </div>
-      <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, paddingTop: 2 }}>
+      <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, paddingTop: 2 }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
           {formatPrice(svc.basePrice, svc.priceFrom)}
         </span>
-        <span style={{ fontSize: 11, fontWeight: 700, color: color, background: `${color}14`, padding: '4px 12px', borderRadius: 20, letterSpacing: '.04em', textTransform: 'uppercase' }}>
-          {selected ? 'Selected' : 'Book'}
+        <span style={{
+          fontSize: 12, fontWeight: 700,
+          color: '#fff',
+          background: selected ? '#1a1a1a' : 'var(--tm-primary, #2D7A5F)',
+          padding: '7px 18px', borderRadius: 999,
+          letterSpacing: '.04em', whiteSpace: 'nowrap',
+          boxShadow: '0 2px 6px rgba(0,0,0,.10)',
+          transition: 'background .15s',
+        }}>
+          {selected ? '✓ Selected' : 'Book'}
         </span>
       </div>
     </button>
