@@ -465,6 +465,15 @@ function ServiceOptionsEditor({ options, onChange }) {
           No options yet. Use options to offer variants like Short/Medium/Long or add-ons (Nail Art, Removal). Each option has its own price and duration.
         </div>
       )}
+      {options.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, paddingLeft: 2 }}>
+          <div style={{ flex: 2, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Name</div>
+          <div style={{ width: 64, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Price ($)</div>
+          <div style={{ width: 56, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Min</div>
+          <div style={{ width: 28, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', textAlign: 'center' }} title="Show price as starts-at (e.g. $15+)">From</div>
+          <div style={{ width: 28 }} />
+        </div>
+      )}
       {options.map((opt, i) => (
         <div key={opt.id || i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
           <input value={opt.name || ''} onChange={e => patch(i, { name: e.target.value })}
