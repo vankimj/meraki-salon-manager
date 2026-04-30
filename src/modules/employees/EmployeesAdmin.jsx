@@ -85,6 +85,32 @@ export default function EmployeesAdmin() {
     finally { setSeeding(false); }
   }
 
+  async function addMissingTechs() {
+    const existingNames = new Set(employees.map(e => (e.name || '').trim().toLowerCase()));
+    const missing = SEED_EMPLOYEES.filter(e => !existingNames.has(e.name.trim().toLowerCase()));
+    if (missing.length === 0) {
+      showToast('All techs are already in the system.');
+      return;
+    }
+    if (!confirm(`Add ${missing.length} missing tech${missing.length === 1 ? '' : 's'}?\n\n• ${missing.map(e => e.name).join('\n• ')}`)) return;
+    setSeeding(true);
+    try {
+      // Append to the end of the existing sortOrder so they don't collide.
+      const baseSort = (employees.reduce((m, e) => Math.max(m, e.sortOrder ?? 0), 0)) + 1;
+      for (let i = 0; i < missing.length; i++) {
+        await createEmployee({ ...missing[i], sortOrder: baseSort + i });
+      }
+      logActivity('employees_added_missing', `${missing.length} techs: ${missing.map(e => e.name).join(', ')}`);
+      showToast(`Added ${missing.length} tech${missing.length === 1 ? '' : 's'}`);
+      await load();
+    } catch (e) {
+      console.error('[Employees] add missing failed:', e);
+      showToast('Failed: ' + (e.message || 'unknown'), 4000);
+    } finally {
+      setSeeding(false);
+    }
+  }
+
   async function assignAllServicesToAll() {
     if (!confirm(`Mark every employee as able to perform all ${services.length} services? You can fine-tune individual techs after.`)) return;
     const allIds = services.map(s => s.id);
@@ -110,6 +136,11 @@ export default function EmployeesAdmin() {
         {employees.length === 0 && (
           <Btn onClick={seedEmployees} disabled={seeding} color="#f59e0b">
             {seeding ? 'Adding…' : '↺ Seed from defaults'}
+          </Btn>
+        )}
+        {employees.length > 0 && (
+          <Btn onClick={addMissingTechs} disabled={seeding} color="#f59e0b">
+            {seeding ? 'Adding…' : '+ Add missing techs'}
           </Btn>
         )}
         {employees.length > 0 && services.length > 0 && (
