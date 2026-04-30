@@ -303,10 +303,11 @@ export default function BookingScreen() {
             onDateChange={d => { setDate(d); setSlot(null); }}
             onSlotSelect={s => {
               setSlot(s);
-              // Signed-in users skip Step 4 entirely — we'll book with whatever
-              // we know (name + email from auth, phone if there's a client record).
-              // Guests go to Step 4 to either sign in or fill out the form.
-              setStep(gUser ? 5 : 4);
+              // Skip Step 4 only when we already have everything we need.
+              // A signed-in but unrecognized email (e.g. magic-link user not in
+              // client list) still has empty name/phone, so they need the form.
+              const haveAll = form.name.trim() && form.phone.trim();
+              setStep(haveAll ? 5 : 4);
             }}
             onBack={() => setStep(2)}
           />
@@ -329,7 +330,7 @@ export default function BookingScreen() {
             form={form} submitting={submitting}
             onEditInfo={() => setStep(4)}
             onConfirm={handleBook}
-            onBack={() => setStep(gUser ? 3 : 4)}
+            onBack={() => setStep(form.name.trim() && form.phone.trim() ? 3 : 4)}
           />
         )}
       </div>
@@ -627,11 +628,19 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
     </div>
   );
 
-  // Signed-in: this step is only reachable via 'Edit my info'. Show form straight up.
+  // Signed-in: skip the sign-in card. Either editing existing info or
+  // a brand-new auth user whose email isn't in the client list yet —
+  // show the form so they can supply name/phone.
   if (gUser) {
+    const isFirstTime = !form.phone.trim();
     return (
       <div>
-        <StepTitle>Your information</StepTitle>
+        <StepTitle>{isFirstTime ? "Just a couple details" : 'Your information'}</StepTitle>
+        {isFirstTime && (
+          <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#9a3412', lineHeight: 1.5 }}>
+            We don't have you in our client list yet. Add your name and phone so we can confirm and contact you about this appointment.
+          </div>
+        )}
         {formCard}
         <button onClick={onNext} disabled={!valid}
           style={{ width: '100%', padding: '15px', borderRadius: 12, border: 'none', background: valid ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 16, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit', marginBottom: 10 }}>
