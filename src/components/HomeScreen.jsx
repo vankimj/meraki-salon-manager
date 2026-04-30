@@ -125,22 +125,42 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
 
       {/* Greeting */}
       {gUser && (
-        <div style={{ padding: '18px 20px 4px', flexShrink: 0, maxWidth: 760, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a' }}>{greeting()}, {(gUser.displayName || gUser.email).split(' ')[0]} 👋</div>
-          <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>
+        <div style={{ padding: '24px 24px 8px', flexShrink: 0, maxWidth: 1040, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.3px' }}>
+            {greeting()}, {(gUser.displayName || gUser.email).split(' ')[0]}
+            <span style={{ marginLeft: 6 }}>👋</span>
+          </div>
+          <div style={{ fontSize: 12, color: '#aaa', marginTop: 4, letterSpacing: '.02em' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </div>
         </div>
       )}
 
+      {/* Hero — only shown when not signed in */}
+      {!gUser && (
+        <div style={{ padding: '40px 24px 32px', flexShrink: 0, maxWidth: 1040, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
+          <div style={{ width: 76, height: 76, borderRadius: 22, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', boxShadow: '0 12px 32px rgba(45,122,95,.25)' }}>
+            <svg viewBox="0 0 60 60" fill="none" width={42} height={42}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
+          </div>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#1a1a1a', margin: 0, letterSpacing: '-.5px' }}>Welcome to Meraki</h1>
+          <p style={{ fontSize: 14, color: '#888', marginTop: 8, marginBottom: 24, lineHeight: 1.6 }}>
+            Sign in to manage appointments, clients, and your team.
+          </p>
+          <button onClick={() => setShowAuth(true)}
+            style={{ fontSize: 15, fontWeight: 700, padding: '13px 40px', borderRadius: 12, border: 'none', background: 'var(--tm-primary, #2D7A5F)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 6px 18px rgba(45,122,95,.28)', letterSpacing: '.02em', transition: 'transform .15s, box-shadow .15s' }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 8px 22px rgba(45,122,95,.32)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(45,122,95,.28)'; }}>
+            Sign in
+          </button>
+        </div>
+      )}
+
       {/* Module tiles */}
-      <div style={{ padding: '16px 16px 0', flex: 1, maxWidth: 760, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
+      <div style={{ padding: '16px 24px 0', flex: 1, maxWidth: 1040, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
         {isTech ? (
           <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
-              My Tools
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <SectionLabel>My Tools</SectionLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
               <ModuleTile id="schedule"  icon="📅"  label="My Schedule" desc="Your appointments & checkout"  onClick={() => navigate('schedule')}  />
               <ModuleTile id="clients"   icon="👥"  label="Clients"     desc="Profiles & visit history"      onClick={() => navigate('clients')}   />
               <ModuleTile id="services"  icon="💅"  label="Services"    desc="Menu & pricing"                onClick={() => navigate('services')}  />
@@ -150,10 +170,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           </>
         ) : isScheduler ? (
           <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
-              Scheduling
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <SectionLabel>Scheduling</SectionLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
               <ModuleTile id="schedule" icon="📅" label="Schedule"  desc="Appointments & calendar"   onClick={() => navigate('schedule')}  />
               <ModuleTile id="clients"  icon="👥" label="Clients"   desc="Profiles & visit history"  onClick={() => navigate('clients')}   />
               <ModuleTile id="services" icon="💅" label="Services"  desc="Menu & pricing"             onClick={() => navigate('services')}  />
@@ -162,24 +180,14 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           </>
         ) : canManage ? (
           <>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
-              Manage
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+            <SectionLabel>Manage</SectionLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
               {MODULES.filter(m => !m.adminOnly || isAdmin).map(m => (
                 <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} locked={m.proOnly && !isPro} />
               ))}
             </div>
           </>
-        ) : !gUser ? (
-          <div style={{ textAlign: 'center', padding: '32px 20px' }}>
-            <div style={{ fontSize: 13, color: '#aaa', marginBottom: 16 }}>Sign in to access management tools.</div>
-            <button onClick={() => setShowAuth(true)}
-              style={{ fontSize: 17, fontWeight: 700, padding: '16px 48px', borderRadius: 14, border: 'none', background: 'var(--tm-grad)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', width: '100%', maxWidth: 320 }}>
-              Sign in
-            </button>
-          </div>
-        ) : (
+        ) : !gUser ? null : (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', fontSize: 13 }}>
             Your access is pending admin approval.
           </div>
@@ -187,29 +195,25 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
 
         {/* Kiosk launchers — not shown to techs or schedulers */}
         {!isTech && !isScheduler && (
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10, paddingLeft: 4 }}>
-              Kiosk
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <button onClick={() => navigate('tipflow')}
-                style={{ width: '100%', background: 'var(--tm-grad)', border: 'none', borderRadius: 14, padding: '18px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', textAlign: 'left' }}>
-                <div style={{ fontSize: 28, flexShrink: 0 }}>💡</div>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Launch Tip Flow</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>Full-screen kiosk for front desk iPad</div>
-                </div>
-                <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.6)', fontSize: 20 }}>›</div>
-              </button>
-              <button onClick={() => window.open('/?queue', '_blank')}
-                style={{ width: '100%', background: 'var(--tm-grad-dark)', border: 'none', borderRadius: 14, padding: '18px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', textAlign: 'left' }}>
-                <div style={{ fontSize: 28, flexShrink: 0 }}>🪑</div>
-                <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2 }}>Walk-in Queue Kiosk</div>
-                  <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)' }}>Self check-in for walk-ins & arrivals</div>
-                </div>
-                <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.6)', fontSize: 20 }}>↗</div>
-              </button>
+          <div style={{ marginBottom: 24 }}>
+            <SectionLabel>Kiosk</SectionLabel>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+              <KioskCard
+                emoji="💡"
+                label="Launch Tip Flow"
+                desc="Full-screen kiosk for front desk iPad"
+                background="var(--tm-grad)"
+                arrow="›"
+                onClick={() => navigate('tipflow')}
+              />
+              <KioskCard
+                emoji="🪑"
+                label="Walk-in Queue Kiosk"
+                desc="Self check-in for walk-ins & arrivals"
+                background="var(--tm-grad-dark)"
+                arrow="↗"
+                onClick={() => window.open('/?queue', '_blank')}
+              />
             </div>
           </div>
         )}
@@ -298,6 +302,38 @@ function PinModal({ correctPin, onSuccess, onClose }) {
   );
 }
 
+function SectionLabel({ children }) {
+  return (
+    <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 12, paddingLeft: 2 }}>
+      {children}
+    </div>
+  );
+}
+
+function KioskCard({ emoji, label, desc, background, arrow, onClick }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        width: '100%', background, border: 'none', borderRadius: 16,
+        padding: '20px 22px', cursor: 'pointer', display: 'flex',
+        alignItems: 'center', gap: 16, fontFamily: 'inherit', textAlign: 'left',
+        boxShadow: hover ? '0 12px 32px rgba(0,0,0,.18)' : '0 4px 14px rgba(0,0,0,.10)',
+        transform: hover ? 'translateY(-2px)' : 'translateY(0)',
+        transition: 'transform .18s ease, box-shadow .18s ease',
+      }}>
+      <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, flexShrink: 0, backdropFilter: 'blur(4px)' }}>
+        {emoji}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2, letterSpacing: '-.1px' }}>{label}</div>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.78)', lineHeight: 1.4 }}>{desc}</div>
+      </div>
+      <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.7)', fontSize: 22, transform: hover ? 'translateX(3px)' : 'translateX(0)', transition: 'transform .18s ease', flexShrink: 0 }}>{arrow}</div>
+    </button>
+  );
+}
+
 function ModuleTile({ icon, label, desc, onClick, badge, locked }) {
   const [hover, setHover] = useState(false);
   return (
@@ -305,21 +341,29 @@ function ModuleTile({ icon, label, desc, onClick, badge, locked }) {
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ position: 'relative', background: locked ? '#fafafa' : '#fff', border: `1.5px solid ${locked ? '#e8e8e8' : hover ? 'var(--tm-accent, #3D95CE)' : 'var(--tm-border, #e8e8e8)'}`, borderRadius: 14, padding: '16px 14px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', transition: 'border-color .15s, box-shadow .15s', boxShadow: hover ? '0 4px 16px rgba(0,0,0,.1)' : '0 1px 4px rgba(0,0,0,.05)', opacity: locked ? 0.7 : 1 }}
+      style={{
+        position: 'relative', background: locked ? '#fafafa' : '#fff',
+        border: `1px solid ${locked ? '#ececec' : hover ? 'var(--tm-accent, #3D95CE)' : '#ececec'}`,
+        borderRadius: 16, padding: '18px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+        transition: 'border-color .18s, box-shadow .18s, transform .18s',
+        boxShadow: hover ? '0 8px 24px rgba(0,0,0,.10)' : '0 1px 3px rgba(0,0,0,.04)',
+        transform: hover ? 'translateY(-2px)' : 'translateY(0)',
+        opacity: locked ? 0.78 : 1,
+      }}
     >
       {locked && (
-        <div style={{ position: 'absolute', top: 8, right: 8, background: '#7c3aed', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, letterSpacing: '.04em' }}>PRO</div>
+        <div style={{ position: 'absolute', top: 10, right: 10, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 20, letterSpacing: '.06em', boxShadow: '0 2px 6px rgba(124,58,237,.3)' }}>PRO</div>
       )}
-      <div style={{ position: 'relative', display: 'inline-block', marginBottom: 8 }}>
-        <div style={{ fontSize: 26 }}>{icon}</div>
+      <div style={{ position: 'relative', width: 44, height: 44, borderRadius: 12, background: locked ? '#f0f0f0' : 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, boxShadow: locked ? 'none' : '0 4px 10px rgba(45,122,95,.18)' }}>
+        <span style={{ fontSize: 22, filter: locked ? 'grayscale(.4)' : 'none' }}>{icon}</span>
         {badge > 0 && (
-          <div style={{ position: 'absolute', top: -4, right: -10, background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 5px', minWidth: 16, textAlign: 'center', lineHeight: '14px' }}>
+          <div style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 6px', minWidth: 18, textAlign: 'center', lineHeight: '14px', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,.15)' }}>
             {badge > 9 ? '9+' : badge}
           </div>
         )}
       </div>
-      <div style={{ fontSize: 13, fontWeight: 600, color: locked ? '#aaa' : '#1a1a1a', marginBottom: 2 }}>{label}</div>
-      <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.4 }}>{desc}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: locked ? '#aaa' : '#1a1a1a', marginBottom: 3, letterSpacing: '-.1px' }}>{label}</div>
+      <div style={{ fontSize: 12, color: '#888', lineHeight: 1.45 }}>{desc}</div>
     </button>
   );
 }
