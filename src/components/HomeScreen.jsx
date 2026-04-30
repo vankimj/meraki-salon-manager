@@ -138,7 +138,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
 
       {/* Hero — only shown when not signed in */}
       {!gUser && (
-        <div style={{ padding: '40px 24px 32px', flexShrink: 0, maxWidth: 1040, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
+        <div style={{ padding: '40px 24px 32px', flexShrink: 0, maxWidth: 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
           <div style={{ width: 76, height: 76, borderRadius: 22, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', boxShadow: '0 12px 32px rgba(45,122,95,.25)' }}>
             <svg viewBox="0 0 60 60" fill="none" width={42} height={42}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
           </div>
@@ -156,7 +156,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
       )}
 
       {/* Module tiles */}
-      <div style={{ padding: '16px 24px 0', flex: 1, maxWidth: 1040, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
+      <div style={{ padding: '16px 24px 0', flex: 1, maxWidth: gUser ? 1040 : 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
         {isTech ? (
           <>
             <SectionLabel>My Tools</SectionLabel>

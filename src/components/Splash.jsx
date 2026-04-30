@@ -129,17 +129,19 @@ export default function Splash() {
         {/* ── Text stack (on top of SVG) ── */}
         <div style={{ position: 'relative', textAlign: 'center', userSelect: 'none' }}>
 
-          {/* Brand tagline above name */}
-          <div style={{
-            fontFamily: '"Great Vibes", cursive',
-            fontSize: 30,
-            color: 'rgba(255,255,255,0.75)',
-            lineHeight: 1,
-            marginBottom: -4,
-            letterSpacing: '0.02em',
-          }}>
-            {settings?.brandTaglineTop || 'Nail'}
-          </div>
+          {/* Brand tagline above name — only render if explicitly configured (default omits it) */}
+          {settings?.brandTaglineTop && (
+            <div style={{
+              fontFamily: '"Great Vibes", cursive',
+              fontSize: 30,
+              color: 'rgba(255,255,255,0.75)',
+              lineHeight: 1,
+              marginBottom: -4,
+              letterSpacing: '0.02em',
+            }}>
+              {settings.brandTaglineTop}
+            </div>
+          )}
 
           {/* Brand name */}
           <div style={{
