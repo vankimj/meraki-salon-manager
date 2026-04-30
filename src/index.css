@@ -10,6 +10,12 @@ body {
   padding: 24px;
 }
 
+/* Desktop readability bump — scales inline pixel sizes proportionally.
+   Skipped on mobile where text is already at sensible viewport-fit sizes. */
+@media (min-width: 700px) {
+  body { zoom: 1.10; }
+}
+
 #root { display: flex; align-items: center; justify-content: center; width: 100%; }
 
 /* ── Mobile: fill the full screen, no card frame ── */
