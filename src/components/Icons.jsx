@@ -139,6 +139,26 @@ export const IconChevronRight = (p) => (
   </Svg>
 );
 
+export const IconCheck = (p) => (
+  <Svg {...p}>
+    <polyline points="20 6 9 17 4 12" />
+  </Svg>
+);
+
+export const IconArrowLeft = (p) => (
+  <Svg {...p}>
+    <line x1="19" y1="12" x2="5" y2="12" />
+    <polyline points="12 19 5 12 12 5" />
+  </Svg>
+);
+
+export const IconClock = (p) => (
+  <Svg {...p}>
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </Svg>
+);
+
 export const IconBell = (p) => (
   <Svg {...p}>
     <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />

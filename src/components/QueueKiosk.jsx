@@ -1,30 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchServices, fetchEmployees, addToWaitlist, fetchTodayQueue } from '../lib/firestore';
+import { fetchServices, fetchEmployees, addToWaitlist, subscribeQueue, fetchWebfrontConfig } from '../lib/firestore';
+import { getTheme, detectAutoTheme } from '../lib/themes';
+import { IconChair, IconCalendar, IconCheck, IconArrowLeft, IconClock, IconChevronRight } from './Icons';
 
-const DARK   = '#0e1c14';
-const GREEN  = '#2D7A5F';
-const BLUE   = '#3D95CE';
 const RESET_SECS = 14;
 
 function todayStr() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-}
-
-function BigBtn({ onClick, children, accent = GREEN, outline = false }) {
-  return (
-    <button onClick={onClick} style={{
-      width: '100%', padding: '22px 0', borderRadius: 18, fontSize: 20, fontWeight: 700,
-      fontFamily: 'inherit', cursor: 'pointer', letterSpacing: '-.01em',
-      border: outline ? `2px solid ${accent}` : 'none',
-      background: outline ? 'transparent' : accent,
-      color: outline ? accent : '#fff',
-      transition: 'opacity .15s',
-    }}
-      onMouseEnter={e => e.currentTarget.style.opacity = '.85'}
-      onMouseLeave={e => e.currentTarget.style.opacity = '1'}
-    >{children}</button>
-  );
 }
 
 function CountDown({ secs, onDone }) {
@@ -33,14 +16,15 @@ function CountDown({ secs, onDone }) {
     const t = setInterval(() => setLeft(l => { if (l <= 1) { clearInterval(t); onDone(); return 0; } return l - 1; }), 1000);
     return () => clearInterval(t);
   }, []); // eslint-disable-line
-  return <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)' }}>Returning to start in {left}s</span>;
+  return <span style={{ fontSize: 12, color: 'rgba(255,255,255,.4)', letterSpacing: '.04em' }}>Returning to start in {left}s</span>;
 }
 
 export default function QueueKiosk() {
-  const [step,       setStep]       = useState('welcome'); // welcome | walkin | arrival | done-walkin | done-arrival
+  const [step,       setStep]       = useState('welcome');
   const [services,   setServices]   = useState([]);
   const [techs,      setTechs]      = useState([]);
   const [queueCount, setQueueCount] = useState(0);
+  const [theme,      setTheme]      = useState(getTheme('meraki'));
 
   // Walk-in form
   const [name,     setName]     = useState('');
@@ -56,15 +40,28 @@ export default function QueueKiosk() {
   const nameRef = useRef(null);
   const arrRef  = useRef(null);
 
+  // Load static data + theme
   useEffect(() => {
     fetchServices().then(s => setServices(s.filter(sv => sv.active !== false))).catch(() => {});
     fetchEmployees().then(e => setTechs(e.filter(emp => emp.active !== false))).catch(() => {});
-    fetchTodayQueue().then(q => setQueueCount(q.filter(e => e.status === 'waiting').length)).catch(() => {});
+    fetchWebfrontConfig().then(wf => {
+      if (!wf) return;
+      const t = wf.autoTheme ? (detectAutoTheme() || getTheme(wf.themeId || 'meraki')) : getTheme(wf.themeId || 'meraki');
+      setTheme(t);
+    }).catch(() => {});
+  }, []);
+
+  // Live queue count
+  useEffect(() => {
+    const unsub = subscribeQueue(todayStr(), entries => {
+      setQueueCount(entries.filter(e => e.status === 'waiting').length);
+    });
+    return unsub;
   }, []);
 
   useEffect(() => {
-    if (step === 'walkin')   setTimeout(() => nameRef.current?.focus(), 100);
-    if (step === 'arrival')  setTimeout(() => arrRef.current?.focus(), 100);
+    if (step === 'walkin')   setTimeout(() => nameRef.current?.focus(), 120);
+    if (step === 'arrival')  setTimeout(() => arrRef.current?.focus(), 120);
   }, [step]);
 
   function reset() {
@@ -77,8 +74,6 @@ export default function QueueKiosk() {
     if (!name.trim() || !svcSel) return;
     setWorking(true);
     try {
-      const q = await fetchTodayQueue();
-      const waiting = q.filter(e => e.status === 'waiting');
       await addToWaitlist({
         clientName: name.trim(),
         clientPhone: phone.trim(),
@@ -87,8 +82,7 @@ export default function QueueKiosk() {
         isWalkIn: true,
         hasAppointment: false,
       });
-      setPosition(waiting.length + 1);
-      setQueueCount(waiting.length + 1);
+      setPosition(queueCount + 1);
       setStep('done-walkin');
     } catch { setWorking(false); }
   }
@@ -108,153 +102,310 @@ export default function QueueKiosk() {
     } catch { setWorking(false); }
   }
 
-  const shell = (children) => (
-    <div style={{
-      position: 'fixed', inset: 0, background: DARK, display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', fontFamily: "'Helvetica Neue',sans-serif",
-      padding: 40, overflowY: 'auto',
-    }}>
-      {/* Logo */}
-      <div style={{ position: 'absolute', top: 28, left: 0, right: 0, textAlign: 'center' }}>
-        <div style={{ fontFamily: "'Great Vibes', cursive", fontSize: 32, color: '#fff', letterSpacing: '-.01em' }}>Meraki</div>
-        <div style={{ fontFamily: "'Cinzel', serif", fontSize: 11, color: 'rgba(255,255,255,.4)', letterSpacing: '.18em', marginTop: -4 }}>NAIL STUDIO</div>
+  // Background uses the theme's dark + a subtle gradient glow.
+  const bgStyle = {
+    position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden',
+    background: `radial-gradient(ellipse at top, ${theme.dark}f5 0%, ${theme.dark} 55%, #050a0a 100%)`,
+    fontFamily: "'Helvetica Neue','Inter',-apple-system,sans-serif",
+    color: '#fff',
+  };
+
+  const Shell = ({ children, narrow }) => (
+    <div style={bgStyle}>
+      {/* Ambient gradient glow */}
+      <div aria-hidden style={{
+        position: 'absolute', top: -160, left: '50%', transform: 'translateX(-50%)',
+        width: 720, height: 480, borderRadius: '50%',
+        background: `radial-gradient(ellipse, ${theme.primary}26 0%, ${theme.accent}18 35%, transparent 65%)`,
+        pointerEvents: 'none',
+      }} />
+
+      {/* Brand header */}
+      <div style={{ position: 'relative', textAlign: 'center', paddingTop: 36, paddingBottom: 12, zIndex: 1 }}>
+        <div style={{ fontFamily: "'Great Vibes', cursive", fontSize: 38, lineHeight: 1, color: '#fff', letterSpacing: '-.01em' }}>Meraki</div>
+        <div style={{ fontFamily: "'Cinzel', serif", fontSize: 11, color: 'rgba(255,255,255,.42)', letterSpacing: '.32em', textTransform: 'uppercase', marginTop: 2 }}>Nail Studio</div>
       </div>
-      <div style={{ width: '100%', maxWidth: 480 }}>
+
+      <div style={{ position: 'relative', zIndex: 1, maxWidth: narrow ? 540 : 720, margin: '0 auto', padding: '20px 28px 56px' }}>
         {children}
       </div>
     </div>
   );
 
-  // ── Welcome ──────────────────────────────────────────
-  if (step === 'welcome') return shell(
-    <>
-      <div style={{ textAlign: 'center', marginBottom: 48 }}>
-        <div style={{ fontSize: 30, fontWeight: 700, color: '#fff', marginBottom: 10 }}>Welcome! 💅</div>
-        <div style={{ fontSize: 16, color: 'rgba(255,255,255,.55)' }}>How can we help you today?</div>
-        {queueCount > 0 && (
-          <div style={{ marginTop: 12, fontSize: 13, color: 'rgba(255,255,255,.35)' }}>
-            {queueCount} {queueCount === 1 ? 'person' : 'people'} ahead in queue
-          </div>
-        )}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-        <BigBtn onClick={() => setStep('walkin')} accent={GREEN}>Walk In — Add me to the queue</BigBtn>
-        <BigBtn onClick={() => setStep('arrival')} accent={BLUE}>I have an appointment</BigBtn>
-      </div>
-    </>
-  );
+  // ── Welcome ──────────────────────────────────────────────
+  if (step === 'welcome') {
+    return (
+      <Shell>
+        <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 36 }}>
+          <h1 style={{ fontSize: 38, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-.6px' }}>How can we help?</h1>
+          <p style={{ fontSize: 16, color: 'rgba(255,255,255,.55)', marginTop: 10 }}>Pick one to get started.</p>
+          {queueCount > 0 && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 18, padding: '7px 16px', borderRadius: 30, background: 'rgba(255,255,255,.07)', border: '1px solid rgba(255,255,255,.12)', fontSize: 13, color: 'rgba(255,255,255,.65)' }}>
+              <IconClock size={14} />
+              {queueCount} {queueCount === 1 ? 'person' : 'people'} ahead in queue
+            </div>
+          )}
+        </div>
 
-  // ── Walk-in form ─────────────────────────────────────
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
+          <KioskChoice
+            Icon={IconChair}
+            title="Walk in"
+            desc="Add me to the queue"
+            tint={theme.primary}
+            onClick={() => setStep('walkin')}
+          />
+          <KioskChoice
+            Icon={IconCalendar}
+            title="I have an appointment"
+            desc="Let us know you've arrived"
+            tint={theme.accent}
+            onClick={() => setStep('arrival')}
+          />
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Walk-in form ─────────────────────────────────────────
   if (step === 'walkin') {
-    const inp = { width: '100%', boxSizing: 'border-box', padding: '14px 16px', borderRadius: 12, border: '1px solid rgba(255,255,255,.15)', background: 'rgba(255,255,255,.07)', color: '#fff', fontSize: 16, fontFamily: 'inherit', outline: 'none' };
     const canSubmit = name.trim() && svcSel && !working;
-    return shell(
-      <>
-        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 6 }}>Walk-in Queue</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.45)', marginBottom: 28 }}>Tell us a bit about yourself</div>
+    return (
+      <Shell narrow>
+        <SectionHeader title="Join the Walk-in Queue" subtitle="Tell us a bit about yourself." />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <input ref={nameRef} value={name} onChange={e => setName(e.target.value)} placeholder="Your name *" style={inp} />
-          <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone number (optional)" style={inp} inputMode="tel" />
+          <KInput refEl={nameRef} value={name} onChange={setName} placeholder="Your name *" />
+          <KInput value={phone} onChange={setPhone} placeholder="Phone number (optional)" inputMode="tel" />
 
-          {/* Service picker */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>Service *</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <Field label="Service *">
+            <PillRow>
               {services.map(s => (
-                <button key={s.id} onClick={() => setSvcSel(s.name)}
-                  style={{ padding: '9px 16px', borderRadius: 30, border: `1.5px solid ${svcSel === s.name ? GREEN : 'rgba(255,255,255,.18)'}`, background: svcSel === s.name ? GREEN : 'transparent', color: svcSel === s.name ? '#fff' : 'rgba(255,255,255,.65)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', fontWeight: svcSel === s.name ? 700 : 400 }}>
+                <Pill key={s.id} active={svcSel === s.name} tint={theme.primary} onClick={() => setSvcSel(s.name)}>
                   {s.name}
-                </button>
+                </Pill>
               ))}
-            </div>
-          </div>
+            </PillRow>
+          </Field>
 
-          {/* Tech preference */}
-          <div>
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,.4)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>Tech preference</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <Field label="Tech preference">
+            <PillRow>
               {['Any', ...techs.map(t => t.name)].map(t => (
-                <button key={t} onClick={() => setTechSel(t)}
-                  style={{ padding: '9px 16px', borderRadius: 30, border: `1.5px solid ${techSel === t ? BLUE : 'rgba(255,255,255,.18)'}`, background: techSel === t ? BLUE : 'transparent', color: techSel === t ? '#fff' : 'rgba(255,255,255,.65)', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', fontWeight: techSel === t ? 700 : 400 }}>
+                <Pill key={t} active={techSel === t} tint={theme.accent} onClick={() => setTechSel(t)}>
                   {t === 'Any' ? 'No preference' : t}
-                </button>
+                </Pill>
               ))}
-            </div>
-          </div>
+            </PillRow>
+          </Field>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 4 }}>
-            <button onClick={reset} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,.2)', background: 'transparent', color: 'rgba(255,255,255,.6)', fontSize: 15, fontFamily: 'inherit', cursor: 'pointer' }}>← Back</button>
-            <button onClick={submitWalkIn} disabled={!canSubmit}
-              style={{ flex: 2, padding: 16, borderRadius: 12, border: 'none', background: canSubmit ? GREEN : 'rgba(255,255,255,.12)', color: canSubmit ? '#fff' : 'rgba(255,255,255,.3)', fontSize: 16, fontWeight: 700, fontFamily: 'inherit', cursor: canSubmit ? 'pointer' : 'default' }}>
+          <ButtonRow>
+            <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Back</SecondaryButton>
+            <PrimaryButton onClick={submitWalkIn} disabled={!canSubmit} tint={theme.primary}>
               {working ? 'Adding…' : 'Join Queue'}
-            </button>
-          </div>
+            </PrimaryButton>
+          </ButtonRow>
         </div>
-      </>
+      </Shell>
     );
   }
 
-  // ── Appointment arrival ──────────────────────────────
+  // ── Appointment arrival ─────────────────────────────────
   if (step === 'arrival') {
-    const inp = { width: '100%', boxSizing: 'border-box', padding: '16px 18px', borderRadius: 12, border: '1px solid rgba(255,255,255,.15)', background: 'rgba(255,255,255,.07)', color: '#fff', fontSize: 20, fontFamily: 'inherit', outline: 'none' };
     const canSubmit = arrName.trim() && !working;
-    return shell(
-      <>
-        <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginBottom: 6 }}>Check In</div>
-        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.45)', marginBottom: 32 }}>Enter your name to let us know you've arrived</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <input ref={arrRef} value={arrName} onChange={e => setArrName(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && canSubmit && submitArrival()}
-            placeholder="Your name" style={inp} />
-          <div style={{ display: 'flex', gap: 12 }}>
-            <button onClick={reset} style={{ flex: 1, padding: 16, borderRadius: 12, border: '1px solid rgba(255,255,255,.2)', background: 'transparent', color: 'rgba(255,255,255,.6)', fontSize: 15, fontFamily: 'inherit', cursor: 'pointer' }}>← Back</button>
-            <button onClick={submitArrival} disabled={!canSubmit}
-              style={{ flex: 2, padding: 16, borderRadius: 12, border: 'none', background: canSubmit ? BLUE : 'rgba(255,255,255,.12)', color: canSubmit ? '#fff' : 'rgba(255,255,255,.3)', fontSize: 16, fontWeight: 700, fontFamily: 'inherit', cursor: canSubmit ? 'pointer' : 'default' }}>
-              {working ? 'Checking in…' : 'Check In'}
-            </button>
-          </div>
-        </div>
-      </>
+    return (
+      <Shell narrow>
+        <SectionHeader title="Let us know you're here" subtitle="Enter your name and we'll let your tech know." />
+
+        <KInput refEl={arrRef} value={arrName} onChange={setArrName}
+          onKeyDown={e => e.key === 'Enter' && canSubmit && submitArrival()}
+          placeholder="Your name" big />
+
+        <ButtonRow style={{ marginTop: 16 }}>
+          <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Back</SecondaryButton>
+          <PrimaryButton onClick={submitArrival} disabled={!canSubmit} tint={theme.accent}>
+            {working ? 'Checking in…' : 'Check In'}
+          </PrimaryButton>
+        </ButtonRow>
+      </Shell>
     );
   }
 
-  // ── Done: walk-in ────────────────────────────────────
-  if (step === 'done-walkin') return shell(
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 64, marginBottom: 16 }}>🎉</div>
-      <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', marginBottom: 8 }}>You're in the queue!</div>
-      <div style={{ fontSize: 18, color: 'rgba(255,255,255,.6)', marginBottom: 4 }}>
-        {position > 1 ? `You are #${position} in line.` : 'You\'re next!'}
-      </div>
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,.4)', marginBottom: 8 }}>
-        {techSel !== 'Any' ? `Requesting ${techSel}` : 'Any available tech'}
-        {svcSel ? ` · ${svcSel}` : ''}
-      </div>
-      <div style={{ fontSize: 15, color: GREEN, fontWeight: 600, marginBottom: 40 }}>Have a seat — we'll call your name shortly!</div>
-      <BigBtn onClick={reset} outline accent="rgba(255,255,255,.3)">
-        Done
-      </BigBtn>
-      <div style={{ marginTop: 20 }}>
-        <CountDown secs={RESET_SECS} onDone={reset} />
-      </div>
-    </div>
-  );
+  // ── Done: walk-in ───────────────────────────────────────
+  if (step === 'done-walkin') {
+    return (
+      <Shell narrow>
+        <SuccessHero
+          tint={theme.primary}
+          big={position > 1 ? `You're #${position} in line` : "You're next!"}
+          title="You're in the queue!"
+          detail={`${techSel !== 'Any' ? `Requesting ${techSel}` : 'Any available tech'}${svcSel ? ` · ${svcSel}` : ''}`}
+          tagline="Have a seat — we'll call your name shortly!"
+        />
+        <DoneFooter onReset={reset} />
+      </Shell>
+    );
+  }
 
-  // ── Done: arrival ────────────────────────────────────
-  if (step === 'done-arrival') return shell(
-    <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
-      <div style={{ fontSize: 28, fontWeight: 800, color: '#fff', marginBottom: 8 }}>You're checked in!</div>
-      <div style={{ fontSize: 16, color: 'rgba(255,255,255,.5)', marginBottom: 40 }}>
-        Have a seat — your tech will be with you shortly.
-      </div>
-      <BigBtn onClick={reset} outline accent="rgba(255,255,255,.3)">Done</BigBtn>
-      <div style={{ marginTop: 20 }}>
-        <CountDown secs={RESET_SECS} onDone={reset} />
-      </div>
-    </div>
-  );
+  // ── Done: arrival ───────────────────────────────────────
+  if (step === 'done-arrival') {
+    return (
+      <Shell narrow>
+        <SuccessHero
+          tint={theme.accent}
+          title="You're checked in!"
+          tagline="Have a seat — your tech will be with you shortly."
+        />
+        <DoneFooter onReset={reset} />
+      </Shell>
+    );
+  }
 
   return null;
+}
+
+// ── Sub-components ──────────────────────────────────────
+
+function KioskChoice({ Icon, title, desc, tint, onClick }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        background: 'rgba(255,255,255,.04)',
+        border: `1px solid ${hover ? tint : 'rgba(255,255,255,.12)'}`,
+        borderRadius: 20, padding: '32px 26px', cursor: 'pointer', textAlign: 'left',
+        fontFamily: 'inherit', color: '#fff',
+        transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background .18s ease',
+        transform: hover ? 'translateY(-3px)' : 'translateY(0)',
+        boxShadow: hover ? `0 18px 48px ${tint}26, 0 0 0 1px ${tint}40 inset` : '0 4px 14px rgba(0,0,0,.3)',
+        display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 18, minHeight: 200,
+      }}>
+      <div style={{ width: 56, height: 56, borderRadius: 16, background: `linear-gradient(135deg,${tint},${tint}cc)`, display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 8px 22px ${tint}44` }}>
+        <Icon size={28} />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4, letterSpacing: '-.2px' }}>{title}</div>
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.55)', lineHeight: 1.5 }}>{desc}</div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'rgba(255,255,255,.7)', fontSize: 13, fontWeight: 600, transform: hover ? 'translateX(3px)' : 'translateX(0)', transition: 'transform .18s' }}>
+        Continue <IconChevronRight size={14} />
+      </div>
+    </button>
+  );
+}
+
+function SectionHeader({ title, subtitle }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ fontSize: 26, fontWeight: 700, color: '#fff', letterSpacing: '-.3px' }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 14, color: 'rgba(255,255,255,.5)', marginTop: 6 }}>{subtitle}</div>}
+    </div>
+  );
+}
+
+function KInput({ refEl, value, onChange, placeholder, inputMode, onKeyDown, big }) {
+  return (
+    <input ref={refEl} value={value} onChange={e => onChange(e.target.value)}
+      onKeyDown={onKeyDown} placeholder={placeholder} inputMode={inputMode}
+      style={{
+        width: '100%', boxSizing: 'border-box',
+        padding: big ? '20px 22px' : '16px 18px',
+        borderRadius: 14,
+        border: '1px solid rgba(255,255,255,.15)',
+        background: 'rgba(255,255,255,.06)',
+        color: '#fff', fontSize: big ? 22 : 16, fontFamily: 'inherit',
+        outline: 'none',
+        transition: 'border-color .15s, background .15s',
+      }}
+      onFocus={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.32)'; e.currentTarget.style.background = 'rgba(255,255,255,.09)'; }}
+      onBlur={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,.15)'; e.currentTarget.style.background = 'rgba(255,255,255,.06)'; }}
+    />
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.42)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 10 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function PillRow({ children }) {
+  return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{children}</div>;
+}
+
+function Pill({ active, tint, onClick, children }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        padding: '10px 18px', borderRadius: 30,
+        border: `1.5px solid ${active ? tint : 'rgba(255,255,255,.18)'}`,
+        background: active ? tint : 'rgba(255,255,255,.04)',
+        color: active ? '#fff' : 'rgba(255,255,255,.7)',
+        fontSize: 14, fontFamily: 'inherit', cursor: 'pointer',
+        fontWeight: active ? 700 : 500,
+        transition: 'background .15s, border-color .15s',
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function ButtonRow({ children, style }) {
+  return <div style={{ display: 'flex', gap: 12, marginTop: 6, ...style }}>{children}</div>;
+}
+
+function SecondaryButton({ onClick, children }) {
+  return (
+    <button onClick={onClick}
+      style={{ flex: 1, padding: '15px 18px', borderRadius: 14, border: '1px solid rgba(255,255,255,.18)', background: 'transparent', color: 'rgba(255,255,255,.65)', fontSize: 15, fontFamily: 'inherit', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+      {children}
+    </button>
+  );
+}
+
+function PrimaryButton({ onClick, disabled, tint, children }) {
+  return (
+    <button onClick={onClick} disabled={disabled}
+      style={{
+        flex: 2, padding: '15px 22px', borderRadius: 14, border: 'none',
+        background: disabled ? 'rgba(255,255,255,.1)' : `linear-gradient(135deg,${tint},${tint}dd)`,
+        color: disabled ? 'rgba(255,255,255,.3)' : '#fff',
+        fontSize: 16, fontWeight: 700, fontFamily: 'inherit',
+        cursor: disabled ? 'default' : 'pointer',
+        boxShadow: disabled ? 'none' : `0 8px 22px ${tint}44`,
+        transition: 'box-shadow .15s',
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function SuccessHero({ tint, title, big, detail, tagline }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '32px 8px 24px' }}>
+      <div style={{ width: 96, height: 96, borderRadius: '50%', background: `linear-gradient(135deg,${tint},${tint}aa)`, margin: '0 auto 24px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 14px 40px ${tint}55`, color: '#fff' }}>
+        <IconCheck size={44} />
+      </div>
+      <div style={{ fontSize: 32, fontWeight: 800, color: '#fff', marginBottom: 10, letterSpacing: '-.4px' }}>{title}</div>
+      {big && <div style={{ fontSize: 22, fontWeight: 700, color: tint, marginBottom: 8 }}>{big}</div>}
+      {detail && <div style={{ fontSize: 14, color: 'rgba(255,255,255,.5)', marginBottom: 14 }}>{detail}</div>}
+      {tagline && <div style={{ fontSize: 16, color: 'rgba(255,255,255,.78)', fontWeight: 500, lineHeight: 1.5, maxWidth: 380, margin: '0 auto' }}>{tagline}</div>}
+    </div>
+  );
+}
+
+function DoneFooter({ onReset }) {
+  return (
+    <div style={{ marginTop: 28, textAlign: 'center' }}>
+      <button onClick={onReset}
+        style={{ padding: '13px 38px', borderRadius: 14, border: '1px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.04)', color: 'rgba(255,255,255,.85)', fontSize: 15, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer' }}>
+        Done
+      </button>
+      <div style={{ marginTop: 16 }}>
+        <CountDown secs={RESET_SECS} onDone={onReset} />
+      </div>
+    </div>
+  );
 }
