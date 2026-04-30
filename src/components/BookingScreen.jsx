@@ -543,10 +543,10 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
         transition: 'background .15s',
       }}>
       {/* Thumbnail */}
-      <div style={{ width: 72, height: 72, flexShrink: 0, borderRadius: 12, overflow: 'hidden', background: hasImg ? '#f0f0f0' : `${color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: 128, height: 128, flexShrink: 0, borderRadius: 14, overflow: 'hidden', background: hasImg ? '#f0f0f0' : `${color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {hasImg
           ? <img src={svc.image} alt={svc.name} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : <span style={{ fontSize: 30 }}>{CATEGORY_ICONS[svc.category] || '💅'}</span>
+          : <span style={{ fontSize: 52 }}>{CATEGORY_ICONS[svc.category] || '💅'}</span>
         }
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
