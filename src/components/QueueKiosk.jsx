@@ -29,6 +29,7 @@ export default function QueueKiosk() {
   // Walk-in form
   const [name,     setName]     = useState('');
   const [phone,    setPhone]    = useState('');
+  const [email,    setEmail]    = useState('');
   const [svcSel,   setSvcSel]   = useState('');
   const [techSel,  setTechSel]  = useState('Any');
   const [working,  setWorking]  = useState(false);
@@ -66,7 +67,7 @@ export default function QueueKiosk() {
 
   function reset() {
     setStep('welcome');
-    setName(''); setPhone(''); setSvcSel(''); setTechSel('Any');
+    setName(''); setPhone(''); setEmail(''); setSvcSel(''); setTechSel('Any');
     setArrName(''); setPosition(null); setWorking(false);
   }
 
@@ -77,6 +78,7 @@ export default function QueueKiosk() {
       await addToWaitlist({
         clientName: name.trim(),
         clientPhone: phone.trim(),
+        clientEmail: email.trim(),
         serviceName: svcSel,
         techName: techSel,
         isWalkIn: true,
@@ -177,6 +179,7 @@ export default function QueueKiosk() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <KInput refEl={nameRef} value={name} onChange={setName} placeholder="Your name *" />
           <KInput value={phone} onChange={setPhone} placeholder="Phone number (optional)" inputMode="tel" />
+          <KInput value={email} onChange={setEmail} placeholder="Email (optional)" inputMode="email" />
 
           <Field label="Service *">
             <PillRow>
