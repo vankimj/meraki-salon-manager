@@ -734,22 +734,26 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
                 {dayAppts.length === 0
                   ? <div style={{ fontSize: 10, color: '#e8e8e8', textAlign: 'center', paddingTop: 14 }}>—</div>
                   : dayAppts.map(appt => {
-                      const col = getTechColor(appt.techName, allTechs || []);
-                      const dot = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
+                      const col         = getTechColor(appt.techName, allTechs || []);
+                      const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
                       const isCancelled = appt.status === 'cancelled';
+                      const isDone      = appt.status === 'done';
+                      const blockBg     = isCancelled ? '#fef2f2' : isDone ? '#f3f4f6' : col.bg;
+                      const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
+                      const blockText   = isCancelled ? '#991b1b' : isDone ? '#6b7280' : col.text;
                       return (
                         <div key={appt.id} onClick={e => { e.stopPropagation(); onApptClick(appt); }}
-                          style={{ padding: '3px 5px', borderRadius: 5, background: isCancelled ? '#fef2f2' : col.bg, borderLeft: `3px solid ${isCancelled ? '#EF4444' : col.solid}`, cursor: 'pointer', opacity: isCancelled ? 0.6 : 1 }}>
+                          style={{ padding: '3px 5px', borderRadius: 5, background: blockBg, borderLeft: `3px solid ${blockBorder}`, cursor: 'pointer', opacity: isCancelled ? 0.6 : 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                            <div style={{ fontSize: 10, fontWeight: 700, color: isCancelled ? '#991b1b' : col.text, lineHeight: 1.2, flex: 1 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: blockText, lineHeight: 1.2, flex: 1 }}>
                               {minsToStr(strToMins(appt.startTime))}
                             </div>
                             <span style={{ fontSize: 8, color: dot.color }}>{dot.label}</span>
                           </div>
-                          <div style={{ fontSize: 10, color: col.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
+                          <div style={{ fontSize: 10, color: blockText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
                             {appt.clientName || 'Walk-in'}
                           </div>
-                          <div style={{ fontSize: 9, color: col.solid, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, opacity: .8 }}>
+                          <div style={{ fontSize: 9, color: blockBorder, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 600, opacity: .8 }}>
                             {appt.techName}
                           </div>
                         </div>
@@ -894,9 +898,13 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
           const topOffset = ((startMins - dayStart) / 30) * SLOT_H;
           const height    = Math.max((appt.duration / 30) * SLOT_H - 2, SLOT_H - 2);
           const left      = TIME_COL + techIdx * TECH_COL + 2;
-          const col       = getTechColor(appt.techName, allTechs || techs);
-          const dot       = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
+          const col         = getTechColor(appt.techName, allTechs || techs);
+          const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
           const isCancelled = appt.status === 'cancelled';
+          const isDone      = appt.status === 'done';
+          const blockBg     = isCancelled ? '#fef2f2' : isDone ? '#f3f4f6' : col.bg;
+          const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
+          const blockText   = isCancelled ? '#991b1b' : isDone ? '#6b7280' : col.text;
 
           return (
             <div
@@ -908,10 +916,9 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
                 left,
                 width: TECH_COL - 4,
                 height,
-                background: isCancelled ? '#fef2f2' : col.bg,
-                borderLeft: `3px solid ${isCancelled ? '#EF4444' : col.solid}`,
-                border: `1px solid ${isCancelled ? '#fca5a5' : col.solid}`,
-                borderLeft: `3px solid ${isCancelled ? '#EF4444' : col.solid}`,
+                background: blockBg,
+                border: `1px solid ${isCancelled ? '#fca5a5' : isDone ? '#d1d5db' : col.solid}`,
+                borderLeft: `3px solid ${blockBorder}`,
                 borderRadius: 6,
                 padding: '3px 5px',
                 cursor: 'pointer',
@@ -924,22 +931,22 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: isCancelled ? '#991b1b' : col.text, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: blockText, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                   {appt.clientName || 'Walk-in'}
                 </div>
                 <span title={appt.status} style={{ fontSize: 8, color: dot.color, flexShrink: 0, lineHeight: 1 }}>{dot.label}</span>
                 {appt.source === 'online_booking' && (
-                  <span title="Online booking" style={{ fontSize: 9, background: col.solid, color: '#fff', borderRadius: 4, padding: '1px 4px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>WEB</span>
+                  <span title="Online booking" style={{ fontSize: 9, background: blockBorder, color: '#fff', borderRadius: 4, padding: '1px 4px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>WEB</span>
                 )}
                 {appt.checkedInAt && (
-                  <span title="Client checked in" style={{ fontSize: 9, background: col.solid, color: '#fff', borderRadius: 4, padding: '1px 4px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>IN</span>
+                  <span title="Client checked in" style={{ fontSize: 9, background: blockBorder, color: '#fff', borderRadius: 4, padding: '1px 4px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>IN</span>
                 )}
               </div>
-              <div style={{ fontSize: 10, color: col.text, opacity: .8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 10, color: blockText, opacity: .8, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {appt.services?.map(s => s.name).filter(Boolean).join(', ') || '—'}
               </div>
               {height > SLOT_H && (
-                <div style={{ fontSize: 10, color: col.text, opacity: .6 }}>
+                <div style={{ fontSize: 10, color: blockText, opacity: .6 }}>
                   {minsToStr(startMins)} · {appt.duration} min
                 </div>
               )}
