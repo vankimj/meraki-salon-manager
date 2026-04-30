@@ -5,8 +5,42 @@ import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import { MODULE_ICONS, IconHome, IconSettings, IconMessage } from './Icons';
 
-export default function ModuleShell({ view, title, onHome, onAdmin, children }) {
-  const { isAdmin, realIsAdmin, viewAs, setViewAs, syncState, activeTheme: t, users } = useApp();
+// Module catalog (mirrors HomeScreen) so the sidebar can show the same items
+// with the same role-based visibility.
+const SIDEBAR_MODULES = [
+  { id: 'schedule',  label: 'Schedule',  adminOnly: false },
+  { id: 'clients',   label: 'Clients',   adminOnly: false },
+  { id: 'services',  label: 'Services',  adminOnly: false },
+  { id: 'employees', label: 'Employees', adminOnly: true  },
+  { id: 'reports',   label: 'Reports',   adminOnly: false },
+  { id: 'hr',        label: 'HR',        adminOnly: true  },
+  { id: 'giftcards', label: 'Gift Cards',adminOnly: true  },
+  { id: 'meetings',  label: 'Meetings',  adminOnly: true  },
+  { id: 'products',  label: 'Products',  adminOnly: true  },
+  { id: 'marketing', label: 'Marketing', adminOnly: true, proOnly: true },
+  { id: 'chat',      label: 'Messages',  adminOnly: false },
+];
+
+export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
+  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, activeTheme: t, users } = useApp();
+  const isPro = !settings?.plan || settings.plan === 'pro';
+  const canManage = isAdmin || isReadOnly;
+
+  // Build the per-role sidebar item list, matching HomeScreen's logic.
+  const sidebarItems = (() => {
+    if (isTech) {
+      return ['schedule','clients','services','employees','hr']
+        .map(id => SIDEBAR_MODULES.find(m => m.id === id)).filter(Boolean);
+    }
+    if (isScheduler) {
+      return ['schedule','clients','services','chat']
+        .map(id => SIDEBAR_MODULES.find(m => m.id === id)).filter(Boolean);
+    }
+    if (canManage) {
+      return SIDEBAR_MODULES.filter(m => !m.adminOnly || isAdmin);
+    }
+    return [];
+  })();
   const techUsers = users.filter(u => u.role === 'tech' && u.techName);
 
   function previewLabel(va) {
@@ -28,7 +62,69 @@ export default function ModuleShell({ view, title, onHome, onAdmin, children }) 
   const ModuleIcon = MODULE_ICONS[view];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '100dvh', background: 'var(--tm-bg, #f8f9fa)' }}>
+    <div className="ms-root" style={{ display: 'flex', flexDirection: 'row', height: '100%', minHeight: '100dvh', background: 'var(--tm-bg, #f8f9fa)' }}>
+      {/* Desktop left-rail navigation */}
+      {sidebarItems.length > 0 && (
+        <nav className="ms-sidebar" style={{
+          width: 220, flexShrink: 0, background: '#fff',
+          borderRight: '1px solid var(--tm-border, #ebebeb)',
+          display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, height: '100dvh',
+          overflowY: 'auto',
+        }}>
+          <button onClick={onHome}
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid #f0f0f0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+            <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <svg viewBox="0 0 60 60" fill="none" width={16} height={16}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>Meraki</div>
+              <div style={{ fontSize: 10, color: 'var(--tm-muted, #aaa)' }}>Salon Manager</div>
+            </div>
+          </button>
+          <div style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {sidebarItems.map(m => {
+              const Icon   = MODULE_ICONS[m.id];
+              const active = m.id === view;
+              const locked = m.proOnly && !isPro;
+              const badge  = m.id === 'chat' ? totalChatUnread : 0;
+              return (
+                <button key={m.id} onClick={() => onNavigate?.(m.id)}
+                  title={locked ? `${m.label} — upgrade to Pro to unlock` : m.label}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '9px 12px', borderRadius: 10,
+                    border: 'none', background: active ? 'var(--tm-primary, #2D7A5F)' : 'transparent',
+                    color: active ? '#fff' : locked ? '#bbb' : '#444',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left',
+                    transition: 'background .15s, color .15s',
+                    opacity: locked && !active ? 0.7 : 1,
+                  }}
+                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#f5f5f5'; }}
+                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
+                  {Icon ? <Icon size={16} /> : <span style={{ width: 16 }} />}
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label}</span>
+                  {locked && <span style={{ fontSize: 9, fontWeight: 800, color: active ? 'rgba(255,255,255,.85)' : '#7c3aed', background: active ? 'rgba(255,255,255,.18)' : '#ede9fe', padding: '2px 6px', borderRadius: 6, letterSpacing: '.04em' }}>PRO</span>}
+                  {!locked && badge > 0 && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#ef4444', borderRadius: 10, padding: '1px 6px', minWidth: 16, textAlign: 'center' }}>
+                      {badge > 9 ? '9+' : badge}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {isAdmin && (
+            <button onClick={onAdmin} title="Admin Settings"
+              style={{ margin: 12, padding: '10px 12px', borderRadius: 10, border: 'none', background: 'var(--tm-grad)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <IconSettings size={14} /> Admin Settings
+            </button>
+          )}
+        </nav>
+      )}
+      <style>{`@media (max-width: 899px) { .ms-sidebar { display: none !important; } }`}</style>
+
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100dvh', minWidth: 0 }}>
       {/* Top nav — taller on mobile for easier tapping */}
       <div style={{
         background: '#fff',
@@ -113,6 +209,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, children }) 
         WebkitOverflowScrolling: 'touch',
       }}>
         {children}
+      </div>
       </div>
     </div>
   );

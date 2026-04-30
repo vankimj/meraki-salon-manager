@@ -130,7 +130,7 @@ function AppShell() {
 
       {/* Management modules */}
       {Object.keys(MODULE_TITLES).map(id => view === id && (
-        <ModuleShell key={id} view={id} title={MODULE_TITLES[id]} onHome={() => setView('home')} onAdmin={() => setShowAdmin(true)}>
+        <ModuleShell key={id} view={id} title={MODULE_TITLES[id]} onHome={() => setView('home')} onAdmin={() => setShowAdmin(true)} onNavigate={setView}>
           {id === 'schedule'  && <ScheduleAdmin />}
           {id === 'clients'   && <ClientsAdmin />}
           {id === 'services'  && <ServicesAdmin />}
