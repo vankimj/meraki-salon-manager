@@ -248,7 +248,7 @@ export default function BookingScreen() {
   if (confirmed) return <SuccessScreen appt={confirmed} service={service} />;
 
   return (
-    <div style={{ minHeight: '100dvh', background: '#f5f6f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <Header
         step={step} cfg={cfg}
         gUser={gUser} client={client}
@@ -758,7 +758,7 @@ function Step5Confirm({ service, tech, techs, date, slot, appts, form, submittin
 // ── Success ────────────────────────────────────────────
 function SuccessScreen({ appt, service }) {
   return (
-    <div style={{ minHeight: '100dvh', background: '#f5f6f8', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', display: 'flex', flexDirection: 'column' }}>
       <div style={{ background: 'var(--tm-grad-dark, linear-gradient(135deg,#1e6b50,#2D7A5F 40%,#3D7FBF))', padding: '20px 20px 40px' }}>
         <div style={{ maxWidth: 600, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Meraki Nail Studio</div>
