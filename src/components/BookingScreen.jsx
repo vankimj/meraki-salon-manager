@@ -793,8 +793,8 @@ function SuccessScreen({ appt, service }) {
           ))}
         </div>
 
-        <a href="/" style={{ display: 'block', textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#fff', textDecoration: 'none', background: 'var(--tm-accent, #3D95CE)', borderRadius: 14, padding: '15px', boxShadow: '0 2px 8px rgba(61,149,206,.35)' }}>
-          ← Back to Meraki Salon Manager
+        <a href="/?web" style={{ display: 'block', textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#fff', textDecoration: 'none', background: 'var(--tm-accent, #3D95CE)', borderRadius: 14, padding: '15px', boxShadow: '0 2px 8px rgba(61,149,206,.35)' }}>
+          ← Back to Meraki Nail Studio
         </a>
       </div>
     </div>
