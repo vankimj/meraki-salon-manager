@@ -30,5 +30,14 @@ export function validateService(data) {
 }
 
 export function blankService() {
-  return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, description: '', image: '', active: true, sortOrder: 99 };
+  return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, description: '', image: '', active: true, sortOrder: 99, options: [] };
+}
+
+// Resolve effective price + duration for a service given an optional selected option.
+// Options can override (price, duration) or just adjust (priceAdd, durationAdd) the base.
+export function resolveServicePricing(svc, opt) {
+  if (!opt) return { price: svc?.basePrice ?? 0, duration: svc?.duration ?? 0 };
+  const price    = opt.price    != null ? Number(opt.price)    : (svc.basePrice ?? 0) + Number(opt.priceAdd    || 0);
+  const duration = opt.duration != null ? Number(opt.duration) : (svc.duration  ?? 0) + Number(opt.durationAdd || 0);
+  return { price, duration };
 }

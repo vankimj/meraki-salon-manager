@@ -7,7 +7,7 @@ import {
   fetchAppointments, createAppointment, fetchClientByEmail, createClient,
 } from '../lib/firestore';
 import { getTheme, detectAutoTheme } from '../lib/themes';
-import { groupByCategory, formatPrice, formatDuration } from '../utils/serviceHelpers';
+import { groupByCategory, formatPrice, formatDuration, resolveServicePricing } from '../utils/serviceHelpers';
 
 // ── constants ──────────────────────────────────────────
 const BOOKING_START = 9 * 60;
@@ -104,6 +104,7 @@ export default function BookingScreen() {
   // wizard
   const [step,    setStep]    = useState(1);
   const [service, setService] = useState(null);
+  const [option,  setOption]  = useState(null);  // selected option/variant on the service, if any
   const [tech,    setTech]    = useState(undefined); // undefined=not chosen, null=no-pref, obj=specific
   const [date,    setDate]    = useState('');
   const [slot,    setSlot]    = useState(null);
@@ -208,7 +209,9 @@ export default function BookingScreen() {
   }
 
   async function handleBook() {
-    const dur = service.duration || 60;
+    const resolved = resolveServicePricing(service, option);
+    const dur   = resolved.duration || 60;
+    const price = resolved.price    || 0;
     let assignedTech = tech;
     if (tech === null && appts) assignedTech = firstFreeTech(eligibleTechs, slot, dur, appts);
     const h = Math.floor(slot / 60), m = slot % 60;
@@ -243,7 +246,7 @@ export default function BookingScreen() {
         clientName:  form.name.trim(),
         clientPhone: form.phone.trim(),
         clientEmail: form.email.trim() || gUser?.email || null,
-        services:    [{ id: service.id, name: service.name, price: service.basePrice || 0, duration: dur }],
+        services:    [{ id: service.id, name: option?.name ? `${service.name} — ${option.name}` : service.name, price, duration: dur, optionId: option?.id || null, optionName: option?.name || null }],
         status:      'scheduled',
         notes:       form.notes.trim() || null,
         source:      'online_booking',
@@ -307,7 +310,8 @@ export default function BookingScreen() {
           <Step1Service
             services={services}
             selected={service}
-            onSelect={s => { setService(s); setTech(undefined); setSlot(null); setAppts(null); setStep(2); }}
+            selectedOption={option}
+            onSelect={(s, opt) => { setService(s); setOption(opt || null); setTech(undefined); setSlot(null); setAppts(null); setStep(2); }}
           />
         )}
         {step === 2 && (
@@ -322,7 +326,7 @@ export default function BookingScreen() {
         )}
         {step === 3 && (
           <Step3DateTime
-            service={service} tech={tech} techs={eligibleTechs}
+            service={service} option={option} tech={tech} techs={eligibleTechs}
             date={date} slot={slot} appts={appts}
             onDateChange={d => { setDate(d); setSlot(null); }}
             onSlotSelect={s => {
@@ -349,7 +353,7 @@ export default function BookingScreen() {
         )}
         {step === 5 && (
           <Step5Confirm
-            service={service} tech={tech} techs={eligibleTechs}
+            service={service} option={option} tech={tech} techs={eligibleTechs}
             date={date} slot={slot} appts={appts}
             form={form} submitting={submitting}
             onEditInfo={() => setStep(4)}
@@ -419,7 +423,7 @@ function Header({ step, cfg, gUser, client, onSignIn, onSignOut }) {
 }
 
 // ── Step 1: Service ────────────────────────────────────
-function Step1Service({ services, selected, onSelect }) {
+function Step1Service({ services, selected, selectedOption, onSelect }) {
   const groups = groupByCategory(services);
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -436,8 +440,9 @@ function Step1Service({ services, selected, onSelect }) {
               {svcs.map((s, i) => (
                 <ServiceRow key={s.id} svc={s} color={color}
                   selected={selected?.id === s.id}
+                  selectedOption={selected?.id === s.id ? selectedOption : null}
                   divider={i < svcs.length - 1}
-                  onSelect={() => onSelect(s)} />
+                  onSelect={(opt) => onSelect(s, opt)} />
               ))}
             </div>
           </div>
@@ -447,20 +452,30 @@ function Step1Service({ services, selected, onSelect }) {
   );
 }
 
-function ServiceRow({ svc, color, selected, divider, onSelect }) {
+function ServiceRow({ svc, color, selected, selectedOption, divider, onSelect }) {
   const [hover,  setHover]  = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const hasImg = svc.image && !imgErr;
+  const opts   = svc.options || [];
+  const hasOptions = opts.length > 0;
+
+  function handleRowClick(e) {
+    // If the service has options, the parent row tap shouldn't auto-book —
+    // the user needs to pick a variant pill below.
+    if (hasOptions) return;
+    onSelect(null);
+  }
+
   return (
-    <button onClick={onSelect}
+    <div
+      onClick={handleRowClick}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 16,
         textAlign: 'left', fontFamily: 'inherit', width: '100%',
         background: selected ? `${color}10` : hover ? '#fafafa' : '#fff',
-        border: 'none',
         borderBottom: divider ? '1px solid #f1f1f1' : 'none',
-        cursor: 'pointer',
+        cursor: hasOptions ? 'default' : 'pointer',
         padding: '18px 20px',
         transition: 'background .15s',
       }}>
@@ -474,7 +489,7 @@ function ServiceRow({ svc, color, selected, divider, onSelect }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: svc.description ? 6 : 0 }}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px' }}>{svc.name}</span>
-          {selected && (
+          {selected && !hasOptions && (
             <span style={{ width: 18, height: 18, borderRadius: '50%', background: color, color: '#fff', fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</span>
           )}
         </div>
@@ -483,27 +498,64 @@ function ServiceRow({ svc, color, selected, divider, onSelect }) {
             {svc.description}
           </div>
         )}
-        <div style={{ marginTop: 8, fontSize: 12, color: '#999', display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
+
+        {/* Options grid — each variant is its own selectable card */}
+        {hasOptions && (
+          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
+            {opts.map(opt => {
+              const isOptSel = selected && selectedOption?.id === opt.id;
+              const { price, duration } = resolveServicePricing(svc, opt);
+              return (
+                <button key={opt.id} onClick={e => { e.stopPropagation(); onSelect(opt); }}
+                  style={{
+                    background: isOptSel ? color : '#fff',
+                    border: `1.5px solid ${isOptSel ? color : '#e0e0e0'}`,
+                    borderRadius: 12, padding: '10px 12px',
+                    fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left',
+                    color: isOptSel ? '#fff' : '#1a1a1a',
+                    transition: 'background .15s, border-color .15s',
+                  }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {isOptSel && <span style={{ fontSize: 11 }}>✓</span>}
+                    {opt.name || 'Option'}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: isOptSel ? 0.95 : 0.65, fontWeight: 500 }}>
+                    ${price} · {duration} min
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {!hasOptions && (
+          <div style={{ marginTop: 8, fontSize: 12, color: '#999', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Right-side price + Book pill — only for services without options.
+          Services with options use their inline option-pills as the selector. */}
+      {!hasOptions && (
+        <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, paddingTop: 2 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
+            {formatPrice(svc.basePrice, svc.priceFrom)}
+          </span>
+          <span style={{
+            fontSize: 12, fontWeight: 700,
+            color: '#fff',
+            background: selected ? '#1a1a1a' : 'var(--tm-primary, #2D7A5F)',
+            padding: '7px 18px', borderRadius: 999,
+            letterSpacing: '.04em', whiteSpace: 'nowrap',
+            boxShadow: '0 2px 6px rgba(0,0,0,.10)',
+            transition: 'background .15s',
+          }}>
+            {selected ? '✓ Selected' : 'Book'}
+          </span>
         </div>
-      </div>
-      <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, paddingTop: 2 }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
-          {formatPrice(svc.basePrice, svc.priceFrom)}
-        </span>
-        <span style={{
-          fontSize: 12, fontWeight: 700,
-          color: '#fff',
-          background: selected ? '#1a1a1a' : 'var(--tm-primary, #2D7A5F)',
-          padding: '7px 18px', borderRadius: 999,
-          letterSpacing: '.04em', whiteSpace: 'nowrap',
-          boxShadow: '0 2px 6px rgba(0,0,0,.10)',
-          transition: 'background .15s',
-        }}>
-          {selected ? '✓ Selected' : 'Book'}
-        </span>
-      </div>
-    </button>
+      )}
+    </div>
   );
 }
 
@@ -584,8 +636,8 @@ function TechCard({ tech, selected, onSelect }) {
 }
 
 // ── Step 3: Date + Time ────────────────────────────────
-function Step3DateTime({ service, tech, techs, date, slot, appts, onDateChange, onSlotSelect, onBack }) {
-  const dur = service?.duration || 60;
+function Step3DateTime({ service, option, tech, techs, date, slot, appts, onDateChange, onSlotSelect, onBack }) {
+  const dur = (option ? resolveServicePricing(service, option).duration : service?.duration) || 60;
   const allSlots = getSlots(dur);
 
   function isAvailable(slotMins) {
@@ -741,10 +793,10 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
 }
 
 // ── Step 5: Confirm ────────────────────────────────────
-function Step5Confirm({ service, tech, techs, date, slot, appts, form, submitting, onConfirm, onBack, onEditInfo }) {
-  const dur = service?.duration || 60;
+function Step5Confirm({ service, option, tech, techs, date, slot, appts, form, submitting, onConfirm, onBack, onEditInfo }) {
+  const resolved = resolveServicePricing(service, option);
+  const dur = resolved.duration || 60;
   const assignedTech = tech !== null ? tech : (appts ? firstFreeTech(techs, slot, dur, appts) : null);
-  const total = service?.basePrice;
   return (
     <div>
       <StepTitle>Confirm booking</StepTitle>
@@ -754,13 +806,13 @@ function Step5Confirm({ service, tech, techs, date, slot, appts, form, submittin
         {/* Service banner */}
         <div style={{ background: `linear-gradient(135deg,${CATEGORY_COLORS[service?.category] || 'var(--tm-primary, #2D7A5F)'},var(--tm-accent, #3D95CE))`, padding: '16px 20px' }}>
           <div style={{ fontSize: 13, color: 'rgba(255,255,255,.75)', marginBottom: 2 }}>Service</div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{service?.name}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{service?.name}{option?.name ? ` — ${option.name}` : ''}</div>
           <div style={{ display: 'flex', gap: 12, marginTop: 6 }}>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,.85)', background: 'rgba(255,255,255,.15)', borderRadius: 8, padding: '2px 10px' }}>
-              {formatPrice(service?.basePrice, service?.priceFrom)}
+              ${resolved.price}
             </span>
             <span style={{ fontSize: 13, color: 'rgba(255,255,255,.85)', background: 'rgba(255,255,255,.15)', borderRadius: 8, padding: '2px 10px' }}>
-              ⏱ {formatDuration(service?.duration, service?.durationMin)}
+              ⏱ {dur} min
             </span>
           </div>
         </div>

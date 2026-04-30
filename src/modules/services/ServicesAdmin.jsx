@@ -302,6 +302,13 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} placeholder="Brief description of what's included…" />
         </Field>
 
+        <Field label="Options / Variants (optional)">
+          <ServiceOptionsEditor
+            options={svc.options || []}
+            onChange={opts => onChange({ options: opts })}
+          />
+        </Field>
+
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 18 }}>
           <input type="checkbox" checked={svc.active} onChange={e => onChange({ active: e.target.checked })} />
           Active (visible to clients)
@@ -314,6 +321,50 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ServiceOptionsEditor({ options, onChange }) {
+  function patch(idx, patchObj) {
+    onChange(options.map((o, i) => i === idx ? { ...o, ...patchObj } : o));
+  }
+  function remove(idx) { onChange(options.filter((_, i) => i !== idx)); }
+  function add() {
+    onChange([...options, { id: `opt_${Date.now()}_${options.length}`, name: '', priceAdd: 0, durationAdd: 0 }]);
+  }
+
+  return (
+    <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 10, padding: 10 }}>
+      {options.length === 0 && (
+        <div style={{ fontSize: 11, color: '#aaa', padding: '6px 4px 10px', lineHeight: 1.5 }}>
+          No options yet. Use options to offer variants like Short/Medium/Long or add-ons (Nail Art, Removal). Each option can adjust price and duration.
+        </div>
+      )}
+      {options.map((opt, i) => (
+        <div key={opt.id || i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+          <input value={opt.name || ''} onChange={e => patch(i, { name: e.target.value })}
+            placeholder="Option name (e.g. Short, Add-on Nail Art)"
+            style={{ flex: 2, minWidth: 0, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
+          <input type="number" value={opt.priceAdd ?? 0} onChange={e => patch(i, { priceAdd: Number(e.target.value) })}
+            title="Price adjustment ($)" placeholder="$"
+            style={{ width: 64, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
+          <input type="number" value={opt.durationAdd ?? 0} onChange={e => patch(i, { durationAdd: Number(e.target.value) })}
+            title="Duration adjustment (min)" placeholder="min"
+            style={{ width: 56, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
+          <button onClick={() => remove(i)} title="Remove option"
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', flexShrink: 0 }}>×</button>
+        </div>
+      ))}
+      <button onClick={add}
+        style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px dashed #c0c0c0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+        + Add option
+      </button>
+      {options.length > 0 && (
+        <div style={{ fontSize: 10, color: '#aaa', marginTop: 8, lineHeight: 1.5 }}>
+          Price/duration values are added to the base. Use 0 for "no change". Negative numbers are allowed (e.g. -10 for a discount).
+        </div>
+      )}
     </div>
   );
 }
