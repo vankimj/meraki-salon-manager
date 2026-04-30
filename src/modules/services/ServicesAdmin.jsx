@@ -470,7 +470,7 @@ function ServiceOptionsEditor({ options, onChange }) {
           <div style={{ flex: 2, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Name</div>
           <div style={{ width: 64, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Price ($)</div>
           <div style={{ width: 56, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Min</div>
-          <div style={{ width: 28, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', textAlign: 'center' }} title="Show price as starts-at (e.g. $15+)">From</div>
+          <div style={{ width: 28, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', textAlign: 'center' }} title='Display price as "starts at" (e.g. $15+). Useful when the final price varies — like Nail Art.'>$+?</div>
           <div style={{ width: 28 }} />
         </div>
       )}
@@ -485,9 +485,9 @@ function ServiceOptionsEditor({ options, onChange }) {
           <input type="number" value={opt.duration ?? 0} onChange={e => patch(i, { duration: Number(e.target.value) })}
             title="Duration (min)" placeholder="min"
             style={{ width: 56, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
-          <label title="Show price as starting-from (e.g. $15+)" style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: '#555', cursor: 'pointer', userSelect: 'none' }}>
+          <label title='Display price as "starts at" (e.g. $15+). Use for variable-price options like Nail Art.'
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, fontSize: 11, color: '#555', cursor: 'pointer', userSelect: 'none' }}>
             <input type="checkbox" checked={!!opt.priceFrom} onChange={e => patch(i, { priceFrom: e.target.checked })} />
-            +
           </label>
           <button onClick={() => remove(i)} title="Remove option"
             style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', flexShrink: 0 }}>×</button>
@@ -499,7 +499,7 @@ function ServiceOptionsEditor({ options, onChange }) {
       </button>
       {options.length > 0 && (
         <div style={{ fontSize: 10, color: '#aaa', marginTop: 8, lineHeight: 1.5 }}>
-          Each option's price + duration overrides the base service. Check '+' to show the price as "from $X" for variable services like Nail Art.
+          Each option's price + duration overrides the base service. Check the <strong>$+?</strong> box to display the price as <strong>"$X+"</strong> instead of <strong>"$X"</strong> — useful for options whose final cost varies (Nail Art, Air Brush, etc.).
         </div>
       )}
     </div>
