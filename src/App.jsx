@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
+import { TENANT_ID } from './lib/tenant';
 import Splash from './components/Splash';
 import Toast from './components/Toast';
 import ThemeProvider from './components/ThemeProvider';
@@ -168,6 +169,30 @@ function VersionBadge() {
   );
 }
 
+// Visual marker so it's obvious when you're not on prod (e.g. on the staging
+// preview channel reading from the meraki-staging tenant).
+function EnvBanner() {
+  if (TENANT_ID === 'meraki') return null;
+  const label = TENANT_ID === 'meraki-staging' ? 'STAGING' : TENANT_ID.toUpperCase();
+  return (
+    <div style={{
+      position: 'fixed', top: 0, left: 0, right: 0,
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+      background: 'repeating-linear-gradient(45deg, #f59e0b, #f59e0b 12px, #fbbf24 12px, #fbbf24 24px)',
+      zIndex: 10000, pointerEvents: 'none',
+    }}>
+      <div style={{
+        textAlign: 'center', fontSize: 11, fontWeight: 800, color: '#1a1a1a',
+        letterSpacing: '.18em', padding: '4px 10px',
+        background: 'rgba(255,255,255,.55)',
+        borderBottom: '1px solid rgba(0,0,0,.1)',
+      }}>
+        ⚠ {label} ENVIRONMENT — data writes here will not affect production
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { hostname } = window.location;
 
@@ -198,5 +223,5 @@ export default function App() {
     );
   }
 
-  return <>{content}<VersionBadge /></>;
+  return <><EnvBanner />{content}<VersionBadge /></>;
 }
