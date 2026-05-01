@@ -615,11 +615,13 @@ export async function fetchClientByEmail(email) {
 
 // ── Backup / Restore ────────────────────────────────────
 export async function fetchAllForBackup() {
-  const [slidesSnap, settingsSnap, usersSnap, handbookSnap] = await Promise.all([
+  const [slidesSnap, settingsSnap, usersSnap, handbookSnap, webfrontSnap, bookingCfgSnap] = await Promise.all([
     getDoc(tenantDoc('slides')),
     getDoc(tenantDoc('settings')),
     getDoc(tenantDoc('users')),
     getDoc(tenantDoc('handbook')),
+    getDoc(tenantDoc('webfront')),
+    getDoc(tenantDoc('bookingConfig')),
   ]);
 
   const cols = ['clients', 'employees', 'services', 'appointments', 'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'meetings', 'handbookSigs', 'products'];
@@ -630,16 +632,20 @@ export async function fetchAllForBackup() {
     data[c] = colSnaps[i].docs.map(d => ({ _id: d.id, ...d.data() }));
   });
 
-  data._slides    = slidesSnap.exists()    ? slidesSnap.data()    : null;
-  data._settings  = settingsSnap.exists()  ? settingsSnap.data()  : null;
-  data._users     = usersSnap.exists()     ? usersSnap.data()     : null;
-  data._handbook  = handbookSnap.exists()  ? handbookSnap.data()  : null;
+  data._slides       = slidesSnap.exists()     ? slidesSnap.data()     : null;
+  data._settings     = settingsSnap.exists()   ? settingsSnap.data()   : null;
+  data._users        = usersSnap.exists()      ? usersSnap.data()      : null;
+  data._handbook     = handbookSnap.exists()   ? handbookSnap.data()   : null;
+  data._webfront     = webfrontSnap.exists()   ? webfrontSnap.data()   : null;
+  data._bookingConfig= bookingCfgSnap.exists() ? bookingCfgSnap.data() : null;
 
   return data;
 }
 
 export async function restoreFromBackup(data) {
-  const cols = ['clients', 'employees', 'services', 'appointments', 'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'meetings', 'handbookSigs'];
+  // Keep this list aligned with fetchAllForBackup's cols so a backup → restore
+  // round-trip doesn't silently drop collections.
+  const cols = ['clients', 'employees', 'services', 'appointments', 'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'meetings', 'handbookSigs', 'products'];
   for (const col of cols) {
     if (!Array.isArray(data[col])) continue;
     for (const item of data[col]) {
@@ -647,10 +653,12 @@ export async function restoreFromBackup(data) {
       if (_id) await setDoc(doc(tenantCol(col), _id), docData);
     }
   }
-  if (data._slides)    await setDoc(tenantDoc('slides'),    data._slides);
-  if (data._settings)  await setDoc(tenantDoc('settings'),  data._settings);
-  if (data._users)     await setDoc(tenantDoc('users'),     data._users);
-  if (data._handbook)  await setDoc(tenantDoc('handbook'),  data._handbook);
+  if (data._slides)        await setDoc(tenantDoc('slides'),        data._slides);
+  if (data._settings)      await setDoc(tenantDoc('settings'),      data._settings);
+  if (data._users)         await setDoc(tenantDoc('users'),         data._users);
+  if (data._handbook)      await setDoc(tenantDoc('handbook'),      data._handbook);
+  if (data._webfront)      await setDoc(tenantDoc('webfront'),      data._webfront);
+  if (data._bookingConfig) await setDoc(tenantDoc('bookingConfig'), data._bookingConfig);
 }
 
 // ── Online booking config (publicly readable) ─────────
