@@ -36,6 +36,55 @@ export function AppProvider({ children }) {
   const [portalClientId,    setPortalClientId]    = useState(null);
   const [totalChatUnread,   setTotalChatUnread]   = useState(0);
   const [recentNotifs,      setRecentNotifs]      = useState([]);
+
+  // ── Per-user checkout cart ─────────────────────────────
+  // Lives in localStorage so a refresh doesn't lose what's been added.
+  // Shape: { appts: [Appointment], products: [{ product, qty }] }
+  const CART_STORAGE_KEY = 'meraki:cart:v1';
+  const [cart, setCart] = useState(() => {
+    try {
+      const raw = localStorage.getItem(CART_STORAGE_KEY);
+      if (!raw) return { appts: [], products: [] };
+      const parsed = JSON.parse(raw);
+      // Sanity-check shape — drop anything that doesn't match.
+      return {
+        appts:    Array.isArray(parsed.appts)    ? parsed.appts    : [],
+        products: Array.isArray(parsed.products) ? parsed.products : [],
+      };
+    } catch { return { appts: [], products: [] }; }
+  });
+  const [cartCheckoutOpen, setCartCheckoutOpen] = useState(false);
+
+  useEffect(() => {
+    try { localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)); } catch {}
+  }, [cart]);
+
+  function addApptToCart(appt) {
+    if (!appt?.id) return;
+    setCart(c => {
+      if (c.appts.some(a => a.id === appt.id)) return c;
+      return { ...c, appts: [...c.appts, appt] };
+    });
+  }
+  function removeApptFromCart(apptId) {
+    setCart(c => ({ ...c, appts: c.appts.filter(a => a.id !== apptId) }));
+  }
+  function addProductToCart(product) {
+    if (!product?.id) return;
+    setCart(c => {
+      const existing = c.products.find(p => p.product.id === product.id);
+      if (existing) return { ...c, products: c.products.map(p => p.product.id === product.id ? { ...p, qty: p.qty + 1 } : p) };
+      return { ...c, products: [...c.products, { product, qty: 1 }] };
+    });
+  }
+  function setCartProductQty(productId, qty) {
+    setCart(c => {
+      if (qty < 1) return { ...c, products: c.products.filter(p => p.product.id !== productId) };
+      return { ...c, products: c.products.map(p => p.product.id === productId ? { ...p, qty } : p) };
+    });
+  }
+  function clearCart() { setCart({ appts: [], products: [] }); }
+  const cartCount = cart.appts.length + cart.products.reduce((s, p) => s + p.qty, 0);
   const [viewAs,            setViewAs]            = useState(null); // null | { role: 'tech', techName: string } | { role: 'scheduler' } | { role: 'readonly' }
 
   const logoutTimer    = useRef(null);
@@ -453,6 +502,8 @@ export function AppProvider({ children }) {
       handbookPending, handbookDoc, signHandbook,
       totalChatUnread,
       recentNotifs, unreadNotifCount, markNotifRead,
+      cart, cartCount, addApptToCart, removeApptFromCart, addProductToCart, setCartProductQty, clearCart,
+      cartCheckoutOpen, setCartCheckoutOpen,
       activeTheme,
     }}>
       {children}

@@ -29,6 +29,7 @@ import ClientPortal from './components/ClientPortal';
 import SalonWebfront from './modules/webfront/SalonWebfront';
 import OnboardingScreen from './components/OnboardingScreen';
 import TipFlowLanding from './components/TipFlowLanding';
+import CartCheckoutLauncher from './components/CartCheckoutLauncher';
 
 const MODULE_TITLES = {
   schedule:   'Schedule',
@@ -154,6 +155,9 @@ function AppShell() {
 
       {/* Magic link completion — shown when user arrives via link on a different device */}
       {magicLinkPending && <MagicLinkPrompt />}
+
+      {/* Cart-driven checkout — opens from any module when the cart panel's Continue button fires */}
+      <CartCheckoutLauncher />
     </div>
   );
 }

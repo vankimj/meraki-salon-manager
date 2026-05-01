@@ -4,6 +4,7 @@ import AuthModal from './AuthModal';
 import FeedbackModal from './FeedbackModal';
 import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
+import CartPanel from './CartPanel';
 import { logActivity } from '../lib/logger';
 import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRight, IconSettings, IconMessage } from './Icons';
 
@@ -113,6 +114,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             style={{ height: 40, borderRadius: 20, border: 'none', background: 'var(--tm-accent, #3D95CE)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
             <IconMessage size={16} /> Feedback
           </button>
+          {gUser && <CartPanel />}
           {gUser && <NotificationsBell />}
           {gUser && <UserMenu />}
         </div>

@@ -37,7 +37,7 @@ export default function CheckoutModal(props) {
   );
 }
 
-function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, onComplete, onClose, techs = [] }) {
+function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
   // Backward-compat: if a single `appt` prop is passed, normalize to an array.
   const appts = apptsProp || (appt ? [appt] : []);
   const isWalkInRetail = appts.length === 0;
@@ -83,7 +83,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, onComplete
   const [tip,          setTip]          = useState('');
   const [customTip,    setCustomTip]    = useState(false);
   const [method,       setMethod]       = useState('card');
-  const [cartItems,    setCartItems]    = useState([]); // retail products: [{product, qty}]
+  const [cartItems,    setCartItems]    = useState(() => Array.isArray(initialProducts) ? initialProducts : []);
   const [allProducts,  setAllProducts]  = useState(null);
   const [showPicker,   setShowPicker]   = useState(false);
   const [saving,       setSaving]       = useState(false);
