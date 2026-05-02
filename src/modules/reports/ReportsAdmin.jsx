@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
+import { generate1099NecPdf } from '../../lib/pdf1099';
 
 // ── helpers ────────────────────────────────────────────
 function todayStr() {
@@ -1016,6 +1017,7 @@ function taxRevenue(a, techFilter) {
 }
 
 function TaxReport() {
+  const { settings } = useApp();
   const currentYear = new Date().getFullYear();
   const years = [currentYear, currentYear - 1, currentYear - 2];
 
@@ -1024,9 +1026,35 @@ function TaxReport() {
   const [payMethod, setPayMethod] = useState('all');
   const [tech,      setTech]      = useState('all');
   const [appts,     setAppts]     = useState(null);
+  const [employees, setEmployees] = useState([]);
   const [loading,   setLoading]   = useState(true);
 
   useEffect(() => { loadYear(); }, [year]); // eslint-disable-line
+  useEffect(() => { fetchEmployees().then(setEmployees).catch(() => setEmployees([])); }, []);
+
+  function downloadPdfFor(techName, revenue) {
+    const emp = employees.find(e => e.name === techName) || {};
+    const payer = {
+      name:    settings?.brandName || 'Meraki Nail Studio',
+      address: settings?.brandAddress || '',
+      city:    settings?.brandCity    || '',
+      state:   settings?.brandState   || '',
+      zip:     settings?.brandZip     || '',
+      ein:     settings?.ein          || '',
+      phone:   settings?.brandPhone   || '',
+    };
+    const recipient = {
+      name:    emp.name    || techName,
+      address: emp.address || '',
+      city:    emp.city    || '',
+      state:   emp.state   || '',
+      zip:     emp.zip     || '',
+      tin:     emp.tin     || '',
+      email:   emp.email   || '',
+      phone:   emp.phone   || '',
+    };
+    generate1099NecPdf({ payer, recipient, year, amount: revenue });
+  }
 
   async function loadYear() {
     setLoading(true);
@@ -1331,6 +1359,7 @@ function TaxReport() {
                       <Th>Appts</Th>
                       <Th>Avg Ticket</Th>
                       <Th>1099-NEC</Th>
+                      <Th>PDF</Th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1347,6 +1376,13 @@ function TaxReport() {
                               {needs1099 ? 'Required' : 'Not required'}
                             </span>
                           </td>
+                          <td style={{ padding: '8px 4px', textAlign: 'right' }}>
+                            <button onClick={() => downloadPdfFor(name, d.revenue)}
+                              title={`Download 1099-NEC summary PDF for ${name}`}
+                              style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #2D7A5F', background: '#fff', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              📄 PDF
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1358,7 +1394,7 @@ function TaxReport() {
                       <td style={{ padding: '8px 4px', fontSize: 12, color: '#333', textAlign: 'right', fontWeight: 700 }}>
                         {tech1099.reduce((s, [, d]) => s + d.count, 0)}
                       </td>
-                      <td colSpan={2} style={{ padding: '8px 4px', fontSize: 11, color: '#aaa', textAlign: 'right' }}>
+                      <td colSpan={3} style={{ padding: '8px 4px', fontSize: 11, color: '#aaa', textAlign: 'right' }}>
                         {tech1099.filter(([, d]) => d.revenue >= 600).length} of {tech1099.length} techs require 1099
                       </td>
                     </tr>
