@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
 
 // ── helpers ────────────────────────────────────────────
@@ -120,8 +120,9 @@ const PERIODS = [
 ];
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'tax',      label: 'IRS / Tax Report' },
+  { id: 'overview',     label: 'Overview' },
+  { id: 'transactions', label: 'Transactions' },
+  { id: 'tax',          label: 'IRS / Tax Report' },
 ];
 
 export default function ReportsAdmin() {
@@ -213,6 +214,16 @@ export default function ReportsAdmin() {
 
       {activeTab === 'tax' ? (
         <TaxReport />
+      ) : activeTab === 'transactions' ? (
+        <TransactionsReport
+          startDate={isCustom ? customStart : startOf(periodDays)}
+          endDate={isCustom ? customEnd : todayStr()}
+          isCustom={isCustom}
+          periodDays={periodDays}
+          setPeriodDays={setPeriodDays}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd}     setCustomEnd={setCustomEnd}
+        />
       ) : (
         <>
           {/* Toolbar */}
@@ -615,6 +626,337 @@ const QUARTERS = [
 ];
 
 const QUARTER_MONTHS = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
+
+// ─── Transactions Report (filterable + per-tech detail) ───────────────
+const METHOD_LABELS = { card: 'Credit card', cash: 'Cash', other: 'Other' };
+
+function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const [receipts, setReceipts] = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [methodFilter, setMethodFilter] = useState('all');   // all | card | cash | other
+  const [typeFilter,   setTypeFilter]   = useState('all');   // all | service | retail | gcSale
+  const [techFilter,   setTechFilter]   = useState('all');   // all | <techName>
+
+  useEffect(() => {
+    setLoading(true);
+    fetchReceiptsByRange(startDate, endDate)
+      .then(rs => setReceipts(rs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))))
+      .catch(() => setReceipts([]))
+      .finally(() => setLoading(false));
+  }, [startDate, endDate]);
+
+  const allTechs = useMemo(() => {
+    const set = new Set();
+    (receipts || []).forEach(r => {
+      if (r.payment?.techSplit) r.payment.techSplit.forEach(s => s.techName && set.add(s.techName));
+      else if (r.techName) r.techName.split(',').map(t => t.trim()).filter(Boolean).forEach(t => set.add(t));
+    });
+    return Array.from(set).sort();
+  }, [receipts]);
+
+  // Filter rows
+  const filtered = useMemo(() => {
+    if (!receipts) return [];
+    return receipts.filter(r => {
+      if (methodFilter !== 'all') {
+        const m = r.payment?.method || 'other';
+        if (methodFilter === 'card'  && m !== 'card') return false;
+        if (methodFilter === 'cash'  && m !== 'cash') return false;
+        if (methodFilter === 'other' && (m === 'card' || m === 'cash')) return false;
+      }
+      if (typeFilter !== 'all') {
+        const hasService = (r.services || []).length > 0;
+        const hasRetail  = (r.retailProducts || []).length > 0;
+        const hasGcSale  = (r.giftCardsSold || []).length > 0 || (r.payment?.gcSalesTotal || 0) > 0;
+        if (typeFilter === 'service' && !hasService) return false;
+        if (typeFilter === 'retail'  && !hasRetail)  return false;
+        if (typeFilter === 'gcSale'  && !hasGcSale)  return false;
+      }
+      if (techFilter !== 'all') {
+        const techs = r.payment?.techSplit
+          ? r.payment.techSplit.map(s => s.techName)
+          : (r.techName || '').split(',').map(t => t.trim()).filter(Boolean);
+        if (!techs.includes(techFilter)) return false;
+      }
+      return true;
+    });
+  }, [receipts, methodFilter, typeFilter, techFilter]);
+
+  // Per-tech aggregate from filtered receipts
+  const perTech = useMemo(() => {
+    const m = {};
+    function ensure(name) {
+      if (!m[name]) m[name] = { appts: 0, sales: 0, tax: 0, tips: 0, card: 0, cash: 0, ccFees: 0 };
+    }
+    filtered.forEach(r => {
+      const p = r.payment || {};
+      const total = p.total || 0;
+      const subtotalSvc = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+      // Allocation of tax/method/ccFee proportional to a tech's share of services
+      if (p.techSplit && p.techSplit.length > 0) {
+        const totalSvcRev = p.techSplit.reduce((s, t) => s + (t.revenue || 0), 0);
+        p.techSplit.forEach(t => {
+          ensure(t.techName);
+          const ratio = totalSvcRev > 0 ? (t.revenue || 0) / totalSvcRev : 1 / p.techSplit.length;
+          m[t.techName].appts += 1 / p.techSplit.length;
+          m[t.techName].sales += t.revenue || 0;
+          m[t.techName].tax   += (p.tax || 0) * ratio;
+          m[t.techName].tips  += t.tipShare || 0;
+          if (p.method === 'card') {
+            m[t.techName].card   += total * ratio;
+            m[t.techName].ccFees += (p.ccFee || 0) * ratio;
+          } else if (p.method === 'cash') {
+            m[t.techName].cash   += total * ratio;
+          }
+        });
+      } else if (r.techName) {
+        const t = r.techName.split(',')[0].trim() || '—';
+        ensure(t);
+        m[t].appts += 1;
+        m[t].sales += subtotalSvc;
+        m[t].tax   += p.tax || 0;
+        m[t].tips  += p.tip || 0;
+        if (p.method === 'card') { m[t].card += total; m[t].ccFees += p.ccFee || 0; }
+        else if (p.method === 'cash') m[t].cash += total;
+      }
+    });
+    return Object.entries(m).sort((a, b) => b[1].sales - a[1].sales);
+  }, [filtered]);
+
+  // Salon-level totals (including non-tech-attributed lines like gift card sales)
+  const totals = useMemo(() => {
+    let sales = 0, tax = 0, tips = 0, card = 0, cash = 0, gcSold = 0, ccFees = 0;
+    filtered.forEach(r => {
+      const p = r.payment || {};
+      const svcRev   = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+      const retail   = (r.retailProducts || []).reduce((s, x) => s + (x.price || 0) * (x.qty || 1), 0);
+      sales  += svcRev + retail;
+      tax    += p.tax || 0;
+      tips   += p.tip || 0;
+      gcSold += p.gcSalesTotal || 0;
+      ccFees += p.ccFee || 0;
+      if (p.method === 'card') card += p.total || 0;
+      else if (p.method === 'cash') cash += p.total || 0;
+    });
+    return { sales, tax, tips, card, cash, gcSold, ccFees };
+  }, [filtered]);
+
+  function exportCSV() {
+    const rows = [['Date','Time','Client','Tech(s)','Type','Sales','Tax','Tip','Method','GC Sold','CC Fee','Total']];
+    filtered.forEach(r => {
+      const p = r.payment || {};
+      const dt = (r.createdAt || '').slice(0, 19).replace('T', ' ');
+      const svcRev = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+      const retail = (r.retailProducts || []).reduce((s, x) => s + (x.price || 0) * (x.qty || 1), 0);
+      const types = [];
+      if ((r.services || []).length)        types.push('service');
+      if ((r.retailProducts || []).length)  types.push('retail');
+      if ((r.giftCardsSold || []).length)   types.push('GC sale');
+      rows.push([
+        dt.split(' ')[0], dt.split(' ')[1] || '',
+        r.clientName || '',
+        r.techName || (r.payment?.techSplit || []).map(s => s.techName).join(', '),
+        types.join('+') || '—',
+        (svcRev + retail).toFixed(2),
+        (p.tax || 0).toFixed(2),
+        (p.tip || 0).toFixed(2),
+        p.method || '',
+        (p.gcSalesTotal || 0).toFixed(2),
+        (p.ccFee || 0).toFixed(2),
+        (p.total || 0).toFixed(2),
+      ]);
+    });
+    dlCSV(`transactions_${startDate}_to_${endDate}.csv`, rows);
+  }
+
+  return (
+    <>
+      {/* Date toolbar (mirrors Overview) */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {PERIODS.map(p => (
+            <PillBtn key={p.days} active={periodDays === p.days} onClick={() => setPeriodDays(p.days)}>{p.label}</PillBtn>
+          ))}
+          <PillBtn active={isCustom} onClick={() => setPeriodDays('custom')}>Custom</PillBtn>
+          {isCustom && (
+            <>
+              <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+              <span style={{ color: '#888', fontSize: 12 }}>→</span>
+              <input type="date" value={customEnd} min={customStart} max={todayStr()} onChange={e => setCustomEnd(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+            </>
+          )}
+        </div>
+        <button onClick={exportCSV} disabled={!filtered.length}
+          style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #2D7A5F', background: filtered.length ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+          Export CSV
+        </button>
+      </div>
+
+      {/* Filters */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <FilterGroup label="Method" value={methodFilter} onChange={setMethodFilter} options={[
+          { id: 'all',   label: 'All' },
+          { id: 'card',  label: '💳 Card' },
+          { id: 'cash',  label: '💵 Cash' },
+          { id: 'other', label: 'Other' },
+        ]} />
+        <FilterGroup label="Type" value={typeFilter} onChange={setTypeFilter} options={[
+          { id: 'all',     label: 'All' },
+          { id: 'service', label: 'Service' },
+          { id: 'retail',  label: 'Retail' },
+          { id: 'gcSale',  label: '🎁 Gift card' },
+        ]} />
+        {allTechs.length > 0 && (
+          <select value={techFilter} onChange={e => setTechFilter(e.target.value)}
+            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', fontFamily: 'inherit', color: '#333' }}>
+            <option value="all">All techs</option>
+            {allTechs.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        )}
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>
+      ) : !filtered.length ? (
+        <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>No transactions match these filters.</div>
+      ) : (
+        <>
+          {/* KPI summary band — salon-level totals reflecting the active filter */}
+          <div className="kpi-grid" style={{ marginBottom: 12 }}>
+            <KPICard label="Sales"     value={fmt$(totals.sales)} accent="#2D7A5F" />
+            <KPICard label="Tax"       value={fmt$(totals.tax)} />
+            <KPICard label="Tips"      value={fmt$(totals.tips)} />
+            <KPICard label="Card"      value={fmt$(totals.card)} sub={`${filtered.filter(r => r.payment?.method === 'card').length} txns`} />
+            <KPICard label="Cash"      value={fmt$(totals.cash)} sub={`${filtered.filter(r => r.payment?.method === 'cash').length} txns`} />
+            <KPICard label="GC sold"   value={fmt$(totals.gcSold)} accent="#7c3aed" />
+            <KPICard label="CC fees"   value={fmt$(totals.ccFees)} sub="recorded" />
+          </div>
+
+          {perTech.length > 0 && (
+            <Card title="Per-Tech Detail" style={{ marginBottom: 12 }}>
+              <PerTechTable rows={perTech} />
+            </Card>
+          )}
+
+          <Card title={`Transactions (${filtered.length})`}>
+            <TransactionList receipts={filtered} />
+          </Card>
+        </>
+      )}
+    </>
+  );
+}
+
+function FilterGroup({ label, value, onChange, options }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 4px', background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8 }}>
+      <span style={{ fontSize: 11, color: '#888', fontWeight: 600, marginLeft: 6 }}>{label}:</span>
+      {options.map(o => (
+        <button key={o.id} onClick={() => onChange(o.id)}
+          style={{
+            fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none',
+            background: value === o.id ? '#2D7A5F' : 'transparent',
+            color: value === o.id ? '#fff' : '#666',
+            fontWeight: value === o.id ? 700 : 500,
+            cursor: 'pointer', fontFamily: 'inherit',
+          }}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PerTechTable({ rows }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+        <thead>
+          <tr style={{ background: '#fafafa', textAlign: 'left' }}>
+            <Th>Tech</Th>
+            <Th>Appts</Th>
+            <Th>Sales</Th>
+            <Th>Tax</Th>
+            <Th>Tips</Th>
+            <Th>Card</Th>
+            <Th>Cash</Th>
+            <Th>CC fees</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([name, d]) => (
+            <tr key={name} style={{ borderTop: '1px solid #f0f0f0' }}>
+              <Td bold>{name}</Td>
+              <Td>{Math.round(d.appts)}</Td>
+              <Td green>{fmt$(d.sales)}</Td>
+              <Td>{fmt$(d.tax)}</Td>
+              <Td>{fmt$(d.tips)}</Td>
+              <Td>{fmt$(d.card)}</Td>
+              <Td>{fmt$(d.cash)}</Td>
+              <Td muted>{fmt$(d.ccFees)}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TransactionList({ receipts }) {
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 880 }}>
+        <thead>
+          <tr style={{ background: '#fafafa', textAlign: 'left' }}>
+            <Th>Date</Th>
+            <Th>Client</Th>
+            <Th>Tech(s)</Th>
+            <Th>Type</Th>
+            <Th>Sales</Th>
+            <Th>Tax</Th>
+            <Th>Tip</Th>
+            <Th>Method</Th>
+            <Th>GC sold</Th>
+            <Th>CC fee</Th>
+            <Th>Total</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {receipts.map(r => {
+            const p = r.payment || {};
+            const dt = (r.createdAt || '').slice(0, 16).replace('T', ' ');
+            const svcRev = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+            const retail = (r.retailProducts || []).reduce((s, x) => s + (x.price || 0) * (x.qty || 1), 0);
+            const techs = r.payment?.techSplit
+              ? r.payment.techSplit.map(s => s.techName).join(', ')
+              : (r.techName || '—');
+            const types = [];
+            if ((r.services || []).length)       types.push('Service');
+            if ((r.retailProducts || []).length) types.push('Retail');
+            if ((r.giftCardsSold || []).length || (p.gcSalesTotal || 0) > 0) types.push('GC sale');
+            return (
+              <tr key={r.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+                <Td muted>{dt}</Td>
+                <Td>{r.clientName || '—'}</Td>
+                <Td>{techs}</Td>
+                <Td muted>{types.join(' + ') || '—'}</Td>
+                <Td>{fmt$(svcRev + retail)}</Td>
+                <Td muted>{fmt$(p.tax || 0)}</Td>
+                <Td muted>{fmt$(p.tip || 0)}</Td>
+                <Td>{METHOD_LABELS[p.method] || p.method || '—'}</Td>
+                <Td>{p.gcSalesTotal > 0 ? fmt$(p.gcSalesTotal) : '—'}</Td>
+                <Td muted>{p.ccFee > 0 ? fmt$(p.ccFee) : '—'}</Td>
+                <Td bold green>{fmt$(p.total || 0)}</Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function taxRevenue(a, techFilter) {
   if (techFilter !== 'all' && a.payment?.techSplit) {

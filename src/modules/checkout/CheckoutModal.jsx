@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { saveAppointment, fetchClient, saveClient,
-         fetchGiftCardByCode, updateGiftCard,
+         fetchGiftCardByCode, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
          fetchProducts, saveProduct, createReviewRequest } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
@@ -38,6 +38,10 @@ export default function CheckoutModal(props) {
 }
 
 function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
+  const { settings } = useApp();
+  const taxRate    = Number(settings.taxRate ?? 0);
+  const ccFeePct   = Number(settings.ccFeePct ?? 0);
+  const ccFeeFlat  = Number(settings.ccFeeFlat ?? 0);
   // Backward-compat: if a single `appt` prop is passed, normalize to an array.
   const appts = apptsProp || (appt ? [appt] : []);
   const isWalkInRetail = appts.length === 0;
@@ -87,6 +91,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [cartItems,    setCartItems]    = useState(() => Array.isArray(initialProducts) ? initialProducts : []);
   const [allProducts,  setAllProducts]  = useState(null);
   const [showPicker,   setShowPicker]   = useState(false);
+  const [gcSales,      setGcSales]      = useState([]);  // [{ id, code, amount, recipientName, recipientEmail }]
+  const [showGcSale,   setShowGcSale]   = useState(false);
   const [saving,       setSaving]       = useState(false);
   const [receipt,      setReceipt]      = useState(null);
   const [cardError,    setCardError]    = useState('');
@@ -103,7 +109,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 
   // ── Math ───────────────────────────────────────────────
   const productsTotal = cartItems.reduce((s, item) => s + (item.product.price || 0) * item.qty, 0);
-  const subtotal = prices.reduce((s, p) => s + (Number(p) || 0), 0) + productsTotal;
+  const gcSalesTotal  = gcSales.reduce((s, g) => s + (Number(g.amount) || 0), 0);
+  const subtotal = prices.reduce((s, p) => s + (Number(p) || 0), 0) + productsTotal + gcSalesTotal;
 
   const discountDef    = DISCOUNT_TYPES.find(d => d.id === discountType);
   const discountAmount = (() => {
@@ -122,15 +129,27 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   })();
 
   const afterDiscounts = Math.max(subtotal - discountAmount - promoAmount, 0);
+
+  // Tax — computed on the post-discount taxable base.
+  // Services and retail products are taxable; gift card sales are not.
+  const taxableSubtotal  = Math.max(subtotal - gcSalesTotal, 0);
+  const taxableShare     = subtotal > 0 ? taxableSubtotal / subtotal : 0;
+  const taxableAfterDisc = Math.max(taxableSubtotal - (discountAmount + promoAmount) * taxableShare, 0);
+  const taxAmt           = Math.round(taxableAfterDisc * taxRate) / 100;
+
+  const billBeforeTip  = afterDiscounts + taxAmt;
   const tipAmt         = customTip
     ? (Number(tip) || 0)
     : (tipPct ? Math.round(subtotal * tipPct) / 100 : 0);
-  const gcApply        = giftCard && applyGC ? Math.min(giftCard.balance, afterDiscounts) : 0;
+  const gcApply        = giftCard && applyGC ? Math.min(giftCard.balance, billBeforeTip) : 0;
   const creditApply    = applyCredit && clientCredit > 0
-    ? Math.min(clientCredit, afterDiscounts - gcApply)
+    ? Math.min(clientCredit, billBeforeTip - gcApply)
     : 0;
-  const charged        = Math.max(afterDiscounts - gcApply - creditApply, 0);
+  const charged        = Math.max(billBeforeTip - gcApply - creditApply, 0);
   const total          = charged + tipAmt;
+  const ccFee          = method === 'card' && total > 0
+    ? Math.round((total * ccFeePct / 100 + ccFeeFlat) * 100) / 100
+    : 0;
 
   // ── Product cart ───────────────────────────────────────
   async function openProductPicker() {
@@ -276,6 +295,26 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         ? cartItems.map(i => ({ id: i.product.id, name: i.product.name, price: i.product.price, qty: i.qty }))
         : null;
 
+      // Persist any sold gift cards as real records so the codes work for redemption.
+      const giftCardsSold = [];
+      for (const g of gcSales) {
+        try {
+          const id = await createGiftCard({
+            code: g.code.toUpperCase(),
+            balance: g.amount,
+            originalAmount: g.amount,
+            recipientName: g.recipientName || null,
+            recipientEmail: g.recipientEmail || null,
+            soldAt: new Date().toISOString(),
+            soldVia: 'checkout',
+            active: true,
+          });
+          giftCardsSold.push({ id, code: g.code.toUpperCase(), amount: g.amount, recipientName: g.recipientName || null, recipientEmail: g.recipientEmail || null });
+        } catch (e) {
+          console.warn('[Checkout] gift card create failed:', e);
+        }
+      }
+
       const payment = {
         subtotal,
         discountType:   discountType || null,
@@ -283,6 +322,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         discountAmount,
         promoCode:      promo ? promo.code : null,
         promoAmount,
+        tax:            taxAmt,
+        taxRate,
         giftCard:       giftCard && applyGC && gcApply > 0
           ? { code: giftCard.code, id: giftCard.id, applied: gcApply }
           : null,
@@ -291,8 +332,13 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         tip:            tipAmt,
         total,
         method,
+        ccFee,
+        ccFeePct,
+        ccFeeFlat,
         techSplit,
         retailProducts,
+        giftCardsSold:  giftCardsSold.length > 0 ? giftCardsSold : null,
+        gcSalesTotal,
         apptIds:        appts.map(a => a.id),
         paidAt:         new Date().toISOString(),
         ...(stripePaymentIntentId ? { stripePaymentIntentId } : {}),
@@ -352,20 +398,21 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           }
         }
       }
-      if (clientEmail) {
-        createReceipt({
-          clientId:    primaryClient?.id || null,
-          clientName:  combinedClientLabel,
-          clientEmail,
-          techName:    techSplit ? techSplit.map(t => t.techName).join(', ') : (allUpdatedServices[0]?.techName || ''),
-          date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
-          startTime:   primaryAppt?.startTime || '',
-          services:    allUpdatedServices.map(s => ({ name: s.name, price: s.price, techName: s.techName })),
-          retailProducts,
-          apptIds:     payment.apptIds,
-          payment,
-        }).catch(() => {});
-      }
+      // Always create a receipt — it's the canonical transaction record for
+      // Reports. Without it, cash walk-ins without an email would vanish.
+      createReceipt({
+        clientId:    primaryClient?.id || null,
+        clientName:  combinedClientLabel,
+        clientEmail: clientEmail || null,
+        techName:    techSplit ? techSplit.map(t => t.techName).join(', ') : (allUpdatedServices[0]?.techName || ''),
+        date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
+        startTime:   primaryAppt?.startTime || '',
+        services:    allUpdatedServices.map(s => ({ name: s.name, price: s.price, techName: s.techName })),
+        retailProducts,
+        giftCardsSold: giftCardsSold.length > 0 ? giftCardsSold : null,
+        apptIds:     payment.apptIds,
+        payment,
+      }).catch(() => {});
 
       setReceipt({
         client:         combinedClientLabel,
@@ -493,6 +540,44 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               </div>
             )}
           </Section>
+
+          {/* Gift Card Sales — non-taxable line items */}
+          <Section
+            title="Sell a gift card"
+            action={
+              <button onClick={() => setShowGcSale(true)}
+                style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '.02em' }}>
+                + Sell gift card
+              </button>
+            }
+          >
+            {gcSales.length > 0 ? (
+              <div>
+                {gcSales.map(g => (
+                  <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
+                    <span style={{ fontSize: 13, color: '#333', flex: 1, minWidth: 0 }}>
+                      🎁 Gift card <span style={{ color: '#7c3aed', fontWeight: 700, fontFamily: 'monospace' }}>{g.code}</span>
+                      {g.recipientName && <span style={{ color: '#888', fontSize: 11 }}> · for {g.recipientName}</span>}
+                    </span>
+                    <span style={{ fontSize: 13, color: '#555', width: 70, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>${g.amount.toFixed(2)}</span>
+                    <button onClick={() => setGcSales(s => s.filter(x => x.id !== g.id))} style={{ fontSize: 15, background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', padding: '0 2px', flexShrink: 0 }}>×</button>
+                  </div>
+                ))}
+                <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, fontStyle: 'italic' }}>Gift cards are not taxed. Codes are auto-generated and emailed to the recipient on completion.</div>
+              </div>
+            ) : (
+              <div style={{ fontSize: 11, color: '#aaa', padding: '4px 2px', lineHeight: 1.5 }}>
+                Selling a gift card? Tap <strong style={{ color: '#666' }}>+ Sell gift card</strong>. They're non-taxable and credited to the salon (no tech).
+              </div>
+            )}
+          </Section>
+
+          {showGcSale && (
+            <GiftCardSaleModal
+              onClose={() => setShowGcSale(false)}
+              onAdd={g => { setGcSales(s => [...s, g]); setShowGcSale(false); }}
+            />
+          )}
 
           {showPicker && (
             <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 400 }}
@@ -685,13 +770,19 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             <SummaryRow label="Subtotal" value={`$${subtotal}`} />
             {discountAmount > 0 && <SummaryRow label={discountType === 'ff' ? 'Friends & Family' : 'Discount'} value={`−$${discountAmount.toFixed(2)}`} valueColor="#22c55e" />}
             {promoAmount > 0    && <SummaryRow label={`Promo: ${promo.code}`} value={`−$${promoAmount.toFixed(2)}`} valueColor="#22c55e" />}
+            {taxAmt > 0         && <SummaryRow label={`Tax (${taxRate}%)`} value={`+$${taxAmt.toFixed(2)}`} />}
             {gcApply > 0        && <SummaryRow label={`Gift Card: ${giftCard.code}`} value={`−$${gcApply.toFixed(2)}`} valueColor="#22c55e" />}
             {creditApply > 0    && <SummaryRow label="Store Credit" value={`−$${creditApply.toFixed(2)}`} valueColor="#22c55e" />}
-            {tipAmt > 0         && <SummaryRow label="Tip" value={`+$${tipAmt}`} />}
+            {tipAmt > 0         && <SummaryRow label="Tip" value={`+$${tipAmt.toFixed(2)}`} />}
             <div style={{ borderTop: '1px solid #e8e8e8', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>Total</span>
               <span style={{ fontSize: 24, fontWeight: 800, color: '#2D7A5F' }}>${total.toFixed(2)}</span>
             </div>
+            {ccFee > 0 && (
+              <div style={{ marginTop: 6, fontSize: 10, color: '#aaa', textAlign: 'right', fontStyle: 'italic' }}>
+                Card processing fee: ~${ccFee.toFixed(2)} (recorded for reports, not added to charge)
+              </div>
+            )}
           </div>
 
           {/* Issue store credit (optional) — only if we have a known client */}
@@ -898,6 +989,60 @@ function SummaryRow({ label, value, valueColor, bold }) {
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
       <span style={{ fontSize: 12, color: '#888', fontWeight: bold ? 600 : 400 }}>{label}</span>
       <span style={{ fontSize: bold ? 14 : 13, fontWeight: bold ? 700 : 500, color: valueColor || (bold ? '#1a1a1a' : '#333') }}>{value}</span>
+    </div>
+  );
+}
+
+// Generate a random alphanumeric gift card code, e.g. MERAKI-A4F7K2
+function generateGcCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return `MK-${s}`;
+}
+
+function GiftCardSaleModal({ onClose, onAdd }) {
+  const [amount, setAmount] = useState('');
+  const [name,   setName]   = useState('');
+  const [email,  setEmail]  = useState('');
+  const valid = Number(amount) > 0;
+
+  function add() {
+    if (!valid) return;
+    onAdd({
+      id: `gc_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
+      code: generateGcCode(),
+      amount: Number(amount),
+      recipientName: name.trim(),
+      recipientEmail: email.trim(),
+    });
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400 }}
+         onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 22px', width: '92%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>🎁 Sell gift card</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>A unique code is generated automatically. Recipient details are optional.</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+          <span style={{ fontSize: 14, color: '#aaa' }}>$</span>
+          <input type="number" min={1} value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" autoFocus
+            onKeyDown={e => e.key === 'Enter' && valid && add()}
+            style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '10px 12px', fontSize: 13, background: '#fafafa' }}
+          />
+        </div>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Recipient name (optional)"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: '#fafafa' }} />
+        <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Recipient email (optional)" inputMode="email"
+          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginBottom: 14, background: '#fafafa' }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={add} disabled={!valid}
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: valid ? '#7c3aed' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+            Add to ticket →
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

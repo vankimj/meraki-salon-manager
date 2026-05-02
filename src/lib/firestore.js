@@ -488,6 +488,17 @@ export async function createReceipt(data) {
   await addDoc(RECEIPTS_COL, { ...data, createdAt: new Date().toISOString(), sent: false });
 }
 
+export async function fetchReceiptsByRange(startDate, endDate) {
+  // createdAt is an ISO timestamp; build inclusive bounds on the date portion.
+  const startISO = `${startDate}T00:00:00.000Z`;
+  const endISO   = `${endDate}T23:59:59.999Z`;
+  const snap = await getDocs(query(RECEIPTS_COL,
+    where('createdAt', '>=', startISO),
+    where('createdAt', '<=', endISO),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // ── Notification center ────────────────────────────────
 const NOTIFS_COL   = tenantCol('notifications');
 

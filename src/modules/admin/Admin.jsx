@@ -28,6 +28,10 @@ export default function Admin({ onClose }) {
   const [autoLapsed,     setAutoLapsed]    = useState(!!settings.autoLapsed);
   const [autoLapsedDays, setAutoLapsedDays]= useState(settings.autoLapsedDays || 60);
   const [autoSaving,     setAutoSaving]    = useState(false);
+  const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
+  const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
+  const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
+  const [finSaving,      setFinSaving]     = useState(false);
   const [themeId,        setThemeId]       = useState(settings.themeId   || 'meraki');
   const [autoTheme,      setAutoTheme]     = useState(!!settings.autoTheme);
   const [themeSaving,    setThemeSaving]   = useState(false);
@@ -317,6 +321,43 @@ export default function Admin({ onClose }) {
                   await updateSettings({ ...settings, autoBirthday, autoLapsed, autoLapsedDays });
                   setAutoSaving(false);
                 }}>{autoSaving ? 'Saving…' : 'Save Automations'}</Btn>
+              </div>
+            </Section>
+            <Section title="💰 Financial">
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Sales tax rate</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Applied to services and retail products. Gift card sales are not taxed.</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="number" value={taxRate} step="0.01" min={0} max={20}
+                    onChange={e => setTaxRate(Number(e.target.value))}
+                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: '#aaa' }}>%</span>
+                </div>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Card processing fee</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Stripe-style: percentage + flat amount. Recorded on each card transaction so reports can show your true take-home.</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input type="number" value={ccFeePct} step="0.01" min={0} max={10}
+                    onChange={e => setCcFeePct(Number(e.target.value))}
+                    style={{ width: 70, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: '#aaa' }}>%  +</span>
+                  <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
+                  <input type="number" value={ccFeeFlat} step="0.01" min={0} max={5}
+                    onChange={e => setCcFeeFlat(Number(e.target.value))}
+                    style={{ width: 70, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                </div>
+              </div>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                <Btn color="#2D7A5F" onClick={async () => {
+                  setFinSaving(true);
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat });
+                  setFinSaving(false);
+                }}>{finSaving ? 'Saving…' : 'Save Financial Settings'}</Btn>
               </div>
             </Section>
             <BookingSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} />
