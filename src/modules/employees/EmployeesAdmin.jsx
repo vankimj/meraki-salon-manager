@@ -108,18 +108,21 @@ export default function EmployeesAdmin() {
     finally { setSeeding(false); }
   }
 
-  // Fully populate demo contact + TIN data on every employee. Falls back to
-  // SEED_EMPLOYEES (matched by name) first, then to deterministic generated
-  // values so anyone outside the seed list still ends up with realistic
-  // address + phone + email + TIN. Only fills blank fields. Also seeds the
-  // salon's own EIN/address into settings if missing.
+  // Fully populate demo contact + TIN data on every employee. Reloads from
+  // Firestore first so any newly-added employees are included. Aggressively
+  // fills any falsy field — including empty strings — with seed-matched or
+  // deterministic fallback values. Also seeds the salon's own EIN/address
+  // into settings if missing.
   async function backfillContactInfo() {
-    if (!confirm('Fill in demo contact info + TIN on every employee where those fields are blank, and set demo salon EIN/address. Existing values will not be overwritten.')) return;
+    if (!confirm('Fill in demo contact info + TIN on every employee, and set demo salon EIN/address. Real values are preserved.')) return;
     setSeeding(true);
+    setEditing(null);  // close any open edit modal so it re-opens with fresh data
     try {
+      const fresh = await fetchEmployees();
       let patched = 0;
-      for (let i = 0; i < employees.length; i++) {
-        const emp  = employees[i];
+      let fieldsFilled = 0;
+      for (let i = 0; i < fresh.length; i++) {
+        const emp  = fresh[i];
         const seed = SEED_EMPLOYEES.find(s => s.name === emp.name) || {};
         const fb   = FALLBACK_ADDRS[i % FALLBACK_ADDRS.length];
         const slug = (emp.name || `tech${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
@@ -135,11 +138,16 @@ export default function EmployeesAdmin() {
         };
         const updates = {};
         Object.entries(candidates).forEach(([k, v]) => {
-          if (!emp[k] && v) updates[k] = v;
+          // Treat undefined/null/empty-string as "not set" — anything else is real data.
+          const cur = emp[k];
+          if ((cur === undefined || cur === null || cur === '') && v) {
+            updates[k] = v;
+          }
         });
         if (Object.keys(updates).length > 0) {
           await saveEmployee(emp.id, { ...emp, ...updates });
           patched++;
+          fieldsFilled += Object.keys(updates).length;
         }
       }
 
@@ -153,14 +161,15 @@ export default function EmployeesAdmin() {
       };
       const salonUpdates = {};
       Object.entries(salonDefaults).forEach(([k, v]) => {
-        if (!settings?.[k]) salonUpdates[k] = v;
+        const cur = settings?.[k];
+        if ((cur === undefined || cur === null || cur === '') && v) salonUpdates[k] = v;
       });
       if (Object.keys(salonUpdates).length > 0) {
         await updateSettings({ ...settings, ...salonUpdates });
       }
 
-      logActivity('employees_contact_backfilled', `${patched} employees · salon: ${Object.keys(salonUpdates).join(', ') || 'no changes'}`);
-      showToast(`Filled in contact/TIN for ${patched} employees${Object.keys(salonUpdates).length > 0 ? ' + salon EIN/address' : ''}`);
+      logActivity('employees_contact_backfilled', `${patched}/${fresh.length} employees · ${fieldsFilled} fields · salon: ${Object.keys(salonUpdates).join(', ') || 'no changes'}`);
+      showToast(`Updated ${patched}/${fresh.length} employees · ${fieldsFilled} fields filled${Object.keys(salonUpdates).length > 0 ? ' + salon defaults' : ''}`, 3500);
       await load();
     } catch (e) {
       console.error('[Employees] backfill failed:', e);
