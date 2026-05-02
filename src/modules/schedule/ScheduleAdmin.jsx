@@ -787,6 +787,9 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
                             {appt.techRequestType === 'specific' && (
                               <span title="Client specifically requested this tech" style={{ fontSize: 10, lineHeight: 1 }}>⭐</span>
                             )}
+                            {appt.techRequestType === 'auto' && (
+                              <span title="No preference — auto-assigned" style={{ fontSize: 10, lineHeight: 1 }}>🎲</span>
+                            )}
                             <span style={{ fontSize: 8, color: dot.color }}>{dot.label}</span>
                           </div>
                           <div style={{ fontSize: 10, color: blockText, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
@@ -972,6 +975,9 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 {appt.techRequestType === 'specific' && (
                   <span title="Client specifically requested this tech" style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>⭐</span>
+                )}
+                {appt.techRequestType === 'auto' && (
+                  <span title="No preference — auto-assigned" style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>🎲</span>
                 )}
                 <div style={{ fontSize: 11, fontWeight: 700, color: blockText, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                   {appt.clientName || 'Walk-in'}

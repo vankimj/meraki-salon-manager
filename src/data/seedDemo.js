@@ -691,6 +691,12 @@ function randomTimeStr() {
 }
 
 // ── Build appointment list ──────────────────────────────
+// 60% of customer-booked demo appointments are flagged "specifically requested",
+// 40% "auto-assigned" — drives the ⭐/🎲 icon split on the schedule.
+function randomRequestType() {
+  return Math.random() < 0.6 ? 'specific' : 'auto';
+}
+
 function buildAppointments(clientRecords, celebRecords) {
   const appts = [];
   const base  = today();
@@ -717,14 +723,14 @@ function buildAppointments(clientRecords, celebRecords) {
         appts.push({
           clientId: '', clientName: 'Walk-in',
           techName: tech, services, date,
-          startTime: randomTimeStr(), duration, notes: '', status: 'done', _demo: true,
+          startTime: randomTimeStr(), duration, notes: '', status: 'done', techRequestType: randomRequestType(), _demo: true,
         });
       } else {
         const client = clientRecords[Math.floor(Math.random() * clientRecords.length)];
         appts.push({
           clientId: client.id, clientName: client.name,
           techName: tech, services, date,
-          startTime: randomTimeStr(), duration, notes: '', status: 'done', _demo: true,
+          startTime: randomTimeStr(), duration, notes: '', status: 'done', techRequestType: randomRequestType(), _demo: true,
         });
       }
     }
@@ -746,7 +752,7 @@ function buildAppointments(clientRecords, celebRecords) {
       appts.push({
         clientId: client.id, clientName: client.name,
         techName: tech, services: [{ ...svc }], date: todayStr, startTime,
-        duration: svc.duration, notes: '', status: 'scheduled', _demo: true,
+        duration: svc.duration, notes: '', status: 'scheduled', techRequestType: randomRequestType(), _demo: true,
       });
     }
   }
@@ -770,7 +776,7 @@ function buildAppointments(clientRecords, celebRecords) {
         appts.push({
           clientId: client.id, clientName: client.name,
           techName: tech, services: [{ ...svc }], date, startTime,
-          duration: svc.duration, notes: '', status: 'scheduled', _demo: true,
+          duration: svc.duration, notes: '', status: 'scheduled', techRequestType: randomRequestType(), _demo: true,
         });
       }
     }
@@ -788,7 +794,7 @@ function buildAppointments(clientRecords, celebRecords) {
         clientId: celeb.id, clientName: celeb.name,
         techName: tech, services: [{ ...svc }], date,
         startTime: randomTimeStr(), duration: svc.duration,
-        notes: 'VIP appointment', status: 'done', _demo: true,
+        notes: 'VIP appointment', status: 'done', techRequestType: randomRequestType(), _demo: true,
       });
     }
     // ~40% chance of a future appointment (next 30 days)
@@ -801,7 +807,7 @@ function buildAppointments(clientRecords, celebRecords) {
         clientId: celeb.id, clientName: celeb.name,
         techName: tech, services: [{ ...svc }], date,
         startTime: randomTimeStr(), duration: svc.duration,
-        notes: 'VIP appointment', status: 'scheduled', _demo: true,
+        notes: 'VIP appointment', status: 'scheduled', techRequestType: randomRequestType(), _demo: true,
       });
     }
   }
@@ -873,7 +879,7 @@ export async function addFutureAppointments(onProgress) {
         appts.push({
           clientId: client.id, clientName: client.name,
           techName: tech, services: [{ ...svc }], date, startTime,
-          duration: svc.duration, notes: '', status: 'scheduled', _demo: true,
+          duration: svc.duration, notes: '', status: 'scheduled', techRequestType: randomRequestType(), _demo: true,
         });
       }
     }
@@ -889,7 +895,7 @@ export async function addFutureAppointments(onProgress) {
         clientId: celeb.id, clientName: celeb.name,
         techName: tech, services: [{ ...svc }], date,
         startTime: randomTimeStr(), duration: svc.duration,
-        notes: 'VIP appointment', status: 'scheduled', _demo: true,
+        notes: 'VIP appointment', status: 'scheduled', techRequestType: randomRequestType(), _demo: true,
       });
     }
   }
@@ -922,6 +928,19 @@ export async function backfillDemoTransactions(onProgress) {
   if (candidates.length === 0) {
     onProgress?.('No past done appointments found. Seed demo data first.');
     return { receipts: 0, cancelled: 0, noShow: 0 };
+  }
+
+  // Pass 0: stamp techRequestType onto every demo appointment that doesn't
+  // have one yet (60% specific / 40% auto). Drives the ⭐/🎲 icons on the
+  // calendar so staff can see at a glance which appts were customer-requested.
+  onProgress?.(`Marking request type on ${all.length} appointments…`);
+  for (let i = 0; i < all.length; i++) {
+    const a = all[i];
+    if (a.techRequestType) continue;
+    try {
+      await saveAppointment(a.id, { ...a, techRequestType: Math.random() < 0.6 ? 'specific' : 'auto' });
+    } catch (e) { console.warn('[backfill rt]', a.id, e?.message || e); }
+    if ((i + 1) % 100 === 0) onProgress?.(`Marked ${i + 1} / ${all.length}…`);
   }
 
   onProgress?.(`Backfilling ${candidates.length} appointments…`);
