@@ -691,10 +691,15 @@ function randomTimeStr() {
 }
 
 // ── Build appointment list ──────────────────────────────
-// 60% of customer-booked demo appointments are flagged "specifically requested",
-// 40% "auto-assigned" — drives the ⭐/🎲 icon split on the schedule.
+// 40% of demo appointments come in flagged "specifically requested",
+// 30% "auto-assigned" (online booking with no preference), and 30%
+// "scheduler" (front-desk staff scheduled it). Drives the ⭐/🎲/📋 icon
+// distribution on the schedule.
 function randomRequestType() {
-  return Math.random() < 0.6 ? 'specific' : 'auto';
+  const r = Math.random();
+  if (r < 0.40) return 'specific';
+  if (r < 0.70) return 'auto';
+  return 'scheduler';
 }
 
 function buildAppointments(clientRecords, celebRecords) {
@@ -938,7 +943,7 @@ export async function backfillDemoTransactions(onProgress) {
     const a = all[i];
     if (a.techRequestType) continue;
     try {
-      await saveAppointment(a.id, { ...a, techRequestType: Math.random() < 0.6 ? 'specific' : 'auto' });
+      await saveAppointment(a.id, { ...a, techRequestType: randomRequestType() });
     } catch (e) { console.warn('[backfill rt]', a.id, e?.message || e); }
     if ((i + 1) % 100 === 0) onProgress?.(`Marked ${i + 1} / ${all.length}…`);
   }
