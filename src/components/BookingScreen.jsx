@@ -103,9 +103,12 @@ export default function BookingScreen() {
   const [gUser,   setGUser]   = useState(undefined); // undefined=loading, null=signed out
   const [client,  setClient]  = useState(null);      // matching client record if found
 
-  // wizard
-  const [step,    setStep]    = useState(1);
-  // Multi-service cart. Each item: { id, service, option, tech, date, slot }
+  // wizard. step 0 = flow chooser, 1..5 = steps. Default to 0 so the user
+  // explicitly picks a path; once chosen, flow is locked for this session.
+  const [step,    setStep]    = useState(0);
+  const [flow,    setFlow]    = useState(null);   // 'time-first' | 'tech-first'
+  const [pickedTech, setPickedTech] = useState(null); // populated in tech-first mode
+  // Multi-service cart. Each item: { id, service, option, tech, date, slot, removal }
   // tech: undefined=not picked, null=no preference, {…}=specific tech
   const [cart, setCart] = useState([]);
   // Per-date appointment cache so each cart item's date picker can check
@@ -195,9 +198,11 @@ export default function BookingScreen() {
   }, []);
 
   // Cart helpers ─────────────────────────────────────────
+  // In tech-first mode, the chosen tech is auto-assigned to every new line.
   function addToCart(svc, opt) {
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
-    setCart(c => [...c, { id, service: svc, option: opt || null, tech: undefined, date: '', slot: null, removal: false }]);
+    const initialTech = flow === 'tech-first' && pickedTech ? pickedTech : undefined;
+    setCart(c => [...c, { id, service: svc, option: opt || null, tech: initialTech, date: '', slot: null, removal: false }]);
   }
   function removeFromCart(itemId) {
     setCart(c => c.filter(i => i.id !== itemId));
@@ -354,7 +359,7 @@ export default function BookingScreen() {
   return (
     <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <Header
-        step={step} cfg={cfg}
+        step={step} cfg={cfg} flow={flow}
         gUser={gUser} client={client}
         onSignIn={handleGoogleSignIn}
         onSignOut={handleSignOut}
@@ -381,21 +386,50 @@ export default function BookingScreen() {
           </div>
         )}
 
-        {step === 1 && (
+        {step === 0 && (
+          <FlowChooser
+            onPick={f => {
+              setFlow(f);
+              setStep(1);
+              if (f === 'time-first') setPickedTech(null);
+            }}
+          />
+        )}
+        {step === 1 && flow === 'time-first' && (
           <Step1Cart
             services={services}
             cart={cart}
             onAdd={addToCart}
             onRemove={removeFromCart}
             onProceed={() => setStep(2)}
+            onSwitchFlow={() => { setStep(0); setCart([]); }}
           />
         )}
-        {step === 2 && (
+        {step === 1 && flow === 'tech-first' && (
+          <Step1PickStylist
+            techs={techs}
+            picked={pickedTech}
+            onPick={t => setPickedTech(t)}
+            onProceed={() => setStep(2)}
+            onSwitchFlow={() => { setStep(0); setCart([]); setPickedTech(null); }}
+          />
+        )}
+        {step === 2 && flow === 'time-first' && (
           <Step2AssignTechs
             cart={cart} allTechs={techs}
             updateCartItem={updateCartItem}
             onProceed={() => setStep(3)}
             onBack={() => setStep(1)}
+          />
+        )}
+        {step === 2 && flow === 'tech-first' && (
+          <Step1Cart
+            services={services.filter(s => techCanDo(pickedTech, s.id))}
+            cart={cart}
+            onAdd={addToCart}
+            onRemove={removeFromCart}
+            onProceed={() => setStep(3)}
+            techFirstNote={pickedTech ? `Booking with ${pickedTech.name}. Showing only the services they offer.` : null}
           />
         )}
         {step === 3 && (
@@ -440,7 +474,10 @@ export default function BookingScreen() {
 }
 
 // ── Header ─────────────────────────────────────────────
-function Header({ step, cfg, gUser, client, onSignIn, onSignOut }) {
+function Header({ step, cfg, flow, gUser, client, onSignIn, onSignOut }) {
+  const labels = flow === 'tech-first'
+    ? ['Stylist','Services','Schedule','Info','Confirm']
+    : ['Cart','Stylists','Schedule','Info','Confirm'];
   return (
     <div style={{ background: 'var(--tm-grad-dark, linear-gradient(135deg,#1e6b50,#2D7A5F 40%,#3D7FBF))', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 12px rgba(0,0,0,.18)' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '14px 12px 10px' }}>
@@ -477,26 +514,120 @@ function Header({ step, cfg, gUser, client, onSignIn, onSignOut }) {
           </div>
         )}
 
-        {/* Step progress */}
-        <div style={{ display: 'flex', gap: 4, paddingBottom: 2 }}>
-          {[1,2,3,4,5].map(s => (
-            <div key={s} style={{ flex: s === step ? 2 : 1, height: 3, borderRadius: 2, background: s <= step ? '#fff' : 'rgba(255,255,255,.25)', transition: 'all .25s' }} />
-          ))}
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, paddingBottom: 2 }}>
-          {['Cart','Stylists','Schedule','Info','Confirm'].map((label, i) => (
-            <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, fontWeight: i + 1 <= step ? 700 : 400, color: i + 1 <= step ? '#fff' : 'rgba(255,255,255,.4)', letterSpacing: '.03em', textTransform: 'uppercase' }}>
-              {label}
+        {/* Step progress (hidden on the flow chooser) */}
+        {step >= 1 && (
+          <>
+            <div style={{ display: 'flex', gap: 4, paddingBottom: 2 }}>
+              {[1,2,3,4,5].map(s => (
+                <div key={s} style={{ flex: s === step ? 2 : 1, height: 3, borderRadius: 2, background: s <= step ? '#fff' : 'rgba(255,255,255,.25)', transition: 'all .25s' }} />
+              ))}
             </div>
-          ))}
-        </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 5, paddingBottom: 2 }}>
+              {labels.map((label, i) => (
+                <div key={i} style={{ flex: 1, textAlign: 'center', fontSize: 9, fontWeight: i + 1 <= step ? 700 : 400, color: i + 1 <= step ? '#fff' : 'rgba(255,255,255,.4)', letterSpacing: '.03em', textTransform: 'uppercase' }}>
+                  {label}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
+// ── Flow chooser (step 0) ─────────────────────────────
+function FlowChooser({ onPick }) {
+  const opts = [
+    { id: 'time-first', emoji: '📅', title: 'Pick a time that works for me',  desc: 'Choose your services first, then we\'ll show you available stylists and times.' },
+    { id: 'tech-first', emoji: '⭐', title: 'Book with a specific stylist',    desc: 'Pick your favorite nail tech, then see only their services and openings.' },
+  ];
+  return (
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '20px 0' }}>
+      <StepTitle>How would you like to book?</StepTitle>
+      <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 22, lineHeight: 1.5 }}>
+        Pick whichever feels right — you can always switch back.
+      </div>
+      <div style={{ display: 'grid', gap: 12 }}>
+        {opts.map(o => (
+          <button key={o.id} onClick={() => onPick(o.id)}
+            style={{ background: '#fff', border: '1.5px solid #e8e8e8', borderRadius: 14, padding: '18px 22px', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 18, transition: 'border-color .15s, box-shadow .15s' }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--tm-primary, #2D7A5F)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(45,122,95,.12)'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#e8e8e8'; e.currentTarget.style.boxShadow = 'none'; }}>
+            <div style={{ fontSize: 32, flexShrink: 0 }}>{o.emoji}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>{o.title}</div>
+              <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>{o.desc}</div>
+            </div>
+            <div style={{ fontSize: 18, color: 'var(--tm-primary, #2D7A5F)', flexShrink: 0 }}>→</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Step 1 (tech-first): Pick a stylist ────────────────
+function Step1PickStylist({ techs, picked, onPick, onProceed, onSwitchFlow }) {
+  const list = (techs || []).filter(t => t.active !== false);
+  return (
+    <div style={{ maxWidth: 720, margin: '0 auto', paddingBottom: picked ? 110 : 16 }}>
+      <StepTitle>Pick your stylist</StepTitle>
+      <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 6, lineHeight: 1.5 }}>
+        We'll then show you only their services and openings.
+      </div>
+      <button onClick={onSwitchFlow}
+        style={{ fontSize: 11, color: 'var(--tm-accent, #3D95CE)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0, marginBottom: 18 }}>
+        ← Or pick a time first
+      </button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+        {list.map(t => {
+          const sel = picked?.id === t.id;
+          return (
+            <button key={t.id} onClick={() => onPick(t)}
+              style={{ background: '#fff', border: `2px solid ${sel ? 'var(--tm-primary, #2D7A5F)' : '#e8e8e8'}`, borderRadius: 14, padding: 14, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 8, transition: 'border-color .15s, box-shadow .15s', boxShadow: sel ? '0 4px 12px rgba(45,122,95,.18)' : 'none' }}>
+              <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: '#f0f0f0' }}>
+                {t.photo
+                  ? <img src={t.photo} alt={t.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, color: '#bbb' }}>👩‍💼</div>}
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{t.name}</div>
+                {t.instagram && (
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{t.instagram.startsWith('@') ? t.instagram : `@${t.instagram}`}</div>
+                )}
+                {t.notes && (
+                  <div style={{ fontSize: 11, color: '#999', marginTop: 4, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                    {t.notes}
+                  </div>
+                )}
+              </div>
+              {sel && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--tm-primary, #2D7A5F)' }}>✓ Selected</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {picked && (
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255,255,255,.97)', backdropFilter: 'blur(8px)', borderTop: '1px solid #e0e0e0', padding: '14px 20px', zIndex: 20 }}>
+          <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>
+              Booking with <span style={{ color: 'var(--tm-primary, #2D7A5F)' }}>{picked.name}</span>
+            </div>
+            <button onClick={onProceed}
+              style={{ background: 'var(--tm-primary, #2D7A5F)', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: 999, fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 4px 12px rgba(0,0,0,.15)' }}>
+              Continue →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Step 1: Cart (browse + add) ────────────────────────
-function Step1Cart({ services, cart, onAdd, onRemove, onProceed }) {
+function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, techFirstNote }) {
   const groups = groupByCategory(services);
   // Per-row selected option (local UI state) — picking a variant chip just
   // remembers it so 'Add to cart' adds the right one.
@@ -508,9 +639,16 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed }) {
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', paddingBottom: cart.length ? 110 : 16 }}>
       <StepTitle>Choose your services</StepTitle>
-      <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 18, lineHeight: 1.5 }}>
-        Add as many services as you'd like — you'll pick a stylist and time for each one in the next step.
+      <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 6, lineHeight: 1.5 }}>
+        {techFirstNote || 'Add as many services as you\'d like — you\'ll pick a stylist and time for each one in the next step.'}
       </div>
+      {onSwitchFlow && (
+        <button onClick={onSwitchFlow}
+          style={{ fontSize: 11, color: 'var(--tm-accent, #3D95CE)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0, marginBottom: 14 }}>
+          ← Or pick a stylist first
+        </button>
+      )}
+      <div style={{ marginBottom: 12 }} />
       {groups.map(({ category, services: svcs }) => {
         const color = CATEGORY_COLORS[category] || '#1a1a1a';
         return (
