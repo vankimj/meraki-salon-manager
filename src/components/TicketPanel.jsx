@@ -6,15 +6,38 @@ import { IconShoppingCart } from './Icons';
 
 // Top-bar ticket button + dropdown panel. State + persistence lives in AppContext.
 export default function TicketPanel() {
-  const { ticket, ticketCount, removeApptFromTicket, addProductToTicket, setTicketProductQty, setTicketCheckoutOpen, gUser } = useApp();
+  const { ticket, ticketCount, removeApptFromTicket, addProductToTicket, setTicketProductQty, setTicketCheckoutOpen, clearTicket, gUser } = useApp();
   const [open, setOpen] = useState(false);
   const [showPicker, setShowPicker] = useState(false);
   const [allProducts, setAllProducts] = useState(null);
+  const [coords, setCoords] = useState(null); // { top, right } anchored from the button rect
   const wrapRef = useRef(null);
+  const dropRef = useRef(null);
+
+  // Recompute the dropdown's fixed-position anchor whenever it opens, the
+  // viewport changes, or anything scrolls (so it stays anchored to the button).
+  useEffect(() => {
+    if (!open) return;
+    function update() {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (r) setCoords({ top: r.bottom + 8, right: window.innerWidth - r.right });
+    }
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
-    function onDoc(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }
+    function onDoc(e) {
+      if (wrapRef.current?.contains(e.target)) return;
+      if (dropRef.current?.contains(e.target)) return;
+      setOpen(false);
+    }
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
@@ -39,8 +62,13 @@ export default function TicketPanel() {
     setTicketCheckoutOpen(true);
   }
 
+  function handleClearTicket() {
+    if (!window.confirm(`Clear ${ticketCount} item${ticketCount === 1 ? '' : 's'} from the ticket?`)) return;
+    clearTicket();
+  }
+
   return (
-    <div ref={wrapRef} style={{ position: 'relative', zIndex: 100 }}>
+    <div ref={wrapRef} style={{ position: 'relative' }}>
       <button onClick={() => setOpen(o => !o)} title="Ticket"
         style={{ height: 40, width: 40, borderRadius: 20, border: '1px solid #e0e0e0', background: open ? '#f0f0f0' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
         <IconShoppingCart size={18} />
@@ -51,13 +79,21 @@ export default function TicketPanel() {
         )}
       </button>
 
-      {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 380, maxWidth: 'calc(100vw - 24px)', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,.14)', zIndex: 50, overflow: 'hidden', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      {open && coords && (
+        <div ref={dropRef} style={{ position: 'fixed', top: coords.top, right: coords.right, width: 380, maxWidth: 'calc(100vw - 24px)', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,.14)', zIndex: 9999, overflow: 'hidden', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>🧾 Ticket</div>
-            {ticketCount > 0 && (
-              <span style={{ fontSize: 11, color: '#888' }}>{ticketCount} item{ticketCount === 1 ? '' : 's'}</span>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {ticketCount > 0 && (
+                <span style={{ fontSize: 11, color: '#888' }}>{ticketCount} item{ticketCount === 1 ? '' : 's'}</span>
+              )}
+              {ticketCount > 0 && (
+                <button onClick={handleClearTicket} title="Clear ticket"
+                  style={{ fontSize: 11, fontWeight: 600, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
