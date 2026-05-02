@@ -23,7 +23,8 @@ const SIDEBAR_MODULES = [
 ];
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
-  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, activeTheme: t, users } = useApp();
+  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, activeTheme: t, users, requirePin } = useApp();
+  const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
   const isPro = !settings?.plan || settings.plan === 'pro';
   const canManage = isAdmin || isReadOnly;
 
@@ -89,7 +90,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
               const locked = m.proOnly && !isPro;
               const badge  = m.id === 'chat' ? totalChatUnread : 0;
               return (
-                <button key={m.id} onClick={() => onNavigate?.(m.id)}
+                <button key={m.id} onClick={() => guardedNavigate(m.id)}
                   title={locked ? `${m.label} — upgrade to Pro to unlock` : m.label}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10,

@@ -628,7 +628,43 @@ const QUARTERS = [
 const QUARTER_MONTHS = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
 
 // ─── Transactions Report (filterable + per-tech detail) ───────────────
-const METHOD_LABELS = { card: 'Credit card', cash: 'Cash', other: 'Other' };
+const METHOD_LABELS = { card: 'Credit card', cash: 'Cash', venmo: 'Venmo', other: 'Other' };
+
+// For done appointments that don't have a receipt row (legacy / demo data),
+// build a receipt-shaped object so the Transactions tab can still surface them.
+function apptToSyntheticReceipt(a) {
+  const sales = (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+  const p = a.payment || {};
+  const startISO = `${a.date}T${(a.startTime || '12:00')}:00.000Z`;
+  return {
+    id:           `appt:${a.id}`,
+    apptIds:      [a.id],
+    clientId:     a.clientId || null,
+    clientName:   a.clientName || '',
+    clientEmail:  a.clientEmail || null,
+    techName:     a.techName || '',
+    date:         a.date,
+    startTime:    a.startTime || '',
+    services:     (a.services || []).map(sv => ({ name: sv.name, price: sv.price, techName: sv.techName || a.techName })),
+    retailProducts: p.retailProducts || null,
+    giftCardsSold:  null,
+    createdAt:    p.paidAt || startISO,
+    payment: {
+      subtotal:     p.subtotal     ?? sales,
+      discountAmount: p.discountAmount ?? 0,
+      promoAmount:  p.promoAmount  ?? 0,
+      tax:          p.tax          ?? 0,
+      taxRate:      p.taxRate      ?? 0,
+      tip:          p.tip          ?? 0,
+      total:        p.total        ?? sales,
+      method:       p.method       ?? 'other',
+      ccFee:        p.ccFee        ?? 0,
+      gcSalesTotal: p.gcSalesTotal ?? 0,
+      techSplit:    p.techSplit    || null,
+      _synthetic:   !p.paidAt,
+    },
+  };
+}
 
 function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [receipts, setReceipts] = useState(null);
@@ -639,10 +675,23 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
 
   useEffect(() => {
     setLoading(true);
-    fetchReceiptsByRange(startDate, endDate)
-      .then(rs => setReceipts(rs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))))
-      .catch(() => setReceipts([]))
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetchReceiptsByRange(startDate, endDate).catch(() => []),
+      fetchAppointmentsByRange(startDate, endDate).catch(() => []),
+    ]).then(([rs, as]) => {
+      // Receipts are the canonical record. For appointments marked done that
+      // don't have a corresponding receipt (legacy / demo / pre-receipt data),
+      // synthesize a receipt-shaped row so the report covers the full history.
+      const covered = new Set();
+      rs.forEach(r => (r.apptIds || []).forEach(id => covered.add(id)));
+      const synthesized = as
+        .filter(a => a.status === 'done' && !covered.has(a.id))
+        .map(a => apptToSyntheticReceipt(a));
+      const all = [...rs, ...synthesized].sort(
+        (a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''),
+      );
+      setReceipts(all);
+    }).finally(() => setLoading(false));
   }, [startDate, endDate]);
 
   const allTechs = useMemo(() => {

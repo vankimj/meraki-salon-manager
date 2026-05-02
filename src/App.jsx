@@ -31,6 +31,7 @@ import OnboardingScreen from './components/OnboardingScreen';
 import TipFlowLanding from './components/TipFlowLanding';
 import TicketCheckoutLauncher from './components/TicketCheckoutLauncher';
 import RsvpScreen from './components/RsvpScreen';
+import PinModal from './components/PinModal';
 
 const MODULE_TITLES = {
   schedule:   'Schedule',
@@ -85,7 +86,7 @@ function MagicLinkPrompt() {
 }
 
 function AppShell() {
-  const { slides, def, cur, magicLinkPending, handbookPending, isPortalUser } = useApp();
+  const { slides, def, cur, magicLinkPending, handbookPending, isPortalUser, settings, pinPrompt, acceptPinPrompt, dismissPinPrompt } = useApp();
 
   if (isPortalUser) return <ClientPortal />;
   const [view,      setView]      = useState('home'); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
@@ -156,6 +157,11 @@ function AppShell() {
 
       {/* Magic link completion — shown when user arrives via link on a different device */}
       {magicLinkPending && <MagicLinkPrompt />}
+
+      {/* PIN prompt — guards sensitive views (HR, Reports) from any nav entry point */}
+      {pinPrompt && (
+        <PinModal correctPin={settings?.adminPin} onSuccess={acceptPinPrompt} onClose={dismissPinPrompt} />
+      )}
 
       {/* Ticket-driven checkout — opens from any module when the ticket panel's Continue button fires */}
       <TicketCheckoutLauncher />

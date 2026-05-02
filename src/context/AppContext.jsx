@@ -91,6 +91,36 @@ export function AppProvider({ children }) {
   const ticketCount = ticket.appts.length + ticket.products.reduce((s, p) => s + p.qty, 0);
   const [viewAs,            setViewAs]            = useState(null); // null | { role: 'tech', techName: string } | { role: 'scheduler' } | { role: 'readonly' }
 
+  // ── PIN gate for sensitive views (HR, Reports) ─────────
+  // Lives at the app level so the home grid AND the module-shell sidebar both
+  // route through the same check (and the same per-session unlock cache).
+  const PIN_LOCKED_VIEWS = useRef(new Set(['hr', 'reports'])).current;
+  const unlockedViewsRef = useRef(new Set());
+  const [pinPrompt, setPinPrompt] = useState(null); // null | { viewId, onUnlock }
+
+  // requirePin(viewId, onUnlock) — calls onUnlock immediately if the view
+  // doesn't need a PIN, isn't locked, or has already been unlocked this session.
+  // Otherwise it raises the prompt; onUnlock fires only on correct PIN.
+  const requirePin = useCallback((viewId, onUnlock) => {
+    const pin = settings?.adminPin;
+    if (!pin || !PIN_LOCKED_VIEWS.has(viewId) || unlockedViewsRef.current.has(viewId)) {
+      onUnlock();
+      return;
+    }
+    setPinPrompt({ viewId, onUnlock });
+  }, [settings?.adminPin, PIN_LOCKED_VIEWS]);
+
+  const acceptPinPrompt = useCallback(() => {
+    if (!pinPrompt) return;
+    unlockedViewsRef.current.add(pinPrompt.viewId);
+    logActivity('sensitive_tile_accessed', `${gUser?.email || 'unknown'} unlocked ${pinPrompt.viewId}`);
+    const cb = pinPrompt.onUnlock;
+    setPinPrompt(null);
+    cb();
+  }, [pinPrompt, gUser?.email]);
+
+  const dismissPinPrompt = useCallback(() => setPinPrompt(null), []);
+
   const logoutTimer    = useRef(null);
   const inactivityTimer= useRef(null);
   const toastTimer     = useRef(null);
@@ -508,6 +538,7 @@ export function AppProvider({ children }) {
       recentNotifs, unreadNotifCount, markNotifRead,
       ticket, ticketCount, addApptToTicket, removeApptFromTicket, addProductToTicket, setTicketProductQty, clearTicket,
       ticketCheckoutOpen, setTicketCheckoutOpen,
+      requirePin, pinPrompt, acceptPinPrompt, dismissPinPrompt,
       activeTheme,
     }}>
       {children}
