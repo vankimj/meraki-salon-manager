@@ -1156,22 +1156,22 @@ function DemoSeedSection() {
     setRunning(true); setPhase('idle'); setStatus('');
     try {
       const result = await clearDemoData(msg => setStatus(msg));
-      setStatus(`Removed ${result.clients} clients, ${result.appointments} appointments, and ${result.receipts || 0} receipts.`);
+      setStatus(`Removed ${result.clients} clients, ${result.appointments} appts, ${result.receipts || 0} receipts, ${result.giftCards || 0} gift cards.`);
       setPhase('cleared');
-      logActivity('demo_cleared', `${result.clients} clients · ${result.appointments} appts · ${result.receipts || 0} receipts`);
+      logActivity('demo_cleared', `${result.clients} clients · ${result.appointments} appts · ${result.receipts || 0} receipts · ${result.giftCards || 0} GC`);
     } catch (e) {
       setStatus('Error: ' + e.message); setPhase('error');
     } finally { setRunning(false); }
   }
 
   async function runBackfill() {
-    if (!confirm('Backfill all past "done" demo appointments with realistic receipts (random method, tip, tax). Some will flip to Cancelled (~15%) and No-show (~10%) for variety. Continue?')) return;
+    if (!confirm('Backfill all past "done" demo appointments with realistic receipts (random method, tip, tax), plus 40 gift card sales and 50 retail product sales. Some appointments flip to Cancelled (~15%) and No-show (~10%) for variety. Continue?')) return;
     setRunning(true); setPhase('idle'); setStatus('');
     try {
       const result = await backfillDemoTransactions(msg => setStatus(msg));
-      setStatus(`Created ${result.receipts} receipts · ${result.cancelled} cancelled · ${result.noShow} no-shows.`);
+      setStatus(`${result.receipts} appt receipts · ${result.cancelled} cancelled · ${result.noShow} no-shows · ${result.giftCardSales || 0} gift card sales · ${result.productSales || 0} product sales.`);
       setPhase('seeded');
-      logActivity('demo_backfilled', `${result.receipts} receipts · ${result.cancelled} cancelled · ${result.noShow} no-shows`);
+      logActivity('demo_backfilled', `${result.receipts} receipts · ${result.cancelled} cancelled · ${result.noShow} no-shows · ${result.giftCardSales || 0} GC · ${result.productSales || 0} retail`);
     } catch (e) {
       setStatus('Error: ' + e.message); setPhase('error');
     } finally { setRunning(false); }

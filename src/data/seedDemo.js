@@ -4,6 +4,8 @@ import {
   fetchDemoClients, fetchDemoAppointments,
   saveAppointment, createReceipt,
   fetchDemoReceipts, deleteReceipt,
+  createGiftCard, fetchDemoGiftCards, deleteGiftCard,
+  fetchProducts,
 } from '../lib/firestore';
 
 // ── Name pools ─────────────────────────────────────────
@@ -994,8 +996,139 @@ export async function backfillDemoTransactions(onProgress) {
     if ((i + 1) % 50 === 0) onProgress?.(`Backfilled ${i + 1} / ${candidates.length}…`);
   }
 
+  // ── Gift card sales ─────────────────────────────────
+  // ~40 standalone sales spread over the past 12 months, no service / no tech,
+  // amounts $25/$50/$75/$100/$150/$200, paid mostly by card.
+  const GC_AMOUNTS = [25, 50, 75, 100, 100, 150, 200];
+  const GC_COUNT   = 40;
+  const allClients = await fetchDemoClients().catch(() => []);
+  let gcSaleCount = 0;
+  onProgress?.('Seeding gift card sales…');
+  for (let g = 0; g < GC_COUNT; g++) {
+    try {
+      const daysAgo = 1 + Math.floor(Math.random() * 360);
+      const date    = offsetDate(today(), -daysAgo);
+      const amount  = GC_AMOUNTS[Math.floor(Math.random() * GC_AMOUNTS.length)];
+      const buyer   = allClients.length > 0 && Math.random() < 0.7
+        ? allClients[Math.floor(Math.random() * allClients.length)]
+        : null;
+      const code    = `MK-${randomCode(6)}`;
+      const giftCardId = await createGiftCard({
+        _demo: true,
+        code,
+        balance: amount,
+        originalAmount: amount,
+        recipientName: buyer?.name || `Walk-in #${g + 1}`,
+        recipientEmail: null,
+        soldAt: `${date}T${randomTimeStr()}:00.000Z`,
+        soldVia: 'demo_seed',
+        active: true,
+      });
+      const method = METHODS[Math.floor(Math.random() * METHODS.length)];
+      const ccFee  = method === 'card' ? round2(amount * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
+      const startISO = `${date}T${(randomTimeStr())}:00.000Z`;
+      const payment = {
+        subtotal: amount, tax: 0, taxRate: TAX_RATE,
+        discountAmount: 0, promoAmount: 0,
+        tip: 0, charged: amount, total: amount,
+        method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
+        techSplit: null, retailProducts: null,
+        gcSalesTotal: amount,
+        giftCardsSold: [{ id: giftCardId, code, amount, recipientName: buyer?.name || null, recipientEmail: null }],
+        apptIds: [],
+        paidAt: startISO,
+      };
+      await createReceipt({
+        _demo: true,
+        clientId: buyer?.id || null,
+        clientName: buyer?.name || 'Walk-in retail',
+        clientEmail: null,
+        techName: '',
+        date,
+        startTime: '',
+        services: [],
+        retailProducts: null,
+        giftCardsSold: payment.giftCardsSold,
+        apptIds: [],
+        payment,
+      });
+      gcSaleCount++;
+    } catch (e) {
+      console.warn('[backfill gc]', e?.message || e);
+    }
+  }
+
+  // ── Retail product sales ────────────────────────────
+  // ~50 standalone retail purchases (no service) across active products.
+  let productSaleCount = 0;
+  const products = await fetchProducts().catch(() => []);
+  const sellableProducts = products.filter(p => p.active !== false && (Number(p.price) || 0) > 0);
+  if (sellableProducts.length > 0) {
+    onProgress?.('Seeding retail product sales…');
+    const PRODUCT_SALE_COUNT = 50;
+    for (let s = 0; s < PRODUCT_SALE_COUNT; s++) {
+      try {
+        const daysAgo = 1 + Math.floor(Math.random() * 360);
+        const date    = offsetDate(today(), -daysAgo);
+        // 1-3 different products per ticket
+        const lineCount = 1 + Math.floor(Math.random() * 3);
+        const lines = [];
+        for (let l = 0; l < lineCount; l++) {
+          const p   = sellableProducts[Math.floor(Math.random() * sellableProducts.length)];
+          const qty = 1 + Math.floor(Math.random() * 2); // 1 or 2
+          if (lines.find(x => x.id === p.id)) continue;
+          lines.push({ id: p.id, name: p.name, price: Number(p.price) || 0, qty });
+        }
+        const subtotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
+        if (subtotal <= 0) continue;
+        const tax    = round2(subtotal * TAX_RATE / 100);
+        const total  = round2(subtotal + tax);
+        const method = METHODS[Math.floor(Math.random() * METHODS.length)];
+        const ccFee  = method === 'card' ? round2(total * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
+        const buyer  = allClients.length > 0 && Math.random() < 0.6
+          ? allClients[Math.floor(Math.random() * allClients.length)]
+          : null;
+        const startISO = `${date}T${randomTimeStr()}:00.000Z`;
+        const payment = {
+          subtotal, tax, taxRate: TAX_RATE,
+          discountAmount: 0, promoAmount: 0,
+          tip: 0, charged: total, total,
+          method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
+          techSplit: null, retailProducts: lines,
+          gcSalesTotal: 0, giftCardsSold: null,
+          apptIds: [],
+          paidAt: startISO,
+        };
+        await createReceipt({
+          _demo: true,
+          clientId: buyer?.id || null,
+          clientName: buyer?.name || 'Walk-in retail',
+          clientEmail: null,
+          techName: '',
+          date,
+          startTime: '',
+          services: [],
+          retailProducts: lines,
+          giftCardsSold: null,
+          apptIds: [],
+          payment,
+        });
+        productSaleCount++;
+      } catch (e) {
+        console.warn('[backfill product]', e?.message || e);
+      }
+    }
+  }
+
   onProgress?.('Done!');
-  return { receipts: receiptCount, cancelled: cancelledCount, noShow: noShowCount };
+  return { receipts: receiptCount, cancelled: cancelledCount, noShow: noShowCount, giftCardSales: gcSaleCount, productSales: productSaleCount };
+}
+
+function randomCode(len) {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < len; i++) s += chars.charAt(Math.floor(Math.random() * chars.length));
+  return s;
 }
 
 // ── Clear ──────────────────────────────────────────────
@@ -1024,6 +1157,14 @@ export async function clearDemoData(onProgress) {
     if ((i + 1) % 50 === 0) onProgress?.(`Receipts removed: ${i + 1} / ${demoReceipts.length}`);
   }
 
+  onProgress?.('Finding demo gift cards…');
+  const demoGcs = await fetchDemoGiftCards();
+  onProgress?.(`Removing ${demoGcs.length} gift cards…`);
+  for (let i = 0; i < demoGcs.length; i++) {
+    await deleteGiftCard(demoGcs[i].id);
+    if ((i + 1) % 50 === 0) onProgress?.(`Gift cards removed: ${i + 1} / ${demoGcs.length}`);
+  }
+
   onProgress?.('Done!');
-  return { clients: demoClients.length, appointments: demoAppts.length, receipts: demoReceipts.length };
+  return { clients: demoClients.length, appointments: demoAppts.length, receipts: demoReceipts.length, giftCards: demoGcs.length };
 }

@@ -325,6 +325,13 @@ export async function createGiftCard(data) {
   return ref.id;
 }
 
+export async function fetchDemoGiftCards() {
+  const snap = await getDocs(query(GIFT_CARDS_COL, where('_demo', '==', true)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export const deleteGiftCard = (id) => deleteDoc(doc(GIFT_CARDS_COL, id));
+
 export async function updateGiftCard(id, data) {
   await updateDoc(doc(GIFT_CARDS_COL, id), { ...data, updatedAt: new Date().toISOString() });
 }
