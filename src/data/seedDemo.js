@@ -2,7 +2,7 @@ import {
   createClient, createAppointment,
   deleteClient, deleteAppointment,
   fetchDemoClients, fetchDemoAppointments,
-  saveAppointment, createReceipt,
+  saveAppointment, saveClient, createReceipt,
   fetchDemoReceipts, deleteReceipt,
   createGiftCard, fetchDemoGiftCards, deleteGiftCard,
   fetchProducts,
@@ -589,6 +589,10 @@ function generateClients() {
       const byear = 1975 + (i * 37 % 28);
       const bmon  = String(1 + (i * 13 % 12)).padStart(2, '0');
       const bday  = String(1 + (i * 7 % 28)).padStart(2, '0');
+      // ~60% of clients have a favorite tech they always request.
+      const favoriteTech = Math.random() < 0.6
+        ? TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)]
+        : '';
       clients.push({
         name,
         phone,
@@ -604,6 +608,7 @@ function generateClients() {
         instagramTags: [],
         googleReviews: [],
         visits: [],
+        favoriteTech,
         _demo: true,
       });
     }
@@ -629,6 +634,8 @@ function generateCelebrities() {
     instagramTags: [],
     googleReviews: [],
     visits: [],
+    // Celebrities are VIPs — 90% always book the same tech.
+    favoriteTech: Math.random() < 0.9 ? TECH_NAMES[i % TECH_NAMES.length] : '',
     _demo: true,
     _celebrity: true,
   }));
@@ -702,6 +709,29 @@ function randomRequestType() {
   return 'scheduler';
 }
 
+// Pick a tech + request type for a given client. If the client has a
+// favoriteTech, 75% of their appts go to that tech with techRequestType
+// 'specific' — creating realistic clusters of "regulars" you can spot on the
+// calendar by the repeating ⭐ + same tech + same client pattern.
+function pickTechAndType(client) {
+  if (!client) {
+    // Walk-ins: front desk picks the tech.
+    return { tech: TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)], techRequestType: 'scheduler' };
+  }
+  const fav = client.favoriteTech;
+  if (fav) {
+    const r = Math.random();
+    if (r < 0.75) return { tech: fav, techRequestType: 'specific' };
+    if (r < 0.90) return { tech: TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)], techRequestType: 'specific' };
+    return { tech: TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)], techRequestType: Math.random() < 0.5 ? 'auto' : 'scheduler' };
+  }
+  // No favorite — uniform distribution.
+  return {
+    tech: TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)],
+    techRequestType: randomRequestType(),
+  };
+}
+
 function buildAppointments(clientRecords, celebRecords) {
   const appts = [];
   const base  = today();
@@ -715,7 +745,6 @@ function buildAppointments(clientRecords, celebRecords) {
     const count     = countBase + Math.floor(Math.random() * 4) - 1;
     for (let a = 0; a < count; a++) {
       const isWalkin = Math.random() < 0.30;
-      const tech     = TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)];
       const svc      = pickService();
       const addAddon = Math.random() < 0.25;
       const services = [svc];
@@ -725,17 +754,19 @@ function buildAppointments(clientRecords, celebRecords) {
       }
       const duration = services.reduce((s, sv) => s + sv.duration, 0);
       if (isWalkin) {
+        const { tech, techRequestType } = pickTechAndType(null);
         appts.push({
           clientId: '', clientName: 'Walk-in',
           techName: tech, services, date,
-          startTime: randomTimeStr(), duration, notes: '', status: 'done', techRequestType: randomRequestType(), _demo: true,
+          startTime: randomTimeStr(), duration, notes: '', status: 'done', techRequestType, _demo: true,
         });
       } else {
         const client = clientRecords[Math.floor(Math.random() * clientRecords.length)];
+        const { tech, techRequestType } = pickTechAndType(client);
         appts.push({
           clientId: client.id, clientName: client.name,
           techName: tech, services, date,
-          startTime: randomTimeStr(), duration, notes: '', status: 'done', techRequestType: randomRequestType(), _demo: true,
+          startTime: randomTimeStr(), duration, notes: '', status: 'done', techRequestType, _demo: true,
         });
       }
     }
@@ -793,26 +824,26 @@ function buildAppointments(clientRecords, celebRecords) {
     for (let i = 0; i < pastCount; i++) {
       const daysAgo = 1 + Math.floor(Math.random() * 119);
       const date    = offsetDate(base, -daysAgo);
-      const tech    = TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)];
+      const { tech, techRequestType } = pickTechAndType(celeb);
       const svc     = pickService();
       appts.push({
         clientId: celeb.id, clientName: celeb.name,
         techName: tech, services: [{ ...svc }], date,
         startTime: randomTimeStr(), duration: svc.duration,
-        notes: 'VIP appointment', status: 'done', techRequestType: randomRequestType(), _demo: true,
+        notes: 'VIP appointment', status: 'done', techRequestType, _demo: true,
       });
     }
     // ~40% chance of a future appointment (next 30 days)
     if (Math.random() < 0.4) {
       const daysAhead = 1 + Math.floor(Math.random() * 29);
       const date      = offsetDate(base, daysAhead);
-      const tech      = TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)];
+      const { tech, techRequestType } = pickTechAndType(celeb);
       const svc       = pickService();
       appts.push({
         clientId: celeb.id, clientName: celeb.name,
         techName: tech, services: [{ ...svc }], date,
         startTime: randomTimeStr(), duration: svc.duration,
-        notes: 'VIP appointment', status: 'scheduled', techRequestType: randomRequestType(), _demo: true,
+        notes: 'VIP appointment', status: 'scheduled', techRequestType, _demo: true,
       });
     }
   }
@@ -829,7 +860,7 @@ export async function seedDemoData(onProgress) {
   const clientRecords = [];
   for (let i = 0; i < clientDefs.length; i++) {
     const id = await createClient(clientDefs[i]);
-    clientRecords.push({ id, name: clientDefs[i].name });
+    clientRecords.push({ id, name: clientDefs[i].name, favoriteTech: clientDefs[i].favoriteTech || '' });
     if ((i + 1) % 50 === 0) onProgress?.(`Clients: ${i + 1} / ${clientDefs.length}`);
   }
 
@@ -837,7 +868,7 @@ export async function seedDemoData(onProgress) {
   const celebRecords = [];
   for (let i = 0; i < celebDefs.length; i++) {
     const id = await createClient(celebDefs[i]);
-    celebRecords.push({ id, name: celebDefs[i].name });
+    celebRecords.push({ id, name: celebDefs[i].name, favoriteTech: celebDefs[i].favoriteTech || '' });
   }
 
   const allClients = [...clientRecords, ...celebRecords];
@@ -935,17 +966,55 @@ export async function backfillDemoTransactions(onProgress) {
     return { receipts: 0, cancelled: 0, noShow: 0 };
   }
 
-  // Pass 0: stamp techRequestType onto every demo appointment that doesn't
-  // have one yet (60% specific / 40% auto). Drives the ⭐/🎲 icons on the
-  // calendar so staff can see at a glance which appts were customer-requested.
-  onProgress?.(`Marking request type on ${all.length} appointments…`);
+  // Pass 0a: ensure every demo client has a favoriteTech. ~60% get one;
+  // celebrities get one with 90% probability. Drives the realistic clusters
+  // (regulars seeing the same tech each visit) below.
+  onProgress?.('Assigning favorite techs to demo clients…');
+  const demoClients = await fetchDemoClients().catch(() => []);
+  const favTechByClient = new Map();
+  for (let i = 0; i < demoClients.length; i++) {
+    const c = demoClients[i];
+    if (typeof c.favoriteTech === 'string') {
+      favTechByClient.set(c.id, c.favoriteTech || '');
+      continue;
+    }
+    const threshold = c._celebrity ? 0.9 : 0.6;
+    const fav = Math.random() < threshold
+      ? TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)]
+      : '';
+    favTechByClient.set(c.id, fav);
+    try {
+      const { id, createdAt, ...data } = c;
+      await saveClient(id, { ...data, favoriteTech: fav });
+    } catch (e) { console.warn('[backfill fav]', c.id, e?.message || e); }
+  }
+
+  // Pass 0b: re-stamp techRequestType on every demo appointment, this time
+  // biasing toward the client's favorite tech so the calendar shows the
+  // realistic ⭐ clustering ("regulars always see Yan W"). For clients with a
+  // favorite, 70% of their appts are realigned to that tech as 'specific'.
+  onProgress?.(`Re-aligning request types on ${all.length} appointments…`);
   for (let i = 0; i < all.length; i++) {
     const a = all[i];
-    if (a.techRequestType) continue;
     try {
-      await saveAppointment(a.id, { ...a, techRequestType: randomRequestType() });
+      const fav = a.clientId ? favTechByClient.get(a.clientId) : '';
+      const update = { ...a };
+      if (fav) {
+        const r = Math.random();
+        if (r < 0.70) {
+          update.techRequestType = 'specific';
+          update.techName = fav;
+        } else if (r < 0.85) {
+          update.techRequestType = 'specific';
+        } else {
+          update.techRequestType = Math.random() < 0.5 ? 'auto' : 'scheduler';
+        }
+      } else {
+        update.techRequestType = randomRequestType();
+      }
+      await saveAppointment(a.id, update);
     } catch (e) { console.warn('[backfill rt]', a.id, e?.message || e); }
-    if ((i + 1) % 100 === 0) onProgress?.(`Marked ${i + 1} / ${all.length}…`);
+    if ((i + 1) % 100 === 0) onProgress?.(`Re-aligned ${i + 1} / ${all.length}…`);
   }
 
   onProgress?.(`Backfilling ${candidates.length} appointments…`);
