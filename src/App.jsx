@@ -16,6 +16,7 @@ import ServicesAdmin from './modules/services/ServicesAdmin';
 import EmployeesAdmin from './modules/employees/EmployeesAdmin';
 import ReportsAdmin from './modules/reports/ReportsAdmin';
 import HRAdmin from './modules/hr/HRAdmin';
+import AttendanceAdmin from './modules/attendance/AttendanceAdmin';
 import GiftCardsAdmin from './modules/giftcards/GiftCardsAdmin';
 import MeetingsAdmin from './modules/meetings/MeetingsAdmin';
 import ProductsAdmin from './modules/products/ProductsAdmin';
@@ -39,6 +40,7 @@ const MODULE_TITLES = {
   services:   'Services',
   employees:  'Employees',
   reports:    'Reports',
+  attendance: 'Attendance',
   hr:         'HR',
   giftcards:  'Gift Cards & Promos',
   meetings:   'Meetings',
@@ -140,6 +142,7 @@ function AppShell() {
           {id === 'services'  && <ServicesAdmin />}
           {id === 'employees' && <EmployeesAdmin />}
           {id === 'reports'    && <ReportsAdmin />}
+          {id === 'attendance' && <AttendanceAdmin />}
           {id === 'hr'         && <HRAdmin />}
           {id === 'giftcards'  && <GiftCardsAdmin />}
           {id === 'meetings'   && <MeetingsAdmin />}

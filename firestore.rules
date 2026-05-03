@@ -223,6 +223,13 @@ service cloud.firestore {
         allow read, write: if isAuthenticated();
       }
 
+      // Attendance / time cards (one doc per day) — staff can read; only
+      // admin can edit clock-in / clock-out times.
+      match /attendance/{date} {
+        allow read:  if isAuthenticated();
+        allow write: if isTenantAdmin(tenantId);
+      }
+
       // Tax forms (1099-NEC): admin manages all; authenticated users read their own (matched by email)
       match /taxForms/{formId} {
         allow read:                if isTenantAdmin(tenantId) ||

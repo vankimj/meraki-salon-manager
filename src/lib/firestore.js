@@ -146,6 +146,28 @@ export async function saveTurnRoster(date, roster) {
   await setDoc(doc(TURN_ROSTER_COL, date), { date, roster, updatedAt: new Date().toISOString() });
 }
 
+// ── Attendance / time cards (per-day doc) ──────────────
+// One doc per date keyed YYYY-MM-DD with { entries: [{ employeeId,
+// employeeName, clockInAt, clockOutAt }] }. Admin-managed; ties scheduled
+// hours (employee.workDays) to actual times worked.
+const ATTENDANCE_COL = tenantCol('attendance');
+
+export async function fetchAttendance(date) {
+  const snap = await getDoc(doc(ATTENDANCE_COL, date));
+  if (!snap.exists()) return { date, entries: [] };
+  return { date, ...snap.data() };
+}
+
+export function subscribeAttendance(date, cb) {
+  return onSnapshot(doc(ATTENDANCE_COL, date), s => {
+    cb(s.exists() ? { date, ...s.data() } : { date, entries: [] });
+  });
+}
+
+export async function saveAttendance(date, entries) {
+  await setDoc(doc(ATTENDANCE_COL, date), { date, entries, updatedAt: new Date().toISOString() });
+}
+
 // ── Employees ─────────────────────────────────────────
 const EMPLOYEES_COL = tenantCol('employees');
 

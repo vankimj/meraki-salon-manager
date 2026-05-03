@@ -13,6 +13,7 @@ const MODULES = [
   { id: 'services',  label: 'Services',  desc: 'Menu & pricing',           adminOnly: false },
   { id: 'employees', label: 'Employees', desc: 'Team & profiles',          adminOnly: true  },
   { id: 'reports',   label: 'Reports',   desc: 'Revenue & analytics',      adminOnly: false },
+  { id: 'attendance',label: 'Attendance',desc: 'Clock-in / clock-out times', adminOnly: true },
   { id: 'hr',        label: 'HR',        desc: 'Payroll & compensation',   adminOnly: true  },
   { id: 'giftcards', label: 'Gift Cards', desc: 'Gift cards & promo codes', adminOnly: true  },
   { id: 'meetings',  label: 'Meetings',  desc: 'Internal team meetings',   adminOnly: true  },

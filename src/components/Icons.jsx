@@ -188,6 +188,7 @@ export const MODULE_ICONS = {
   services:  IconSparkles,
   employees: IconUserBadge,
   reports:   IconBarChart,
+  attendance: IconCalendarClock,
   hr:        IconBriefcase,
   giftcards: IconGift,
   meetings:  IconCalendarClock,

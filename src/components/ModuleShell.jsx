@@ -14,6 +14,7 @@ const SIDEBAR_MODULES = [
   { id: 'services',  label: 'Services',  adminOnly: false },
   { id: 'employees', label: 'Employees', adminOnly: true  },
   { id: 'reports',   label: 'Reports',   adminOnly: false },
+  { id: 'attendance',label: 'Attendance',adminOnly: true  },
   { id: 'hr',        label: 'HR',        adminOnly: true  },
   { id: 'giftcards', label: 'Gift Cards',adminOnly: true  },
   { id: 'meetings',  label: 'Meetings',  adminOnly: true  },
