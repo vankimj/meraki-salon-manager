@@ -1525,23 +1525,36 @@ exports.sendSMSCampaign = onDocumentCreated(
     const client = require('twilio')(sid, token);
     let sentCount = 0;
     let failCount = 0;
+    const failures = []; // capped + written back so the UI can display per-recipient reasons
 
     for (const r of recipients) {
       const phone = normalizePhone(r.phone);
-      if (!phone) { failCount++; continue; }
+      if (!phone) {
+        failCount++;
+        failures.push({ name: r.name || '(unknown)', phone: r.phone || '', code: 'INVALID_PHONE_FORMAT', reason: `Could not normalize phone "${r.phone || ''}" to E.164` });
+        continue;
+      }
       const body = (data.smsBody || '')
         .replace(/\{firstName\}/g, r.name?.split(' ')[0] || 'there')
         .replace(/\{lastName\}/g,  r.name?.split(' ').slice(1).join(' ') || '');
       try {
         await client.messages.create({ body, from, to: phone });
         sentCount++;
-      } catch { failCount++; }
+      } catch (err) {
+        failCount++;
+        const code = err?.code != null ? String(err.code) : 'UNKNOWN';
+        const reason = err?.message || 'Unknown Twilio error';
+        // Top-level Functions log so `firebase functions:log` surfaces it.
+        console.error(`[sendSMSCampaign] ${r.name} ${phone} failed code=${code} reason=${reason}`);
+        if (failures.length < 200) failures.push({ name: r.name || '(unknown)', phone, code, reason });
+      }
     }
 
     await event.data.ref.update({
       status: 'sent',
       sentCount,
       failCount,
+      failures, // up to 200 per-recipient error records
       sentAt: new Date().toISOString(),
     });
   }

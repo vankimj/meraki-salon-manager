@@ -343,6 +343,21 @@ function CampaignRow({ campaign: c, last, onDelete, onClone }) {
         <div style={{ padding: '0 16px 14px 64px', borderTop: '1px solid #f8f8f8' }}>
           <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>{c.subject}</div>
           <div style={{ fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', background: '#f8f9fa', borderRadius: 6, padding: '8px 10px', marginBottom: 10 }}>{c.body}</div>
+          {Array.isArray(c.failures) && c.failures.length > 0 && (
+            <div style={{ marginBottom: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 10px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#7f1d1d', marginBottom: 6 }}>
+                ⚠ {c.failures.length} delivery {c.failures.length === 1 ? 'failure' : 'failures'}{c.failCount > c.failures.length ? ` (showing first ${c.failures.length} of ${c.failCount})` : ''}
+              </div>
+              <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 11, color: '#7f1d1d' }}>
+                {c.failures.map((f, i) => (
+                  <div key={i} style={{ padding: '3px 0', borderTop: i > 0 ? '1px solid #fecaca' : 'none' }}>
+                    <div style={{ fontWeight: 600 }}>{f.name} · <code style={{ background: '#fee2e2', padding: '0 4px', borderRadius: 3 }}>{f.code}</code></div>
+                    <div style={{ color: '#9a3412', marginTop: 1 }}>{f.phone || f.email || '—'} — {f.reason}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 8 }}>
             <button onClick={e => { e.stopPropagation(); onClone(); }}
               style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
