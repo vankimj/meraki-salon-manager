@@ -722,7 +722,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 {recipients.map((c, i) => (
                   <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderBottom: i < recipients.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
                     <span style={{ fontSize: 12, color: '#333', flex: 1 }}>{c.name}</span>
-                    <span style={{ fontSize: 11, color: '#bbb' }}>{c.email}</span>
+                    <span style={{ fontSize: 11, color: '#bbb' }}>{channel === 'sms' ? (c.phone || '—') : (c.email || '—')}</span>
                   </div>
                 ))}
               </div>
