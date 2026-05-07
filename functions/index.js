@@ -1484,9 +1484,10 @@ function buildWelcomeHtml(salonName, ownerEmail, tenantId, url) {
 }
 
 // ── Config params for new integrations ───────────────────────────────────────
-const twilioSid    = defineString('TWILIO_ACCOUNT_SID', { default: '' });
-const twilioToken  = defineString('TWILIO_AUTH_TOKEN',  { default: '' });
-const twilioFrom   = defineString('TWILIO_FROM',        { default: '' });
+const twilioSid       = defineString('TWILIO_ACCOUNT_SID', { default: '' });
+const twilioToken     = defineString('TWILIO_AUTH_TOKEN',  { default: '' }); // master Auth Token OR API Key Secret
+const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
+const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
 const stripePriceId  = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
 const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
 const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
@@ -1508,9 +1509,10 @@ exports.sendSMSCampaign = onDocumentCreated(
     if (data.channel !== 'sms') return;
     if (data.status !== 'pending') return;
 
-    const sid   = twilioSid.value();
-    const token = twilioToken.value();
-    const from  = twilioFrom.value();
+    const sid       = twilioSid.value();
+    const token     = twilioToken.value();
+    const apiKeySid = twilioApiKeySid.value();
+    const from      = twilioFrom.value();
     if (!sid || !token || !from) {
       await event.data.ref.update({ status: 'failed', error: 'twilio_not_configured' });
       return;
@@ -1522,7 +1524,16 @@ exports.sendSMSCampaign = onDocumentCreated(
       return;
     }
 
-    const client = require('twilio')(sid, token);
+    // Auth modes:
+    //   1. Master:  TWILIO_ACCOUNT_SID (AC...) + TWILIO_AUTH_TOKEN (master)
+    //   2. API Key: TWILIO_ACCOUNT_SID (AC...) + TWILIO_API_KEY_SID (SK...)
+    //               + TWILIO_AUTH_TOKEN (the API Key's secret)
+    // Twilio's SDK fails noisily if the SID style and call signature mismatch,
+    // so detect via prefix and route to the correct constructor.
+    const twilioSDK = require('twilio');
+    const client = apiKeySid
+      ? twilioSDK(apiKeySid, token, { accountSid: sid })
+      : twilioSDK(sid, token);
     let sentCount = 0;
     let failCount = 0;
     const failures = []; // capped + written back so the UI can display per-recipient reasons
