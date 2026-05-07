@@ -222,3 +222,33 @@ describe('computeMetrics — byService', () => {
     expect(m.byService.Pedicure).toEqual({ count: 1, revenue: 60 });
   });
 });
+
+// GG records 100%-discount / comped services with Amount=$0.00 even though
+// the line items still carry pre-discount prices. byMethod must respect the
+// authoritative payment.total=0 and not inflate the bucket with the
+// services array. Synthesized receipts (no payment.total at all) still fall
+// back to summing services so done appts without a receipt aren't dropped.
+describe('computeMetrics — byMethod with $0 receipts', () => {
+  it('respects payment.total=0 instead of falling back to services sum', () => {
+    const m = computeMetrics([
+      tx({ services: [{ price: 50 }], payment: { method: 'cash', total: 50 } }),
+      tx({ services: [{ price: 60 }], payment: { method: 'cash', total: 0 } }), // free service
+    ], TODAY);
+    expect(m.byMethod.cash.total).toBe(50); // not 110
+    expect(m.byMethod.cash.count).toBe(2);  // both still count as transactions
+  });
+  it('falls back to services sum when payment.total is missing entirely (synthesized)', () => {
+    const m = computeMetrics([
+      tx({ services: [{ price: 40 }], payment: { method: 'cash' } }), // no total field
+    ], TODAY);
+    expect(m.byMethod.cash.total).toBe(40);
+    expect(m.byMethod.cash.count).toBe(1);
+  });
+  it('skips rows with neither payment.total nor any services', () => {
+    const m = computeMetrics([
+      tx({ services: [], payment: { method: 'cash' } }),
+    ], TODAY);
+    expect(m.byMethod.cash.total).toBe(0);
+    expect(m.byMethod.cash.count).toBe(0);
+  });
+});

@@ -234,10 +234,21 @@ export function computeMetrics(transactions, today = todayStr()) {
   let methodTotal = 0;
   done.forEach(a => {
     const p = a.payment || {};
-    let total = Number(p.total) || Math.abs(apptRevenue(a));
-    if (total === 0) return;
     const isRefund = a.transactionType === 'refund';
     const sign = isRefund ? -1 : 1;
+    // Treat an explicit p.total === 0 as authoritative ("free service /
+    // 100% discount" — GG records these with Amount=$0.00 even though the
+    // services array still carries the pre-discount price). Only fall back
+    // to summing services when payment.total is genuinely missing
+    // (synthesized receipts from done appts without a payment field). Skip
+    // entirely if neither source yields any data.
+    let total;
+    if (p.total !== undefined && p.total !== null) {
+      total = Number(p.total) || 0;
+    } else {
+      total = Math.abs(apptRevenue(a));
+      if (total === 0) return;
+    }
     if (isRefund) total = -Math.abs(total);
     const m = (p.method === 'card' || p.method === 'cash') ? p.method : 'other';
     const svcRev = Math.abs(apptRevenue(a)); // apptRevenue already flips sign for refunds; we want the magnitude here
