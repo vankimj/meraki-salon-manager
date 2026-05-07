@@ -108,7 +108,7 @@ function buildPreviewHtml(bodyText, promoCode, promoLabel, ctaText, ctaUrl) {
 
 // ── Main view ──────────────────────────────────────────
 export default function MarketingAdmin() {
-  const { showToast, isAdmin, settings } = useApp();
+  const { showToast, isAdmin, settings, updateSettings } = useApp();
   const [campaigns, setCampaigns] = useState(null);
   const [modal,     setModal]     = useState(false);  // false | true | campaign-object (clone)
   const [tab,       setTab]       = useState('campaigns');
@@ -147,8 +147,9 @@ export default function MarketingAdmin() {
   if (!campaigns) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
 
   const TABS = [
-    { id: 'campaigns', label: 'Campaigns' },
-    { id: 'reviews',   label: 'Google Reviews' },
+    { id: 'campaigns',  label: 'Campaigns' },
+    { id: 'automations', label: 'Automations' },
+    { id: 'reviews',    label: 'Google Reviews' },
   ];
 
   return (
@@ -170,6 +171,8 @@ export default function MarketingAdmin() {
 
       {tab === 'reviews' ? (
         <GoogleReviewsPanel />
+      ) : tab === 'automations' ? (
+        <AutomationsPanel settings={settings} updateSettings={updateSettings} isAdmin={isAdmin} showToast={showToast} />
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
@@ -177,7 +180,7 @@ export default function MarketingAdmin() {
             <StatCard label="Messages sent"    value={fmtNum(totalSent)} accent="#3D95CE" />
             <StatCard label="This month"      value={thisMonth}         accent="#7c3aed" />
             <StatCard label="Automations on"  value={`${autoActive} / 2`} accent={autoActive ? '#f59e0b' : '#ccc'}
-              sub={autoActive === 0 ? 'Enable in Admin → Settings' : autoActive === 1 ? '1 active' : 'Birthday + Lapsed'} />
+              sub={autoActive === 0 ? 'Enable in Automations tab' : autoActive === 1 ? '1 active' : 'Birthday + Lapsed'} />
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
@@ -209,6 +212,77 @@ export default function MarketingAdmin() {
           prefill={typeof modal === 'object' ? modal : null}
           onSend={handleSend}
           onClose={() => setModal(false)} />
+      )}
+    </div>
+  );
+}
+
+// ── Automations panel ──────────────────────────────────
+// Birthday + lapsed-client emails. Settings live on the same tenant settings
+// doc the rest of the app uses, so flipping a toggle here updates the
+// Cloud-Function-driven schedule immediately on next save.
+function AutomationsPanel({ settings, updateSettings, isAdmin, showToast }) {
+  const [autoBirthday,   setAutoBirthday]   = useState(!!settings?.autoBirthday);
+  const [autoLapsed,     setAutoLapsed]     = useState(!!settings?.autoLapsed);
+  const [autoLapsedDays, setAutoLapsedDays] = useState(settings?.autoLapsedDays || 60);
+  const [saving,         setSaving]         = useState(false);
+
+  const rows = [
+    { key: 'birthday', label: 'Birthday emails', val: autoBirthday, set: setAutoBirthday,
+      desc: 'Sends a happy birthday email at 10am on each client\'s birthday.' },
+    { key: 'lapsed',   label: 'Lapsed client emails', val: autoLapsed, set: setAutoLapsed,
+      desc: `Sends a "we miss you" re-engagement email every Monday to clients with no visit in the last ${autoLapsedDays} days.` },
+  ];
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateSettings({ ...settings, autoBirthday, autoLapsed, autoLapsedDays });
+      showToast('Automations updated');
+    } catch (e) { showToast('Save failed: ' + e.message, 3000); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+      {rows.map((r, i) => (
+        <div key={r.key} style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: i === 0 ? 'none' : '1px solid #f0f0f0' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>{r.label}</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.5 }}>{r.desc}</div>
+          </div>
+          <button onClick={() => isAdmin && r.set(v => !v)} disabled={!isAdmin}
+            style={{
+              width: 44, height: 24, borderRadius: 12, border: 'none',
+              cursor: isAdmin ? 'pointer' : 'not-allowed', padding: 0,
+              background: r.val ? '#2D7A5F' : '#d1d5db', position: 'relative',
+              transition: 'background .2s', flexShrink: 0, opacity: isAdmin ? 1 : .6,
+            }}>
+            <div style={{
+              position: 'absolute', top: 3, left: r.val ? 22 : 2, width: 18, height: 18,
+              borderRadius: '50%', background: '#fff', transition: 'left .2s',
+              boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+            }} />
+          </button>
+        </div>
+      ))}
+      {autoLapsed && (
+        <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid #f0f0f0' }}>
+          <span style={{ fontSize: 12, color: '#555' }}>Lapse threshold:</span>
+          <input type="number" min={14} max={365} value={autoLapsedDays}
+            disabled={!isAdmin}
+            onChange={e => setAutoLapsedDays(Math.max(14, Number(e.target.value)))}
+            style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '6px 10px', fontSize: 13 }} />
+          <span style={{ fontSize: 12, color: '#aaa' }}>days</span>
+        </div>
+      )}
+      {isAdmin && (
+        <div style={{ padding: '10px 16px 14px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={save} disabled={saving}
+            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: saving ? '#aaa' : '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            {saving ? 'Saving…' : 'Save Automations'}
+          </button>
+        </div>
       )}
     </div>
   );

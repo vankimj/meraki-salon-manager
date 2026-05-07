@@ -9,12 +9,14 @@ import {
 } from '../lib/firestore';
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { groupByCategory, formatPrice, formatDuration, resolveServicePricing } from '../utils/serviceHelpers';
+import {
+  strToMins,
+  techCanDo, techsForService, techsForServices,
+  cartTotalDuration, isTechFreeAt, firstFreeTech, getSlots,
+} from '../lib/booking';
 import { pickTech, startOfWeek, endOfWeek, DEFAULT_ASSIGNMENT_METHOD } from '../lib/techAssignment';
 
 // ── constants ──────────────────────────────────────────
-const BOOKING_START = 9 * 60;
-const BOOKING_END   = 20 * 60;
-const SLOT_STEP     = 30;
 
 const CATEGORY_COLORS = {
   'Manicures': 'var(--tm-primary, #2D7A5F)', 'Pedicures': 'var(--tm-accent, #3D95CE)', 'Gel Nails': '#8B5CF6',
@@ -31,11 +33,6 @@ const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
 // ── helpers ────────────────────────────────────────────
-function strToMins(str) {
-  if (!str) return 0;
-  const [h, m] = str.split(':').map(Number);
-  return h * 60 + m;
-}
 function minsToStr(m) {
   const h = Math.floor(m / 60), min = m % 60;
   const ampm = h >= 12 ? 'PM' : 'AM';
@@ -63,32 +60,6 @@ function applyThemeVars(theme) {
   r.style.setProperty('--tm-dark',      theme.dark);
 }
 
-function techCanDo(tech, serviceId) {
-  // Empty/missing serviceIds means "can do all" (backward compatible default)
-  if (!tech.serviceIds || tech.serviceIds.length === 0) return true;
-  return tech.serviceIds.includes(serviceId);
-}
-function techsForService(techs, service) {
-  if (!service) return techs;
-  return techs.filter(t => techCanDo(t, service.id));
-}
-function isTechFreeAt(tech, slotMins, durationMins, appts) {
-  const relevant = appts.filter(a => a.techId === tech.id || a.techName === tech.name);
-  const end = slotMins + durationMins;
-  return !relevant.some(a => {
-    const aStart = strToMins(a.startTime);
-    const aDur = (a.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (a.duration || 60);
-    return aStart < end && (aStart + aDur) > slotMins;
-  });
-}
-function firstFreeTech(techs, slotMins, durationMins, appts) {
-  return techs.find(t => isTechFreeAt(t, slotMins, durationMins, appts)) || null;
-}
-function getSlots(dur) {
-  const slots = [];
-  for (let m = BOOKING_START; m + dur <= BOOKING_END; m += SLOT_STEP) slots.push(m);
-  return slots;
-}
 
 // ── main component ─────────────────────────────────────
 export default function BookingScreen() {
@@ -108,11 +79,17 @@ export default function BookingScreen() {
   const [step,    setStep]    = useState(0);
   const [flow,    setFlow]    = useState(null);   // 'time-first' | 'tech-first'
   const [pickedTech, setPickedTech] = useState(null); // populated in tech-first mode
-  // Multi-service cart. Each item: { id, service, option, tech, date, slot, removal }
-  // tech: undefined=not picked, null=no preference, {…}=specific tech
+  // Multi-service cart. Each item: { id, service, option, removal }.
+  // The whole cart is booked as ONE appointment with a single tech, single
+  // date, single start time and a summed duration — see cartTech / cartDate /
+  // cartSlot below.
   const [cart, setCart] = useState([]);
-  // Per-date appointment cache so each cart item's date picker can check
-  // availability without refetching every render.
+  // Cart-level tech / date / slot (shared by every service in the cart).
+  // cartTech: undefined=not picked, null=no preference, {…}=specific tech.
+  const [cartTech, setCartTech] = useState(undefined);
+  const [cartDate, setCartDate] = useState('');
+  const [cartSlot, setCartSlot] = useState(null);
+  // Per-date appointment cache for the slot picker.
   const [apptsByDate, setApptsByDate] = useState({});
   const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '' });
   const [submitting,      setSubmitting]      = useState(false);
@@ -198,17 +175,21 @@ export default function BookingScreen() {
   }, []);
 
   // Cart helpers ─────────────────────────────────────────
-  // In tech-first mode, the chosen tech is auto-assigned to every new line.
   function addToCart(svc, opt) {
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
-    const initialTech = flow === 'tech-first' && pickedTech ? pickedTech : undefined;
-    setCart(c => [...c, { id, service: svc, option: opt || null, tech: initialTech, date: '', slot: null, removal: false }]);
+    setCart(c => [...c, { id, service: svc, option: opt || null, removal: false }]);
+    // Adding a service may invalidate prior tech/slot choices (e.g. picked tech
+    // can't do the new service). Reset downstream picks; user re-picks at step 2/3.
+    setCartTech(t => (t === undefined ? t : t)); // no-op, kept for symmetry
+    setCartSlot(null);
   }
   function removeFromCart(itemId) {
     setCart(c => c.filter(i => i.id !== itemId));
+    setCartSlot(null);
   }
   function updateCartItem(itemId, patch) {
     setCart(c => c.map(i => i.id === itemId ? { ...i, ...patch } : i));
+    if (Object.prototype.hasOwnProperty.call(patch, 'removal')) setCartSlot(null);
   }
 
   // Lazy-fetch + cache appointments per date for any cart item that needs them.
@@ -233,7 +214,7 @@ export default function BookingScreen() {
   }
 
   async function handleBook() {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || !cartDate || cartSlot == null) return;
     setSubmitting(true);
     try {
       // Auto-create a client record once per booking session.
@@ -250,94 +231,84 @@ export default function BookingScreen() {
         } catch (e) { console.error('[Booking] auto-create client failed:', e); }
       }
 
-      // Pre-fetch week appointments once per unique week the cart spans —
-      // needed for leastBusyWeek and lowestRevenueWeek assignment methods.
+      const removalDur = 15;
+      const removalPrice = Number(cfg?.removalPrice ?? 15);
+      const totalDur = cartTotalDuration(cart, removalDur);
+      const dayAppts = apptsByDate[cartDate] || [];
+      const eligible = techsForServices(techs, cart.map(c => c.service));
+
+      // Resolve tech: explicit pick or auto-assign via configured method.
       const method = cfg?.assignmentMethod || DEFAULT_ASSIGNMENT_METHOD;
-      const weekCache = {};
-      if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
-        const weeks = [...new Set(cart.map(it => startOfWeek(it.date)))];
-        await Promise.all(weeks.map(async wk => {
-          weekCache[wk] = await fetchAppointmentsByRange(wk, endOfWeek(wk)).catch(() => []);
-        }));
-      }
-      // Pre-fetch today's turn roster once if any cart item is for today AND
-      // method is turnQueue. Future-dated items skip the roster automatically.
-      const today = dateStr(todayDate());
-      let todayRoster = null;
-      if (method === 'turnQueue' && cart.some(it => it.date === today)) {
-        const r = await fetchTurnRoster(today).catch(() => null);
-        todayRoster = (r && r.roster) || [];
-      }
+      let assignedTech = cartTech;
+      let techRequestType = 'specific';
       let rrIdx = cfg?.roundRobinIndex || 0;
       const startingRrIdx = rrIdx;
-
-      const created = [];
-      for (const item of cart) {
-        const { service: svc, option: opt, tech: itemTech, date: itemDate, slot: itemSlot } = item;
-        const resolved = resolveServicePricing(svc, opt);
-        const dur   = resolved.duration || 60;
-        const price = resolved.price    || 0;
-        const dayAppts = apptsByDate[itemDate] || [];
-        const eligible = techsForService(techs, svc);
-        let assignedTech = itemTech;
-        let techRequestType = 'specific';
-        if (itemTech === null) {
-          techRequestType = 'auto';
-          const free = eligible.filter(t => isTechFreeAt(t, itemSlot, dur, dayAppts));
-          const weekAppts = weekCache[startOfWeek(itemDate)] || [];
-          // Roster only applies for today's bookings; future dates fall back.
-          const rosterForItem = (method === 'turnQueue' && itemDate === today) ? todayRoster : null;
-          const result = pickTech({
-            method, freeTechs: free,
-            dayAppts, weekAppts, turnRoster: rosterForItem, roundRobinIndex: rrIdx,
-          });
-          assignedTech = result.tech || firstFreeTech(eligible, itemSlot, dur, dayAppts);
-          rrIdx = result.nextRoundRobinIndex;
+      if (cartTech === null) {
+        techRequestType = 'auto';
+        const free = eligible.filter(t => isTechFreeAt(t, cartSlot, totalDur, dayAppts));
+        let weekAppts = [];
+        if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
+          const wk = startOfWeek(cartDate);
+          weekAppts = await fetchAppointmentsByRange(wk, endOfWeek(wk)).catch(() => []);
         }
-        const h = Math.floor(itemSlot / 60), m = itemSlot % 60;
+        let turnRoster = null;
+        const today = dateStr(todayDate());
+        if (method === 'turnQueue' && cartDate === today) {
+          const r = await fetchTurnRoster(today).catch(() => null);
+          turnRoster = (r && r.roster) || [];
+        }
+        const result = pickTech({
+          method, freeTechs: free,
+          dayAppts, weekAppts, turnRoster, roundRobinIndex: rrIdx,
+        });
+        assignedTech = result.tech || firstFreeTech(eligible, cartSlot, totalDur, dayAppts);
+        rrIdx = result.nextRoundRobinIndex;
+      }
 
-        // Build service line + optional removal line. Removal price comes from
-        // bookingConfig (mirror of settings.removalPrice). Removal duration
-        // defaults to 15 min — adjust if needed in a future setting.
-        const removalAddPrice = item.removal && svc.canRequireRemoval ? Number(cfg?.removalPrice ?? 15) : 0;
-        const services = [{
+      // Build the merged services[] array with optional removal lines.
+      const services = [];
+      cart.forEach(item => {
+        const { service: svc, option: opt } = item;
+        const resolved = resolveServicePricing(svc, opt);
+        services.push({
           id: svc.id,
           name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name,
-          price, duration: dur,
-          optionId: opt?.id || null, optionName: opt?.name || null,
-        }];
-        if (removalAddPrice > 0) {
+          price: resolved.price || 0,
+          duration: resolved.duration || 60,
+          optionId: opt?.id || null,
+          optionName: opt?.name || null,
+        });
+        if (item.removal && svc.canRequireRemoval && removalPrice > 0) {
           services.push({
             id: 'removal',
             name: `Removal (${svc.name})`,
-            price: removalAddPrice,
-            duration: 15,
+            price: removalPrice,
+            duration: removalDur,
             isRemoval: true,
           });
         }
-        const totalDur = services.reduce((s, sv) => s + (Number(sv.duration) || 0), 0);
+      });
 
-        const appt = {
-          date:        itemDate,
-          startTime:   `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
-          duration:    totalDur,
-          techId:      assignedTech?.id   || null,
-          techName:    assignedTech?.name || 'TBD',
-          techRequestType,
-          clientId,
-          clientName:  form.name.trim(),
-          clientPhone: form.phone.trim(),
-          clientEmail: form.email.trim() || gUser?.email || null,
-          services,
-          status:      'scheduled',
-          notes:       form.notes.trim() || null,
-          source:      'online_booking',
-          createdAt:   new Date().toISOString(),
-          updatedAt:   new Date().toISOString(),
-        };
-        await createAppointment(appt);
-        created.push({ ...appt, _service: svc, _option: opt, _tech: assignedTech });
-      }
+      const h = Math.floor(cartSlot / 60), m = cartSlot % 60;
+      const appt = {
+        date:        cartDate,
+        startTime:   `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
+        duration:    totalDur,
+        techId:      assignedTech?.id   || null,
+        techName:    assignedTech?.name || 'TBD',
+        techRequestType,
+        clientId,
+        clientName:  form.name.trim(),
+        clientPhone: form.phone.trim(),
+        clientEmail: form.email.trim() || gUser?.email || null,
+        services,
+        status:      'scheduled',
+        notes:       form.notes.trim() || null,
+        source:      'online_booking',
+        createdAt:   new Date().toISOString(),
+        updatedAt:   new Date().toISOString(),
+      };
+      await createAppointment(appt);
 
       // Persist round-robin counter so the next booking continues the cycle.
       if (rrIdx !== startingRrIdx && cfg) {
@@ -345,7 +316,7 @@ export default function BookingScreen() {
         catch (e) { console.warn('[Booking] roundRobin persist failed:', e); }
       }
 
-      setConfirmed(created);
+      setConfirmed({ ...appt, _tech: assignedTech, _cartItems: cart });
     } catch (e) {
       console.error('[Booking] failed:', e);
       alert('Booking failed. Please try again or call us.');
@@ -401,7 +372,7 @@ export default function BookingScreen() {
             onPick={f => {
               setFlow(f);
               setStep(1);
-              if (f === 'time-first') setPickedTech(null);
+              if (f === 'time-first') { setPickedTech(null); setCartTech(undefined); }
             }}
           />
         )}
@@ -412,22 +383,22 @@ export default function BookingScreen() {
             onAdd={addToCart}
             onRemove={removeFromCart}
             onProceed={() => setStep(2)}
-            onSwitchFlow={() => { setStep(0); setCart([]); }}
+            onSwitchFlow={() => { setStep(0); setCart([]); setCartTech(undefined); setCartDate(''); setCartSlot(null); }}
           />
         )}
         {step === 1 && flow === 'tech-first' && (
           <Step1PickStylist
             techs={techs}
             picked={pickedTech}
-            onPick={t => setPickedTech(t)}
+            onPick={t => { setPickedTech(t); setCartTech(t); }}
             onProceed={() => setStep(2)}
-            onSwitchFlow={() => { setStep(0); setCart([]); setPickedTech(null); }}
+            onSwitchFlow={() => { setStep(0); setCart([]); setPickedTech(null); setCartTech(undefined); setCartDate(''); setCartSlot(null); }}
           />
         )}
         {step === 2 && flow === 'time-first' && (
-          <Step2AssignTechs
+          <Step2PickTech
             cart={cart} allTechs={techs}
-            updateCartItem={updateCartItem}
+            cartTech={cartTech} setCartTech={setCartTech}
             onProceed={() => setStep(3)}
             onBack={() => setStep(1)}
           />
@@ -443,11 +414,12 @@ export default function BookingScreen() {
           />
         )}
         {step === 3 && (
-          <Step3ScheduleEach
-            cart={cart} allTechs={techs}
-            apptsByDate={apptsByDate}
-            ensureApptsForDate={ensureApptsForDate}
-            updateCartItem={updateCartItem}
+          <Step3PickSlot
+            cart={cart} cartTech={cartTech} allTechs={techs}
+            cartDate={cartDate} setCartDate={setCartDate}
+            cartSlot={cartSlot} setCartSlot={setCartSlot}
+            apptsByDate={apptsByDate} ensureApptsForDate={ensureApptsForDate}
+            removalDur={15}
             onProceed={() => {
               const haveAll = form.name.trim() && form.phone.trim();
               setStep(haveAll ? 5 : 4);
@@ -469,6 +441,7 @@ export default function BookingScreen() {
         {step === 5 && (
           <Step5Confirm
             cart={cart} allTechs={techs}
+            cartTech={cartTech} cartDate={cartDate} cartSlot={cartSlot}
             apptsByDate={apptsByDate}
             form={form} submitting={submitting}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
@@ -820,77 +793,58 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 }
 
 // ── Step 2: Assign a stylist to each cart item ─────────
-function Step2AssignTechs({ cart, allTechs, updateCartItem, onProceed, onBack }) {
-  const allTechsAssigned = cart.every(item => item.tech !== undefined);
+function Step2PickTech({ cart, allTechs, cartTech, setCartTech, onProceed, onBack }) {
+  const eligible = techsForServices(allTechs, cart.map(c => c.service));
+  const totalDur = cartTotalDuration(cart);
+  const picked = cartTech !== undefined;
+  const cartLabel = cart.length === 1 ? '1 service' : `${cart.length} services`;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
-      <StepTitle>Choose a stylist for each service</StepTitle>
+      <StepTitle>Choose your stylist</StepTitle>
       <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 18, lineHeight: 1.5 }}>
-        Each service can have its own stylist (or pick "no preference" and we'll assign someone).
+        One stylist will perform all {cartLabel} ({totalDur} min total) back-to-back. Pick a favorite or let us assign someone available.
       </div>
-      {cart.map((item, idx) => {
-        const eligible = techsForService(allTechs, item.service);
-        const filteredOut = allTechs.length - eligible.length;
-        const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
-        return (
-          <div key={item.id} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 16, marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #f1f1f1' }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase' }}>Service {idx + 1}</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginTop: 2 }}>{itemLabel}</div>
-              </div>
-              {item.tech !== undefined && (
-                <div style={{ fontSize: 12, color: 'var(--tm-primary, #2D7A5F)', fontWeight: 700 }}>
-                  ✓ {item.tech === null ? 'No preference' : item.tech.name}
-                </div>
-              )}
-            </div>
 
-            {eligible.length === 0 ? (
-              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: 12, textAlign: 'center' }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#7c2d12' }}>No stylists perform this service</div>
-                <div style={{ fontSize: 11, color: '#9a3412', marginTop: 3 }}>Remove it from your cart to continue.</div>
-              </div>
-            ) : (
-              <>
-                {filteredOut > 0 && (
-                  <div style={{ fontSize: 11, color: '#888', marginBottom: 10 }}>
-                    Showing only stylists who perform this service.
-                  </div>
-                )}
-                <button onClick={() => updateCartItem(item.id, { tech: null })} style={{
-                  display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px',
-                  borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%',
-                  marginBottom: 10,
-                  border: `1.5px solid ${item.tech === null ? 'var(--tm-primary, #2D7A5F)' : '#e8e8e8'}`,
-                  background: item.tech === null ? '#f0f9f5' : '#fff',
-                }}>
-                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>💅</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>No preference</div>
-                    <div style={{ fontSize: 11, color: '#888' }}>We'll pick an available stylist</div>
-                  </div>
-                </button>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
-                  {eligible.map(t => (
-                    <TechCard key={t.id} tech={t}
-                      selected={item.tech?.id === t.id}
-                      onSelect={() => updateCartItem(item.id, { tech: t })} />
-                  ))}
-                </div>
-              </>
-            )}
+      {eligible.length === 0 ? (
+        <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 18, textAlign: 'center', marginBottom: 18 }}>
+          <div style={{ fontSize: 28, marginBottom: 6 }}>🤝</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#7c2d12', marginBottom: 6 }}>No single stylist offers all of these services</div>
+          <div style={{ fontSize: 12, color: '#9a3412', lineHeight: 1.6 }}>
+            To keep your visit on one chair with one stylist, please go back and remove a service, or call us to split it across multiple appointments.
           </div>
-        );
-      })}
+        </div>
+      ) : (
+        <>
+          <button onClick={() => setCartTech(null)} style={{
+            display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+            borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%',
+            marginBottom: 12,
+            border: `1.5px solid ${cartTech === null ? 'var(--tm-primary, #2D7A5F)' : '#e8e8e8'}`,
+            background: cartTech === null ? '#f0f9f5' : '#fff',
+          }}>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>💅</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>No preference</div>
+              <div style={{ fontSize: 11, color: '#888' }}>We'll pick an available stylist for you</div>
+            </div>
+          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
+            {eligible.map(t => (
+              <TechCard key={t.id} tech={t}
+                selected={cartTech?.id === t.id}
+                onSelect={() => setCartTech(t)} />
+            ))}
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
         <button onClick={onBack} style={{ flex: 1, padding: '14px', borderRadius: 12, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
           ← Back
         </button>
-        <button onClick={onProceed} disabled={!allTechsAssigned}
-          style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', background: allTechsAssigned ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 15, fontWeight: 700, cursor: allTechsAssigned ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+        <button onClick={onProceed} disabled={!picked || eligible.length === 0}
+          style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', background: (picked && eligible.length > 0) ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 15, fontWeight: 700, cursor: (picked && eligible.length > 0) ? 'pointer' : 'default', fontFamily: 'inherit' }}>
           Continue →
         </button>
       </div>
@@ -918,109 +872,84 @@ function TechCard({ tech, selected, onSelect }) {
   );
 }
 
-// ── Step 3: Schedule each cart item ────────────────────
-function Step3ScheduleEach({ cart, allTechs, apptsByDate, ensureApptsForDate, updateCartItem, onProceed, onBack }) {
-  const allScheduled = cart.every(item => item.date && item.slot != null);
+// ── Step 3: Pick a date + start time for the whole cart ─
+function Step3PickSlot({ cart, cartTech, allTechs, cartDate, setCartDate, cartSlot, setCartSlot, apptsByDate, ensureApptsForDate, removalDur, onProceed, onBack }) {
+  const totalDur = cartTotalDuration(cart, removalDur);
+  const eligible = techsForServices(allTechs, cart.map(c => c.service));
+  const allSlots = getSlots(totalDur);
+  const dayAppts = cartDate ? apptsByDate[cartDate] : null;
+
+  useEffect(() => { if (cartDate) ensureApptsForDate(cartDate); }, [cartDate]); // eslint-disable-line
+
+  function isAvailable(slotMins) {
+    if (!dayAppts) return false;
+    if (cartTech) return isTechFreeAt(cartTech, slotMins, totalDur, dayAppts);
+    return eligible.some(t => isTechFreeAt(t, slotMins, totalDur, dayAppts));
+  }
+  const hasAny = dayAppts && allSlots.some(s => isAvailable(s));
+  const techLabel = cartTech ? cartTech.name : 'No preference';
+  const cartLabel = cart.length === 1 ? '1 service' : `${cart.length} services`;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
-      <StepTitle>Pick a date &amp; time for each service</StepTitle>
+      <StepTitle>Pick a date &amp; start time</StepTitle>
       <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 18, lineHeight: 1.5 }}>
-        Schedule each service individually — same day or different days, your call.
+        Your {cartLabel} ({totalDur} min total) will be done back-to-back with <strong>{techLabel}</strong>.
       </div>
-      {cart.map((item, idx) => (
-        <CartItemSchedule
-          key={item.id}
-          item={item} idx={idx}
-          allTechs={allTechs}
-          apptsByDate={apptsByDate}
-          ensureApptsForDate={ensureApptsForDate}
-          updateCartItem={updateCartItem}
-        />
-      ))}
+
+      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 16 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
+          <div style={{ flex: '1 1 280px', minWidth: 0 }}>
+            <BookingCalendar value={cartDate} onChange={d => { setCartDate(d); setCartSlot(null); }} />
+          </div>
+          {cartDate && (
+            <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#555', marginBottom: 12 }}>{fmtDate(cartDate)}</div>
+              {dayAppts == null ? (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner /></div>
+              ) : hasAny ? (
+                <>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                    Showing slots that fit the full {totalDur} min visit.
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: 6 }}>
+                    {allSlots.map(m => {
+                      const avail = isAvailable(m);
+                      const isSel = cartSlot === m;
+                      return (
+                        <button key={m} onClick={() => avail && setCartSlot(m)} disabled={!avail}
+                          style={{
+                            padding: '12px 4px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                            border: `1.5px solid ${isSel ? 'var(--tm-primary, #2D7A5F)' : avail ? '#c3e6d8' : '#ececec'}`,
+                            background: isSel ? 'var(--tm-primary, #2D7A5F)' : avail ? '#f0f9f5' : '#fafafa',
+                            color: isSel ? '#fff' : avail ? '#1a6040' : '#ccc',
+                            cursor: avail ? 'pointer' : 'default',
+                          }}>
+                          {minsToStr(m)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <div style={{ textAlign: 'center', padding: '24px 16px', background: '#fafafa', borderRadius: 12, border: '1px solid #ececec' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>No availability on this date</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Try a different day</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
 
       <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
         <button onClick={onBack} style={{ flex: 1, padding: '14px', borderRadius: 12, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
           ← Back
         </button>
-        <button onClick={onProceed} disabled={!allScheduled}
-          style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', background: allScheduled ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 15, fontWeight: 700, cursor: allScheduled ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+        <button onClick={onProceed} disabled={!cartDate || cartSlot == null}
+          style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', background: (cartDate && cartSlot != null) ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 15, fontWeight: 700, cursor: (cartDate && cartSlot != null) ? 'pointer' : 'default', fontFamily: 'inherit' }}>
           Continue →
         </button>
-      </div>
-    </div>
-  );
-}
-
-function CartItemSchedule({ item, idx, allTechs, apptsByDate, ensureApptsForDate, updateCartItem }) {
-  const dur = resolveServicePricing(item.service, item.option).duration || 60;
-  const allSlots = getSlots(dur);
-  const eligible = techsForService(allTechs, item.service);
-  const dayAppts = item.date ? apptsByDate[item.date] : null;
-
-  useEffect(() => { if (item.date) ensureApptsForDate(item.date); }, [item.date]); // eslint-disable-line
-
-  function isAvailable(slotMins) {
-    if (!dayAppts) return false;
-    if (item.tech) return isTechFreeAt(item.tech, slotMins, dur, dayAppts);
-    // No preference — at least one eligible tech must be free.
-    return eligible.some(t => isTechFreeAt(t, slotMins, dur, dayAppts));
-  }
-  const hasAny = dayAppts && allSlots.some(s => isAvailable(s));
-  const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
-  const techLabel = item.tech ? item.tech.name : 'No preference';
-
-  return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 16, marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 10, borderBottom: '1px solid #f1f1f1' }}>
-        <div>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase' }}>Service {idx + 1} · {dur} min</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginTop: 2 }}>{itemLabel}</div>
-          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Stylist: {techLabel}</div>
-        </div>
-        {item.date && item.slot != null && (
-          <div style={{ fontSize: 12, color: 'var(--tm-primary, #2D7A5F)', fontWeight: 700, textAlign: 'right' }}>
-            ✓ {fmtDate(item.date)}<br/>{minsToStr(item.slot)}
-          </div>
-        )}
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
-        <div style={{ flex: '1 1 280px', minWidth: 0 }}>
-          <BookingCalendar value={item.date} onChange={d => updateCartItem(item.id, { date: d, slot: null })} />
-        </div>
-        {item.date && (
-          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#555', marginBottom: 12 }}>{fmtDate(item.date)}</div>
-            {dayAppts == null ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><Spinner /></div>
-            ) : hasAny ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: 6 }}>
-                {allSlots.map(m => {
-                  const avail = isAvailable(m);
-                  const isSel = item.slot === m;
-                  return (
-                    <button key={m} onClick={() => avail && updateCartItem(item.id, { slot: m })} disabled={!avail}
-                      style={{
-                        padding: '12px 4px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
-                        border: `1.5px solid ${isSel ? 'var(--tm-primary, #2D7A5F)' : avail ? '#c3e6d8' : '#ececec'}`,
-                        background: isSel ? 'var(--tm-primary, #2D7A5F)' : avail ? '#f0f9f5' : '#fafafa',
-                        color: isSel ? '#fff' : avail ? '#1a6040' : '#ccc',
-                        cursor: avail ? 'pointer' : 'default',
-                      }}>
-                      {minsToStr(m)}
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '24px 16px', background: '#fafafa', borderRadius: 12, border: '1px solid #ececec' }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#555' }}>No availability on this date</div>
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Try a different day</div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -1124,83 +1053,89 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
 }
 
 // ── Step 5: Confirm (multi-item) ────────────────────────
-function Step5Confirm({ cart, allTechs, apptsByDate, form, submitting, removalPrice, updateCartItem, onConfirm, onBack, onEditInfo }) {
-  const removalCount = cart.filter(it => it.removal).length;
+function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDate, form, submitting, removalPrice, updateCartItem, onConfirm, onBack, onEditInfo }) {
+  const removalDur = 15;
   const totalPrice = cart.reduce((sum, item) => {
     const base = resolveServicePricing(item.service, item.option).price || 0;
-    return sum + base + (item.removal ? Number(removalPrice) || 0 : 0);
+    return sum + base + (item.removal && item.service.canRequireRemoval ? Number(removalPrice) || 0 : 0);
   }, 0);
-  const totalDur   = cart.reduce((sum, item) => sum + (resolveServicePricing(item.service, item.option).duration || 0), 0);
+  const totalDur = cartTotalDuration(cart, removalDur);
+
+  // Resolve "no preference" to whichever tech is actually free for the full window
+  const eligible = techsForServices(allTechs, cart.map(c => c.service));
+  const dayAppts = apptsByDate[cartDate] || [];
+  const assignedTech = cartTech !== null ? cartTech : firstFreeTech(eligible, cartSlot, totalDur, dayAppts);
+  const endSlot = (cartSlot ?? 0) + totalDur;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <StepTitle>Confirm booking</StepTitle>
 
-      {/* Per-item summary cards */}
-      {cart.map((item, idx) => {
-        const resolved = resolveServicePricing(item.service, item.option);
-        const dur = resolved.duration || 60;
-        const eligible = techsForService(allTechs, item.service);
-        const dayAppts = apptsByDate[item.date] || [];
-        const assignedTech = item.tech !== null ? item.tech : firstFreeTech(eligible, item.slot, dur, dayAppts);
-        const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
-        return (
-          <div key={item.id} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,.04)' }}>
-            <div style={{ background: `linear-gradient(135deg,${CATEGORY_COLORS[item.service?.category] || 'var(--tm-primary, #2D7A5F)'},var(--tm-accent, #3D95CE))`, padding: '14px 18px' }}>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Service {idx + 1}</div>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginTop: 2 }}>{itemLabel}</div>
-              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,.9)', background: 'rgba(255,255,255,.15)', borderRadius: 6, padding: '2px 8px' }}>${resolved.price}</span>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,.9)', background: 'rgba(255,255,255,.15)', borderRadius: 6, padding: '2px 8px' }}>⏱ {dur} min</span>
-              </div>
-            </div>
-            {[
-              { icon: '👩‍💼', label: 'Stylist', value: assignedTech?.name || 'Any available' },
-              { icon: '📅',  label: 'Date',    value: fmtDate(item.date) },
-              { icon: '🕐',  label: 'Time',    value: minsToStr(item.slot) },
-            ].map(({ icon, label, value }) => (
-              <div key={label} style={{ display: 'flex', alignItems: 'center', padding: '10px 18px', borderTop: '1px solid #f0f0f0', gap: 10 }}>
-                <span style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
-                <span style={{ fontSize: 11, color: '#aaa', width: 56, flexShrink: 0 }}>{label}</span>
-                <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
-              </div>
-            ))}
-            {item.service.canRequireRemoval && (
-              <div style={{ padding: '12px 18px', borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>Do you need a removal first?</div>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
-                  Remove an existing set of {item.service.category === 'Acrylics' ? 'acrylics' : 'gel/dip'} before this service. Adds <strong>${Number(removalPrice).toFixed(2)}</strong>.
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {[true, false].map(v => {
-                    const sel = item.removal === v;
-                    return (
-                      <button key={String(v)} onClick={() => updateCartItem(item.id, { removal: v })}
-                        style={{ flex: 1, padding: '8px 10px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: `1.5px solid ${sel ? (v ? '#2D7A5F' : '#3D95CE') : '#e0e0e0'}`, background: sel ? (v ? '#EDFAF3' : '#EBF4FB') : '#fff', color: sel ? (v ? '#166534' : '#1a5f8a') : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
-                        {v ? `✓ Yes — add removal (+$${Number(removalPrice).toFixed(2)})` : 'No removal'}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+      {/* Combined appointment card */}
+      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,.04)' }}>
+        <div style={{ background: `linear-gradient(135deg,${CATEGORY_COLORS[cart[0]?.service?.category] || 'var(--tm-primary, #2D7A5F)'},var(--tm-accent, #3D95CE))`, padding: '14px 18px' }}>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Your visit</div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginTop: 2 }}>
+            {cart.length} {cart.length === 1 ? 'service' : 'services'} · {totalDur} min
           </div>
-        );
-      })}
-
-      {/* Total + customer info */}
-      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{cart.length} {cart.length === 1 ? 'service' : 'services'} · {totalDur} min total</span>
-          <span style={{ fontSize: 17, fontWeight: 800, color: '#1a1a1a' }}>${totalPrice}</span>
+          <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,.9)', background: 'rgba(255,255,255,.15)', borderRadius: 6, padding: '2px 8px' }}>${totalPrice}</span>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,.9)', background: 'rgba(255,255,255,.15)', borderRadius: 6, padding: '2px 8px' }}>⏱ {minsToStr(cartSlot)} – {minsToStr(endSlot)}</span>
+          </div>
         </div>
+        {[
+          { icon: '👩‍💼', label: 'Stylist', value: assignedTech?.name || 'Any available' },
+          { icon: '📅',  label: 'Date',    value: fmtDate(cartDate) },
+          { icon: '🕐',  label: 'Time',    value: minsToStr(cartSlot) },
+        ].map(({ icon, label, value }) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', padding: '10px 18px', borderTop: '1px solid #f0f0f0', gap: 10 }}>
+            <span style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
+            <span style={{ fontSize: 11, color: '#aaa', width: 56, flexShrink: 0 }}>{label}</span>
+            <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
+          </div>
+        ))}
+
+        {/* Service breakdown + per-service removal toggles */}
+        <div style={{ borderTop: '1px solid #f0f0f0', padding: '10px 18px', background: '#fafafa' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Services</div>
+          {cart.map((item, idx) => {
+            const resolved = resolveServicePricing(item.service, item.option);
+            const dur = resolved.duration || 60;
+            const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
+            return (
+              <div key={item.id} style={{ marginBottom: idx === cart.length - 1 ? 0 : 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 600 }}>{itemLabel}</span>
+                  <span style={{ fontSize: 12, color: '#888' }}>${resolved.price} · {dur} min</span>
+                </div>
+                {item.service.canRequireRemoval && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                    {[true, false].map(v => {
+                      const sel = item.removal === v;
+                      return (
+                        <button key={String(v)} onClick={() => updateCartItem(item.id, { removal: v })}
+                          style={{ flex: 1, padding: '6px 8px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1.5px solid ${sel ? (v ? '#2D7A5F' : '#3D95CE') : '#e0e0e0'}`, background: sel ? (v ? '#EDFAF3' : '#EBF4FB') : '#fff', color: sel ? (v ? '#166534' : '#1a5f8a') : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                          {v ? `+ Removal $${Number(removalPrice).toFixed(0)}` : 'No removal'}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Customer info */}
+      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 16 }}>
         {[
           { icon: '👤',  label: 'Name',  value: form.name },
           { icon: '📞',  label: 'Phone', value: form.phone },
           form.email && { icon: '✉️', label: 'Email', value: form.email },
           form.notes && { icon: '📝', label: 'Notes', value: form.notes },
-        ].filter(Boolean).map(({ icon, label, value }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', padding: '10px 18px', borderTop: '1px solid #f0f0f0', gap: 10 }}>
+        ].filter(Boolean).map(({ icon, label, value }, i) => (
+          <div key={label} style={{ display: 'flex', alignItems: 'center', padding: '10px 18px', borderTop: i === 0 ? 'none' : '1px solid #f0f0f0', gap: 10 }}>
             <span style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
             <span style={{ fontSize: 11, color: '#aaa', width: 56, flexShrink: 0 }}>{label}</span>
             <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
@@ -1217,7 +1152,7 @@ function Step5Confirm({ cart, allTechs, apptsByDate, form, submitting, removalPr
 
       <button onClick={onConfirm} disabled={submitting}
         style={{ width: '100%', padding: '16px', borderRadius: 14, border: 'none', background: submitting ? '#aaa' : 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 16, fontWeight: 800, cursor: submitting ? 'default' : 'pointer', fontFamily: 'inherit', marginBottom: 10, letterSpacing: '.01em' }}>
-        {submitting ? 'Booking…' : `✓ Confirm ${cart.length} ${cart.length === 1 ? 'Appointment' : 'Appointments'}`}
+        {submitting ? 'Booking…' : '✓ Confirm Booking'}
       </button>
       <BackBtn onClick={onBack} />
       <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 12, lineHeight: 1.6 }}>
@@ -1229,13 +1164,18 @@ function Step5Confirm({ cart, allTechs, apptsByDate, form, submitting, removalPr
 
 // ── Success ────────────────────────────────────────────
 function SuccessScreen({ appts, techs, webCfg }) {
-  const list = Array.isArray(appts) ? appts : [appts];
+  const a = Array.isArray(appts) ? appts[0] : appts;
+  const tech = a?._tech || techs?.find(t => t.id === a?.techId) || null;
+  const cartItems = a?._cartItems || [];
+  const firstSvc = cartItems[0]?.service;
+  const color = CATEGORY_COLORS[firstSvc?.category] || 'var(--tm-primary, #2D7A5F)';
   const address = webCfg?.address || '5029 Olentangy River Rd\nColumbus, OH 43214';
   const addressOneLine = address.replace(/\n/g, ', ');
   const mapsUrl = webCfg?.mapsUrl || `https://maps.google.com/?q=${encodeURIComponent(addressOneLine)}`;
   const phone = webCfg?.phone?.trim();
   const telHref = phone ? `tel:${phone.replace(/[^\d+]/g, '')}` : null;
-  const sendEmail = list.find(a => a.clientEmail)?.clientEmail;
+  const sendEmail = a?.clientEmail;
+
   return (
     <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', display: 'flex', flexDirection: 'column' }}>
       <div style={{ background: 'var(--tm-grad-dark, linear-gradient(135deg,#1e6b50,#2D7A5F 40%,#3D7FBF))', padding: '20px 20px 40px' }}>
@@ -1250,39 +1190,44 @@ function SuccessScreen({ appts, techs, webCfg }) {
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a1a', marginBottom: 6 }}>You're booked!</div>
           <div style={{ fontSize: 14, color: '#888', lineHeight: 1.7 }}>
-            {list.length === 1
-              ? <>See you on <strong style={{ color: '#333' }}>{fmtDate(list[0].date)}</strong> at <strong style={{ color: '#333' }}>{minsToStr(strToMins(list[0].startTime))}</strong></>
-              : <>{list.length} appointments confirmed.</>}
+            See you on <strong style={{ color: '#333' }}>{fmtDate(a?.date)}</strong> at <strong style={{ color: '#333' }}>{minsToStr(strToMins(a?.startTime))}</strong>
             {sendEmail && (
               <><br /><span style={{ fontSize: 12, color: '#bbb' }}>Confirmation sent to {sendEmail}</span></>
             )}
           </div>
         </div>
 
-        {list.map((a, idx) => {
-          const svc  = a._service;
-          const opt  = a._option;
-          const tech = a._tech || techs?.find(t => t.id === a.techId) || null;
-          const color = CATEGORY_COLORS[svc?.category] || 'var(--tm-primary, #2D7A5F)';
-          const label = opt?.name ? `${svc?.name} — ${opt.name}` : svc?.name;
-          return (
-            <div key={idx} style={{ background: '#fff', borderRadius: 14, padding: '14px 18px', boxShadow: '0 2px 8px rgba(0,0,0,.06)', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-                <ServiceThumb svc={svc} color={color} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{label}</div>
-                  <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{fmtDate(a.date)} · {minsToStr(strToMins(a.startTime))}</div>
-                </div>
+        <div style={{ background: '#fff', borderRadius: 14, padding: '14px 18px', boxShadow: '0 2px 8px rgba(0,0,0,.06)', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+            <ServiceThumb svc={firstSvc} color={color} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>
+                {cartItems.length === 1
+                  ? (cartItems[0].option?.name ? `${firstSvc?.name} — ${cartItems[0].option.name}` : firstSvc?.name)
+                  : `${cartItems.length} services · ${a?.duration} min`}
               </div>
-              {a.techName !== 'TBD' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid #f5f5f5' }}>
-                  {tech ? <TechAvatar tech={tech} size={28} /> : <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>👩‍💼</span>}
-                  <span style={{ fontSize: 12, color: '#666' }}>with {a.techName}</span>
-                </div>
-              )}
+              <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{fmtDate(a?.date)} · {minsToStr(strToMins(a?.startTime))}</div>
             </div>
-          );
-        })}
+          </div>
+          {cartItems.length > 1 && (
+            <div style={{ borderTop: '1px solid #f5f5f5', paddingTop: 8, marginBottom: 4 }}>
+              {cartItems.map((it, i) => {
+                const lbl = it.option?.name ? `${it.service.name} — ${it.option.name}` : it.service.name;
+                return (
+                  <div key={it.id} style={{ fontSize: 12, color: '#666', padding: '3px 0', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>{i + 1}. {lbl}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {a?.techName && a.techName !== 'TBD' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid #f5f5f5' }}>
+              {tech ? <TechAvatar tech={tech} size={28} /> : <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>👩‍💼</span>}
+              <span style={{ fontSize: 12, color: '#666' }}>with {a.techName}</span>
+            </div>
+          )}
+        </div>
 
         {/* Salon contact card */}
         <div style={{ background: '#fff', borderRadius: 16, padding: '8px 20px', boxShadow: '0 2px 8px rgba(0,0,0,.06)', marginBottom: 16 }}>

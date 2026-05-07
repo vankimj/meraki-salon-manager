@@ -1,13 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
 import { generate1099NecPdf } from '../../lib/pdf1099';
+import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations } from './metrics';
 
-// ── helpers ────────────────────────────────────────────
-function todayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 function startOf(daysAgo) {
   const d = new Date();
@@ -33,83 +29,101 @@ function fmt$(n) {
   return '$' + Math.round(n).toLocaleString();
 }
 
-function apptRevenue(a) {
-  return (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+// Match RevenueChart's aggregation threshold (>45 days → weekly bars).
+function revenueChartTitle(startDate, endDate) {
+  if (!startDate || !endDate) return 'Revenue';
+  const days = Math.max(
+    1,
+    Math.round((new Date(endDate + 'T12:00:00') - new Date(startDate + 'T12:00:00')) / 86400000) + 1,
+  );
+  return days > 45 ? 'Weekly Revenue' : 'Daily Revenue';
 }
 
-// ── compute all metrics ────────────────────────────────
-function computeMetrics(appointments) {
-  const today = todayStr();
-  const done = appointments.filter(a => a.status !== 'cancelled' && a.date <= today);
 
-  const totalRevenue  = done.reduce((s, a) => s + apptRevenue(a), 0);
-  const totalAppts    = done.length;
-  const walkInAppts   = done.filter(a => !a.clientId);
-  const walkIns       = walkInAppts.length;
-  const anonymous     = walkInAppts.filter(a => !a.clientName || a.clientName === 'Walk-in').length;
-  const namedWalkIns  = walkIns - anonymous;
-  const scheduled     = totalAppts - walkIns;
-  const avgTicket     = totalAppts ? totalRevenue / totalAppts : 0;
+// ── Filters ────────────────────────────────────────────
+const EMPTY_FILTERS = Object.freeze({
+  techs:      [],          // multi: tech names from techSplit or techName
+  services:   [],          // multi: service names
+  methods:    [],          // multi: 'card' | 'cash' | 'venmo' | 'other'
+  sources:    [],          // multi: 'in-salon' | 'online_booking' | 'imported' | 'rebook_prompt'
+  clientType: 'all',       // 'all' | 'scheduled' | 'walkin'
+});
 
-  const byDay = {};
-  done.forEach(a => { byDay[a.date] = (byDay[a.date] || 0) + apptRevenue(a); });
+const METHOD_OPTIONS = [
+  { id: 'card',  label: 'Credit card' },
+  { id: 'cash',  label: 'Cash' },
+  { id: 'venmo', label: 'Venmo' },
+  { id: 'other', label: 'Other' },
+];
 
-  const byTech = {};
-  function ensureTech(name) {
-    if (!byTech[name]) byTech[name] = { revenue: 0, count: 0, services: {}, clients: new Set() };
-  }
-  done.forEach(a => {
-    if (a.payment?.techSplit) {
-      // Multi-tech: attribute revenue and services per split entry
-      a.payment.techSplit.forEach(split => {
-        ensureTech(split.techName);
-        byTech[split.techName].revenue += split.revenue || 0;
-        byTech[split.techName].count++;
-        if (a.clientId) byTech[split.techName].clients.add(a.clientId);
-        // Match services by techName field if present, else distribute evenly
-        const techServices = (a.services || []).filter(sv => (sv.techName || a.techName) === split.techName);
-        techServices.forEach(sv => {
-          const k = sv.name || 'Unknown';
-          if (!byTech[split.techName].services[k]) byTech[split.techName].services[k] = { count: 0, revenue: 0 };
-          byTech[split.techName].services[k].count++;
-          byTech[split.techName].services[k].revenue += Number(sv.price) || 0;
-        });
-      });
-    } else {
-      ensureTech(a.techName);
-      const rev = apptRevenue(a);
-      byTech[a.techName].revenue += rev;
-      byTech[a.techName].count++;
-      if (a.clientId) byTech[a.techName].clients.add(a.clientId);
-      (a.services || []).forEach(sv => {
-        const k = sv.name || 'Unknown';
-        if (!byTech[a.techName].services[k]) byTech[a.techName].services[k] = { count: 0, revenue: 0 };
-        byTech[a.techName].services[k].count++;
-        byTech[a.techName].services[k].revenue += Number(sv.price) || 0;
-      });
+const SOURCE_OPTIONS = [
+  { id: 'in-salon',       label: 'In-salon' },
+  { id: 'online_booking', label: 'Online booking' },
+  { id: 'rebook_prompt',  label: 'Rebook prompt' },
+  { id: 'imported',       label: 'Imported (GG)' },
+];
+
+const CLIENT_TYPE_OPTIONS = [
+  { id: 'all',       label: 'All clients' },
+  { id: 'scheduled', label: 'Scheduled (with record)' },
+  { id: 'walkin',    label: 'Walk-ins' },
+];
+
+function txTechs(t) {
+  if (t.payment?.techSplit?.length) return t.payment.techSplit.map(s => s.techName).filter(Boolean);
+  return [t.techName].filter(Boolean);
+}
+function txSourceKey(t) {
+  if (t._importedFrom === 'glossgenius') return 'imported';
+  return t.source || 'in-salon';
+}
+
+function buildFilterOptions(appts) {
+  if (!appts) return { techs: [], services: [] };
+  const techs = new Set(), services = new Set();
+  appts.forEach(t => {
+    txTechs(t).forEach(n => techs.add(n));
+    (t.services || []).forEach(s => { if (s.name) services.add(s.name); });
+  });
+  return {
+    techs:    Array.from(techs).sort(),
+    services: Array.from(services).sort(),
+  };
+}
+
+function countActiveFilters(f) {
+  let n = 0;
+  if (f.techs.length)    n++;
+  if (f.services.length) n++;
+  if (f.methods.length)  n++;
+  if (f.sources.length)  n++;
+  if (f.clientType !== 'all') n++;
+  return n;
+}
+
+function filterTransactions(appts, f) {
+  if (!appts) return null;
+  if (countActiveFilters(f) === 0) return appts;
+  return appts.filter(t => {
+    if (f.techs.length) {
+      const techs = txTechs(t);
+      if (!techs.some(n => f.techs.includes(n))) return false;
     }
+    if (f.services.length) {
+      const names = (t.services || []).map(s => s.name);
+      if (!names.some(n => f.services.includes(n))) return false;
+    }
+    if (f.methods.length) {
+      const m = t.payment?.method || 'other';
+      if (!f.methods.includes(m)) return false;
+    }
+    if (f.sources.length) {
+      if (!f.sources.includes(txSourceKey(t))) return false;
+    }
+    if (f.clientType === 'scheduled' && !t.clientId) return false;
+    if (f.clientType === 'walkin'    &&  t.clientId) return false;
+    return true;
   });
-  Object.values(byTech).forEach(t => { t.clientCount = t.clients.size; delete t.clients; });
-
-  const byService = {};
-  done.forEach(a => {
-    (a.services || []).forEach(sv => {
-      const k = sv.name || 'Unknown';
-      if (!byService[k]) byService[k] = { revenue: 0, count: 0 };
-      byService[k].revenue += Number(sv.price) || 0;
-      byService[k].count++;
-    });
-  });
-
-  const byClient = {};
-  done.forEach(a => {
-    if (!a.clientId) return;
-    if (!byClient[a.clientId]) byClient[a.clientId] = { name: a.clientName, revenue: 0, count: 0 };
-    byClient[a.clientId].revenue += apptRevenue(a);
-    byClient[a.clientId].count++;
-  });
-
-  return { totalRevenue, totalAppts, walkIns, anonymous, namedWalkIns, scheduled, avgTicket, byDay, byTech, byService, byClient };
 }
 
 // ── main component ─────────────────────────────────────
@@ -117,7 +131,7 @@ const PERIODS = [
   { label: '7D',       days: 7   },
   { label: '30D',      days: 30  },
   { label: '90D',      days: 90  },
-  { label: 'All time', days: 730 },
+  { label: 'All time', days: 3650 }, // ~10 years — covers any imported salon history
 ];
 
 const TABS = [
@@ -133,8 +147,12 @@ export default function ReportsAdmin() {
   const [customStart, setCustomStart] = useState(startOf(30));
   const [customEnd,   setCustomEnd]   = useState(todayStr());
   const [appts,       setAppts]       = useState(null);
+  const [rawAppts,    setRawAppts]    = useState(null); // for cancellation stats
   const [priorAppts,  setPriorAppts]  = useState(null);
+  const [priorClientIds, setPriorClientIds] = useState(null);
   const [loading,     setLoading]     = useState(true);
+  // Overview filters (all multi-select except clientType).
+  const [filters,     setFilters]     = useState(EMPTY_FILTERS);
 
   if (isTech || isScheduler) {
     return (
@@ -147,6 +165,7 @@ export default function ReportsAdmin() {
   }
 
   const isCustom  = periodDays === 'custom';
+  const isAllTime = periodDays === 3650;
   const endDate   = isCustom ? customEnd   : todayStr();
   const startDate = isCustom ? customStart : startOf(periodDays);
   const durationDays = isCustom
@@ -164,36 +183,88 @@ export default function ReportsAdmin() {
     setLoading(true);
     setAppts(null);
     setPriorAppts(null);
+    setPriorClientIds(null);
     try {
-      const [current, prior] = await Promise.all([
+      // priorAppts is the matching same-length prior window for KPI comparison.
+      // priorClientIds is the lifetime set of clientIds with any visit before
+      // startDate — used to classify "new" (first-ever visit) vs "returning".
+      const [curRs, curAs, priorRs, priorAs, historicalIds] = await Promise.all([
+        fetchReceiptsByRange(startDate, endDate).catch(() => []),
         fetchAppointmentsByRange(startDate, endDate),
+        showComparison ? fetchReceiptsByRange(priorStart, priorEnd).catch(() => []) : Promise.resolve([]),
         showComparison ? fetchAppointmentsByRange(priorStart, priorEnd) : Promise.resolve([]),
+        fetchHistoricalClientIds(startDate).catch(() => new Set()),
       ]);
-      setAppts(current);
-      setPriorAppts(prior);
-    } catch (e) { console.error('[Reports] load failed:', e); setAppts([]); setPriorAppts([]); }
+      setAppts(buildTransactions(curRs, curAs));
+      setRawAppts(curAs);
+      setPriorAppts(buildTransactions(priorRs, priorAs));
+      setPriorClientIds(historicalIds);
+    } catch (e) { console.error('[Reports] load failed:', e); setAppts([]); setRawAppts([]); setPriorAppts([]); setPriorClientIds(new Set()); }
     finally  { setLoading(false); }
   }
 
-  const metrics      = useMemo(() => appts       ? computeMetrics(appts)       : null, [appts]);
-  const priorMetrics = useMemo(() => priorAppts  ? computeMetrics(priorAppts)  : null, [priorAppts]);
+  // Build filter option lists from the loaded transactions.
+  const filterOptions = useMemo(() => buildFilterOptions(appts), [appts]);
+  // Apply current filters to current and prior periods so KPIs, leaderboard,
+  // and comparison numbers all stay consistent with what the user picked.
+  const filteredAppts      = useMemo(() => filterTransactions(appts,      filters), [appts, filters]);
+  const filteredPriorAppts = useMemo(() => filterTransactions(priorAppts, filters), [priorAppts, filters]);
+  const activeFilterCount  = useMemo(() => countActiveFilters(filters), [filters]);
+
+  const metrics      = useMemo(() => filteredAppts      ? computeMetrics(filteredAppts)      : null, [filteredAppts]);
+  const priorMetrics = useMemo(() => filteredPriorAppts ? computeMetrics(filteredPriorAppts) : null, [filteredPriorAppts]);
+
+  // Cancellations are computed from raw appointments (which include status
+  // 'cancelled' and 'no_show'); buildTransactions only carries 'done'.
+  // Apply tech/service/clientType filters to the raw list — payment-method
+  // and source filters intentionally don't affect cancellations because
+  // cancelled appointments don't have a payment method or completion source.
+  const cancellationFilters = useMemo(() => ({
+    techs: filters.techs, services: filters.services,
+    methods: [], sources: [], clientType: filters.clientType,
+  }), [filters]);
+  const filteredRawAppts = useMemo(
+    () => filterTransactions(rawAppts, cancellationFilters),
+    [rawAppts, cancellationFilters],
+  );
+  // Filtered receipts feed the cancellation card too — receipts with
+  // transactionType='cancellation'/'refund'/'void' (set at GG import time)
+  // surface alongside cancelled appointments.
+  const cancellations = useMemo(
+    () => filteredRawAppts ? computeCancellations(filteredRawAppts, filteredAppts) : null,
+    [filteredRawAppts, filteredAppts],
+  );
+
+  // For "All time", the fetch uses a wide 10-year window so we don't miss
+  // anything, but the chart axis + export filename should reflect the
+  // actual span of data — i.e. the oldest transaction's date.
+  const dataMinDate = useMemo(() => {
+    if (!filteredAppts?.length) return null;
+    let min = null;
+    filteredAppts.forEach(a => {
+      if (a.date && (!min || a.date < min)) min = a.date;
+    });
+    return min;
+  }, [filteredAppts]);
+  const displayStartDate = isAllTime && dataMinDate ? dataMinDate : startDate;
 
   const clientRetention = useMemo(() => {
-    if (!metrics || !priorAppts || !appts) return null;
-    const priorIds = new Set(priorAppts.filter(a => a.clientId).map(a => a.clientId));
+    if (!metrics || !filteredAppts || !priorClientIds) return null;
     const today = todayStr();
-    const done  = appts.filter(a => a.status !== 'cancelled' && a.date <= today);
+    const done  = filteredAppts.filter(a => a.status !== 'cancelled' && a.date <= today);
     let newCount = 0, returningCount = 0, walkInCount = 0;
     const seen = {};
     done.forEach(a => {
       if (!a.clientId) { walkInCount++; return; }
       if (!seen[a.clientId]) {
         seen[a.clientId] = true;
-        priorIds.has(a.clientId) ? returningCount++ : newCount++;
+        // "New" = first ever visit is in this period; "Returning" = had any
+        // visit (appt or receipt) before this period, anywhere in history.
+        priorClientIds.has(a.clientId) ? returningCount++ : newCount++;
       }
     });
     return { newCount, returningCount, walkInCount, total: newCount + returningCount + walkInCount };
-  }, [metrics, priorAppts, appts]);
+  }, [metrics, filteredAppts, priorClientIds]);
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', paddingBottom: 24 }}>
@@ -246,13 +317,25 @@ export default function ReportsAdmin() {
                 </>
               )}
             </div>
-            <ExportMenu appts={appts} metrics={metrics} startDate={startDate} endDate={endDate} />
+            <ExportMenu appts={filteredAppts} metrics={metrics} startDate={displayStartDate} endDate={endDate} filtersActive={activeFilterCount > 0} />
           </div>
+
+          {/* Filters */}
+          <FiltersPanel
+            filters={filters}
+            setFilters={setFilters}
+            options={filterOptions}
+            activeCount={activeFilterCount}
+            totalCount={appts?.length || 0}
+            shownCount={filteredAppts?.length || 0}
+          />
 
           {loading ? (
             <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>
           ) : !metrics?.totalAppts ? (
-            <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>No completed appointments in this period.</div>
+            <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>
+              {activeFilterCount > 0 ? 'No transactions match the current filters.' : 'No completed appointments in this period.'}
+            </div>
           ) : (
             <>
               <div className="kpi-grid">
@@ -272,14 +355,32 @@ export default function ReportsAdmin() {
                 <WalkInVsScheduled metrics={metrics} />
               </Card>
 
-              {clientRetention && showComparison && (
-                <Card title="New vs Returning Clients" style={{ marginBottom: 12 }}>
-                  <NewVsReturning retention={clientRetention} periodDays={durationDays} />
+              <Card title="Payment Methods" style={{ marginBottom: 12 }}>
+                <PaymentMethodsBreakdown metrics={metrics} />
+              </Card>
+
+              <Card title="Processing Fees" style={{ marginBottom: 12 }}>
+                <ProcessingFeesBreakdown metrics={metrics} />
+              </Card>
+
+              <Card title="Gratuity Collected" style={{ marginBottom: 12 }}>
+                <GratuityBreakdown metrics={metrics} />
+              </Card>
+
+              {cancellations && (
+                <Card title="Cancellation Analysis" style={{ marginBottom: 12 }}>
+                  <CancellationsBreakdown stats={cancellations} />
                 </Card>
               )}
 
-              <Card title="Daily Revenue" style={{ marginBottom: 12 }}>
-                <RevenueChart byDay={metrics.byDay} startDate={startDate} endDate={endDate} />
+              {clientRetention && (
+                <Card title="New vs Returning Clients" style={{ marginBottom: 12 }}>
+                  <NewVsReturning retention={clientRetention} />
+                </Card>
+              )}
+
+              <Card title={revenueChartTitle(displayStartDate, endDate)} style={{ marginBottom: 12 }}>
+                <RevenueChart byDay={metrics.byDay} startDate={displayStartDate} endDate={endDate} />
               </Card>
 
               <Card title="Tech Leaderboard" style={{ marginBottom: 12 }}>
@@ -336,8 +437,326 @@ function WalkInVsScheduled({ metrics }) {
   );
 }
 
+// ── Payment methods breakdown ──────────────────────────
+function PaymentMethodsBreakdown({ metrics }) {
+  const [expanded, setExpanded] = useState(null); // method id when open
+  const { byMethod, methodTotal } = metrics;
+  if (!methodTotal) return <Empty>No payment data</Empty>;
+  const pct = (n) => methodTotal ? Math.round(n / methodTotal * 100) : 0;
+
+  const rows = [
+    { id: 'card',  label: 'Credit card', color: '#3B82F6' },
+    { id: 'cash',  label: 'Cash',        color: '#10B981' },
+    { id: 'other', label: 'Other (Venmo / Zelle / GC)', color: '#A78BFA' },
+  ].map(r => {
+    const d = byMethod[r.id] || {};
+    return {
+      ...r,
+      total:  d.total  || 0,
+      count:  d.count  || 0,
+      svcRev: d.svcRev || 0,
+      retail: d.retail || 0,
+      tax:    d.tax    || 0,
+      tip:    d.tip    || 0,
+      pct:    pct(d.total || 0),
+    };
+  });
+
+  return (
+    <div>
+      <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', marginBottom: 16 }}>
+        {rows.map(r => (
+          <div key={r.id} style={{ width: `${r.pct}%`, background: r.color, transition: 'width .4s' }} />
+        ))}
+      </div>
+      {rows.map(r => {
+        const isOpen = expanded === r.id;
+        return (
+          <div key={r.id} style={{ marginBottom: 4 }}>
+            <button onClick={() => setExpanded(isOpen ? null : r.id)}
+              style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '6px 0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+              <span style={{ display: 'inline-block', width: 10, color: '#bbb', fontSize: 9, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', marginRight: 4 }}>▶</span>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
+              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 11, color: '#aaa', marginRight: 16, minWidth: 60, textAlign: 'right' }}>{r.count.toLocaleString()} txn{r.count !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12, minWidth: 80, textAlign: 'right' }}>{fmt$(r.total)}</span>
+              <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+            </button>
+            {isOpen && (
+              <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 22px', fontSize: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>What makes up this total</div>
+                {[
+                  { label: 'Service revenue', val: r.svcRev },
+                  { label: 'Retail revenue', val: r.retail },
+                  { label: 'Sales tax',      val: r.tax    },
+                  { label: 'Tip',            val: r.tip    },
+                ].map(c => (
+                  <div key={c.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
+                    <span style={{ color: '#666' }}>{c.label}</span>
+                    <span style={{ fontWeight: 500, color: '#333' }}>{fmt$(c.val)}</span>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0', marginTop: 6, borderTop: '1px solid #e8e8e8' }}>
+                  <span style={{ fontWeight: 600, color: '#333' }}>Sum of components</span>
+                  <span style={{ fontWeight: 600, color: '#333' }}>{fmt$(r.svcRev + r.retail + r.tax + r.tip)}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0' }}>
+                  <span style={{ fontWeight: 600, color: '#333' }}>payment.total reported</span>
+                  <span style={{ fontWeight: 600, color: '#333' }}>{fmt$(r.total)}</span>
+                </div>
+                {Math.abs(r.svcRev + r.retail + r.tax + r.tip - r.total) > 1 && (
+                  <div style={{ marginTop: 6, fontSize: 11, color: '#9a3412' }}>
+                    Δ {fmt$(r.total - (r.svcRev + r.retail + r.tax + r.tip))} — usually a discount/promo/gift-card adjustment baked into <code>payment.total</code> but not into the line items.
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: '#888', flex: 1 }}>Total collected</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{fmt$(methodTotal)}</span>
+      </div>
+      <div style={{ fontSize: 10, color: '#bbb', marginTop: 6, lineHeight: 1.5 }}>
+        Sums <code>payment.total</code> per transaction (includes tax + tip on top of service revenue). Click a row to see the breakdown.
+      </div>
+    </div>
+  );
+}
+
+// ── Processing fees ────────────────────────────────────
+function ProcessingFeesBreakdown({ metrics }) {
+  const { ccFeeTotal, cardTxnCount, cardRevenue } = metrics;
+  if (cardTxnCount === 0) {
+    return <Empty>No card transactions in this period</Empty>;
+  }
+  const avgFee = cardTxnCount ? ccFeeTotal / cardTxnCount : 0;
+  const effectiveRate = cardRevenue > 0 ? ccFeeTotal / cardRevenue : 0;
+  const netCardRevenue = cardRevenue - ccFeeTotal;
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+        <KpiTile label="Total fees paid" big={fmt$(ccFeeTotal)} sub={`${cardTxnCount.toLocaleString()} card txn${cardTxnCount !== 1 ? 's' : ''}`} color="#EF4444" />
+        <KpiTile label="Avg fee per txn" big={fmt$(avgFee)} sub={`${(effectiveRate * 100).toFixed(2)}% effective`} color="#F59E0B" />
+        <KpiTile label="Net card revenue" big={fmt$(netCardRevenue)} sub={`${fmt$(cardRevenue)} gross`} color="#2D7A5F" />
+      </div>
+      <div style={{ fontSize: 10, color: '#bbb', lineHeight: 1.5 }}>
+        Fees are summed from <code>payment.ccFee</code> on each card transaction (Stripe-style: percentage + flat per swipe). Refunds subtract.
+      </div>
+    </div>
+  );
+}
+
+// ── Gratuity ───────────────────────────────────────────
+function GratuityBreakdown({ metrics }) {
+  const { tipTotal, tipTxnCount, tipsByMethod, tipsByTech, totalRevenue } = metrics;
+  if (!tipTxnCount && tipTotal === 0) {
+    return <Empty>No tips recorded in this period</Empty>;
+  }
+  const avgTip = tipTxnCount ? tipTotal / tipTxnCount : 0;
+  const tipRate = totalRevenue > 0 ? tipTotal / totalRevenue : 0;
+
+  const sumByMethod = (tipsByMethod.card || 0) + (tipsByMethod.cash || 0) + (tipsByMethod.other || 0);
+  const methodPct = (n) => sumByMethod > 0 ? Math.round(n / sumByMethod * 100) : 0;
+
+  const methodRows = [
+    { id: 'card',  label: 'Card',  color: '#3B82F6', amt: tipsByMethod.card  || 0 },
+    { id: 'cash',  label: 'Cash',  color: '#10B981', amt: tipsByMethod.cash  || 0 },
+    { id: 'other', label: 'Other', color: '#A78BFA', amt: tipsByMethod.other || 0 },
+  ].filter(r => r.amt !== 0);
+
+  const topTechs = Object.entries(tipsByTech || {})
+    .filter(([n, amt]) => n && amt > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+        <KpiTile label="Total tips"      big={fmt$(tipTotal)} sub={`${tipTxnCount.toLocaleString()} tipped txn${tipTxnCount !== 1 ? 's' : ''}`} color="#16a34a" />
+        <KpiTile label="Avg tip"         big={fmt$(avgTip)}   sub="per tipped transaction" color="#0ea5e9" />
+        <KpiTile label="Tip rate"        big={`${(tipRate * 100).toFixed(1)}%`} sub="vs service revenue" color="#9333EA" />
+      </div>
+
+      {methodRows.length > 0 && (
+        <>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>By payment method</div>
+          {methodRows.map(r => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
+              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12, minWidth: 80, textAlign: 'right' }}>{fmt$(r.amt)}</span>
+              <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{methodPct(r.amt)}%</span>
+            </div>
+          ))}
+        </>
+      )}
+
+      {topTechs.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Top earners</div>
+          {topTechs.map(([name, amt]) => (
+            <div key={name} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
+              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{name}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: '#16a34a' }}>{fmt$(amt)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ fontSize: 10, color: '#bbb', marginTop: 10, lineHeight: 1.5 }}>
+        Tips come from <code>payment.tip</code> at checkout. Multi-tech bookings split via <code>tipShare</code>. Refunds subtract.
+      </div>
+    </div>
+  );
+}
+
+// ── KPI tile (shared) ─────────────────────────────────
+function KpiTile({ label, big, sub, color }) {
+  return (
+    <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 10, padding: '10px 12px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: color || '#1a1a1a', lineHeight: 1.1 }}>{big}</div>
+      {sub && <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── Cancellations & no-shows ───────────────────────────
+// Walk-ins-style breakdown: stacked bar + rows with count and %, plus a
+// compact "Most affected techs" footer and an empty-state info panel when
+// no statuses were found.
+function CancellationsBreakdown({ stats }) {
+  const { cancelCount, noShowCount, completedCount, scheduledCount, lostRevenue, byTech, statusCounts, totalInPeriod,
+    ggCancellationCount, ggRefundCount, ggVoidCount, lostGgCxl, lostRefund, lostVoid } = stats;
+  const total = totalInPeriod;
+  const pct = (n) => total ? Math.round(n / total * 100) : 0;
+  const ggBlocked = ggCancellationCount + ggRefundCount + ggVoidCount;
+
+  // Empty-state copy: surfaces the raw status mix so the user can see why
+  // there are no cancellations (usually because the Appointments CSV wasn't
+  // imported, or the source uses an unrecognized status).
+  const noCancelData = cancelCount === 0 && noShowCount === 0;
+  const statusEntries = Object.entries(statusCounts || {})
+    .sort((a, b) => b[1] - a[1]);
+
+  // Special case: no appointments at all in the loaded period. Show a
+  // clear message instead of a bar of all zeros.
+  if (total === 0 && ggBlocked === 0) {
+    return (
+      <div style={{ padding: 14, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#78350f', lineHeight: 1.6 }}>
+        <strong>No appointments loaded for this period.</strong>
+        <div style={{ marginTop: 6 }}>
+          Cancellations live in the <strong>appointments</strong> collection (GG sales imports populate <strong>receipts</strong> only). To see cancellation history:
+          <ol style={{ margin: '6px 0 0 18px', padding: 0, lineHeight: 1.7 }}>
+            <li>Export the GG <strong>Appointments</strong> CSV (Insights → Reports → Appointments).</li>
+            <li>Upload it via Admin → Settings → 📦 Data Imports → 📥 Import from GlossGenius.</li>
+            <li>Refresh this page — the analysis will populate.</li>
+          </ol>
+        </div>
+      </div>
+    );
+  }
+
+  const rows = [
+    { label: 'Completed',          count: completedCount, color: '#2D7A5F', pct: pct(completedCount) },
+    { label: 'Scheduled (future)', count: scheduledCount, color: '#3B82F6', pct: pct(scheduledCount) },
+    { label: 'Cancelled',          count: cancelCount,    color: '#EF4444', pct: pct(cancelCount) },
+    { label: 'No-show',            count: noShowCount,    color: '#F59E0B', pct: pct(noShowCount) },
+  ];
+
+  const topByTech = Object.entries(byTech)
+    .sort((a, b) => (b[1].cancelled + b[1].noShow) - (a[1].cancelled + a[1].noShow))
+    .slice(0, 5);
+
+  return (
+    <div>
+      {/* Stacked bar mirroring WalkInVsScheduled */}
+      <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', marginBottom: 16 }}>
+        {rows.map(r => (
+          <div key={r.label} style={{ width: `${r.pct}%`, background: r.color, transition: 'width .4s' }} />
+        ))}
+      </div>
+      {rows.map(r => (
+        <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
+          <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12 }}>{r.count.toLocaleString()}</span>
+          <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+        </div>
+      ))}
+
+      {/* GG-import cancellation/refund/void receipts (from Payment Details
+          "Transaction Type") — shown as a sub-section since they live in
+          the receipts collection, not appointments. */}
+      {ggBlocked > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+            From GG transactions (Payment Details · Transaction Type)
+          </div>
+          {[
+            { label: 'Cancellations', count: ggCancellationCount, lost: lostGgCxl,  color: '#EF4444' },
+            { label: 'Refunds',       count: ggRefundCount,       lost: lostRefund, color: '#F59E0B' },
+            { label: 'Voids',         count: ggVoidCount,         lost: lostVoid,   color: '#9333EA' },
+          ].filter(r => r.count > 0).map(r => (
+            <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
+              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 12, color: '#aaa', marginRight: 12 }}>{r.count.toLocaleString()} txn{r.count !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: r.color }}>{fmt$(r.lost)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Lost revenue + top affected techs in a compact footer block */}
+      {(cancelCount > 0 || noShowCount > 0 || ggBlocked > 0) && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: topByTech.length > 0 ? 10 : 0 }}>
+            <span style={{ fontSize: 12, color: '#888', flex: 1 }}>Total lost revenue (all sources)</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: '#9333EA' }}>{fmt$(lostRevenue)}</span>
+          </div>
+          {topByTech.length > 0 && (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+                Most affected techs
+              </div>
+              {topByTech.map(([name, d]) => (
+                <div key={name} style={{ display: 'flex', alignItems: 'center', padding: '4px 0', fontSize: 12 }}>
+                  <span style={{ color: '#333', flex: 1 }}>{name}</span>
+                  <span style={{ color: '#aaa', marginRight: 12 }}>{d.cancelled} cxl · {d.noShow} no-show</span>
+                  <span style={{ color: '#9333EA', fontWeight: 600 }}>{fmt$(d.lostRevenue)}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </div>
+      )}
+
+      {noCancelData && (
+        <div style={{ marginTop: 12, padding: 10, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: '#78350f', lineHeight: 1.6 }}>
+          <strong>No cancellations or no-shows in the appointments collection.</strong>
+          <div style={{ marginTop: 4 }}>
+            Status mix ({totalInPeriod.toLocaleString()} appointments):{' '}
+            <span style={{ color: '#9a3412' }}>
+              {statusEntries.length === 0
+                ? '(none)'
+                : statusEntries.map(([s, n]) => `${s}: ${n.toLocaleString()}`).join(' · ')}
+            </span>
+          </div>
+          <div style={{ marginTop: 6, fontSize: 11, color: '#78350f' }}>
+            If you expected cancellations, double-check your GG Appointments CSV included statuses like "Cancelled" or "No Show" — the importer normalizes case + spacing.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── New vs Returning clients ───────────────────────────
-function NewVsReturning({ retention, periodDays }) {
+function NewVsReturning({ retention }) {
   const { newCount, returningCount, walkInCount, total } = retention;
   const pctNew  = total ? Math.round(newCount       / total * 100) : 0;
   const pctRet  = total ? Math.round(returningCount / total * 100) : 0;
@@ -365,7 +784,7 @@ function NewVsReturning({ retention, periodDays }) {
         </div>
       ))}
       <div style={{ fontSize: 11, color: '#bbb', marginTop: 8 }}>
-        "New" = client not seen in the prior {periodDays} days
+        "New" = first-ever visit was in this period (no prior history at the salon)
       </div>
     </div>
   );
@@ -390,11 +809,17 @@ function RevenueChart({ byDay, startDate, endDate }) {
   }
   const barMax = Math.max(...bars.map(b => b.value), 1);
 
+  // Long ranges (incl. multi-year) need the year in the label so a "May 8"
+  // bar can't be read as the same May as a "May 6" right next to it.
+  const longRange = dates.length > 365;
   function barLabel(dateStr) {
     const d = new Date(dateStr + 'T12:00:00');
-    return aggregate
-      ? 'wk ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      : d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    if (aggregate) {
+      return 'wk ' + d.toLocaleDateString('en-US',
+        longRange ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' });
+    }
+    return d.toLocaleDateString('en-US',
+      longRange ? { month: 'short', day: 'numeric', year: 'numeric' } : { weekday: 'short', month: 'short', day: 'numeric' });
   }
 
   return (
@@ -437,9 +862,11 @@ function RevenueChart({ byDay, startDate, endDate }) {
         <line x1="0" y1={H} x2="600" y2={H} stroke="#e0e0e0" strokeWidth="1" />
       </svg>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginTop: 4 }}>
-        <span>{new Date(startDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+        <span>{new Date(startDate + 'T12:00:00').toLocaleDateString('en-US',
+          longRange ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' })}</span>
         <span style={{ fontWeight: 500, color: '#888' }}>{aggregate ? 'weekly' : 'daily'} · max {fmt$(barMax)}</span>
-        <span>{new Date(endDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+        <span>{new Date(endDate + 'T12:00:00').toLocaleDateString('en-US',
+          longRange ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' })}</span>
       </div>
     </div>
   );
@@ -450,7 +877,14 @@ const MEDALS = ['🥇', '🥈', '🥉'];
 
 function Leaderboard({ byTech }) {
   const [expanded, setExpanded] = useState(null);
-  const sorted = Object.entries(byTech).sort((a, b) => b[1].revenue - a[1].revenue);
+  // Drop the no-tech bucket — receipts with empty techName (retail, gift
+  // card sales, GG imports without a Provider) shouldn't appear as a
+  // ranked tech with $0 revenue. Their totals are still surfaced on the
+  // Transactions tab.
+  const unassigned = byTech[''] || null;
+  const sorted = Object.entries(byTech)
+    .filter(([name]) => name && name.trim())
+    .sort((a, b) => b[1].revenue - a[1].revenue);
   const maxRev = sorted[0]?.[1].revenue || 1;
 
   if (!sorted.length) return <Empty>No data</Empty>;
@@ -512,6 +946,12 @@ function Leaderboard({ byTech }) {
           </div>
         );
       })}
+      {unassigned && unassigned.count > 0 && (
+        <div style={{ marginTop: 10, padding: '8px 10px', background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, fontSize: 11, color: '#888', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>+ {unassigned.count.toLocaleString()} transaction{unassigned.count !== 1 ? 's' : ''} with no tech assigned (retail, gift cards, imports without a Provider)</span>
+          <span style={{ color: '#aaa' }}>{fmt$(unassigned.revenue)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -540,29 +980,170 @@ function ServiceTable({ byService }) {
 
 // ── Top clients ────────────────────────────────────────
 function TopClients({ byClient }) {
-  const sorted = Object.entries(byClient)
-    .sort((a, b) => b[1].revenue - a[1].revenue)
-    .slice(0, 10);
+  const [q, setQ] = useState('');
+  const [selected, setSelected] = useState(null); // { id, name }
+  const sorted = useMemo(
+    () => Object.entries(byClient).sort((a, b) => b[1].revenue - a[1].revenue),
+    [byClient],
+  );
+  const filtered = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    if (!term) return sorted;
+    return sorted.filter(([, d]) => (d.name || '').toLowerCase().includes(term));
+  }, [sorted, q]);
 
   if (!sorted.length) return <Empty>No data</Empty>;
 
-  const cols = [sorted.slice(0, 5), sorted.slice(5, 10)];
+  // Two-column scroll: row 1 = #1 + #2, row 2 = #3 + #4, etc. Reads top→
+  // bottom by rank no matter how tall the list gets. Capped container so
+  // the page doesn't grow unbounded; scrolls vertically beyond ~14 rows.
+  return (
+    <div>
+      <div style={{ position: 'relative', marginBottom: 10 }}>
+        <input
+          type="search"
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          placeholder="Search clients by name…"
+          style={{
+            width: '100%', boxSizing: 'border-box',
+            padding: '7px 30px 7px 32px', fontSize: 12, fontFamily: 'inherit',
+            border: '1px solid #e0e0e0', borderRadius: 8, background: '#fafafa',
+            color: '#333', outline: 'none',
+          }}
+        />
+        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#aaa', pointerEvents: 'none' }}>🔍</span>
+        {q && (
+          <button onClick={() => setQ('')} aria-label="Clear"
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#bbb', padding: '2px 6px', fontFamily: 'inherit' }}>
+            ×
+          </button>
+        )}
+      </div>
+
+      <div style={{ maxHeight: 420, overflowY: 'auto', paddingRight: 8 }}>
+        {filtered.length === 0 ? (
+          <Empty>No clients match "{q}"</Empty>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', columnGap: 32, rowGap: 0 }}>
+            {filtered.map(([clientId, d]) => {
+              // Preserve overall rank from `sorted` so search results still
+              // show the client's standing in the full leaderboard.
+              const overallRank = sorted.findIndex(([, e]) => e === d) + 1;
+              return (
+                <button key={clientId}
+                  onClick={() => setSelected({ id: clientId, name: d.name })}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '7px 6px', borderBottom: '1px solid #f5f5f5', minWidth: 0,
+                    background: 'none', border: 'none', borderBottomColor: '#f5f5f5',
+                    fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', width: '100%',
+                    transition: 'background .12s',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, flex: 1 }}>
+                    <span style={{ fontSize: 10, color: '#bbb', fontWeight: 600, flexShrink: 0, width: 26 }}>#{overallRank}</span>
+                    <span style={{ fontSize: 13, color: 'var(--tm-accent, #3D95CE)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
+                    <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{d.count} visit{d.count !== 1 ? 's' : ''}</span>
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', flexShrink: 0, marginLeft: 12 }}>{fmt$(d.revenue)}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <div style={{ padding: '8px 0 4px', textAlign: 'center', fontSize: 10, color: '#bbb' }}>
+        {q
+          ? `${filtered.length} of ${sorted.length} client${sorted.length !== 1 ? 's' : ''}`
+          : `${sorted.length} client${sorted.length !== 1 ? 's' : ''}`}
+      </div>
+
+      {selected && (
+        <ClientVisitsModal
+          clientId={selected.id}
+          clientName={selected.name}
+          onClose={() => setSelected(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Client visits modal ────────────────────────────────
+function ClientVisitsModal({ clientId, clientName, onClose }) {
+  const [visits, setVisits] = useState(null);
+  const [err,    setErr]    = useState(null);
+
+  useEffect(() => {
+    let cancel = false;
+    setVisits(null); setErr(null);
+    fetchClientVisits(clientId)
+      .then(rows => { if (!cancel) setVisits(rows); })
+      .catch(e   => { if (!cancel) setErr(e?.message || 'Failed to load visits'); });
+    return () => { cancel = true; };
+  }, [clientId]);
+
+  // Esc to close
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  // fetchClientVisits already sorts newest-first and pre-computes revenue.
+  const totalRevenue = (visits || []).reduce((s, v) => s + (v.revenue || 0), 0);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 32px' }}>
-      {cols.map((col, ci) => (
-        <div key={ci}>
-          {col.map(([, d], i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: i < col.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
-              <div>
-                <span style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>{d.name}</span>
-                <span style={{ fontSize: 11, color: '#bbb', marginLeft: 8 }}>{d.count} visit{d.count !== 1 ? 's' : ''}</span>
-              </div>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', flexShrink: 0, marginLeft: 12 }}>{fmt$(d.revenue)}</span>
-            </div>
-          ))}
+    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+      <div style={{ background: '#fff', borderRadius: 14, width: '94%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff' }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 11, opacity: .8, textTransform: 'uppercase', letterSpacing: '.06em' }}>Client visit history</div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientName}</div>
+          </div>
+          <button onClick={onClose}
+            style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid rgba(255,255,255,.4)', background: 'rgba(255,255,255,.15)', cursor: 'pointer', fontSize: 16, color: '#fff', flexShrink: 0, marginLeft: 8 }}>×</button>
         </div>
-      ))}
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '12px 18px' }}>
+          {err ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#ef4444', fontSize: 13 }}>Error: {err}</div>
+          ) : visits == null ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#bbb', fontSize: 13 }}>Loading…</div>
+          ) : visits.length === 0 ? (
+            <Empty>No visits on record for this client.</Empty>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666', padding: '6px 0 12px' }}>
+                <span>{visits.length} visit{visits.length !== 1 ? 's' : ''}</span>
+                <span>Total: <strong style={{ color: '#1a1a1a' }}>{fmt$(totalRevenue)}</strong></span>
+              </div>
+              {visits.map(v => {
+                const services = (v.services || []).map(s => s.name).filter(Boolean).join(' + ') || '—';
+                const cancelled = v.status === 'cancelled';
+                return (
+                  <div key={v.source + ':' + v.id} style={{ padding: '10px 0', borderBottom: '1px solid #f5f5f5', opacity: cancelled ? .55 : 1 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>
+                        {v.date}{v.startTime ? ` · ${v.startTime}` : ''}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#2D7A5F' }}>{fmt$(v.revenue || 0)}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>{services}</div>
+                    <div style={{ display: 'flex', gap: 8, fontSize: 11, color: '#888' }}>
+                      {v.techName && <span>👩‍💼 {v.techName}</span>}
+                      <span style={{ textTransform: 'capitalize' }}>· {v.status || 'scheduled'}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -630,42 +1211,6 @@ const QUARTER_MONTHS = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
 
 // ─── Transactions Report (filterable + per-tech detail) ───────────────
 const METHOD_LABELS = { card: 'Credit card', cash: 'Cash', venmo: 'Venmo', other: 'Other' };
-
-// For done appointments that don't have a receipt row (legacy / demo data),
-// build a receipt-shaped object so the Transactions tab can still surface them.
-function apptToSyntheticReceipt(a) {
-  const sales = (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
-  const p = a.payment || {};
-  const startISO = `${a.date}T${(a.startTime || '12:00')}:00.000Z`;
-  return {
-    id:           `appt:${a.id}`,
-    apptIds:      [a.id],
-    clientId:     a.clientId || null,
-    clientName:   a.clientName || '',
-    clientEmail:  a.clientEmail || null,
-    techName:     a.techName || '',
-    date:         a.date,
-    startTime:    a.startTime || '',
-    services:     (a.services || []).map(sv => ({ name: sv.name, price: sv.price, techName: sv.techName || a.techName })),
-    retailProducts: p.retailProducts || null,
-    giftCardsSold:  null,
-    createdAt:    p.paidAt || startISO,
-    payment: {
-      subtotal:     p.subtotal     ?? sales,
-      discountAmount: p.discountAmount ?? 0,
-      promoAmount:  p.promoAmount  ?? 0,
-      tax:          p.tax          ?? 0,
-      taxRate:      p.taxRate      ?? 0,
-      tip:          p.tip          ?? 0,
-      total:        p.total        ?? sales,
-      method:       p.method       ?? 'other',
-      ccFee:        p.ccFee        ?? 0,
-      gcSalesTotal: p.gcSalesTotal ?? 0,
-      techSplit:    p.techSplit    || null,
-      _synthetic:   !p.paidAt,
-    },
-  };
-}
 
 function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [receipts, setReceipts] = useState(null);
@@ -846,13 +1391,13 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
 
       {/* Filters */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <FilterGroup label="Method" value={methodFilter} onChange={setMethodFilter} options={[
+        <FilterRow label="Method" value={methodFilter} onChange={setMethodFilter} options={[
           { id: 'all',   label: 'All' },
           { id: 'card',  label: '💳 Card' },
           { id: 'cash',  label: '💵 Cash' },
           { id: 'other', label: 'Other' },
         ]} />
-        <FilterGroup label="Type" value={typeFilter} onChange={setTypeFilter} options={[
+        <FilterRow label="Type" value={typeFilter} onChange={setTypeFilter} options={[
           { id: 'all',     label: 'All' },
           { id: 'service', label: 'Service' },
           { id: 'retail',  label: 'Retail' },
@@ -899,7 +1444,7 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
   );
 }
 
-function FilterGroup({ label, value, onChange, options }) {
+function FilterRow({ label, value, onChange, options }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 4px', background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8 }}>
       <span style={{ fontSize: 11, color: '#888', fontWeight: 600, marginLeft: 6 }}>{label}:</span>
@@ -1423,6 +1968,109 @@ const filterSelectStyle = {
   border: '1px solid #d8d8d8', background: '#fff', color: '#444', cursor: 'pointer',
 };
 
+// ── Filters panel ──────────────────────────────────────
+function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, shownCount }) {
+  const [open, setOpen] = useState(false);
+
+  function toggleMulti(key, value) {
+    setFilters(f => ({
+      ...f,
+      [key]: f[key].includes(value) ? f[key].filter(v => v !== value) : [...f[key], value],
+    }));
+  }
+  function clearAll() { setFilters(EMPTY_FILTERS); }
+
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button onClick={() => setOpen(o => !o)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '6px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
+            border: `1.5px solid ${activeCount > 0 ? '#2D7A5F' : '#d8d8d8'}`,
+            background: activeCount > 0 ? '#EDFAF3' : '#fff',
+            color: activeCount > 0 ? '#166534' : '#555', cursor: 'pointer',
+          }}>
+          <span>⚲</span>
+          <span>Filters{activeCount > 0 ? ` (${activeCount})` : ''}</span>
+          <span style={{ fontSize: 10, opacity: .7 }}>{open ? '▴' : '▾'}</span>
+        </button>
+        {activeCount > 0 && (
+          <>
+            <span style={{ fontSize: 11, color: '#888' }}>
+              Showing {shownCount.toLocaleString()} of {totalCount.toLocaleString()} transactions
+            </span>
+            <button onClick={clearAll}
+              style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, fontFamily: 'inherit', fontSize: 11, background: 'none', border: '1px solid #e0e0e0', color: '#888', cursor: 'pointer' }}>
+              Clear all
+            </button>
+          </>
+        )}
+      </div>
+
+      {open && (
+        <div style={{ marginTop: 10, background: '#fafafa', border: '1px solid #ececec', borderRadius: 12, padding: 14 }}>
+          <FilterSection label="Techs" empty="No techs in current data">
+            {options.techs.map(name => (
+              <FilterChip key={name} active={filters.techs.includes(name)} onClick={() => toggleMulti('techs', name)}>{name || '(no tech)'}</FilterChip>
+            ))}
+          </FilterSection>
+          <FilterSection label="Services" empty="No services in current data">
+            {options.services.map(name => (
+              <FilterChip key={name} active={filters.services.includes(name)} onClick={() => toggleMulti('services', name)}>{name}</FilterChip>
+            ))}
+          </FilterSection>
+          <FilterSection label="Payment method">
+            {METHOD_OPTIONS.map(m => (
+              <FilterChip key={m.id} active={filters.methods.includes(m.id)} onClick={() => toggleMulti('methods', m.id)}>{m.label}</FilterChip>
+            ))}
+          </FilterSection>
+          <FilterSection label="Source">
+            {SOURCE_OPTIONS.map(s => (
+              <FilterChip key={s.id} active={filters.sources.includes(s.id)} onClick={() => toggleMulti('sources', s.id)}>{s.label}</FilterChip>
+            ))}
+          </FilterSection>
+          <FilterSection label="Client type">
+            {CLIENT_TYPE_OPTIONS.map(c => (
+              <FilterChip key={c.id} active={filters.clientType === c.id} onClick={() => setFilters(f => ({ ...f, clientType: c.id }))} radio>
+                {c.label}
+              </FilterChip>
+            ))}
+          </FilterSection>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FilterSection({ label, children, empty }) {
+  const arr = Array.isArray(children) ? children.filter(Boolean) : [children];
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {arr.length === 0
+          ? <span style={{ fontSize: 11, color: '#bbb', fontStyle: 'italic' }}>{empty || 'No options'}</span>
+          : children}
+      </div>
+    </div>
+  );
+}
+
+function FilterChip({ active, onClick, children, radio }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        padding: '5px 11px', borderRadius: 14, fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
+        border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`,
+        background: active ? '#EDFAF3' : '#fff',
+        color: active ? '#166534' : '#555', cursor: 'pointer', whiteSpace: 'nowrap',
+      }}>
+      {!radio && active ? '✓ ' : ''}{children}
+    </button>
+  );
+}
+
 function Th({ children, left, color }) {
   return (
     <th style={{ padding: '6px 4px', textAlign: left ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: color || '#aaa', textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap' }}>
@@ -1504,13 +2152,54 @@ function dlCSV(filename, rows) {
   el.click(); URL.revokeObjectURL(url);
 }
 
-function ExportMenu({ appts, metrics, startDate, endDate }) {
+function ExportMenu({ appts, metrics, startDate, endDate, filtersActive }) {
   const [open, setOpen] = useState(false);
   const disabled = !appts?.length || !metrics;
+  const fileSuffix = filtersActive ? '-filtered' : '';
+
+  function exportCurrent() {
+    // Per-transaction snapshot of exactly what's on screen, including
+    // payment + tax + tip detail so the CSV is a complete record of the
+    // current filtered view. Useful for ad-hoc audits and tax prep.
+    const today = todayStr();
+    const rows = appts
+      .filter(a => a.status !== 'cancelled' && a.date && a.date <= today)
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map(a => {
+        const p = a.payment || {};
+        const techs = txTechs(a).join(', ');
+        const services = (a.services || []).map(s => s.name).join(' + ');
+        const svcRev   = apptRevenue(a);
+        const retail   = (a.retailProducts || []).reduce((s, x) => s + (Number(x.price) || 0) * (x.qty || 1), 0);
+        return [
+          a.date,
+          a.startTime || '',
+          a.clientName || 'Walk-in',
+          techs,
+          services,
+          (a.retailProducts || []).map(x => x.name).join(', '),
+          svcRev.toFixed(2),
+          retail.toFixed(2),
+          (Number(p.tax)  || 0).toFixed(2),
+          (Number(p.tip)  || 0).toFixed(2),
+          (Number(p.discountAmount) || 0).toFixed(2),
+          (Number(p.ccFee) || 0).toFixed(2),
+          (Number(p.total) || svcRev).toFixed(2),
+          p.method || '',
+          a.clientId ? 'Scheduled' : 'Walk-in',
+          txSourceKey(a),
+        ];
+      });
+    dlCSV(`meraki-report-${startDate}-to-${endDate}${fileSuffix}.csv`, [
+      ['Date','Time','Client','Tech(s)','Services','Retail items','Service rev ($)','Retail rev ($)','Tax ($)','Tip ($)','Discount ($)','CC fee ($)','Total ($)','Payment','Type','Source'],
+      ...rows,
+    ]);
+    setOpen(false);
+  }
 
   function exportRaw() {
     const today = todayStr();
-    dlCSV(`meraki-appointments-${startDate}-to-${endDate}.csv`, [
+    dlCSV(`meraki-appointments-${startDate}-to-${endDate}${fileSuffix}.csv`, [
       ['Date', 'Client', 'Tech', 'Services', 'Revenue ($)', 'Status', 'Type'],
       ...appts
         .filter(a => a.status !== 'cancelled' && a.date <= today)
@@ -1545,7 +2234,7 @@ function ExportMenu({ appts, metrics, startDate, endDate }) {
       runningTotal += d.revenue;
       return [label, d.revenue.toFixed(2), d.count, d.count ? (d.revenue / d.count).toFixed(2) : '0.00', runningTotal.toFixed(2)];
     });
-    dlCSV(`meraki-monthly-revenue-${startDate}-to-${endDate}.csv`, [
+    dlCSV(`meraki-monthly-revenue-${startDate}-to-${endDate}${fileSuffix}.csv`, [
       ['Month', 'Revenue ($)', 'Appointments', 'Avg Ticket ($)', 'Running Total ($)'],
       ...dataRows,
       ['TOTAL', sorted.reduce((s, [, d]) => s + d.revenue, 0).toFixed(2), sorted.reduce((s, [, d]) => s + d.count, 0), '', ''],
@@ -1556,7 +2245,7 @@ function ExportMenu({ appts, metrics, startDate, endDate }) {
   function exportTechSummary() {
     const sorted = Object.entries(metrics.byTech).sort((a, b) => b[1].revenue - a[1].revenue);
     const grandTotal = sorted.reduce((s, [, d]) => s + d.revenue, 0);
-    dlCSV(`meraki-tech-summary-${startDate}-to-${endDate}.csv`, [
+    dlCSV(`meraki-tech-summary-${startDate}-to-${endDate}${fileSuffix}.csv`, [
       ['Tech Name', 'Revenue ($)', 'Appointments', 'Avg Ticket ($)', 'Unique Clients', '% of Revenue'],
       ...sorted.map(([name, d]) => [
         name,
@@ -1573,7 +2262,7 @@ function ExportMenu({ appts, metrics, startDate, endDate }) {
 
   function export1099() {
     const sorted = Object.entries(metrics.byTech).sort((a, b) => b[1].revenue - a[1].revenue);
-    dlCSV(`meraki-1099-${new Date(startDate + 'T12:00:00').getFullYear()}.csv`, [
+    dlCSV(`meraki-1099-${new Date(startDate + 'T12:00:00').getFullYear()}${fileSuffix}.csv`, [
       ['Contractor Name', 'Total Compensation ($)', 'Appointments', '1099 Required (>$600)', 'Notes'],
       ...sorted.map(([name, d]) => [
         name,
@@ -1589,6 +2278,7 @@ function ExportMenu({ appts, metrics, startDate, endDate }) {
   }
 
   const OPTS = [
+    { label: 'Current view (filtered)', sub: 'every transaction with money detail', fn: exportCurrent },
     { label: 'All appointments',   sub: 'raw row-per-appointment',       fn: exportRaw },
     { label: 'Monthly revenue',    sub: 'grouped by calendar month',     fn: exportMonthly },
     { label: 'Per-tech summary',   sub: 'revenue + avg ticket per tech', fn: exportTechSummary },

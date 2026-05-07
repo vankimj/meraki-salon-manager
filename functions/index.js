@@ -24,6 +24,23 @@ function fmtTime(str) {
   return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+// Escape user-controlled strings before interpolating them into email HTML.
+// Receipts/reviewRequests/chatNotifications are now staff-only at the rules
+// layer, but we still escape here as defense-in-depth so any future relaxation
+// of those rules — or any imported field — can't smuggle markup into mail
+// sent from the salon's verified domain.
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
+}
+// Validate a URL is plain http(s). Used for href interpolation so an attacker
+// can't smuggle javascript:/data: URIs through fields like googleReviewUrl.
+function safeUrl(u) {
+  if (!u) return '';
+  const s = String(u).trim();
+  return /^https?:\/\//i.test(s) ? s : '';
+}
+
 function fmtDate(str) {
   if (!str) return str;
   return new Date(str + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -42,7 +59,7 @@ function buildSubject(changeType, clientName, date) {
 }
 
 function buildHtml(data) {
-  const dateStr = `${fmtDate(data.date)} at ${fmtTime(data.startTime)}`;
+  const dateStr = `${esc(fmtDate(data.date))} at ${esc(fmtTime(data.startTime))}`;
   return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -52,13 +69,13 @@ function buildHtml(data) {
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Schedule Notification</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;line-height:1.65;color:#222;margin:0 0 20px;">${data.message}</p>
+      <p style="font-size:15px;line-height:1.65;color:#222;margin:0 0 20px;">${esc(data.message)}</p>
       <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;">
         <div style="font-size:13px;color:#555;margin-bottom:6px;">
           <span style="margin-right:8px;">📅</span>${dateStr}
         </div>
         <div style="font-size:13px;color:#555;">
-          <span style="margin-right:8px;">👤</span>${data.clientName}
+          <span style="margin-right:8px;">👤</span>${esc(data.clientName)}
         </div>
       </div>
     </div>
@@ -83,14 +100,14 @@ function buildHandbookReminderHtml(data, empName) {
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Employee Handbook</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${firstName}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}!</p>
       <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
-        The <strong>${title}</strong> (v${version}) has been updated and requires your acknowledgment.
+        The <strong>${esc(title)}</strong> (v${esc(version)}) has been updated and requires your acknowledgment.
         Please log in to the Meraki Salon Manager app to read and sign the latest handbook.
       </p>
       <div style="background:#FEF9EC;border-radius:8px;padding:14px 16px;border:1px solid #fcd34d;">
         <div style="font-size:13px;color:#92400e;font-weight:600;">Action Required</div>
-        <div style="font-size:13px;color:#555;margin-top:4px;">Sign the ${title} v${version} in the Meraki app under HR → Handbook.</div>
+        <div style="font-size:13px;color:#555;margin-top:4px;">Sign the ${esc(title)} v${esc(version)} in the Meraki app under HR → Handbook.</div>
       </div>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
@@ -123,15 +140,15 @@ exports.sendReceiptEmail = onDocumentCreated(
       if (settingsSnap.exists) googleReviewUrl = settingsSnap.data().googleReviewUrl || null;
     } catch { /* non-fatal */ }
 
-    const dateStr     = `${fmtDate(date)}${startTime ? ' at ' + fmtTime(startTime) : ''}`;
+    const dateStr     = `${esc(fmtDate(date))}${startTime ? ' at ' + esc(fmtTime(startTime)) : ''}`;
     const firstName   = (clientName || 'there').split(' ')[0];
     const serviceRows = services.map(s =>
-      `<tr><td style="padding:6px 0;color:#333;font-size:13px;">${s.name || '—'}${s.techName && s.techName !== techName ? ` <span style="color:#aaa">(${s.techName})</span>` : ''}</td><td style="text-align:right;padding:6px 0;color:#333;font-size:13px;">$${Number(s.price || 0).toFixed(2)}</td></tr>`
+      `<tr><td style="padding:6px 0;color:#333;font-size:13px;">${esc(s.name || '—')}${s.techName && s.techName !== techName ? ` <span style="color:#aaa">(${esc(s.techName)})</span>` : ''}</td><td style="text-align:right;padding:6px 0;color:#333;font-size:13px;">$${Number(s.price || 0).toFixed(2)}</td></tr>`
     ).join('');
 
     const summaryRows = [
       payment.discountAmount > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Discount</td><td style="text-align:right;font-size:12px;color:#ef4444;">-$${payment.discountAmount.toFixed(2)}</td></tr>`,
-      payment.promoAmount    > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Promo (${payment.promoCode})</td><td style="text-align:right;font-size:12px;color:#ef4444;">-$${payment.promoAmount.toFixed(2)}</td></tr>`,
+      payment.promoAmount    > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Promo (${esc(payment.promoCode)})</td><td style="text-align:right;font-size:12px;color:#ef4444;">-$${payment.promoAmount.toFixed(2)}</td></tr>`,
       payment.giftCard       && payment.giftCard.applied > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Gift card</td><td style="text-align:right;font-size:12px;color:#ef4444;">-$${payment.giftCard.applied.toFixed(2)}</td></tr>`,
       payment.creditApplied  > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Store credit</td><td style="text-align:right;font-size:12px;color:#ef4444;">-$${payment.creditApplied.toFixed(2)}</td></tr>`,
       payment.tip            > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Tip</td><td style="text-align:right;font-size:12px;color:#555;">$${payment.tip.toFixed(2)}</td></tr>`,
@@ -146,12 +163,12 @@ exports.sendReceiptEmail = onDocumentCreated(
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Receipt</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 4px;font-weight:600;">Hi ${firstName}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 4px;font-weight:600;">Hi ${esc(firstName)}!</p>
       <p style="font-size:13px;color:#888;margin:0 0 20px;">Thanks for visiting Meraki Nail Studio. Here's your receipt.</p>
 
       <div style="background:#f8f9fa;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#555;">
         <div>📅 ${dateStr}</div>
-        <div style="margin-top:4px;">👩‍💼 ${techName || 'Your technician'}</div>
+        <div style="margin-top:4px;">👩‍💼 ${esc(techName || 'Your technician')}</div>
       </div>
 
       <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
@@ -162,7 +179,7 @@ exports.sendReceiptEmail = onDocumentCreated(
         ${serviceRows}
         ${retailProducts.length > 0 ? `
           <tr><td colspan="2" style="padding:8px 0 4px;font-size:11px;font-weight:600;color:#aaa;text-transform:uppercase;letter-spacing:.06em;border-top:1px solid #f0f0f0;">Retail Products</td></tr>
-          ${retailProducts.map(rp => `<tr><td style="padding:6px 0;color:#333;font-size:13px;">${rp.name}${rp.qty > 1 ? ` ×${rp.qty}` : ''}</td><td style="text-align:right;padding:6px 0;color:#333;font-size:13px;">$${(Number(rp.price || 0) * (rp.qty || 1)).toFixed(2)}</td></tr>`).join('')}
+          ${retailProducts.map(rp => `<tr><td style="padding:6px 0;color:#333;font-size:13px;">${esc(rp.name)}${rp.qty > 1 ? ` ×${esc(rp.qty)}` : ''}</td><td style="text-align:right;padding:6px 0;color:#333;font-size:13px;">$${(Number(rp.price || 0) * (rp.qty || 1)).toFixed(2)}</td></tr>`).join('')}
         ` : ''}
         ${summaryRows ? `<tr><td colspan="2" style="padding:6px 0;border-top:1px solid #f0f0f0;"></td></tr>${summaryRows}` : ''}
         <tr style="border-top:1px solid #e8e8e8;">
@@ -170,13 +187,13 @@ exports.sendReceiptEmail = onDocumentCreated(
           <td style="text-align:right;padding:10px 0 0;font-size:14px;font-weight:700;color:#2D7A5F;">$${Number(payment.total || 0).toFixed(2)}</td>
         </tr>
         <tr>
-          <td colspan="2" style="font-size:11px;color:#aaa;padding-top:3px;">Paid via ${payment.method || '—'}</td>
+          <td colspan="2" style="font-size:11px;color:#aaa;padding-top:3px;">Paid via ${esc(payment.method || '—')}</td>
         </tr>
       </table>
 
-      ${googleReviewUrl
+      ${safeUrl(googleReviewUrl)
         ? `<div style="margin:20px 0 0;text-align:center;">
-             <a href="${googleReviewUrl}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:13px;font-weight:700;padding:11px 24px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">⭐ Leave us a Google Review</a>
+             <a href="${esc(safeUrl(googleReviewUrl))}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:13px;font-weight:700;padding:11px 24px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">⭐ Leave us a Google Review</a>
              <p style="font-size:11px;color:#bbb;margin:8px 0 0;">It takes 30 seconds and means the world to us 🙏</p>
            </div>`
         : `<p style="font-size:12px;color:#aaa;margin:16px 0 0;line-height:1.6;">We loved having you! It means a lot. 🙏</p>`
@@ -208,15 +225,19 @@ exports.sendReceiptEmail = onDocumentCreated(
 );
 
 function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl) {
+  // bodyHtml is pre-escaped by the caller (sendMarketingCampaign). The other
+  // four inputs come straight from the campaign doc — escape every one and
+  // restrict ctaUrl to http(s).
   const promoBlock = promoCode ? `
       <div style="margin:20px 0;background:#f0faf6;border:2px dashed #2D7A5F;border-radius:10px;padding:16px;text-align:center;">
         <div style="font-size:11px;color:#2D7A5F;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px;">Your Exclusive Promo Code</div>
-        <div style="font-size:26px;font-weight:800;color:#1a1a1a;letter-spacing:.12em;font-family:monospace,sans-serif;">${promoCode}</div>
-        ${promoLabel ? `<div style="font-size:12px;color:#888;margin-top:6px;">${promoLabel}</div>` : ''}
+        <div style="font-size:26px;font-weight:800;color:#1a1a1a;letter-spacing:.12em;font-family:monospace,sans-serif;">${esc(promoCode)}</div>
+        ${promoLabel ? `<div style="font-size:12px;color:#888;margin-top:6px;">${esc(promoLabel)}</div>` : ''}
       </div>` : '';
-  const ctaBlock = ctaUrl ? `
+  const ctaUrlSafe = safeUrl(ctaUrl);
+  const ctaBlock = ctaUrlSafe ? `
       <div style="text-align:center;margin:24px 0 8px;">
-        <a href="${ctaUrl}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">${ctaText || 'Book Your Appointment'} →</a>
+        <a href="${esc(ctaUrlSafe)}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">${esc(ctaText || 'Book Your Appointment')} →</a>
       </div>` : '';
   return `<!DOCTYPE html>
 <html>
@@ -307,12 +328,12 @@ exports.sendReviewRequestEmail = onDocumentCreated(
     if (!apiKey) { await snap.ref.update({ error: 'resend_not_configured' }); return; }
 
     const { clientName, clientEmail, googleReviewUrl } = data;
-    if (!clientEmail)     { await snap.ref.update({ error: 'no_email' });      return; }
-    if (!googleReviewUrl) { await snap.ref.update({ error: 'no_review_url' }); return; }
+    if (!clientEmail)              { await snap.ref.update({ error: 'no_email' });      return; }
+    if (!safeUrl(googleReviewUrl)) { await snap.ref.update({ error: 'no_review_url' }); return; }
 
     const firstName   = (clientName || 'there').split(' ')[0];
     const reqId       = snap.id;
-    const trackUrl    = `https://us-central1-meraki-salon-manager.cloudfunctions.net/trackReviewClick?r=${reqId}`;
+    const trackUrl    = `https://us-central1-meraki-salon-manager.cloudfunctions.net/trackReviewClick?r=${encodeURIComponent(reqId)}`;
     const html = `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -322,14 +343,14 @@ exports.sendReviewRequestEmail = onDocumentCreated(
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">We'd love your feedback</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${firstName}! 💅</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}! 💅</p>
       <p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 24px;">
         Thank you so much for visiting us at Meraki Nail Studio! We hope you loved your nails.
         If you have a moment, leaving us a Google review would mean the world to us and helps
         other clients find us.
       </p>
       <div style="text-align:center;margin-bottom:24px;">
-        <a href="${trackUrl}" style="display:inline-block;background:#f59e0b;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">
+        <a href="${esc(trackUrl)}" style="display:inline-block;background:#f59e0b;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">
           ⭐ Leave a Google Review
         </a>
         <p style="font-size:11px;color:#bbb;margin:10px 0 0;">It only takes 30 seconds and helps us so much 🙏</p>
@@ -376,9 +397,9 @@ exports.sendReviewRequestEmail = onDocumentCreated(
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Review Request Sent</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${tFirstName}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(tFirstName)}!</p>
       <p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 16px;">
-        A Google review request was just sent to <strong>${clientName}</strong>.
+        A Google review request was just sent to <strong>${esc(clientName)}</strong>.
         If you see them in the salon, remind them to leave a review — it helps the whole team!
       </p>
       <div style="background:#f0fdf4;border-radius:8px;padding:12px 14px;border:1px solid #bbf7d0;font-size:13px;color:#16a34a;font-weight:600;">
@@ -433,8 +454,8 @@ exports.sendAccessRequestNotification = onDocumentCreated(
         A new user is requesting access to the salon manager app.
       </p>
       <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
-        <div><strong>Name:</strong> ${name}</div>
-        <div style="margin-top:6px;"><strong>Email:</strong> ${req.email}</div>
+        <div><strong>Name:</strong> ${esc(name)}</div>
+        <div style="margin-top:6px;"><strong>Email:</strong> ${esc(req.email)}</div>
       </div>
       <p style="font-size:13px;color:#888;margin:16px 0 0;">
         Log in to the Admin panel to approve or deny this request.
@@ -536,7 +557,7 @@ function tomorrowStr() {
 }
 
 function buildReminderHtml(appt, client) {
-  const dateStr  = `${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`;
+  const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
   return `<!DOCTYPE html>
@@ -548,7 +569,7 @@ function buildReminderHtml(appt, client) {
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Appointment Reminder</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${client.name?.split(' ')[0] || client.name}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(client.name?.split(' ')[0] || client.name)}!</p>
       <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
         Just a reminder that you have an appointment <strong>tomorrow</strong> at Meraki Nail Studio.
       </p>
@@ -557,10 +578,10 @@ function buildReminderHtml(appt, client) {
           <span>📅</span><span><strong>${dateStr}</strong></span>
         </div>
         <div style="font-size:13px;color:#333;margin-bottom:8px;display:flex;gap:10px;">
-          <span>💅</span><span>${services}${duration ? ` <span style="color:#aaa">(${duration})</span>` : ''}</span>
+          <span>💅</span><span>${esc(services)}${duration ? ` <span style="color:#aaa">(${esc(duration)})</span>` : ''}</span>
         </div>
         <div style="font-size:13px;color:#333;margin-bottom:8px;display:flex;gap:10px;">
-          <span>👩‍💼</span><span>with ${appt.techName}</span>
+          <span>👩‍💼</span><span>with ${esc(appt.techName)}</span>
         </div>
         <div style="font-size:13px;color:#333;display:flex;gap:10px;">
           <span>📍</span><span>Columbus, OH</span>
@@ -580,26 +601,31 @@ function buildReminderHtml(appt, client) {
 
 function buildMeetingReminderHtml(meeting, participantName, timeLabel) {
   const firstName = (participantName || 'Team').split(' ')[0];
-  const dateStr   = `${fmtDate(meeting.date)} at ${fmtTime(meeting.startTime)}`;
+  const dateStr   = `${esc(fmtDate(meeting.date))} at ${esc(fmtTime(meeting.startTime))}`;
   const durLabel  = meeting.duration ? `${meeting.duration} min` : '';
+  // description is the only field that should keep newlines as <br>; escape
+  // first, then convert escaped newlines to <br> so script can't sneak in.
+  const descHtml  = meeting.description
+    ? esc(meeting.description).replace(/\n/g, '<br>')
+    : '';
   return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
     <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
       <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">Meraki Nail Studio</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Meeting Reminder — starting in ${timeLabel}</div>
+      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Meeting Reminder — starting in ${esc(timeLabel)}</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${firstName}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}!</p>
       <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
-        Your meeting is starting in <strong>${timeLabel}</strong>. See you there!
+        Your meeting is starting in <strong>${esc(timeLabel)}</strong>. See you there!
       </p>
       <div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
-        <div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:10px;">${meeting.title}</div>
-        <div style="font-size:13px;color:#555;margin-bottom:6px;">📅 ${dateStr}${durLabel ? ` (${durLabel})` : ''}</div>
-        ${meeting.location ? `<div style="font-size:13px;color:#555;margin-bottom:6px;">📍 ${meeting.location}</div>` : ''}
-        ${meeting.description ? `<div style="font-size:12px;color:#888;margin-top:8px;line-height:1.5;">${meeting.description.replace(/\n/g, '<br>')}</div>` : ''}
+        <div style="font-size:14px;font-weight:700;color:#1a1a1a;margin-bottom:10px;">${esc(meeting.title)}</div>
+        <div style="font-size:13px;color:#555;margin-bottom:6px;">📅 ${dateStr}${durLabel ? ` (${esc(durLabel)})` : ''}</div>
+        ${meeting.location ? `<div style="font-size:13px;color:#555;margin-bottom:6px;">📍 ${esc(meeting.location)}</div>` : ''}
+        ${descHtml ? `<div style="font-size:12px;color:#888;margin-top:8px;line-height:1.5;">${descHtml}</div>` : ''}
       </div>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
@@ -745,11 +771,14 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const apiKey = resendKey.value();
     if (!apiKey) return;
 
+    // appt.* fields here come from the public booking form (anyone can submit
+    // an appointment doc). Every interpolation below MUST be HTML-escaped so
+    // an attacker can't inject markup into mail sent from the verified domain.
     const resend    = new Resend(apiKey);
     const firstName = (appt.clientName || 'there').split(' ')[0];
-    const dateStr   = `${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`;
+    const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
-    const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'a available stylist';
+    const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
 
     const clientHtml = `<!DOCTYPE html>
 <html>
@@ -760,14 +789,14 @@ exports.sendBookingConfirmation = onDocumentCreated(
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Booking Confirmation</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${firstName}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}!</p>
       <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
         Your appointment has been booked. We can't wait to see you!
       </p>
       <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;">
         <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>📅</strong> ${dateStr}</div>
-        <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>💅</strong> ${svcName}</div>
-        <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>👩‍💼</strong> With ${techLine}</div>
+        <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>💅</strong> ${esc(svcName)}</div>
+        <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>👩‍💼</strong> With ${esc(techLine)}</div>
         <div style="font-size:13px;color:#555;"><strong>📍</strong> Meraki Nail Studio, Columbus OH</div>
       </div>
       <p style="font-size:12px;color:#aaa;margin:16px 0 0;">Need to reschedule? Give us a call and we'll take care of you.</p>
@@ -807,10 +836,10 @@ exports.sendBookingConfirmation = onDocumentCreated(
         A new appointment was booked online.
       </p>
       <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
-        <div style="margin-bottom:6px;"><strong>Client:</strong> ${appt.clientName}${appt.clientPhone ? ' · ' + appt.clientPhone : ''}</div>
+        <div style="margin-bottom:6px;"><strong>Client:</strong> ${esc(appt.clientName)}${appt.clientPhone ? ' · ' + esc(appt.clientPhone) : ''}</div>
         <div style="margin-bottom:6px;"><strong>Date:</strong> ${dateStr}</div>
-        <div style="margin-bottom:6px;"><strong>Service:</strong> ${svcName}</div>
-        <div><strong>Stylist:</strong> ${appt.techName || 'TBD'}</div>
+        <div style="margin-bottom:6px;"><strong>Service:</strong> ${esc(svcName)}</div>
+        <div><strong>Stylist:</strong> ${esc(appt.techName || 'TBD')}</div>
       </div>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
@@ -938,9 +967,9 @@ exports.sendChatNotification = onDocumentCreated(
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">New Client Message</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">New message from ${data.clientName || 'a client'}</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">New message from ${esc(data.clientName || 'a client')}</p>
       <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;margin:12px 0;">
-        <div style="font-size:13px;color:#555;font-style:italic;">"${preview}"</div>
+        <div style="font-size:13px;color:#555;font-style:italic;">"${esc(preview)}"</div>
       </div>
       <p style="font-size:13px;color:#888;margin:0;">Open the Meraki app and go to <strong>Messages</strong> to reply.</p>
     </div>
@@ -985,11 +1014,11 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
       <div style="color:rgba(255,255,255,.85);font-size:12px;margin-top:2px;">New Google Review</div>
     </div>
     <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">⭐ New review from ${data.clientName || 'a client'}!</p>
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">⭐ New review from ${esc(data.clientName || 'a client')}!</p>
       <div style="background:#fffbeb;border-radius:8px;padding:14px 16px;border:1px solid #fde68a;margin:12px 0;">
         <div style="font-size:20px;color:#f59e0b;margin-bottom:6px;letter-spacing:2px;">${stars}</div>
-        ${data.techName ? `<div style="font-size:13px;color:#555;">Serviced by <strong>${data.techName}</strong></div>` : ''}
-        ${data.date ? `<div style="font-size:12px;color:#aaa;margin-top:4px;">${data.date}</div>` : ''}
+        ${data.techName ? `<div style="font-size:13px;color:#555;">Serviced by <strong>${esc(data.techName)}</strong></div>` : ''}
+        ${data.date ? `<div style="font-size:12px;color:#aaa;margin-top:4px;">${esc(data.date)}</div>` : ''}
       </div>
       <p style="font-size:13px;color:#888;margin:0;">Open the client's profile in the Meraki app to view the full review.</p>
     </div>
@@ -1345,20 +1374,26 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
 
 // Tracks when a client clicks the review link in their email, then redirects to Google.
 exports.trackReviewClick = onRequest({ cors: false }, async (req, res) => {
-  const reqId = req.query.r;
+  const reqId = String(req.query.r || '');
   const db    = getFirestore();
+
+  // Reject obviously-malformed reqIds before doing a Firestore read.
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(reqId)) {
+    return res.redirect(302, 'https://g.page/r/review');
+  }
 
   let redirectTo = `https://g.page/r/review`; // fallback
   try {
-    if (reqId) {
-      const ref  = db.doc(`tenants/${TENANT_ID}/reviewRequests/${reqId}`);
-      const snap = await ref.get();
-      if (snap.exists) {
-        const data = snap.data();
-        if (data.googleReviewUrl) redirectTo = data.googleReviewUrl;
-        if (!data.clickedAt) {
-          await ref.update({ clickedAt: new Date().toISOString() });
-        }
+    const ref  = db.doc(`tenants/${TENANT_ID}/reviewRequests/${reqId}`);
+    const snap = await ref.get();
+    if (snap.exists) {
+      const data = snap.data();
+      // Only honor http(s) URLs — blocks javascript:/data: and any
+      // malformed string an attacker could otherwise plant.
+      const candidate = safeUrl(data.googleReviewUrl);
+      if (candidate) redirectTo = candidate;
+      if (!data.clickedAt) {
+        await ref.update({ clickedAt: new Date().toISOString() });
       }
     }
   } catch (e) {
@@ -1800,27 +1835,30 @@ function meetingInviteHtml({ meeting, token, recipientName, baseUrl }) {
     const total = h * 60 + mi + dur;
     return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
   })();
+  const descHtml = meeting.description
+    ? esc(meeting.description).replace(/\n/g, '<br>')
+    : '';
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:520px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
     <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:24px 24px 20px;color:#fff;">
       <div style="font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.8;">Meeting invitation</div>
-      <div style="font-size:22px;font-weight:800;margin-top:4px;line-height:1.25;">${meeting.title || 'Meraki team meeting'}</div>
+      <div style="font-size:22px;font-weight:800;margin-top:4px;line-height:1.25;">${esc(meeting.title || 'Meraki team meeting')}</div>
     </div>
     <div style="padding:22px 24px;color:#1a1a1a;">
-      <p style="margin:0 0 14px;font-size:14px;line-height:1.6;">Hi ${recipientName || 'there'},<br>You're invited to the following meeting. Please let us know if you can make it:</p>
+      <p style="margin:0 0 14px;font-size:14px;line-height:1.6;">Hi ${esc(recipientName || 'there')},<br>You're invited to the following meeting. Please let us know if you can make it:</p>
       <table style="width:100%;border-collapse:collapse;margin:8px 0 18px;font-size:14px;">
-        <tr><td style="padding:6px 0;color:#888;width:84px;">Date</td><td style="padding:6px 0;">${fmtDate(meeting.date)}</td></tr>
-        <tr><td style="padding:6px 0;color:#888;">Time</td><td style="padding:6px 0;">${fmtTime(meeting.startTime)} – ${fmtTime(endHHMM)}</td></tr>
-        ${meeting.location ? `<tr><td style="padding:6px 0;color:#888;">Location</td><td style="padding:6px 0;">${meeting.location}</td></tr>` : ''}
-        ${meeting.description ? `<tr><td style="padding:6px 0;color:#888;vertical-align:top;">Details</td><td style="padding:6px 0;line-height:1.5;">${meeting.description.replace(/\n/g, '<br>')}</td></tr>` : ''}
+        <tr><td style="padding:6px 0;color:#888;width:84px;">Date</td><td style="padding:6px 0;">${esc(fmtDate(meeting.date))}</td></tr>
+        <tr><td style="padding:6px 0;color:#888;">Time</td><td style="padding:6px 0;">${esc(fmtTime(meeting.startTime))} – ${esc(fmtTime(endHHMM))}</td></tr>
+        ${meeting.location ? `<tr><td style="padding:6px 0;color:#888;">Location</td><td style="padding:6px 0;">${esc(meeting.location)}</td></tr>` : ''}
+        ${descHtml ? `<tr><td style="padding:6px 0;color:#888;vertical-align:top;">Details</td><td style="padding:6px 0;line-height:1.5;">${descHtml}</td></tr>` : ''}
       </table>
       <div style="display:block;text-align:center;margin:22px 0 12px;">
-        <a href="${acceptUrl}"  style="display:inline-block;margin:4px 4px;padding:11px 22px;border-radius:8px;background:#16a34a;color:#fff;text-decoration:none;font-weight:700;font-size:14px;">✓ Accept</a>
-        <a href="${maybeUrl}"   style="display:inline-block;margin:4px 4px;padding:11px 22px;border-radius:8px;background:#f59e0b;color:#fff;text-decoration:none;font-weight:700;font-size:14px;">? Maybe</a>
-        <a href="${declineUrl}" style="display:inline-block;margin:4px 4px;padding:11px 22px;border-radius:8px;background:#ef4444;color:#fff;text-decoration:none;font-weight:700;font-size:14px;">✗ Decline</a>
+        <a href="${esc(acceptUrl)}"  style="display:inline-block;margin:4px 4px;padding:11px 22px;border-radius:8px;background:#16a34a;color:#fff;text-decoration:none;font-weight:700;font-size:14px;">✓ Accept</a>
+        <a href="${esc(maybeUrl)}"   style="display:inline-block;margin:4px 4px;padding:11px 22px;border-radius:8px;background:#f59e0b;color:#fff;text-decoration:none;font-weight:700;font-size:14px;">? Maybe</a>
+        <a href="${esc(declineUrl)}" style="display:inline-block;margin:4px 4px;padding:11px 22px;border-radius:8px;background:#ef4444;color:#fff;text-decoration:none;font-weight:700;font-size:14px;">✗ Decline</a>
       </div>
       <div style="text-align:center;font-size:12px;color:#888;margin-top:6px;">
-        Or <a href="${detailsUrl}" style="color:#3D95CE;text-decoration:none;">view meeting details &amp; respond there</a>
+        Or <a href="${esc(detailsUrl)}" style="color:#3D95CE;text-decoration:none;">view meeting details &amp; respond there</a>
       </div>
     </div>
     <div style="padding:14px 24px;background:#fafafa;border-top:1px solid #f0f0f0;text-align:center;font-size:11px;color:#aaa;">

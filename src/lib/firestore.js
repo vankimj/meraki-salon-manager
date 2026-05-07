@@ -32,19 +32,60 @@ export async function loadAll() {
   const usersDoc    = ud.status  === 'fulfilled' ? ud.value  : null;
   const settingsDoc = stg.status === 'fulfilled' ? stg.value : null;
   return {
-    slides:   slidesDoc?.exists()   ? (slidesDoc.data().slides   ?? []) : null,
-    def:      slidesDoc?.exists()   ? (slidesDoc.data().def      ?? 0)  : 0,
-    cur:      slidesDoc?.exists()   ? (slidesDoc.data().cur      ?? 0)  : 0,
-    users:    usersDoc?.exists()    ? (usersDoc.data().users     ?? []) : [],
-    settings: settingsDoc?.exists() ? settingsDoc.data()                : {},
+    slides:        slidesDoc?.exists()   ? (slidesDoc.data().slides       ?? []) : null,
+    def:           slidesDoc?.exists()   ? (slidesDoc.data().def          ?? 0)  : 0,
+    cur:           slidesDoc?.exists()   ? (slidesDoc.data().cur          ?? 0)  : 0,
+    users:         usersDoc?.exists()    ? (usersDoc.data().users         ?? []) : [],
+    staffEmails:   usersDoc?.exists()    ? (usersDoc.data().staffEmails   ?? null) : null,
+    adminEmails:   usersDoc?.exists()    ? (usersDoc.data().adminEmails   ?? null) : null,
+    settings:      settingsDoc?.exists() ? settingsDoc.data()                    : {},
   };
+}
+
+// One-time backfill: write the derived `staffEmails`/`adminEmails` arrays
+// onto an existing users doc that was created before those fields existed.
+// Called silently from AppContext on admin load — admins are the only callers
+// with permission to write the users doc, so non-admin invocations are inert.
+export async function ensureStaffEmailsBackfill(users) {
+  try {
+    await setDoc(USERS_REF, {
+      users,
+      staffEmails: buildStaffEmails(users),
+      adminEmails: buildAdminEmails(users),
+    });
+  } catch (e) { console.warn('[ensureStaffEmailsBackfill] skipped:', e?.code || e?.message); }
 }
 
 // ── Slides ─────────────────────────────────────────────
 export const saveSlides   = (slides, def, cur) => setDoc(SLIDES_REF, { slides, def, cur });
 
 // ── Users ──────────────────────────────────────────────
-export const saveUsers    = (users)    => setDoc(USERS_REF, { users });
+// `staffEmails` and `adminEmails` are projections of the active-role emails
+// the Firestore security rules read for `isTenantStaff(tenantId)` and
+// `isTenantAdmin(tenantId)`. We rebuild them on every save so that role
+// changes (grant/revoke admin, demote to readonly, deny) take effect
+// immediately at the rules layer without app code having to maintain a
+// parallel field.
+const STAFF_ROLES = ['admin', 'readonly', 'tech', 'scheduler'];
+function emailsByRole(users, predicate) {
+  return Array.from(new Set(
+    (users || [])
+      .filter(u => u && u.email && predicate(u))
+      .map(u => String(u.email).trim().toLowerCase())
+      .filter(Boolean),
+  ));
+}
+export function buildStaffEmails(users) {
+  return emailsByRole(users, u => STAFF_ROLES.includes(u.role));
+}
+export function buildAdminEmails(users) {
+  return emailsByRole(users, u => u.role === 'admin');
+}
+export const saveUsers    = (users)    => setDoc(USERS_REF, {
+  users,
+  staffEmails: buildStaffEmails(users),
+  adminEmails: buildAdminEmails(users),
+});
 
 // ── Settings ───────────────────────────────────────────
 export const saveSettings = (settings) => setDoc(SETTINGS_REF, settings);
@@ -283,8 +324,61 @@ export async function deleteRecurringGroup(groupId) {
 }
 
 export async function fetchClientAppointments(clientId) {
-  const snap = await getDocs(query(APPTS_COL, where('clientId', '==', clientId), orderBy('date', 'desc'), limit(100)));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  // where + orderBy on different fields would require a composite index;
+  // the project convention is to filter with where alone and sort client-side.
+  const snap = await getDocs(query(APPTS_COL, where('clientId', '==', clientId)));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  rows.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  return rows;
+}
+
+// Full visit history for a client: appointments + receipts (imports).
+// Returns a unified, deduped list sorted newest-first. Each row exposes
+// date, startTime, services[], techName, status, and revenue surface so
+// the visit-history modal can render either source uniformly.
+export async function fetchClientVisits(clientId) {
+  const [apptSnap, rcptSnap] = await Promise.all([
+    getDocs(query(APPTS_COL,    where('clientId', '==', clientId))),
+    getDocs(query(RECEIPTS_COL, where('clientId', '==', clientId))).catch(() => ({ docs: [] })),
+  ]);
+  const appts    = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const receipts = rcptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  // De-dupe: if a receipt covers an appointment via apptIds, drop the appt
+  // since the receipt is the canonical record.
+  const covered = new Set();
+  receipts.forEach(r => (r.apptIds || []).forEach(id => covered.add(id)));
+
+  const visits = [
+    ...receipts.map(r => ({
+      id:        r.id,
+      source:    'receipt',
+      date:      r.date,
+      startTime: r.startTime || (r.payment?.paidAt ? r.payment.paidAt.slice(11, 16) : ''),
+      services:  r.services || [],
+      techName:  r.techName || '',
+      status:    r.refunded ? 'refunded' : 'done',
+      revenue:   (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0),
+      raw:       r,
+    })),
+    ...appts.filter(a => !covered.has(a.id)).map(a => ({
+      id:        a.id,
+      source:    'appt',
+      date:      a.date,
+      startTime: a.startTime || '',
+      services:  a.services || [],
+      techName:  a.techName || '',
+      status:    a.status || 'scheduled',
+      revenue:   (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0),
+      raw:       a,
+    })),
+  ];
+  visits.sort((a, b) => {
+    const d = (b.date || '').localeCompare(a.date || '');
+    if (d !== 0) return d;
+    return (b.startTime || '').localeCompare(a.startTime || '');
+  });
+  return visits;
 }
 
 export async function fetchDemoAppointments() {
@@ -347,6 +441,21 @@ export async function fetchAppointmentsByRange(startDate, endDate) {
     where('date', '<=', endDate),
   ));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// Returns the set of clientIds with any appointment OR receipt strictly
+// before `beforeDate`. Used to classify clients in the current period as
+// "new" (first ever visit) vs "returning" — accurate even when the prior
+// period is short.
+export async function fetchHistoricalClientIds(beforeDate) {
+  const [aSnap, rSnap] = await Promise.all([
+    getDocs(query(APPTS_COL, where('date', '<', beforeDate))).catch(() => ({ docs: [] })),
+    getDocs(query(RECEIPTS_COL, where('date', '<', beforeDate))).catch(() => ({ docs: [] })),
+  ]);
+  const ids = new Set();
+  aSnap.docs.forEach(d => { const c = d.data().clientId; if (c) ids.add(c); });
+  rSnap.docs.forEach(d => { const c = d.data().clientId; if (c) ids.add(c); });
+  return ids;
 }
 
 // ── Gift cards ─────────────────────────────────────────
@@ -536,7 +645,11 @@ export async function markCheckedIn(apptId, appt) {
 const RECEIPTS_COL = tenantCol('receipts');
 
 export async function createReceipt(data) {
-  await addDoc(RECEIPTS_COL, { ...data, createdAt: new Date().toISOString(), sent: false });
+  await addDoc(RECEIPTS_COL, {
+    sent: false,
+    ...data,
+    createdAt: data.createdAt || new Date().toISOString(),
+  });
 }
 
 export async function fetchDemoReceipts() {
@@ -545,6 +658,614 @@ export async function fetchDemoReceipts() {
 }
 
 export const deleteReceipt = (id) => deleteDoc(doc(RECEIPTS_COL, id));
+
+// ── Pre-import dedup keys ──────────────────────────────
+// Returns a Set of `_glossgeniusChargeId` values for receipts already in the
+// DB. The joined-receipts importer skips any payment whose chargeId is in
+// this set, so re-running the importer is now idempotent.
+export async function fetchExistingGgChargeIds() {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  const set = new Set();
+  snap.docs.forEach(d => {
+    const id = d.data()._glossgeniusChargeId;
+    if (id) set.add(id);
+  });
+  return set;
+}
+
+// Returns a Set of _glossgeniusTransactionId values already in the receipts
+// collection. This is the per-row unique ID from the GG Payment Details
+// CSV (column "Payment Transaction ID") and is the correct dedup key for
+// re-import. Charge ID alone is insufficient because GG re-uses the same
+// Charge ID across payment/refund pairs and split payments, so dedup-by-
+// chargeId silently drops refund and split-second-half rows.
+export async function fetchExistingGgTransactionIds() {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  const set = new Set();
+  snap.docs.forEach(d => {
+    const id = d.data()._glossgeniusTransactionId;
+    if (id) set.add(id);
+  });
+  return set;
+}
+
+// Returns a Set of normalized client name keys (matching csvImport.clientKey)
+// already in the clients collection. Used to skip duplicate client imports.
+export async function fetchExistingClientNameKeys() {
+  const snap = await getDocs(CLIENTS_COL);
+  const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const set = new Set();
+  snap.docs.forEach(d => {
+    const c = d.data();
+    if (c?.name) set.add(norm(c.name));
+  });
+  return set;
+}
+
+// Synthetic key for an appointment row — used to dedup re-imports of the GG
+// Appointments CSV. Matches the importer's expected fields.
+function apptDedupKey({ date, startTime, clientName, techName, services }) {
+  const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  const svcName = norm(services?.[0]?.name);
+  return `${date || ''}|${startTime || ''}|${norm(clientName)}|${norm(techName)}|${svcName}`;
+}
+export { apptDedupKey };
+
+// Returns a Set of dedup keys for every appointment already in the DB.
+export async function fetchExistingApptKeys() {
+  const snap = await getDocs(APPTS_COL);
+  const set = new Set();
+  snap.docs.forEach(d => set.add(apptDedupKey(d.data())));
+  return set;
+}
+
+// Synthetic key for a single-file "Sales" receipt (mapSaleRow path) — used
+// to dedup re-imports when the row has no Charge ID.
+function saleDedupKey({ date, clientName, payment }) {
+  const norm = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return `${date || ''}|${norm(clientName)}|${(payment?.total || 0).toFixed(2)}|${payment?.method || ''}`;
+}
+export { saleDedupKey };
+
+// Set of synthetic keys for every existing receipt. Covers both joined-path
+// (which also has a Charge ID dedup) and single-file paths.
+export async function fetchExistingReceiptKeys() {
+  const snap = await getDocs(RECEIPTS_COL);
+  const set = new Set();
+  snap.docs.forEach(d => set.add(saleDedupKey(d.data())));
+  return set;
+}
+
+// Counts every appointment doc — destructive scope preview for the
+// "wipe all appointments" button.
+export async function countAllAppointments() {
+  const snap = await getDocs(APPTS_COL);
+  return snap.size;
+}
+
+// Hard reset: delete EVERY appointment doc, regardless of source. Used
+// before re-importing GG appointment history when a tenant wants a clean
+// calendar. Irreversible. Receipts are NOT touched (sales history is
+// preserved). Demo / online-booking / in-app appointments all go.
+export async function wipeAllAppointments(onProgress) {
+  const snap = await getDocs(APPTS_COL);
+  const total = snap.size;
+  let deleted = 0;
+  for (const d of snap.docs) {
+    await deleteDoc(doc(APPTS_COL, d.id));
+    deleted++;
+    if (onProgress && deleted % 50 === 0) onProgress(`Deleted ${deleted.toLocaleString()} / ${total.toLocaleString()}…`);
+  }
+  return { deleted, total };
+}
+
+// Counts every receipt doc — destructive scope preview for the
+// "wipe all transactions" button.
+export async function countAllReceipts() {
+  const snap = await getDocs(RECEIPTS_COL);
+  return snap.size;
+}
+
+// Hard reset: delete EVERY receipt doc, regardless of source. Wipes the
+// entire sales/transaction history (in-app checkouts + GG imports + demo).
+// Irreversible. Appointments and clients are NOT touched.
+export async function wipeAllReceipts(onProgress) {
+  const snap = await getDocs(RECEIPTS_COL);
+  const total = snap.size;
+  let deleted = 0;
+  for (const d of snap.docs) {
+    await deleteDoc(doc(RECEIPTS_COL, d.id));
+    deleted++;
+    if (onProgress && deleted % 50 === 0) onProgress(`Deleted ${deleted.toLocaleString()} / ${total.toLocaleString()}…`);
+  }
+  return { deleted, total };
+}
+
+// Preview of what wipeAllGgImports would delete — counts per collection so
+// the user can decide before pulling the trigger.
+export async function previewGgImportWipe() {
+  const [clients, appts, receipts] = await Promise.all([
+    getDocs(query(CLIENTS_COL,  where('_importedFrom', '==', 'glossgenius'))),
+    getDocs(query(APPTS_COL,    where('_importedFrom', '==', 'glossgenius'))),
+    getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius'))),
+  ]);
+  return {
+    clients:  clients.size,
+    appointments: appts.size,
+    receipts: receipts.size,
+    total:    clients.size + appts.size + receipts.size,
+  };
+}
+
+// Hard reset: delete every record tagged `_importedFrom: 'glossgenius'` across
+// clients, appointments, and receipts. After this runs, the user can re-import
+// the GG Clients CSV + Payment Details + Checkout Line Items cleanly. Local
+// (non-GG) records are untouched. Irreversible — no soft-delete.
+export async function wipeAllGgImports(onProgress) {
+  const [clientsSnap, apptsSnap, receiptsSnap] = await Promise.all([
+    getDocs(query(CLIENTS_COL,  where('_importedFrom', '==', 'glossgenius'))),
+    getDocs(query(APPTS_COL,    where('_importedFrom', '==', 'glossgenius'))),
+    getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius'))),
+  ]);
+  const total = clientsSnap.size + apptsSnap.size + receiptsSnap.size;
+  let done = 0;
+
+  async function deleteAll(snap, col, label) {
+    for (const d of snap.docs) {
+      await deleteDoc(doc(col, d.id));
+      done++;
+      if (onProgress && done % 50 === 0) onProgress(`Deleted ${done.toLocaleString()} / ${total.toLocaleString()} (${label})…`);
+    }
+  }
+
+  await deleteAll(receiptsSnap, RECEIPTS_COL, 'receipts');
+  await deleteAll(apptsSnap,    APPTS_COL,    'appointments');
+  await deleteAll(clientsSnap,  CLIENTS_COL,  'clients');
+
+  return {
+    deletedReceipts:    receiptsSnap.size,
+    deletedAppointments: apptsSnap.size,
+    deletedClients:     clientsSnap.size,
+    total,
+  };
+}
+
+// Same idea as the createdAt distribution but for the receipt's `date` field
+// (the transaction's actual sale date, which the metrics filter requires
+// for inclusion). Returns counts of valid vs missing/malformed.
+export async function diagnoseReceiptDate() {
+  const snap = await getDocs(RECEIPTS_COL);
+  const byYear = {};
+  let valid = 0, missing = 0, malformed = 0;
+  const sampleMissing = [];
+  const sampleMalformed = [];
+  snap.docs.forEach(d => {
+    const data = d.data();
+    const dt = data.date;
+    if (!dt) {
+      missing++;
+      if (sampleMissing.length < 5) sampleMissing.push({ id: d.id, clientName: data.clientName, total: data.payment?.total || 0, method: data.payment?.method, createdAt: data.createdAt });
+      return;
+    }
+    if (typeof dt !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dt)) {
+      malformed++;
+      if (sampleMalformed.length < 5) sampleMalformed.push({ id: d.id, value: String(dt).slice(0, 40), method: data.payment?.method });
+      return;
+    }
+    valid++;
+    const yr = dt.slice(0, 4);
+    byYear[yr] = (byYear[yr] || 0) + 1;
+  });
+  return { total: snap.size, valid, missing, malformed, byYear, sampleMissing, sampleMalformed };
+}
+
+// Backfill: copy a usable date string into receipts whose `date` field is
+// missing or malformed. Pulls (in order): payment.paidAt → createdAt
+// (slicing off the time portion to get YYYY-MM-DD). Same signature pattern
+// as the createdAt backfill — safe to run multiple times.
+export async function backfillReceiptDate(onProgress) {
+  const snap = await getDocs(RECEIPTS_COL);
+  let scanned = 0, updated = 0, skipped = 0, unfixable = 0;
+  const sampleUnfixable = [];
+  for (const d of snap.docs) {
+    scanned++;
+    const data = d.data();
+    const cur = data.date;
+    if (cur && typeof cur === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(cur)) { skipped++; continue; }
+    const fromPaid = typeof data?.payment?.paidAt === 'string' ? data.payment.paidAt.slice(0, 10) : null;
+    const fromCreated = typeof data?.createdAt === 'string' ? data.createdAt.slice(0, 10) : null;
+    const target = (fromPaid && /^\d{4}-\d{2}-\d{2}$/.test(fromPaid))
+      ? fromPaid
+      : (fromCreated && /^\d{4}-\d{2}-\d{2}$/.test(fromCreated) ? fromCreated : null);
+    if (!target) {
+      unfixable++;
+      if (sampleUnfixable.length < 5) sampleUnfixable.push({ id: d.id, clientName: data.clientName, total: data.payment?.total || 0 });
+      continue;
+    }
+    await updateDoc(doc(RECEIPTS_COL, d.id), { date: target });
+    updated++;
+    if (onProgress && updated % 25 === 0) onProgress(`Backfilled ${updated}/${scanned}…`);
+  }
+  return { scanned, updated, skipped, unfixable, sampleUnfixable };
+}
+
+// Diagnostic: bucket every receipt's createdAt by year + flags type problems
+// (Firestore Timestamps stored as objects instead of ISO strings, garbage
+// like "Invalid Date", or out-of-range years). Use this when the Reports
+// `where('createdAt', ...)` range query is silently dropping receipts.
+export async function diagnoseReceiptCreatedAt() {
+  const snap = await getDocs(RECEIPTS_COL);
+  const byYear = {};
+  let validIso = 0, nonString = 0, unparseable = 0, missing = 0;
+  const sampleNonString = [];
+  const sampleUnparseable = [];
+  snap.docs.forEach(d => {
+    const data = d.data();
+    const c = data.createdAt;
+    if (c == null) { missing++; return; }
+    if (typeof c !== 'string') {
+      nonString++;
+      if (sampleNonString.length < 5) sampleNonString.push({ id: d.id, type: typeof c, value: String(c).slice(0, 60), method: data.payment?.method });
+      return;
+    }
+    const dt = new Date(c);
+    if (isNaN(dt.getTime())) {
+      unparseable++;
+      if (sampleUnparseable.length < 5) sampleUnparseable.push({ id: d.id, value: c.slice(0, 40), method: data.payment?.method });
+      return;
+    }
+    validIso++;
+    const yr = dt.getUTCFullYear();
+    byYear[yr] = (byYear[yr] || 0) + 1;
+  });
+  return {
+    total: snap.size,
+    validIso,
+    nonString,
+    unparseable,
+    missing,
+    byYear,
+    sampleNonString,
+    sampleUnparseable,
+  };
+}
+
+// Diagnostic: explain a method-bucket count discrepancy by listing all
+// receipts with the given normalized method, grouped by transactionType
+// and source. Use it when "Cash" (or another method) on the Reports KPI
+// shows fewer transactions than the user counted manually — most often
+// the gap is rows tagged 'cancellation' or 'void' that the Overview
+// excludes from "money collected" by design.
+export async function diagnoseMethodBucket(method) {
+  const snap = await getDocs(query(RECEIPTS_COL, where('payment.method', '==', method)));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const byType = {};
+  const bySource = {};
+  let totalAll = 0, sumAll = 0;
+  rows.forEach(r => {
+    const t = r.transactionType || '(unset)';
+    const s = r._glossgeniusSource || (r._importedFrom === 'glossgenius' ? '(no source)' : '(in-app)');
+    const total = Number(r.payment?.total) || 0;
+    if (!byType[t])   byType[t]   = { count: 0, total: 0 };
+    if (!bySource[s]) bySource[s] = { count: 0, total: 0 };
+    byType[t].count++;     byType[t].total   += total;
+    bySource[s].count++;   bySource[s].total += total;
+    totalAll++; sumAll += total;
+  });
+  return {
+    method,
+    totalReceipts: totalAll,
+    grossTotal:    sumAll, // pre-filter — includes everything regardless of transactionType
+    byType,                 // counts + sums grouped by transactionType
+    bySource,               // counts + sums grouped by GG source
+  };
+}
+
+// Diagnostic: revenue vs payment-method KPI doubling. Looks for two flavors
+// of duplication in GG-imported receipts:
+//   (a) joined-path duplicates (same _glossgeniusChargeId on N>1 docs).
+//   (b) cross-format duplicates: the single-file "Sales" import path
+//       creates receipts WITHOUT _glossgeniusChargeId, while the joined
+//       Payment + Line Items path creates ones WITH chargeId. If the user
+//       ran both, every transaction is doubled and the dedup-by-chargeId
+//       backfill misses it. We detect this by counting GG receipts in each
+//       flavor.
+export async function diagnoseImportFormats() {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  let total = 0, withChargeId = 0, withoutChargeId = 0;
+  let svcRev = 0, paymentTotal = 0, tax = 0, tip = 0, retail = 0;
+  let svcRevWith = 0, totalWith = 0, svcRevWithout = 0, totalWithout = 0;
+  const sampleWithout = [];
+
+  snap.docs.forEach(d => {
+    const r = d.data();
+    total++;
+    const p = r.payment || {};
+    const sRev = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+    const ret  = (r.retailProducts || []).reduce((s, x) => s + (Number(x.price) || 0) * (x.qty || 1), 0);
+    svcRev       += sRev;
+    paymentTotal += Number(p.total) || 0;
+    tax          += Number(p.tax)   || 0;
+    tip          += Number(p.tip)   || 0;
+    retail       += ret;
+
+    if (r._glossgeniusChargeId) {
+      withChargeId++;
+      svcRevWith += sRev;
+      totalWith  += Number(p.total) || 0;
+    } else {
+      withoutChargeId++;
+      svcRevWithout += sRev;
+      totalWithout  += Number(p.total) || 0;
+      if (sampleWithout.length < 5) sampleWithout.push({
+        id: d.id, date: r.date, clientName: r.clientName, total: Number(p.total) || 0, services: (r.services || []).map(s => s.name),
+      });
+    }
+  });
+
+  return {
+    totalGgReceipts: total,
+    withChargeId:    { count: withChargeId,    svcRev: svcRevWith,    paymentTotal: totalWith },
+    withoutChargeId: { count: withoutChargeId, svcRev: svcRevWithout, paymentTotal: totalWithout },
+    aggregates: { svcRev, paymentTotal, tax, tip, retail },
+    expectedTotal: svcRev + retail + tax + tip,
+    inflationRatio: svcRev > 0 ? paymentTotal / svcRev : null,
+    sampleWithoutChargeId: sampleWithout,
+  };
+}
+
+// Delete all GG-imported receipts that have NO _glossgeniusChargeId. Use
+// this to clean up the single-file "Sales" import path duplicates after
+// confirming via diagnoseImportFormats that the joined-path receipts are
+// the canonical ones to keep. Irreversible.
+export async function deleteImportedReceiptsWithoutChargeId(onProgress) {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  let scanned = 0, deleted = 0;
+  for (const d of snap.docs) {
+    scanned++;
+    const data = d.data();
+    if (data._glossgeniusChargeId) continue;
+    await deleteDoc(doc(RECEIPTS_COL, d.id));
+    deleted++;
+    if (onProgress && deleted % 25 === 0) onProgress(`Deleted ${deleted}/${scanned} scanned…`);
+  }
+  return { scanned, deleted };
+}
+
+// Diagnostic: explain a cash-total discrepancy by breaking it down by
+// source (GG-imported vs in-app) and detecting duplicate Charge IDs. Run
+// this when the Cash KPI looks ~2x off — it's almost always a double-import.
+export async function diagnoseCashTotals(startDate, endDate) {
+  const startISO = `${startDate}T00:00:00.000Z`;
+  const endISO   = `${endDate}T23:59:59.999Z`;
+  const snap = await getDocs(query(RECEIPTS_COL,
+    where('createdAt', '>=', startISO),
+    where('createdAt', '<=', endISO),
+  ));
+  const rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  let cashCount = 0, cashTotal = 0;
+  let cashGgCount = 0, cashGgTotal = 0;
+  let cashInAppCount = 0, cashInAppTotal = 0;
+  let salesAllSources = 0;
+
+  // Count Charge ID occurrences for the GG-imported subset to surface dupes.
+  const chargeIdCounts = {};
+  const sampleDupes = {};
+
+  rows.forEach(r => {
+    const p = r.payment || {};
+    const svcRev = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+    const retail = (r.retailProducts || []).reduce((s, x) => s + (Number(x.price) || 0) * (x.qty || 1), 0);
+    salesAllSources += svcRev + retail;
+
+    if (p.method === 'cash') {
+      cashCount++;
+      cashTotal += Number(p.total) || 0;
+      if (r._importedFrom === 'glossgenius') {
+        cashGgCount++;
+        cashGgTotal += Number(p.total) || 0;
+      } else {
+        cashInAppCount++;
+        cashInAppTotal += Number(p.total) || 0;
+      }
+    }
+
+    if (r._glossgeniusChargeId) {
+      const cid = r._glossgeniusChargeId;
+      chargeIdCounts[cid] = (chargeIdCounts[cid] || 0) + 1;
+      if (chargeIdCounts[cid] > 1 && Object.keys(sampleDupes).length < 8) {
+        sampleDupes[cid] = (sampleDupes[cid] || 0) + 1;
+      }
+    }
+  });
+
+  const dupChargeIds = Object.entries(chargeIdCounts).filter(([, n]) => n > 1);
+  const totalRowsDuplicated = dupChargeIds.reduce((s, [, n]) => s + (n - 1), 0);
+
+  return {
+    range: { startDate, endDate },
+    receiptsScanned: rows.length,
+    sales: { allSources: salesAllSources },
+    cash: {
+      total:       cashTotal,
+      txnCount:    cashCount,
+      ggImported:  { count: cashGgCount,    total: cashGgTotal },
+      inApp:       { count: cashInAppCount, total: cashInAppTotal },
+    },
+    duplicates: {
+      uniqueChargeIdsAffected: dupChargeIds.length,
+      extraDuplicateRows:      totalRowsDuplicated,
+      sample: dupChargeIds.slice(0, 8).map(([cid, n]) => ({ chargeId: cid, copies: n })),
+    },
+  };
+}
+
+// Dedup imported GG receipts: keeps the oldest doc per `_glossgeniusTransactionId`
+// (the per-row unique ID from the GG Payment Details CSV) and deletes the
+// rest. Returns counts; safe to run twice. Falls back to chargeId for legacy
+// receipts that lack a transactionId. We deliberately do NOT dedup by
+// chargeId alone — a payment + refund pair shares a chargeId by design.
+export async function dedupeImportedReceipts(onProgress) {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  const byKey = {};
+  snap.docs.forEach(d => {
+    const data = d.data();
+    const key = data._glossgeniusTransactionId || data._glossgeniusChargeId;
+    if (!key) return;
+    if (!byKey[key]) byKey[key] = [];
+    byKey[key].push({ id: d.id, createdAt: data.createdAt || '' });
+  });
+
+  let scanned = 0, deleted = 0;
+  for (const k of Object.keys(byKey)) {
+    const copies = byKey[k];
+    scanned++;
+    if (copies.length < 2) continue;
+    // Keep the oldest createdAt (earliest import); delete the rest.
+    copies.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    for (let i = 1; i < copies.length; i++) {
+      await deleteDoc(doc(RECEIPTS_COL, copies[i].id));
+      deleted++;
+      if (onProgress && deleted % 25 === 0) onProgress(`Deleted ${deleted} duplicates…`);
+    }
+  }
+  return { uniqueChargeIds: scanned, duplicatesDeleted: deleted };
+}
+
+// Diagnostic: fetch a sample of GG receipts whose techName equals the given
+// value. Pass '' to find receipts with no tech assigned (the source of the
+// "Unassigned" leaderboard row).
+export async function sampleGgReceiptsByTech(techName, n = 10) {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  const matches = [];
+  for (const d of snap.docs) {
+    const data = d.data();
+    const t = (data.techName || '').trim();
+    if (t === techName) {
+      matches.push({ id: d.id, ...data });
+      if (matches.length >= n) break;
+    }
+  }
+  return matches;
+}
+
+// Diagnostic: returns counts of unlinked GG receipts grouped by clientName,
+// plus the total number of client records on file. Helps figure out why a
+// backfill matched 0 — usually either no clients imported, or name mismatches.
+export async function diagnoseUnlinkedReceipts() {
+  const normalize = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const clientsSnap = await getDocs(tenantCol('clients'));
+  const clientNames = new Set();
+  clientsSnap.forEach(d => {
+    const c = d.data();
+    if (c?.name) clientNames.add(normalize(c.name));
+  });
+
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  const counts = {};
+  let unlinked = 0;
+  snap.forEach(d => {
+    const data = d.data();
+    if (data.clientId) return;
+    unlinked++;
+    const name = data.clientName || '(empty)';
+    counts[name] = (counts[name] || 0) + 1;
+  });
+
+  const top = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 20);
+
+  return {
+    clientCount: clientNames.size,
+    totalUnlinked: unlinked,
+    topNames: top.map(([name, count]) => ({
+      name,
+      count,
+      hasMatch: clientNames.has(normalize(name)),
+    })),
+  };
+}
+
+// Link previously imported GG receipts to existing client docs by matching
+// clientName → client.id. Uses a normalized key (case + whitespace insensitive).
+export async function backfillImportedReceiptClientIds(onProgress) {
+  const normalize = (s) => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+  const clientsSnap = await getDocs(tenantCol('clients'));
+  const lookup = {};
+  clientsSnap.forEach(d => {
+    const c = d.data();
+    if (c?.name) lookup[normalize(c.name)] = d.id;
+  });
+
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  let scanned = 0, linked = 0, alreadyLinked = 0, noMatch = 0;
+  for (const d of snap.docs) {
+    scanned++;
+    const data = d.data();
+    if (data.clientId) { alreadyLinked++; continue; }
+    const id = data.clientName ? lookup[normalize(data.clientName)] : null;
+    if (!id) { noMatch++; continue; }
+    await updateDoc(doc(RECEIPTS_COL, d.id), { clientId: id });
+    linked++;
+    if (onProgress && scanned % 25 === 0) onProgress(`Linked ${linked}/${scanned}…`);
+  }
+  return { scanned, linked, alreadyLinked, noMatch };
+}
+
+// Stronger backfill: makes sure EVERY receipt has a usable createdAt so the
+// Reports `where('createdAt', '>=', start)` range query doesn't silently
+// drop docs whose createdAt is null/undefined. Falls back through:
+//   payment.paidAt → r.date + noon UTC → leaves doc untouched if neither.
+// Returns counts of scanned/updated/skipped/sample so the caller can show
+// progress and surface the unfixable rows.
+export async function backfillReceiptCreatedAtStrong(onProgress) {
+  const snap = await getDocs(RECEIPTS_COL);
+  let scanned = 0, updated = 0, skipped = 0, unfixable = 0;
+  const sampleUnfixable = [];
+  for (const d of snap.docs) {
+    scanned++;
+    const data = d.data();
+    if (data.createdAt) { skipped++; continue; }
+    const fromPaid = data?.payment?.paidAt;
+    const fromDate = data?.date ? `${data.date}T12:00:00.000Z` : null;
+    const target = fromPaid || fromDate;
+    if (!target) {
+      unfixable++;
+      if (sampleUnfixable.length < 5) sampleUnfixable.push({
+        id: d.id, clientName: data.clientName, total: data?.payment?.total || 0, method: data?.payment?.method,
+      });
+      continue;
+    }
+    await updateDoc(doc(RECEIPTS_COL, d.id), { createdAt: target });
+    updated++;
+    if (onProgress && updated % 25 === 0) onProgress(`Backfilled ${updated}/${scanned}…`);
+  }
+  return { scanned, updated, skipped, unfixable, sampleUnfixable };
+}
+
+// One-time fix: receipts imported before the createdAt fix had createdAt
+// overwritten with the import time. Copy payment.paidAt → createdAt so
+// reports/transactions filter by the historical sale date.
+export async function backfillImportedReceiptCreatedAt(onProgress) {
+  const snap = await getDocs(query(RECEIPTS_COL, where('_importedFrom', '==', 'glossgenius')));
+  let scanned = 0, updated = 0, skipped = 0;
+  for (const d of snap.docs) {
+    scanned++;
+    const data = d.data();
+    const target = data?.payment?.paidAt;
+    if (!target) { skipped++; continue; }
+    if (data.createdAt === target) { skipped++; continue; }
+    await updateDoc(doc(RECEIPTS_COL, d.id), { createdAt: target });
+    updated++;
+    if (onProgress && scanned % 25 === 0) onProgress(`Backfilled ${updated}/${scanned}…`);
+  }
+  return { scanned, updated, skipped };
+}
 
 export async function fetchReceiptsByRange(startDate, endDate) {
   // createdAt is an ISO timestamp; build inclusive bounds on the date portion.

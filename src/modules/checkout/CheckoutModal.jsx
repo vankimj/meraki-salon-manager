@@ -6,6 +6,8 @@ import { saveAppointment, fetchClient, saveClient,
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit } from '../../lib/turnCredit';
 import { useApp } from '../../context/AppContext';
+import { escapeHtml } from '../../utils/helpers';
+import RebookPrompt from './RebookPrompt';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { callFn } from '../../lib/firebase';
@@ -43,6 +45,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const taxRate    = Number(settings.taxRate ?? 0);
   const ccFeePct   = Number(settings.ccFeePct ?? 0);
   const ccFeeFlat  = Number(settings.ccFeeFlat ?? 0);
+  const noCardTips = !!settings.noCardTips;
   // Backward-compat: if a single `appt` prop is passed, normalize to an array.
   const appts = apptsProp || (appt ? [appt] : []);
   const isWalkInRetail = appts.length === 0;
@@ -139,9 +142,11 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const taxAmt           = Math.round(taxableAfterDisc * taxRate) / 100;
 
   const billBeforeTip  = afterDiscounts + taxAmt;
-  const tipAmt         = customTip
-    ? (Number(tip) || 0)
-    : (tipPct ? Math.round(subtotal * tipPct) / 100 : 0);
+  const tipsDisabled   = method === 'card' && noCardTips;
+  const tipAmt         = tipsDisabled ? 0
+    : customTip
+      ? (Number(tip) || 0)
+      : (tipPct ? Math.round(subtotal * tipPct) / 100 : 0);
   const gcApply        = giftCard && applyGC ? Math.min(giftCard.balance, billBeforeTip) : 0;
   const creditApply    = applyCredit && clientCredit > 0
     ? Math.min(clientCredit, billBeforeTip - gcApply)
@@ -424,13 +429,30 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         payment,
       }).catch(() => {});
 
+      // For rebook: collect each visit-service with its original id + option,
+      // deduped — drives the auto-rebook prompt on the receipt screen.
+      const seenSvcKeys = new Set();
+      const visitServices = [];
+      appts.forEach(a => {
+        (a.services || []).forEach(s => {
+          if (s.isRemoval || s.id === 'removal') return;
+          const key = `${s.id || ''}:${s.optionId || ''}`;
+          if (seenSvcKeys.has(key)) return;
+          seenSvcKeys.add(key);
+          visitServices.push({ id: s.id, optionId: s.optionId || null });
+        });
+      });
+
       setReceipt({
         client:         combinedClientLabel,
         clientId:       primaryClient?.id || null,
+        clientPhone:    primaryAppt?.clientPhone || '',
         clientEmail,
         tech:           techSplit ? techSplit.map(t => t.techName).join(', ') : (allUpdatedServices[0]?.techName || ''),
+        primaryTechName: allUpdatedServices[0]?.techName || (techSplit?.[0]?.techName) || '',
         date:           primaryAppt?.date || new Date().toISOString().slice(0, 10),
         services:       allUpdatedServices.map(s => ({ name: s.name, price: s.price, techName: s.techName })),
+        visitServices,
         retailProducts,
         payment,
       });
@@ -722,37 +744,39 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             </Section>
           )}
 
-          {/* Tip */}
-          <Section title="Tip">
-            <div style={{ display: 'flex', gap: 6, marginBottom: customTip ? 10 : 0 }}>
-              {QUICK_TIP_PCTS.map(pct => {
-                const active = !customTip && tipPct === pct;
-                const amt    = subtotal * pct / 100;
-                return (
-                  <button key={pct} onClick={() => pickTipPct(pct)}
-                    style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#EDFAF3' : '#fafafa', color: active ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>{pct}%</span>
-                    <span style={{ fontSize: 10, opacity: .7 }}>${amt.toFixed(2)}</span>
-                  </button>
-                );
-              })}
-              <button onClick={pickCustomTip}
-                style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : '#e0e0e0'}`, background: customTip ? '#EDFAF3' : '#fafafa', color: customTip ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Other</span>
-                <span style={{ fontSize: 10, opacity: .7 }}>custom $</span>
-              </button>
-            </div>
-            {customTip && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
-                <input type="number" min={0} value={tip} onChange={e => setTip(e.target.value)}
-                  placeholder="0" autoFocus
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa' }}
-                />
+          {/* Tip — hidden when card tips are disabled */}
+          {!tipsDisabled && (
+            <Section title="Tip">
+              <div style={{ display: 'flex', gap: 6, marginBottom: customTip ? 10 : 0 }}>
+                {QUICK_TIP_PCTS.map(pct => {
+                  const active = !customTip && tipPct === pct;
+                  const amt    = subtotal * pct / 100;
+                  return (
+                    <button key={pct} onClick={() => pickTipPct(pct)}
+                      style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#EDFAF3' : '#fafafa', color: active ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{pct}%</span>
+                      <span style={{ fontSize: 10, opacity: .7 }}>${amt.toFixed(2)}</span>
+                    </button>
+                  );
+                })}
+                <button onClick={pickCustomTip}
+                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : '#e0e0e0'}`, background: customTip ? '#EDFAF3' : '#fafafa', color: customTip ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>Other</span>
+                  <span style={{ fontSize: 10, opacity: .7 }}>custom $</span>
+                </button>
               </div>
-            )}
-            <TipSplitPreview tipAmt={tipAmt} serviceLines={serviceLines} prices={prices} techNames={techNames} />
-          </Section>
+              {customTip && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
+                  <input type="number" min={0} value={tip} onChange={e => setTip(e.target.value)}
+                    placeholder="0" autoFocus
+                    style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa' }}
+                  />
+                </div>
+              )}
+              <TipSplitPreview tipAmt={tipAmt} serviceLines={serviceLines} prices={prices} techNames={techNames} />
+            </Section>
+          )}
 
           {/* Payment method */}
           <Section title="Payment Method">
@@ -831,7 +855,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 // ── Receipt ────────────────────────────────────────────
 function ReceiptScreen({ receipt, onDone }) {
   const { settings, showToast } = useApp();
-  const { client, clientId, clientEmail, tech, date, services, retailProducts, payment: p } = receipt;
+  const { client, clientId, clientPhone, clientEmail, tech, primaryTechName, date, services, visitServices, retailProducts, payment: p } = receipt;
   const [reviewSent,    setReviewSent]    = useState(false);
   const [reviewSending, setReviewSending] = useState(false);
   const canReview = clientId && clientEmail && settings?.googleReviewUrl;
@@ -850,9 +874,14 @@ function ReceiptScreen({ receipt, onDone }) {
   const methodLabel = { card: 'Credit / Debit Card', cash: 'Cash', venmo: 'Venmo', zelle: 'Zelle', check: 'Check' }[p.method] || p.method;
 
   function handlePrint() {
+    // Receipt is rendered into a same-origin popup via document.write, so
+    // every interpolated string MUST be HTML-escaped — `client`, `tech`,
+    // service/product names, and `promoCode` flow in from public booking
+    // input or imported CSVs and could otherwise execute as script in the
+    // admin's session.
     const w = window.open('', '_blank', 'width=400,height=650');
     w.document.write(`
-      <html><head><title>Receipt — ${client}</title>
+      <html><head><title>Receipt — ${escapeHtml(client)}</title>
       <style>
         body { font-family: 'Helvetica Neue', sans-serif; max-width: 340px; margin: 30px auto; color: #1a1a1a; }
         h2 { font-size: 22px; font-weight: 700; margin: 0 0 2px; }
@@ -863,19 +892,19 @@ function ReceiptScreen({ receipt, onDone }) {
         .footer { text-align: center; font-size: 12px; color: #aaa; margin-top: 24px; }
       </style></head><body>
       <h2>Meraki Nail Studio</h2>
-      <p class="sub">${fmtDate} &nbsp;·&nbsp; ${tech}</p>
+      <p class="sub">${escapeHtml(fmtDate)} &nbsp;·&nbsp; ${escapeHtml(tech)}</p>
       <hr>
-      ${services.map(s => `<div class="row"><span>${s.name || '—'}</span><span>$${s.price.toFixed(2)}</span></div>`).join('')}
+      ${services.map(s => `<div class="row"><span>${escapeHtml(s.name || '—')}</span><span>$${(Number(s.price) || 0).toFixed(2)}</span></div>`).join('')}
       <hr>
       ${p.discountAmount > 0 ? `<div class="row"><span>Discount</span><span>-$${p.discountAmount.toFixed(2)}</span></div>` : ''}
-      ${p.promoAmount    > 0 ? `<div class="row"><span>Promo (${p.promoCode})</span><span>-$${p.promoAmount.toFixed(2)}</span></div>` : ''}
+      ${p.promoAmount    > 0 ? `<div class="row"><span>Promo (${escapeHtml(p.promoCode)})</span><span>-$${p.promoAmount.toFixed(2)}</span></div>` : ''}
       ${p.giftCard       ? `<div class="row"><span>Gift card</span><span>-$${p.giftCard.applied.toFixed(2)}</span></div>` : ''}
       ${p.creditApplied  > 0 ? `<div class="row"><span>Credit applied</span><span>-$${p.creditApplied.toFixed(2)}</span></div>` : ''}
       ${p.tip            > 0 ? `<div class="row"><span>Tip</span><span>$${p.tip.toFixed(2)}</span></div>` : ''}
       <div class="row total"><span>Total</span><span>$${p.total.toFixed(2)}</span></div>
       <hr>
-      <div class="row"><span>Paid via</span><span>${methodLabel}</span></div>
-      <div class="footer">Thank you, ${client}! We appreciate your visit 💅</div>
+      <div class="row"><span>Paid via</span><span>${escapeHtml(methodLabel)}</span></div>
+      <div class="footer">Thank you, ${escapeHtml(client)}! We appreciate your visit 💅</div>
       </body></html>`);
     w.document.close();
     w.focus();
@@ -894,6 +923,15 @@ function ReceiptScreen({ receipt, onDone }) {
 
         {/* Receipt body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '18px 20px' }}>
+          <RebookPrompt
+            clientId={clientId}
+            clientName={client}
+            clientPhone={clientPhone}
+            clientEmail={clientEmail}
+            techName={primaryTechName || tech}
+            visitDate={date}
+            visitServices={visitServices}
+          />
           <div style={{ fontSize: 11, color: '#aaa', marginBottom: 12 }}>{fmtDate}</div>
 
           {isMultiTech ? (

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, useCallback, us
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
-import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats, subscribeToRecentNotifications, markNotificationRead } from '../lib/firestore';
+import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats, subscribeToRecentNotifications, markNotificationRead, ensureStaffEmailsBackfill } from '../lib/firestore';
 import { migrateFromLegacy } from '../lib/migration';
 import { logActivity, setLoggerUser } from '../lib/logger';
 import { phSVG } from '../utils/helpers';
@@ -199,12 +199,13 @@ export function AppProvider({ children }) {
   async function checkUserAccess(user) {
     let currentUsers = users;
     let currentTimeoutMin = settings.timeoutMin || 5;
+    let loadedData = null;
     try {
-      const data = await loadAll();
-      currentUsers = data.users;
-      currentTimeoutMin = data.settings?.timeoutMin || currentTimeoutMin;
+      loadedData = await loadAll();
+      currentUsers = loadedData.users;
+      currentTimeoutMin = loadedData.settings?.timeoutMin || currentTimeoutMin;
       setUsers(currentUsers);
-      setSettings(s => ({ ...s, ...data.settings }));
+      setSettings(s => ({ ...s, ...loadedData.settings }));
     } catch (_) {}
 
     if (ALLOWED_EMAILS.includes(user.email)) {
@@ -218,6 +219,11 @@ export function AppProvider({ children }) {
         const updated = currentUsers.map(u => u.email === user.email ? { ...u, role: 'admin', grantedAt: new Date().toISOString() } : u);
         setUsers(updated);
         await saveUsers(updated);
+      } else if (loadedData?.staffEmails == null || loadedData?.adminEmails == null) {
+        // Self-heal: pre-rules-update tenants don't have staffEmails /
+        // adminEmails yet — re-save so the new tenant-scoped rules can
+        // authorize staff and recognize app-level admins.
+        ensureStaffEmailsBackfill(currentUsers);
       }
       setGUser(user);
       setLoggerUser(user);

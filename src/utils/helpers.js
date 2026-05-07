@@ -15,6 +15,15 @@ export function formatTime(iso) {
   return d.toLocaleDateString() + ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 }
 
+// Escape a string for safe interpolation into HTML markup. Use anywhere
+// user-controlled text is concatenated into raw HTML (document.write,
+// innerHTML, email template strings, etc.). React JSX auto-escapes by
+// default — only use this for the unsafe-by-design code paths.
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+export function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
+}
+
 export function phSVG(color) {
   const s = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400">
     <rect width="300" height="400" fill="${color}"/>

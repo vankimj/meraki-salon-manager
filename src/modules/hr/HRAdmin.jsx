@@ -13,6 +13,7 @@ import {
 import { EmpAvatar } from '../employees/EmployeesAdmin';
 import { logActivity } from '../../lib/logger';
 import { useApp } from '../../context/AppContext';
+import { escapeHtml } from '../../utils/helpers';
 
 const gustoGetAuthUrlFn    = httpsCallable(functions, 'gustoGetAuthUrl');
 const gustoSyncEmployeesFn = httpsCallable(functions, 'gustoSyncEmployees');
@@ -1345,7 +1346,10 @@ function download1099Pdf(form, emp, settings) {
 
   const w = window.open('', '_blank', 'width=900,height=700');
   if (!w) return;
-  w.document.write(`<!DOCTYPE html><html><head><title>1099-NEC ${year} — ${recipName}</title>
+  // Defense-in-depth: every interpolated string is HTML-escaped so admin-
+  // typed employee/payer names (or imported records) can't run script in
+  // this same-origin popup.
+  w.document.write(`<!DOCTYPE html><html><head><title>1099-NEC ${escapeHtml(year)} — ${escapeHtml(recipName)}</title>
 <style>
   @page { size: letter; margin: .5in; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -1372,7 +1376,7 @@ function download1099Pdf(form, emp, settings) {
   @media print { .btn-bar { display: none; } }
 </style></head><body>
   <div class="form-title">FORM 1099-NEC</div>
-  <div class="form-sub">Nonemployee Compensation — Tax Year ${year}</div>
+  <div class="form-sub">Nonemployee Compensation — Tax Year ${escapeHtml(year)}</div>
 
   <div class="outer">
     <div class="top-bar">CORRECTED (if checked) □</div>
@@ -1380,34 +1384,34 @@ function download1099Pdf(form, emp, settings) {
     <div class="row">
       <div class="cell wide">
         <div class="cell-label">Payer's name, street address, city, state, ZIP</div>
-        <div class="cell-value">${payerName}</div>
-        <div style="font-size:11px;color:#444;margin-top:2px;">${payerAddr}</div>
+        <div class="cell-value">${escapeHtml(payerName)}</div>
+        <div style="font-size:11px;color:#444;margin-top:2px;">${escapeHtml(payerAddr)}</div>
       </div>
       <div class="cell narrow">
         <div class="cell-label">Payer's TIN / EIN</div>
-        <div class="cell-value">${einVal}</div>
+        <div class="cell-value">${escapeHtml(einVal)}</div>
       </div>
       <div class="cell narrow">
         <div class="cell-label">Recipient's TIN / SSN</div>
-        <div class="cell-value">${recipTin}</div>
+        <div class="cell-value">${escapeHtml(recipTin)}</div>
       </div>
     </div>
 
     <div class="row">
       <div class="cell wide">
         <div class="cell-label">Recipient's name</div>
-        <div class="cell-value">${recipName}</div>
+        <div class="cell-value">${escapeHtml(recipName)}</div>
       </div>
       <div class="cell">
         <div class="cell-label">Account number (optional)</div>
-        <div class="cell-value" style="color:#aaa;font-size:11px;">${form.id || ''}</div>
+        <div class="cell-value" style="color:#aaa;font-size:11px;">${escapeHtml(form.id || '')}</div>
       </div>
     </div>
 
     <div class="row">
       <div class="cell wide">
         <div class="cell-label">Street address (including apt. no.)</div>
-        <div class="cell-value">${recipAddr || '—'}</div>
+        <div class="cell-value">${escapeHtml(recipAddr || '—')}</div>
       </div>
       <div class="cell narrow highlight">
         <div class="cell-label"><span class="box-num">1</span>Nonemployee compensation</div>

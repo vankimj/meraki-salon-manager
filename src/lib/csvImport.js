@@ -171,7 +171,7 @@ export function detectType(headers) {
 //   - Gratuity    → payment.tip
 //   - Sales Tax   → payment.tax
 //   - Discount    → payment.discountAmount (price comes through negative)
-export function buildReceiptsFromGg(payments, lineItems) {
+export function buildReceiptsFromGg(payments, lineItems, clientLookup) {
   // Index line items by charge id
   const linesByCharge = {};
   lineItems.forEach(li => {
@@ -186,13 +186,35 @@ export function buildReceiptsFromGg(payments, lineItems) {
     const chargeId = getCol(p, ['Charge ID']);
     if (!chargeId) return;
     const lines = linesByCharge[chargeId] || [];
-    const r = mapJoinedReceipt(p, lines);
+    const r = mapJoinedReceipt(p, lines, clientLookup);
     if (r) receipts.push(r);
   });
   return receipts;
 }
 
-function mapJoinedReceipt(payment, lines) {
+// Normalize a name for case/whitespace-insensitive lookup.
+export function clientKey(name) {
+  return (name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+// Normalize GG's "Transaction Type" column. Values seen in the wild:
+//   Sale / Charge / Payment        → 'sale' (real revenue)
+//   Cancellation / Cancelled       → 'cancellation'
+//   Refund / Partial Refund        → 'refund'
+//   Void / Voided                  → 'void'
+// Cancellation/refund/void records still create a receipt (so the
+// transaction history is preserved) but they're flagged so reports can
+// exclude them from revenue and surface them on the cancellation card.
+function normalizeTxType(raw) {
+  const s = (raw || '').toLowerCase().trim();
+  if (!s) return 'sale';
+  if (s.includes('cancel'))      return 'cancellation';
+  if (s.includes('refund'))      return 'refund';
+  if (s.includes('void'))        return 'void';
+  return 'sale';
+}
+
+function mapJoinedReceipt(payment, lines, clientLookup) {
   const txDateRaw = getCol(payment, ['Transaction Date', 'Date']);
   const { date, iso } = parseGgDateTime(txDateRaw);
   if (!date) return null;
@@ -204,6 +226,8 @@ function mapJoinedReceipt(payment, lines) {
   const txId       = getCol(payment, ['Payment Transaction ID', 'Transaction ID']);
   const chargeId   = getCol(payment, ['Charge ID']);
   const source     = getCol(payment, ['Payment Source']); // "Retail Purchase" | "Appointment"
+  const txTypeRaw  = getCol(payment, ['Transaction Type', 'Type']);
+  const txType     = normalizeTxType(txTypeRaw);
 
   // Pull client + tech from the first line item that has them.
   const firstWithClient = lines.find(l => getCol(l, ['Client']));
@@ -237,8 +261,10 @@ function mapJoinedReceipt(payment, lines) {
   const subtotal = services.reduce((s, sv) => s + sv.price, 0)
                  + retailProducts.reduce((s, p) => s + p.price * p.qty, 0);
 
+  const clientId = clientLookup && clientName ? (clientLookup[clientKey(clientName)] || null) : null;
+
   return {
-    clientId: null,
+    clientId,
     clientName: clientName || (source === 'Retail Purchase' ? 'Walk-in retail' : 'Walk-in'),
     clientEmail: null,
     techName: techName || '',
@@ -248,6 +274,7 @@ function mapJoinedReceipt(payment, lines) {
     retailProducts: retailProducts.length > 0 ? retailProducts : null,
     giftCardsSold: null,
     apptIds: [],
+    createdAt: iso,
     payment: {
       subtotal,
       tax, taxRate: 0,
@@ -261,10 +288,12 @@ function mapJoinedReceipt(payment, lines) {
       gcSalesTotal: 0,
       paidAt: iso,
     },
+    transactionType: txType,
     _importedFrom: 'glossgenius',
     _glossgeniusChargeId: chargeId,
     _glossgeniusTransactionId: txId,
     _glossgeniusSource: source || null,
+    _glossgeniusTransactionTypeRaw: txTypeRaw || null,
   };
 }
 
@@ -308,7 +337,7 @@ export function mapAppointmentRow(record, clientLookup) {
   const status = normalizeStatus(getCol(record, ['Status', 'Appointment Status']));
   const notes = getCol(record, ['Notes', 'Appointment Notes', 'Client Notes']);
   if (!date || !clientName || !serviceName) return null;
-  const clientId = clientLookup ? (clientLookup[clientName.toLowerCase()] || null) : null;
+  const clientId = clientLookup ? (clientLookup[clientKey(clientName)] || null) : null;
   return {
     date,
     startTime: startTime || '12:00',
@@ -349,6 +378,7 @@ export function mapSaleRow(record) {
     retailProducts: null,
     giftCardsSold: null,
     apptIds: [],
+    createdAt: `${date}T12:00:00.000Z`,
     payment: {
       subtotal, tax, taxRate: 0,
       discountAmount: 0, promoAmount: 0,

@@ -25,14 +25,11 @@ export default function Admin({ onClose }) {
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
   const [ein,            setEin]           = useState(settings.ein || '');
-  const [autoBirthday,   setAutoBirthday]  = useState(!!settings.autoBirthday);
-  const [autoLapsed,     setAutoLapsed]    = useState(!!settings.autoLapsed);
-  const [autoLapsedDays, setAutoLapsedDays]= useState(settings.autoLapsedDays || 60);
-  const [autoSaving,     setAutoSaving]    = useState(false);
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
   const [removalPrice,   setRemovalPrice]  = useState(settings.removalPrice ?? 15);
+  const [noCardTips,     setNoCardTips]    = useState(!!settings.noCardTips);
   const [finSaving,      setFinSaving]     = useState(false);
   const [themeId,        setThemeId]       = useState(settings.themeId   || 'meraki');
   const [autoTheme,      setAutoTheme]     = useState(!!settings.autoTheme);
@@ -44,7 +41,7 @@ export default function Admin({ onClose }) {
   const [logs,     setLogs]      = useState(null);
   const [feedback, setFeedback]  = useState(null);
   const [notifs,   setNotifs]    = useState(null);
-  const [tab,          setTab]          = useState('users');
+  const [tab,          setTab]          = useState('settings');
   const [showFeedback, setShowFeedback] = useState(false);
   const [webfrontCfg,  setWebfrontCfg] = useState(null);
   const [reviewsData,  setReviewsData]  = useState(null);
@@ -284,47 +281,6 @@ export default function Admin({ onClose }) {
                 <Btn color="#3D95CE" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null })}>Save</Btn>
               </div>
             </Section>
-            <Section title="🤖 Automations">
-              {[
-                { key: 'birthday', label: 'Birthday emails', val: autoBirthday, set: setAutoBirthday,
-                  desc: 'Sends a happy birthday email at 10am on each client\'s birthday.' },
-                { key: 'lapsed',   label: 'Lapsed client emails', val: autoLapsed,   set: setAutoLapsed,
-                  desc: `Sends a "we miss you" re-engagement email every Monday to clients with no visit in the last ${autoLapsedDays} days.` },
-              ].map(({ key, label, val, set, desc }) => (
-                <div key={key} style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 13, color: '#333' }}>{label}</div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{desc}</div>
-                  </div>
-                  <button onClick={() => set(v => !v)} style={{
-                    width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0,
-                    background: val ? '#2D7A5F' : '#d1d5db', position: 'relative', transition: 'background .2s', flexShrink: 0,
-                  }}>
-                    <div style={{
-                      position: 'absolute', top: 3, left: val ? 22 : 2, width: 18, height: 18,
-                      borderRadius: '50%', background: '#fff', transition: 'left .2s',
-                      boxShadow: '0 1px 3px rgba(0,0,0,.2)',
-                    }} />
-                  </button>
-                </div>
-              ))}
-              {autoLapsed && (
-                <div style={{ padding: '8px 16px 12px', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid #f0f0f0' }}>
-                  <span style={{ fontSize: 12, color: '#555' }}>Lapse threshold:</span>
-                  <input type="number" min={14} max={365} value={autoLapsedDays}
-                    onChange={e => setAutoLapsedDays(Math.max(14, Number(e.target.value)))}
-                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '6px 10px', fontSize: 13 }} />
-                  <span style={{ fontSize: 12, color: '#aaa' }}>days</span>
-                </div>
-              )}
-              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                <Btn color="#2D7A5F" onClick={async () => {
-                  setAutoSaving(true);
-                  await updateSettings({ ...settings, autoBirthday, autoLapsed, autoLapsedDays });
-                  setAutoSaving(false);
-                }}>{autoSaving ? 'Saving…' : 'Save Automations'}</Btn>
-              </div>
-            </Section>
             <Section title="💰 Financial">
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -366,10 +322,26 @@ export default function Admin({ onClose }) {
                     style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
                 </div>
               </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: '#333' }}>Disable tips on credit card</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Hide the tip selector during checkout when payment method is card. Cash, Venmo, and other methods still prompt for a tip.</div>
+                </div>
+                <button onClick={() => setNoCardTips(v => !v)} style={{
+                  width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0,
+                  background: noCardTips ? '#2D7A5F' : '#d1d5db', position: 'relative', transition: 'background .2s', flexShrink: 0,
+                }}>
+                  <div style={{
+                    position: 'absolute', top: 3, left: noCardTips ? 22 : 2, width: 18, height: 18,
+                    borderRadius: '50%', background: '#fff', transition: 'left .2s',
+                    boxShadow: '0 1px 3px rgba(0,0,0,.2)',
+                  }} />
+                </button>
+              </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
-                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice });
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips });
                   // Mirror removalPrice onto bookingConfig so the public-facing
                   // booking page can read it without admin permissions.
                   if (bookingCfg) {
@@ -400,9 +372,13 @@ export default function Admin({ onClose }) {
             <BrandingSection settings={settings} updateSettings={updateSettings} />
             <UpgradeSection settings={settings} gUser={gUser} />
             <BackupRestoreSection />
-            <CsvImportSection />
-            <ProductSeedSection />
-            <DemoSeedSection />
+            <Section title="📦 Data Imports">
+              <div style={{ padding: '12px 14px' }}>
+                <CsvImportSection />
+                <ProductSeedSection />
+                <DemoSeedSection />
+              </div>
+            </Section>
           </>
         )}
 
@@ -739,13 +715,24 @@ function AddMissingTechUsersBtn({ employees, users, addTechUsersForEmployees, sh
   );
 }
 
-function Section({ title, children, action }) {
+function Section({ title, children, action, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
   return (
     <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', marginBottom: 14, overflow: 'hidden' }}>
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #e8e8e8', fontSize: 12, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        {title}{action}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ padding: '12px 16px', borderBottom: open ? '1px solid #e8e8e8' : 'none', fontSize: 12, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 10, color: '#bbb' }}>▶</span>
+          {title}
+        </span>
+        {action && (
+          // Stop bubbling so action-bar buttons don't toggle the section.
+          <span onClick={e => e.stopPropagation()}>{action}</span>
+        )}
       </div>
-      {children}
+      {open && children}
     </div>
   );
 }

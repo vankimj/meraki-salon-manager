@@ -436,7 +436,7 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           <input type="checkbox" checked={svc.active} onChange={e => onChange({ active: e.target.checked })} />
           Active (visible to clients)
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 18 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 14 }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.canRequireRemoval} onChange={e => onChange({ canRequireRemoval: e.target.checked })} />
           <span>
             Can require removal
@@ -445,6 +445,12 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             </div>
           </span>
         </label>
+
+        <Field label="Auto-rebook interval (weeks)" hint="At checkout, prompt the client to book their next visit this many weeks out. 0 = no prompt.">
+          <input type="number" min={0} max={26} value={svc.defaultRebookWeeks ?? 0}
+            onChange={e => onChange({ defaultRebookWeeks: Math.max(0, Number(e.target.value) || 0) })}
+            style={{ ...inputStyle, width: 100 }} />
+        </Field>
 
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Cancel</button>
@@ -522,11 +528,12 @@ function Toggle({ active, onChange }) {
   );
 }
 
-function Field({ label, error, children, style }) {
+function Field({ label, error, hint, children, style }) {
   return (
     <div style={{ marginBottom: 12, ...style }}>
       <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>{label}</label>
       {children}
+      {hint && !error && <div style={{ fontSize: 11, color: '#aaa', marginTop: 3, lineHeight: 1.45 }}>{hint}</div>}
       {error && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{error}</div>}
     </div>
   );

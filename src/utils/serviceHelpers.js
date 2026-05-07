@@ -30,7 +30,7 @@ export function validateService(data) {
 }
 
 export function blankService() {
-  return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, description: '', image: '', active: true, sortOrder: 99, options: [] };
+  return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, description: '', image: '', active: true, sortOrder: 99, options: [], defaultRebookWeeks: 0 };
 }
 
 // Resolve effective price + duration for a service given an optional selected option.

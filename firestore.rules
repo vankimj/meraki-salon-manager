@@ -10,14 +10,43 @@ service cloud.firestore {
       return request.auth != null;
     }
     // Tenant owner: email matches the ownerEmail stored in the root tenant registry doc.
-    // Used so a non-bootstrap admin can manage their own tenant's data.
     function isTenantOwner(tenantId) {
       return isAuthenticated() &&
         request.auth.token.email ==
           get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerEmail;
     }
+    // Tenant admin: bootstrap admin, the tenant's ownerEmail, OR any user
+    // whose role is 'admin' in the tenant's data/users doc (mirrored into
+    // `adminEmails` by saveUsers). This lets the app's "make this user an
+    // admin" flow grant rules-level admin access without requiring the
+    // bootstrap email to be the only true admin.
     function isTenantAdmin(tenantId) {
-      return isBootstrapAdmin() || isTenantOwner(tenantId);
+      return isBootstrapAdmin() || isTenantOwner(tenantId) || (
+        isAuthenticated() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in
+          get(/databases/$(database)/documents/tenants/$(tenantId)/data/users)
+            .data.get('adminEmails', [])
+      );
+    }
+    // Tenant staff: caller's email is in this tenant's `data/users` doc's
+    // `staffEmails` array (maintained by saveUsers — every email whose role
+    // is admin/readonly/tech/scheduler ends up here; pending/denied users
+    // are excluded). This is the primary tenant-scoped authorization for
+    // staff operations and closes the cross-tenant data-access vector
+    // where any signed-in user could read/write any tenant's data.
+    function isTenantStaff(tenantId) {
+      return isTenantAdmin(tenantId) || (
+        isAuthenticated() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in
+          get(/databases/$(database)/documents/tenants/$(tenantId)/data/users)
+            .data.get('staffEmails', [])
+      );
+    }
+    // Public field length caps for unauthenticated submissions.
+    function isShortString(v, maxLen) {
+      return v is string && v.size() <= maxLen;
     }
 
     // ── Legacy path (read-only for migration) ────────────
@@ -35,22 +64,21 @@ service cloud.firestore {
       // Root tenant registry document (plan, owner, name) — super-admin only
       allow read, write: if isBootstrapAdmin();
 
-
       // Config documents live in a data/ sub-collection (4-segment paths = valid Firestore docs)
       match /data/slides {
         allow read:  if true;
         allow write: if isTenantAdmin(tenantId);
       }
       match /data/users {
-        allow read:  if isAuthenticated();
+        allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
       }
       match /data/settings {
-        allow read:  if isAuthenticated();
+        allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
       }
       match /data/handbook {
-        allow read:  if isAuthenticated();
+        allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
       }
       match /data/bookingConfig {
@@ -78,10 +106,9 @@ service cloud.firestore {
         allow write: if isTenantAdmin(tenantId);
       }
 
-      // Clients: any authenticated staff can read/write
+      // Clients: only this tenant's staff can read/write
       match /clients/{clientId} {
-        allow read:  if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow read, write: if isTenantStaff(tenantId);
       }
 
       // Employees: public read (names/photos shown on booking page); only admin can write
@@ -90,12 +117,23 @@ service cloud.firestore {
         allow write: if isTenantAdmin(tenantId);
       }
 
-      // Appointments: public read (check-in) + public create (online booking); staff full access
+      // Appointments: public read (check-in) + public create (online booking).
+      // Public create caps name/phone/notes/email lengths so the print-receipt
+      // template and staff dashboards can't be abused as an XSS / oversized-
+      // payload sink. Staff (this tenant only) get full update/delete; the
+      // single-field client-checkin update path stays public.
       match /appointments/{apptId} {
         allow read:           if true;
-        allow create:         if true;
-        allow delete:         if isAuthenticated();
-        allow update:         if isAuthenticated() ||
+        allow create:         if (
+          (!('clientName'  in request.resource.data) || isShortString(request.resource.data.clientName, 80)) &&
+          (!('clientPhone' in request.resource.data) || isShortString(request.resource.data.clientPhone, 32)) &&
+          (!('clientEmail' in request.resource.data) || request.resource.data.clientEmail == null ||
+              isShortString(request.resource.data.clientEmail, 120)) &&
+          (!('notes'       in request.resource.data) || request.resource.data.notes == null ||
+              isShortString(request.resource.data.notes, 500))
+        );
+        allow delete:         if isTenantStaff(tenantId);
+        allow update:         if isTenantStaff(tenantId) ||
                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checkedInAt']);
       }
 
@@ -105,9 +143,10 @@ service cloud.firestore {
         allow read:   if isTenantAdmin(tenantId);
       }
 
-      // Notifications — authenticated users can create; check-in page can create client_checkin type; admin manages
+      // Notifications — staff create; check-in page can also create the
+      // 'client_checkin' type unauthenticated. Admin manages reads/updates.
       match /notifications/{notifId} {
-        allow create: if isAuthenticated() ||
+        allow create: if isTenantStaff(tenantId) ||
                          request.resource.data.get('changeType', '') == 'client_checkin';
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
@@ -118,9 +157,9 @@ service cloud.firestore {
         allow read, delete:   if isTenantAdmin(tenantId);
       }
 
-      // Internal meetings: admin writes, any authenticated staff can read
+      // Internal meetings: admin writes, this tenant's staff can read
       match /meetings/{meetingId} {
-        allow read:  if isAuthenticated();
+        allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
       }
 
@@ -134,17 +173,17 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
-      // Gift cards: any authenticated staff can read/write
+      // Gift cards: only this tenant's staff (mint, balance changes, redemption)
       match /giftCards/{cardId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isTenantStaff(tenantId);
       }
 
-      // Promo codes: any authenticated staff can read/write
+      // Promo codes: only this tenant's staff
       match /promoCodes/{promoId} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isTenantStaff(tenantId);
       }
 
-      // Feedback (bugs/ideas): any authenticated user can create; admin can read/update
+      // Feedback (bugs/ideas): any authenticated user can create; admin reads/updates
       match /feedback/{feedbackId} {
         allow create: if isAuthenticated();
         allow read, update: if isTenantAdmin(tenantId);
@@ -160,15 +199,17 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      // Retail products: staff can read; authenticated users can write (stock decrements happen at checkout)
+      // Retail products: only this tenant's staff (stock changes happen at checkout)
       match /products/{productId} {
-        allow read:  if isAuthenticated();
-        allow write: if isAuthenticated();
+        allow read, write: if isTenantStaff(tenantId);
       }
 
-      // Receipts (post-checkout outreach): staff create; admin reads/manages; Cloud Function updates via admin SDK
+      // Receipts (post-checkout outreach): staff create — this triggers an
+      // email from the salon's verified domain via sendReceiptEmail, so the
+      // create gate must be tenant-scoped to prevent phishing through it.
+      // Admin reads/manages; Cloud Function updates via admin SDK.
       match /receipts/{receiptId} {
-        allow create:              if isAuthenticated();
+        allow create:               if isTenantStaff(tenantId);
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
@@ -177,26 +218,41 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
-      // Client chat threads: any authenticated user (staff or portal client) can read/write
+      // Client chat threads. Chat docs are keyed by clientId and store the
+      // client's email in `clientEmail`. Staff get full access; the portal
+      // client whose email matches owns the chat.
       match /chats/{chatId} {
-        allow read, write: if isAuthenticated();
+        allow read:   if isTenantStaff(tenantId) ||
+                         (isAuthenticated() && resource.data.clientEmail == request.auth.token.email);
+        allow create: if isTenantStaff(tenantId) ||
+                         (isAuthenticated() &&
+                          request.resource.data.clientEmail == request.auth.token.email);
+        allow update: if isTenantStaff(tenantId) ||
+                         (isAuthenticated() &&
+                          resource.data.clientEmail == request.auth.token.email &&
+                          request.resource.data.clientEmail == request.auth.token.email);
+        allow delete: if isTenantStaff(tenantId);
       }
 
-      // Review requests: staff create; admin reads/manages; Cloud Function updates via admin SDK
+      // Review requests: staff create only — this triggers an email from
+      // the salon's verified domain via sendReviewRequestEmail.
       match /reviewRequests/{reqId} {
-        allow create:               if isAuthenticated();
+        allow create:               if isTenantStaff(tenantId);
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
-      // Chat notifications: any authenticated user can create (portal clients + staff); Cloud Function reads via admin SDK
+      // Chat notifications: staff create OR a portal client creating a
+      // notification matching their own email. Cloud Function reads via admin SDK.
       match /chatNotifications/{notifId} {
-        allow create: if isAuthenticated();
+        allow create: if isTenantStaff(tenantId) ||
+                         (isAuthenticated() &&
+                          request.resource.data.clientEmail == request.auth.token.email);
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
-      // Review received records: authenticated staff create; Cloud Function reads via admin SDK; admin manages
+      // Review received records: tenant staff create; admin manages
       match /reviewReceived/{docId} {
-        allow create:               if isAuthenticated();
+        allow create:               if isTenantStaff(tenantId);
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
@@ -213,27 +269,29 @@ service cloud.firestore {
       // Walk-in / arrival queue: public read+create (kiosk); staff update/delete
       match /waitlist/{entryId} {
         allow read, create: if true;
-        allow update, delete: if isAuthenticated();
+        allow update, delete: if isTenantStaff(tenantId);
       }
 
-      // Walk-in turn rotation roster (one doc per day) — any authenticated
-      // staff can read & write so anyone at the front desk can clock techs
-      // in/out and rotate them as walk-ins are assigned.
+      // Walk-in turn rotation roster (one doc per day) — only this tenant's
+      // staff so the front desk can clock techs in/out and rotate them.
       match /turnRoster/{date} {
-        allow read, write: if isAuthenticated();
+        allow read, write: if isTenantStaff(tenantId);
       }
 
       // Attendance / time cards (one doc per day) — staff can read; only
       // admin can edit clock-in / clock-out times.
       match /attendance/{date} {
-        allow read:  if isAuthenticated();
+        allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
       }
 
-      // Tax forms (1099-NEC): admin manages all; authenticated users read their own (matched by email)
+      // Tax forms (1099-NEC): admin manages all; tenant staff with the
+      // matching email read their own. The tenant-scoped check prevents
+      // a tech with a duplicate email at another salon from leaking forms.
       match /taxForms/{formId} {
         allow read:                if isTenantAdmin(tenantId) ||
-                                      (isAuthenticated() && request.auth.token.email == resource.data.techEmail);
+                                      (isTenantStaff(tenantId) &&
+                                       request.auth.token.email == resource.data.techEmail);
         allow create, update, delete: if isTenantAdmin(tenantId);
       }
     }
