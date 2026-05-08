@@ -512,6 +512,44 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                     </label>
                 }
               </Field>
+              <Field label="Marketing opt-out">
+                {isView
+                  ? (
+                    <ViewVal style={{ color: client.marketingOptOut ? '#92400e' : undefined, fontWeight: client.marketingOptOut ? 600 : undefined }}>
+                      {client.marketingOptOut ? (
+                        <>
+                          🔕 Opted out of marketing
+                          {(client.marketingOptOutAt || client.marketingOptOutVia) && (
+                            <div style={{ fontSize: 11, fontWeight: 400, color: '#a16207', marginTop: 3 }}>
+                              {client.marketingOptOutAt ? `Opted out: ${new Date(client.marketingOptOutAt).toLocaleString()}` : ''}
+                              {client.marketingOptOutVia ? <> · via <code style={{ background: '#fef3c7', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>{client.marketingOptOutVia}</code></> : ''}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span>Subscribed (will receive marketing campaigns)</span>
+                      )}
+                    </ViewVal>
+                  )
+                  : (
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: '#333' }}>
+                      <input type="checkbox" checked={!!client.marketingOptOut}
+                        onChange={e => {
+                          const opted = e.target.checked;
+                          onChange({
+                            marketingOptOut: opted,
+                            marketingOptOutAt: opted ? new Date().toISOString() : null,
+                            marketingOptOutVia: opted ? 'manual_admin' : null,
+                          });
+                        }} />
+                      <span>
+                        Exclude from marketing campaigns
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Email and SMS audiences automatically skip opted-out clients. Transactional messages (receipts, reminders) still send.</div>
+                      </span>
+                    </label>
+                  )
+                }
+              </Field>
               <Field label="Referred by">
                 {isView
                   ? (() => {
