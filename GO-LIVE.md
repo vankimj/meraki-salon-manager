@@ -41,6 +41,31 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 - [ ] **Compensation** info entered for payroll runs.
 - [ ] 30-min walkthrough with the techs: how to start an appointment, check out a client, mark walk-ins, view their schedule.
 
+## T-3 days — Marketing & Compliance
+
+### Email setup
+- [ ] **Domain verification:** confirm sender domain (e.g. `merakinailstudio.com`) is verified in Resend Console → Domains. All four DNS records green.
+- [ ] **Resend `RESEND_FROM`** in `functions/.env` matches the verified domain (not `vankim.me` or `onboarding@resend.dev`).
+- [ ] **Send a test email campaign** to yourself via Test subjects audience. Confirm: lands in inbox (not spam), branded card renders, `{firstName}` and subject-line `{firstName}` substitute correctly.
+- [ ] **Click the Unsubscribe link** in the test email → land on green confirmation page. Verify the client profile shows 🔕 with `marketingOptOutVia: email_unsubscribe_link`.
+- [ ] **Re-send to that audience** — opted-out client should be excluded automatically; recipient count drops by one.
+
+### SMS setup
+- [ ] **Twilio domain status:** A2P 10DLC registration approved OR Toll-Free Verified — without this, US carriers throttle/drop messages. Check Twilio Console → Messaging → Regulatory Compliance.
+- [ ] **Twilio Advanced Opt-Out** (Console → Messaging → Services → Settings) is **enabled**. Without this Twilio doesn't auto-handle STOP and your account can be flagged.
+- [ ] **Twilio creds** in `functions/.env` (TWILIO_ACCOUNT_SID = AC..., either AUTH_TOKEN or API_KEY_SID + secret) and `TWILIO_FROM` is your purchased number.
+- [ ] **Send a test SMS campaign** to yourself via Test subjects audience. Confirm: arrives within ~5s, `{firstName}` and `{bookingLink}` substituted, the link actually opens the booking screen.
+- [ ] **Reply STOP** from your phone → next campaign should auto-flag your client record (`marketingOptOutVia: sms_stop_keyword_code_21610`) and exclude you.
+
+### Personalized promos (if you plan to use them)
+- [ ] Send a campaign with **Personalized promo per recipient** toggle on. Verify: each recipient receives a unique code in `{promoCode}`. Visit Admin → Gift Cards & Promos → confirm one code per recipient was created with the right discount + expiry + clientId binding.
+- [ ] At checkout, attempt to redeem someone else's personalized code (use a code that belongs to a different client) → should reject with **"reserved for a different client"**.
+
+### Marketing audience hygiene
+- [ ] Confirm **opted-out clients are excluded** from every audience: send a campaign to "All clients" and verify the recipient count = (clients with valid contact) − (clients with `marketingOptOut: true`).
+- [ ] Spot-check 3 random clients' profiles to confirm the opt-out state is visible and accurate.
+- [ ] **GO-LIVE announcement template** drafted, saved, and previewed for both email + SMS channels.
+
 ## T-1 day — Dress rehearsal
 
 - [ ] Run a full mock day on staging or with real `_demo` records: book a multi-service appointment online → confirm it lands on calendar correctly → check it in → check it out → see it on Reports.
@@ -50,6 +75,12 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 - [ ] Test the booking link from a phone (not just desktop) — that's where most customers will land.
 - [ ] Daily reminder Cloud Function runs at the right time in the right TZ.
 - [ ] Print a paper backup of tomorrow's appointments at end of day, in case the app is down.
+
+### Marketing dress rehearsal
+- [ ] **Schedule a campaign** for 5 minutes from now (Test subjects audience) and confirm it fires automatically within the minute via the runScheduledCampaigns sweep.
+- [ ] **Cancel a campaign mid-send** (queue 5+ test recipients to a verified-only setup so some succeed, some queue): click ⏹ Cancel → verify status flips to CANCELLED within 2s and the activity log shows partial completion.
+- [ ] **Retry-failed flow**: produce a campaign with at least 1 failed delivery (e.g. unverified Twilio recipient on trial) → click 🔄 Retry → confirm new campaign sends only to the failed recipient(s) with `retryOf` reference to original.
+- [ ] **Mass-send confirmation prompt** appears for any audience >10 recipients (sanity-test with All clients audience without sending).
 
 ## Launch day (T-0)
 
@@ -71,6 +102,12 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 - [ ] **Receipt sample**: pick 5 random checkouts each day and verify totals, tax, tip, fee, and CC processing fee all reconcile to your Stripe dashboard.
 - [ ] Track unresolved bugs in the open-bugs list and prioritize for the first patch cycle.
 
+### Marketing post-launch
+- [ ] **Unsubscribe activity**: every couple days, scan Clients for new `marketingOptOut: true` records — abnormally high opt-out rates signal a bad campaign (subject too clickbait, too-frequent sends, etc.).
+- [ ] **Twilio cost monitor**: Twilio Console → Usage → SMS. Real cost should track ~$0.0079 × segments × recipients. Spikes could indicate retry loops or unintended re-sends.
+- [ ] **Resend deliverability**: Resend Dashboard → Logs. Watch for bounces, complaints, blocks. >2% bounce rate is a red flag — clean stale email addresses.
+- [ ] **Campaign delivery rates**: every campaign's activity log should show <5% failed for a healthy domain. Higher → check A2P/TFN status, opt-out clean-up, recipient list quality.
+
 ---
 
 ## Riskiest items (test twice)
@@ -80,6 +117,8 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 3. **GG receipt history → Reports**: spot-check that historical totals roughly match GG's own reports for the same date range. If they don't, something's wrong with the import (probably the createdAt or client linking).
 4. **Stripe live charge** end-to-end: card → success → receipt email → matches Stripe dashboard.
 5. **Daily reminder email** fires once and only once per day at the right time.
+6. **Marketing audience opt-out**: the recipient count must drop by exactly 1 immediately after a client unsubscribes (via either link click or STOP keyword). Test this twice with two separate test clients — one via email link, one via SMS STOP — before any real blast.
+7. **Personalized promo isolation**: try redeeming a personalized code as the wrong client at checkout. Must reject with "reserved for a different client" — never silently accept.
 
 ---
 
