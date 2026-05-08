@@ -104,7 +104,7 @@ export default function NotificationsBell() {
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative' }}>
+    <div ref={wrapRef} style={{ position: 'relative', zIndex: 1000 }}>
       <button onClick={() => setOpen(!open)} title="Notifications"
         style={{ height: 40, width: 40, borderRadius: 20, border: '1px solid #e0e0e0', background: open ? '#f0f0f0' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
         <IconBell size={18} />
@@ -116,7 +116,7 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 360, maxWidth: 'calc(100vw - 24px)', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,.14)', zIndex: 50, overflow: 'hidden', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 360, maxWidth: 'calc(100vw - 24px)', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,.14)', zIndex: 1000, overflow: 'hidden', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>Notifications</div>
             {unreadItems.length > 0 && (
