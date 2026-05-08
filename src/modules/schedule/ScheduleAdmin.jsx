@@ -679,6 +679,13 @@ function openNew(techName, slotMins) {
               techColWidth={techColWidth}
               onSlotClick={openNew}
               onApptClick={openView}
+              onApptReschedule={(apptId, newTech, newMins) => {
+                const original = appts.find(a => a.id === apptId);
+                if (!original) return;
+                const newStartTime = minsToStr(newMins);
+                if (newStartTime === original.startTime && newTech === original.techName) return;
+                handleSave({ ...original, techName: newTech, startTime: newStartTime }, original);
+              }}
             />
       }
 
@@ -1027,7 +1034,11 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
 }
 
 // ── Day grid ──────────────────────────────────────────
-function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, onSlotClick, onApptClick }) {
+function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, onSlotClick, onApptClick, onApptReschedule }) {
+  // Drag-to-reschedule state. id of the appointment currently being dragged
+  // and the slot+tech being hovered for drop preview. Reset on dragend/drop.
+  const [dragging, setDragging] = useState(null);     // appt.id or null
+  const [hoverKey, setHoverKey] = useState(null);     // `${tech}:${slotMins}` or null
   const TIME_COL = 54;
   const TECH_COL = techColWidth || 120;
   const dow = dayOfWeek(date);
@@ -1107,23 +1118,43 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
             {techs.map(tech => {
               const isOff  = empWorkDays[tech]?.[dow]?.on === false;
               const allowed = !isOff && (inWalkIn || techExtended[tech]);
+              const slotKey = `${tech}:${slotMins}`;
+              const isDropHover = dragging && hoverKey === slotKey && allowed;
               return (
                 <div
                   key={tech}
                   onClick={() => allowed && onSlotClick(tech, slotMins)}
+                  onDragOver={e => {
+                    if (!dragging || !allowed) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    if (hoverKey !== slotKey) setHoverKey(slotKey);
+                  }}
+                  onDragLeave={() => { if (hoverKey === slotKey) setHoverKey(null); }}
+                  onDrop={e => {
+                    if (!dragging || !allowed) return;
+                    e.preventDefault();
+                    const id = e.dataTransfer.getData('text/appt');
+                    if (id) onApptReschedule && onApptReschedule(id, tech, slotMins);
+                    setDragging(null); setHoverKey(null);
+                  }}
                   style={{
                     width: TECH_COL, flexShrink: 0, borderLeft: '1px solid #ececec',
                     cursor: allowed ? 'pointer' : 'default',
                     position: 'relative',
-                    background: isOff
+                    background: isDropHover
+                      ? 'rgba(45,122,95,.18)'
+                      : isOff
                       ? 'repeating-linear-gradient(45deg,#fafafa,#fafafa 4px,#f0f0f0 4px,#f0f0f0 8px)'
                       : !inWalkIn
                       ? (allowed ? 'rgba(59,130,246,.06)' : 'rgba(0,0,0,.025)')
                       : 'transparent',
+                    outline: isDropHover ? '2px dashed #2D7A5F' : 'none',
+                    outlineOffset: -2,
                   }}
                   title={isOff ? `${tech} · off today` : (allowed ? `${tech} · ${minsToStr(slotMins)}` : `${tech} · appointment-only hours`)}
                 >
-                  {allowed && (
+                  {allowed && !dragging && (
                     <div style={{ position: 'absolute', inset: 0, transition: 'background .1s' }}
                          onMouseEnter={e => e.currentTarget.style.background = inWalkIn ? 'rgba(59,130,246,.08)' : 'rgba(59,130,246,.13)'}
                          onMouseLeave={e => e.currentTarget.style.background = ''} />
@@ -1158,10 +1189,21 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
           const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
           const blockText   = isCancelled ? '#991b1b' : isDone ? '#6b7280' : col.text;
 
+          // Done/cancelled appts shouldn't be reschedulable — they represent
+          // historical state. Active scheduled appts are draggable.
+          const isDraggable = !isDone && !isCancelled;
+          const isBeingDragged = dragging === appt.id;
           return (
             <div
               key={appt.id}
               onClick={e => { e.stopPropagation(); onApptClick(appt); }}
+              draggable={isDraggable}
+              onDragStart={e => {
+                e.dataTransfer.setData('text/appt', appt.id);
+                e.dataTransfer.effectAllowed = 'move';
+                setDragging(appt.id);
+              }}
+              onDragEnd={() => { setDragging(null); setHoverKey(null); }}
               style={{
                 position: 'absolute',
                 top: topOffset + 1,
@@ -1173,13 +1215,15 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
                 borderLeft: `3px solid ${blockBorder}`,
                 borderRadius: 6,
                 padding: '3px 5px',
-                cursor: 'pointer',
+                cursor: isDraggable ? 'grab' : 'pointer',
                 overflow: 'hidden',
-                zIndex: 5,
+                zIndex: isBeingDragged ? 7 : 5,
                 boxSizing: 'border-box',
                 display: 'flex',
                 flexDirection: 'column',
-                opacity: isCancelled ? 0.55 : 1,
+                opacity: isCancelled ? 0.55 : isBeingDragged ? 0.4 : 1,
+                pointerEvents: isBeingDragged ? 'none' : 'auto',
+                transition: 'opacity .12s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
