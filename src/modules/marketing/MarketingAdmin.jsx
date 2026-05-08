@@ -927,39 +927,53 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
 
-          {/* ── Template picker (email only) ── */}
-          {channel === 'email' && <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-              Templates
-              <span style={{ fontSize: 10, fontWeight: 400, color: '#ccc', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
-                {savedTpls.length > 0 ? `${BUILTIN_TEMPLATES.length} built-in · ${savedTpls.length} saved` : `${BUILTIN_TEMPLATES.length} built-in`}
-              </span>
-            </div>
-            <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
-              {allTemplates.map(tpl => {
-                const active  = activeTemplate === tpl.id;
-                const builtin = tpl.id.startsWith('_');
-                return (
-                  <div key={tpl.id} onClick={() => applyTemplate(tpl)}
-                    style={{ flexShrink: 0, width: 110, padding: '10px 10px 8px', borderRadius: 10, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#f0faf6' : '#fafafa', cursor: 'pointer', position: 'relative' }}>
-                    <div style={{ fontSize: 20, marginBottom: 4 }}>{tpl.icon || '📄'}</div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#2D7A5F' : '#333', lineHeight: 1.3 }}>{tpl.name}</div>
-                    {!builtin && (
-                      <button
-                        onClick={e => handleDeleteTemplate(tpl, e)}
-                        title="Delete template"
-                        style={{ position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.08)', color: '#aaa', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1 }}>
-                        ×
-                      </button>
-                    )}
-                    {!builtin && (
-                      <div style={{ fontSize: 9, color: '#bbb', marginTop: 3 }}>saved</div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>}
+          {/* ── Template picker — shows templates with content for the active channel ── */}
+          {(() => {
+            // For SMS, hide templates that lack an smsBody (they'd insert
+            // nothing useful). For email, hide those that lack subject+body.
+            const channelTemplates = allTemplates.filter(t =>
+              channel === 'sms'
+                ? !!(t.smsBody && t.smsBody.trim())
+                : !!((t.subject || '').trim() && (t.body || '').trim())
+            );
+            if (channelTemplates.length === 0) return null;
+            const builtinCount = channelTemplates.filter(t => t.id.startsWith('_')).length;
+            const savedCount = channelTemplates.length - builtinCount;
+            return (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+                  Templates
+                  <span style={{ fontSize: 10, fontWeight: 400, color: '#ccc', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
+                    {savedCount > 0 ? `${builtinCount} built-in · ${savedCount} saved` : `${builtinCount} built-in`}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4, WebkitOverflowScrolling: 'touch' }}>
+                  {channelTemplates.map(tpl => {
+                    const active  = activeTemplate === tpl.id;
+                    const builtin = tpl.id.startsWith('_');
+                    return (
+                      <div key={tpl.id} onClick={() => applyTemplate(tpl)}
+                        style={{ flexShrink: 0, width: 110, padding: '10px 10px 8px', borderRadius: 10, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#f0faf6' : '#fafafa', cursor: 'pointer', position: 'relative' }}>
+                        <div style={{ fontSize: 20, marginBottom: 4 }}>{tpl.icon || '📄'}</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#2D7A5F' : '#333', lineHeight: 1.3 }}>{tpl.name}</div>
+                        {!builtin && (
+                          <button
+                            onClick={e => handleDeleteTemplate(tpl, e)}
+                            title="Delete template"
+                            style={{ position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.08)', color: '#aaa', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1 }}>
+                            ×
+                          </button>
+                        )}
+                        {!builtin && (
+                          <div style={{ fontSize: 9, color: '#bbb', marginTop: 3 }}>saved</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── Channel toggle ── */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
