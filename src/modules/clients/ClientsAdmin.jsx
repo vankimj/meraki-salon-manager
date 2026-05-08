@@ -16,6 +16,22 @@ function blankClient() {
     visits: [],
     banned: false,
     testSubject: false,
+    commPreferences: defaultCommPreferences(),
+  };
+}
+
+// Two categories × three channels. Voice is recorded but not yet acted on
+// (Phase 4 of the Communications Hub roadmap). Default opts everyone into
+// SMS + Email for both transactional and marketing — preserves existing
+// behavior so the field is purely additive for legacy clients.
+export function defaultCommPreferences() {
+  return {
+    appointmentSms:   true,
+    appointmentEmail: true,
+    appointmentVoice: false,
+    marketingSms:     true,
+    marketingEmail:   true,
+    marketingVoice:   false,
   };
 }
 
@@ -511,6 +527,38 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                       Include in "Test subjects" marketing audience
                     </label>
                 }
+              </Field>
+              <Field label="Communication preferences">
+                {(() => {
+                  const cp = client.commPreferences || defaultCommPreferences();
+                  const setCp = (patch) => onChange({ commPreferences: { ...cp, ...patch } });
+                  const Row = ({ label, smsKey, emailKey, voiceKey, hint }) => (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 4 }}>{label}</div>
+                      {hint && <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{hint}</div>}
+                      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#333', flexWrap: 'wrap' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer' }}>
+                          <input type="checkbox" disabled={isView} checked={!!cp[smsKey]} onChange={e => setCp({ [smsKey]: e.target.checked })} /> SMS
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer' }}>
+                          <input type="checkbox" disabled={isView} checked={!!cp[emailKey]} onChange={e => setCp({ [emailKey]: e.target.checked })} /> Email
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer', color: '#aaa' }}
+                          title="Voice channel coming in a future release.">
+                          <input type="checkbox" disabled={isView} checked={!!cp[voiceKey]} onChange={e => setCp({ [voiceKey]: e.target.checked })} /> Voice <span style={{ fontSize: 10, color: '#bbb' }}>(soon)</span>
+                        </label>
+                      </div>
+                    </div>
+                  );
+                  return (
+                    <div style={{ background: isView ? '#fafafa' : '#fff', border: '1px solid #ececec', borderRadius: 8, padding: '10px 12px' }}>
+                      <Row label="Appointment messages" smsKey="appointmentSms" emailKey="appointmentEmail" voiceKey="appointmentVoice"
+                        hint="Confirmations, reminders, reschedule notices, receipts." />
+                      <Row label="Marketing messages" smsKey="marketingSms" emailKey="marketingEmail" voiceKey="marketingVoice"
+                        hint="Campaigns, promotions, seasonal offers." />
+                    </div>
+                  );
+                })()}
               </Field>
               <Field label="Marketing opt-out">
                 {isView

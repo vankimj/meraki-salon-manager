@@ -91,7 +91,7 @@ export default function BookingScreen() {
   const [cartSlot, setCartSlot] = useState(null);
   // Per-date appointment cache for the slot picker.
   const [apptsByDate, setApptsByDate] = useState({});
-  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '' });
+  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: true, optInEmail: true });
   const [submitting,      setSubmitting]      = useState(false);
   const [confirmed,       setConfirmed]       = useState(null);
   const [emailLinkState,  setEmailLinkState]  = useState(null); // null|'sending'|'sent'|'error'
@@ -231,6 +231,17 @@ export default function BookingScreen() {
             email:   form.email.trim() || gUser.email,
             picture: gUser.photoURL || '',
             source:  'online_booking',
+            // Default a new online-booking client to opted-in on both
+            // SMS + Email for both transactional and marketing. They
+            // can change this any time on their profile / via unsubscribe.
+            commPreferences: {
+              appointmentSms:   form.optInSms !== false,
+              appointmentEmail: form.optInEmail !== false,
+              appointmentVoice: false,
+              marketingSms:     form.optInSms !== false,
+              marketingEmail:   form.optInEmail !== false,
+              marketingVoice:   false,
+            },
           });
         } catch (e) { console.error('[Booking] auto-create client failed:', e); }
       }
@@ -987,6 +998,26 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
     </div>
   );
 
+  // Communication-preference opt-ins. Defaults to both checked for new
+  // bookers; salon-side, the client profile lets them edit later. We split
+  // SMS + Email so customers can pick "email only" if they hate texts.
+  const optInCard = (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: '12px 16px', marginBottom: 16, fontSize: 13 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 6 }}>How can we reach you?</div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', color: '#333' }}>
+        <input type="checkbox" checked={form.optInSms !== false} onChange={e => onChange({ optInSms: e.target.checked })} />
+        <span>Text me reminders + appointment updates</span>
+      </label>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', color: '#333' }}>
+        <input type="checkbox" checked={form.optInEmail !== false} onChange={e => onChange({ optInEmail: e.target.checked })} />
+        <span>Email me reminders + appointment updates</span>
+      </label>
+      <div style={{ fontSize: 11, color: '#888', marginTop: 4, lineHeight: 1.5 }}>
+        We'll only send what's relevant. You can change this any time. Reply STOP to a text or click "Unsubscribe" in any email to opt out of marketing.
+      </div>
+    </div>
+  );
+
   // Signed-in: skip the sign-in card. Either editing existing info or
   // a brand-new auth user whose email isn't in the client list yet —
   // show the form so they can supply name/phone.
@@ -1001,6 +1032,7 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
           </div>
         )}
         {formCard}
+        {optInCard}
         <button onClick={onNext} disabled={!valid}
           style={{ width: '100%', padding: '15px', borderRadius: 12, border: 'none', background: valid ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 16, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit', marginBottom: 10 }}>
           Review Booking →
@@ -1047,6 +1079,7 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
       </div>
 
       {formCard}
+      {optInCard}
 
       <button onClick={onNext} disabled={!valid}
         style={{ width: '100%', padding: '15px', borderRadius: 12, border: 'none', background: valid ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 16, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit', marginBottom: 10 }}>

@@ -922,6 +922,13 @@ exports.sendDailyReminders = onSchedule(
       const email  = client?.email?.trim();
 
       if (!email) { skipped++; return; }
+      // Honor the client's appointment-email preference. Default to opted-in
+      // when the field is missing (legacy clients).
+      if (client?.commPreferences?.appointmentEmail === false) {
+        skipped++;
+        console.log(`[Reminders] Skipping ${client.name} — opted out of appointment email`);
+        return;
+      }
 
       try {
         const { error } = await resend.emails.send({
@@ -997,14 +1004,26 @@ exports.sendBookingConfirmation = onDocumentCreated(
 </body>
 </html>`;
 
-    // Send to client
+    // Send to client — honor commPreferences.appointmentEmail if set on
+    // the linked client doc. Defaults to opted-in for legacy/unknown clients.
     if (appt.clientEmail) {
-      await resend.emails.send({
-        from:    resendFrom.value(),
-        to:      appt.clientEmail,
-        subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
-        html:    clientHtml,
-      }).catch(e => console.error('[Booking] Client email failed:', e.message));
+      let emailOk = true;
+      if (appt.clientId) {
+        try {
+          const cDoc = await db.doc(`tenants/${TENANT_ID}/clients/${appt.clientId}`).get();
+          if (cDoc.exists && cDoc.data()?.commPreferences?.appointmentEmail === false) emailOk = false;
+        } catch { /* fall through — assume opted-in */ }
+      }
+      if (emailOk) {
+        await resend.emails.send({
+          from:    resendFrom.value(),
+          to:      appt.clientEmail,
+          subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
+          html:    clientHtml,
+        }).catch(e => console.error('[Booking] Client email failed:', e.message));
+      } else {
+        console.log(`[Booking] Skipped client email — opted out of appointment email`);
+      }
     }
 
     // Notify admins

@@ -778,9 +778,19 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
   const recipients = useMemo(() => {
     if (!clients) return null;
+    // commPreferences gates per-channel marketing. When the field is missing
+    // (legacy clients), default to opted-in for both channels — same as
+    // existing behavior. marketingOptOut is the master kill-switch and
+    // overrides the channel preferences.
+    const channelOk = (c) => {
+      if (c.marketingOptOut) return false;
+      const cp = c.commPreferences;
+      if (!cp) return true; // legacy: no preferences set → both channels OK
+      return channel === 'sms' ? cp.marketingSms !== false : cp.marketingEmail !== false;
+    };
     const withContact = channel === 'sms'
-      ? clients.filter(c => c.phone && !c.marketingOptOut)
-      : clients.filter(c => c.email && !c.marketingOptOut);
+      ? clients.filter(c => c.phone && channelOk(c))
+      : clients.filter(c => c.email && channelOk(c));
     if (segType === 'all') return withContact;
     if (segType === 'test_subjects') return withContact.filter(c => c.testSubject);
     if (segType === 'appts_on_date') {
