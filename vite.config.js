@@ -45,6 +45,9 @@ export default defineConfig({
         skipWaiting:  true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
+        // Bundle has grown past 2 MB as differentiator features ship; raise
+        // the precache size limit so the main JS chunk still gets cached.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // Cache the app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,svg,png,woff2}'],
         // Network-first for Firestore / auth (handled by Firebase SDK itself)

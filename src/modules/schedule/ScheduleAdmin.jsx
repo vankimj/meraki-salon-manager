@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster } from '../../lib/firestore';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import { useApp } from '../../context/AppContext';
@@ -7,6 +7,7 @@ import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
 import { notifyAffectedTechs } from '../../lib/notifications';
 import { resizeImg } from '../../utils/helpers';
+import VoiceAssistant from '../voice/VoiceAssistant';
 
 const FALLBACK_TECHS = ['Yasmin D', 'Audriana L', 'Samantha T', 'Tess D', 'Elizabeth L', 'Yan W', 'Jen T', 'Marisela I', 'Ana P', 'Jenesis B'];
 
@@ -81,6 +82,33 @@ function dayOfWeek(dateStr) {
   return new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' });
 }
 
+// Returns the time-off entries that apply to a specific date for a tech.
+// allDay entries cover the whole day; partial entries cover a slot range.
+function timeOffOnDate(timeOff, techName, date) {
+  if (!Array.isArray(timeOff) || !techName || !date) return [];
+  return timeOff.filter(t =>
+    t.techName === techName &&
+    (t.startDate || '') <= date && date <= (t.endDate || t.startDate || '')
+  );
+}
+
+// True if the given (techName, slotMins) is inside a time-off block.
+// Partial-day entries on the first/last day respect startTime/endTime.
+function isSlotBlocked(timeOff, techName, date, slotMins) {
+  const hits = timeOffOnDate(timeOff, techName, date);
+  for (const t of hits) {
+    if (t.allDay !== false) return t;
+    // Partial-day: only apply startTime/endTime on the relevant edges.
+    const isStart = date === (t.startDate || '');
+    const isEnd   = date === (t.endDate   || t.startDate || '');
+    let s = 0, e = 24 * 60;
+    if (t.startTime && isStart) s = strToMins(t.startTime);
+    if (t.endTime   && isEnd)   e = strToMins(t.endTime);
+    if (slotMins >= s && slotMins < e) return t;
+  }
+  return null;
+}
+
 function weekStartOf(dateStr) {
   const d = new Date(dateStr + 'T12:00:00');
   const dow = d.getDay(); // 0=Sun
@@ -118,7 +146,7 @@ function blankAppt(date, techName, startMins, clientName = '', serviceName = '')
 
 // ── Main ──────────────────────────────────────────────
 export default function ScheduleAdmin() {
-  const { settings, updateSettings, isTech, isAdmin, myTechName, gUser, showToast, addApptToTicket } = useApp();
+  const { settings, updateSettings, isTech, isAdmin, isScheduler, myTechName, gUser, showToast, addApptToTicket } = useApp();
 
   const [date,         setDate]        = useState(todayStr());
 
@@ -144,6 +172,8 @@ export default function ScheduleAdmin() {
   const [techExtended,     setTechExtended]     = useState({});
   const [showAll,          setShowAll]          = useState(false);
   const [showHours,        setShowHours]        = useState(false);
+  const [showTimeOff,      setShowTimeOff]      = useState(false);
+  const [timeOff,          setTimeOff]          = useState([]);
   const [visibleTechNames, setVisibleTechNames] = useState(null);
   const [empWorkDays,      setEmpWorkDays]      = useState({});
   const [employees,        setEmployeesData]    = useState([]);
@@ -154,6 +184,10 @@ export default function ScheduleAdmin() {
   const [queueEntries,     setQueueEntries]     = useState([]);
   const [turnRoster,       setTurnRoster]       = useState({ date: '', roster: [] });
   const [deleteDialog,     setDeleteDialog]     = useState(null); // appt with recurringGroupId
+  // Series creation conflict prompt — { dates: [{date, ok, reasons[]}], proceed, cancel }
+  const [seriesConflict,   setSeriesConflict]   = useState(null);
+  // Series edit prompt — { appt, original }; user picks scope (this / following / all)
+  const [seriesEdit,       setSeriesEdit]       = useState(null);
 
   const load = useCallback(async () => {
     // Kept for places that still trigger an explicit reload (e.g. modal save error paths).
@@ -193,9 +227,37 @@ export default function ScheduleAdmin() {
     return unsub;
   }, [viewMode, weekStart]);
 
+  // Self-heal startTime fields written in 12h "h:mm AM/PM" format. An earlier
+  // version of drag-and-drop reschedule used the display formatter and saved
+  // strings like "2:00 PM" — those parse to NaN in strToMins and the block
+  // renders at top:NaN (invisible). Convert them back to 24h "HH:mm" so the
+  // appt becomes visible again. Idempotent: HH:mm strings are left alone.
+  useEffect(() => {
+    appts.forEach(a => {
+      const s = a.startTime;
+      if (!s) return;
+      const m12 = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(s);
+      if (!m12) return;
+      let h = parseInt(m12[1], 10);
+      const min = m12[2];
+      const isPM = m12[3].toUpperCase() === 'PM';
+      if (isPM && h < 12) h += 12;
+      if (!isPM && h === 12) h = 0;
+      const fixed = `${String(h).padStart(2, '0')}:${min}`;
+      saveAppointment(a.id, { startTime: fixed }).catch(e => console.error('[Schedule] startTime repair failed', e));
+    });
+  }, [appts]);
+
   // Real-time queue listener — always on so badge stays current
   useEffect(() => {
     const unsub = subscribeQueue(todayStr(), setQueueEntries);
+    return unsub;
+  }, []);
+
+  // Live time-off subscription so blocked-out periods render on the day grid
+  // and slot interactions can respect them.
+  useEffect(() => {
+    const unsub = subscribeTimeOff(setTimeOff);
     return unsub;
   }, []);
 
@@ -279,13 +341,24 @@ export default function ScheduleAdmin() {
         let warning = null;
         if (day.closed) {
           warning = `The salon is marked closed on ${apptDow.charAt(0).toUpperCase() + apptDow.slice(1)}.`;
-        } else {
-          const openMins  = strToMins(day.open  || settings.apptHours?.open  || '09:00');
-          const closeMins = strToMins(day.close || settings.apptHours?.close || '20:00');
+        } else if (day.open && day.close) {
+          const openMins  = strToMins(day.open);
+          const closeMins = strToMins(day.close);
           if (startMins < openMins) {
             warning = `Appointment starts at ${fmtMins(startMins)}, before the salon opens (${fmtMins(openMins)}).`;
           } else if (endMins > closeMins) {
             warning = `Appointment ends at ${fmtMins(endMins)} (${dur}-minute duration), after the salon closes (${fmtMins(closeMins)}).`;
+          }
+        } else {
+          // No per-day store hours configured — fall back to the global
+          // appointment-hours window so we still warn for clearly wild
+          // times.
+          const apptOpen  = strToMins(settings.apptHours?.open  || '09:00');
+          const apptClose = strToMins(settings.apptHours?.close || '20:00');
+          if (startMins < apptOpen) {
+            warning = `Appointment starts at ${fmtMins(startMins)}, before the earliest available slot (${fmtMins(apptOpen)}).`;
+          } else if (endMins > apptClose) {
+            warning = `Appointment ends at ${fmtMins(endMins)}, after the latest available slot (${fmtMins(apptClose)}).`;
           }
         }
         if (warning) {
@@ -301,6 +374,21 @@ export default function ScheduleAdmin() {
       const logDetail  = `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} at ${appt.startTime} — ${svcSummary}${totalPrice > 0 ? ` ($${totalPrice.toFixed(2)})` : ''}`;
 
       if (appt.id) {
+        // If this is part of a series and the user actually changed something
+        // meaningful, ask whether to apply to one / following / all.
+        const inSeries = !!original?.recurringGroupId;
+        const meaningfulChange = inSeries && (
+          appt.techName    !== original.techName    ||
+          appt.startTime   !== original.startTime   ||
+          appt.status      !== original.status      ||
+          appt.clientId    !== original.clientId    ||
+          appt.notes       !== original.notes       ||
+          JSON.stringify(appt.services) !== JSON.stringify(original.services)
+        );
+        if (meaningfulChange) {
+          setSeriesEdit({ appt, original, full, logDetail, dur });
+          return;
+        }
         const { id, createdAt, ...data } = full;
         await saveAppointment(id, data);
         logActivity('appt_updated', logDetail);
@@ -315,17 +403,24 @@ export default function ScheduleAdmin() {
           });
         }
       } else if (recurrence) {
-        const groupId = crypto.randomUUID();
+        // Pre-flight: check each future date for conflicts and let the user
+        // decide skip-some / book-anyway / cancel before we write anything.
+        const dates = [];
         for (let i = 0; i < recurrence.count; i++) {
-          await createAppointment({
-            ...full,
-            date: addDays(full.date, i * recurrence.weeks * 7),
-            recurringGroupId: groupId,
-            recurringIndex: i + 1,
-            recurringTotal: recurrence.count,
-          });
+          dates.push(addDays(full.date, i * recurrence.weeks * 7));
         }
-        logActivity('appt_series_created', `${recurrence.count}× ${logDetail}`);
+        const checks = await checkSeriesConflicts(dates, full);
+        const anyConflict = checks.some(c => !c.ok);
+        if (anyConflict) {
+          setSeriesConflict({
+            dates: checks,
+            full,
+            recurrence,
+            logDetail,
+          });
+          return; // user picks an option in the dialog
+        }
+        await createSeries(full, recurrence, dates, logDetail);
       } else {
         const newId = await createAppointment(full);
         full.id = newId;
@@ -364,6 +459,124 @@ export default function ScheduleAdmin() {
     logActivity('appt_series_deleted', `${appt.clientName || 'walk-in'} recurring series (${appt.recurringTotal} appts)`);
     if (viewMode === 'week') { await loadWeek(); } else { await load(); }
     setDeleteDialog(null);
+    setModal(null);
+  }
+
+  // Look ahead at every date in a proposed series and flag problems:
+  // store closed, tech off-day, or another appt overlaps the same tech/time.
+  // Single Firestore range query, in-memory cross-check.
+  async function checkSeriesConflicts(dates, full) {
+    if (!dates.length) return [];
+    const startDate = dates[0];
+    const endDate   = dates[dates.length - 1];
+    const existing  = await fetchAppointmentsByRange(startDate, endDate);
+    const startMins = strToMins(full.startTime || '00:00');
+    const endMins   = startMins + (Number(full.duration) || 60);
+    return dates.map(d => {
+      const reasons = [];
+      const dow = dayOfWeek(d);
+      const sh  = settings.storeHours?.[dow] || {};
+      if (sh.closed) reasons.push('salon closed that day');
+      const wd  = empWorkDays[full.techName]?.[dow];
+      if (wd && wd.on === false) reasons.push(`${full.techName} off that day`);
+      // Time off (vacation/sick/personal) blocks the slot.
+      const blocked = isSlotBlocked(timeOff, full.techName, d, startMins);
+      if (blocked) reasons.push(`${full.techName} on ${blocked.type || 'time off'}`);
+      const collisions = existing.filter(a => {
+        if (a.date !== d) return false;
+        if (a.techName !== full.techName) return false;
+        if (a.status === 'cancelled') return false;
+        const aStart = strToMins(a.startTime || '00:00');
+        const aEnd   = aStart + (Number(a.duration) || 60);
+        return aStart < endMins && aEnd > startMins;
+      });
+      if (collisions.length) {
+        reasons.push(`${full.techName} already booked ${collisions[0].startTime}`);
+      }
+      return { date: d, ok: reasons.length === 0, reasons };
+    });
+  }
+
+  async function createSeries(full, recurrence, dates, logDetail) {
+    const groupId = crypto.randomUUID();
+    for (let i = 0; i < dates.length; i++) {
+      await createAppointment({
+        ...full,
+        date: dates[i],
+        recurringGroupId: groupId,
+        recurringIndex: i + 1,
+        recurringTotal: dates.length,
+      });
+    }
+    logActivity('appt_series_created', `${dates.length}× ${logDetail}`);
+    if (viewMode === 'week') { await loadWeek(); } else { await load(); }
+    setModal(null);
+  }
+
+  async function confirmSeriesConflict(action) {
+    const ctx = seriesConflict;
+    if (!ctx) return;
+    const { full, recurrence, dates, logDetail } = ctx;
+    setSeriesConflict(null);
+    if (action === 'cancel') return;
+    let finalDates;
+    if (action === 'skip') {
+      finalDates = dates.filter(d => d.ok).map(d => d.date);
+    } else { // 'force'
+      finalDates = dates.map(d => d.date);
+    }
+    if (!finalDates.length) {
+      showToast('Nothing to book — all dates conflict');
+      return;
+    }
+    await createSeries(full, recurrence, finalDates, logDetail);
+  }
+
+  // Apply the changes from a series edit to a chosen scope.
+  async function applySeriesEdit(scope) {
+    const ctx = seriesEdit;
+    if (!ctx) return;
+    const { appt, original, full, logDetail, dur } = ctx;
+    setSeriesEdit(null);
+
+    if (scope === 'this') {
+      const { id, createdAt, ...data } = full;
+      await saveAppointment(id, data);
+      logActivity('appt_updated', logDetail);
+      const becameDone = original?.status !== 'done' && appt.status === 'done';
+      if (becameDone) {
+        applyTurnCredit({ ...full, id: appt.id }).then(applied => {
+          if (applied) logActivity('turn_credit', `${appt.techName} +1 (${appt.clientName || 'walk-in'})`);
+        });
+      }
+      if (viewMode === 'week') { await loadWeek(); } else { await load(); }
+      setModal(null);
+      return;
+    }
+
+    // 'following' or 'all' — fan out to series siblings
+    const siblings = await fetchRecurringGroup(original.recurringGroupId);
+    const targets = scope === 'all'
+      ? siblings
+      : siblings.filter(s => (s.recurringIndex || 0) >= (original.recurringIndex || 0));
+    // Fields propagated to siblings (NOT date — each occurrence keeps its own date)
+    const patch = {
+      techName:        appt.techName,
+      startTime:       appt.startTime,
+      status:          appt.status,
+      clientId:        appt.clientId,
+      clientName:      appt.clientName,
+      services:        appt.services,
+      duration:        dur,
+      notes:           appt.notes,
+      techRequestType: appt.techRequestType,
+      updatedAt:       new Date().toISOString(),
+    };
+    for (const s of targets) {
+      await saveAppointment(s.id, patch);
+    }
+    logActivity('appt_series_updated', `${targets.length}× ${appt.clientName || 'walk-in'} — ${scope === 'all' ? 'whole series' : 'this and following'}`);
+    if (viewMode === 'week') { await loadWeek(); } else { await load(); }
     setModal(null);
   }
 
@@ -473,8 +686,29 @@ function openNew(techName, slotMins) {
             🕐 Hours
           </button>
         )}
+        {(isAdmin || isScheduler || isTech) && (
+          <button onClick={() => setShowTimeOff(true)} title="Vacation / sick / personal time off"
+            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+            🌴 Time Off
+          </button>
+        )}
       </div>
       {showHours && <HoursModal settings={settings} updateSettings={updateSettings} onClose={() => setShowHours(false)} />}
+      {showTimeOff && (
+        <TimeOffModal
+          timeOff={timeOff}
+          techs={techs}
+          employees={employees}
+          services={services}
+          clients={clients}
+          isAdmin={isAdmin}
+          isScheduler={isScheduler}
+          isTech={isTech}
+          myTechName={myTechName}
+          gUser={gUser}
+          onClose={() => setShowTimeOff(false)}
+        />
+      )}
 
       {/* Turn roster — walk-in rotation (visible whenever the queue is open or when there's a roster) */}
       {(showQueue || (turnRoster.roster && turnRoster.roster.length > 0)) && date === todayStr() && (
@@ -668,6 +902,7 @@ function openNew(techName, slotMins) {
           : <DayGrid
               date={date}
               appts={appts}
+              timeOff={timeOff}
               techs={displayTechs}
               allTechs={techs}
               techExtended={techExtended}
@@ -682,9 +917,16 @@ function openNew(techName, slotMins) {
               onApptReschedule={(apptId, newTech, newMins) => {
                 const original = appts.find(a => a.id === apptId);
                 if (!original) return;
-                const newStartTime = minsToStr(newMins);
+                // startTime is stored as 24h "HH:mm" — minsToStr returns
+                // a 12h display string ("2:00 PM"), which would corrupt
+                // the field and leave the block unrenderable after save.
+                const newStartTime = `${String(Math.floor(newMins / 60)).padStart(2, '0')}:${String(newMins % 60).padStart(2, '0')}`;
                 if (newStartTime === original.startTime && newTech === original.techName) return;
-                handleSave({ ...original, techName: newTech, startTime: newStartTime }, original);
+                setModal({
+                  appt: { ...original, techName: newTech, startTime: newStartTime },
+                  original,
+                  mode: 'edit',
+                });
               }}
             />
       }
@@ -733,6 +975,25 @@ function openNew(techName, slotMins) {
           onCancel={() => setDeleteDialog(null)}
         />
       )}
+
+      {seriesConflict && (
+        <SeriesConflictDialog
+          dates={seriesConflict.dates}
+          onSkip={() => confirmSeriesConflict('skip')}
+          onForce={() => confirmSeriesConflict('force')}
+          onCancel={() => confirmSeriesConflict('cancel')}
+        />
+      )}
+
+      {seriesEdit && (
+        <SeriesEditDialog
+          appt={seriesEdit.appt}
+          onScope={(scope) => applySeriesEdit(scope)}
+          onCancel={() => setSeriesEdit(null)}
+        />
+      )}
+
+      <VoiceAssistant clients={clients} services={services} techs={techs} />
     </div>
   );
 }
@@ -1034,11 +1295,59 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
 }
 
 // ── Day grid ──────────────────────────────────────────
-function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, onSlotClick, onApptClick, onApptReschedule }) {
-  // Drag-to-reschedule state. id of the appointment currently being dragged
-  // and the slot+tech being hovered for drop preview. Reset on dragend/drop.
-  const [dragging, setDragging] = useState(null);     // appt.id or null
-  const [hoverKey, setHoverKey] = useState(null);     // `${tech}:${slotMins}` or null
+function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, onSlotClick, onApptClick, onApptReschedule }) {
+  // Pointer-event drag-to-reschedule. Works on both mouse and touch
+  // (iPad/iPhone) — HTML5 D&D doesn't work on touch devices natively.
+  // Dragging happens in two phases:
+  //   1. onPointerDown stashes the candidate appt + start coords. Click
+  //      still works at this point for short interactions.
+  //   2. Once pointer moves >6px the drag becomes "active": we capture
+  //      the pointer, render a translated ghost, and listen at the
+  //      document level for move/up.
+  const [drag, setDrag] = useState(null); // { id, startX, startY, dx, dy, hoverKey } or null
+  const dragRef = useRef(null);
+  dragRef.current = drag;
+  // After a successful drop the browser still fires a `click` on the appt
+  // block. Without this guard the click would re-open the appt in view mode
+  // and overwrite the edit modal we just opened from the drop.
+  const justDroppedRef = useRef(0);
+
+  useEffect(() => {
+    if (!drag) return;
+    function onMove(e) {
+      const cur = dragRef.current;
+      if (!cur) return;
+      const dx = e.clientX - cur.startX;
+      const dy = e.clientY - cur.startY;
+      // Walk the DOM at the pointer's coords to find the slot cell under it.
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const cell = el?.closest?.('[data-slot-tech]');
+      const hoverKey = cell ? `${cell.dataset.slotTech}:${cell.dataset.slotMins}` : null;
+      setDrag({ ...cur, dx, dy, hoverKey, active: cur.active || Math.hypot(dx, dy) > 6 });
+      if (cur.active || Math.hypot(dx, dy) > 6) e.preventDefault();
+    }
+    function onUp(e) {
+      const cur = dragRef.current;
+      setDrag(null);
+      if (!cur || !cur.active) return; // a click, not a drag
+      justDroppedRef.current = Date.now();
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const cell = el?.closest?.('[data-slot-tech]');
+      if (!cell) return;
+      const tech = cell.dataset.slotTech;
+      const mins = parseInt(cell.dataset.slotMins, 10);
+      if (!tech || !Number.isFinite(mins)) return;
+      onApptReschedule && onApptReschedule(cur.id, tech, mins);
+    }
+    document.addEventListener('pointermove', onMove, { passive: false });
+    document.addEventListener('pointerup',   onUp);
+    document.addEventListener('pointercancel', onUp);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup',   onUp);
+      document.removeEventListener('pointercancel', onUp);
+    };
+  }, [drag?.id]); // eslint-disable-line
   const TIME_COL = 54;
   const TECH_COL = techColWidth || 120;
   const dow = dayOfWeek(date);
@@ -1060,6 +1369,13 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
         {techs.map(tech => {
           const isOff = empWorkDays[tech]?.[dow]?.on === false;
           const col   = getTechColor(tech, allTechs || techs);
+          const todayTimeOff = timeOffOnDate(timeOff, tech, date);
+          const hasTimeOff = todayTimeOff.length > 0;
+          const timeOffLabel = hasTimeOff
+            ? (todayTimeOff[0].type === 'sick' ? '🩹 sick'
+               : todayTimeOff[0].type === 'personal' ? '🏠 personal'
+               : '🌴 vacation')
+            : null;
           return (
             <div key={tech} style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? '#bbb' : col.text, textAlign: 'center', borderLeft: '1px solid #e8e8e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? '#fafafa' : col.bg, paddingBottom: 6 }}>
               <div style={{ height: 3, background: isOff ? '#e0e0e0' : col.solid, marginBottom: 6 }} />
@@ -1067,7 +1383,10 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
               {isOff && (
                 <div style={{ fontSize: 8, color: '#d0d0d0', fontWeight: 500, letterSpacing: '.03em' }}>off today</div>
               )}
-              {!isOff && hasApptOnlyZone && techExtended[tech] && (
+              {!isOff && hasTimeOff && (
+                <div style={{ fontSize: 9, color: '#92400e', fontWeight: 700, letterSpacing: '.03em' }}>{timeOffLabel}</div>
+              )}
+              {!isOff && !hasTimeOff && hasApptOnlyZone && techExtended[tech] && (
                 <div style={{ fontSize: 8, color: col.solid, fontWeight: 600, letterSpacing: '.03em', opacity: .8 }}>extended hrs</div>
               )}
             </div>
@@ -1117,44 +1436,56 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
             {/* Tech cells */}
             {techs.map(tech => {
               const isOff  = empWorkDays[tech]?.[dow]?.on === false;
-              const allowed = !isOff && (inWalkIn || techExtended[tech]);
+              const blockedBy = isSlotBlocked(timeOff, tech, date, slotMins);
+              // `interactive` controls whether the cell is clickable / a valid
+              // drop target. We let the user click and drop anywhere the tech
+              // is working — handleSave's out-of-hours guard handles the
+              // confirm prompt for slots outside store / extended hours.
+              // Time-off blocks (vacation/sick/personal) are NOT interactive.
+              const interactive = !isOff && !blockedBy;
+              const inExtended  = !inWalkIn && techExtended[tech];
               const slotKey = `${tech}:${slotMins}`;
-              const isDropHover = dragging && hoverKey === slotKey && allowed;
+              const isDropHover = drag?.active && drag.hoverKey === slotKey && interactive;
+              const tooltipBlocked = blockedBy
+                ? `${tech} · ${blockedBy.type || 'time off'}${blockedBy.notes ? ` — ${blockedBy.notes}` : ''}`
+                : null;
               return (
                 <div
                   key={tech}
-                  onClick={() => allowed && onSlotClick(tech, slotMins)}
-                  onDragOver={e => {
-                    if (!dragging || !allowed) return;
-                    e.preventDefault();
-                    e.dataTransfer.dropEffect = 'move';
-                    if (hoverKey !== slotKey) setHoverKey(slotKey);
-                  }}
-                  onDragLeave={() => { if (hoverKey === slotKey) setHoverKey(null); }}
-                  onDrop={e => {
-                    if (!dragging || !allowed) return;
-                    e.preventDefault();
-                    const id = e.dataTransfer.getData('text/appt');
-                    if (id) onApptReschedule && onApptReschedule(id, tech, slotMins);
-                    setDragging(null); setHoverKey(null);
+                  data-slot-tech={interactive ? tech : undefined}
+                  data-slot-mins={interactive ? slotMins : undefined}
+                  onClick={() => {
+                    if (!interactive) return;
+                    // Suppress the synthetic click after a drop so it doesn't
+                    // open a blank-new-appt modal over the reschedule edit modal.
+                    if (Date.now() - justDroppedRef.current < 400) return;
+                    onSlotClick(tech, slotMins);
                   }}
                   style={{
                     width: TECH_COL, flexShrink: 0, borderLeft: '1px solid #ececec',
-                    cursor: allowed ? 'pointer' : 'default',
+                    cursor: interactive ? 'pointer' : 'default',
                     position: 'relative',
                     background: isDropHover
                       ? 'rgba(45,122,95,.18)'
+                      : blockedBy
+                      ? 'repeating-linear-gradient(45deg,rgba(245,158,11,.10),rgba(245,158,11,.10) 6px,rgba(245,158,11,.22) 6px,rgba(245,158,11,.22) 12px)'
                       : isOff
                       ? 'repeating-linear-gradient(45deg,#fafafa,#fafafa 4px,#f0f0f0 4px,#f0f0f0 8px)'
                       : !inWalkIn
-                      ? (allowed ? 'rgba(59,130,246,.06)' : 'rgba(0,0,0,.025)')
+                      ? (inExtended ? 'rgba(59,130,246,.06)' : 'rgba(0,0,0,.025)')
                       : 'transparent',
                     outline: isDropHover ? '2px dashed #2D7A5F' : 'none',
                     outlineOffset: -2,
                   }}
-                  title={isOff ? `${tech} · off today` : (allowed ? `${tech} · ${minsToStr(slotMins)}` : `${tech} · appointment-only hours`)}
+                  title={
+                    tooltipBlocked ? tooltipBlocked
+                    : isOff ? `${tech} · off today`
+                    : inWalkIn ? `${tech} · ${minsToStr(slotMins)}`
+                    : inExtended ? `${tech} · appointment-only hours`
+                    : `${tech} · outside store hours — confirm on save`
+                  }
                 >
-                  {allowed && !dragging && (
+                  {interactive && !drag && (
                     <div style={{ position: 'absolute', inset: 0, transition: 'background .1s' }}
                          onMouseEnter={e => e.currentTarget.style.background = inWalkIn ? 'rgba(59,130,246,.08)' : 'rgba(59,130,246,.13)'}
                          onMouseLeave={e => e.currentTarget.style.background = ''} />
@@ -1192,18 +1523,22 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
           // Done/cancelled appts shouldn't be reschedulable — they represent
           // historical state. Active scheduled appts are draggable.
           const isDraggable = !isDone && !isCancelled;
-          const isBeingDragged = dragging === appt.id;
+          const isBeingDragged = drag?.id === appt.id && drag.active;
           return (
             <div
               key={appt.id}
-              onClick={e => { e.stopPropagation(); onApptClick(appt); }}
-              draggable={isDraggable}
-              onDragStart={e => {
-                e.dataTransfer.setData('text/appt', appt.id);
-                e.dataTransfer.effectAllowed = 'move';
-                setDragging(appt.id);
+              onClick={e => {
+                e.stopPropagation();
+                // If we just finished an active drag, suppress the click so
+                // it doesn't re-open the appt in view mode and clobber the
+                // edit modal opened from the drop.
+                if (Date.now() - justDroppedRef.current < 400) return;
+                onApptClick(appt);
               }}
-              onDragEnd={() => { setDragging(null); setHoverKey(null); }}
+              onPointerDown={isDraggable ? (e) => {
+                if (e.button !== undefined && e.button !== 0) return;
+                setDrag({ id: appt.id, startX: e.clientX, startY: e.clientY, dx: 0, dy: 0, hoverKey: null, active: false });
+              } : undefined}
               style={{
                 position: 'absolute',
                 top: topOffset + 1,
@@ -1215,15 +1550,22 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
                 borderLeft: `3px solid ${blockBorder}`,
                 borderRadius: 6,
                 padding: '3px 5px',
-                cursor: isDraggable ? 'grab' : 'pointer',
+                cursor: isDraggable ? (isBeingDragged ? 'grabbing' : 'grab') : 'pointer',
                 overflow: 'hidden',
-                zIndex: isBeingDragged ? 7 : 5,
+                zIndex: isBeingDragged ? 20 : 5,
                 boxSizing: 'border-box',
                 display: 'flex',
                 flexDirection: 'column',
-                opacity: isCancelled ? 0.55 : isBeingDragged ? 0.4 : 1,
+                opacity: isCancelled ? 0.55 : 1,
+                transform: isBeingDragged ? `translate(${drag.dx}px, ${drag.dy}px)` : 'none',
+                boxShadow: isBeingDragged ? '0 6px 18px rgba(0,0,0,.25)' : 'none',
+                touchAction: isDraggable ? 'none' : 'auto',
+                userSelect: 'none',
+                // While dragging, make the ghost pointer-transparent so
+                // elementFromPoint returns the slot cell underneath (for
+                // both the hover indicator and the drop target lookup).
                 pointerEvents: isBeingDragged ? 'none' : 'auto',
-                transition: 'opacity .12s',
+                transition: isBeingDragged ? 'none' : 'opacity .12s, box-shadow .12s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -1238,6 +1580,9 @@ function DayGrid({ date, appts, techs, allTechs, techExtended, empWorkDays, slot
                   {appt.clientName || 'Walk-in'}
                 </div>
                 <span title={appt.status} style={{ fontSize: 10, color: dot.color, flexShrink: 0, lineHeight: 1 }}>{dot.label}</span>
+                {appt.recurringGroupId && (
+                  <span title={`Recurring · ${appt.recurringIndex}/${appt.recurringTotal}`} style={{ fontSize: 10, flexShrink: 0, lineHeight: 1 }}>🔁</span>
+                )}
                 {appt.source === 'online_booking' && (
                   <span title="Online booking" style={{ fontSize: 10, background: blockBorder, color: '#fff', borderRadius: 4, padding: '1px 5px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>WEB</span>
                 )}
@@ -1664,6 +2009,84 @@ function RecurringDeleteDialog({ appt, onDeleteOne, onDeleteAll, onCancel }) {
   );
 }
 
+// ── Series conflict dialog (pre-flight on create) ──────
+function SeriesConflictDialog({ dates, onSkip, onForce, onCancel }) {
+  const okCount = dates.filter(d => d.ok).length;
+  const conflictCount = dates.length - okCount;
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 22, width: '94%', maxWidth: 460, maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>Recurring series — conflicts found</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 14, lineHeight: 1.5 }}>
+          {conflictCount} of {dates.length} dates have a problem ({okCount} are clear).
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 10, marginBottom: 14, background: '#fafafa' }}>
+          {dates.map((d, i) => {
+            const human = new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+            return (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderBottom: i < dates.length - 1 ? '1px solid #f0f0f0' : 'none', background: d.ok ? 'transparent' : '#fef2f2' }}>
+                <span style={{ fontSize: 14, lineHeight: 1.3, flexShrink: 0, color: d.ok ? '#22c55e' : '#ef4444' }}>{d.ok ? '✓' : '✕'}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: d.ok ? '#1a1a1a' : '#991b1b' }}>{human}</div>
+                  {!d.ok && (
+                    <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 2 }}>{d.reasons.join(' · ')}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={onSkip} disabled={okCount === 0}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #2D7A5F', background: okCount === 0 ? '#f5f5f5' : '#EDFAF3', fontSize: 14, fontWeight: 600, cursor: okCount === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: okCount === 0 ? '#bbb' : '#166534', textAlign: 'left' }}>
+            Skip the {conflictCount} conflicts — book {okCount} clear date{okCount === 1 ? '' : 's'}
+          </button>
+          <button onClick={onForce}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #f59e0b', background: '#fffbeb', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#92400e', textAlign: 'left' }}>
+            Book all {dates.length} anyway (overlap allowed)
+          </button>
+          <button onClick={onCancel}
+            style={{ padding: '8px', borderRadius: 10, border: 'none', background: 'none', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#aaa' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Series edit scope dialog ───────────────────────────
+function SeriesEditDialog({ appt, onScope, onCancel }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '90%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Edit recurring appointment</div>
+        <div style={{ fontSize: 13, color: '#888', marginBottom: 20, lineHeight: 1.5 }}>
+          This is appointment {appt.recurringIndex || '?'} of {appt.recurringTotal || '?'} in a series. Apply your changes to:
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <button onClick={() => onScope('this')}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #e8e8e8', background: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1a1a1a', textAlign: 'left' }}>
+            Just this appointment
+          </button>
+          <button onClick={() => onScope('following')}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #c7dff7', background: '#f0f7ff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1a5f8a', textAlign: 'left' }}>
+            This and all following
+          </button>
+          <button onClick={() => onScope('all')}
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #c7dff7', background: '#f0f7ff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1a5f8a', textAlign: 'left' }}>
+            All {appt.recurringTotal || ''} in this series
+          </button>
+          <button onClick={onCancel}
+            style={{ padding: '8px', borderRadius: 10, border: 'none', background: 'none', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#aaa' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Before / After photos ─────────────────────────────
 function PhotoSection({ photosBefore, photosAfter, isView, onChange }) {
   const [uploading, setUploading] = useState(null); // 'before' | 'after' | null
@@ -1871,6 +2294,767 @@ function ViewVal({ children, style }) {
 
 const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };
 const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, padding: '8px 14px', color: '#333' };
+
+// ── Time Off modal (vacation / sick / personal) ────────
+function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdmin, isScheduler, isTech, myTechName, gUser, onClose }) {
+  // Admins/schedulers see and manage everyone's time off; techs see only their own.
+  const canManageOthers = isAdmin || isScheduler;
+  const visible = canManageOthers
+    ? timeOff
+    : timeOff.filter(t => t.techName === myTechName);
+  const upcoming = visible
+    .filter(t => (t.endDate || t.startDate) >= todayStr())
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+  const past = visible
+    .filter(t => (t.endDate || t.startDate) < todayStr())
+    .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''))
+    .slice(0, 10);
+
+  const [showAdd, setShowAdd] = useState(false);
+  const canAdd = canManageOthers || (isTech && !!myTechName);
+
+  function fmtDate(d) {
+    if (!d) return '';
+    return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  function fmtRange(t) {
+    if (!t.startDate) return '—';
+    if (!t.endDate || t.endDate === t.startDate) return fmtDate(t.startDate);
+    return `${fmtDate(t.startDate)} – ${fmtDate(t.endDate)}`;
+  }
+  function typeLabel(t) {
+    if (t === 'sick') return '🩹 Sick';
+    if (t === 'personal') return '🏠 Personal';
+    return '🌴 Vacation';
+  }
+
+  async function handleDelete(t) {
+    if (!confirm(`Delete this time off entry?\n\n${t.techName} · ${fmtRange(t)}`)) return;
+    try { await deleteTimeOff(t.id); }
+    catch (e) { alert(`Could not delete — ${e.message}`); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
+         onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 520, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>🌴 Time Off</span>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+          {showAdd ? (
+            <TimeOffForm
+              techs={techs}
+              employees={employees}
+              services={services}
+              clients={clients}
+              timeOff={timeOff}
+              isAdmin={isAdmin}
+              isScheduler={isScheduler}
+              isTech={isTech}
+              myTechName={myTechName}
+              gUser={gUser}
+              onCancel={() => setShowAdd(false)}
+              onSaved={() => setShowAdd(false)}
+            />
+          ) : (
+            <>
+              {canAdd && (
+                <button onClick={() => setShowAdd(true)}
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px dashed #2D7A5F', background: '#EDFAF3', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#166534', marginBottom: 14 }}>
+                  + Add time off
+                </button>
+              )}
+
+              <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Upcoming</div>
+              {upcoming.length === 0 ? (
+                <div style={{ fontSize: 12, color: '#bbb', padding: '12px 4px' }}>None scheduled.</div>
+              ) : upcoming.map(t => (
+                <TimeOffRow key={t.id} t={t} typeLabel={typeLabel} fmtRange={fmtRange}
+                  canEdit={canManageOthers || t.techName === myTechName}
+                  onDelete={() => handleDelete(t)} />
+              ))}
+
+              {past.length > 0 && (
+                <>
+                  <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 16, marginBottom: 6 }}>Recent past</div>
+                  {past.map(t => (
+                    <TimeOffRow key={t.id} t={t} typeLabel={typeLabel} fmtRange={fmtRange}
+                      canEdit={canManageOthers || t.techName === myTechName}
+                      onDelete={() => handleDelete(t)} muted />
+                  ))}
+                </>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TimeOffRow({ t, typeLabel, fmtRange, canEdit, onDelete, muted }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, border: '1px solid #f0f0f0', background: muted ? '#fafafa' : '#fff', marginBottom: 6, opacity: muted ? .7 : 1 }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span>{t.techName || '—'}</span>
+          <span style={{ fontSize: 11, color: '#888', fontWeight: 500 }}>· {typeLabel(t.type)}</span>
+        </div>
+        <div style={{ fontSize: 12, color: '#666' }}>
+          {fmtRange(t)}
+          {t.allDay === false && t.startTime && t.endTime ? ` · ${t.startTime}–${t.endTime}` : ''}
+        </div>
+        {t.notes && (
+          <div style={{ fontSize: 11, color: '#888', marginTop: 2, fontStyle: 'italic' }}>{t.notes}</div>
+        )}
+      </div>
+      {canEdit && (
+        <button onClick={onDelete} title="Delete"
+          style={{ fontSize: 12, padding: '5px 9px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fff', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+          Delete
+        </button>
+      )}
+    </div>
+  );
+}
+
+function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmin, isScheduler, isTech, myTechName, gUser, onCancel, onSaved }) {
+  const canManageOthers = isAdmin || isScheduler;
+  const defaultTech = canManageOthers ? '' : (myTechName || '');
+  const [techName, setTechName] = useState(defaultTech);
+  const [type, setType] = useState('vacation');
+  const today = todayStr();
+  const [startDate, setStartDate] = useState(today);
+  const [endDate, setEndDate] = useState(today);
+  const [allDay, setAllDay] = useState(true);
+  const [startTime, setStartTime] = useState('09:00');
+  const [endTime, setEndTime] = useState('17:00');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState('');
+  const [conflictCtx, setConflictCtx] = useState(null); // { affected, draftEntry }
+  const [messagesCtx, setMessagesCtx] = useState(null); // { affected, draftEntry, reassignmentsByApptId }
+
+  async function persist(draftEntry, reassignments) {
+    // Apply any tech reassignments first (so the affected appts move BEFORE
+    // the time-off block lands and the day grid stops rendering them on the
+    // out-going tech).
+    if (reassignments && reassignments.length) {
+      for (const r of reassignments) {
+        await saveAppointment(r.apptId, {
+          techName: r.newTech,
+          // Drop the "specific request" flag — the original requested tech is
+          // off, so this is now a scheduler-assigned reassignment.
+          techRequestType: 'scheduler',
+          reassignedFrom: r.fromTech,
+          reassignedAt: new Date().toISOString(),
+        });
+      }
+    }
+    await createTimeOff(draftEntry);
+
+    // After save: if there were any affected appts (reassigned or left
+    // manual), open the AI message-drafting panel so the user can quickly
+    // notify clients. Skipping the panel just calls onSaved.
+    const ctx = conflictCtx;
+    if (ctx && ctx.affected && ctx.affected.length > 0) {
+      const reByApptId = {};
+      (reassignments || []).forEach(r => { reByApptId[r.apptId] = r; });
+      // Enrich affected appts with client phone/email for the messages panel
+      const clientById = new Map((clients || []).map(c => [c.id, c]));
+      const enriched = ctx.affected.map(a => {
+        const c = clientById.get(a.clientId) || {};
+        return { ...a, clientPhone: c.phone || null, clientEmail: c.email || null };
+      });
+      setMessagesCtx({ affected: enriched, draftEntry, reassignmentsByApptId: reByApptId });
+    } else {
+      onSaved();
+    }
+  }
+
+  async function submit() {
+    setErr('');
+    if (!techName) { setErr('Pick a tech'); return; }
+    if (!startDate) { setErr('Start date required'); return; }
+    if (endDate && endDate < startDate) { setErr('End date is before start date'); return; }
+    if (!allDay && (!startTime || !endTime)) { setErr('Pick start and end times'); return; }
+    if (!allDay && endTime <= startTime) { setErr('End time must be after start'); return; }
+
+    const draftEntry = {
+      techName,
+      type,
+      startDate,
+      endDate: endDate || startDate,
+      allDay,
+      startTime: allDay ? null : startTime,
+      endTime:   allDay ? null : endTime,
+      notes: notes.trim() || null,
+      createdBy: gUser?.email || null,
+    };
+
+    setSaving(true);
+    try {
+      // Find appts that conflict with this time-off block.
+      const all = await fetchAppointmentsByRange(draftEntry.startDate, draftEntry.endDate);
+      const blockS = !allDay && startTime ? strToMins(startTime) : 0;
+      const blockE = !allDay && endTime   ? strToMins(endTime)   : 24 * 60;
+      const affected = all.filter(a => {
+        if (a.techName !== techName) return false;
+        if (a.status === 'cancelled' || a.status === 'done') return false;
+        if (allDay) return true;
+        const aS = strToMins(a.startTime || '00:00');
+        const aE = aS + (Number(a.duration) || 60);
+        // Overlap test against block window. For multi-day blocks, allDay
+        // already matches; otherwise we apply the time window per-day.
+        return aS < blockE && aE > blockS;
+      });
+
+      if (affected.length === 0) {
+        await persist(draftEntry, []);
+      } else {
+        setConflictCtx({ affected, draftEntry });
+      }
+    } catch (e) {
+      setErr(e?.message || 'Could not save');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (messagesCtx) {
+    return (
+      <ConflictMessagesPanel
+        affected={messagesCtx.affected}
+        draftEntry={messagesCtx.draftEntry}
+        reassignmentsByApptId={messagesCtx.reassignmentsByApptId}
+        onClose={() => { setMessagesCtx(null); onSaved(); }}
+      />
+    );
+  }
+
+  if (conflictCtx) {
+    return (
+      <TimeOffConflictView
+        affected={conflictCtx.affected}
+        draftEntry={conflictCtx.draftEntry}
+        techs={techs}
+        employees={employees}
+        services={services}
+        timeOff={timeOff}
+        onCancel={() => setConflictCtx(null)}
+        onConfirm={async (reassignments) => {
+          setSaving(true);
+          try {
+            await persist(conflictCtx.draftEntry, reassignments);
+          } catch (e) {
+            setErr(e?.message || 'Could not save');
+            setConflictCtx(null);
+          } finally {
+            setSaving(false);
+          }
+        }}
+        saving={saving}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>New time off</div>
+        <button onClick={onCancel} style={{ ...btnBase, padding: '5px 10px', fontSize: 12 }}>← Back</button>
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Tech</div>
+        {canManageOthers ? (
+          <select value={techName} onChange={e => setTechName(e.target.value)} style={inp}>
+            <option value="">Pick a tech…</option>
+            {techs.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        ) : (
+          <div style={{ ...inp, background: '#f5f5f5' }}>{myTechName || '—'}</div>
+        )}
+      </div>
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Type</div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[
+            { id: 'vacation', label: '🌴 Vacation' },
+            { id: 'sick',     label: '🩹 Sick' },
+            { id: 'personal', label: '🏠 Personal' },
+          ].map(opt => (
+            <button key={opt.id} onClick={() => setType(opt.id)}
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: type === opt.id ? '1.5px solid #2D7A5F' : '1px solid #d8d8d8', background: type === opt.id ? '#EDFAF3' : '#fff', fontSize: 13, fontWeight: type === opt.id ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', color: type === opt.id ? '#166534' : '#555' }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>From</div>
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inp} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>To</div>
+          <input type="date" value={endDate} min={startDate} onChange={e => setEndDate(e.target.value)} style={inp} />
+        </div>
+      </div>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', marginBottom: 10 }}>
+        <input type="checkbox" checked={allDay} onChange={e => setAllDay(e.target.checked)} />
+        <span style={{ fontSize: 13, color: '#444' }}>All day</span>
+      </label>
+
+      {!allDay && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Start time</div>
+            <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={inp} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>End time</div>
+            <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)} style={inp} />
+          </div>
+        </div>
+      )}
+
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Note (optional)</div>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} style={{ ...inp, resize: 'vertical' }} placeholder="e.g. Family trip — back the 18th" />
+      </div>
+
+      {err && (
+        <div style={{ fontSize: 12, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', padding: '6px 10px', borderRadius: 8, marginBottom: 10 }}>{err}</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={submit} disabled={saving}
+          style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: saving ? '#cbb6e0' : '#2D7A5F', fontSize: 14, fontWeight: 600, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', color: '#fff' }}>
+          {saving ? 'Saving…' : 'Save time off'}
+        </button>
+        <button onClick={onCancel} disabled={saving} style={{ ...btnBase, padding: '10px 14px' }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// Suggests techs who can cover a single appt: must be different from the
+// out-going tech, capable of every service in the cart, working that day,
+// not on time off, and free at the appt's time slot.
+function suggestCoverageTechs(appt, employees, services, allAppts, timeOff) {
+  if (!appt || !Array.isArray(employees) || employees.length === 0) return [];
+  const apptStart = strToMins(appt.startTime || '00:00');
+  const apptEnd   = apptStart + (Number(appt.duration) || 60);
+  const apptDow   = dayOfWeek(appt.date);
+  // Map service names → service objects (for serviceIds capability check).
+  const svcByName = new Map((services || []).map(s => [s.name, s]));
+  const apptSvcIds = (appt.services || [])
+    .map(s => svcByName.get(s.name)?.id)
+    .filter(Boolean);
+
+  const ranked = employees
+    .filter(e => e.name && e.name !== appt.techName)
+    .map(e => {
+      const reasons = [];
+      // Capability — empty serviceIds = "can do all" (back-compat).
+      const empSvcIds = e.serviceIds || [];
+      if (empSvcIds.length > 0 && apptSvcIds.length > 0) {
+        const allCovered = apptSvcIds.every(id => empSvcIds.includes(id));
+        if (!allCovered) reasons.push('missing service');
+      }
+      // Work day on that DOW
+      const wd = e.workDays?.[apptDow];
+      if (wd && wd.on === false) reasons.push('off that day');
+      // Not on time off at this slot
+      if (isSlotBlocked(timeOff, e.name, appt.date, apptStart)) reasons.push('on time off');
+      // Free at the slot — no overlapping appts
+      const overlap = (allAppts || []).some(a => {
+        if (a.id === appt.id) return false;
+        if (a.techName !== e.name) return false;
+        if (a.date !== appt.date) return false;
+        if (a.status === 'cancelled') return false;
+        const aS = strToMins(a.startTime || '00:00');
+        const aE = aS + (Number(a.duration) || 60);
+        return aS < apptEnd && aE > apptStart;
+      });
+      if (overlap) reasons.push('booked at that time');
+      return { name: e.name, ok: reasons.length === 0, reasons };
+    });
+
+  // Available first, then unavailable with reasons (so user has visibility).
+  ranked.sort((a, b) => (a.ok === b.ok ? 0 : a.ok ? -1 : 1));
+  return ranked;
+}
+
+function TimeOffConflictView({ affected, draftEntry, techs, employees, services, timeOff, onCancel, onConfirm, saving }) {
+  // Build per-appt coverage suggestions once when the dialog opens.
+  const allAppts = affected; // best-effort — we already know they're on the affected tech in this range
+  const suggestionsByAppt = useMemo(() => {
+    const map = {};
+    affected.forEach(a => {
+      map[a.id] = suggestCoverageTechs(a, employees || [], services || [], allAppts, timeOff || []);
+    });
+    return map;
+  }, [affected, employees, services, allAppts, timeOff]);
+
+  // For each appt: { newTech: '' | name, overrideSpecific: bool }
+  const [picks, setPicks] = useState(() => {
+    const init = {};
+    affected.forEach(a => { init[a.id] = { newTech: '', overrideSpecific: false }; });
+    return init;
+  });
+
+  function patch(apptId, delta) {
+    setPicks(p => ({ ...p, [apptId]: { ...p[apptId], ...delta } }));
+  }
+
+  function fmt(a) {
+    const dStr = new Date(a.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const t = a.startTime ? minsToStr(strToMins(a.startTime)) : '';
+    return `${dStr} · ${t}`;
+  }
+
+  function autoPickAll() {
+    setPicks(p => {
+      const next = { ...p };
+      affected.forEach(a => {
+        const sugg = suggestionsByAppt[a.id] || [];
+        const first = sugg.find(s => s.ok);
+        if (first) next[a.id] = { ...next[a.id], newTech: first.name };
+      });
+      return next;
+    });
+  }
+
+  const reassignments = affected
+    .map(a => {
+      const p = picks[a.id] || {};
+      if (!p.newTech) return null;
+      // Specific-request appts require the override flag.
+      if (a.techRequestType === 'specific' && !p.overrideSpecific) return null;
+      return { apptId: a.id, newTech: p.newTech, fromTech: a.techName };
+    })
+    .filter(Boolean);
+
+  const specificCount = affected.filter(a => a.techRequestType === 'specific').length;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>
+          ⚠️ {affected.length} appointment{affected.length === 1 ? '' : 's'} affected
+        </div>
+        <button onClick={onCancel} disabled={saving} style={{ ...btnBase, padding: '5px 10px', fontSize: 12 }}>← Back</button>
+      </div>
+
+      <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
+          <strong>It's up to you (or {draftEntry.techName}) to contact these clients</strong> to reschedule, or to find another tech to cover. The system <em>will not</em> auto-cancel or auto-notify the client. For appointments where the client did not specifically request {draftEntry.techName}, you can pick a coverage tech below — that change will be applied when you save.
+          {specificCount > 0 && (
+            <> {specificCount} appointment{specificCount === 1 ? '' : 's'} ⭐ specifically requested {draftEntry.techName}; we recommend reaching out to the client first before reassigning. You can override and auto-find another tech if needed.</>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em' }}>Conflicts</div>
+        <button onClick={autoPickAll} disabled={saving}
+          style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, border: '1px solid #c7dff7', background: '#f0f7ff', color: '#1a5f8a', cursor: 'pointer', fontFamily: 'inherit' }}>
+          Auto-pick all where possible
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+        {affected.map(a => {
+          const sugg = suggestionsByAppt[a.id] || [];
+          const isSpecific = a.techRequestType === 'specific';
+          const pick = picks[a.id] || {};
+          const services = (a.services || []).map(s => s.name).filter(Boolean).join(', ') || '—';
+          const blocked = isSpecific && !pick.overrideSpecific;
+          const availSuggestions = sugg.filter(s => s.ok);
+          return (
+            <div key={a.id} style={{ border: `1px solid ${isSpecific ? '#fca5a5' : '#e8e8e8'}`, borderRadius: 10, padding: 10, background: isSpecific ? '#fef2f2' : '#fff' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                {isSpecific && <span title="Client specifically requested this tech" style={{ color: '#ef4444', fontWeight: 700, fontSize: 14 }}>⭐</span>}
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', flex: 1 }}>
+                  {a.clientName || 'Walk-in'}
+                </div>
+                <div style={{ fontSize: 11, color: '#666' }}>{fmt(a)}</div>
+              </div>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>{services}</div>
+
+              {isSpecific && (
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#991b1b', marginBottom: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={!!pick.overrideSpecific}
+                    onChange={e => patch(a.id, { overrideSpecific: e.target.checked, newTech: e.target.checked ? pick.newTech : '' })} />
+                  Override — let me reassign anyway (I'll contact the client)
+                </label>
+              )}
+
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 11, color: '#666', flexShrink: 0 }}>Cover with:</span>
+                <select value={pick.newTech || ''} onChange={e => patch(a.id, { newTech: e.target.value })}
+                  disabled={blocked || saving}
+                  style={{ ...inp, flex: 1, fontSize: 12, padding: '5px 7px', opacity: blocked ? .5 : 1 }}>
+                  <option value="">— Leave on {a.techName} (handle manually) —</option>
+                  {availSuggestions.map(s => (
+                    <option key={s.name} value={s.name}>{s.name}</option>
+                  ))}
+                  {sugg.filter(s => !s.ok).length > 0 && (
+                    <optgroup label="Unavailable">
+                      {sugg.filter(s => !s.ok).map(s => (
+                        <option key={s.name} value="" disabled>{s.name} — {s.reasons.join(', ')}</option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </div>
+
+              {!blocked && availSuggestions.length === 0 && (
+                <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 6 }}>
+                  No available tech can cover this — you'll need to reschedule with the client.
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={() => onConfirm(reassignments)} disabled={saving}
+          style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: saving ? '#cbb6e0' : '#2D7A5F', fontSize: 14, fontWeight: 600, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', color: '#fff' }}>
+          {saving
+            ? 'Saving…'
+            : reassignments.length > 0
+              ? `Reassign ${reassignments.length} & save time off`
+              : 'Save time off (handle manually)'}
+        </button>
+        <button onClick={onCancel} disabled={saving} style={{ ...btnBase, padding: '10px 14px' }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+// ── AI-drafted client outreach for time-off conflicts ─
+function ConflictMessagesPanel({ affected, draftEntry, reassignmentsByApptId, onClose }) {
+  const { showToast } = useApp();
+  const [drafts, setDrafts] = useState([]);     // [{ apptId, scenario, smsDraft, emailSubject, emailDraft }]
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [sentByApptId, setSentByApptId] = useState({}); // { [apptId]: { sms?: 'sent'|'failed', email?: ... } }
+  const [sendingByApptId, setSendingByApptId] = useState({});
+
+  // Build the input shape the function expects
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const apptInputs = affected.map(a => {
+          const r = reassignmentsByApptId[a.id];
+          return {
+            id:               a.id,
+            clientName:       a.clientName || 'Client',
+            clientPhone:      a.clientPhone || '',
+            clientEmail:      a.clientEmail || '',
+            date:             a.date,
+            startTime:        a.startTime,
+            services:         a.services || [],
+            techRequestType:  a.techRequestType || 'scheduler',
+            newTechName:      r?.newTech || null,
+          };
+        });
+        const { httpsCallable } = await import('firebase/functions');
+        const { functions } = await import('../../lib/firebase');
+        const fn = httpsCallable(functions, 'draftConflictMessages');
+        const res = await fn({
+          technicianName: draftEntry.techName,
+          reason:         draftEntry.type,
+          startDate:      draftEntry.startDate,
+          endDate:        draftEntry.endDate,
+          affected:       apptInputs,
+        });
+        if (!cancelled) setDrafts(res?.data?.drafts || []);
+      } catch (e) {
+        if (!cancelled) setError(e?.message || 'Could not draft messages');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [affected, draftEntry, reassignmentsByApptId]);
+
+  function patchDraft(apptId, delta) {
+    setDrafts(d => d.map(x => x.apptId === apptId ? { ...x, ...delta } : x));
+  }
+
+  async function send(apptId, channel) {
+    const draft = drafts.find(d => d.apptId === apptId);
+    const appt  = affected.find(a => a.id === apptId);
+    if (!draft || !appt) return;
+
+    setSendingByApptId(s => ({ ...s, [apptId]: channel }));
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../../lib/firebase');
+      if (channel === 'sms') {
+        if (!appt.clientId) throw new Error('No client ID — open the client record first');
+        if (!appt.clientPhone) throw new Error('No phone on file');
+        await httpsCallable(functions, 'sendDirectSms')({ clientId: appt.clientId, body: draft.smsDraft });
+        setSentByApptId(s => ({ ...s, [apptId]: { ...(s[apptId] || {}), sms: 'sent' } }));
+      } else if (channel === 'email') {
+        if (!appt.clientId) throw new Error('No client ID — open the client record first');
+        if (!appt.clientEmail) throw new Error('No email on file');
+        await httpsCallable(functions, 'sendDirectEmail')({ clientId: appt.clientId, subject: draft.emailSubject, body: draft.emailDraft });
+        setSentByApptId(s => ({ ...s, [apptId]: { ...(s[apptId] || {}), email: 'sent' } }));
+      }
+      showToast(`Message sent to ${appt.clientName}`);
+    } catch (e) {
+      setSentByApptId(s => ({ ...s, [apptId]: { ...(s[apptId] || {}), [channel]: 'failed' } }));
+      showToast(`Failed to send: ${e.message || 'unknown error'}`, 4000);
+    } finally {
+      setSendingByApptId(s => { const n = { ...s }; delete n[apptId]; return n; });
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>📨 Notify clients</div>
+        <button onClick={onClose} style={{ ...btnBase, padding: '5px 10px', fontSize: 12 }}>Done</button>
+      </div>
+
+      <div style={{ background: 'linear-gradient(135deg,#f3eafc,#eaf3fc)', border: '1px solid #d8d0e8', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: '#5b3b8c', lineHeight: 1.5 }}>
+          <strong>AI-drafted outreach for {affected.length} affected client{affected.length === 1 ? '' : 's'}.</strong> Edit any message, then send via SMS or email. Reassigned appts get a "swap confirmation" message; un-reassigned appts get a "please reschedule" message.
+        </div>
+      </div>
+
+      {loading && (
+        <div style={{ textAlign: 'center', padding: '24px 0', color: '#888', fontSize: 13 }}>
+          ✨ Drafting personalized messages…
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#b91c1c', marginBottom: 12 }}>
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && drafts.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 16, fontSize: 12, color: '#888' }}>No drafts generated.</div>
+      )}
+
+      {!loading && drafts.map(d => {
+        const appt = affected.find(a => a.id === d.apptId);
+        if (!appt) return null;
+        const sent     = sentByApptId[d.apptId] || {};
+        const sending  = sendingByApptId[d.apptId];
+        const r        = reassignmentsByApptId[d.apptId];
+        const dStr     = (() => {
+          try { return new Date(appt.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); }
+          catch { return appt.date; }
+        })();
+        const tStr     = appt.startTime ? minsToStr(strToMins(appt.startTime)) : '';
+        const isReassigned = !!r;
+
+        return (
+          <div key={d.apptId} style={{ border: '1px solid #e8e8e8', borderRadius: 10, padding: 10, marginBottom: 10, background: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', flex: 1 }}>{appt.clientName || 'Client'}</div>
+              <div style={{ fontSize: 11, color: '#666' }}>{dStr} · {tStr}</div>
+            </div>
+
+            <div style={{ fontSize: 11, color: '#666', marginBottom: 8 }}>
+              {isReassigned
+                ? <>↪ Reassigned: {appt.techName} → <strong>{r.newTech}</strong></>
+                : <>⚠ No coverage — needs reschedule</>
+              }
+            </div>
+
+            {/* SMS block */}
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>📱 SMS</div>
+                <div style={{ fontSize: 10, color: appt.clientPhone ? '#22c55e' : '#999' }}>
+                  {appt.clientPhone || 'no phone on file'}
+                </div>
+              </div>
+              <textarea
+                value={d.smsDraft}
+                onChange={e => patchDraft(d.apptId, { smsDraft: e.target.value })}
+                rows={3}
+                style={{ ...inp, fontSize: 12, width: '100%', resize: 'vertical' }}
+              />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <div style={{ fontSize: 10, color: d.smsDraft.length > 160 ? '#92400e' : '#999' }}>
+                  {d.smsDraft.length} chars{d.smsDraft.length > 160 && ' · 2+ segments'}
+                </div>
+                <button
+                  onClick={() => send(d.apptId, 'sms')}
+                  disabled={!appt.clientPhone || !appt.clientId || sending === 'sms' || sent.sms === 'sent'}
+                  style={{
+                    fontSize: 11, padding: '5px 10px', borderRadius: 6, border: 'none',
+                    background: sent.sms === 'sent' ? '#22c55e' : sent.sms === 'failed' ? '#fca5a5' : (!appt.clientPhone || !appt.clientId) ? '#ccc' : '#3D95CE',
+                    color: '#fff', cursor: (!appt.clientPhone || !appt.clientId || sent.sms === 'sent') ? 'default' : 'pointer', fontFamily: 'inherit',
+                  }}>
+                  {sending === 'sms' ? 'Sending…' : sent.sms === 'sent' ? '✓ Sent' : sent.sms === 'failed' ? 'Retry' : 'Send SMS'}
+                </button>
+              </div>
+            </div>
+
+            {/* Email block */}
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                <div style={{ fontSize: 11, color: '#888', fontWeight: 600 }}>✉️ Email</div>
+                <div style={{ fontSize: 10, color: appt.clientEmail ? '#22c55e' : '#999' }}>
+                  {appt.clientEmail || 'no email on file'}
+                </div>
+              </div>
+              <input
+                value={d.emailSubject}
+                onChange={e => patchDraft(d.apptId, { emailSubject: e.target.value })}
+                placeholder="Subject"
+                style={{ ...inp, fontSize: 12, width: '100%', marginBottom: 4 }}
+              />
+              <textarea
+                value={d.emailDraft}
+                onChange={e => patchDraft(d.apptId, { emailDraft: e.target.value })}
+                rows={4}
+                style={{ ...inp, fontSize: 12, width: '100%', resize: 'vertical' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                <button
+                  onClick={() => send(d.apptId, 'email')}
+                  disabled={!appt.clientEmail || !appt.clientId || sending === 'email' || sent.email === 'sent'}
+                  style={{
+                    fontSize: 11, padding: '5px 10px', borderRadius: 6, border: 'none',
+                    background: sent.email === 'sent' ? '#22c55e' : sent.email === 'failed' ? '#fca5a5' : (!appt.clientEmail || !appt.clientId) ? '#ccc' : '#2D7A5F',
+                    color: '#fff', cursor: (!appt.clientEmail || !appt.clientId || sent.email === 'sent') ? 'default' : 'pointer', fontFamily: 'inherit',
+                  }}>
+                  {sending === 'email' ? 'Sending…' : sent.email === 'sent' ? '✓ Sent' : sent.email === 'failed' ? 'Retry' : 'Send email'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6 }}>
+        <button onClick={onClose} style={{ ...btnBase, padding: '8px 14px', fontSize: 13 }}>Done</button>
+      </div>
+    </div>
+  );
+}
 
 // ── Hours modal ────────────────────────────────────────
 const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

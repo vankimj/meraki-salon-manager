@@ -369,6 +369,7 @@ export default function Admin({ onClose }) {
                 Open the Calendar module and click the <strong>🕐 Hours</strong> button in the toolbar.
               </div>
             </Section>
+            <TechRemindersSection settings={settings} updateSettings={updateSettings} />
             <BrandingSection settings={settings} updateSettings={updateSettings} />
             <UpgradeSection settings={settings} gUser={gUser} />
             <BackupRestoreSection />
@@ -1835,6 +1836,76 @@ function NotifRow({ item, last }) {
       {/* Time */}
       <div style={{ fontSize: 10, color: '#bbb', flexShrink: 0, textAlign: 'right', paddingTop: 2 }}>{timeStr}</div>
     </div>
+  );
+}
+
+// ── Tech appointment reminders settings ───────────────────────────────────────
+function TechRemindersSection({ settings, updateSettings }) {
+  const cfg = settings.techReminders || {};
+  const [enabled,  setEnabled]  = useState(cfg.enabled !== false); // default ON
+  const [leadMin,  setLeadMin]  = useState(Number(cfg.leadMinutes) || 15);
+  const [channel,  setChannel]  = useState(cfg.channel || 'email');
+  const [saving,   setSaving]   = useState(false);
+  const [savedAt,  setSavedAt]  = useState(null);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateSettings({
+        ...settings,
+        techReminders: {
+          enabled,
+          leadMinutes: Number(leadMin) || 15,
+          channel,
+        },
+      });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2200);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="🔔 Tech Appointment Reminders">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+          Sends each tech a heads-up before every scheduled appointment so they're not caught off guard. Runs every 5 minutes server-side; per-appt dedupe (no duplicate sends). Individual techs can opt out via their employee record (<code style={{ fontSize: 11, background: '#f5f3fa', padding: '1px 5px', borderRadius: 3 }}>techReminderOptOut: true</code>).
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', marginBottom: 12 }}>
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+          <span style={{ fontSize: 13, color: '#444', fontWeight: 600 }}>Enabled</span>
+          <span style={{ fontSize: 12, color: '#888' }}>· global on/off switch</span>
+        </label>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, opacity: enabled ? 1 : .5, pointerEvents: enabled ? 'auto' : 'none' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Lead time</div>
+            <select value={leadMin} onChange={e => setLeadMin(Number(e.target.value))}
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none' }}>
+              {[5, 10, 15, 20, 30, 45, 60].map(n => (
+                <option key={n} value={n}>{n} minute{n === 1 ? '' : 's'} before</option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Channel</div>
+            <select value={channel} onChange={e => setChannel(e.target.value)}
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none' }}>
+              <option value="email">Email</option>
+              <option value="sms">SMS</option>
+              <option value="both">Email + SMS</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Btn color="#3D95CE" onClick={save}>{saving ? 'Saving…' : 'Save reminder settings'}</Btn>
+          {savedAt && <span style={{ fontSize: 12, color: '#22c55e' }}>✓ Saved</span>}
+        </div>
+      </div>
+    </Section>
   );
 }
 

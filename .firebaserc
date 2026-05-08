@@ -1,5 +1,18 @@
 {
   "projects": {
     "default": "meraki-salon-manager"
-  }
+  },
+  "targets": {
+    "meraki-salon-manager": {
+      "hosting": {
+        "meraki": [
+          "meraki-salon-manager"
+        ],
+        "plumenexus": [
+          "plumenexus"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

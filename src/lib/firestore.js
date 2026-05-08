@@ -443,6 +443,111 @@ export async function fetchAppointmentsByRange(startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// ── Memberships ────────────────────────────────────────
+// Plans are templates (e.g. "Manicure Club $80/mo"). Memberships are the
+// per-client subscription records (one client → one membership at a time).
+const MEMBERSHIP_PLANS_COL = tenantCol('membershipPlans');
+const MEMBERSHIPS_COL      = tenantCol('memberships');
+
+export async function fetchMembershipPlans() {
+  const snap = await getDocs(MEMBERSHIP_PLANS_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.price || 0) - (b.price || 0));
+}
+export function subscribeMembershipPlans(cb) {
+  return onSnapshot(MEMBERSHIP_PLANS_COL, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.price || 0) - (b.price || 0));
+    cb(list);
+  });
+}
+export async function createMembershipPlan(data) {
+  const ref = await addDoc(MEMBERSHIP_PLANS_COL, {
+    ...data,
+    active: data.active !== false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveMembershipPlan(id, data) {
+  await setDoc(doc(MEMBERSHIP_PLANS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteMembershipPlan(id) {
+  await deleteDoc(doc(MEMBERSHIP_PLANS_COL, id));
+}
+
+export async function fetchMemberships() {
+  const snap = await getDocs(MEMBERSHIPS_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+}
+export function subscribeMemberships(cb) {
+  return onSnapshot(MEMBERSHIPS_COL, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+    cb(list);
+  });
+}
+// Look up a single client's active membership. Returns null if none.
+export async function fetchClientMembership(clientId) {
+  if (!clientId) return null;
+  const snap = await getDocs(query(MEMBERSHIPS_COL, where('clientId', '==', clientId), where('status', '==', 'active')));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { id: d.id, ...d.data() };
+}
+export async function createMembership(data) {
+  const ref = await addDoc(MEMBERSHIPS_COL, {
+    ...data,
+    status: data.status || 'active',
+    startedAt: data.startedAt || new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveMembership(id, data) {
+  await setDoc(doc(MEMBERSHIPS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteMembership(id) {
+  await deleteDoc(doc(MEMBERSHIPS_COL, id));
+}
+
+// ── Time off (vacation / sick / personal) ──────────────
+const TIMEOFF_COL = tenantCol('timeOff');
+
+export async function fetchTimeOff() {
+  const snap = await getDocs(TIMEOFF_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+}
+
+export function subscribeTimeOff(cb) {
+  return onSnapshot(TIMEOFF_COL, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+    cb(list);
+  });
+}
+
+export async function createTimeOff(data) {
+  const ref = await addDoc(TIMEOFF_COL, {
+    ...data,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+
+export async function updateTimeOff(id, data) {
+  await setDoc(doc(TIMEOFF_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+export async function deleteTimeOff(id) {
+  await deleteDoc(doc(TIMEOFF_COL, id));
+}
+
 // Returns the set of clientIds with any appointment OR receipt strictly
 // before `beforeDate`. Used to classify clients in the current period as
 // "new" (first ever visit) vs "returning" — accurate even when the prior

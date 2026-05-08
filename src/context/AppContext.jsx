@@ -27,6 +27,20 @@ export function AppProvider({ children }) {
   const [settings, setSettings] = useState({ timeoutMin: 5 });
   const [gUser,           setGUser]           = useState(null);
   const [syncState,       setSyncState]       = useState('idle');
+  // Online/offline state — driven by both the browser network event and
+  // Firestore's own connection signal. Used to show the offline banner and
+  // gate any operations that need a live network (e.g. Stripe charges).
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  useEffect(() => {
+    const onUp   = () => setIsOnline(true);
+    const onDown = () => setIsOnline(false);
+    window.addEventListener('online',  onUp);
+    window.addEventListener('offline', onDown);
+    return () => {
+      window.removeEventListener('online',  onUp);
+      window.removeEventListener('offline', onDown);
+    };
+  }, []);
   const [toast,           setToast]           = useState(null);
   const [toastAction,     setToastAction]     = useState(null);
   const [loaded,          setLoaded]          = useState(false);
@@ -532,7 +546,7 @@ export function AppProvider({ children }) {
     <Ctx.Provider value={{
       slides, def, cur, setCur,
       users, settings,
-      gUser, syncState, toast, toastAction, loaded,
+      gUser, syncState, toast, toastAction, loaded, isOnline,
       isAdmin, isReadOnly, isTech, isScheduler, myTechName, realIsAdmin, viewAs, setViewAs,
       isPortalUser, portalClientId,
       showToast, resetInactivity, resetLogoutTimer,

@@ -37,6 +37,25 @@ function unsubUrl(tenantId, clientId) {
   return `${base}/?unsub=1&tid=${encodeURIComponent(tenantId)}&cid=${encodeURIComponent(clientId)}&t=${t}`;
 }
 
+// Per-appointment HMAC token for client-facing "manage my appointment" links.
+// Same threat model as unsubscribe: not security-critical (the worst case is
+// a guessed token cancels a single appointment, which the client can re-
+// confirm with the salon). Lets us include reschedule/cancel links in emails
+// + SMS without the client needing to log in.
+function apptManageToken(tenantId, apptId) {
+  const crypto = require('crypto');
+  return crypto.createHmac('sha256', unsubscribeSecret.value())
+    .update(`appt:${tenantId}:${apptId}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+function apptManageUrl(tenantId, apptId) {
+  if (!apptId) return null;
+  const t = apptManageToken(tenantId, apptId);
+  const base = (publicAppUrl.value() || '').replace(/\/+$/, '');
+  return `${base}/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&t=${t}`;
+}
+
 function fmtTime(str) {
   if (!str) return '';
   const [h, m] = str.split(':').map(Number);
@@ -505,6 +524,186 @@ exports.processUnsubscribe = onCall({ cors: true }, async (request) => {
   return { ok: true, name: doc.data().name || null };
 });
 
+// ── Self-service appointment manage (public via HMAC token) ────
+// Single callable that handles three actions, all gated by an HMAC token
+// pinned to the appointment. No login required — the link in the booking
+// confirmation email/SMS is the credential.
+//
+// Actions:
+//   'get'             — return appt summary + cancellation policy
+//   'availableSlots'  — return open slots for the next 30 days for the
+//                       same tech/service combo (or any tech if 'auto')
+//   'reschedule'      — change date/startTime (and optionally techName)
+//   'cancel'          — set status to 'cancelled'
+//
+// Cancellation policy: refuse mutations within
+// settings.bookingConfig.cancellationLeadHours of the start time
+// (defaults to 24 hours). Frontend reads the policy via 'get' to show
+// the right UX.
+exports.manageAppointment = onCall({ cors: true }, async (request) => {
+  const { tid, apptId, token, action, payload = {} } = request.data || {};
+  if (!tid || !apptId || !token || !action) {
+    throw new HttpsError('invalid-argument', 'Missing parameters');
+  }
+  const expected = apptManageToken(tid, apptId);
+  const crypto = require('crypto');
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(token));
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    throw new HttpsError('permission-denied', 'Invalid token');
+  }
+
+  const db = getFirestore();
+  const apptRef = db.doc(`tenants/${tid}/appointments/${apptId}`);
+  const apptSnap = await apptRef.get();
+  if (!apptSnap.exists) throw new HttpsError('not-found', 'Appointment not found');
+  const appt = { id: apptSnap.id, ...apptSnap.data() };
+
+  const settingsSnap = await db.doc(`tenants/${tid}/data/settings`).get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+  const leadHours = Number(settings.bookingConfig?.cancellationLeadHours) || 24;
+
+  const strToMins = (s) => {
+    if (!s) return 0;
+    const [h, m] = s.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  };
+  const fmtTimeIso = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+  // Compare appointment start instant to "now" to enforce policy
+  function hoursUntilAppt() {
+    const apptMs = new Date(`${appt.date}T${(appt.startTime || '00:00')}:00`).getTime();
+    return (apptMs - Date.now()) / 3600000;
+  }
+
+  if (action === 'get') {
+    const hUntil = hoursUntilAppt();
+    return {
+      appt: {
+        id: appt.id,
+        date: appt.date,
+        startTime: appt.startTime,
+        duration: appt.duration || 60,
+        techName: appt.techName,
+        clientName: appt.clientName || 'Client',
+        services: (appt.services || []).map(s => ({ name: s.name, duration: s.duration, price: s.price })),
+        status: appt.status,
+        techRequestType: appt.techRequestType || 'scheduler',
+      },
+      policy: {
+        cancellationLeadHours: leadHours,
+        canModify: appt.status !== 'cancelled' && appt.status !== 'done' && hUntil >= leadHours,
+        hoursUntil: hUntil,
+      },
+      salon: {
+        name: settings.salonName || 'Meraki Nail Studio',
+        phone: settings.contactPhone || settings.phone || '',
+      },
+    };
+  }
+
+  if (appt.status === 'cancelled') throw new HttpsError('failed-precondition', 'Already cancelled');
+  if (appt.status === 'done')      throw new HttpsError('failed-precondition', 'Already completed');
+  if (hoursUntilAppt() < leadHours) {
+    throw new HttpsError('failed-precondition', `Changes must be made at least ${leadHours} hour${leadHours === 1 ? '' : 's'} in advance — please call the salon.`);
+  }
+
+  if (action === 'cancel') {
+    await apptRef.update({
+      status:           'cancelled',
+      cancelledAt:      new Date().toISOString(),
+      cancelledBy:      'client_self_service',
+      updatedAt:        new Date().toISOString(),
+    });
+    return { ok: true };
+  }
+
+  if (action === 'availableSlots') {
+    // Look up the next 30 days of openings for the same tech, same service
+    const dur = (appt.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (Number(appt.duration) || 60);
+    const today = new Date();
+    const out = [];
+    for (let d = 1; d <= 30; d++) {
+      const target = new Date(today);
+      target.setDate(target.getDate() + d);
+      const yyyymmdd = target.toLocaleDateString('en-CA');
+      const dow = target.toLocaleDateString('en-US', { weekday: 'short' });
+      const sh = settings.storeHours?.[dow] || {};
+      if (sh.closed) continue;
+      const open  = strToMins(sh.open  || settings.apptHours?.open  || '09:00');
+      const close = strToMins(sh.close || settings.apptHours?.close || '18:00');
+      // Check tech is on that day-of-week
+      const empSnap = await db.collection(`tenants/${tid}/employees`).where('name', '==', appt.techName).limit(1).get();
+      const emp = empSnap.empty ? null : empSnap.docs[0].data();
+      if (emp?.workDays && emp.workDays[dow]?.on === false) continue;
+      // Check tech time-off
+      const toSnap = await db.collection(`tenants/${tid}/timeOff`).get();
+      const onTimeOff = toSnap.docs.map(x => x.data()).some(t =>
+        t.techName === appt.techName &&
+        (t.startDate || '') <= yyyymmdd && yyyymmdd <= (t.endDate || t.startDate || '')
+      );
+      if (onTimeOff) continue;
+      // Tech's existing appts
+      const apSnap = await db.collection(`tenants/${tid}/appointments`).where('date', '==', yyyymmdd).get();
+      const techAppts = apSnap.docs.map(x => x.data())
+        .filter(a => a.techName === appt.techName && a.status !== 'cancelled')
+        .map(a => ({ s: strToMins(a.startTime || '00:00'), e: strToMins(a.startTime || '00:00') + (Number(a.duration) || 60) }))
+        .sort((a, b) => a.s - b.s);
+      // Build open slots in 30-min increments
+      const slots = [];
+      for (let m = open; m + dur <= close; m += 30) {
+        const free = !techAppts.some(t => t.s < m + dur && t.e > m);
+        if (free) slots.push(m);
+      }
+      if (slots.length) {
+        out.push({
+          date: yyyymmdd,
+          dow,
+          slots: slots.map(m => ({ startTime: fmtTimeIso(m), durationMinutes: dur })),
+        });
+      }
+      if (out.length >= 14) break; // cap response
+    }
+    return { availability: out };
+  }
+
+  if (action === 'reschedule') {
+    const { date, startTime, techName } = payload;
+    if (!date || !startTime) throw new HttpsError('invalid-argument', 'date and startTime required');
+    // Tight self-check: don't allow rescheduling INTO the past or onto a
+    // collision with another appt on the same tech.
+    const newApptMs = new Date(`${date}T${startTime}:00`).getTime();
+    if (newApptMs < Date.now()) throw new HttpsError('invalid-argument', 'Cannot reschedule to a past time');
+    const dur = (appt.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (Number(appt.duration) || 60);
+    const useTechName = techName || appt.techName;
+    const collSnap = await db.collection(`tenants/${tid}/appointments`).where('date', '==', date).get();
+    const newStart = strToMins(startTime);
+    const newEnd   = newStart + dur;
+    const collide = collSnap.docs.map(x => ({ id: x.id, ...x.data() })).some(a =>
+      a.id !== appt.id &&
+      a.techName === useTechName &&
+      a.status !== 'cancelled' &&
+      (() => {
+        const s = strToMins(a.startTime || '00:00');
+        const e = s + (Number(a.duration) || 60);
+        return s < newEnd && e > newStart;
+      })()
+    );
+    if (collide) throw new HttpsError('failed-precondition', 'That slot is no longer available — pick another time.');
+    await apptRef.update({
+      date,
+      startTime,
+      ...(techName && techName !== appt.techName ? { techName } : {}),
+      rescheduledAt:    new Date().toISOString(),
+      rescheduledBy:    'client_self_service',
+      updatedAt:        new Date().toISOString(),
+    });
+    return { ok: true, newDate: date, newStartTime: startTime };
+  }
+
+  throw new HttpsError('invalid-argument', `Unknown action: ${action}`);
+});
+
 exports.sendReviewRequestEmail = onDocumentCreated(
   `tenants/${TENANT_ID}/reviewRequests/{reqId}`,
   async (event) => {
@@ -749,6 +948,7 @@ function buildReminderHtml(appt, client) {
   const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
+  const manageLink = apptManageUrl(TENANT_ID, appt.id);
   return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -776,8 +976,13 @@ function buildReminderHtml(appt, client) {
           <span>📍</span><span>Columbus, OH</span>
         </div>
       </div>
-      <p style="font-size:12px;color:#aaa;margin:16px 0 0;line-height:1.5;">
-        Need to reschedule? Please contact us as soon as possible so we can accommodate you.
+      ${manageLink ? `<div style="text-align:center;margin:18px 0 0;">
+        <a href="${esc(manageLink)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
+          Reschedule or cancel
+        </a>
+      </div>` : ''}
+      <p style="font-size:11px;color:#aaa;margin:14px 0 0;line-height:1.5;text-align:center;">
+        Need help? Reply to this email or call the salon.
       </p>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
@@ -954,6 +1159,143 @@ exports.sendDailyReminders = onSchedule(
   }
 );
 
+// ── Tech appointment reminders (T-minus N min) ─────────
+// Runs every 5 minutes. Looks for scheduled appts that start within
+// `leadMinutes` (default 15) and aren't yet flagged techReminderSent.
+// Sends an email + optional SMS to the assigned tech, then marks the appt.
+exports.sendTechAppointmentReminders = onSchedule(
+  {
+    schedule: 'every 5 minutes',
+    timeZone: 'America/New_York',
+  },
+  async () => {
+    const db = getFirestore();
+    const sDoc = await db.doc(`tenants/${TENANT_ID}/data/settings`).get();
+    const cfg  = ((sDoc.exists ? sDoc.data() : {}).techReminders) || {};
+    if (cfg.enabled === false) {
+      console.log('[TechReminders] Disabled via settings — skipping');
+      return;
+    }
+    const leadMin = Number(cfg.leadMinutes) > 0 ? Number(cfg.leadMinutes) : 15;
+    const channel = cfg.channel || 'email'; // 'email' | 'sms' | 'both'
+
+    // "now" in salon timezone
+    const tz = 'America/New_York';
+    const now = new Date();
+    const localToday = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+    const hm = now.toLocaleTimeString('en-US', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    const [h, m] = hm.split(':').map(Number);
+    const nowMins   = h * 60 + m;
+    const upperMins = nowMins + leadMin;
+
+    const apptSnap = await db
+      .collection(`tenants/${TENANT_ID}/appointments`)
+      .where('date', '==', localToday)
+      .get();
+
+    const candidates = apptSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => {
+      if (a.status !== 'scheduled') return false;
+      if (a.techReminderSent) return false;
+      if (!a.startTime || !a.techName) return false;
+      const [ah, am] = String(a.startTime).split(':').map(Number);
+      if (!Number.isFinite(ah) || !Number.isFinite(am)) return false;
+      const sm = ah * 60 + am;
+      return sm > nowMins && sm <= upperMins;
+    });
+
+    if (!candidates.length) {
+      console.log(`[TechReminders] Nothing pending at ${hm} (lead=${leadMin}m)`);
+      return;
+    }
+
+    const empSnap = await db.collection(`tenants/${TENANT_ID}/employees`).get();
+    const empByName = {};
+    empSnap.docs.forEach(d => { const e = d.data(); if (e.name) empByName[e.name] = e; });
+
+    const apiKey = resendKey.value();
+    const resend = apiKey ? new Resend(apiKey) : null;
+
+    const twSid       = twilioSid.value();
+    const twToken     = twilioToken.value();
+    const twApiKeySid = twilioApiKeySid.value();
+    const twFrom      = twilioFrom.value();
+    const smsClient = (twSid && twToken && twFrom)
+      ? require('twilio')(twApiKeySid || twSid, twToken, twApiKeySid ? { accountSid: twSid } : undefined)
+      : null;
+
+    let emailsSent = 0, smsSent = 0, skipped = 0;
+
+    for (const appt of candidates) {
+      const emp = empByName[appt.techName];
+      if (!emp || emp.techReminderOptOut) { skipped++; continue; }
+
+      const [ah, am] = appt.startTime.split(':').map(Number);
+      const apptMins = ah * 60 + am;
+      const minutesAway = Math.max(0, apptMins - nowMins);
+      const startLabel = (() => {
+        const hh = ah > 12 ? ah - 12 : ah === 0 ? 12 : ah;
+        const ampm = ah >= 12 ? 'PM' : 'AM';
+        return `${hh}:${String(am).padStart(2, '0')} ${ampm}`;
+      })();
+      const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'no services listed';
+      const clientLabel = appt.clientName || 'Walk-in';
+
+      const wantsEmail = (channel === 'email' || channel === 'both');
+      const wantsSms   = (channel === 'sms'   || channel === 'both');
+
+      // Email
+      if (wantsEmail && resend && emp.email) {
+        try {
+          const subject = `[${minutesAway}m] ${clientLabel} at ${startLabel} — ${services}`;
+          const html = buildAutoEmail(
+            'Upcoming appointment',
+            emp.name?.split(' ')[0] || 'there',
+            `<p style="font-size:14px;color:#222;margin:0 0 12px;">Heads-up — your next appointment starts in <strong>${minutesAway} minute${minutesAway === 1 ? '' : 's'}</strong>.</p>
+             <table style="width:100%;border-collapse:collapse;font-size:14px;color:#222;margin:0 0 12px;">
+               <tr><td style="padding:6px 0;color:#888;width:90px;">Time</td><td style="padding:6px 0;font-weight:600;">${startLabel}</td></tr>
+               <tr><td style="padding:6px 0;color:#888;">Client</td><td style="padding:6px 0;font-weight:600;">${clientLabel}</td></tr>
+               <tr><td style="padding:6px 0;color:#888;">Services</td><td style="padding:6px 0;">${services}</td></tr>
+               ${appt.notes ? `<tr><td style="padding:6px 0;color:#888;">Notes</td><td style="padding:6px 0;font-style:italic;">${String(appt.notes).slice(0, 280)}</td></tr>` : ''}
+             </table>`,
+            null, null
+          );
+          const { error } = await resend.emails.send({
+            from: resendFrom.value(),
+            to: emp.email.trim(),
+            subject,
+            html,
+          });
+          if (error) throw new Error(error.message || JSON.stringify(error));
+          emailsSent++;
+        } catch (e) {
+          console.error(`[TechReminders] Email failed for ${emp.name}:`, e.message);
+        }
+      }
+
+      // SMS
+      if (wantsSms && smsClient && emp.phone) {
+        try {
+          const phone = normalizePhone(emp.phone);
+          if (phone) {
+            const body = `Meraki: ${clientLabel} at ${startLabel} (in ${minutesAway} min) — ${services.slice(0, 80)}`;
+            await smsClient.messages.create({ from: twFrom, to: phone, body });
+            smsSent++;
+          }
+        } catch (e) {
+          console.error(`[TechReminders] SMS failed for ${emp.name}:`, e.message);
+        }
+      }
+
+      await db.doc(`tenants/${TENANT_ID}/appointments/${appt.id}`).update({
+        techReminderSent: true,
+        techReminderSentAt: new Date().toISOString(),
+      });
+    }
+
+    console.log(`[TechReminders] ${candidates.length} due. emails:${emailsSent} sms:${smsSent} skipped:${skipped}`);
+  }
+);
+
 exports.sendBookingConfirmation = onDocumentCreated(
   `tenants/${TENANT_ID}/appointments/{apptId}`,
   async (event) => {
@@ -975,6 +1317,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
     const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
+    const manageLink = apptManageUrl(TENANT_ID, event.params?.apptId || snap.id);
 
     const clientHtml = `<!DOCTYPE html>
 <html>
@@ -995,7 +1338,12 @@ exports.sendBookingConfirmation = onDocumentCreated(
         <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>👩‍💼</strong> With ${esc(techLine)}</div>
         <div style="font-size:13px;color:#555;"><strong>📍</strong> Meraki Nail Studio, Columbus OH</div>
       </div>
-      <p style="font-size:12px;color:#aaa;margin:16px 0 0;">Need to reschedule? Give us a call and we'll take care of you.</p>
+      ${manageLink ? `<div style="text-align:center;margin:18px 0 0;">
+        <a href="${esc(manageLink)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
+          Reschedule or cancel
+        </a>
+      </div>` : ''}
+      <p style="font-size:11px;color:#aaa;margin:14px 0 0;text-align:center;">Or reply to this email — we'll take care of you.</p>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
       <p style="font-size:11px;color:#bbb;margin:0;">Meraki Nail Studio · Columbus, OH</p>
@@ -1403,6 +1751,759 @@ ${cfg.policy || 'Appointments canceled with less than 24 hours notice may incur 
     });
 
     return { reply: response.content[0]?.text || '' };
+  }
+);
+
+// ── Reports AI chatbot (admin-only, read-only) ────────
+// Lets the salon owner ask natural-language questions about their data.
+// Hard read-only: no mutate methods imported, no write tools exposed.
+exports.chatWithReports = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 90 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+
+    const { messages = [] } = request.data || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new HttpsError('invalid-argument', 'messages required');
+    }
+    if (messages.length > 20) throw new HttpsError('invalid-argument', 'Too many messages');
+
+    const db = getFirestore();
+    const APPTS    = `tenants/${TENANT_ID}/appointments`;
+    const RECEIPTS = `tenants/${TENANT_ID}/receipts`;
+    const CLIENTS  = `tenants/${TENANT_ID}/clients`;
+
+    // ── Tool implementations ────────────────────────────
+    const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const dowOf = (yyyymmdd) => {
+      try { return DOW[new Date(yyyymmdd + 'T12:00:00').getDay()]; }
+      catch { return null; }
+    };
+    const apptRev = (a) => {
+      if (Array.isArray(a.services)) {
+        return a.services.reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+      }
+      return 0;
+    };
+
+    async function queryAppointments({ startDate, endDate, techName, dayOfWeek, status, clientNameQuery, limit = 10 }) {
+      if (!startDate || !endDate) return { error: 'startDate and endDate are required' };
+      const snap = await db.collection(APPTS)
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate)
+        .get();
+      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (techName) {
+        const t = techName.toLowerCase();
+        rows = rows.filter(a => (a.techName || '').toLowerCase().includes(t));
+      }
+      if (dayOfWeek) {
+        const want = dayOfWeek.slice(0, 3).toLowerCase();
+        rows = rows.filter(a => (dowOf(a.date) || '').toLowerCase() === want);
+      }
+      if (status) rows = rows.filter(a => (a.status || '').toLowerCase() === status.toLowerCase());
+      if (clientNameQuery) {
+        const q = clientNameQuery.toLowerCase();
+        rows = rows.filter(a => (a.clientName || '').toLowerCase().includes(q));
+      }
+      const totalRevenue = rows.reduce((s, a) => s + apptRev(a), 0);
+      const cancelled = rows.filter(a => a.status === 'cancelled').length;
+      const noShow    = rows.filter(a => a.status === 'no_show').length;
+      const done      = rows.filter(a => a.status === 'done').length;
+      const sample = rows.slice(0, Math.min(Math.max(1, limit), 50)).map(a => ({
+        date: a.date, dayOfWeek: dowOf(a.date), startTime: a.startTime, techName: a.techName,
+        clientName: a.clientName || 'Walk-in', status: a.status,
+        services: (a.services || []).map(s => s.name).filter(Boolean).join(', '),
+        revenue: apptRev(a),
+      }));
+      return {
+        count: rows.length, totalRevenue: Math.round(totalRevenue * 100) / 100,
+        cancelled, noShow, done, sample,
+      };
+    }
+
+    async function getRevenueSummary({ startDate, endDate, groupBy }) {
+      if (!startDate || !endDate) return { error: 'startDate and endDate are required' };
+      const snap = await db.collection(RECEIPTS)
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate)
+        .get();
+      const rows = snap.docs.map(d => d.data());
+      // Revenue lives under r.payment, not at the top level. Refunds, voids,
+      // and cancellations are negative receipts that should net against sales.
+      const isNegative = (r) => r.transactionType === 'refund'
+        || r.transactionType === 'void' || r.transactionType === 'cancellation';
+      const refundedCount = rows.filter(isNegative).length;
+      const totals = rows.reduce((acc, r) => {
+        const p   = r.payment || {};
+        const sales = Array.isArray(r.services)
+          ? r.services.reduce((s, sv) => s + (Number(sv.price) || 0), 0) : 0;
+        const sub = Number(p.subtotal) || sales;
+        const tax = Number(p.tax) || 0;
+        const tip = Number(p.tip) || 0;
+        const tot = (p.total !== undefined && p.total !== null)
+          ? Number(p.total) || 0
+          : (sub + tax + tip);
+        const sign = isNegative(r) ? -1 : 1;
+        acc.subtotal += sign * sub;
+        acc.tax      += sign * tax;
+        acc.tip      += sign * tip;
+        acc.total    += sign * tot;
+        return acc;
+      }, { subtotal: 0, tax: 0, tip: 0, total: 0 });
+      Object.keys(totals).forEach(k => totals[k] = Math.round(totals[k] * 100) / 100);
+
+      let breakdown = null;
+      if (groupBy === 'tech' || groupBy === 'service' || groupBy === 'month' || groupBy === 'day') {
+        const buckets = {};
+        rows.forEach(r => {
+          const p     = r.payment || {};
+          const sign  = isNegative(r) ? -1 : 1;
+          const lines = Array.isArray(r.services) ? r.services
+                       : Array.isArray(r.lineItems) ? r.lineItems : [];
+          const recTotal = (p.total !== undefined && p.total !== null)
+            ? Number(p.total) || 0
+            : lines.reduce((s, l) => s + (Number(l.price) || 0), 0);
+          if (groupBy === 'tech' || groupBy === 'service') {
+            // Prefer per-line tech/name; fall back to receipt-level techName.
+            if (lines.length === 0 && groupBy === 'tech') {
+              const key = r.techName || '—';
+              buckets[key] = (buckets[key] || 0) + sign * recTotal;
+            } else {
+              lines.forEach(li => {
+                const key = groupBy === 'tech'
+                  ? (li.techName || r.techName || '—')
+                  : (li.name || li.service || '—');
+                const amt = Number(li.price) || 0;
+                buckets[key] = (buckets[key] || 0) + sign * amt;
+              });
+            }
+          } else {
+            const d = r.date || '';
+            const key = groupBy === 'month' ? d.slice(0, 7) : d;
+            buckets[key] = (buckets[key] || 0) + sign * recTotal;
+          }
+        });
+        breakdown = Object.entries(buckets)
+          .map(([k, v]) => ({ key: k, total: Math.round(v * 100) / 100 }))
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 30);
+      }
+      return { receiptCount: rows.length, refundedOrCancelled: refundedCount, ...totals, breakdown };
+    }
+
+    async function getTopClients({ startDate, endDate, sortBy = 'visits', limit = 10 }) {
+      if (!startDate || !endDate) return { error: 'startDate and endDate are required' };
+      const snap = await db.collection(APPTS)
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate)
+        .get();
+      const byClient = {};
+      snap.docs.forEach(d => {
+        const a = d.data();
+        if (!a.clientId || !a.clientName || a.clientName === 'Walk-in') return;
+        if (a.status === 'cancelled') return;
+        const k = a.clientId;
+        if (!byClient[k]) byClient[k] = { clientId: k, name: a.clientName, visits: 0, spend: 0 };
+        byClient[k].visits += 1;
+        byClient[k].spend  += apptRev(a);
+      });
+      const list = Object.values(byClient)
+        .map(c => ({ ...c, spend: Math.round(c.spend * 100) / 100 }))
+        .sort((a, b) => sortBy === 'spend' ? b.spend - a.spend : b.visits - a.visits)
+        .slice(0, Math.min(Math.max(1, limit), 50));
+      return { clients: list, totalUniqueClients: Object.keys(byClient).length };
+    }
+
+    async function getClientHistory({ nameQuery, limit = 5 }) {
+      if (!nameQuery) return { error: 'nameQuery is required' };
+      const cSnap = await db.collection(CLIENTS).get();
+      const q = nameQuery.toLowerCase();
+      const matches = cSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => (c.name || '').toLowerCase().includes(q))
+        .slice(0, Math.min(Math.max(1, limit), 10));
+      const out = [];
+      for (const c of matches) {
+        const aSnap = await db.collection(APPTS).where('clientId', '==', c.id).get();
+        const appts = aSnap.docs.map(d => d.data())
+          .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const lastVisit = appts.find(a => a.status === 'done' || a.status === 'scheduled');
+        const totalSpend = appts.reduce((s, a) => s + apptRev(a), 0);
+        out.push({
+          name: c.name, phone: c.phone || null, email: c.email || null,
+          birthday: c.birthday || null, banned: !!c.banned,
+          totalAppts: appts.length,
+          totalSpend: Math.round(totalSpend * 100) / 100,
+          lastVisitDate: lastVisit?.date || null,
+          recentVisits: appts.slice(0, 5).map(a => ({
+            date: a.date, tech: a.techName, status: a.status,
+            services: (a.services || []).map(s => s.name).filter(Boolean).join(', '),
+          })),
+        });
+      }
+      return { matches: out };
+    }
+
+    const TOOLS = [
+      {
+        name: 'queryAppointments',
+        description: 'Count and filter appointments by date range, tech, day of week, status, or client name. Returns count, totals, and a sample of matching rows. Use this for questions like "how many appointments did Tess D have on Saturdays last year".',
+        input_schema: {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string', description: 'YYYY-MM-DD inclusive lower bound' },
+            endDate:   { type: 'string', description: 'YYYY-MM-DD inclusive upper bound' },
+            techName:  { type: 'string', description: 'Substring match against techName, case-insensitive' },
+            dayOfWeek: { type: 'string', description: 'Sun/Mon/Tue/Wed/Thu/Fri/Sat (or full name)' },
+            status:    { type: 'string', description: 'scheduled/done/cancelled/no_show/in-progress' },
+            clientNameQuery: { type: 'string', description: 'Substring match against clientName' },
+            limit:     { type: 'number', description: 'Max rows in sample (default 10, max 50)' },
+          },
+          required: ['startDate', 'endDate'],
+        },
+      },
+      {
+        name: 'getRevenueSummary',
+        description: 'Sum revenue (subtotal/tax/tip/total) from receipts in a date range. Optionally break down by tech, service, day, or month.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string' }, endDate: { type: 'string' },
+            groupBy: { type: 'string', enum: ['tech', 'service', 'day', 'month'] },
+          },
+          required: ['startDate', 'endDate'],
+        },
+      },
+      {
+        name: 'getTopClients',
+        description: 'Top clients by visit count or spend within a date range.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string' }, endDate: { type: 'string' },
+            sortBy: { type: 'string', enum: ['visits', 'spend'] },
+            limit:  { type: 'number', description: 'Default 10, max 50' },
+          },
+          required: ['startDate', 'endDate'],
+        },
+      },
+      {
+        name: 'getClientHistory',
+        description: 'Look up a client by fuzzy name match. Returns up to 5 matches each with profile info, total visits, total spend, and recent visit details.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            nameQuery: { type: 'string' },
+            limit: { type: 'number', description: 'Max matches, default 5' },
+          },
+          required: ['nameQuery'],
+        },
+      },
+    ];
+
+    const TOOL_DISPATCH = { queryAppointments, getRevenueSummary, getTopClients, getClientHistory };
+
+    const today = new Date().toISOString().slice(0, 10);
+    const systemPrompt = `You are a read-only analytics assistant for Meraki Nail Studio (a nail salon in Columbus, OH).
+
+You answer questions about salon data — appointments, revenue, clients, techs — using the tools provided. You CANNOT modify any record, send messages, or change any setting. If asked to do so, decline and explain you're read-only.
+
+Today is ${today}. When the user references relative time ("last year", "this past month", "year-to-date"), translate it to explicit YYYY-MM-DD ranges before calling tools.
+
+When using tools:
+- Always pick the smallest date window that answers the question.
+- Be precise with names — fuzzy matching is on, but obvious typos are still your job to resolve.
+- If a tool returns 0 rows, double-check whether the date range or filter might be wrong.
+- After getting tool results, answer in 1–4 short paragraphs. For lists, use compact bullets. Format numbers with $ and commas.
+- Never fabricate values not in tool output. If you didn't call a tool, say so.`;
+
+    const client = new Anthropic({ apiKey });
+    let convo = messages.map(m => ({ role: m.role, content: m.content }));
+    let toolRounds = 0;
+
+    while (true) {
+      const resp = await client.messages.create({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        system:     systemPrompt,
+        tools:      TOOLS,
+        messages:   convo,
+      });
+
+      const stopReason = resp.stop_reason;
+      const blocks = resp.content || [];
+
+      if (stopReason !== 'tool_use') {
+        const text = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+        return { reply: text };
+      }
+
+      // Append assistant turn (with tool_use blocks) and run tools.
+      convo.push({ role: 'assistant', content: blocks });
+      const toolResults = [];
+      for (const b of blocks) {
+        if (b.type !== 'tool_use') continue;
+        const fn = TOOL_DISPATCH[b.name];
+        let result;
+        try {
+          result = fn ? await fn(b.input || {}) : { error: `Unknown tool: ${b.name}` };
+        } catch (e) {
+          result = { error: e.message || 'Tool failed' };
+        }
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          content: JSON.stringify(result),
+        });
+      }
+      convo.push({ role: 'user', content: toolResults });
+
+      toolRounds += 1;
+      if (toolRounds >= 6) {
+        // Hard cap to prevent runaway loops; force a final answer next round.
+        const final = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 1500,
+          system: systemPrompt + '\n\nDo not call any more tools — answer with what you have.',
+          messages: convo,
+        });
+        const text = (final.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+        return { reply: text };
+      }
+    }
+  }
+);
+
+// ── Voice Command AI (admin/scheduler only) ───────────
+// Takes a transcribed voice command from the front desk, parses intent,
+// resolves entities (which client / which tech / which appt), and returns
+// a structured "proposed action" the frontend confirms + executes.
+// HARD RULE: this function never writes to Firestore. It only reads to
+// resolve entities. The frontend executes the confirmed action through
+// existing client-side helpers, so all writes go through Firestore rules.
+exports.voiceCommand = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+
+    const { transcript, role = 'admin' } = request.data || {};
+    if (!transcript || typeof transcript !== 'string') {
+      throw new HttpsError('invalid-argument', 'transcript required');
+    }
+    if (transcript.length > 500) {
+      throw new HttpsError('invalid-argument', 'transcript too long');
+    }
+
+    const db = getFirestore();
+    const APPTS    = `tenants/${TENANT_ID}/appointments`;
+    const CLIENTS  = `tenants/${TENANT_ID}/clients`;
+    const EMPS     = `tenants/${TENANT_ID}/employees`;
+    const SVCS     = `tenants/${TENANT_ID}/services`;
+
+    const todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const fmtTime = (m) => {
+      const h = Math.floor(m / 60), mm = m % 60;
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const hh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      return `${hh}:${String(mm).padStart(2, '0')} ${ampm}`;
+    };
+    const strToMins = (s) => {
+      if (!s) return 0;
+      const [h, m] = s.split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+
+    // ── Read-only entity-resolution tools ───────────────
+    async function searchClients({ nameQuery, limit = 5 }) {
+      if (!nameQuery) return { matches: [] };
+      const snap = await db.collection(CLIENTS).get();
+      const q = nameQuery.toLowerCase();
+      const matches = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => (c.name || '').toLowerCase().includes(q) && !c.banned)
+        .slice(0, Math.min(limit, 10))
+        .map(c => ({ id: c.id, name: c.name, phone: c.phone || null, email: c.email || null }));
+      return { matches };
+    }
+
+    async function listEmployees() {
+      const snap = await db.collection(EMPS).get();
+      const techs = snap.docs.map(d => d.data())
+        .filter(e => e.active !== false && e.name)
+        .map(e => ({
+          name: e.name,
+          serviceIds: e.serviceIds || [],
+          workDays: e.workDays || {},
+        }));
+      return { techs };
+    }
+
+    async function listServices() {
+      const snap = await db.collection(SVCS).get();
+      const services = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .filter(s => s.active !== false)
+        .map(s => ({ id: s.id, name: s.name, duration: s.duration || 60, basePrice: s.basePrice ?? null }));
+      return { services };
+    }
+
+    async function viewSchedule({ date, techName }) {
+      if (!date) return { error: 'date required (YYYY-MM-DD)' };
+      const snap = await db.collection(APPTS).where('date', '==', date).get();
+      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (techName) {
+        const t = techName.toLowerCase();
+        rows = rows.filter(a => (a.techName || '').toLowerCase().includes(t));
+      }
+      rows.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      return {
+        date,
+        appointments: rows.map(a => ({
+          id: a.id,
+          startTime: a.startTime,
+          startTimeFormatted: a.startTime ? fmtTime(strToMins(a.startTime)) : '',
+          duration: a.duration || 60,
+          techName: a.techName,
+          clientName: a.clientName || 'Walk-in',
+          status: a.status,
+          services: (a.services || []).map(s => s.name).filter(Boolean).join(', '),
+        })),
+      };
+    }
+
+    async function findAppointment({ clientNameQuery, techName, date }) {
+      if (!date) return { error: 'date required (YYYY-MM-DD)' };
+      const snap = await db.collection(APPTS).where('date', '==', date).get();
+      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (techName) {
+        const t = techName.toLowerCase();
+        rows = rows.filter(a => (a.techName || '').toLowerCase().includes(t));
+      }
+      if (clientNameQuery) {
+        const q = clientNameQuery.toLowerCase();
+        rows = rows.filter(a => (a.clientName || '').toLowerCase().includes(q));
+      }
+      rows = rows.filter(a => a.status !== 'cancelled');
+      rows.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+      return {
+        matches: rows.slice(0, 5).map(a => ({
+          id: a.id,
+          startTime: a.startTime,
+          startTimeFormatted: a.startTime ? fmtTime(strToMins(a.startTime)) : '',
+          duration: a.duration || 60,
+          techName: a.techName,
+          clientName: a.clientName || 'Walk-in',
+          status: a.status,
+          services: (a.services || []).map(s => s.name).filter(Boolean).join(', '),
+          checkedInAt: a.checkedInAt || null,
+        })),
+      };
+    }
+
+    async function findOpenSlots({ techName, date, durationMinutes = 60, preferredStartTime }) {
+      if (!techName || !date) return { error: 'techName and date required' };
+      const snap = await db.collection(APPTS).where('date', '==', date).get();
+      const techAppts = snap.docs.map(d => d.data())
+        .filter(a => a.techName === techName && a.status !== 'cancelled')
+        .map(a => ({ start: strToMins(a.startTime || '00:00'), end: strToMins(a.startTime || '00:00') + (Number(a.duration) || 60) }))
+        .sort((a, b) => a.start - b.start);
+      // Default working window 9am-8pm
+      const dayStart = 9 * 60, dayEnd = 20 * 60;
+      const slots = [];
+      let cursor = dayStart;
+      for (const a of techAppts) {
+        if (a.start - cursor >= durationMinutes) {
+          slots.push(cursor);
+        }
+        cursor = Math.max(cursor, a.end);
+      }
+      if (dayEnd - cursor >= durationMinutes) slots.push(cursor);
+      // If preferred time given, sort by closeness; else first 6
+      let chosen = slots;
+      if (preferredStartTime) {
+        const target = strToMins(preferredStartTime);
+        chosen = [...slots].sort((a, b) => Math.abs(a - target) - Math.abs(b - target));
+      }
+      return {
+        techName, date, durationMinutes,
+        openSlots: chosen.slice(0, 6).map(m => ({ startTime: `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`, formatted: fmtTime(m) })),
+      };
+    }
+
+    // ── Finalize: this is the LAST tool the model calls ─
+    async function finalizeAction(payload) {
+      // Just echo back the proposed action — frontend handles execution.
+      return { ok: true, ...payload };
+    }
+
+    const TOOLS = [
+      {
+        name: 'searchClients',
+        description: 'Find clients by partial name match. Use when the user mentions a client name to resolve to a clientId.',
+        input_schema: { type: 'object', properties: { nameQuery: { type: 'string' }, limit: { type: 'number' } }, required: ['nameQuery'] },
+      },
+      {
+        name: 'listEmployees',
+        description: 'List all active techs (with their serviceIds + workDays). Use when the user mentions a tech name to confirm spelling and capabilities.',
+        input_schema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'listServices',
+        description: 'List all active services (with id, name, duration, basePrice). Use when the user mentions a service name.',
+        input_schema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'viewSchedule',
+        description: 'Read the schedule for a specific date and optional tech. Use for "what does X have today" or "show me Y\'s schedule" questions.',
+        input_schema: { type: 'object', properties: { date: { type: 'string', description: 'YYYY-MM-DD' }, techName: { type: 'string' } }, required: ['date'] },
+      },
+      {
+        name: 'findAppointment',
+        description: 'Find an existing appointment by client name, tech, and/or date. Use when the user wants to reschedule, cancel, or check-in a specific appt.',
+        input_schema: { type: 'object', properties: { clientNameQuery: { type: 'string' }, techName: { type: 'string' }, date: { type: 'string' } }, required: ['date'] },
+      },
+      {
+        name: 'findOpenSlots',
+        description: 'Find available time slots for a tech on a date with a given duration. Use to suggest booking times.',
+        input_schema: { type: 'object', properties: { techName: { type: 'string' }, date: { type: 'string' }, durationMinutes: { type: 'number' }, preferredStartTime: { type: 'string', description: 'HH:mm 24h' } }, required: ['techName', 'date'] },
+      },
+      {
+        name: 'finalizeAction',
+        description: 'Call this LAST when you have all the info to propose an action to the user. The user will confirm or cancel before any changes happen. Available actionTypes: "book" | "reschedule" | "cancel" | "checkIn" | "view" | "unsupported".',
+        input_schema: {
+          type: 'object',
+          properties: {
+            actionType: { type: 'string', enum: ['book', 'reschedule', 'cancel', 'checkIn', 'view', 'unsupported'] },
+            summary: { type: 'string', description: 'A one-sentence plain-English description of what will happen, in present tense. e.g. "Book Sarah Johnson with Tess on Tuesday May 13 at 2:00 PM for Gel Manicure."' },
+            payload: {
+              type: 'object',
+              description: 'Action-specific data. For "book": { clientId, clientName, techName, date, startTime (HH:mm), duration, services: [{name, duration, price}] }. For "reschedule": { apptId, newTechName?, newDate?, newStartTime? }. For "cancel": { apptId }. For "checkIn": { apptId }. For "view": { description, items: [...] }. For "unsupported": { reason }.',
+            },
+            naturalReply: { type: 'string', description: 'Short conversational reply to show the user. Used as a header above the confirmation card.' },
+          },
+          required: ['actionType', 'summary', 'payload', 'naturalReply'],
+        },
+      },
+    ];
+
+    const TOOL_DISPATCH = { searchClients, listEmployees, listServices, viewSchedule, findAppointment, findOpenSlots, finalizeAction };
+
+    const systemPrompt = `You are a voice assistant for Meraki Nail Studio's front desk. The user just spoke a command into a phone microphone. Your job: parse intent, resolve entities, and call finalizeAction with a structured proposal that the user will confirm before any change happens.
+
+Today is ${todayISO} (timezone America/New_York). When the user says "today" / "tomorrow" / "next Tuesday" / "this Friday", convert to explicit YYYY-MM-DD.
+
+User's role: ${role}. Tech-role users can only do "view" and "checkIn" actions. Admins/schedulers can do all.
+
+Process:
+1. Identify the intent: book / reschedule / cancel / checkIn / view / unsupported
+2. Resolve entities by calling searchClients, listEmployees, listServices, viewSchedule, findAppointment, or findOpenSlots as needed
+3. Call finalizeAction with the complete payload
+
+Critical rules:
+- Times must be 24h "HH:mm" format. "2pm" → "14:00".
+- Always resolve client/tech names to exact matches via searchClients/listEmployees before finalizing. If multiple clients match, pick the one with the most recent activity OR set actionType="unsupported" with reason="multiple matches" listing them.
+- For booking: services array must include duration and price. Look services up via listServices.
+- If the user's request is unclear or impossible, set actionType="unsupported" with a clear reason.
+- Be concise in summary + naturalReply.
+- Don't ask follow-up questions in this turn — make a best-effort proposal. The user will see the confirmation card and can correct.
+
+You MUST call finalizeAction exactly once at the end.`;
+
+    const client = new Anthropic({ apiKey });
+    let convo = [{ role: 'user', content: transcript }];
+    let toolRounds = 0;
+
+    while (true) {
+      const resp = await client.messages.create({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 1500,
+        system:     systemPrompt,
+        tools:      TOOLS,
+        messages:   convo,
+      });
+
+      const blocks = resp.content || [];
+      const stopReason = resp.stop_reason;
+
+      // Look for the finalizeAction call → terminal state
+      const finalize = blocks.find(b => b.type === 'tool_use' && b.name === 'finalizeAction');
+      if (finalize) {
+        const out = finalize.input || {};
+        return {
+          actionType:  out.actionType || 'unsupported',
+          summary:     out.summary || '',
+          payload:     out.payload || {},
+          naturalReply: out.naturalReply || '',
+          transcript,
+        };
+      }
+
+      if (stopReason !== 'tool_use') {
+        // Model gave up without finalizing
+        const text = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+        return {
+          actionType: 'unsupported',
+          summary: text || 'Could not parse command.',
+          payload: { reason: 'no_finalize' },
+          naturalReply: text || 'Sorry, I didn\'t catch that.',
+          transcript,
+        };
+      }
+
+      // Run other tools and continue
+      convo.push({ role: 'assistant', content: blocks });
+      const results = [];
+      for (const b of blocks) {
+        if (b.type !== 'tool_use') continue;
+        const fn = TOOL_DISPATCH[b.name];
+        let r;
+        try { r = fn ? await fn(b.input || {}) : { error: 'unknown_tool' }; }
+        catch (e) { r = { error: e.message || 'tool_failed' }; }
+        results.push({ type: 'tool_result', tool_use_id: b.id, content: JSON.stringify(r) });
+      }
+      convo.push({ role: 'user', content: results });
+
+      toolRounds += 1;
+      if (toolRounds >= 6) {
+        return {
+          actionType: 'unsupported',
+          summary: 'Took too many steps to resolve. Try a more specific command.',
+          payload: { reason: 'tool_rounds_exceeded' },
+          naturalReply: 'Sorry, that was too complex — try something simpler.',
+          transcript,
+        };
+      }
+    }
+  }
+);
+
+// ── AI-drafted conflict-resolution messages ───────────
+// Given a tech's time-off block + the list of affected client appointments,
+// drafts personalized SMS + email outreach messages. The frontend reviews,
+// edits, then sends via existing sendDirectSms / sendDirectEmail.
+// Hard read-only: function never sends — frontend does, after user confirms.
+exports.draftConflictMessages = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+
+    const {
+      technicianName,
+      reason,
+      startDate,
+      endDate,
+      affected = [],
+      salonName = 'Meraki Nail Studio',
+      salonPhone,
+      bookingUrl = 'https://meraki-salon-manager.web.app/?book',
+    } = request.data || {};
+
+    if (!technicianName || !Array.isArray(affected) || affected.length === 0) {
+      throw new HttpsError('invalid-argument', 'technicianName and affected[] required');
+    }
+    if (affected.length > 30) {
+      throw new HttpsError('invalid-argument', 'Too many appointments to draft at once');
+    }
+
+    const fmtDate = (d) => {
+      try { return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }); }
+      catch { return d; }
+    };
+    const fmtTime = (t) => {
+      if (!t) return '';
+      const [h, m] = t.split(':').map(Number);
+      const ampm = h >= 12 ? 'PM' : 'AM';
+      const hh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+      return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
+    };
+
+    const reasonText = reason === 'sick'      ? 'unexpectedly out sick'
+                     : reason === 'personal' ? 'taking a personal day'
+                     : reason === 'vacation' ? 'on vacation'
+                     : 'unavailable';
+
+    // Build a compact appt-context string for the prompt
+    const apptList = affected.map((a, idx) => {
+      const services = (a.services || []).map(s => s.name || s).filter(Boolean).join(', ') || 'service';
+      const newTech = a.newTechName ? ` → reassigned to ${a.newTechName}` : '';
+      const specific = a.techRequestType === 'specific' ? ' (specifically requested this tech)' : '';
+      return `${idx + 1}. ${a.clientName || 'Client'} on ${fmtDate(a.date)} at ${fmtTime(a.startTime)} for ${services}${specific}${newTech}`;
+    }).join('\n');
+
+    const systemPrompt = `You draft polite, professional client outreach messages for a salon when a technician is unavailable. Tone: warm, apologetic, action-oriented. Sound like the salon owner, not a robot.
+
+Two outreach scenarios:
+1. **Reassigned**: A different tech will cover. Confirm the swap, mention the original tech is out, ask the client to reply YES to confirm or call to reschedule.
+2. **Needs reschedule**: No coverage available. Apologize, explain, offer the booking link or phone to reschedule.
+
+Output strict JSON (no other text). Schema:
+{
+  "drafts": [
+    {
+      "apptId": "<original id>",
+      "scenario": "reassigned" | "reschedule",
+      "smsDraft": "<140-200 chars, single message, no emojis except possibly one ❤️ or 🌸>",
+      "emailSubject": "<short, 8-12 words>",
+      "emailDraft": "<3-5 sentences, friendly>"
+    }
+  ]
+}
+
+Salon: ${salonName}${salonPhone ? `, phone ${salonPhone}` : ''}. Booking URL: ${bookingUrl}.
+
+Tech ${technicianName} is ${reasonText} ${startDate === endDate ? `on ${fmtDate(startDate)}` : `from ${fmtDate(startDate)} through ${fmtDate(endDate)}`}.
+
+For appts marked "specifically requested" — be a bit more apologetic since the client picked the tech. Offer to wait for ${technicianName}'s next available slot or pick someone else.
+
+Keep SMS under 200 characters (so it stays a single segment). Use \\n in SMS for line breaks if needed.
+
+Use the client's first name only. Sign messages "${salonName}".`;
+
+    const userPrompt = `Draft messages for these ${affected.length} affected appointments:
+
+${apptList}
+
+Output the JSON only.`;
+
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
+
+    const raw = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    // Strip code fences if the model wrapped them
+    const json = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+
+    let parsed;
+    try { parsed = JSON.parse(json); }
+    catch (e) {
+      console.error('[draftConflictMessages] JSON parse failed:', e.message, 'raw:', raw.slice(0, 500));
+      throw new HttpsError('internal', 'AI returned invalid format');
+    }
+
+    if (!parsed.drafts || !Array.isArray(parsed.drafts)) {
+      throw new HttpsError('internal', 'AI returned no drafts array');
+    }
+
+    // Defensive cap on length to prevent runaway tokens
+    const drafts = parsed.drafts.slice(0, affected.length).map(d => ({
+      apptId:        String(d.apptId || ''),
+      scenario:      d.scenario === 'reassigned' ? 'reassigned' : 'reschedule',
+      smsDraft:      String(d.smsDraft || '').slice(0, 320),
+      emailSubject:  String(d.emailSubject || '').slice(0, 120),
+      emailDraft:    String(d.emailDraft || '').slice(0, 1200),
+    }));
+
+    return { drafts };
   }
 );
 
@@ -2078,27 +3179,267 @@ exports.stripeWebhook = onRequest(
     const obj = event.data.object;
 
     if (event.type === 'checkout.session.completed') {
-      const tenantId = obj.metadata?.tenantId;
-      const plan     = obj.metadata?.plan || 'pro';
-      if (tenantId) {
-        await db.doc(`tenants/${tenantId}/data/settings`).set({ plan }, { merge: true });
-        await db.doc(`tenants/${tenantId}`).set({ plan, stripeSubscriptionId: obj.subscription }, { merge: true });
+      // Two flavors of checkout.session.completed land here:
+      //   1. SaaS subscription (tipflow plan) — metadata.type !== 'membership'
+      //   2. Salon membership subscription — metadata.type === 'membership'
+      if (obj.metadata?.type === 'membership') {
+        const tid          = obj.metadata.tenantId || TENANT_ID;
+        const membershipId = obj.metadata.membershipId;
+        if (membershipId) {
+          await db.doc(`tenants/${tid}/memberships/${membershipId}`).set({
+            status:                 'active',
+            stripeSubscriptionId:   obj.subscription,
+            stripeCustomerId:       obj.customer,
+            paidAt:                 new Date().toISOString(),
+            updatedAt:              new Date().toISOString(),
+          }, { merge: true });
+          // Persist customer ID on the client too for next-time reuse
+          if (obj.customer) {
+            const memSnap = await db.doc(`tenants/${tid}/memberships/${membershipId}`).get();
+            const clientId = memSnap.data()?.clientId;
+            if (clientId) {
+              await db.doc(`tenants/${tid}/clients/${clientId}`).set({ stripeCustomerId: obj.customer }, { merge: true });
+            }
+          }
+        }
+      } else {
+        // SaaS subscription
+        const tenantId = obj.metadata?.tenantId;
+        const plan     = obj.metadata?.plan || 'pro';
+        if (tenantId) {
+          await db.doc(`tenants/${tenantId}/data/settings`).set({ plan }, { merge: true });
+          await db.doc(`tenants/${tenantId}`).set({ plan, stripeSubscriptionId: obj.subscription }, { merge: true });
+        }
+      }
+    }
+
+    // Subscription lifecycle: active / past_due / cancelled / unpaid
+    if (event.type === 'customer.subscription.updated') {
+      // Try membership first (per-tenant subcollection lookup)
+      const tid = obj.metadata?.tenantId || TENANT_ID;
+      const membershipId = obj.metadata?.membershipId;
+      if (membershipId) {
+        const status = obj.status === 'active' ? 'active'
+                     : obj.status === 'past_due' ? 'past_due'
+                     : obj.status === 'canceled' ? 'cancelled'
+                     : obj.status === 'unpaid' ? 'past_due'
+                     : obj.status === 'paused' ? 'paused'
+                     : obj.status;
+        await db.doc(`tenants/${tid}/memberships/${membershipId}`).set({
+          status,
+          cancelAtPeriodEnd: !!obj.cancel_at_period_end,
+          currentPeriodEnd:  obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null,
+          updatedAt:         new Date().toISOString(),
+        }, { merge: true });
       }
     }
 
     if (event.type === 'customer.subscription.deleted') {
-      const snap = await db.collection('tenants')
-        .where('stripeSubscriptionId', '==', obj.id).limit(1).get();
-      if (!snap.empty) {
-        const tid = snap.docs[0].id;
-        await db.doc(`tenants/${tid}/data/settings`).set({ plan: 'starter' }, { merge: true });
-        await db.doc(`tenants/${tid}`).set({ plan: 'starter' }, { merge: true });
+      // Membership branch: stamp cancelled
+      const tid = obj.metadata?.tenantId || TENANT_ID;
+      const membershipId = obj.metadata?.membershipId;
+      if (membershipId) {
+        await db.doc(`tenants/${tid}/memberships/${membershipId}`).set({
+          status:      'cancelled',
+          cancelledAt: new Date().toISOString(),
+          updatedAt:   new Date().toISOString(),
+        }, { merge: true });
+      } else {
+        // SaaS: fall back to existing tenant search
+        const snap = await db.collection('tenants')
+          .where('stripeSubscriptionId', '==', obj.id).limit(1).get();
+        if (!snap.empty) {
+          const t = snap.docs[0].id;
+          await db.doc(`tenants/${t}/data/settings`).set({ plan: 'starter' }, { merge: true });
+          await db.doc(`tenants/${t}`).set({ plan: 'starter' }, { merge: true });
+        }
+      }
+    }
+
+    if (event.type === 'invoice.payment_failed') {
+      const tid = obj.metadata?.tenantId || obj.subscription_details?.metadata?.tenantId;
+      const subId = obj.subscription;
+      if (subId && tid) {
+        const memSnap = await db.collection(`tenants/${tid}/memberships`)
+          .where('stripeSubscriptionId', '==', subId).limit(1).get();
+        if (!memSnap.empty) {
+          await memSnap.docs[0].ref.set({
+            status:    'past_due',
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+        }
       }
     }
 
     res.json({ received: true });
   }
 );
+
+// Create a Stripe Checkout Session for a salon-client membership subscription.
+// Auto-creates the Stripe Product + Price for the plan if one doesn't exist
+// yet, and reuses the client's Stripe Customer if we have one.
+exports.createMembershipCheckout = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { membershipId, successUrl, cancelUrl, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!membershipId) throw new HttpsError('invalid-argument', 'membershipId required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+  const db     = getFirestore();
+
+  const memRef = db.doc(`tenants/${tenantId}/memberships/${membershipId}`);
+  const memSnap = await memRef.get();
+  if (!memSnap.exists) throw new HttpsError('not-found', 'Membership not found');
+  const mem = { id: memSnap.id, ...memSnap.data() };
+
+  const planSnap = await db.doc(`tenants/${tenantId}/membershipPlans/${mem.planId}`).get();
+  if (!planSnap.exists) throw new HttpsError('not-found', 'Plan not found');
+  const plan = { id: planSnap.id, ...planSnap.data() };
+
+  const clientSnap = await db.doc(`tenants/${tenantId}/clients/${mem.clientId}`).get();
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const client = { id: clientSnap.id, ...clientSnap.data() };
+
+  // Ensure Stripe Product + Price exist for this plan
+  let stripePriceId = plan.stripePriceId;
+  if (!stripePriceId) {
+    const product = plan.stripeProductId
+      ? await stripe.products.retrieve(plan.stripeProductId).catch(() => null)
+      : await stripe.products.create({ name: plan.name, metadata: { tenantId, planId: plan.id } });
+    const price = await stripe.prices.create({
+      product:  product.id,
+      unit_amount: Math.round((Number(plan.price) || 0) * 100),
+      currency: 'usd',
+      recurring: { interval: plan.billingPeriod === 'yearly' ? 'year' : 'month' },
+      metadata: { tenantId, planId: plan.id },
+    });
+    stripePriceId = price.id;
+    await db.doc(`tenants/${tenantId}/membershipPlans/${plan.id}`).set({
+      stripeProductId: product.id,
+      stripePriceId:   price.id,
+    }, { merge: true });
+  }
+
+  // Ensure Stripe Customer for this client
+  let stripeCustomerId = client.stripeCustomerId;
+  if (!stripeCustomerId) {
+    const customer = await stripe.customers.create({
+      email: client.email || undefined,
+      name:  client.name || undefined,
+      phone: client.phone || undefined,
+      metadata: { tenantId, clientId: client.id },
+    });
+    stripeCustomerId = customer.id;
+    await db.doc(`tenants/${tenantId}/clients/${client.id}`).set({ stripeCustomerId }, { merge: true });
+  }
+
+  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const session = await stripe.checkout.sessions.create({
+    customer:   stripeCustomerId,
+    mode:       'subscription',
+    line_items: [{ price: stripePriceId, quantity: 1 }],
+    success_url: successUrl || `${baseUrl}/?membership=success`,
+    cancel_url:  cancelUrl  || `${baseUrl}/?membership=cancel`,
+    metadata: {
+      type:         'membership',
+      tenantId,
+      membershipId: mem.id,
+      clientId:     client.id,
+      planId:       plan.id,
+    },
+    // Forward the same metadata to the underlying Subscription so webhook
+    // events for status updates can route back to the right membership doc.
+    subscription_data: {
+      metadata: { type: 'membership', tenantId, membershipId: mem.id, clientId: client.id, planId: plan.id },
+    },
+  });
+
+  // Stamp the membership doc so the admin UI shows that a payment link was generated
+  await memRef.set({
+    paymentLinkUrl:       session.url,
+    paymentLinkCreatedAt: new Date().toISOString(),
+    updatedAt:            new Date().toISOString(),
+  }, { merge: true });
+
+  return { url: session.url };
+});
+
+// Generate a Stripe Customer Portal session for a member to manage billing
+// (cancel, update card, view invoices).
+exports.createMembershipPortal = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { membershipId, returnUrl, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+  const db     = getFirestore();
+
+  const memSnap = await db.doc(`tenants/${tenantId}/memberships/${membershipId}`).get();
+  if (!memSnap.exists) throw new HttpsError('not-found', 'Membership not found');
+  const mem = memSnap.data();
+  if (!mem.stripeCustomerId) throw new HttpsError('failed-precondition', 'No Stripe customer for this member yet');
+
+  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const session = await stripe.billingPortal.sessions.create({
+    customer:   mem.stripeCustomerId,
+    return_url: returnUrl || baseUrl,
+  });
+
+  return { url: session.url };
+});
+
+// Email the Stripe Checkout payment link to a member's client. Frontend
+// passes the URL it got from createMembershipCheckout, plus the plan name.
+// Sends the branded transactional email and stamps the membership doc.
+exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { membershipId, url, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!membershipId || !url) throw new HttpsError('invalid-argument', 'membershipId and url required');
+
+  const apiKey = resendKey.value();
+  if (!apiKey) throw new HttpsError('unavailable', 'Resend not configured');
+  const db = getFirestore();
+
+  const memSnap = await db.doc(`tenants/${tenantId}/memberships/${membershipId}`).get();
+  if (!memSnap.exists) throw new HttpsError('not-found', 'Membership not found');
+  const mem = memSnap.data();
+  const planSnap = await db.doc(`tenants/${tenantId}/membershipPlans/${mem.planId}`).get();
+  const clientSnap = await db.doc(`tenants/${tenantId}/clients/${mem.clientId}`).get();
+  if (!planSnap.exists || !clientSnap.exists) throw new HttpsError('not-found', 'Plan or client missing');
+  const plan = planSnap.data();
+  const client = clientSnap.data();
+  if (!client.email) throw new HttpsError('failed-precondition', 'Client has no email on file');
+
+  const resend  = new Resend(apiKey);
+  const firstName = (client.name || 'there').split(' ')[0];
+  const html = buildAutoEmail(
+    `${plan.name} membership`,
+    firstName,
+    `<p style="font-size:14px;color:#222;margin:0 0 12px;">You're all set to join the <strong>${esc(plan.name)}</strong> membership at $${plan.price}/${plan.billingPeriod === 'yearly' ? 'year' : 'month'}.</p>
+     <p style="font-size:13px;color:#555;margin:0 0 18px;">Click the button below to add your payment method. Your subscription starts immediately and renews automatically. You can cancel anytime through your billing portal — we'll email you the link after sign-up.</p>`,
+    'Complete sign-up',
+    url
+  );
+  await resend.emails.send({
+    from:    resendFrom.value(),
+    to:      client.email.trim(),
+    subject: `Complete your ${plan.name} membership`,
+    html,
+  });
+
+  await db.doc(`tenants/${tenantId}/memberships/${membershipId}`).set({
+    paymentLinkSentAt: new Date().toISOString(),
+    paymentLinkSentTo: client.email.trim(),
+    updatedAt:         new Date().toISOString(),
+  }, { merge: true });
+
+  return { ok: true, sentTo: client.email };
+});
 
 // ── Gusto Integration ─────────────────────────────────────────────────────────
 exports.gustoGetAuthUrl = onCall({ cors: true }, async (request) => {
@@ -2797,3 +4138,221 @@ exports.retryGiftCardEmail = onCall({ cors: true }, async (request) => {
   const after = await ref.get();
   return { ok: true, emailStatus: after.data()?.emailStatus, emailErrorReason: after.data()?.emailErrorReason };
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plume Nexus marketing site — public, unauthenticated callables.
+// Powers the chatbot and contact form on https://plumenexus.com.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Marketing pitch system prompt — long-lived, prompt-cached so the per-call
+// token bill is just the conversation tail.
+const PLUMENEXUS_SYSTEM_PROMPT = `You are Plume — the AI assistant for Plume Nexus, a salon-management SaaS platform sold at https://plumenexus.com.
+
+Your role: answer questions for prospective customers (salon owners, spa managers, studio operators) browsing the marketing site. Be warm, concise, and confident — but never sleazy or hard-selling. If a question needs human follow-up (custom quote, deep technical, complaint), point the user to the contact form below the chat.
+
+Tone: friendly product expert. 1-3 short paragraphs. No emoji unless the user uses one first. Never invent features or pricing not listed below.
+
+━━━ ABOUT PLUME NEXUS ━━━
+- All-in-one operating system for modern personal-services businesses: salons, nail studios, spas, barbershops, brow/lash, wellness studios, tattoo, pet grooming.
+- Built by Jonathan Kim, a software engineer who runs his own 10-tech nail salon (Meraki Nail Studio, Columbus OH). The platform replaced GlossGenius for his own business and is in production today.
+- Sold by JVK Consulting LLC. Domain plumenexus.com. App will be plumenexus.app on iOS/Android.
+- Founder-led, small-team. Founder still answers email personally.
+
+━━━ CORE MODULES ━━━
+- Smart Scheduling: drag-to-reschedule, recurring bookings, walk-in turn rotation, time-off blocks, store-hours guard, birthday banner, VIP highlight, geo check-in.
+- Client CRM: profiles, full visit history, photos, social handles, notes, allergies, marketing preferences, referral tracking, automated lapsed-client alerts.
+- POS & Checkout: Stripe-powered, multi-tech credit splits, tip-per-service, gift cards, promo codes, store credit, refunds with photos. Tap-to-Pay on iOS coming Q3.
+- Communications Hub: two-way SMS + email in one threaded inbox. Per-client commPreferences (SMS/email/voice). Twilio webhook for inbound, Resend for email. CAN-SPAM + Twilio STOP compliant.
+- Marketing Engine: campaigns with audience segmentation (8+ built-in audiences), AI-drafted body copy, personalized promo codes per client, scheduled sends, real-time per-recipient delivery analytics, channel-aware templates.
+- Gift Cards & Loyalty: digital gift cards with auto-emailed delivery, points-per-dollar loyalty, tiers (Silver/Gold/Platinum), birthday bonuses, referral bonuses.
+- AI-Powered Reports: chatbot answers natural-language questions about your data ("top three techs in March?", "lapsed clients who used to come monthly?"). IRS-ready tax export, real-time revenue, leaderboards, retention/rebook rate per tech.
+- Voice Commands: hands-free booking ("Book Sarah with Tess tomorrow at 2 for a gel mani"). None of GlossGenius/Square/Vagaro/Boulevard ship this.
+- Employee & HR: profiles, photos, social links, compensation models, performance reviews, 1099-NEC PDF export, Gusto payroll sync.
+- Online Booking: public page, embeddable widget, magic-link self-service reschedule, post-visit Google review prompts.
+- TipFlow Kiosk: dedicated front-desk iPad mode for tip selection, queue display, walk-in turn rotation. Custom-branded per location.
+- Roles & Permissions: admin/scheduler/tech/read-only, view-as impersonation, PIN-locked HR & Reports, verbose activity logs.
+
+━━━ AI ADVANTAGE (deeper than the modules above) ━━━
+Built on Claude. Every AI call is server-side, never trains on customer data, never shared.
+- Plain-English reporting (read-only by design)
+- Voice command booking (proposes action, waits for confirmation before writing)
+- AI-drafted marketing copy
+- Conflict-resolution drafts when a tech calls in sick
+- Send-time optimization based on opens/clicks
+- Auto-rebook nudges when a client is overdue
+
+━━━ PRICING (USD/mo, no setup fees, no per-tx surcharges) ━━━
+- Solo — $49/mo: 1 staff, full feature set minus advanced extras
+- Studio — $99/mo: up to 8 staff, multi-tech splits, walk-in rotation, voice commands, loyalty, custom booking domain
+- Salon Pro — $199/mo: unlimited staff, multi-location (Q3), Gusto integration, white-label client app, 2FA, founder-direct support
+- Annual billing saves 20%
+- 30-day free trial
+- Month-to-month, cancel anytime, no exit fees, full data export on request
+
+━━━ MIGRATION & SUPPORT ━━━
+- GlossGenius migration: CSV export → import in a single business day. Dedupes on _glossgeniusTransactionId so refunds and split payments don't double up.
+- Stripe payments: each tenant connects their own Stripe account (funds settle directly to your bank).
+- Twilio SMS: dedicated number per tenant, separate marketing vs transactional numbers.
+- Support: founder-direct email at hello@plumenexus.com on every plan.
+
+━━━ WHEN TO ESCALATE TO HUMAN ━━━
+If a user asks for: a custom quote for >25 staff, multi-location pricing, a specific compliance certification (HIPAA, SOC 2), a feature you don't see listed above, or sounds like a complaint — politely point them to the contact form ("I'd loop in the founder for that — drop your details on the contact form below the chat and Jonathan will reply within a business day").
+
+━━━ COMPETITORS (concise honest comparison) ━━━
+- vs GlossGenius: We do everything they do, plus two-way inbox, AI reports, voice commands, walk-in rotation, IRS-ready tax export, founder-direct support. Their main advantage is brand recognition.
+- vs Square Appointments: They have stronger marketing analytics and Tap-to-Pay today. We have AI everywhere, integrated loyalty (vs Square's $45/mo loyalty add-on), and we're not a payment processor first.
+- vs Vagaro: Vagaro leads on MMS attachments and consumer marketplace. We lead on AI, walk-in rotation, voice commands, IRS tax report, and per-tech earnings dashboards.
+- vs Boulevard/Mindbody: They lead on multi-location and enterprise features. We match most of their feature surface at salon-tier pricing instead of $300+/mo.
+
+Be honest about competitor strengths — never trash-talk. Position by what we do uniquely well, not by tearing others down.`;
+
+// Naive in-memory rate limiter — keyed by Function instance. Good enough for
+// the marketing site's traffic shape; not a fortress. Each instance allows
+// up to 30 chat calls per IP per 10-minute window.
+const _chatRateBuckets = new Map();
+function checkRate(ip, now = Date.now(), windowMs = 10 * 60 * 1000, max = 30) {
+  if (!ip) return true;
+  const bucket = _chatRateBuckets.get(ip) || { count: 0, resetAt: now + windowMs };
+  if (now > bucket.resetAt) {
+    bucket.count = 0;
+    bucket.resetAt = now + windowMs;
+  }
+  bucket.count += 1;
+  _chatRateBuckets.set(ip, bucket);
+  return bucket.count <= max;
+}
+
+exports.chatWithMarketing = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+
+    const ip = request.rawRequest?.ip || '';
+    if (!checkRate(ip)) {
+      throw new HttpsError('resource-exhausted', 'Too many requests. Try again in a few minutes or use the contact form.');
+    }
+
+    const { messages = [] } = request.data || {};
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new HttpsError('invalid-argument', 'messages required');
+    }
+    if (messages.length > 24) {
+      throw new HttpsError('invalid-argument', 'Conversation too long — please refresh and start a new chat.');
+    }
+
+    // Sanitize: clip each message body, drop anything non-string
+    const wireMessages = messages
+      .filter(m => m && typeof m.content === 'string' && (m.role === 'user' || m.role === 'assistant'))
+      .map(m => ({
+        role: m.role,
+        content: String(m.content).slice(0, 2000),
+      }));
+    if (wireMessages.length === 0) {
+      throw new HttpsError('invalid-argument', 'No valid messages');
+    }
+    if (wireMessages[wireMessages.length - 1].role !== 'user') {
+      // Defensive — assistant should never be the trailing message
+      throw new HttpsError('invalid-argument', 'Last message must be from user');
+    }
+
+    const client = new Anthropic({ apiKey });
+    const response = await client.messages.create({
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 500,
+      system: [
+        {
+          type: 'text',
+          text: PLUMENEXUS_SYSTEM_PROMPT,
+          cache_control: { type: 'ephemeral' },
+        },
+      ],
+      messages: wireMessages,
+    });
+
+    const reply = response.content?.[0]?.text || '';
+    return { reply };
+  }
+);
+
+// Contact-form inquiry from the marketing site. Validates input, sends Resend
+// email to the founder, persists a record in Firestore for the audit trail.
+exports.submitContactInquiry = onCall(
+  { cors: true, timeoutSeconds: 20 },
+  async (request) => {
+    const ip = request.rawRequest?.ip || '';
+    if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 5)) {
+      // Tighter window for contact: 5/hr per IP
+      throw new HttpsError('resource-exhausted', 'Too many submissions. Try again later.');
+    }
+
+    const { name = '', email = '', salon = '', staff = '', message = '' } = request.data || {};
+    const cleanName    = String(name).trim().slice(0, 120);
+    const cleanEmail   = String(email).trim().slice(0, 200);
+    const cleanSalon   = String(salon).trim().slice(0, 200);
+    const cleanStaff   = String(staff).trim().slice(0, 50);
+    const cleanMessage = String(message).trim().slice(0, 4000);
+
+    if (!cleanName || !cleanEmail || !cleanMessage) {
+      throw new HttpsError('invalid-argument', 'Name, email, and message are required.');
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(cleanEmail)) {
+      throw new HttpsError('invalid-argument', 'Email is invalid.');
+    }
+
+    const db = getFirestore();
+    const inquiry = {
+      name:      cleanName,
+      email:     cleanEmail,
+      salon:     cleanSalon,
+      staff:     cleanStaff,
+      message:   cleanMessage,
+      ip:        ip || null,
+      userAgent: request.rawRequest?.headers?.['user-agent']?.slice(0, 300) || null,
+      source:    'plumenexus.com',
+      createdAt: new Date().toISOString(),
+      status:    'new',
+    };
+    const ref = await db.collection('plumenexus_inquiries').add(inquiry);
+
+    // Email founder via Resend if configured
+    const apiKey = resendKey.value();
+    if (apiKey) {
+      try {
+        const resend = new Resend(apiKey);
+        const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const html = `
+<div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a1f2e;">
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#5b3b8c;text-transform:uppercase;margin-bottom:6px;">PLUME NEXUS · NEW INQUIRY</div>
+  <h2 style="margin:0 0 18px;font-size:20px;color:#0f1923;">${esc(cleanName)} · ${esc(cleanSalon || 'No salon name given')}</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">
+    <tr><td style="padding:6px 0;color:#888;width:90px;">Email</td><td style="padding:6px 0;font-weight:600;"><a href="mailto:${esc(cleanEmail)}">${esc(cleanEmail)}</a></td></tr>
+    <tr><td style="padding:6px 0;color:#888;">Salon</td><td style="padding:6px 0;">${esc(cleanSalon) || '—'}</td></tr>
+    <tr><td style="padding:6px 0;color:#888;">Staff</td><td style="padding:6px 0;">${esc(cleanStaff) || '—'}</td></tr>
+  </table>
+  <div style="padding:16px;background:#fbfaff;border:1px solid #e7e3ee;border-radius:10px;font-size:14px;line-height:1.6;white-space:pre-wrap;">${esc(cleanMessage)}</div>
+  <div style="margin-top:18px;font-size:11px;color:#999;">
+    Source: plumenexus.com · IP: ${esc(ip || 'unknown')} · Inquiry ID: ${ref.id}
+  </div>
+</div>
+        `.trim();
+
+        await resend.emails.send({
+          from:     resendFrom.value(),
+          to:       'jvankim@gmail.com',
+          replyTo:  cleanEmail,
+          subject:  `[Plume Nexus] ${cleanName} — ${cleanSalon || 'inquiry'}`,
+          html,
+        });
+        await ref.update({ emailedFounderAt: new Date().toISOString() });
+      } catch (e) {
+        console.error('[plumenexus.contact] Resend email failed', e);
+        await ref.update({ emailError: e?.message || String(e) });
+      }
+    } else {
+      console.warn('[plumenexus.contact] RESEND_API_KEY missing — inquiry recorded but no email sent');
+    }
+
+    return { ok: true, id: ref.id };
+  }
+);

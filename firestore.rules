@@ -137,6 +137,27 @@ service cloud.firestore {
                                  request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checkedInAt']);
       }
 
+      // Time off (vacation/sick/personal): staff read so the day grid can
+      // render block-out overlays; staff write so techs can self-manage and
+      // admins/schedulers can manage anyone.
+      match /timeOff/{timeOffId} {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if isTenantStaff(tenantId);
+      }
+
+      // Membership plans (templates): public read so client-portal can browse
+      // available plans; admin write only.
+      match /membershipPlans/{planId} {
+        allow read:  if true;
+        allow write: if isTenantAdmin(tenantId);
+      }
+      // Memberships (per-client subscriptions): staff read for checkout +
+      // admin write to assign/cancel.
+      match /memberships/{membershipId} {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if isTenantAdmin(tenantId);
+      }
+
       // Logs: any authenticated user can create, only admin can read
       match /logs/{logId} {
         allow create: if isAuthenticated();
@@ -294,6 +315,13 @@ service cloud.firestore {
                                        request.auth.token.email == resource.data.techEmail);
         allow create, update, delete: if isTenantAdmin(tenantId);
       }
+    }
+
+    // Plume Nexus marketing-site inquiries. Only the cloud function (admin
+    // SDK, bypasses rules) writes; only the bootstrap admin reads.
+    match /plumenexus_inquiries/{inquiryId} {
+      allow read:  if isBootstrapAdmin();
+      allow write: if false;
     }
   }
 }

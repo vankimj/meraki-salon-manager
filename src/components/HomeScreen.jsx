@@ -20,6 +20,9 @@ const MODULES = [
   { id: 'products',  label: 'Products',  desc: 'Retail inventory & stock', adminOnly: true  },
   { id: 'marketing', label: 'Marketing', desc: 'Email campaigns & outreach', adminOnly: true, proOnly: true },
   { id: 'chat',      label: 'Communications', desc: 'SMS, email & in-app messages', adminOnly: false },
+  { id: 'earnings',  label: 'Earnings',  desc: 'Tips, services & take-home',  adminOnly: false },
+  { id: 'walkin',    label: 'Walk-in Kiosk', desc: 'Live turn rotation + waitlist', adminOnly: false },
+  { id: 'memberships', label: 'Memberships', desc: 'Recurring plans & members',     adminOnly: true },
 ];
 
 function greeting() {
@@ -158,6 +161,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             <SectionLabel>My Tools</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
               <ModuleTile id="schedule"  label="My Schedule" desc="Your appointments & checkout"  onClick={() => navigate('schedule')}  />
+              <ModuleTile id="earnings"  label="My Earnings" desc="Tips, services & take-home"   onClick={() => navigate('earnings')}  />
               <ModuleTile id="clients"   label="Clients"     desc="Profiles & visit history"      onClick={() => navigate('clients')}   />
               <ModuleTile id="services"  label="Services"    desc="Menu & pricing"                onClick={() => navigate('services')}  />
               <ModuleTile id="employees" label="Team"        desc="Staff profiles"                onClick={() => navigate('employees')} />
@@ -169,6 +173,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             <SectionLabel>Scheduling</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
               <ModuleTile id="schedule" label="Schedule"  desc="Appointments & calendar"   onClick={() => navigate('schedule')}  />
+              <ModuleTile id="walkin"   label="Walk-in Kiosk" desc="Live turn rotation + waitlist" onClick={() => navigate('walkin')} />
               <ModuleTile id="clients"  label="Clients"   desc="Profiles & visit history"  onClick={() => navigate('clients')}   />
               <ModuleTile id="services" label="Services"  desc="Menu & pricing"             onClick={() => navigate('services')}  />
               <ModuleTile id="chat"     label="Communications" desc="SMS, email & in-app messages" onClick={() => navigate('chat')}      badge={totalChatUnread} />

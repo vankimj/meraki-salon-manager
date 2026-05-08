@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { saveAppointment, fetchClient, saveClient,
          fetchGiftCardByCode, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
-         fetchProducts, saveProduct, createReviewRequest } from '../../lib/firestore';
+         fetchProducts, saveProduct, createReviewRequest,
+         fetchClientMembership } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit } from '../../lib/turnCredit';
 import { useApp } from '../../context/AppContext';
@@ -25,6 +26,7 @@ const PAYMENT_METHODS = [
 
 const DISCOUNT_TYPES = [
   { id: null,      label: 'None'  },
+  { id: 'member',  label: 'Member',isPercent: true,  hint: '%', default: 10 },
   { id: 'ff',      label: 'F&F',   isPercent: true,  hint: '%', default: 20 },
   { id: 'percent', label: '% Off', isPercent: true,  hint: '%', default: 10 },
   { id: 'fixed',   label: '$ Off', isPercent: false, hint: '$', default: 5  },
@@ -41,7 +43,7 @@ export default function CheckoutModal(props) {
 }
 
 function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
-  const { settings } = useApp();
+  const { settings, isOnline } = useApp();
   const taxRate    = Number(settings.taxRate ?? 0);
   const ccFeePct   = Number(settings.ccFeePct ?? 0);
   const ccFeeFlat  = Number(settings.ccFeeFlat ?? 0);
@@ -94,12 +96,14 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [gcLoading,    setGcLoading]    = useState(false);
   const [applyGC,      setApplyGC]      = useState(true);
   const [clientCredit, setClientCredit] = useState(0);
+  const [membership,   setMembership]   = useState(null);   // active membership for primaryClient (or null)
+  const [memberDiscountApplied, setMemberDiscountApplied] = useState(false);
   const [applyCredit,  setApplyCredit]  = useState(false);
   const [issueCredit,  setIssueCredit]  = useState('');
   const [tip,          setTip]          = useState('');     // dollar amount when customTip is on
   const [tipPct,       setTipPct]       = useState(null);    // selected percentage (null = none)
   const [customTip,    setCustomTip]    = useState(false);
-  const [method,       setMethod]       = useState('card');
+  const [method,       setMethod]       = useState(() => (typeof navigator !== 'undefined' && !navigator.onLine) ? 'cash' : 'card');
   const [cartItems,    setCartItems]    = useState(() => Array.isArray(initialProducts) ? initialProducts : []);
   const [allProducts,  setAllProducts]  = useState(null);
   const [showPicker,   setShowPicker]   = useState(false);
@@ -116,8 +120,17 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         setClientCredit(cr);
         if (cr > 0) setApplyCredit(true);
       }).catch(() => {});
+      fetchClientMembership(primaryClient.id).then(m => {
+        setMembership(m);
+        // Auto-apply the member discount once when the modal opens.
+        if (m && m.status === 'active' && Number(m.discountPct) > 0 && !memberDiscountApplied) {
+          setDiscountType('member');
+          setDiscountValue(String(m.discountPct));
+          setMemberDiscountApplied(true);
+        }
+      }).catch(() => {});
     }
-  }, [primaryClient?.id]);
+  }, [primaryClient?.id]); // eslint-disable-line
 
   // ── Math ───────────────────────────────────────────────
   const productsTotal = cartItems.reduce((s, item) => s + (item.product.price || 0) * item.qty, 0);
@@ -499,6 +512,12 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 : appts.length > 1
                   ? `${primaryAppt?.clientName || 'Walk-in'} + ${appts.length - 1} more`
                   : (primaryAppt?.clientName || 'Walk-in')}
+              {membership?.status === 'active' && (
+                <span title={`${membership.planName} — ${membership.discountPct}% off`}
+                  style={{ marginLeft: 6, fontSize: 9, padding: '2px 6px', borderRadius: 4, background: 'rgba(255,255,255,.22)', color: '#fff', fontWeight: 700, letterSpacing: '.05em', verticalAlign: 'middle' }}>
+                  ★ MEMBER
+                </span>
+              )}
             </div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,.75)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {isWalkInRetail
@@ -798,14 +817,24 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 
           {/* Payment method */}
           <Section title="Payment Method">
+            {!isOnline && (
+              <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#92400e', marginBottom: 10, lineHeight: 1.4 }}>
+                <strong>Offline mode.</strong> Card payments need a live connection. Take cash or store credit now — receipt will sync when you're back online.
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8, marginBottom: method === 'card' && stripePromise ? 10 : 0 }}>
-              {PAYMENT_METHODS.map(m => (
-                <button key={m.id} onClick={() => { setMethod(m.id); setCardError(''); }}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : '#e0e0e0'}`, background: method === m.id ? '#EBF4FB' : '#fafafa', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  <span style={{ fontSize: 20 }}>{m.icon}</span>
-                  <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? '#1a5f8a' : '#888' }}>{m.label}</span>
-                </button>
-              ))}
+              {PAYMENT_METHODS.map(m => {
+                const isCardOffline = !isOnline && m.id === 'card';
+                return (
+                  <button key={m.id} onClick={() => { if (!isCardOffline) { setMethod(m.id); setCardError(''); } }}
+                    disabled={isCardOffline}
+                    title={isCardOffline ? 'Card requires a live network — try cash or store credit' : undefined}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : '#e0e0e0'}`, background: isCardOffline ? '#f5f5f5' : (method === m.id ? '#EBF4FB' : '#fafafa'), cursor: isCardOffline ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardOffline ? .5 : 1 }}>
+                    <span style={{ fontSize: 20 }}>{m.icon}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? '#1a5f8a' : '#888' }}>{m.label}</span>
+                  </button>
+                );
+              })}
             </div>
             {method === 'card' && stripePromise && charged > 0 && (
               <div>
@@ -820,7 +849,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {/* Total summary */}
           <div style={{ background: '#f8f9fa', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
             <SummaryRow label="Subtotal" value={`$${subtotal}`} />
-            {discountAmount > 0 && <SummaryRow label={discountType === 'ff' ? 'Friends & Family' : 'Discount'} value={`−$${discountAmount.toFixed(2)}`} valueColor="#22c55e" />}
+            {discountAmount > 0 && <SummaryRow label={discountType === 'member' ? `Member${membership?.planName ? ` (${membership.planName})` : ''}` : discountType === 'ff' ? 'Friends & Family' : 'Discount'} value={`−$${discountAmount.toFixed(2)}`} valueColor="#22c55e" />}
             {promoAmount > 0    && <SummaryRow label={`Promo: ${promo.code}`} value={`−$${promoAmount.toFixed(2)}`} valueColor="#22c55e" />}
             {taxAmt > 0         && <SummaryRow label={`Tax (${taxRate}%)`} value={`+$${taxAmt.toFixed(2)}`} />}
             {gcApply > 0        && <SummaryRow label={`Gift Card: ${giftCard.code}`} value={`−$${gcApply.toFixed(2)}`} valueColor="#22c55e" />}

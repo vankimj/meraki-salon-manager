@@ -16,6 +16,9 @@ import ServicesAdmin from './modules/services/ServicesAdmin';
 import EmployeesAdmin from './modules/employees/EmployeesAdmin';
 import ReportsAdmin from './modules/reports/ReportsAdmin';
 import HRAdmin from './modules/hr/HRAdmin';
+import TechEarnings from './modules/earnings/TechEarnings';
+import WalkinKiosk from './modules/walkin/WalkinKiosk';
+import MembershipsAdmin from './modules/memberships/MembershipsAdmin';
 import AttendanceAdmin from './modules/attendance/AttendanceAdmin';
 import GiftCardsAdmin from './modules/giftcards/GiftCardsAdmin';
 import MeetingsAdmin from './modules/meetings/MeetingsAdmin';
@@ -33,6 +36,7 @@ import TipFlowLanding from './components/TipFlowLanding';
 import TicketCheckoutLauncher from './components/TicketCheckoutLauncher';
 import RsvpScreen from './components/RsvpScreen';
 import UnsubscribeScreen from './components/UnsubscribeScreen';
+import ManageAppointmentScreen from './components/ManageAppointmentScreen';
 import { TermsScreen, PrivacyScreen } from './components/PolicyScreen';
 import PinModal from './components/PinModal';
 
@@ -49,6 +53,9 @@ const MODULE_TITLES = {
   products:   'Products & Inventory',
   marketing:  'Marketing',
   chat:       'Communications',
+  earnings:   'Earnings',
+  walkin:     'Walk-in Kiosk',
+  memberships: 'Memberships',
 };
 
 function MagicLinkPrompt() {
@@ -151,6 +158,9 @@ function AppShell() {
           {id === 'products'   && <ProductsAdmin />}
           {id === 'marketing'  && <MarketingAdmin />}
           {id === 'chat'       && <ChatAdmin />}
+          {id === 'earnings'   && <TechEarnings />}
+          {id === 'walkin'     && <WalkinKiosk />}
+          {id === 'memberships' && <MembershipsAdmin />}
         </ModuleShell>
       ))}
 
@@ -225,9 +235,11 @@ export default function App() {
     const isSignup   = params.has('signup');
     const isRsvp     = params.has('rsvp');
     const isUnsub    = params.has('unsub');
+    const isManage   = params.has('manage');
     const isTerms    = params.has('terms');
     const isPrivacy  = params.has('privacy');
-    if      (isUnsub)   content = <UnsubscribeScreen />;
+    if      (isManage)  content = <ManageAppointmentScreen />;
+    else if (isUnsub)   content = <UnsubscribeScreen />;
     else if (isTerms)   content = <TermsScreen />;
     else if (isPrivacy) content = <PrivacyScreen />;
     else if (isRsvp)    content = <RsvpScreen />;

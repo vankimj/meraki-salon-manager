@@ -24,7 +24,7 @@ const SIDEBAR_MODULES = [
 ];
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
-  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, activeTheme: t, users, requirePin } = useApp();
+  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin } = useApp();
   const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
   const isPro = !settings?.plan || settings.plan === 'pro';
   const canManage = isAdmin || isReadOnly;
@@ -205,6 +205,24 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
       )}
 
       {/* Content — safe-area padding at bottom for iPhone home indicator */}
+      {!isOnline && (
+        <div style={{
+          background: '#fef3c7',
+          borderBottom: '1px solid #fcd34d',
+          color: '#92400e',
+          padding: '8px 16px',
+          fontSize: 13,
+          fontWeight: 600,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          textAlign: 'center',
+          justifyContent: 'center',
+        }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+          Offline — your changes are being saved locally and will sync when you reconnect.
+        </div>
+      )}
       <div style={{
         flex: 1,
         overflowY: view === 'schedule' ? 'hidden' : 'auto',

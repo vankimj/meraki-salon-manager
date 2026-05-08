@@ -138,6 +138,7 @@ const TABS = [
   { id: 'overview',     label: 'Overview' },
   { id: 'transactions', label: 'Transactions' },
   { id: 'tax',          label: 'IRS / Tax Report' },
+  { id: 'ask',          label: 'Ask AI' },
 ];
 
 export default function ReportsAdmin() {
@@ -284,7 +285,9 @@ export default function ReportsAdmin() {
         ))}
       </div>
 
-      {activeTab === 'tax' ? (
+      {activeTab === 'ask' ? (
+        <AskAI />
+      ) : activeTab === 'tax' ? (
         <TaxReport />
       ) : activeTab === 'transactions' ? (
         <TransactionsReport
@@ -2313,6 +2316,281 @@ function ExportMenu({ appts, metrics, startDate, endDate, filtersActive }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── Ask AI ────────────────────────────────────────────
+// Tiny markdown renderer for assistant messages — handles the formats Claude
+// actually emits (tables, bold/italic, bullet/numbered lists, headers, code).
+// Kept inline so we don't pay a ~50KB react-markdown dependency.
+function renderInline(text, keyPrefix = '') {
+  // Process **bold**, *italic*, `code` in left-to-right order using a single
+  // alternation regex so they don't fight each other.
+  const parts = [];
+  const re = /\*\*([^*]+)\*\*|\*([^*]+)\*|`([^`]+)`/g;
+  let last = 0, m, idx = 0;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    if (m[1] !== undefined) parts.push(<strong key={`${keyPrefix}b${idx++}`}>{m[1]}</strong>);
+    else if (m[2] !== undefined) parts.push(<em key={`${keyPrefix}i${idx++}`}>{m[2]}</em>);
+    else parts.push(
+      <code key={`${keyPrefix}c${idx++}`} style={{ background: '#f3f0f8', padding: '1px 5px', borderRadius: 4, fontSize: '.92em', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+        {m[3]}
+      </code>
+    );
+    last = re.lastIndex;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : [text];
+}
+
+function MarkdownLite({ text }) {
+  if (!text) return null;
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const blocks = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Blank line separator
+    if (!trimmed) { i += 1; continue; }
+
+    // Headers
+    const hMatch = /^(#{1,3})\s+(.+)$/.exec(trimmed);
+    if (hMatch) {
+      blocks.push({ type: 'h', level: hMatch[1].length, text: hMatch[2] });
+      i += 1; continue;
+    }
+
+    // Tables: header row + separator row of dashes/pipes
+    if (trimmed.includes('|') && i + 1 < lines.length && /^[\s|:\-]+$/.test(lines[i + 1].trim()) && lines[i + 1].includes('-')) {
+      const splitRow = (s) => s.replace(/^\||\|$/g, '').split('|').map(c => c.trim());
+      const header = splitRow(trimmed);
+      const rows = [];
+      i += 2;
+      while (i < lines.length && lines[i].trim().includes('|')) {
+        rows.push(splitRow(lines[i].trim()));
+        i += 1;
+      }
+      blocks.push({ type: 'table', header, rows });
+      continue;
+    }
+
+    // Bullet list
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^[-*]\s+/, ''));
+        i += 1;
+      }
+      blocks.push({ type: 'ul', items });
+      continue;
+    }
+
+    // Numbered list
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items = [];
+      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
+        items.push(lines[i].trim().replace(/^\d+\.\s+/, ''));
+        i += 1;
+      }
+      blocks.push({ type: 'ol', items });
+      continue;
+    }
+
+    // Paragraph (collect consecutive non-blank, non-special lines)
+    const paragraph = [trimmed];
+    i += 1;
+    while (i < lines.length) {
+      const t = lines[i].trim();
+      if (!t) break;
+      if (/^(#{1,3}\s+|[-*]\s+|\d+\.\s+)/.test(t)) break;
+      if (t.includes('|')) break;
+      paragraph.push(t);
+      i += 1;
+    }
+    blocks.push({ type: 'p', text: paragraph.join(' ') });
+  }
+
+  return (
+    <div>
+      {blocks.map((b, bi) => {
+        const k = `b${bi}`;
+        if (b.type === 'h') {
+          const sz = b.level === 1 ? 17 : b.level === 2 ? 15 : 14;
+          return (
+            <div key={k} style={{ fontSize: sz, fontWeight: 700, color: '#1a1a1a', margin: bi === 0 ? '0 0 6px' : '12px 0 6px' }}>
+              {renderInline(b.text, k)}
+            </div>
+          );
+        }
+        if (b.type === 'p') {
+          return (
+            <p key={k} style={{ margin: bi === 0 ? '0 0 8px' : '8px 0', color: '#222' }}>
+              {renderInline(b.text, k)}
+            </p>
+          );
+        }
+        if (b.type === 'ul') {
+          return (
+            <ul key={k} style={{ margin: '6px 0 8px', paddingLeft: 22, color: '#222' }}>
+              {b.items.map((it, ii) => <li key={ii} style={{ marginBottom: 3 }}>{renderInline(it, `${k}i${ii}`)}</li>)}
+            </ul>
+          );
+        }
+        if (b.type === 'ol') {
+          return (
+            <ol key={k} style={{ margin: '6px 0 8px', paddingLeft: 22, color: '#222' }}>
+              {b.items.map((it, ii) => <li key={ii} style={{ marginBottom: 3 }}>{renderInline(it, `${k}i${ii}`)}</li>)}
+            </ol>
+          );
+        }
+        if (b.type === 'table') {
+          return (
+            <div key={k} style={{ overflowX: 'auto', margin: '10px 0' }}>
+              <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    {b.header.map((h, hi) => (
+                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: '#f3eafc', color: '#5b3b8c', fontWeight: 700, borderBottom: '1px solid #d8d0e8', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+                        {renderInline(h, `${k}h${hi}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {b.rows.map((row, ri) => (
+                    <tr key={ri} style={{ background: ri % 2 === 0 ? '#fff' : '#fafafa' }}>
+                      {row.map((cell, ci) => (
+                        <td key={ci} style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', color: '#222' }}>
+                          {renderInline(cell, `${k}r${ri}c${ci}`)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
+const SUGGESTED = [
+  'How many appointments did Tess D have on Saturdays this past year?',
+  'Top 10 clients by spend in the last 90 days',
+  'Revenue by tech for last month',
+  'Who hasn\'t visited in 60 days?',
+  'How is May vs April this year?',
+];
+
+function AskAI() {
+  const [messages, setMessages] = useState([]); // [{role, content}]
+  const [input,    setInput]    = useState('');
+  const [busy,     setBusy]     = useState(false);
+  const [error,    setError]    = useState('');
+
+  async function send(text) {
+    const q = (text || input).trim();
+    if (!q || busy) return;
+    setError('');
+    setInput('');
+    const next = [...messages, { role: 'user', content: q }];
+    setMessages(next);
+    setBusy(true);
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../../lib/firebase');
+      const fn = httpsCallable(functions, 'chatWithReports');
+      const res = await fn({ messages: next });
+      const reply = res?.data?.reply || '(no answer)';
+      setMessages([...next, { role: 'assistant', content: reply }]);
+    } catch (e) {
+      setError(e?.message || 'Request failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <div style={{ background: 'linear-gradient(135deg, #f3eafc, #eaf3fc)', border: '1px solid #d8d0e8', borderRadius: 12, padding: '14px 18px' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#5b3b8c', marginBottom: 4 }}>🤖 Ask anything about your data</div>
+        <div style={{ fontSize: 12, color: '#7a6a9a' }}>
+          Read-only. I can answer questions about appointments, revenue, clients, and techs — but I can't make changes.
+        </div>
+      </div>
+
+      {messages.length === 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Try asking</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {SUGGESTED.map(s => (
+              <button key={s} onClick={() => send(s)} disabled={busy}
+                style={{ textAlign: 'left', fontFamily: 'inherit', fontSize: 13, color: '#444', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10, padding: '10px 14px', cursor: busy ? 'default' : 'pointer' }}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{
+            alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
+            maxWidth: m.role === 'user' ? '85%' : '95%',
+            background: m.role === 'user' ? '#3D95CE' : '#fff',
+            color: m.role === 'user' ? '#fff' : '#222',
+            padding: m.role === 'user' ? '10px 14px' : '14px 18px',
+            borderRadius: 14,
+            border: m.role === 'user' ? 'none' : '1px solid #e8e4f0',
+            boxShadow: m.role === 'user' ? 'none' : '0 1px 3px rgba(91,59,140,.06)',
+            fontSize: 13.5,
+            lineHeight: 1.55,
+            wordBreak: 'break-word',
+          }}>
+            {m.role === 'user'
+              ? <div style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+              : <MarkdownLite text={m.content} />}
+          </div>
+        ))}
+        {busy && (
+          <div style={{ alignSelf: 'flex-start', fontSize: 12, color: '#888', padding: '6px 10px' }}>
+            Thinking…
+          </div>
+        )}
+        {error && (
+          <div style={{ alignSelf: 'flex-start', fontSize: 12, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '6px 10px' }}>
+            {error}
+          </div>
+        )}
+      </div>
+
+      <form onSubmit={e => { e.preventDefault(); send(); }} style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          placeholder="Ask a question about your data…"
+          disabled={busy}
+          style={{ flex: 1, fontFamily: 'inherit', fontSize: 14, padding: '10px 14px', borderRadius: 10, border: '1px solid #d8d8d8', outline: 'none', background: '#fff', color: '#222' }}
+        />
+        <button type="submit" disabled={busy || !input.trim()}
+          style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, padding: '10px 18px', borderRadius: 10, border: 'none', background: busy || !input.trim() ? '#cbb6e0' : '#5b3b8c', color: '#fff', cursor: busy || !input.trim() ? 'default' : 'pointer' }}>
+          Ask
+        </button>
+        {messages.length > 0 && (
+          <button type="button" onClick={() => { setMessages([]); setError(''); }} disabled={busy}
+            style={{ fontFamily: 'inherit', fontSize: 13, padding: '10px 14px', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer' }}>
+            Reset
+          </button>
+        )}
+      </form>
     </div>
   );
 }
