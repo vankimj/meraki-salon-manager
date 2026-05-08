@@ -259,6 +259,41 @@ export default function ScheduleAdmin() {
   async function handleSave(appt, original) {
     try {
       const dur = appt.services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0) || 60;
+
+      // Out-of-hours guard — prompt before saving when the time falls outside
+      // the day's store hours (or the day is closed). Skipped when editing
+      // and neither date nor start time has changed (so re-saving an old
+      // appointment doesn't keep re-prompting).
+      const timeChanged = !original?.id || appt.date !== original.date || appt.startTime !== original.startTime;
+      if (timeChanged && appt.date && appt.startTime) {
+        const apptDow = dayOfWeek(appt.date);
+        const day = settings.storeHours?.[apptDow] || {};
+        const startMins = strToMins(appt.startTime);
+        const endMins   = startMins + dur;
+        const fmtMins = (m) => {
+          const h = Math.floor(m / 60), mm = m % 60;
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          const hh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+          return `${hh}:${String(mm).padStart(2, '0')} ${ampm}`;
+        };
+        let warning = null;
+        if (day.closed) {
+          warning = `The salon is marked closed on ${apptDow.charAt(0).toUpperCase() + apptDow.slice(1)}.`;
+        } else {
+          const openMins  = strToMins(day.open  || settings.apptHours?.open  || '09:00');
+          const closeMins = strToMins(day.close || settings.apptHours?.close || '20:00');
+          if (startMins < openMins) {
+            warning = `Appointment starts at ${fmtMins(startMins)}, before the salon opens (${fmtMins(openMins)}).`;
+          } else if (endMins > closeMins) {
+            warning = `Appointment ends at ${fmtMins(endMins)} (${dur}-minute duration), after the salon closes (${fmtMins(closeMins)}).`;
+          }
+        }
+        if (warning) {
+          const proceed = window.confirm(`${warning}\n\nBook this appointment anyway?`);
+          if (!proceed) return;
+        }
+      }
+
       const { recurrence, ...apptBase } = appt;
       const full = { ...apptBase, duration: dur };
       const svcSummary = (full.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ') || 'no services';
