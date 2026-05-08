@@ -281,6 +281,7 @@ export default function BookingScreen() {
           duration: resolved.duration || 60,
           optionId: opt?.id || null,
           optionName: opt?.name || null,
+          taxable: svc.taxable !== false,
         });
         if (item.removal && svc.canRequireRemoval && removalPrice > 0) {
           services.push({

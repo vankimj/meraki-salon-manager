@@ -58,7 +58,15 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     const lines = [];
     appts.forEach((a, ai) => {
       (a.services || []).forEach((s, si) => {
-        lines.push({ apptIdx: ai, svcIdx: si, name: s.name, defaultPrice: s.price, defaultTech: s.techName || a.techName || '' });
+        lines.push({
+          apptIdx: ai, svcIdx: si,
+          name: s.name,
+          defaultPrice: s.price,
+          defaultTech: s.techName || a.techName || '',
+          // Default to taxable when the flag isn't on the service entry
+          // (legacy data from before the per-service taxable toggle).
+          taxable: s.taxable !== false,
+        });
       });
     });
     return lines;
@@ -135,8 +143,12 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const afterDiscounts = Math.max(subtotal - discountAmount - promoAmount, 0);
 
   // Tax — computed on the post-discount taxable base.
-  // Services and retail products are taxable; gift card sales are not.
-  const taxableSubtotal  = Math.max(subtotal - gcSalesTotal, 0);
+  // Services and retail products are taxable by default; gift card sales
+  // and any service explicitly flagged taxable:false (e.g. cancellation
+  // fees, no-show fees) are not.
+  const nonTaxableServiceTotal = serviceLines.reduce((s, line, i) =>
+    line.taxable === false ? s + (Number(prices[i]) || 0) : s, 0);
+  const taxableSubtotal  = Math.max(subtotal - gcSalesTotal - nonTaxableServiceTotal, 0);
   const taxableShare     = subtotal > 0 ? taxableSubtotal / subtotal : 0;
   const taxableAfterDisc = Math.max(taxableSubtotal - (discountAmount + promoAmount) * taxableShare, 0);
   const taxAmt           = Math.round(taxableAfterDisc * taxRate) / 100;

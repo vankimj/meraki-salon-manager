@@ -440,6 +440,15 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           <input type="checkbox" checked={svc.active} onChange={e => onChange({ active: e.target.checked })} />
           Active (visible to clients)
         </label>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 10 }}>
+          <input type="checkbox" style={{ marginTop: 3 }} checked={svc.taxable !== false} onChange={e => onChange({ taxable: e.target.checked })} />
+          <span>
+            Subject to sales tax
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+              On for regular services. Turn off for cancellation fees, no-show fees, or any non-service charges where Ohio sales tax doesn't apply.
+            </div>
+          </span>
+        </label>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 14 }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.canRequireRemoval} onChange={e => onChange({ canRequireRemoval: e.target.checked })} />
           <span>
