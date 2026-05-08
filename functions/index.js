@@ -1545,20 +1545,29 @@ exports.sendSMSCampaign = onDocumentCreated(
       attempts: [],
     });
 
-    let sentCount = 0;
-    let failCount = 0;
     const attempts = []; // full chronological log: { name, phone, status, code?, reason?, at }
     let lastFlushAt = Date.now();
     const FLUSH_EVERY_N = 5;
     const FLUSH_EVERY_MS = 1500;
     const ATTEMPTS_CAP = 2000; // doc-size safety cap
 
+    // Derive counters from attempts so the doc can never show e.g.
+    // "0 sent / 1 failed" alongside an attempts entry tagged 'sent'.
+    function counts() {
+      let sent = 0, failed = 0;
+      for (const a of attempts) {
+        if (a.status === 'sent')        sent++;
+        else if (a.status === 'failed') failed++;
+      }
+      return { sent, failed };
+    }
+
     async function flushProgress() {
-      // Cap stored array; counters always reflect the true total.
+      const { sent, failed } = counts();
       const stored = attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts;
       await event.data.ref.update({
-        sentCount,
-        failCount,
+        sentCount: sent,
+        failCount: failed,
         attemptedCount: attempts.length,
         attempts: stored,
         attemptsTruncated: attempts.length > ATTEMPTS_CAP,
@@ -1571,21 +1580,29 @@ exports.sendSMSCampaign = onDocumentCreated(
       const at = new Date().toISOString();
       const phone = normalizePhone(r.phone);
       if (!phone) {
-        failCount++;
         attempts.push({ name: r.name || '(unknown)', phone: r.phone || '', status: 'failed', code: 'INVALID_PHONE_FORMAT', reason: `Could not normalize phone "${r.phone || ''}" to E.164`, at });
       } else {
         const body = (data.smsBody || '')
           .replace(/\{firstName\}/g, r.name?.split(' ')[0] || 'there')
           .replace(/\{lastName\}/g,  r.name?.split(' ').slice(1).join(' ') || '');
         try {
-          await client.messages.create({ body, from, to: phone });
-          sentCount++;
-          attempts.push({ name: r.name || '(unknown)', phone, status: 'sent', at });
+          const msg = await client.messages.create({ body, from, to: phone });
+          // Twilio can resolve with a Message resource that's already in a
+          // failed/undelivered state (e.g. A2P 10DLC pre-block). That's not
+          // an exception path but it IS a delivery failure — record it as one.
+          const tStatus = msg?.status || '';
+          if (tStatus === 'failed' || tStatus === 'undelivered') {
+            const code   = msg?.errorCode != null ? String(msg.errorCode) : `TWILIO_${tStatus.toUpperCase()}`;
+            const reason = msg?.errorMessage || `Twilio reported status: ${tStatus}`;
+            console.error(`[sendSMSCampaign] ${r.name} ${phone} delivery-failed (no throw) status=${tStatus} code=${code} reason=${reason}`);
+            attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, twilioStatus: tStatus, twilioSid: msg?.sid || null, at });
+          } else {
+            attempts.push({ name: r.name || '(unknown)', phone, status: 'sent', twilioStatus: tStatus || null, twilioSid: msg?.sid || null, at });
+          }
         } catch (err) {
-          failCount++;
           const code = err?.code != null ? String(err.code) : 'UNKNOWN';
           const reason = err?.message || 'Unknown Twilio error';
-          console.error(`[sendSMSCampaign] ${r.name} ${phone} failed code=${code} reason=${reason}`);
+          console.error(`[sendSMSCampaign] ${r.name} ${phone} threw code=${code} reason=${reason}`);
           attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, at });
         }
       }
@@ -1597,13 +1614,14 @@ exports.sendSMSCampaign = onDocumentCreated(
       }
     }
 
-    // Final write — failures kept for backward compat with anything reading
-    // the old field; new UI consumes attempts directly.
+    // Final write — counters always derived from attempts; failures[] kept
+    // populated for backward compat with old consumers.
+    const { sent, failed } = counts();
     const failures = attempts.filter(a => a.status === 'failed').slice(0, 200);
     await event.data.ref.update({
       status: 'done',
-      sentCount,
-      failCount,
+      sentCount: sent,
+      failCount: failed,
       attemptedCount: attempts.length,
       attempts: attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts,
       attemptsTruncated: attempts.length > ATTEMPTS_CAP,
