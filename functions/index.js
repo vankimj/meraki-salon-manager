@@ -1535,6 +1535,17 @@ exports.sendSMSCampaign = onDocumentCreated(
       ? twilioSDK(apiKeySid, token, { accountSid: sid })
       : twilioSDK(sid, token);
 
+    // Honor a cancel request that landed before the function picked up the
+    // doc (between create and trigger fire).
+    if (data.cancelRequested) {
+      await event.data.ref.update({
+        status: 'cancelled',
+        cancelledAt: new Date().toISOString(),
+        sentCount: 0, failCount: 0, attemptedCount: 0, attempts: [],
+      });
+      return;
+    }
+
     // Flip to 'sending' immediately so the UI knows the function picked it up.
     await event.data.ref.update({
       status: 'sending',
@@ -1607,26 +1618,42 @@ exports.sendSMSCampaign = onDocumentCreated(
         }
       }
 
-      // Periodic flush so the UI subscription sees progress live.
+      // Periodic flush so the UI subscription sees progress live. After
+      // flushing, re-read the doc to honor user-requested cancellation.
       const now = Date.now();
+      let cancelled = false;
       if (attempts.length % FLUSH_EVERY_N === 0 || now - lastFlushAt >= FLUSH_EVERY_MS) {
         try { await flushProgress(); } catch (e) { console.error('[sendSMSCampaign] progress flush failed:', e); }
+        try {
+          const cur = await event.data.ref.get();
+          if (cur.data()?.cancelRequested) cancelled = true;
+        } catch (e) { console.error('[sendSMSCampaign] cancel-check read failed:', e); }
       }
+      if (cancelled) break;
     }
 
     // Final write — counters always derived from attempts; failures[] kept
     // populated for backward compat with old consumers.
     const { sent, failed } = counts();
     const failures = attempts.filter(a => a.status === 'failed').slice(0, 200);
+    // Re-check one last time so a cancel that landed between the last flush
+    // and the loop exit still flips the status.
+    let finalStatus = 'done';
+    try {
+      const cur = await event.data.ref.get();
+      if (cur.data()?.cancelRequested) finalStatus = 'cancelled';
+    } catch { /* fall through */ }
     await event.data.ref.update({
-      status: 'done',
+      status: finalStatus,
       sentCount: sent,
       failCount: failed,
       attemptedCount: attempts.length,
       attempts: attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts,
       attemptsTruncated: attempts.length > ATTEMPTS_CAP,
       failures,
-      sentAt: new Date().toISOString(),
+      ...(finalStatus === 'cancelled'
+          ? { cancelledAt: new Date().toISOString() }
+          : { sentAt:      new Date().toISOString() }),
     });
   }
 );

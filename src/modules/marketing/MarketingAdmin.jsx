@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { fetchClients, fetchAppointmentsByRange, subscribeToCampaigns, createCampaign, deleteCampaign,
+import { fetchClients, fetchAppointmentsByRange, subscribeToCampaigns, createCampaign, deleteCampaign, cancelCampaign,
          fetchEmployees, fetchServices, fetchPromoCodes,
          fetchCampaignTemplates, saveCampaignTemplate, deleteCampaignTemplate,
          fetchReviewReceived } from '../../lib/firestore';
@@ -140,6 +140,15 @@ export default function MarketingAdmin() {
     } catch (e) { showToast('Delete failed: ' + e.message, 3000); }
   }
 
+  async function handleCancel(id) {
+    if (!confirm('Cancel this campaign? Sending will stop at the next checkpoint (~1–2s).')) return;
+    try {
+      await cancelCampaign(id);
+      logActivity('marketing_campaign_cancelled', id);
+      showToast('Cancellation requested — sending will stop shortly');
+    } catch (e) { showToast('Cancel failed: ' + e.message, 3000); }
+  }
+
   const totalSent    = (campaigns || []).reduce((s, c) => s + (c.sentCount || 0), 0);
   const thisMonth    = (campaigns || []).filter(c => c.createdAt?.slice(0, 7) === new Date().toISOString().slice(0, 7)).length;
   const autoActive   = [settings?.autoBirthday, settings?.autoLapsed].filter(Boolean).length;
@@ -199,6 +208,7 @@ export default function MarketingAdmin() {
                 {campaigns.map((c, i) => (
                   <CampaignRow key={c.id} campaign={c} last={i === campaigns.length - 1}
                     onDelete={() => handleDelete(c.id)}
+                    onCancel={() => handleCancel(c.id)}
                     onClone={() => setModal(c)} />
                 ))}
               </div>
@@ -289,14 +299,17 @@ function AutomationsPanel({ settings, updateSettings, isAdmin, showToast }) {
 }
 
 // ── Campaign row ───────────────────────────────────────
-function CampaignRow({ campaign: c, last, onDelete, onClone }) {
+function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone }) {
   const [expanded, setExpanded] = useState(false);
   const STATUS = {
-    pending: { bg: '#fffbeb', fg: '#92400e', label: 'Queued'  },
-    sending: { bg: '#eff6ff', fg: '#1d4ed8', label: 'Sending' },
-    done:    { bg: '#f0fdf4', fg: '#16a34a', label: 'Sent'    },
-    failed:  { bg: '#fef2f2', fg: '#ef4444', label: 'Failed'  },
+    pending:   { bg: '#fffbeb', fg: '#92400e', label: 'Queued'    },
+    sending:   { bg: '#eff6ff', fg: '#1d4ed8', label: 'Sending'   },
+    done:      { bg: '#f0fdf4', fg: '#16a34a', label: 'Sent'      },
+    failed:    { bg: '#fef2f2', fg: '#ef4444', label: 'Failed'    },
+    cancelled: { bg: '#f5f5f5', fg: '#6b7280', label: 'Cancelled' },
   };
+  const isActive = c.status === 'pending' || c.status === 'sending';
+  const cancelInFlight = isActive && c.cancelRequested;
   const s        = STATUS[c.status] || STATUS.pending;
   const segLabel = SEGMENTS.find(x => x.id === c.segmentType)?.label || c.segmentType || '—';
   const date     = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -374,6 +387,12 @@ function CampaignRow({ campaign: c, last, onDelete, onClone }) {
             </div>
           )}
           <div style={{ display: 'flex', gap: 8 }}>
+            {isActive && (
+              <button onClick={e => { e.stopPropagation(); onCancel(); }} disabled={cancelInFlight}
+                style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #f59e0b', background: cancelInFlight ? '#fef3c7' : '#fffbeb', color: '#92400e', cursor: cancelInFlight ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                {cancelInFlight ? '⏳ Cancelling…' : '⏹ Cancel send'}
+              </button>
+            )}
             <button onClick={e => { e.stopPropagation(); onClone(); }}
               style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
               ⧉ Duplicate
@@ -522,7 +541,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   const { showToast, settings } = useApp();
   const [channel,     setChannel]     = useState(prefill?.channel || 'email');
   const [name,        setName]        = useState(prefill ? `${prefill.name} (copy)` : '');
-  const [segType,     setSegType]     = useState(prefill?.segmentType || 'all');
+  const [segType,     setSegType]     = useState(prefill?.segmentType || 'test_subjects');
   const [lapDays,     setLapDays]     = useState(prefill?.segmentParams?.days || 60);
   const [techSel,     setTechSel]     = useState(prefill?.segmentParams?.techName || '');
   const [serviceSel,  setServiceSel]  = useState(prefill?.segmentParams?.serviceName || '');

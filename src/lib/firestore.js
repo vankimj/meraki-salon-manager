@@ -1357,6 +1357,15 @@ export async function deleteCampaign(id) {
   return deleteDoc(doc(CAMPAIGNS_COL, id));
 }
 
+// Soft-cancel a campaign mid-flight. The Cloud Function checks the
+// cancelRequested flag at every flush boundary and aborts cleanly.
+export async function cancelCampaign(id) {
+  await setDoc(doc(CAMPAIGNS_COL, id), {
+    cancelRequested: true,
+    cancelRequestedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
 const CAMPAIGN_TEMPLATES_COL = tenantCol('campaignTemplates');
 
 export async function fetchCampaignTemplates() {
