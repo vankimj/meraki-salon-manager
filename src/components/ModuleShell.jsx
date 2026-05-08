@@ -128,7 +128,9 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
       <style>{`@media (max-width: 899px) { .ms-sidebar { display: none !important; } }`}</style>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100dvh', minWidth: 0 }}>
-      {/* Top nav — taller on mobile for easier tapping */}
+      {/* Top nav — taller on mobile for easier tapping. position:relative
+          activates the zIndex so this stacking context lifts above the
+          schedule's sticky tech-header row (z-index 10 there). */}
       <div style={{
         background: '#fff',
         borderBottom: `1px solid var(--tm-border, #ebebeb)`,
@@ -138,7 +140,8 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         alignItems: 'center',
         gap: 8,
         flexShrink: 0,
-        zIndex: 10,
+        position: 'relative',
+        zIndex: 100,
         paddingTop: 'env(safe-area-inset-top, 0px)',
       }}>
         {/* Home button */}
