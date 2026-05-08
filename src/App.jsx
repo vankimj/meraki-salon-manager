@@ -32,6 +32,7 @@ import OnboardingScreen from './components/OnboardingScreen';
 import TipFlowLanding from './components/TipFlowLanding';
 import TicketCheckoutLauncher from './components/TicketCheckoutLauncher';
 import RsvpScreen from './components/RsvpScreen';
+import UnsubscribeScreen from './components/UnsubscribeScreen';
 import PinModal from './components/PinModal';
 
 const MODULE_TITLES = {
@@ -222,7 +223,9 @@ export default function App() {
     const isWeb      = params.has('web') || window.location.search === '?web';
     const isSignup   = params.has('signup');
     const isRsvp     = params.has('rsvp');
-    if      (isRsvp)    content = <RsvpScreen />;
+    const isUnsub    = params.has('unsub');
+    if      (isUnsub)   content = <UnsubscribeScreen />;
+    else if (isRsvp)    content = <RsvpScreen />;
     else if (checkinId) content = <CheckInScreen apptId={checkinId} />;
     else if (isBooking) content = <BookingScreen />;
     else if (isQueue)   content = <QueueKiosk />;

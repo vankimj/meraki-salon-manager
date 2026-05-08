@@ -10,11 +10,32 @@ const Anthropic            = require('@anthropic-ai/sdk');
 initializeApp();
 
 const TENANT_ID   = 'meraki';
-const resendKey     = defineString('RESEND_API_KEY',      { default: '' });
-const resendFrom    = defineString('RESEND_FROM',         { default: 'Meraki Nail Studio <noreply@merakinailstudio.com>' });
-const mapsApiKey    = defineString('GOOGLE_MAPS_API_KEY', { default: '' });
-const stripeKey     = defineSecret('STRIPE_SECRET_KEY');
-const anthropicKey  = defineSecret('ANTHROPIC_API_KEY');
+const resendKey       = defineString('RESEND_API_KEY',      { default: '' });
+const resendFrom      = defineString('RESEND_FROM',         { default: 'Meraki Nail Studio <noreply@merakinailstudio.com>' });
+const mapsApiKey      = defineString('GOOGLE_MAPS_API_KEY', { default: '' });
+const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://meraki-salon-manager.web.app' });
+const unsubscribeSecret = defineString('UNSUBSCRIBE_SECRET', { default: 'change-me-in-prod-env' });
+const stripeKey       = defineSecret('STRIPE_SECRET_KEY');
+const anthropicKey    = defineSecret('ANTHROPIC_API_KEY');
+
+// CAN-SPAM unsubscribe link helpers. Token is an HMAC-truncated-to-16-hex of
+// the tenantId:clientId pair, signed with the UNSUBSCRIBE_SECRET. Not
+// security-critical (worst case: a determined attacker can mark a client
+// unsubscribed) — we just need to make scraping infeasible. The link works
+// permanently as required by CAN-SPAM (>= 30 days, indefinite is fine).
+function unsubToken(tenantId, clientId) {
+  const crypto = require('crypto');
+  return crypto.createHmac('sha256', unsubscribeSecret.value())
+    .update(`${tenantId}:${clientId}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+function unsubUrl(tenantId, clientId) {
+  if (!clientId) return null;
+  const t = unsubToken(tenantId, clientId);
+  const base = (publicAppUrl.value() || '').replace(/\/+$/, '');
+  return `${base}/?unsub=1&tid=${encodeURIComponent(tenantId)}&cid=${encodeURIComponent(clientId)}&t=${t}`;
+}
 
 function fmtTime(str) {
   if (!str) return '';
@@ -224,7 +245,7 @@ exports.sendReceiptEmail = onDocumentCreated(
   }
 );
 
-function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl) {
+function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl, unsubLink) {
   // bodyHtml is pre-escaped by the caller (sendMarketingCampaign). The other
   // four inputs come straight from the campaign doc — escape every one and
   // restrict ctaUrl to http(s).
@@ -254,7 +275,7 @@ function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl) {
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
       <p style="font-size:11px;color:#bbb;margin:0;">Meraki Nail Studio · Columbus, OH</p>
-      <p style="font-size:10px;color:#ccc;margin:4px 0 0;">You're receiving this as a valued client. Reply to this email to unsubscribe.</p>
+      <p style="font-size:10px;color:#ccc;margin:4px 0 0;">You're receiving this as a valued client.${unsubLink ? ` <a href="${esc(unsubLink)}" style="color:#888;text-decoration:underline;">Unsubscribe</a>` : ' Reply to this email to unsubscribe.'}</p>
     </div>
   </div>
 </body>
@@ -380,7 +401,7 @@ async function processEmailCampaign(tenantId, docRef, data) {
           from:    fromAddr,
           to:      email,
           subject: personalizedSubject,
-          html:    buildMarketingHtml(bodyHtml, promoCode, promoLabel, data.ctaText || null, data.ctaUrl || null),
+          html:    buildMarketingHtml(bodyHtml, promoCode, promoLabel, data.ctaText || null, data.ctaUrl || null, unsubUrl(tenantId, clientId)),
         });
         if (result?.error) {
           // Resend returns { data: null, error: { name, message, ...} }
@@ -451,6 +472,34 @@ exports.sendMarketingCampaign = onDocumentCreated(
     await processEmailCampaign(snap.ref.parent.parent.id, snap.ref, data);
   }
 );
+
+// Public callable: marks a client opted out of marketing. Called from the
+// /?unsub=1&tid=&cid=&t= public page that the email's unsubscribe link
+// points at. Token-based — no auth required (CAN-SPAM forbids requiring
+// auth or info beyond email to unsubscribe).
+exports.processUnsubscribe = onCall({ cors: true }, async (request) => {
+  const { tid, cid, token } = request.data || {};
+  if (!tid || !cid || !token) throw new HttpsError('invalid-argument', 'Missing parameters');
+  const expected = unsubToken(tid, cid);
+  // Constant-time compare so timing can't reveal a partial-match.
+  const crypto = require('crypto');
+  const a = Buffer.from(expected);
+  const b = Buffer.from(String(token));
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    throw new HttpsError('permission-denied', 'Invalid unsubscribe token');
+  }
+  const db = getFirestore();
+  const ref = db.doc(`tenants/${tid}/clients/${cid}`);
+  const doc = await ref.get();
+  if (!doc.exists) throw new HttpsError('not-found', 'Client not found');
+  await ref.update({
+    marketingOptOut:    true,
+    marketingOptOutAt:  new Date().toISOString(),
+    marketingOptOutVia: 'email_unsubscribe_link',
+    updatedAt:          new Date().toISOString(),
+  });
+  return { ok: true, name: doc.data().name || null };
+});
 
 exports.sendReviewRequestEmail = onDocumentCreated(
   `tenants/${TENANT_ID}/reviewRequests/{reqId}`,
@@ -1759,6 +1808,7 @@ async function processSMSCampaign(tenantId, docRef, data) {
           const reason = msg?.errorMessage || `Twilio reported status: ${tStatus}`;
           console.error(`[processSMSCampaign] ${r.name} ${phone} delivery-failed (no throw) status=${tStatus} code=${code} reason=${reason}`);
           attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, twilioStatus: tStatus, twilioSid: msg?.sid || null, promoCode: promoCode || null, at });
+          await maybeAutoOptOut(tenantId, r, code, 'twilio_status');
         } else {
           attempts.push({ name: r.name || '(unknown)', phone, status: 'sent', twilioStatus: tStatus || null, twilioSid: msg?.sid || null, promoCode: promoCode || null, at });
         }
@@ -1767,6 +1817,7 @@ async function processSMSCampaign(tenantId, docRef, data) {
         const reason = err?.message || 'Unknown Twilio error';
         console.error(`[processSMSCampaign] ${r.name} ${phone} threw code=${code} reason=${reason}`);
         attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, promoCode: promoCode || null, at });
+        await maybeAutoOptOut(tenantId, r, code, 'twilio_throw');
       }
     }
 
@@ -1869,6 +1920,30 @@ exports.runScheduledCampaigns = onSchedule(
     }
   }
 );
+
+// Twilio error codes that signal the recipient has opted out of marketing.
+// When seen, we auto-flag the client's marketingOptOut so future audience
+// queries skip them — saves API calls and keeps us TCPA-compliant.
+//   21610 — recipient previously sent STOP / blacklist
+//   30007 — message filtered (often A2P content/STOP-driven)
+const OPT_OUT_TWILIO_CODES = new Set(['21610', '30007']);
+
+async function maybeAutoOptOut(tenantId, recipient, code, source) {
+  if (!OPT_OUT_TWILIO_CODES.has(String(code))) return;
+  if (!recipient?.clientId) return;
+  try {
+    const db = getFirestore();
+    await db.doc(`tenants/${tenantId}/clients/${recipient.clientId}`).update({
+      marketingOptOut:    true,
+      marketingOptOutAt:  new Date().toISOString(),
+      marketingOptOutVia: `sms_stop_keyword_code_${code}`,
+      updatedAt:          new Date().toISOString(),
+    });
+    console.log(`[maybeAutoOptOut] flagged ${recipient.name} (${recipient.clientId}) for code=${code} source=${source}`);
+  } catch (e) {
+    console.error(`[maybeAutoOptOut] update failed for ${recipient.clientId}:`, e?.message);
+  }
+}
 
 function normalizePhone(raw) {
   if (!raw) return null;
