@@ -33,6 +33,7 @@ import TipFlowLanding from './components/TipFlowLanding';
 import TicketCheckoutLauncher from './components/TicketCheckoutLauncher';
 import RsvpScreen from './components/RsvpScreen';
 import UnsubscribeScreen from './components/UnsubscribeScreen';
+import { TermsScreen, PrivacyScreen } from './components/PolicyScreen';
 import PinModal from './components/PinModal';
 
 const MODULE_TITLES = {
@@ -224,7 +225,11 @@ export default function App() {
     const isSignup   = params.has('signup');
     const isRsvp     = params.has('rsvp');
     const isUnsub    = params.has('unsub');
+    const isTerms    = params.has('terms');
+    const isPrivacy  = params.has('privacy');
     if      (isUnsub)   content = <UnsubscribeScreen />;
+    else if (isTerms)   content = <TermsScreen />;
+    else if (isPrivacy) content = <PrivacyScreen />;
     else if (isRsvp)    content = <RsvpScreen />;
     else if (checkinId) content = <CheckInScreen apptId={checkinId} />;
     else if (isBooking) content = <BookingScreen />;

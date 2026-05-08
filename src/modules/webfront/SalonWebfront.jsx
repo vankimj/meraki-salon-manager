@@ -508,7 +508,11 @@ export default function SalonWebfront() {
           <span style={{ fontFamily:'Cinzel,serif', fontSize:11, color:'rgba(255,255,255,.5)', letterSpacing:'.08em' }}>Meraki Nail Studio</span>
         </div>
         <div style={{ fontSize:11 }}>© {new Date().getFullYear()} Meraki Nail Studio · Columbus, OH</div>
-        <a href={`${window.location.origin}/`} style={{ fontSize:11, color:'rgba(255,255,255,.2)', textDecoration:'none' }}>Staff Login</a>
+        <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
+          <a href="/?terms=1"   style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Terms</a>
+          <a href="/?privacy=1" style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Privacy</a>
+          <a href={`${window.location.origin}/`} style={{ color:'rgba(255,255,255,.2)', textDecoration:'none' }}>Staff Login</a>
+        </div>
       </footer>
 
       <SalonChatbot tm={tm} />

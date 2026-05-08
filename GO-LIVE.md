@@ -11,7 +11,7 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 - [ ] Spot-check 5–10 imported receipts on Reports → Transactions: do dates, totals, techs, and client names match what you remember from GG?
 - [ ] Verify **Top Clients** now shows real visit counts for known repeat clients.
 - [ ] Decide what to do about the ~8,200 walk-in receipts (mostly OK to leave; flag if it bothers you).
-- [ ] Decide whether to clear demo data — `_demo: true` records are tagged. Admin → Demo Data → "Clear Demo Data" if you want a clean slate.
+- [x] Decide whether to clear demo data — `_demo: true` records are tagged. Admin → Demo Data → "Clear Demo Data" if you want a clean slate.
 
 ## T-7 to T-3 days — Configuration
 
@@ -65,6 +65,12 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 - [ ] Confirm **opted-out clients are excluded** from every audience: send a campaign to "All clients" and verify the recipient count = (clients with valid contact) − (clients with `marketingOptOut: true`).
 - [ ] Spot-check 3 random clients' profiles to confirm the opt-out state is visible and accurate.
 - [ ] **GO-LIVE announcement template** drafted, saved, and previewed for both email + SMS channels.
+
+### Legal pages
+- [x] **Terms of Service** page published at `/?terms=1` and linked from webfront footer + every marketing email footer.
+- [x] **Privacy Policy** page published at `/?privacy=1` and linked from webfront footer + every marketing email footer.
+- [ ] **Have an attorney review** the Terms + Privacy templates before launch (especially: cancellation/no-show clause, refund policy, CCPA section). Templates are reasonable but not legal advice.
+- [ ] Update the salon contact email in the policies if `merakinailstudiocolumbus@gmail.com` isn't the right one.
 
 ## T-1 day — Dress rehearsal
 

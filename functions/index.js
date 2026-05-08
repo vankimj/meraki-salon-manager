@@ -275,7 +275,11 @@ function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl, un
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
       <p style="font-size:11px;color:#bbb;margin:0;">Meraki Nail Studio · Columbus, OH</p>
-      <p style="font-size:10px;color:#ccc;margin:4px 0 0;">You're receiving this as a valued client.${unsubLink ? ` <a href="${esc(unsubLink)}" style="color:#888;text-decoration:underline;">Unsubscribe</a>` : ' Reply to this email to unsubscribe.'}</p>
+      <p style="font-size:10px;color:#ccc;margin:4px 0 0;">
+        You're receiving this as a valued client.${unsubLink ? ` <a href="${esc(unsubLink)}" style="color:#888;text-decoration:underline;">Unsubscribe</a>` : ' Reply to this email to unsubscribe.'}
+        &nbsp;·&nbsp; <a href="${esc(publicAppUrl.value() || '')}/?terms=1" style="color:#888;text-decoration:underline;">Terms</a>
+        &nbsp;·&nbsp; <a href="${esc(publicAppUrl.value() || '')}/?privacy=1" style="color:#888;text-decoration:underline;">Privacy</a>
+      </p>
     </div>
   </div>
 </body>
