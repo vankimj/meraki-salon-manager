@@ -179,11 +179,19 @@ export default function MarketingAdmin() {
   // so history is preserved.
   async function handleRetry(c) {
     const attempted = Array.isArray(c.attempts) ? c.attempts : [];
-    const sentClientIds = new Set();
+    // Successful-send identity differs by channel: SMS uses phone, email
+    // uses email. Build a key set on whichever the attempt carried.
+    const sentKeys = new Set();
     attempted.forEach(a => {
-      if (a.status === 'sent' && a.phone) sentClientIds.add(a.phone);
+      if (a.status !== 'sent') return;
+      if (a.phone) sentKeys.add('p:' + a.phone);
+      if (a.email) sentKeys.add('e:' + a.email);
     });
-    const remaining = (c.recipients || []).filter(r => !sentClientIds.has(r.phone));
+    const remaining = (c.recipients || []).filter(r => {
+      if (r.phone && sentKeys.has('p:' + r.phone)) return false;
+      if (r.email && sentKeys.has('e:' + r.email)) return false;
+      return true;
+    });
     if (remaining.length === 0) { showToast('Nothing to retry — every recipient already received a successful send.', 3500); return; }
     const proceed = window.confirm(`Retry will create a new campaign and send to the ${remaining.length} recipient${remaining.length !== 1 ? 's' : ''} that didn't get a successful delivery (failed or queued at cancellation).\n\nThe original campaign stays as-is. Continue?`);
     if (!proceed) return;
@@ -501,6 +509,8 @@ function fmtElapsed(ms) {
 }
 
 function CampaignDiagnostics({ c }) {
+  const isSms = c.channel === 'sms';
+  const fnName = isSms ? 'sendSMSCampaign' : 'sendMarketingCampaign';
   const [now, setNow] = useState(() => Date.now());
   const isActive = c.status === 'pending' || c.status === 'sending';
   // Live ticker so elapsed/last-update times stay accurate while a campaign is in flight.
@@ -548,8 +558,8 @@ function CampaignDiagnostics({ c }) {
 
       {(stuck || stalled) && (
         <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: 11, color: '#78350f' }}>
-          ⚠ {stuck ? "Campaign hasn't started after 30s — Cloud Function may not be picking it up. Check `firebase functions:log --only sendSMSCampaign`."
-                    : "No progress in 30s — function may be slow, throttled by Twilio, or about to hit its 60s timeout."}
+          ⚠ {stuck ? `Campaign hasn't started after 30s — Cloud Function may not be picking it up. Check \`firebase functions:log --only ${fnName}\`.`
+                    : `No progress in 30s — function may be slow, throttled by ${isSms ? 'Twilio' : 'Resend'}, or about to hit its timeout.`}
         </div>
       )}
 
@@ -583,9 +593,10 @@ function CampaignDiagnostics({ c }) {
                     <span style={{ fontSize: 10, color: '#999', flexShrink: 0 }}>{time}</span>
                   </div>
                   <div style={{ fontSize: 10, color: isFail ? '#9a3412' : '#888', marginTop: 1 }}>
-                    {a.phone || '—'}
+                    {a.phone || a.email || '—'}
                     {isFail && a.code && <> · <code style={{ background: '#fee2e2', padding: '0 4px', borderRadius: 3, color: '#7f1d1d' }}>{a.code}</code></>}
                     {isFail && a.reason && <> — {a.reason}</>}
+                    {a.promoCode && <> · <code style={{ background: '#f0faf6', padding: '0 4px', borderRadius: 3, color: '#15803d', fontFamily: 'monospace' }}>{a.promoCode}</code></>}
                   </div>
                 </div>
               </div>

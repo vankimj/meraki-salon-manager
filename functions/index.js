@@ -261,50 +261,100 @@ function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl) {
 </html>`;
 }
 
-exports.sendMarketingCampaign = onDocumentCreated(
-  { document: `tenants/${TENANT_ID}/campaigns/{campaignId}`, timeoutSeconds: 540 },
-  async (event) => {
-    const snap = event.data;
-    if (!snap) return;
-    const data = snap.data();
-    if (!data || data.status !== 'pending') return;
+// Core email-send pipeline. Mirrors processSMSCampaign so the UI's
+// CampaignDiagnostics panel (attempts[], sent/fail/queued counters,
+// progress flushes, cancel-on-flush, status flow) works identically
+// across channels. Used by both the immediate trigger and the scheduled
+// runner.
+async function processEmailCampaign(tenantId, docRef, data) {
+  const apiKey = resendKey.value();
+  if (!apiKey) {
+    await docRef.update({ status: 'failed', error: 'resend_not_configured' });
+    return;
+  }
 
-    const apiKey = resendKey.value();
-    if (!apiKey) { await snap.ref.update({ status: 'failed', error: 'resend_not_configured' }); return; }
+  const recipients = Array.isArray(data.recipients) ? data.recipients : [];
+  if (recipients.length === 0) {
+    await docRef.update({ status: 'failed', error: 'no_recipients' });
+    return;
+  }
 
-    const { subject, body, recipients = [] } = data;
-    if (!recipients.length) {
-      await snap.ref.update({ status: 'done', sentCount: 0, sentAt: new Date().toISOString() });
-      return;
+  if (data.cancelRequested) {
+    await docRef.update({
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      sentCount: 0, failCount: 0, attemptedCount: 0, attempts: [],
+    });
+    return;
+  }
+
+  await docRef.update({
+    status: 'sending',
+    startedAt: new Date().toISOString(),
+    sentCount: 0,
+    failCount: 0,
+    attemptedCount: 0,
+    attempts: [],
+  });
+
+  const resend = new Resend(apiKey);
+  const fromAddr = resendFrom.value();
+  const subject = data.subject || '';
+  const body = data.body || '';
+
+  const attempts = [];
+  let lastFlushAt = Date.now();
+  const FLUSH_EVERY_N = 5;
+  const FLUSH_EVERY_MS = 1500;
+  const ATTEMPTS_CAP = 2000;
+
+  function counts() {
+    let sent = 0, failed = 0;
+    for (const a of attempts) {
+      if (a.status === 'sent')        sent++;
+      else if (a.status === 'failed') failed++;
     }
+    return { sent, failed };
+  }
 
-    await snap.ref.update({ status: 'sending' });
+  async function flushProgress() {
+    const { sent, failed } = counts();
+    const stored = attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts;
+    await docRef.update({
+      sentCount: sent,
+      failCount: failed,
+      attemptedCount: attempts.length,
+      attempts: stored,
+      attemptsTruncated: attempts.length > ATTEMPTS_CAP,
+      lastUpdateAt: new Date().toISOString(),
+    });
+    lastFlushAt = Date.now();
+  }
 
-    const resend = new Resend(apiKey);
-    let sentCount = 0, failCount = 0;
-
-    for (const recipient of recipients) {
-      const { name, email, clientId } = recipient;
-      if (!email) { failCount++; continue; }
-
+  for (const recipient of recipients) {
+    const at = new Date().toISOString();
+    const { name, email, clientId } = recipient;
+    if (!email) {
+      attempts.push({ name: name || '(unknown)', email: '', status: 'failed', code: 'NO_EMAIL', reason: 'Recipient has no email address on file', at });
+    } else {
       const firstName = (name || 'there').split(' ')[0];
       const lastName  = (name || '').split(' ').slice(1).join(' ');
 
       // Personalized promo: mint a unique single-use code bound to this
-      // client. {promoCode} substitutes into the body; the code is also
-      // surfaced in the email's promo block. Falls through silently if
-      // mint fails — the user still gets the message.
+      // client; the code substitutes into the body via {promoCode} AND
+      // is rendered as the highlighted block in the email's promo card.
       let promoCode = data.promoCode || null;
       let promoLabel = data.promoLabel || null;
+      let promoMintError = null;
       if (data.promoPersonalize && clientId) {
         try {
-          const minted = await createPersonalizedPromo(snap.ref.parent.parent.id, {
+          const minted = await createPersonalizedPromo(tenantId, {
             prefix:      data.promoPersonalize.prefix,
             type:        data.promoPersonalize.type,
             value:       data.promoPersonalize.value,
             expiresDays: data.promoPersonalize.expiresDays,
             clientId,
-            campaignId:  snap.id,
+            campaignId:  docRef.id,
           });
           if (minted) {
             promoCode = minted.code;
@@ -313,34 +363,90 @@ exports.sendMarketingCampaign = onDocumentCreated(
               : `${data.promoPersonalize.value}% off — single use, expires in ${data.promoPersonalize.expiresDays} days`;
           }
         } catch (e) {
-          console.error(`[Marketing] promo mint failed for ${email}:`, e.message);
+          promoMintError = e?.message || 'promo_mint_failed';
+          console.error(`[processEmailCampaign] promo mint failed for ${email}:`, promoMintError);
         }
       }
 
       const personalizedBody = substitutePlaceholders(body, { firstName, lastName, promoCode: promoCode || '' });
-      const bodyHtml         = personalizedBody
+      const bodyHtml = personalizedBody
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/\n/g, '<br>');
 
       try {
-        const { error } = await resend.emails.send({
-          from:    resendFrom.value(),
+        const result = await resend.emails.send({
+          from:    fromAddr,
           to:      email,
           subject,
           html:    buildMarketingHtml(bodyHtml, promoCode, promoLabel, data.ctaText || null, data.ctaUrl || null),
         });
-        if (error) throw new Error(error.message || JSON.stringify(error));
-        sentCount++;
-      } catch (e) {
-        console.error(`[Marketing] Failed for ${email}:`, e.message);
-        failCount++;
+        if (result?.error) {
+          // Resend returns { data: null, error: { name, message, ...} }
+          // rather than throwing for most validation errors. Capture it.
+          const code   = result.error.name || result.error.statusCode || 'RESEND_ERROR';
+          const reason = result.error.message || JSON.stringify(result.error);
+          console.error(`[processEmailCampaign] ${email} resend-error code=${code} reason=${reason}`);
+          attempts.push({ name: name || '(unknown)', email, status: 'failed', code: String(code), reason, promoCode: promoCode || null, at });
+        } else {
+          attempts.push({ name: name || '(unknown)', email, status: 'sent', resendId: result?.data?.id || null, promoCode: promoCode || null, at });
+        }
+      } catch (err) {
+        const code = err?.name || err?.code || 'UNKNOWN';
+        const reason = err?.message || 'Unknown Resend error';
+        console.error(`[processEmailCampaign] ${email} threw code=${code} reason=${reason}`);
+        attempts.push({ name: name || '(unknown)', email, status: 'failed', code: String(code), reason, promoCode: promoCode || null, promoMintError, at });
       }
 
+      // Resend rate limit: ~10 req/sec on free tier, more on paid. 50ms
+      // pacing keeps us well under either ceiling.
       await new Promise(r => setTimeout(r, 50));
     }
 
-    await snap.ref.update({ status: 'done', sentCount, failCount, sentAt: new Date().toISOString() });
-    console.log(`[Marketing] "${data.name}": sent ${sentCount}, failed ${failCount}`);
+    const now = Date.now();
+    let cancelled = false;
+    if (attempts.length % FLUSH_EVERY_N === 0 || now - lastFlushAt >= FLUSH_EVERY_MS) {
+      try { await flushProgress(); } catch (e) { console.error('[processEmailCampaign] progress flush failed:', e); }
+      try {
+        const cur = await docRef.get();
+        if (cur.data()?.cancelRequested) cancelled = true;
+      } catch (e) { console.error('[processEmailCampaign] cancel-check read failed:', e); }
+    }
+    if (cancelled) break;
+  }
+
+  const { sent, failed } = counts();
+  const failures = attempts.filter(a => a.status === 'failed').slice(0, 200);
+  let finalStatus = 'done';
+  try {
+    const cur = await docRef.get();
+    if (cur.data()?.cancelRequested) finalStatus = 'cancelled';
+  } catch { /* fall through */ }
+  await docRef.update({
+    status: finalStatus,
+    sentCount: sent,
+    failCount: failed,
+    attemptedCount: attempts.length,
+    attempts: attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts,
+    attemptsTruncated: attempts.length > ATTEMPTS_CAP,
+    failures,
+    ...(finalStatus === 'cancelled'
+        ? { cancelledAt: new Date().toISOString() }
+        : { sentAt:      new Date().toISOString() }),
+  });
+}
+
+exports.sendMarketingCampaign = onDocumentCreated(
+  { document: `tenants/${TENANT_ID}/campaigns/{campaignId}`, timeoutSeconds: 540 },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const data = snap.data();
+    if (!data) return;
+    // Email immediate path. SMS is handled by sendSMSCampaign;
+    // scheduled email/sms is handled by runScheduledCampaigns.
+    if (data.channel === 'sms') return;
+    if (data.status !== 'pending') return;
+    await processEmailCampaign(snap.ref.parent.parent.id, snap.ref, data);
   }
 );
 
@@ -1723,7 +1829,6 @@ exports.runScheduledCampaigns = onSchedule(
       try {
         dueSnap = await db.collection(`tenants/${tDoc.id}/campaigns`)
           .where('status', '==', 'scheduled')
-          .where('channel', '==', 'sms')
           .where('scheduleAt', '<=', nowIso)
           .get();
       } catch (e) {
@@ -1732,8 +1837,8 @@ exports.runScheduledCampaigns = onSchedule(
       }
       for (const cDoc of dueSnap.docs) {
         // Race-safe claim: only ONE sweep instance gets to process this row.
-        // We pre-flip to 'sending' inside a transaction; processSMSCampaign
-        // will overwrite startedAt/sentCount/etc. as part of its own setup.
+        // Pre-flip to 'sending' inside a transaction; the per-channel
+        // processor overwrites startedAt/sentCount/etc. as part of setup.
         let claimedData = null;
         try {
           await db.runTransaction(async (tx) => {
@@ -1749,9 +1854,13 @@ exports.runScheduledCampaigns = onSchedule(
         }
         if (!claimedData) continue;
         try {
-          await processSMSCampaign(tDoc.id, cDoc.ref, claimedData);
+          if (claimedData.channel === 'sms') {
+            await processSMSCampaign(tDoc.id, cDoc.ref, claimedData);
+          } else {
+            await processEmailCampaign(tDoc.id, cDoc.ref, claimedData);
+          }
         } catch (e) {
-          console.error(`[runScheduledCampaigns] processSMSCampaign failed for ${cDoc.id}:`, e?.message);
+          console.error(`[runScheduledCampaigns] processor failed for ${cDoc.id} (${claimedData.channel}):`, e?.message);
           await cDoc.ref.update({ status: 'failed', error: e?.message || 'scheduled_run_failed' }).catch(() => {});
         }
       }
