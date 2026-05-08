@@ -2430,3 +2430,171 @@ exports.fetchMeetingForRsvp = onCall(async (request) => {
     },
   };
 });
+
+// ── Two-way SMS: inbound webhook + outbound callable ───────────────────────
+// Match a client by the inbound phone's last-10-digits across the clients
+// collection. Phones are stored in varied formats; comparing the digit-only
+// suffix avoids needing a separate normalized field.
+async function findClientByPhone(tenantId, fromPhone) {
+  const inboundDigits = (fromPhone || '').replace(/\D/g, '');
+  if (!inboundDigits) return null;
+  const last10 = inboundDigits.slice(-10);
+  const db = getFirestore();
+  const all = await db.collection(`tenants/${tenantId}/clients`).get();
+  for (const d of all.docs) {
+    const phoneDigits = ((d.data().phone || '') + '').replace(/\D/g, '');
+    if (phoneDigits.slice(-10) === last10) return { id: d.id, ...d.data() };
+  }
+  return null;
+}
+
+// Append a message to chats/{clientId}, creating the doc if needed. Used by
+// both inbound (channel='sms', from='client') and outbound (from='staff').
+async function appendChatMessage(tenantId, clientId, clientInfo, message) {
+  const db = getFirestore();
+  const FieldValue = require('firebase-admin/firestore').FieldValue;
+  const chatRef = db.doc(`tenants/${tenantId}/chats/${clientId}`);
+  const snap = await chatRef.get();
+  const now = new Date().toISOString();
+  if (!snap.exists) {
+    await chatRef.set({
+      clientId,
+      clientName:  clientInfo?.name  || 'Client',
+      clientEmail: clientInfo?.email || '',
+      clientPhone: clientInfo?.phone || '',
+      messages:    [message],
+      lastMessage: message.text,
+      lastChannel: message.channel || 'app',
+      lastAt:      now,
+      unreadStaff: message.from === 'client' ? 1 : 0,
+      updatedAt:   now,
+    });
+  } else {
+    const updates = {
+      messages:    FieldValue.arrayUnion(message),
+      lastMessage: message.text,
+      lastChannel: message.channel || 'app',
+      lastAt:      now,
+      updatedAt:   now,
+    };
+    if (message.from === 'client') updates.unreadStaff = FieldValue.increment(1);
+    else                            updates.unreadStaff = 0;
+    await chatRef.update(updates);
+  }
+}
+
+// Twilio webhook target: configure in Twilio Console → Phone Numbers →
+// Active Numbers → click your number → Messaging Configuration → "A
+// message comes in" → Webhook → POST <this function URL>.
+exports.twilioInboundSms = onRequest({ cors: false }, async (req, res) => {
+  try {
+    // Twilio sends application/x-www-form-urlencoded; Firebase parses to req.body
+    const From = req.body?.From || '';
+    const To   = req.body?.To   || '';
+    const Body = req.body?.Body || '';
+    const Sid  = req.body?.MessageSid || null;
+    if (!From || !Body) {
+      console.warn('[twilioInboundSms] missing From or Body');
+      res.set('Content-Type', 'text/xml').status(200).send('<Response/>');
+      return;
+    }
+    // Single-tenant for now; for multi-tenant SaaS we'd map To-number → tenantId.
+    const tenantId = TENANT_ID;
+    const client = await findClientByPhone(tenantId, From);
+    if (!client) {
+      // Unknown sender — log and respond OK. We don't auto-create a client
+      // record (could be a wrong number); staff can create manually if needed.
+      console.warn(`[twilioInboundSms] no client matched for ${From} body="${Body.slice(0, 60)}"`);
+      const db = getFirestore();
+      await db.collection(`tenants/${tenantId}/inboundSmsOrphans`).add({
+        from: From, to: To, body: Body, twilioSid: Sid, at: new Date().toISOString(),
+      }).catch(() => {});
+      res.set('Content-Type', 'text/xml').status(200).send('<Response/>');
+      return;
+    }
+    const message = {
+      text:     Body,
+      channel:  'sms',
+      from:     'client',
+      at:       new Date().toISOString(),
+      twilioSid: Sid,
+      phone:    From,
+    };
+    await appendChatMessage(tenantId, client.id, client, message);
+    // Notify admins (existing chat-notification flow already handles this for
+    // the first message in a session — calling addDoc on chatNotifications).
+    if (client.unreadStaff === undefined || client.unreadStaff === 0) {
+      const db = getFirestore();
+      await db.collection(`tenants/${tenantId}/chatNotifications`).add({
+        clientId:    client.id,
+        clientName:  client.name  || 'Client',
+        clientEmail: client.email || '',
+        clientPhone: From,
+        preview:     Body.slice(0, 120),
+        channel:     'sms',
+        createdAt:   new Date().toISOString(),
+      }).catch(() => {});
+    }
+    res.set('Content-Type', 'text/xml').status(200).send('<Response/>');
+  } catch (e) {
+    console.error('[twilioInboundSms] handler crashed:', e);
+    // Always 200 so Twilio doesn't retry-storm
+    res.set('Content-Type', 'text/xml').status(200).send('<Response/>');
+  }
+});
+
+// Staff-side outbound: send an SMS to a client and append it to the chat.
+// Auth: requires a signed-in user. We trust the client to send sane content;
+// rules-layer enforcement of who-can-message-whom can be tightened later.
+exports.sendDirectSms = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, clientId, body } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!clientId || !body) throw new HttpsError('invalid-argument', 'Missing clientId or body');
+
+  const sid       = twilioSid.value();
+  const token     = twilioToken.value();
+  const apiKeySid = twilioApiKeySid.value();
+  const from      = twilioFrom.value();
+  if (!sid || !token || !from) throw new HttpsError('failed-precondition', 'Twilio not configured');
+
+  const db = getFirestore();
+  const cDoc = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
+  if (!cDoc.exists) throw new HttpsError('not-found', 'Client not found');
+  const client = { id: cDoc.id, ...cDoc.data() };
+  const phone = normalizePhone(client.phone);
+  if (!phone) throw new HttpsError('failed-precondition', `Cannot normalize client phone "${client.phone}"`);
+
+  const twilioSDK = require('twilio');
+  const tw = apiKeySid
+    ? twilioSDK(apiKeySid, token, { accountSid: sid })
+    : twilioSDK(sid, token);
+
+  let twilioStatus = null, twilioError = null, msgSid = null;
+  try {
+    const msg = await tw.messages.create({ body, from, to: phone });
+    twilioStatus = msg?.status || null;
+    msgSid = msg?.sid || null;
+    if (twilioStatus === 'failed' || twilioStatus === 'undelivered') {
+      twilioError = `${msg.errorCode || 'TWILIO_ERROR'}: ${msg.errorMessage || twilioStatus}`;
+    }
+  } catch (e) {
+    twilioError = `${e?.code || 'UNKNOWN'}: ${e?.message || 'send threw'}`;
+    console.error('[sendDirectSms] threw:', twilioError);
+    throw new HttpsError('internal', twilioError);
+  }
+
+  const message = {
+    text:        body,
+    channel:     'sms',
+    from:        'staff',
+    at:          new Date().toISOString(),
+    staffEmail:  request.auth.token?.email || null,
+    twilioSid:   msgSid,
+    twilioStatus,
+    twilioError,
+    phone,
+  };
+  await appendChatMessage(tenantId, clientId, client, message);
+  return { ok: true, twilioStatus, twilioError };
+});

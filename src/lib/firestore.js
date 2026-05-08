@@ -4,7 +4,7 @@ import {
   orderBy, where, query, limit,
   onSnapshot, arrayUnion, increment, writeBatch,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, callFn } from './firebase';
 import { TENANT_ID } from './tenant';
 
 // ── Tenant root helpers ────────────────────────────────
@@ -1542,6 +1542,14 @@ export async function sendChatMessage(clientId, clientInfo, message) {
 export async function markChatRead(clientId) {
   const snap = await getDoc(doc(CHATS_COL, clientId));
   if (snap.exists()) await updateDoc(doc(CHATS_COL, clientId), { unreadStaff: 0 });
+}
+
+// Outbound SMS to a client. Goes through the sendDirectSms callable which
+// dispatches via Twilio + appends the message to chats/{clientId}.
+export async function sendSmsToClient(clientId, body) {
+  const fn = callFn('sendDirectSms');
+  const res = await fn({ tenantId: TENANT_ID, clientId, body });
+  return res?.data || { ok: true };
 }
 
 // ── Review received tracking ───────────────────────────

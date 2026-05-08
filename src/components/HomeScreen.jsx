@@ -19,7 +19,7 @@ const MODULES = [
   { id: 'meetings',  label: 'Meetings',  desc: 'Internal team meetings',   adminOnly: true  },
   { id: 'products',  label: 'Products',  desc: 'Retail inventory & stock', adminOnly: true  },
   { id: 'marketing', label: 'Marketing', desc: 'Email campaigns & outreach', adminOnly: true, proOnly: true },
-  { id: 'chat',      label: 'Messages',  desc: 'Client messages & replies', adminOnly: false },
+  { id: 'chat',      label: 'Communications', desc: 'SMS, email & in-app messages', adminOnly: false },
 ];
 
 function greeting() {
@@ -171,7 +171,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
               <ModuleTile id="schedule" label="Schedule"  desc="Appointments & calendar"   onClick={() => navigate('schedule')}  />
               <ModuleTile id="clients"  label="Clients"   desc="Profiles & visit history"  onClick={() => navigate('clients')}   />
               <ModuleTile id="services" label="Services"  desc="Menu & pricing"             onClick={() => navigate('services')}  />
-              <ModuleTile id="chat"     label="Messages"  desc="Client messages & replies"  onClick={() => navigate('chat')}      badge={totalChatUnread} />
+              <ModuleTile id="chat"     label="Communications" desc="SMS, email & in-app messages" onClick={() => navigate('chat')}      badge={totalChatUnread} />
             </div>
           </>
         ) : canManage ? (

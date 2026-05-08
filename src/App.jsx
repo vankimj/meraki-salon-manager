@@ -48,7 +48,7 @@ const MODULE_TITLES = {
   meetings:   'Meetings',
   products:   'Products & Inventory',
   marketing:  'Marketing',
-  chat:       'Messages',
+  chat:       'Communications',
 };
 
 function MagicLinkPrompt() {

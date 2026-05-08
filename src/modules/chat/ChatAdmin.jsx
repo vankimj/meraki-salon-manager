@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
-import { subscribeToChats, subscribeToChat, sendChatMessage, markChatRead } from '../../lib/firestore';
+import { subscribeToChats, subscribeToChat, sendChatMessage, sendSmsToClient, markChatRead } from '../../lib/firestore';
 
 function fmtTime(iso) {
   if (!iso) return '';
@@ -113,6 +113,9 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
   const [thread,  setThread]  = useState(initialThread || null);
   const [text,    setText]    = useState('');
   const [sending, setSending] = useState(false);
+  // Channel selector — defaults to 'sms' if the client has a phone, else 'app'.
+  const [channel, setChannel] = useState('app');
+  const [sendError, setSendError] = useState('');
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -131,18 +134,31 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
     setSending(true);
+    setSendError('');
+    const previous = text;
     setText('');
-    const msg = {
-      text:       trimmed,
-      from:       'staff',
-      senderName: senderName,
-      sentAt:     new Date().toISOString(),
-    };
-    await sendChatMessage(clientId, {
-      name:  thread?.clientName  || '',
-      email: thread?.clientEmail || '',
-    }, msg).catch(() => {});
-    setSending(false);
+    try {
+      if (channel === 'sms') {
+        await sendSmsToClient(clientId, trimmed);
+      } else {
+        const msg = {
+          text:       trimmed,
+          from:       'staff',
+          channel:    'app',
+          senderName: senderName,
+          sentAt:     new Date().toISOString(),
+        };
+        await sendChatMessage(clientId, {
+          name:  thread?.clientName  || '',
+          email: thread?.clientEmail || '',
+        }, msg);
+      }
+    } catch (e) {
+      setSendError(e?.message || 'Send failed');
+      setText(previous); // restore so user can fix + retry
+    } finally {
+      setSending(false);
+    }
   }
 
   const messages = thread?.messages || [];
@@ -175,41 +191,71 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
       </div>
 
       {/* Input */}
-      <div style={{ display: 'flex', gap: 8, paddingTop: 10, borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
-        <input
-          value={text}
-          onChange={e => setText(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          placeholder="Reply to client…"
-          style={{ flex: 1, fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 22, padding: '9px 16px', fontSize: 13, outline: 'none', background: '#fafafa' }}
-        />
-        <button onClick={handleSend} disabled={!text.trim() || sending}
-          style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: text.trim() && !sending ? '#2D7A5F' : '#e0e0e0', color: '#fff', fontSize: 18, cursor: text.trim() && !sending ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }}>
-          ↑
-        </button>
+      <div style={{ paddingTop: 10, borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+        {/* Channel selector — only show SMS option when client has a phone */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <button onClick={() => setChannel('app')}
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'app' ? '#f0faf6' : '#fafafa', color: channel === 'app' ? '#2D7A5F' : '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            💬 In-app chat
+          </button>
+          <button onClick={() => setChannel('sms')} disabled={!thread?.clientPhone && !thread?.clientPhone}
+            title={thread?.clientPhone ? `Sends an SMS to ${thread.clientPhone}` : 'No phone on file'}
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'sms' ? '#f0faf6' : '#fafafa', color: channel === 'sms' ? '#2D7A5F' : '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            📱 SMS
+          </button>
+        </div>
+        {sendError && (
+          <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6, padding: '4px 8px', background: '#fef2f2', borderRadius: 6, border: '1px solid #fca5a5' }}>{sendError}</div>
+        )}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
+            placeholder={channel === 'sms' ? 'Send SMS to client…' : 'Reply to client…'}
+            style={{ flex: 1, fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 22, padding: '9px 16px', fontSize: 13, outline: 'none', background: '#fafafa' }}
+          />
+          <button onClick={handleSend} disabled={!text.trim() || sending}
+            style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: text.trim() && !sending ? '#2D7A5F' : '#e0e0e0', color: '#fff', fontSize: 18, cursor: text.trim() && !sending ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }}>
+            ↑
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 function MessageBubble({ msg, isStaff }) {
+  const channel = msg.channel || 'app';
+  const isSms = channel === 'sms';
+  const channelBadge = isSms ? '📱 SMS' : channel === 'email' ? '✉️ Email' : null;
+  // SMS bubbles get a slightly different look (dotted border) to make the
+  // channel obvious at a glance even without reading the badge.
+  const bubbleStyle = {
+    maxWidth: '75%',
+    background: isStaff ? (isSms ? '#1d4ed8' : '#2D7A5F') : '#f0f0f0',
+    color:      isStaff ? '#fff' : '#1a1a1a',
+    borderRadius: isStaff ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+    padding: '9px 14px',
+  };
   return (
     <div style={{ display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start' }}>
-      <div style={{
-        maxWidth: '75%',
-        background: isStaff ? '#2D7A5F' : '#f0f0f0',
-        color:      isStaff ? '#fff'    : '#1a1a1a',
-        borderRadius: isStaff ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-        padding: '9px 14px',
-      }}>
-        {!isStaff && (
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-            {msg.senderName}
+      <div style={bubbleStyle}>
+        {(channelBadge || (!isStaff && msg.senderName)) && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: isStaff ? 'rgba(255,255,255,.7)' : '#888', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!isStaff && msg.senderName && <span>{msg.senderName}</span>}
+            {channelBadge && <span>{channelBadge}</span>}
           </div>
         )}
         <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
-        <div style={{ fontSize: 10, color: isStaff ? 'rgba(255,255,255,.6)' : '#bbb', marginTop: 4, textAlign: isStaff ? 'right' : 'left' }}>
-          {fmtTime(msg.sentAt)}
+        <div style={{ fontSize: 10, color: isStaff ? 'rgba(255,255,255,.6)' : '#bbb', marginTop: 4, textAlign: isStaff ? 'right' : 'left', display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start', gap: 6 }}>
+          <span>{fmtTime(msg.sentAt || msg.at)}</span>
+          {isSms && msg.twilioStatus && msg.twilioStatus !== 'sent' && msg.twilioStatus !== 'delivered' && msg.twilioStatus !== 'queued' && (
+            <span style={{ color: '#fca5a5' }}>· {msg.twilioStatus}</span>
+          )}
+          {isSms && msg.twilioError && (
+            <span style={{ color: '#fca5a5' }}>· error</span>
+          )}
         </div>
       </div>
     </div>
