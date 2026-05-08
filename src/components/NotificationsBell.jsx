@@ -15,6 +15,30 @@ function relativeTime(iso) {
   return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+function fmtTimeForNotif(str) {
+  if (!str) return '';
+  const [h, m] = str.split(':').map(Number);
+  if (Number.isNaN(h)) return str;
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h > 12 ? h - 12 : h === 0 ? 12 : h;
+  return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+function fmtDateForNotif(str) {
+  if (!str) return '';
+  try {
+    return new Date(str + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  } catch { return str; }
+}
+function apptDetail(n) {
+  // Pre-built message wins (set by notifyAffectedTechs); fall back to
+  // composing from the structured fields if it's missing.
+  if (n.message) return n.message;
+  const who   = n.clientName || 'a walk-in';
+  const when  = [fmtDateForNotif(n.date), fmtTimeForNotif(n.startTime)].filter(Boolean).join(' at ');
+  const tech  = n.techName ? ` with ${n.techName}` : '';
+  return `${who}${tech}${when ? ` · ${when}` : ''}`;
+}
+
 function formatNotif(n) {
   switch (n.changeType) {
     case 'handbook_reminder':
@@ -27,8 +51,12 @@ function formatNotif(n) {
       return { title: 'New online booking', body: `${n.clientName || 'Guest'} — ${n.serviceName || ''}`.trim() };
     case 'review_received':
       return { title: 'New review', body: n.author ? `From ${n.author}` : '' };
+    case 'appt_added':    return { title: 'New appointment',       body: apptDetail(n) };
+    case 'appt_modified': return { title: 'Appointment updated',   body: apptDetail(n) };
+    case 'appt_assigned': return { title: 'Appointment assigned',  body: apptDetail(n) };
+    case 'appt_removed':  return { title: 'Appointment reassigned', body: apptDetail(n) };
     default: {
-      if (n.title || n.body) return { title: n.title || 'Notification', body: n.body || '' };
+      if (n.title || n.body || n.message) return { title: n.title || 'Notification', body: n.body || n.message || '' };
       const fallback = (n.changeType || 'Update').replace(/_/g, ' ');
       return { title: fallback.charAt(0).toUpperCase() + fallback.slice(1), body: '' };
     }
@@ -122,7 +150,7 @@ export default function NotificationsBell() {
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', marginTop: 6, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{title}</div>
-                      {body && <div style={{ fontSize: 11, color: '#666', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{body}</div>}
+                      {body && <div style={{ fontSize: 11, color: '#666', lineHeight: 1.45, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{body}</div>}
                       <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>{relativeTime(n.createdAt)}</div>
                     </div>
                   </div>
