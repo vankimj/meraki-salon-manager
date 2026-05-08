@@ -1502,159 +1502,208 @@ const gustoRedirectUri  = defineString('GUSTO_REDIRECT_URI',  { default: '' });
 // + channel-required-contact filters there. Re-querying here would silently
 // send to all clients for any segment the function hadn't been updated to
 // recognize.
+// Core SMS-send pipeline. Used by both the immediate trigger
+// (onDocumentCreated, status='pending') and the scheduled runner
+// (onSchedule, picks up status='scheduled' campaigns whose scheduleAt
+// is past). The function:
+//   - validates Twilio config + recipients
+//   - flips status pending → sending
+//   - sends each recipient sequentially, capturing per-attempt status,
+//     Twilio code/reason for failures, and msg.sid for traceability
+//   - flushes progress to Firestore every ~5 attempts or 1.5s so the
+//     UI subscription stays live
+//   - honors cancelRequested at every flush boundary and at exit
+//   - derives counters from the attempts array (cannot diverge)
+async function processSMSCampaign(docRef, data) {
+  const sid       = twilioSid.value();
+  const token     = twilioToken.value();
+  const apiKeySid = twilioApiKeySid.value();
+  const from      = twilioFrom.value();
+  if (!sid || !token || !from) {
+    await docRef.update({ status: 'failed', error: 'twilio_not_configured' });
+    return;
+  }
+
+  const recipients = Array.isArray(data.recipients) ? data.recipients : [];
+  if (recipients.length === 0) {
+    await docRef.update({ status: 'failed', error: 'no_recipients' });
+    return;
+  }
+
+  const twilioSDK = require('twilio');
+  const client = apiKeySid
+    ? twilioSDK(apiKeySid, token, { accountSid: sid })
+    : twilioSDK(sid, token);
+
+  if (data.cancelRequested) {
+    await docRef.update({
+      status: 'cancelled',
+      cancelledAt: new Date().toISOString(),
+      sentCount: 0, failCount: 0, attemptedCount: 0, attempts: [],
+    });
+    return;
+  }
+
+  await docRef.update({
+    status: 'sending',
+    startedAt: new Date().toISOString(),
+    sentCount: 0,
+    failCount: 0,
+    attemptedCount: 0,
+    attempts: [],
+  });
+
+  const attempts = [];
+  let lastFlushAt = Date.now();
+  const FLUSH_EVERY_N = 5;
+  const FLUSH_EVERY_MS = 1500;
+  const ATTEMPTS_CAP = 2000;
+
+  function counts() {
+    let sent = 0, failed = 0;
+    for (const a of attempts) {
+      if (a.status === 'sent')        sent++;
+      else if (a.status === 'failed') failed++;
+    }
+    return { sent, failed };
+  }
+
+  async function flushProgress() {
+    const { sent, failed } = counts();
+    const stored = attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts;
+    await docRef.update({
+      sentCount: sent,
+      failCount: failed,
+      attemptedCount: attempts.length,
+      attempts: stored,
+      attemptsTruncated: attempts.length > ATTEMPTS_CAP,
+      lastUpdateAt: new Date().toISOString(),
+    });
+    lastFlushAt = Date.now();
+  }
+
+  for (const r of recipients) {
+    const at = new Date().toISOString();
+    const phone = normalizePhone(r.phone);
+    if (!phone) {
+      attempts.push({ name: r.name || '(unknown)', phone: r.phone || '', status: 'failed', code: 'INVALID_PHONE_FORMAT', reason: `Could not normalize phone "${r.phone || ''}" to E.164`, at });
+    } else {
+      const body = (data.smsBody || '')
+        .replace(/\{firstName\}/g, r.name?.split(' ')[0] || 'there')
+        .replace(/\{lastName\}/g,  r.name?.split(' ').slice(1).join(' ') || '');
+      try {
+        const msg = await client.messages.create({ body, from, to: phone });
+        const tStatus = msg?.status || '';
+        if (tStatus === 'failed' || tStatus === 'undelivered') {
+          const code   = msg?.errorCode != null ? String(msg.errorCode) : `TWILIO_${tStatus.toUpperCase()}`;
+          const reason = msg?.errorMessage || `Twilio reported status: ${tStatus}`;
+          console.error(`[processSMSCampaign] ${r.name} ${phone} delivery-failed (no throw) status=${tStatus} code=${code} reason=${reason}`);
+          attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, twilioStatus: tStatus, twilioSid: msg?.sid || null, at });
+        } else {
+          attempts.push({ name: r.name || '(unknown)', phone, status: 'sent', twilioStatus: tStatus || null, twilioSid: msg?.sid || null, at });
+        }
+      } catch (err) {
+        const code = err?.code != null ? String(err.code) : 'UNKNOWN';
+        const reason = err?.message || 'Unknown Twilio error';
+        console.error(`[processSMSCampaign] ${r.name} ${phone} threw code=${code} reason=${reason}`);
+        attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, at });
+      }
+    }
+
+    const now = Date.now();
+    let cancelled = false;
+    if (attempts.length % FLUSH_EVERY_N === 0 || now - lastFlushAt >= FLUSH_EVERY_MS) {
+      try { await flushProgress(); } catch (e) { console.error('[processSMSCampaign] progress flush failed:', e); }
+      try {
+        const cur = await docRef.get();
+        if (cur.data()?.cancelRequested) cancelled = true;
+      } catch (e) { console.error('[processSMSCampaign] cancel-check read failed:', e); }
+    }
+    if (cancelled) break;
+  }
+
+  const { sent, failed } = counts();
+  const failures = attempts.filter(a => a.status === 'failed').slice(0, 200);
+  let finalStatus = 'done';
+  try {
+    const cur = await docRef.get();
+    if (cur.data()?.cancelRequested) finalStatus = 'cancelled';
+  } catch { /* fall through */ }
+  await docRef.update({
+    status: finalStatus,
+    sentCount: sent,
+    failCount: failed,
+    attemptedCount: attempts.length,
+    attempts: attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts,
+    attemptsTruncated: attempts.length > ATTEMPTS_CAP,
+    failures,
+    ...(finalStatus === 'cancelled'
+        ? { cancelledAt: new Date().toISOString() }
+        : { sentAt:      new Date().toISOString() }),
+  });
+}
+
 exports.sendSMSCampaign = onDocumentCreated(
   `tenants/{tenantId}/campaigns/{campaignId}`,
   async (event) => {
     const data = event.data.data();
     if (data.channel !== 'sms') return;
+    // Only fire on immediate sends. Scheduled campaigns are picked up by
+    // runScheduledCampaigns once their scheduleAt is past.
     if (data.status !== 'pending') return;
+    await processSMSCampaign(event.data.ref, data);
+  }
+);
 
-    const sid       = twilioSid.value();
-    const token     = twilioToken.value();
-    const apiKeySid = twilioApiKeySid.value();
-    const from      = twilioFrom.value();
-    if (!sid || !token || !from) {
-      await event.data.ref.update({ status: 'failed', error: 'twilio_not_configured' });
-      return;
-    }
+// Scheduled-send sweep. Runs every minute, finds SMS campaigns whose
+// scheduleAt has passed and are still status='scheduled', and processes
+// them. Idempotent: each one is flipped to 'sending' (atomically via a
+// status check) before processing so a duplicate sweep can't double-send.
+exports.runScheduledCampaigns = onSchedule(
+  { schedule: 'every 1 minutes', timeoutSeconds: 540 },
+  async () => {
+    const db = getFirestore();
+    const tenantsSnap = await db.collection('tenants').get();
+    const nowIso = new Date().toISOString();
 
-    const recipients = Array.isArray(data.recipients) ? data.recipients : [];
-    if (recipients.length === 0) {
-      await event.data.ref.update({ status: 'failed', error: 'no_recipients' });
-      return;
-    }
-
-    // Auth modes:
-    //   1. Master:  TWILIO_ACCOUNT_SID (AC...) + TWILIO_AUTH_TOKEN (master)
-    //   2. API Key: TWILIO_ACCOUNT_SID (AC...) + TWILIO_API_KEY_SID (SK...)
-    //               + TWILIO_AUTH_TOKEN (the API Key's secret)
-    // Twilio's SDK fails noisily if the SID style and call signature mismatch,
-    // so detect via prefix and route to the correct constructor.
-    const twilioSDK = require('twilio');
-    const client = apiKeySid
-      ? twilioSDK(apiKeySid, token, { accountSid: sid })
-      : twilioSDK(sid, token);
-
-    // Honor a cancel request that landed before the function picked up the
-    // doc (between create and trigger fire).
-    if (data.cancelRequested) {
-      await event.data.ref.update({
-        status: 'cancelled',
-        cancelledAt: new Date().toISOString(),
-        sentCount: 0, failCount: 0, attemptedCount: 0, attempts: [],
-      });
-      return;
-    }
-
-    // Flip to 'sending' immediately so the UI knows the function picked it up.
-    await event.data.ref.update({
-      status: 'sending',
-      startedAt: new Date().toISOString(),
-      sentCount: 0,
-      failCount: 0,
-      attemptedCount: 0,
-      attempts: [],
-    });
-
-    const attempts = []; // full chronological log: { name, phone, status, code?, reason?, at }
-    let lastFlushAt = Date.now();
-    const FLUSH_EVERY_N = 5;
-    const FLUSH_EVERY_MS = 1500;
-    const ATTEMPTS_CAP = 2000; // doc-size safety cap
-
-    // Derive counters from attempts so the doc can never show e.g.
-    // "0 sent / 1 failed" alongside an attempts entry tagged 'sent'.
-    function counts() {
-      let sent = 0, failed = 0;
-      for (const a of attempts) {
-        if (a.status === 'sent')        sent++;
-        else if (a.status === 'failed') failed++;
+    for (const tDoc of tenantsSnap.docs) {
+      let dueSnap;
+      try {
+        dueSnap = await db.collection(`tenants/${tDoc.id}/campaigns`)
+          .where('status', '==', 'scheduled')
+          .where('channel', '==', 'sms')
+          .where('scheduleAt', '<=', nowIso)
+          .get();
+      } catch (e) {
+        console.error(`[runScheduledCampaigns] query failed for tenant ${tDoc.id}:`, e?.message);
+        continue;
       }
-      return { sent, failed };
-    }
-
-    async function flushProgress() {
-      const { sent, failed } = counts();
-      const stored = attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts;
-      await event.data.ref.update({
-        sentCount: sent,
-        failCount: failed,
-        attemptedCount: attempts.length,
-        attempts: stored,
-        attemptsTruncated: attempts.length > ATTEMPTS_CAP,
-        lastUpdateAt: new Date().toISOString(),
-      });
-      lastFlushAt = Date.now();
-    }
-
-    for (const r of recipients) {
-      const at = new Date().toISOString();
-      const phone = normalizePhone(r.phone);
-      if (!phone) {
-        attempts.push({ name: r.name || '(unknown)', phone: r.phone || '', status: 'failed', code: 'INVALID_PHONE_FORMAT', reason: `Could not normalize phone "${r.phone || ''}" to E.164`, at });
-      } else {
-        const body = (data.smsBody || '')
-          .replace(/\{firstName\}/g, r.name?.split(' ')[0] || 'there')
-          .replace(/\{lastName\}/g,  r.name?.split(' ').slice(1).join(' ') || '');
+      for (const cDoc of dueSnap.docs) {
+        // Race-safe claim: only ONE sweep instance gets to process this row.
+        // We pre-flip to 'sending' inside a transaction; processSMSCampaign
+        // will overwrite startedAt/sentCount/etc. as part of its own setup.
+        let claimedData = null;
         try {
-          const msg = await client.messages.create({ body, from, to: phone });
-          // Twilio can resolve with a Message resource that's already in a
-          // failed/undelivered state (e.g. A2P 10DLC pre-block). That's not
-          // an exception path but it IS a delivery failure — record it as one.
-          const tStatus = msg?.status || '';
-          if (tStatus === 'failed' || tStatus === 'undelivered') {
-            const code   = msg?.errorCode != null ? String(msg.errorCode) : `TWILIO_${tStatus.toUpperCase()}`;
-            const reason = msg?.errorMessage || `Twilio reported status: ${tStatus}`;
-            console.error(`[sendSMSCampaign] ${r.name} ${phone} delivery-failed (no throw) status=${tStatus} code=${code} reason=${reason}`);
-            attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, twilioStatus: tStatus, twilioSid: msg?.sid || null, at });
-          } else {
-            attempts.push({ name: r.name || '(unknown)', phone, status: 'sent', twilioStatus: tStatus || null, twilioSid: msg?.sid || null, at });
-          }
-        } catch (err) {
-          const code = err?.code != null ? String(err.code) : 'UNKNOWN';
-          const reason = err?.message || 'Unknown Twilio error';
-          console.error(`[sendSMSCampaign] ${r.name} ${phone} threw code=${code} reason=${reason}`);
-          attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, at });
+          await db.runTransaction(async (tx) => {
+            const cur = await tx.get(cDoc.ref);
+            const d = cur.data();
+            if (d?.status !== 'scheduled') return;
+            tx.update(cDoc.ref, { status: 'sending', releasedAt: nowIso });
+            claimedData = d;
+          });
+        } catch (e) {
+          console.error(`[runScheduledCampaigns] claim failed for ${cDoc.id}:`, e?.message);
+          continue;
+        }
+        if (!claimedData) continue;
+        try {
+          await processSMSCampaign(cDoc.ref, claimedData);
+        } catch (e) {
+          console.error(`[runScheduledCampaigns] processSMSCampaign failed for ${cDoc.id}:`, e?.message);
+          await cDoc.ref.update({ status: 'failed', error: e?.message || 'scheduled_run_failed' }).catch(() => {});
         }
       }
-
-      // Periodic flush so the UI subscription sees progress live. After
-      // flushing, re-read the doc to honor user-requested cancellation.
-      const now = Date.now();
-      let cancelled = false;
-      if (attempts.length % FLUSH_EVERY_N === 0 || now - lastFlushAt >= FLUSH_EVERY_MS) {
-        try { await flushProgress(); } catch (e) { console.error('[sendSMSCampaign] progress flush failed:', e); }
-        try {
-          const cur = await event.data.ref.get();
-          if (cur.data()?.cancelRequested) cancelled = true;
-        } catch (e) { console.error('[sendSMSCampaign] cancel-check read failed:', e); }
-      }
-      if (cancelled) break;
     }
-
-    // Final write — counters always derived from attempts; failures[] kept
-    // populated for backward compat with old consumers.
-    const { sent, failed } = counts();
-    const failures = attempts.filter(a => a.status === 'failed').slice(0, 200);
-    // Re-check one last time so a cancel that landed between the last flush
-    // and the loop exit still flips the status.
-    let finalStatus = 'done';
-    try {
-      const cur = await event.data.ref.get();
-      if (cur.data()?.cancelRequested) finalStatus = 'cancelled';
-    } catch { /* fall through */ }
-    await event.data.ref.update({
-      status: finalStatus,
-      sentCount: sent,
-      failCount: failed,
-      attemptedCount: attempts.length,
-      attempts: attempts.length > ATTEMPTS_CAP ? attempts.slice(0, ATTEMPTS_CAP) : attempts,
-      attemptsTruncated: attempts.length > ATTEMPTS_CAP,
-      failures,
-      ...(finalStatus === 'cancelled'
-          ? { cancelledAt: new Date().toISOString() }
-          : { sentAt:      new Date().toISOString() }),
-    });
   }
 );
 

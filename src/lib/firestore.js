@@ -1357,12 +1357,18 @@ export async function deleteCampaign(id) {
   return deleteDoc(doc(CAMPAIGNS_COL, id));
 }
 
-// Soft-cancel a campaign mid-flight. The Cloud Function checks the
-// cancelRequested flag at every flush boundary and aborts cleanly.
+// Cancel a campaign. For scheduled campaigns we flip status directly
+// (the sweep skips them). For in-flight campaigns we set cancelRequested
+// and let the Cloud Function honor it at the next flush boundary.
 export async function cancelCampaign(id) {
-  await setDoc(doc(CAMPAIGNS_COL, id), {
+  const ref = doc(CAMPAIGNS_COL, id);
+  const snap = await getDoc(ref);
+  const cur = snap.exists() ? snap.data() : null;
+  const isScheduled = cur?.status === 'scheduled';
+  await setDoc(ref, {
     cancelRequested: true,
     cancelRequestedAt: new Date().toISOString(),
+    ...(isScheduled ? { status: 'cancelled', cancelledAt: new Date().toISOString() } : {}),
   }, { merge: true });
 }
 

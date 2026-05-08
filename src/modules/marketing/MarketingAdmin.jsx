@@ -15,6 +15,7 @@ const BUILTIN_TEMPLATES = [
     icon: '💅',
     subject: "We miss you, {firstName}! Come see us 💅",
     body: "Hi {firstName},\n\nIt's been a while since your last visit, and we'd love to see you again!\n\nWe have exciting new styles and services to share. Book your appointment today and let us pamper you.\n\nWe hope to see you soon!\n— The Meraki Team",
+    smsBody: "Hey {firstName} — it's been a while! We'd love to see you back at Meraki. Book your next visit anytime. Reply STOP to opt out.",
   },
   {
     id: '_birthday',
@@ -22,6 +23,7 @@ const BUILTIN_TEMPLATES = [
     icon: '🎂',
     subject: "Happy Birthday, {firstName}! 🎂 A gift from Meraki",
     body: "Hi {firstName},\n\nHappy Birthday! 🎉 We hope your special day is as fabulous as you are.\n\nAs a birthday gift from us to you, we'd love to treat you to something special. Come celebrate with us this month!\n\nWith love,\n— The Meraki Team",
+    smsBody: "Happy birthday, {firstName}! 🎂 A little treat is waiting for you at Meraki — come in this month to claim it. Reply STOP to opt out.",
   },
   {
     id: '_referral',
@@ -29,6 +31,7 @@ const BUILTIN_TEMPLATES = [
     icon: '💕',
     subject: "Love your nails? Share the love, {firstName}! 💕",
     body: "Hi {firstName},\n\nWe're so grateful to have amazing clients like you! If you've been happy with your experience at Meraki, we'd love for you to spread the word.\n\nRefer a friend to Meraki and help us grow our family. Your support means the world to us!\n\nThank you for being amazing,\n— The Meraki Team",
+    smsBody: "{firstName}, refer a friend to Meraki and we'll thank you both with a little something. We appreciate you 💕 Reply STOP to opt out.",
   },
   {
     id: '_flash',
@@ -36,6 +39,7 @@ const BUILTIN_TEMPLATES = [
     icon: '⚡',
     subject: "⚡ Limited time offer just for you, {firstName}!",
     body: "Hi {firstName},\n\nFor a limited time only, we have a special offer just for you!\n\nSpots are filling up fast — book now before this deal is gone.\n\nDon't miss out!\n— The Meraki Team",
+    smsBody: "{firstName}, ⚡ flash deal at Meraki today — limited spots. Book now before they're gone. Reply STOP to opt out.",
   },
   {
     id: '_newservice',
@@ -43,6 +47,7 @@ const BUILTIN_TEMPLATES = [
     icon: '🌟',
     subject: "🌟 Exciting news from Meraki, {firstName}!",
     body: "Hi {firstName},\n\nWe have exciting news — we've just added new services to our menu and we think you're going to love them!\n\nBe among the first to try something new. Book your appointment now.\n\nCan't wait to see you!\n— The Meraki Team",
+    smsBody: "{firstName}, we just added new services at Meraki 🌟 Be one of the first to try them — book your visit. Reply STOP to opt out.",
   },
   {
     id: '_seasonal',
@@ -50,6 +55,7 @@ const BUILTIN_TEMPLATES = [
     icon: '✨',
     subject: "✨ Treat yourself this season, {firstName}!",
     body: "Hi {firstName},\n\nThe season is here, and there's no better time to treat yourself!\n\nCome visit us at Meraki and let us take care of you. Book your appointment today — our schedule fills up fast!\n\nSee you soon,\n— The Meraki Team",
+    smsBody: "{firstName}, treat yourself this season ✨ Our schedule's filling fast — book your spot at Meraki. Reply STOP to opt out.",
   },
   {
     id: '_loyalty',
@@ -57,8 +63,26 @@ const BUILTIN_TEMPLATES = [
     icon: '🙏',
     subject: "A heartfelt thank you, {firstName} 🙏",
     body: "Hi {firstName},\n\nWe just wanted to take a moment to say thank you. Your loyalty means everything to us and we're so grateful to have you as part of the Meraki family.\n\nAs a small token of our appreciation, we have something special for you.\n\nWith gratitude,\n— The Meraki Team",
+    smsBody: "Thank you, {firstName} 🙏 Your loyalty means everything to us. We have a little something waiting for you at Meraki. Reply STOP to opt out.",
   },
 ];
+
+// SMS pricing (US, Twilio standard rate). Used for cost estimate in the modal.
+const SMS_RATE_PER_SEGMENT = 0.0079;
+// SMS segment math: GSM-7 fits 160 chars/segment when single-segment; multi-
+// part SMS uses 153/segment. UCS-2 (any non-GSM char like emoji) is 70 / 67.
+function smsSegmentInfo(text) {
+  const t = text || '';
+  // Cheap "is GSM-7" check — emoji and many curly quotes force UCS-2.
+  // Twilio is the source of truth at send time; this is only for preview.
+  const isUcs2 = /[^\x00-\x7F -ÿ€]/.test(t) || /[‘’“”…–—]/.test(t);
+  const len = [...t].length;
+  if (len === 0) return { length: 0, segments: 0, encoding: 'GSM-7' };
+  const single = isUcs2 ? 70 : 160;
+  const multi  = isUcs2 ? 67 : 153;
+  const segments = len <= single ? 1 : Math.ceil(len / multi);
+  return { length: len, segments, encoding: isUcs2 ? 'UCS-2' : 'GSM-7' };
+}
 
 const SEGMENTS = [
   { id: 'all',          label: 'All clients',          desc: 'Everyone with an email address' },
@@ -141,12 +165,51 @@ export default function MarketingAdmin() {
   }
 
   async function handleCancel(id) {
-    if (!confirm('Cancel this campaign? Sending will stop at the next checkpoint (~1–2s).')) return;
+    if (!confirm('Cancel this campaign? In-flight sends stop at the next checkpoint (~1–2s); scheduled ones simply won\'t fire.')) return;
     try {
       await cancelCampaign(id);
       logActivity('marketing_campaign_cancelled', id);
-      showToast('Cancellation requested — sending will stop shortly');
+      showToast('Cancellation requested');
     } catch (e) { showToast('Cancel failed: ' + e.message, 3000); }
+  }
+
+  // Retry resends the campaign to recipients that didn't get a successful
+  // attempt last time — failed ones plus anything that was queued at
+  // cancellation. Creates a NEW campaign rather than mutating the original
+  // so history is preserved.
+  async function handleRetry(c) {
+    const attempted = Array.isArray(c.attempts) ? c.attempts : [];
+    const sentClientIds = new Set();
+    attempted.forEach(a => {
+      if (a.status === 'sent' && a.phone) sentClientIds.add(a.phone);
+    });
+    const remaining = (c.recipients || []).filter(r => !sentClientIds.has(r.phone));
+    if (remaining.length === 0) { showToast('Nothing to retry — every recipient already received a successful send.', 3500); return; }
+    const proceed = window.confirm(`Retry will create a new campaign and send to the ${remaining.length} recipient${remaining.length !== 1 ? 's' : ''} that didn't get a successful delivery (failed or queued at cancellation).\n\nThe original campaign stays as-is. Continue?`);
+    if (!proceed) return;
+    try {
+      await createCampaign({
+        name: `${c.name} (retry)`,
+        channel: c.channel,
+        subject: c.subject || null,
+        body:    c.body    || null,
+        smsBody: c.smsBody || null,
+        segmentType: c.segmentType,
+        segmentParams: c.segmentParams || {},
+        promoCode:  c.promoCode  || null,
+        promoLabel: c.promoLabel || null,
+        ctaText:    c.ctaText    || null,
+        ctaUrl:     c.ctaUrl     || null,
+        recipients: remaining,
+        recipientCount: remaining.length,
+        status: 'pending',
+        scheduleAt: null,
+        sentCount: 0, failCount: 0,
+        retryOf: c.id,
+      });
+      logActivity('marketing_campaign_retried', `${c.name} → ${remaining.length} recipients`);
+      showToast(`Retrying ${remaining.length} recipient${remaining.length !== 1 ? 's' : ''}`, 3000);
+    } catch (e) { showToast('Retry failed: ' + e.message, 3000); }
   }
 
   const totalSent    = (campaigns || []).reduce((s, c) => s + (c.sentCount || 0), 0);
@@ -209,6 +272,7 @@ export default function MarketingAdmin() {
                   <CampaignRow key={c.id} campaign={c} last={i === campaigns.length - 1}
                     onDelete={() => handleDelete(c.id)}
                     onCancel={() => handleCancel(c.id)}
+                    onRetry={()  => handleRetry(c)}
                     onClone={() => setModal(c)} />
                 ))}
               </div>
@@ -299,17 +363,22 @@ function AutomationsPanel({ settings, updateSettings, isAdmin, showToast }) {
 }
 
 // ── Campaign row ───────────────────────────────────────
-function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone }) {
+function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }) {
   const [expanded, setExpanded] = useState(false);
   const STATUS = {
     pending:   { bg: '#fffbeb', fg: '#92400e', label: 'Queued'    },
+    scheduled: { bg: '#fdf4ff', fg: '#86198f', label: 'Scheduled' },
     sending:   { bg: '#eff6ff', fg: '#1d4ed8', label: 'Sending'   },
     done:      { bg: '#f0fdf4', fg: '#16a34a', label: 'Sent'      },
     failed:    { bg: '#fef2f2', fg: '#ef4444', label: 'Failed'    },
     cancelled: { bg: '#f5f5f5', fg: '#6b7280', label: 'Cancelled' },
   };
-  const isActive = c.status === 'pending' || c.status === 'sending';
+  // 'sending' / 'pending' / 'scheduled' all support cancel. Scheduled
+  // ones never started; the Cloud Scheduler sweep skips them since
+  // status changes to 'cancelled'.
+  const isActive       = c.status === 'pending' || c.status === 'sending' || c.status === 'scheduled';
   const cancelInFlight = isActive && c.cancelRequested;
+  const canRetry       = (c.status === 'done' || c.status === 'cancelled' || c.status === 'failed') && (c.failCount > 0 || c.attemptedCount < c.recipientCount);
   const s        = STATUS[c.status] || STATUS.pending;
   const segLabel = SEGMENTS.find(x => x.id === c.segmentType)?.label || c.segmentType || '—';
   const date     = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -342,10 +411,15 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone }) {
         </div>
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: s.bg, color: s.fg, letterSpacing: '.04em', textTransform: 'uppercase' }}>{s.label}</span>
-          {(c.status === 'sending' || c.status === 'done') && (
+          {(c.status === 'sending' || c.status === 'done' || c.status === 'cancelled') && (
             <div style={{ fontSize: 10, color: '#aaa', marginTop: 3 }}>
-              {c.status === 'done' ? '✓' : '📨'} {c.sentCount || 0} sent{c.failCount > 0 ? ` · ${c.failCount} failed` : ''}
+              {c.status === 'done' ? '✓' : c.status === 'cancelled' ? '⏹' : '📨'} {c.sentCount || 0} sent{c.failCount > 0 ? ` · ${c.failCount} failed` : ''}
               {c.status === 'sending' && c.recipientCount ? ` · ${(c.recipientCount - (c.attemptedCount || 0))} queued` : ''}
+            </div>
+          )}
+          {c.status === 'scheduled' && c.scheduleAt && (
+            <div style={{ fontSize: 10, color: '#86198f', marginTop: 3, fontWeight: 600 }}>
+              {new Date(c.scheduleAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
             </div>
           )}
           {c.status === 'pending' && (
@@ -386,11 +460,17 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone }) {
               </div>
             </div>
           )}
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {isActive && (
               <button onClick={e => { e.stopPropagation(); onCancel(); }} disabled={cancelInFlight}
                 style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #f59e0b', background: cancelInFlight ? '#fef3c7' : '#fffbeb', color: '#92400e', cursor: cancelInFlight ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                {cancelInFlight ? '⏳ Cancelling…' : '⏹ Cancel send'}
+                {cancelInFlight ? '⏳ Cancelling…' : c.status === 'scheduled' ? '⏹ Cancel scheduled' : '⏹ Cancel send'}
+              </button>
+            )}
+            {canRetry && (
+              <button onClick={e => { e.stopPropagation(); onRetry(); }}
+                style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #2D7A5F', background: '#f0faf6', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                🔄 Retry {Math.max(c.failCount || 0, (c.recipientCount || 0) - (c.attemptedCount || 0))} unsent
               </button>
             )}
             <button onClick={e => { e.stopPropagation(); onClone(); }}
@@ -570,6 +650,20 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   const [newDays,       setNewDays]       = useState(30);
   const [showRecipients,setShowRecipients]= useState(false);
 
+  // Scheduling: 'now' (immediate) | 'later' (date+time). Default to immediate.
+  // When a campaign is scheduled, the doc is written with status='scheduled'
+  // + scheduleAt (ISO); a Cloud Scheduler sweep flips it to 'sending' once due.
+  const [sendMode,    setSendMode]    = useState('now');
+  // Default schedule: tomorrow 10am local (a sane non-zero default that
+  // doesn't accidentally fire immediately if the user picks "later" but
+  // forgets to change the time).
+  const defaultSchedule = useMemo(() => {
+    const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(10, 0, 0, 0);
+    return { date: d.toISOString().slice(0, 10), time: '10:00' };
+  }, []);
+  const [schedDate,   setSchedDate]   = useState(defaultSchedule.date);
+  const [schedTime,   setSchedTime]   = useState(defaultSchedule.time);
+
   useEffect(() => {
     fetchClients().then(setClients).catch(() => setClients([]));
     fetchEmployees().then(emps => setEmployees(emps.filter(e => e.active !== false))).catch(() => {});
@@ -656,18 +750,30 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   }, [clients, channel, segType, lapDays, recentAppts, techSel, serviceSel, allAppts, newDays, minVisits, reviewedIds]);
 
   function applyTemplate(tpl) {
-    setSubject(tpl.subject);
-    setBody(tpl.body);
+    if (tpl.subject) setSubject(tpl.subject);
+    if (tpl.body)    setBody(tpl.body);
+    if (tpl.smsBody) setSmsBody(tpl.smsBody);
     setActiveTemplate(tpl.id);
     setSavingTpl(false);
   }
 
   async function handleSaveTemplate() {
     const n = tplName.trim() || name.trim();
-    if (!n || !subject.trim() || !body.trim()) return;
+    // Channel-aware required fields: SMS templates need smsBody; email
+    // templates need subject + body. Both are saved when both are filled
+    // so a single template can serve both channels.
+    const hasEmail = !!(subject.trim() && body.trim());
+    const hasSms   = !!smsBody.trim();
+    if (!n || (!hasEmail && !hasSms)) return;
     try {
-      const doc = await saveCampaignTemplate({ name: n, subject: subject.trim(), body: body.trim() });
-      const newTpl = { id: doc.id, name: n, subject: subject.trim(), body: body.trim() };
+      const tpl = {
+        name: n,
+        subject: hasEmail ? subject.trim() : '',
+        body:    hasEmail ? body.trim()    : '',
+        smsBody: hasSms   ? smsBody.trim() : '',
+      };
+      const doc = await saveCampaignTemplate(tpl);
+      const newTpl = { id: doc.id, ...tpl };
       setSavedTpls(prev => [newTpl, ...prev]);
       setActiveTemplate(doc.id);
       setTplName('');
@@ -699,12 +805,42 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
     (['tech','service','new_clients','top_clients'].includes(segType) && allAppts === null) ||
     (segType === 'no_review'   && reviewedIds === null);
 
+  // Compute the schedule's ISO timestamp. Treat the date+time as local
+  // (matches what the user typed in the inputs); convert to UTC ISO for
+  // storage so the Cloud Function can compare against `new Date().toISOString()`.
+  const scheduleAt = useMemo(() => {
+    if (sendMode !== 'later' || !schedDate || !schedTime) return null;
+    const local = new Date(`${schedDate}T${schedTime}:00`);
+    return Number.isNaN(local.getTime()) ? null : local.toISOString();
+  }, [sendMode, schedDate, schedTime]);
+  const scheduleInPast = scheduleAt && new Date(scheduleAt).getTime() <= Date.now();
+
+  const smsInfo = useMemo(() => smsSegmentInfo(smsBody), [smsBody]);
+  const recipientCount = recipients?.length ?? 0;
+  const estCost = channel === 'sms' && smsInfo.segments > 0
+    ? recipientCount * smsInfo.segments * SMS_RATE_PER_SEGMENT
+    : 0;
+
   const canSend = !sending && !loading && !needsSelection &&
-    !!name.trim() && (recipients?.length ?? 0) > 0 &&
-    (channel === 'sms' ? !!smsBody.trim() : (!!subject.trim() && !!body.trim()));
+    !!name.trim() && recipientCount > 0 &&
+    (channel === 'sms' ? !!smsBody.trim() : (!!subject.trim() && !!body.trim())) &&
+    (sendMode === 'now' || (!!scheduleAt && !scheduleInPast));
 
   async function submit() {
     if (!canSend) return;
+
+    // Mass-send safety check. >10 recipients is a sane threshold for "this
+    // is more than a personal test" — same threshold competitors use.
+    if (recipientCount > 10) {
+      const what = sendMode === 'later' ? 'schedule' : 'send';
+      const when = sendMode === 'later' ? `\n\nScheduled for: ${new Date(scheduleAt).toLocaleString()}` : '';
+      const cost = channel === 'sms' && estCost > 0 ? `\nEstimated cost: ~$${estCost.toFixed(2)} (${smsInfo.segments} segment${smsInfo.segments !== 1 ? 's' : ''} × ${recipientCount} recipients)` : '';
+      const ok = window.confirm(
+        `You're about to ${what} this campaign to ${recipientCount} recipients.${when}${cost}\n\nContinue?`
+      );
+      if (!ok) return;
+    }
+
     setSending(true);
     const segmentParams = {};
     if (segType === 'lapsed')       segmentParams.days        = lapDays;
@@ -723,10 +859,24 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
       ctaText:    channel === 'email' && addCta && ctaText.trim() ? ctaText.trim() : null,
       ctaUrl:     channel === 'email' && addCta && ctaUrl.trim()  ? ctaUrl.trim()  : null,
       recipients: recipients.map(c => ({ clientId: c.id, name: c.name, email: c.email || null, phone: c.phone || null })),
-      recipientCount: recipients.length,
-      status: 'pending', sentCount: 0, failCount: 0,
+      recipientCount,
+      // 'pending' fires the immediate trigger; 'scheduled' is picked up by
+      // runScheduledCampaigns when scheduleAt is past.
+      status: sendMode === 'later' ? 'scheduled' : 'pending',
+      scheduleAt: sendMode === 'later' ? scheduleAt : null,
+      sentCount: 0, failCount: 0,
     });
     setSending(false);
+  }
+
+  // Insert a personalization variable at the cursor of the active body
+  // textarea. Detects which channel's textarea is in focus.
+  function insertVariable(varName) {
+    const isSms = channel === 'sms';
+    const cur = isSms ? smsBody : body;
+    const setter = isSms ? setSmsBody : setBody;
+    setter(cur + (cur && !cur.endsWith(' ') ? ' ' : '') + varName);
+    setActiveTemplate(null);
   }
 
   const allTemplates = [...BUILTIN_TEMPLATES, ...savedTpls];
@@ -986,22 +1136,63 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
           {channel === 'sms' && (
             <F label="Text message">
-              <textarea value={smsBody} onChange={e => setSmsBody(e.target.value.slice(0, 320))} rows={4}
+              <textarea value={smsBody} onChange={e => { setSmsBody(e.target.value.slice(0, 1600)); setActiveTemplate(null); }} rows={4}
                 placeholder="Hi {firstName}, come visit us at Meraki! Book at meraki.tipflow.app"
                 style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
-                <div style={{ fontSize: 10, color: '#aaa' }}>
-                  Use <code style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, color: '#aaa', marginRight: 4 }}>Insert:</span>
+                  <button type="button" onClick={() => insertVariable('{firstName}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>{'{firstName}'}</button>
+                  <button type="button" onClick={() => insertVariable('{lastName}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>{'{lastName}'}</button>
                 </div>
-                <span style={{ fontSize: 10, color: smsBody.length > 160 ? '#f59e0b' : '#bbb' }}>
-                  {smsBody.length}/160{smsBody.length > 160 ? ' (2 SMS)' : ''}
+                <span style={{ fontSize: 10, color: smsInfo.segments > 1 ? '#f59e0b' : '#888' }}>
+                  {smsInfo.length} chars · {smsInfo.segments} segment{smsInfo.segments !== 1 ? 's' : ''} · {smsInfo.encoding}
+                  {smsInfo.encoding === 'UCS-2' && smsInfo.segments > 1 ? ' (emoji halves capacity)' : ''}
                 </span>
               </div>
+              {channel === 'sms' && recipientCount > 0 && smsInfo.segments > 0 && (
+                <div style={{ marginTop: 6, fontSize: 11, color: '#555' }}>
+                  Estimated cost: <strong>${estCost.toFixed(2)}</strong>
+                  <span style={{ color: '#999' }}> · {smsInfo.segments} × {recipientCount} × ${SMS_RATE_PER_SEGMENT.toFixed(4)}/segment</span>
+                </div>
+              )}
               <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
-                Requires Twilio configured. Clients must have a phone number on file.
+                Requires Twilio configured. Clients must have a phone number on file. Add an opt-out clause (e.g. "Reply STOP to opt out") for TCPA compliance.
               </div>
             </F>
           )}
+
+          <F label="Send schedule">
+            <div style={{ display: 'flex', gap: 8, marginBottom: sendMode === 'later' ? 10 : 0 }}>
+              <button type="button" onClick={() => setSendMode('now')}
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sendMode === 'now' ? '#2D7A5F' : '#d8d8d8'}`, background: sendMode === 'now' ? '#f0faf6' : '#fff', color: sendMode === 'now' ? '#2D7A5F' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                ⚡ Send immediately
+              </button>
+              <button type="button" onClick={() => setSendMode('later')}
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sendMode === 'later' ? '#2D7A5F' : '#d8d8d8'}`, background: sendMode === 'later' ? '#f0faf6' : '#fff', color: sendMode === 'later' ? '#2D7A5F' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                🕒 Schedule for later
+              </button>
+            </div>
+            {sendMode === 'later' && (
+              <div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input type="date" value={schedDate} onChange={e => setSchedDate(e.target.value)}
+                    min={new Date().toISOString().slice(0, 10)}
+                    style={{ ...inp, width: 'auto' }} />
+                  <input type="time" value={schedTime} onChange={e => setSchedTime(e.target.value)}
+                    style={{ ...inp, width: 'auto' }} />
+                  <span style={{ fontSize: 10, color: '#888' }}>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+                </div>
+                <div style={{ fontSize: 11, color: scheduleInPast ? '#ef4444' : '#666', marginTop: 6 }}>
+                  {scheduleAt
+                    ? scheduleInPast
+                      ? '⚠ Pick a time in the future — this is in the past.'
+                      : `Will send around ${new Date(scheduleAt).toLocaleString()} (within 1 minute).`
+                    : 'Pick a date and time.'}
+                </div>
+              </div>
+            )}
+          </F>
 
           <div style={{ display: 'flex', gap: 8 }}>
             {channel === 'email' && (
@@ -1012,7 +1203,12 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
             )}
             <button onClick={submit} disabled={!canSend}
               style={{ flex: channel === 'email' ? 2 : 1, padding: 11, borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit' }}>
-              {sending ? 'Queuing…' : loading ? 'Loading…' : needsSelection ? 'Select audience' : `Send to ${recipients?.length ?? 0} clients`}
+              {sending ? (sendMode === 'later' ? 'Scheduling…' : 'Queuing…')
+                : loading ? 'Loading…'
+                : needsSelection ? 'Select audience'
+                : sendMode === 'later'
+                  ? `Schedule for ${recipientCount} client${recipientCount !== 1 ? 's' : ''}`
+                  : `Send to ${recipientCount} client${recipientCount !== 1 ? 's' : ''}`}
             </button>
           </div>
         </div>
