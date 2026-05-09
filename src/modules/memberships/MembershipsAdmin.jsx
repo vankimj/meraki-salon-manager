@@ -191,9 +191,22 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
         await httpsCallable(functions, 'emailMembershipPaymentLink')({ membershipId: m.id, url });
         showToast(`Payment link emailed to ${client.email}`);
       } else {
-        // No email on file — copy URL to clipboard for manual share
-        await navigator.clipboard.writeText(url).catch(() => {});
-        showToast('No email on file — link copied to clipboard');
+        // No email on file — copy URL to clipboard for manual share. Fall
+        // back to a prompt() if clipboard API is blocked (Safari with
+        // permissions disabled, http context, etc).
+        let copied = false;
+        try {
+          if (navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(url);
+            copied = true;
+          }
+        } catch {}
+        if (copied) {
+          showToast('No email on file — link copied to clipboard', 4000);
+        } else {
+          // Visible prompt the user can manually copy from
+          window.prompt('Copy this payment link and share it with the client:', url);
+        }
       }
     } catch (e) {
       showToast(`Could not send link: ${e.message || 'unknown'}`, 4500);

@@ -243,6 +243,16 @@ export default function TechEarnings() {
         <div style={{ textAlign: 'center', padding: '60px 20px', color: '#bbb' }}>Loading…</div>
       )}
 
+      {!loading && data && data.month.serviceCount === 0 && data.todayRemaining.length === 0 && data.nextSevenDays.length === 0 && (
+        <div style={{ background: 'linear-gradient(135deg, #f3eafc 0%, #eaf3fc 100%)', border: '1px solid #d8d0e8', borderRadius: 14, padding: 24, textAlign: 'center', marginBottom: 18 }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>✨</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Welcome, {techName.split(' ')[0]}!</div>
+          <div style={{ fontSize: 13, color: '#666', maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>
+            Your dashboard will fill in once you start completing appointments. Tips, services done, and your weekly take-home will all appear here in real time.
+          </div>
+        </div>
+      )}
+
       {!loading && data && (
         <>
           {/* Three stat cards: Today / This week / This month */}

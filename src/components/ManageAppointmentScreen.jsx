@@ -319,6 +319,7 @@ function RescheduleView({ appt, salon, policy, tid, apptId, token, onConfirmed, 
 
 function DoneView({ state, salon }) {
   const isCancel = state.type === 'cancelled';
+  const icsHref = isCancel ? null : buildIcsDataUrl(state.appt, salon);
   return (
     <>
       <div style={{
@@ -337,13 +338,52 @@ function DoneView({ state, salon }) {
         </div>
       </div>
       <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: '#666', lineHeight: 1.6 }}>
-        {!isCancel && <>You'll get a reminder {state.appt.startTime ? '24 hours before' : 'before your visit'}.<br /></>}
+        {!isCancel && (
+          <>
+            {icsHref && (
+              <a href={icsHref} download={`${salon.name || 'Appointment'}.ics`}
+                style={{ display: 'inline-block', padding: '10px 18px', borderRadius: 10, background: '#5b3b8c', color: '#fff', textDecoration: 'none', fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
+                📅 Add to Calendar
+              </a>
+            )}
+            <div style={{ marginBottom: 8 }}>You'll get a reminder {state.appt.startTime ? '24 hours before' : 'before your visit'}.</div>
+          </>
+        )}
         Questions? Call <a href={`tel:${salon.phone || ''}`} style={{ color: '#5b3b8c', fontWeight: 600, textDecoration: 'none' }}>
           {salon.phone || salon.name}
         </a>.
       </div>
     </>
   );
+}
+
+// Build a data: URL containing an .ics file the browser can hand to the
+// device's default calendar app. Works on iOS (Calendar.app), Android
+// (Google Cal), Outlook, etc. without any backend round-trip.
+function buildIcsDataUrl(appt, salon) {
+  if (!appt?.date || !appt?.startTime) return null;
+  const startDt = new Date(`${appt.date}T${appt.startTime}:00`);
+  if (Number.isNaN(startDt.getTime())) return null;
+  const endDt   = new Date(startDt.getTime() + (Number(appt.duration) || 60) * 60000);
+  const iso     = (d) => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const uid     = `${appt.id || Math.random().toString(36).slice(2)}@plumenexus`;
+  const title   = `${salon.name || 'Appointment'}: ${(appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Visit'}`;
+  const desc    = `With ${appt.techName || 'your tech'}${salon.phone ? `\\nPhone: ${salon.phone}` : ''}`;
+  const ics = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Plume Nexus//EN',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${iso(new Date())}`,
+    `DTSTART:${iso(startDt)}`,
+    `DTEND:${iso(endDt)}`,
+    `SUMMARY:${title.replace(/[\r\n]/g, ' ')}`,
+    `DESCRIPTION:${desc}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
 }
 
 function DetailRow({ icon, label, value }) {

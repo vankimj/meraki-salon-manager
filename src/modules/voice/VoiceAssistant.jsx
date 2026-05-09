@@ -354,6 +354,25 @@ function ProposalView({ proposal, executing, listening, clients, services, techs
 
   if (actionType === 'view') {
     const items = payload?.items || [];
+    // Defensively render either strings (preferred) or appointment-shaped
+    // objects ({startTimeFormatted, clientName, services}) the model
+    // sometimes returns despite the prompt. Falls back to JSON for
+    // anything else.
+    const renderItem = (it) => {
+      if (typeof it === 'string') return it;
+      if (it && typeof it === 'object') {
+        const time = it.startTimeFormatted || it.startTime || '';
+        const client = it.clientName || '';
+        const tech = it.techName || '';
+        const services = Array.isArray(it.services)
+          ? it.services.map(s => typeof s === 'string' ? s : (s.name || '')).filter(Boolean).join(', ')
+          : (it.services || '');
+        const status = it.status && it.status !== 'scheduled' ? ` (${it.status})` : '';
+        const parts = [time, client, tech, services].filter(Boolean);
+        if (parts.length) return parts.join(' · ') + status;
+      }
+      return JSON.stringify(it);
+    };
     return (
       <div>
         <div style={{ fontSize: 14, color: '#222', marginBottom: 10, fontWeight: 600 }}>{naturalReply || summary}</div>
@@ -361,12 +380,12 @@ function ProposalView({ proposal, executing, listening, clients, services, techs
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {items.map((it, i) => (
               <div key={i} style={{ padding: '8px 10px', background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: '#222' }}>
-                {typeof it === 'string' ? it : JSON.stringify(it)}
+                {renderItem(it)}
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: '#888' }}>{payload?.description || 'No details available.'}</div>
+          <div style={{ fontSize: 12, color: '#888' }}>{payload?.description || summary || 'No details available.'}</div>
         )}
         <button onClick={onCancel} style={{ marginTop: 12, width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Done</button>
       </div>

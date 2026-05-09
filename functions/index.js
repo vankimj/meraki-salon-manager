@@ -2281,7 +2281,7 @@ exports.voiceCommand = onCall(
             summary: { type: 'string', description: 'A one-sentence plain-English description of what will happen, in present tense. e.g. "Book Sarah Johnson with Tess on Tuesday May 13 at 2:00 PM for Gel Manicure."' },
             payload: {
               type: 'object',
-              description: 'Action-specific data. For "book": { clientId, clientName, techName, date, startTime (HH:mm), duration, services: [{name, duration, price}] }. For "reschedule": { apptId, newTechName?, newDate?, newStartTime? }. For "cancel": { apptId }. For "checkIn": { apptId }. For "view": { description, items: [...] }. For "unsupported": { reason }.',
+              description: 'Action-specific data. For "book": { clientId, clientName, techName, date, startTime (HH:mm), duration, services: [{name, duration, price}] }. For "reschedule": { apptId, newTechName?, newDate?, newStartTime? }. For "cancel": { apptId }. For "checkIn": { apptId }. For "view": { description, items: [string] } — items MUST be plain readable strings like "10:00 AM — Sarah Johnson — Gel Manicure (60 min)" or "Tess D is fully booked today". Do not put objects in items. For "unsupported": { reason }.',
             },
             naturalReply: { type: 'string', description: 'Short conversational reply to show the user. Used as a header above the confirmation card.' },
           },
@@ -2428,19 +2428,29 @@ exports.draftConflictMessages = onCall(
                      : reason === 'vacation' ? 'on vacation'
                      : 'unavailable';
 
-    // Build a compact appt-context string for the prompt
+    // Per-appt magic-link so each client can self-service reschedule/cancel
+    // without calling the salon. Drops into both SMS and email drafts.
+    const manageLinks = {};
+    affected.forEach(a => {
+      const link = apptManageUrl(TENANT_ID, a.id);
+      if (link) manageLinks[a.id] = link;
+    });
+
+    // Build a compact appt-context string for the prompt — include the
+    // per-appt manage link so the model can reference it inline.
     const apptList = affected.map((a, idx) => {
       const services = (a.services || []).map(s => s.name || s).filter(Boolean).join(', ') || 'service';
       const newTech = a.newTechName ? ` → reassigned to ${a.newTechName}` : '';
       const specific = a.techRequestType === 'specific' ? ' (specifically requested this tech)' : '';
-      return `${idx + 1}. ${a.clientName || 'Client'} on ${fmtDate(a.date)} at ${fmtTime(a.startTime)} for ${services}${specific}${newTech}`;
+      const link = manageLinks[a.id] ? `\n   Reschedule/cancel link: ${manageLinks[a.id]}` : '';
+      return `${idx + 1}. ID: ${a.id} | ${a.clientName || 'Client'} on ${fmtDate(a.date)} at ${fmtTime(a.startTime)} for ${services}${specific}${newTech}${link}`;
     }).join('\n');
 
     const systemPrompt = `You draft polite, professional client outreach messages for a salon when a technician is unavailable. Tone: warm, apologetic, action-oriented. Sound like the salon owner, not a robot.
 
 Two outreach scenarios:
-1. **Reassigned**: A different tech will cover. Confirm the swap, mention the original tech is out, ask the client to reply YES to confirm or call to reschedule.
-2. **Needs reschedule**: No coverage available. Apologize, explain, offer the booking link or phone to reschedule.
+1. **Reassigned**: A different tech will cover. Confirm the swap, mention the original tech is out, point them at the per-appt reschedule link if they prefer a different time. End with "reply YES to confirm or use the link to reschedule".
+2. **Needs reschedule**: No coverage available. Apologize, explain, include the per-appt reschedule link prominently so they can pick a new time without calling.
 
 Output strict JSON (no other text). Schema:
 {
@@ -2448,9 +2458,9 @@ Output strict JSON (no other text). Schema:
     {
       "apptId": "<original id>",
       "scenario": "reassigned" | "reschedule",
-      "smsDraft": "<140-200 chars, single message, no emojis except possibly one ❤️ or 🌸>",
+      "smsDraft": "<140-200 chars, single message, no emojis except possibly one ❤️ or 🌸 — INCLUDE the reschedule link if provided>",
       "emailSubject": "<short, 8-12 words>",
-      "emailDraft": "<3-5 sentences, friendly>"
+      "emailDraft": "<3-5 sentences, friendly — INCLUDE the reschedule link as a clickable URL when provided>"
     }
   ]
 }
@@ -2459,9 +2469,11 @@ Salon: ${salonName}${salonPhone ? `, phone ${salonPhone}` : ''}. Booking URL: ${
 
 Tech ${technicianName} is ${reasonText} ${startDate === endDate ? `on ${fmtDate(startDate)}` : `from ${fmtDate(startDate)} through ${fmtDate(endDate)}`}.
 
-For appts marked "specifically requested" — be a bit more apologetic since the client picked the tech. Offer to wait for ${technicianName}'s next available slot or pick someone else.
+For appts marked "specifically requested" — be a bit more apologetic since the client picked the tech. Offer to wait for ${technicianName}'s next available slot or pick someone else via the reschedule link.
 
-Keep SMS under 200 characters (so it stays a single segment). Use \\n in SMS for line breaks if needed.
+CRITICAL: when a "Reschedule/cancel link" is provided in the appointment context below, include that EXACT URL (full https://...) in BOTH the smsDraft and emailDraft. The link is per-appointment — never share another client's link. Make the URL clearly visible (don't disguise it). For SMS, put the URL on its own line; for email, the URL should be plain text the email client will auto-link.
+
+Keep SMS under 200 characters (so it stays a single segment), but if you must exceed it to include the link, that's acceptable — segments are cheap. Use \\n in SMS for line breaks if needed.
 
 Use the client's first name only. Sign messages "${salonName}".`;
 
@@ -4146,34 +4158,40 @@ exports.retryGiftCardEmail = onCall({ cors: true }, async (request) => {
 
 // Marketing pitch system prompt — long-lived, prompt-cached so the per-call
 // token bill is just the conversation tail.
-const PLUMENEXUS_SYSTEM_PROMPT = `You are Plume — the AI assistant for Plume Nexus, a salon-management SaaS platform sold at https://plumenexus.com.
+const PLUMENEXUS_SYSTEM_PROMPT = `You are Plume — the AI assistant for Plume Nexus, a salon-management platform sold at https://plumenexus.com.
 
 Your role: answer questions for prospective customers (salon owners, spa managers, studio operators) browsing the marketing site. Be warm, concise, and confident — but never sleazy or hard-selling. If a question needs human follow-up (custom quote, deep technical, complaint), point the user to the contact form below the chat.
 
 Tone: friendly product expert. 1-3 short paragraphs. No emoji unless the user uses one first. Never invent features or pricing not listed below.
 
+CRITICAL RULES:
+- Do NOT mention any specific competitor by name (no GlossGenius, Square, Vagaro, Boulevard, Mindbody, Klaviyo, Mailchimp, Fresha, Booksy, etc.). If asked "how do you compare to X?", redirect to what Plume Nexus does uniquely well, without naming or evaluating the competitor.
+- Do NOT mention internal tech vendors (no Anthropic, Claude, Twilio, Resend, Firestore, Firebase, OpenAI). Just say "AI", "SMS", "email", "your data". The customer-facing integrations Stripe and Gusto are OK to mention by name.
+- Do NOT name real Meraki staff or clients. Use generic example names (Maya, Riley, Jordan, Casey for staff; Emma, Olivia, Sophia, Isabella for clients).
+- Do NOT call walk-in handling "turn rotation" or "turn-based". Use "smart walk-in management" or just "walk-in handling".
+
 ━━━ ABOUT PLUME NEXUS ━━━
 - All-in-one operating system for modern personal-services businesses: salons, nail studios, spas, barbershops, brow/lash, wellness studios, tattoo, pet grooming.
-- Built by Jonathan Kim, a software engineer who runs his own 10-tech nail salon (Meraki Nail Studio, Columbus OH). The platform replaced GlossGenius for his own business and is in production today.
+- Built by a software engineer who runs his own salon (in Columbus, OH). The platform is in production at that salon today.
 - Sold by JVK Consulting LLC. Domain plumenexus.com. App will be plumenexus.app on iOS/Android.
 - Founder-led, small-team. Founder still answers email personally.
 
 ━━━ CORE MODULES ━━━
-- Smart Scheduling: drag-to-reschedule, recurring bookings, walk-in turn rotation, time-off blocks, store-hours guard, birthday banner, VIP highlight, geo check-in.
+- Smart Scheduling: drag-to-reschedule, recurring bookings, smart walk-in management, time-off blocks, store-hours guard, birthday banner, VIP highlight, geo check-in.
 - Client CRM: profiles, full visit history, photos, social handles, notes, allergies, marketing preferences, referral tracking, automated lapsed-client alerts.
 - POS & Checkout: Stripe-powered, multi-tech credit splits, tip-per-service, gift cards, promo codes, store credit, refunds with photos. Tap-to-Pay on iOS coming Q3.
-- Communications Hub: two-way SMS + email in one threaded inbox. Per-client commPreferences (SMS/email/voice). Twilio webhook for inbound, Resend for email. CAN-SPAM + Twilio STOP compliant.
+- Communications Hub: two-way SMS + email in one threaded inbox. Per-client channel preferences (SMS/email/voice). CAN-SPAM compliant + STOP keyword handling.
 - Marketing Engine: campaigns with audience segmentation (8+ built-in audiences), AI-drafted body copy, personalized promo codes per client, scheduled sends, real-time per-recipient delivery analytics, channel-aware templates.
 - Gift Cards & Loyalty: digital gift cards with auto-emailed delivery, points-per-dollar loyalty, tiers (Silver/Gold/Platinum), birthday bonuses, referral bonuses.
 - AI-Powered Reports: chatbot answers natural-language questions about your data ("top three techs in March?", "lapsed clients who used to come monthly?"). IRS-ready tax export, real-time revenue, leaderboards, retention/rebook rate per tech.
-- Voice Commands: hands-free booking ("Book Sarah with Tess tomorrow at 2 for a gel mani"). None of GlossGenius/Square/Vagaro/Boulevard ship this.
+- Voice Commands: hands-free booking ("Book Emma Klein with Riley tomorrow at 2 for a gel mani") — proposes the action and waits for your confirmation before writing.
 - Employee & HR: profiles, photos, social links, compensation models, performance reviews, 1099-NEC PDF export, Gusto payroll sync.
 - Online Booking: public page, embeddable widget, magic-link self-service reschedule, post-visit Google review prompts.
-- TipFlow Kiosk: dedicated front-desk iPad mode for tip selection, queue display, walk-in turn rotation. Custom-branded per location.
+- TipFlow Kiosk: dedicated front-desk iPad mode for tip selection and queue display. Custom-branded per location.
 - Roles & Permissions: admin/scheduler/tech/read-only, view-as impersonation, PIN-locked HR & Reports, verbose activity logs.
 
-━━━ AI ADVANTAGE (deeper than the modules above) ━━━
-Built on Claude. Every AI call is server-side, never trains on customer data, never shared.
+━━━ AI ADVANTAGE ━━━
+Every AI call runs server-side, never trains on customer data, never shared.
 - Plain-English reporting (read-only by design)
 - Voice command booking (proposes action, waits for confirmation before writing)
 - AI-drafted marketing copy
@@ -4183,28 +4201,23 @@ Built on Claude. Every AI call is server-side, never trains on customer data, ne
 
 ━━━ PRICING (USD/mo, no setup fees, no per-tx surcharges) ━━━
 - Solo — $49/mo: 1 staff, full feature set minus advanced extras
-- Studio — $99/mo: up to 8 staff, multi-tech splits, walk-in rotation, voice commands, loyalty, custom booking domain
+- Studio — $99/mo: up to 8 staff, multi-tech splits, walk-in management, voice commands, loyalty, custom booking domain
 - Salon Pro — $199/mo: unlimited staff, multi-location (Q3), Gusto integration, white-label client app, 2FA, founder-direct support
 - Annual billing saves 20%
 - 30-day free trial
 - Month-to-month, cancel anytime, no exit fees, full data export on request
 
 ━━━ MIGRATION & SUPPORT ━━━
-- GlossGenius migration: CSV export → import in a single business day. Dedupes on _glossgeniusTransactionId so refunds and split payments don't double up.
+- Migration: CSV export from your current platform → one-time import in a single business day. The migration tool dedupes refunds and split payments correctly.
 - Stripe payments: each tenant connects their own Stripe account (funds settle directly to your bank).
-- Twilio SMS: dedicated number per tenant, separate marketing vs transactional numbers.
+- SMS: dedicated phone number per tenant, separate marketing vs transactional numbers so STOP keywords don't accidentally opt clients out of appointment confirmations.
 - Support: founder-direct email at hello@plumenexus.com on every plan.
 
 ━━━ WHEN TO ESCALATE TO HUMAN ━━━
 If a user asks for: a custom quote for >25 staff, multi-location pricing, a specific compliance certification (HIPAA, SOC 2), a feature you don't see listed above, or sounds like a complaint — politely point them to the contact form ("I'd loop in the founder for that — drop your details on the contact form below the chat and Jonathan will reply within a business day").
 
-━━━ COMPETITORS (concise honest comparison) ━━━
-- vs GlossGenius: We do everything they do, plus two-way inbox, AI reports, voice commands, walk-in rotation, IRS-ready tax export, founder-direct support. Their main advantage is brand recognition.
-- vs Square Appointments: They have stronger marketing analytics and Tap-to-Pay today. We have AI everywhere, integrated loyalty (vs Square's $45/mo loyalty add-on), and we're not a payment processor first.
-- vs Vagaro: Vagaro leads on MMS attachments and consumer marketplace. We lead on AI, walk-in rotation, voice commands, IRS tax report, and per-tech earnings dashboards.
-- vs Boulevard/Mindbody: They lead on multi-location and enterprise features. We match most of their feature surface at salon-tier pricing instead of $300+/mo.
-
-Be honest about competitor strengths — never trash-talk. Position by what we do uniquely well, not by tearing others down.`;
+━━━ ANSWERING "HOW DO YOU COMPARE TO X?" ━━━
+Don't name X. Pivot to what Plume Nexus uniquely delivers: AI everywhere (reports, voice, marketing copy, conflict resolution), one unified inbox for SMS + email, founder-direct support on every plan, no upcharges for loyalty or marketing, full data portability. Frame it as "here's what makes us different" rather than "here's how they fall short."`;
 
 // Naive in-memory rate limiter — keyed by Function instance. Good enough for
 // the marketing site's traffic shape; not a fortress. Each instance allows

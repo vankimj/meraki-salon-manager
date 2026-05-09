@@ -194,8 +194,14 @@ export default function WalkinKiosk() {
             />
           ) : (
             <div style={{ background: fullscreen ? 'rgba(255,255,255,.06)' : '#fff', border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid #e8e8e8', borderRadius: 18, padding: 36, textAlign: 'center', minHeight: 220 }}>
-              <div style={{ fontSize: 18, color: fullscreen ? '#a99cc9' : '#888', marginBottom: 12 }}>No techs in rotation today</div>
-              <div style={{ fontSize: 13, color: fullscreen ? '#7a6a9a' : '#aaa' }}>Clock techs in from the Schedule page first.</div>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>👥</div>
+              <div style={{ fontSize: 18, color: fullscreen ? '#a99cc9' : '#666', marginBottom: 6, fontWeight: 600 }}>No techs in rotation today</div>
+              <div style={{ fontSize: 13, color: fullscreen ? '#7a6a9a' : '#999', marginBottom: 14, lineHeight: 1.5, maxWidth: 320, margin: '0 auto 14px' }}>
+                Open <strong>Schedule → Turn rotation</strong> from the side nav to clock techs in. This view updates live as soon as anyone joins the rotation from any device.
+              </div>
+              <div style={{ fontSize: 11, color: fullscreen ? '#7a6a9a' : '#bbb' }}>
+                💡 Leave this page open on an iPad — it auto-refreshes.
+              </div>
             </div>
           )}
         </div>
