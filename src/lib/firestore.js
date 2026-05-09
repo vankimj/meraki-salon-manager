@@ -1531,6 +1531,10 @@ export async function fetchClientByEmail(email) {
 }
 
 // ── Backup / Restore ────────────────────────────────────
+// Comprehensive data export. Per Plume Nexus principle #8, this captures
+// EVERYTHING the customer owns so they can leave with their entire history
+// intact. Skips only in-app-only state (notifications, chatNotifications,
+// userPrefs, requests, turnRoster) which are transient and non-portable.
 export async function fetchAllForBackup() {
   const [slidesSnap, settingsSnap, usersSnap, handbookSnap, webfrontSnap, bookingCfgSnap] = await Promise.all([
     getDoc(tenantDoc('slides')),
@@ -1541,7 +1545,22 @@ export async function fetchAllForBackup() {
     getDoc(tenantDoc('bookingConfig')),
   ]);
 
-  const cols = ['clients', 'employees', 'services', 'appointments', 'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'meetings', 'handbookSigs', 'products'];
+  const cols = [
+    // Core operational
+    'clients', 'employees', 'services', 'appointments', 'receipts',
+    // Money
+    'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'taxForms',
+    // Marketing + comms
+    'campaigns', 'campaignTemplates', 'chats',
+    // Reviews
+    'reviews', 'reviewReceived', 'reviewRequests',
+    // Time + scheduling
+    'meetings', 'timeOff', 'attendance', 'waitlist',
+    // Memberships
+    'memberships', 'membershipPlans',
+    // Other
+    'products', 'handbookSigs', 'logs', 'feedback',
+  ];
   const colSnaps = await Promise.all(cols.map(c => getDocs(tenantCol(c))));
 
   const data = {};
@@ -1562,7 +1581,15 @@ export async function fetchAllForBackup() {
 export async function restoreFromBackup(data) {
   // Keep this list aligned with fetchAllForBackup's cols so a backup → restore
   // round-trip doesn't silently drop collections.
-  const cols = ['clients', 'employees', 'services', 'appointments', 'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'meetings', 'handbookSigs', 'products'];
+  const cols = [
+    'clients', 'employees', 'services', 'appointments', 'receipts',
+    'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'taxForms',
+    'campaigns', 'campaignTemplates', 'chats',
+    'reviews', 'reviewReceived', 'reviewRequests',
+    'meetings', 'timeOff', 'attendance', 'waitlist',
+    'memberships', 'membershipPlans',
+    'products', 'handbookSigs', 'logs', 'feedback',
+  ];
   for (const col of cols) {
     if (!Array.isArray(data[col])) continue;
     for (const item of data[col]) {

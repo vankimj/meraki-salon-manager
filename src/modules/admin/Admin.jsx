@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
+import { buildExportBundle } from '../../lib/exportBundle';
 import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchFeedback, updateFeedbackStatus,
          fetchNotificationCenter,
@@ -370,6 +371,7 @@ export default function Admin({ onClose }) {
               </div>
             </Section>
             <TechRemindersSection settings={settings} updateSettings={updateSettings} />
+            <PauseSection settings={settings} updateSettings={updateSettings} />
             <BrandingSection settings={settings} updateSettings={updateSettings} />
             <UpgradeSection settings={settings} gUser={gUser} />
             <BackupRestoreSection />
@@ -1030,8 +1032,27 @@ function BackupRestoreSection() {
   const [busy,   setBusy]   = useState(false);
   const [status, setStatus] = useState('');
 
-  async function handleBackup() {
-    setBusy(true); setStatus('Exporting…');
+  // Complete bundle: CSV + JSON + photos + settings + README, zipped.
+  // Per Plume Nexus principle #8 — data export is always free, on every plan,
+  // forever. Self-serve, one-click, no support ticket needed.
+  async function handleExport() {
+    setBusy(true); setStatus('Preparing your data…');
+    try {
+      const result = await buildExportBundle({ onProgress: setStatus });
+      setStatus(`Done. ${result.fileCount} files, ${result.photoCount} photos, ${(result.bytes / 1024 / 1024).toFixed(1)} MB.`);
+      logActivity('export_downloaded', `${result.fileCount} files, ${result.photoCount} photos`);
+    } catch (e) {
+      console.error('[export] failed', e);
+      setStatus('Export failed: ' + e.message + ' — please email hello@plumenexus.com and we\'ll send you the bundle directly.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Legacy JSON-only download — keeps the original behavior available for
+  // power users who specifically want the single JSON file.
+  async function handleJsonOnly() {
+    setBusy(true); setStatus('Exporting JSON…');
     try {
       const data = await fetchAllForBackup();
       const blob = new Blob([JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), tenant: 'meraki', data }, null, 2)], { type: 'application/json' });
@@ -1041,8 +1062,8 @@ function BackupRestoreSection() {
       a.download = `meraki-backup-${new Date().toISOString().slice(0,10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      setStatus('Download started.');
-      logActivity('backup_exported', new Date().toISOString().slice(0, 10));
+      setStatus('JSON download started.');
+      logActivity('backup_exported_json_only', new Date().toISOString().slice(0, 10));
     } catch (e) { setStatus('Export failed: ' + e.message); }
     finally { setBusy(false); }
   }
@@ -1065,17 +1086,42 @@ function BackupRestoreSection() {
   }
 
   return (
-    <Section title="🗄 Backup &amp; Restore">
-      <div style={{ padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={handleBackup} disabled={busy}
-          style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fafafa', fontSize: 12, color: '#333', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-          ⬇ Download Backup
-        </button>
-        <label style={{ padding: '7px 16px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? '#fafafa' : '#fff1f1', fontSize: 12, color: busy ? '#aaa' : '#ef4444', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-          ⬆ Restore from File
-          <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleRestore} disabled={busy} />
-        </label>
-        {status && <span style={{ fontSize: 11, color: '#888' }}>{status}</span>}
+    <Section title="🗄 Your Data — Export &amp; Restore">
+      <div style={{ padding: '12px 16px' }}>
+        {/* Principle #8 callout */}
+        <div style={{
+          padding: '10px 14px', marginBottom: 14,
+          background: 'rgba(45,122,95,.08)',
+          border: '1px solid rgba(45,122,95,.22)',
+          borderRadius: 10, fontSize: 12, color: '#1f4e3a', lineHeight: 1.55,
+        }}>
+          <strong>Data export is free, complete, and one click. Forever.</strong>{' '}
+          On every plan, including Free Solo, including Founders' Members, including paused accounts, including the 90-day post-cancellation grace. If our service ever stops working for you, walking out the door with everything intact is not a feature we'll ever paywall.
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
+          <button onClick={handleExport} disabled={busy}
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: busy ? '#cbb6e0' : '#5b3b8c', fontSize: 13, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            ⬇ Download Everything (CSV + JSON + photos)
+          </button>
+          <button onClick={handleJsonOnly} disabled={busy}
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fafafa', fontSize: 12, color: '#666', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            JSON only
+          </button>
+          <label style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? '#fafafa' : '#fff1f1', fontSize: 12, color: busy ? '#aaa' : '#ef4444', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            ⬆ Restore from JSON
+            <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleRestore} disabled={busy} />
+          </label>
+        </div>
+
+        <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5 }}>
+          The full export is a ZIP with: <code style={{ background: '#f5f3fa', padding: '0 4px', borderRadius: 3 }}>everything.json</code> (full snapshot for re-import),
+          one CSV per data table (Excel/Sheets-friendly), every photo as a real image file, all settings, and a plain-English README.
+        </div>
+
+        {status && (
+          <div style={{ marginTop: 12, fontSize: 12, color: '#444' }}>{status}</div>
+        )}
       </div>
     </Section>
   );
@@ -1902,6 +1948,152 @@ function TechRemindersSection({ settings, updateSettings }) {
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <Btn color="#3D95CE" onClick={save}>{saving ? 'Saving…' : 'Save reminder settings'}</Btn>
+          {savedAt && <span style={{ fontSize: 12, color: '#22c55e' }}>✓ Saved</span>}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// ── Pause / Closure ───────────────────────────────────────────────────────────
+// Lets the salon temporarily go offline (vacation, slow season, etc.).
+// While paused: inbound SMS gets an auto-reply (mode A, default) OR is
+// forwarded to the admin's personal phone for emergencies (mode B, opt-in).
+// Pause is enforced server-side in the twilioInboundSms cloud function.
+function PauseSection({ settings, updateSettings }) {
+  const cfg = settings.pause || {};
+  const [until,         setUntil]         = useState(cfg.until || '');
+  const [forwardPhone,  setForwardPhone]  = useState(cfg.forwardPhone || '');
+  const [customMessage, setCustomMessage] = useState(cfg.customMessage || '');
+  const [saving,        setSaving]        = useState(false);
+  const [savedAt,       setSavedAt]       = useState(null);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const isActive = !!(until && until >= today);
+
+  const friendlyDate = (() => {
+    if (!until) return '';
+    try {
+      return new Date(until + 'T12:00:00').toLocaleDateString('en-US',
+        { month: 'long', day: 'numeric', year: 'numeric' });
+    } catch { return until; }
+  })();
+  const defaultPreview = `Thanks for reaching out! We're temporarily closed and will reopen on ${friendlyDate || '[date]'}. Online booking will be available again then. We appreciate your patience!`;
+  const livePreview = (customMessage || defaultPreview).replace(/\{date\}/gi, friendlyDate || '[date]');
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateSettings({
+        ...settings,
+        pause: {
+          until:         until || null,
+          forwardPhone:  forwardPhone.trim() || null,
+          customMessage: customMessage.trim() || null,
+        },
+      });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2200);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clearPause() {
+    if (!confirm('Resume normal operations now? Inbound SMS will start hitting the regular flow again.')) return;
+    setUntil('');
+    setSaving(true);
+    try {
+      await updateSettings({
+        ...settings,
+        pause: { until: null, forwardPhone: forwardPhone.trim() || null, customMessage: customMessage.trim() || null },
+      });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2200);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="⏸️ Pause / Vacation Mode">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+          Temporarily close the salon (vacation, slow season, renovation, etc.). While paused, inbound texts get an auto-reply that says when you reopen — or, if you opt in, get forwarded to your personal phone so you stay reachable for emergencies.
+        </div>
+
+        {isActive && (
+          <div style={{
+            padding: '10px 12px', marginBottom: 14,
+            background: '#fef3c7', border: '1px solid #fcd34d',
+            borderRadius: 8, fontSize: 13, color: '#92400e',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+          }}>
+            <div>
+              <strong>Currently paused</strong> · resumes <strong>{friendlyDate}</strong>
+            </div>
+            <button onClick={clearPause} style={{
+              padding: '6px 12px', fontSize: 12, fontWeight: 600,
+              background: '#fff', color: '#92400e',
+              border: '1px solid #fcd34d', borderRadius: 6, cursor: 'pointer',
+            }}>Resume now</button>
+          </div>
+        )}
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Closed through (last day closed)</div>
+          <input type="date" value={until} min={today} onChange={e => setUntil(e.target.value)}
+            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none' }} />
+          <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Leave blank to disable pause. Salon reopens the day after this date.</div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+            Custom auto-reply <span style={{ color: '#bbb' }}>· optional · use {'{date}'} for the resume date</span>
+          </div>
+          <textarea value={customMessage} onChange={e => setCustomMessage(e.target.value)}
+            placeholder={defaultPreview}
+            rows={3} maxLength={1500}
+            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none', resize: 'vertical', lineHeight: 1.5 }} />
+        </div>
+
+        {/* Forward toggle */}
+        <details style={{ marginBottom: 12 }}>
+          <summary style={{ fontSize: 12, color: '#5b3b8c', fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>
+            ⚙️ Forward inbound to my personal phone instead (emergencies)
+          </summary>
+          <div style={{ paddingTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 6, lineHeight: 1.5 }}>
+              When set, inbound texts during pause are forwarded to this number instead of getting an auto-reply. Costs ~$0.008/text via Twilio. Leave blank to use the auto-reply (default).
+            </div>
+            <input type="tel" value={forwardPhone} onChange={e => setForwardPhone(e.target.value)}
+              placeholder="+16145551234"
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none' }} />
+          </div>
+        </details>
+
+        {/* Live preview */}
+        {until && !forwardPhone && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>Auto-reply preview</div>
+            <div style={{
+              maxWidth: 320,
+              padding: '10px 14px',
+              background: '#fff',
+              border: '1px solid #e8e8e8',
+              borderRadius: '14px 14px 14px 4px',
+              fontSize: 13, color: '#222', lineHeight: 1.5,
+            }}>{livePreview}</div>
+          </div>
+        )}
+        {until && forwardPhone && (
+          <div style={{ marginBottom: 14, padding: '8px 12px', background: '#f0f7ff', border: '1px solid #c7dff7', borderRadius: 8, fontSize: 12, color: '#1f6ea3' }}>
+            ➤ Inbound texts will forward to <code style={{ background: '#fff', padding: '1px 5px', borderRadius: 3 }}>{forwardPhone}</code>. The client gets no auto-reply.
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Btn color="#5b3b8c" onClick={save}>{saving ? 'Saving…' : (until ? 'Save pause settings' : 'Save')}</Btn>
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e' }}>✓ Saved</span>}
         </div>
       </div>
