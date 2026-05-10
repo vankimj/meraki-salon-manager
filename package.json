@@ -13,6 +13,7 @@
     "deploy:staging": "npm test && npm run lint:deploy-gate && npm run build:staging && firebase hosting:channel:deploy staging --only meraki && npm run version:print",
     "deploy:prod:skip-tests": "npm run build && firebase deploy --only hosting:meraki && npm run version:print",
     "deploy:plumenexus": "cd plumenexus && npm install && npm run build && cd .. && firebase deploy --only hosting:plumenexus",
+    "deploy:platform-admin": "cd platform-admin && npm install && npm run build && cd .. && firebase deploy --only hosting:platform-admin",
     "deploy:functions": "firebase deploy --only functions",
     "promote:staging": "npm run deploy:prod",
     "rollback:prod": "git revert HEAD --no-edit && npm run deploy:prod && echo '\\n↩  Rolled prod back by reverting the last commit and redeploying.'",
@@ -21,7 +22,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@stripe/react-stripe-js": "^6.3.0",
@@ -37,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.59.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
@@ -51,7 +56,7 @@
     "globals": "^17.5.0",
     "jsdom": "^29.0.2",
     "vite": "^8.0.10",
-    "vite-plugin-pwa": "^1.2.0",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^4.1.5"
   }
 }

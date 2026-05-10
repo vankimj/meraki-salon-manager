@@ -332,17 +332,85 @@ export async function fetchClientAppointments(clientId) {
   return rows;
 }
 
+// Normalize a US phone to canonical 10-digit form for cross-record
+// matching. Mirrors normalizePhone() in ScheduleAdmin — kept inline here
+// to avoid pulling a UI module into the firestore lib.
+function _phoneDigits(p) {
+  let d = String(p || '').replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('1')) d = d.slice(1);
+  return d.length === 10 ? d : '';
+}
+
 // Full visit history for a client: appointments + receipts (imports).
 // Returns a unified, deduped list sorted newest-first. Each row exposes
 // date, startTime, services[], techName, status, and revenue surface so
 // the visit-history modal can render either source uniformly.
-export async function fetchClientVisits(clientId) {
-  const [apptSnap, rcptSnap] = await Promise.all([
-    getDocs(query(APPTS_COL,    where('clientId', '==', clientId))),
-    getDocs(query(RECEIPTS_COL, where('clientId', '==', clientId))).catch(() => ({ docs: [] })),
-  ]);
-  const appts    = apptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-  const receipts = rcptSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+//
+// `client` is optional — when supplied (with name/phone/email), we ALSO
+// fetch records that weren't explicitly linked to this clientId but match
+// on phone or email (covers walk-ins logged with no clientId, GG-imported
+// receipts that didn't get a clientId backfill, and duplicate client
+// records). Match is by normalized 10-digit phone or lowercased email.
+export async function fetchClientVisits(clientId, client) {
+  if (!clientId) return [];
+  // Auto-fetch the client doc if the caller didn't already have it loaded.
+  if (!client) { try { client = await fetchClient(clientId); } catch (_) {} }
+
+  const wantEmail  = (client?.email || '').trim().toLowerCase() || null;
+  const wantDigits = _phoneDigits(client?.phone);
+
+  // Find every client record that represents the same person (typically
+  // just one, but cleans up cases where the booking page minted a
+  // duplicate before findOrCreateClient existed). Match on phone/email.
+  // Falls back to just the supplied clientId if the clients query fails
+  // (rules don't permit it for this user, etc.).
+  const sameIds = new Set([clientId]);
+  if (wantEmail || wantDigits) {
+    try {
+      const cSnap = await getDocs(CLIENTS_COL);
+      cSnap.docs.forEach(d => {
+        const c = d.data();
+        const cEmail  = (c.email || '').trim().toLowerCase();
+        const cDigits = _phoneDigits(c.phone);
+        if (wantEmail && cEmail === wantEmail)   sameIds.add(d.id);
+        if (wantDigits && cDigits === wantDigits) sameIds.add(d.id);
+      });
+    } catch (_) { /* fall through with strict clientId */ }
+  }
+
+  // Run a query per matching id (Firestore `in` is capped at 30 — typical
+  // case is 1–2 ids, so per-id queries stay simple and indexed). For each,
+  // pull both APPTS and RECEIPTS that were linked to that id.
+  const idList = Array.from(sameIds);
+  const apptSnaps = await Promise.all(idList.map(id =>
+    getDocs(query(APPTS_COL, where('clientId', '==', id))).catch(() => ({ docs: [] }))
+  ));
+  const rcptSnaps = await Promise.all(idList.map(id =>
+    getDocs(query(RECEIPTS_COL, where('clientId', '==', id))).catch(() => ({ docs: [] }))
+  ));
+
+  const apptMap = new Map();
+  const rcptMap = new Map();
+  apptSnaps.forEach(snap => snap.docs.forEach(d => apptMap.set(d.id, { id: d.id, ...d.data() })));
+  rcptSnaps.forEach(snap => snap.docs.forEach(d => rcptMap.set(d.id, { id: d.id, ...d.data() })));
+
+  // Orphan-walk-in fallback: if we have a phone, also pick up records
+  // that have NO clientId but a matching phone (legacy walk-ins logged
+  // without linking). Email-equality query is indexed; phone is filtered
+  // client-side because stored formats are inconsistent.
+  if (wantEmail) {
+    try {
+      const aSnap = await getDocs(query(APPTS_COL, where('clientEmail', '==', wantEmail)));
+      aSnap.docs.forEach(d => { if (!apptMap.has(d.id)) apptMap.set(d.id, { id: d.id, ...d.data() }); });
+    } catch (_) {}
+    try {
+      const rSnap = await getDocs(query(RECEIPTS_COL, where('clientEmail', '==', wantEmail)));
+      rSnap.docs.forEach(d => { if (!rcptMap.has(d.id)) rcptMap.set(d.id, { id: d.id, ...d.data() }); });
+    } catch (_) {}
+  }
+
+  const appts    = Array.from(apptMap.values());
+  const receipts = Array.from(rcptMap.values());
 
   // De-dupe: if a receipt covers an appointment via apptIds, drop the appt
   // since the receipt is the canonical record.
@@ -1757,12 +1825,31 @@ export async function fetchTenants() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Subdomain schema (per principle #11 + plumenexus/SUBDOMAIN-CHANGE-DESIGN.md):
+// every new tenant gets `subdomain` (current primary), `aliases` (every previous
+// subdomain, kept forever for 301 redirects), `subdomainChangedAt`, and
+// `subdomainChangeCount` baked in. Doc id never changes; only `subdomain` does.
 export async function createTenantRecord(id, data) {
-  await setDoc(doc(db, 'tenants', id), { ...data, createdAt: new Date().toISOString() });
+  const slug = String(id).toLowerCase().trim();
+  await setDoc(doc(db, 'tenants', slug), {
+    ...data,
+    subdomain:            slug,
+    aliases:              [],
+    subdomainChangedAt:   null,
+    subdomainChangeCount: 0,
+    createdAt:            new Date().toISOString(),
+  });
 }
 
 export async function updateTenantRecord(id, data) {
   await setDoc(doc(db, 'tenants', id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// Single tenant registry doc — surfaces subdomain + aliases for the
+// Settings → Your Salon URL panel.
+export async function fetchTenantRecord(id) {
+  const snap = await getDoc(doc(db, 'tenants', id));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
 // Seeds the minimum Firestore docs a new tenant needs to function.

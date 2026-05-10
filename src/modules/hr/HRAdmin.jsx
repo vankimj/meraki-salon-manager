@@ -1631,7 +1631,7 @@ function GustoTab({ employees, payrollRuns }) {
     if (!confirm(`Submit payroll run (${fmtDateShort(run.startDate)} – ${fmtDateShort(run.endDate)}) to Gusto?`)) return;
     setSubmitting(run.id);
     try {
-      const { data } = await gustoSubmitPayrollFn({ runId: run.id });
+      const { data } = await gustoSubmitPayrollFn({ payrollRunId: run.id });
       showToast(`Payroll submitted to Gusto (ID: ${data.gustoPayrollId})`);
       logActivity('gusto_submit_payroll', `run ${run.id} → Gusto ${data.gustoPayrollId}`);
     } catch (e) {

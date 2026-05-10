@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { fetchMeetings, createMeeting, updateMeeting, deleteMeeting, fetchEmployees } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 import { useApp } from '../../context/AppContext';
@@ -13,9 +13,13 @@ function fmtTime(str) {
   return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+function todayStr() { return new Date().toISOString().slice(0, 10); }
+
+function daysBetween(a, b) {
+  return Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / (1000 * 60 * 60 * 24));
 }
+
+function uid() { return Math.random().toString(36).slice(2, 10); }
 
 const DURATIONS = [
   { label: '15 min',  value: 15  },
@@ -26,45 +30,44 @@ const DURATIONS = [
   { label: '2 hours', value: 120 },
   { label: '3 hours', value: 180 },
 ];
+function durationLabel(min) { return DURATIONS.find(d => d.value === min)?.label || `${min} min`; }
 
-function durationLabel(min) {
-  return DURATIONS.find(d => d.value === min)?.label || `${min} min`;
-}
+// Meeting types — badges + filter chips. Color matches the section's
+// accent so types are scannable without reading the label.
+const MEETING_TYPES = [
+  { id: 'team',     label: 'Team meeting',  short: 'Team',     emoji: '👥', color: '#2D7A5F', bg: '#ecfdf5' },
+  { id: 'training', label: 'Training',      short: 'Training', emoji: '🎓', color: '#7c3aed', bg: '#f5f3ff' },
+  { id: '1on1',     label: '1:1',           short: '1:1',      emoji: '🤝', color: '#3D95CE', bg: '#eff6ff' },
+  { id: 'review',   label: 'Performance review', short: 'Review',  emoji: '📊', color: '#f59e0b', bg: '#fffbeb' },
+  { id: 'huddle',   label: 'Daily huddle',  short: 'Huddle',   emoji: '⚡', color: '#10b981', bg: '#ecfdf5' },
+  { id: 'other',    label: 'Other',         short: 'Other',    emoji: '📝', color: '#6b7280', bg: '#f3f4f6' },
+];
+const TYPE_BY_ID = Object.fromEntries(MEETING_TYPES.map(t => [t.id, t]));
 
 // ── iCal / Google Calendar helpers ─────────────────────
 
-function fmtISOCompact(d) {
-  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
-}
+function fmtISOCompact(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
 
 function generateICS(meeting) {
   const start = new Date(`${meeting.date}T${meeting.startTime}:00`);
   const end   = new Date(start.getTime() + (meeting.duration || 60) * 60000);
-
   const attendees = (meeting.participants || [])
     .filter(p => p.email)
     .map(p => `ATTENDEE;CN="${p.name}";RSVP=TRUE:mailto:${p.email}`)
     .join('\r\n');
-
   return [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
+    'BEGIN:VCALENDAR', 'VERSION:2.0',
     'PRODID:-//Meraki Nail Studio//Salon Manager//EN',
-    'CALSCALE:GREGORIAN',
-    'METHOD:REQUEST',
-    'BEGIN:VEVENT',
-    `DTSTART:${fmtISOCompact(start)}`,
-    `DTEND:${fmtISOCompact(end)}`,
+    'CALSCALE:GREGORIAN', 'METHOD:REQUEST', 'BEGIN:VEVENT',
+    `DTSTART:${fmtISOCompact(start)}`, `DTEND:${fmtISOCompact(end)}`,
     `SUMMARY:${meeting.title}`,
     meeting.description ? `DESCRIPTION:${meeting.description.replace(/\n/g, '\\n')}` : null,
     `LOCATION:${meeting.location || 'Meraki Nail Studio, Columbus OH'}`,
     `UID:${meeting.id}@meraki-salon-manager`,
     'ORGANIZER:mailto:jvankim@gmail.com',
-    attendees || null,
-    'STATUS:CONFIRMED',
+    attendees || null, 'STATUS:CONFIRMED',
     `DTSTAMP:${fmtISOCompact(new Date())}`,
-    'END:VEVENT',
-    'END:VCALENDAR',
+    'END:VEVENT', 'END:VCALENDAR',
   ].filter(Boolean).join('\r\n');
 }
 
@@ -74,9 +77,7 @@ function downloadICS(meeting) {
   const a    = document.createElement('a');
   a.href     = url;
   a.download = `${meeting.title.replace(/[^a-z0-9]/gi, '_')}.ics`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
@@ -84,10 +85,9 @@ function googleCalendarUrl(meeting) {
   const start = new Date(`${meeting.date}T${meeting.startTime}:00`);
   const end   = new Date(start.getTime() + (meeting.duration || 60) * 60000);
   const params = new URLSearchParams({
-    action:   'TEMPLATE',
-    text:     meeting.title,
-    dates:    `${fmtISOCompact(start)}/${fmtISOCompact(end)}`,
-    details:  meeting.description || '',
+    action: 'TEMPLATE', text: meeting.title,
+    dates: `${fmtISOCompact(start)}/${fmtISOCompact(end)}`,
+    details: meeting.description || '',
     location: meeting.location || 'Meraki Nail Studio, Columbus OH',
   });
   return `https://calendar.google.com/calendar/render?${params}`;
@@ -95,13 +95,21 @@ function googleCalendarUrl(meeting) {
 
 // ── Main component ──────────────────────────────────────
 
+// Types that default to private (creator + listed participants only).
+// Other types default public — visible to all tenant staff in the module.
+const PRIVATE_BY_DEFAULT = new Set(['1on1', 'review']);
+
 export default function MeetingsAdmin() {
-  const { showToast } = useApp();
+  const { showToast, gUser, isAdmin } = useApp();
   const [meetings,  setMeetings]  = useState([]);
   const [employees, setEmployees] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [editMtg,   setEditMtg]   = useState(null);
   const [showPast,  setShowPast]  = useState(false);
+  const [query,     setQuery]     = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [viewMode,  setViewMode]  = useState('list'); // 'list' | 'calendar'
+  const [calMonth,  setCalMonth]  = useState(() => todayStr().slice(0, 7)); // YYYY-MM
 
   useEffect(() => {
     Promise.all([
@@ -111,26 +119,50 @@ export default function MeetingsAdmin() {
   }, []);
 
   async function handleSave(data) {
+    // Stamp the creator on first write so private-meeting access checks
+    // can grant the organizer ongoing access even if they aren't in the
+    // participants list themselves.
+    //
+    // Also maintain `participantEmails` — a flat lowercased-email array
+    // mirroring `participants[*].email`. firestore.rules uses this to
+    // gate private-meeting reads, since rules can't iterate over the
+    // structured participants array. Re-derived on every save so it
+    // stays in sync.
+    const participantEmails = (data.participants || [])
+      .map(p => (p.email || '').trim().toLowerCase())
+      .filter(Boolean);
+    const stamped = data.id
+      ? { ...data, participantEmails }
+      : { ...data, participantEmails, createdBy: data.createdBy || (gUser?.email || '').toLowerCase(), createdAt: data.createdAt || new Date().toISOString() };
     try {
-      if (data.id) {
-        await updateMeeting(data.id, data);
-        logActivity('meeting_updated', `"${data.title}" on ${data.date}`);
+      if (stamped.id) {
+        await updateMeeting(stamped.id, stamped);
+        logActivity('meeting_updated', `"${stamped.title}" on ${stamped.date}`);
         setMeetings(m =>
-          m.map(x => x.id === data.id ? { ...x, ...data } : x)
+          m.map(x => x.id === stamped.id ? { ...x, ...stamped } : x)
            .sort((a, b) => a.startTimestamp - b.startTimestamp)
         );
         showToast('Meeting updated');
       } else {
-        const id  = await createMeeting(data);
-        logActivity('meeting_created', `"${data.title}" on ${data.date}`);
-        setMeetings(m => [...m, { id, ...data }].sort((a, b) => a.startTimestamp - b.startTimestamp));
+        const id  = await createMeeting(stamped);
+        logActivity('meeting_created', `"${stamped.title}" on ${stamped.date}${stamped.private ? ' [private]' : ''}`);
+        setMeetings(m => [...m, { id, ...stamped }].sort((a, b) => a.startTimestamp - b.startTimestamp));
         showToast('Meeting created');
       }
-    } catch (e) {
-      showToast('Save failed: ' + e.message, 4000);
-      throw e;
-    }
+    } catch (e) { showToast('Save failed: ' + e.message, 4000); throw e; }
   }
+
+  // Privacy filter — applied BEFORE search/type filter so a private meeting
+  // a user can't access never appears anywhere (no count in stats, no peek
+  // through type chips). Admins see everything (they need to manage).
+  const myEmail = (gUser?.email || '').toLowerCase();
+  function canSee(m) {
+    if (!m.private) return true;
+    if (isAdmin) return true;
+    if (myEmail && (m.createdBy || '').toLowerCase() === myEmail) return true;
+    return (m.participants || []).some(p => (p.email || '').toLowerCase() === myEmail);
+  }
+  const visibleMeetings = useMemo(() => meetings.filter(canSee), [meetings, myEmail, isAdmin]); // eslint-disable-line
 
   async function handleDelete(meeting) {
     if (!confirm(`Delete "${meeting.title}"?`)) return;
@@ -139,77 +171,167 @@ export default function MeetingsAdmin() {
       logActivity('meeting_deleted', `"${meeting.title}" on ${meeting.date}`);
       setMeetings(m => m.filter(x => x.id !== meeting.id));
       showToast('Meeting deleted');
-    } catch (e) {
-      showToast('Delete failed: ' + e.message, 4000);
-    }
+    } catch (e) { showToast('Delete failed: ' + e.message, 4000); }
   }
 
   async function handleSendInvites(meeting) {
     const parts = (meeting.participants || []).filter(p => (p.email || '').trim());
-    if (parts.length === 0) {
-      showToast('No participants with email addresses to invite.', 4000);
-      return;
-    }
+    if (parts.length === 0) { showToast('No participants with email addresses to invite.', 4000); return; }
     if (!confirm(`Send invites to ${parts.length} participant${parts.length === 1 ? '' : 's'}?\n\n${parts.map(p => `• ${p.name || p.email}`).join('\n')}`)) return;
     try {
       const res = await httpsCallable(functions, 'sendMeetingInvites')({ meetingId: meeting.id });
       const { sent, skipped } = res.data || {};
       showToast(`Sent ${sent} invite${sent === 1 ? '' : 's'}${skipped ? ` (${skipped} skipped — no email)` : ''}`);
       logActivity('meeting_invites_sent', `"${meeting.title}" → ${sent} sent`);
-      // Reload meetings so we see the new tokens / inviteSentAt timestamps that the function wrote.
       const fresh = await fetchMeetings();
       setMeetings(fresh);
-    } catch (e) {
-      showToast('Send failed: ' + (e.message || 'unknown'), 5000);
-    }
+    } catch (e) { showToast('Send failed: ' + (e.message || 'unknown'), 5000); }
+  }
+
+  // Duplicate an existing meeting (to schedule the next instance) — copies
+  // title, type, participants, agenda template, and bumps the date by a week.
+  function handleDuplicate(meeting) {
+    const next = new Date(meeting.date + 'T12:00:00');
+    next.setDate(next.getDate() + 7);
+    const draft = {
+      ...meeting,
+      id: undefined,
+      date: next.toISOString().slice(0, 10),
+      // Reset state: clear actuals, keep the template
+      attendance:    {},
+      actionItems:   [],
+      minutes:       '',
+      // Reset agenda check states but keep the items
+      agenda:        (meeting.agenda || []).map(a => ({ ...a, done: false })),
+      // Reset participant RSVP/invite states
+      participants:  (meeting.participants || []).map(p => ({ name: p.name, email: p.email })),
+    };
+    setEditMtg(draft);
   }
 
   const today    = todayStr();
-  const upcoming = meetings.filter(m => m.date >= today);
-  const past     = meetings.filter(m => m.date <  today).slice().reverse();
+
+  // Apply search + type filter (only over meetings the user can see)
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return visibleMeetings.filter(m => {
+      if (typeFilter !== 'all' && (m.type || 'other') !== typeFilter) return false;
+      if (!q) return true;
+      const hay = [
+        m.title, m.location, m.description, m.minutes,
+        ...(m.participants || []).map(p => `${p.name} ${p.email}`),
+        ...(m.agenda || []).map(a => a.text),
+        ...(m.actionItems || []).map(a => `${a.text} ${a.assignee}`),
+      ].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }, [visibleMeetings, query, typeFilter]);
+
+  const upcoming = filtered.filter(m => m.date >= today);
+  const past     = filtered.filter(m => m.date <  today).slice().reverse();
+
+  // Stats (across only meetings the user can see)
+  const stats = useMemo(() => computeStats(visibleMeetings, today, gUser?.email || ''), [visibleMeetings, today, gUser]);
 
   if (loading) {
     return <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>Loading…</div>;
   }
 
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', paddingBottom: 32 }}>
+    <div style={{ maxWidth: 880, margin: '0 auto', paddingBottom: 32 }}>
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>
-            {upcoming.length} upcoming meeting{upcoming.length !== 1 ? 's' : ''}
-          </div>
-          <div style={{ fontSize: 11, color: '#bbb', marginTop: 2 }}>
-            Participants receive email reminders 1 hr and 15 min before
-          </div>
-        </div>
-        <button onClick={() => setEditMtg({})}
-          style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
-          + New Meeting
-        </button>
+      {/* Stats summary strip */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 18 }}>
+        <StatTile label="This month"      value={stats.thisMonth}        sublabel={`${stats.thisMonthHours} hrs total`} accent="#2D7A5F" />
+        <StatTile label="Next 7 days"     value={stats.nextWeek}         sublabel={stats.nextMeetingDate ? `next: ${stats.nextMeetingLabel}` : 'nothing scheduled'} accent="#3D95CE" />
+        <StatTile label="Open action items" value={stats.openActions}    sublabel={stats.overdueActions > 0 ? `${stats.overdueActions} overdue` : 'on track'} accent={stats.overdueActions > 0 ? '#ef4444' : '#10b981'} />
+        <StatTile label="Avg attendance"  value={stats.attendancePct == null ? '—' : `${stats.attendancePct}%`} sublabel={stats.attendanceN ? `across ${stats.attendanceN} meetings` : 'no data yet'} accent="#7c3aed" />
       </div>
 
-      {/* Upcoming */}
-      {upcoming.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#bbb', fontSize: 13 }}>
-          No upcoming meetings. Create one to get started.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
-          {upcoming.map(m => (
-            <MeetingCard key={m.id} meeting={m}
-              onEdit={() => setEditMtg(m)}
-              onDelete={() => handleDelete(m)}
-              onSendInvites={() => handleSendInvites(m)}
-            />
+      {/* My open action items — only shown when the current user has any */}
+      {stats.myActions.length > 0 && (
+        <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+            ⚡ My open action items ({stats.myActions.length})
+          </div>
+          {stats.myActions.slice(0, 5).map((a, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < Math.min(4, stats.myActions.length - 1) ? '1px solid #fef3c7' : 'none' }}>
+              <span style={{ fontSize: 13, flex: 1, color: '#1a1a1a' }}>{a.text}</span>
+              {a.dueDate && (
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: a.overdue ? '#fee2e2' : '#fef3c7', color: a.overdue ? '#991b1b' : '#92400e' }}>
+                  {a.overdue ? 'OVERDUE · ' : ''}{a.dueDate}
+                </span>
+              )}
+              <span style={{ fontSize: 10, color: '#999' }}>{a.meetingTitle}</span>
+            </div>
           ))}
         </div>
       )}
 
-      {/* Past meetings */}
-      {past.length > 0 && (
+      {/* Toolbar — search + view toggle + new */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <input
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder="Search meetings…"
+          style={{ flex: '1 1 220px', minWidth: 0, padding: '8px 12px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit', fontSize: 13 }}
+        />
+        <div style={{ display: 'inline-flex', borderRadius: 8, border: '1px solid #d8d8d8', overflow: 'hidden', flexShrink: 0 }}>
+          {[{ id: 'list', label: '☰ List' }, { id: 'calendar', label: '📅 Calendar' }].map(v => (
+            <button key={v.id} onClick={() => setViewMode(v.id)}
+              style={{ padding: '7px 14px', border: 'none', background: viewMode === v.id ? '#3D95CE' : '#fff', color: viewMode === v.id ? '#fff' : '#555', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: viewMode === v.id ? 700 : 500 }}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <button onClick={() => setEditMtg({})}
+          style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+          + New Meeting
+        </button>
+      </div>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 18, flexWrap: 'wrap' }}>
+        <TypeChip id="all" label="All" active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} count={visibleMeetings.length} />
+        {MEETING_TYPES.map(t => {
+          const n = visibleMeetings.filter(m => (m.type || 'other') === t.id).length;
+          if (n === 0 && typeFilter !== t.id) return null;
+          return <TypeChip key={t.id} id={t.id} label={`${t.emoji} ${t.short}`} active={typeFilter === t.id} onClick={() => setTypeFilter(t.id)} count={n} accent={t.color} bg={t.bg} />;
+        })}
+      </div>
+
+      {viewMode === 'calendar' && (
+        <MonthCalendar
+          month={calMonth}
+          setMonth={setCalMonth}
+          meetings={filtered}
+          today={today}
+          onMeetingClick={m => setEditMtg(m)}
+          onDayClick={dateStr => setEditMtg({ _newOnDay: dateStr })}
+        />
+      )}
+
+      {viewMode === 'list' && (
+        upcoming.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#bbb', fontSize: 13, background: '#fafafa', borderRadius: 12, marginBottom: 16 }}>
+            {query || typeFilter !== 'all'
+              ? 'No upcoming meetings match your filter.'
+              : 'No upcoming meetings. Create one to get started.'}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+            {upcoming.map(m => (
+              <MeetingCard key={m.id} meeting={m}
+                onEdit={() => setEditMtg(m)}
+                onDelete={() => handleDelete(m)}
+                onSendInvites={() => handleSendInvites(m)}
+                onDuplicate={() => handleDuplicate(m)}
+              />
+            ))}
+          </div>
+        )
+      )}
+
+      {/* Past meetings (list view only) */}
+      {viewMode === 'list' && past.length > 0 && (
         <>
           <button onClick={() => setShowPast(p => !p)}
             style={{ fontSize: 12, color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10 }}>
@@ -221,6 +343,7 @@ export default function MeetingsAdmin() {
                 <MeetingCard key={m.id} meeting={m} past
                   onEdit={() => setEditMtg(m)}
                   onDelete={() => handleDelete(m)}
+                  onDuplicate={() => handleDuplicate(m)}
                 />
               ))}
             </div>
@@ -231,18 +354,236 @@ export default function MeetingsAdmin() {
       {editMtg !== null && (
         <MeetingModal
           existing={editMtg?.id ? editMtg : null}
+          draft={editMtg && !editMtg.id && (editMtg.title || editMtg._newOnDay) ? editMtg : null}
           employees={employees.filter(e => e.active !== false)}
           onSave={handleSave}
           onClose={() => setEditMtg(null)}
+          author={gUser?.email || gUser?.displayName || ''}
         />
       )}
     </div>
   );
 }
 
+// ── Month calendar ─────────────────────────────────────
+
+// 6×7 month grid with meeting chips per day. Click a chip to edit;
+// click empty space (or the "+ N more" overflow) to start a new
+// meeting on that date. Off-month leading/trailing days are rendered
+// dimmed so the grid is always rectangular.
+function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDayClick }) {
+  // month = "YYYY-MM"
+  const [y, m] = month.split('-').map(Number);
+  const monthStart = new Date(y, m - 1, 1);
+  const monthEnd   = new Date(y, m, 0);
+
+  // First cell = preceding Sunday. Always render 42 cells (6 weeks × 7 days)
+  // so the grid height stays stable as the user navigates.
+  const firstCell = new Date(monthStart);
+  firstCell.setDate(monthStart.getDate() - monthStart.getDay());
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(firstCell);
+    d.setDate(firstCell.getDate() + i);
+    cells.push(d);
+  }
+
+  function shift(delta) {
+    const next = new Date(y, m - 1 + delta, 1);
+    setMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`);
+  }
+  function goToday() { setMonth(today.slice(0, 7)); }
+
+  const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const byDay = useMemo(() => {
+    const map = {};
+    meetings.forEach(mtg => {
+      if (!mtg.date) return;
+      (map[mtg.date] = map[mtg.date] || []).push(mtg);
+    });
+    Object.values(map).forEach(list => list.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || '')));
+    return map;
+  }, [meetings]);
+
+  const monthLabel = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const isCurrentMonth = month === today.slice(0, 7);
+
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
+      {/* Calendar header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{monthLabel}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <button onClick={() => shift(-1)} title="Previous month"
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>‹</button>
+          <button onClick={goToday} disabled={isCurrentMonth}
+            style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: isCurrentMonth ? '#f5f5f5' : '#fff', color: isCurrentMonth ? '#bbb' : '#555', cursor: isCurrentMonth ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 }}>
+            Today
+          </button>
+          <button onClick={() => shift(1)} title="Next month"
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>›</button>
+        </div>
+      </div>
+
+      {/* Weekday header */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+          <div key={d} style={{ padding: '6px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+            {d}
+          </div>
+        ))}
+      </div>
+
+      {/* Day grid */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gridAutoRows: 'minmax(96px, 1fr)' }}>
+        {cells.map((d, i) => {
+          const ds       = fmtDate(d);
+          const inMonth  = d.getMonth() === m - 1;
+          const isToday  = ds === today;
+          const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+          const dayMtgs  = byDay[ds] || [];
+          const visibleMtgs = dayMtgs.slice(0, 3);
+          const overflow    = dayMtgs.length - visibleMtgs.length;
+          return (
+            <div key={i}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) onDayClick?.(ds);
+              }}
+              style={{
+                borderRight: i % 7 === 6 ? 'none' : '1px solid #f0f0f0',
+                borderBottom: i < 35 ? '1px solid #f0f0f0' : 'none',
+                padding: '4px 6px',
+                background: isToday ? '#eff6ff' : isWeekend && inMonth ? '#fafbfc' : '#fff',
+                opacity: inMonth ? 1 : 0.45,
+                position: 'relative', minHeight: 96, cursor: 'pointer',
+                display: 'flex', flexDirection: 'column', gap: 2,
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{
+                  fontSize: 11, fontWeight: isToday ? 800 : 600,
+                  color: isToday ? '#1e40af' : inMonth ? '#374151' : '#9ca3af',
+                  background: isToday ? '#3D95CE' : 'transparent',
+                  WebkitBackgroundClip: isToday ? 'text' : 'unset',
+                  padding: isToday ? '0 4px' : 0, borderRadius: 4,
+                }}>
+                  {d.getDate()}
+                </span>
+                {dayMtgs.length > 0 && <span style={{ fontSize: 9, color: '#aaa', fontWeight: 600 }}>{dayMtgs.length}</span>}
+              </div>
+
+              {visibleMtgs.map(mtg => {
+                const t = TYPE_BY_ID[mtg.type || 'other'] || TYPE_BY_ID.other;
+                return (
+                  <div key={mtg.id}
+                    onClick={e => { e.stopPropagation(); onMeetingClick?.(mtg); }}
+                    title={`${mtg.title} · ${fmtTime(mtg.startTime)} · ${durationLabel(mtg.duration)}${mtg.location ? ' · ' + mtg.location : ''}${mtg.private ? ' · private' : ''}`}
+                    style={{
+                      background: t.bg,
+                      borderLeft: `3px solid ${t.color}`,
+                      color: t.color,
+                      padding: '2px 5px',
+                      borderRadius: 3,
+                      fontSize: 10, fontWeight: 600,
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                      cursor: 'pointer',
+                      lineHeight: 1.3,
+                    }}>
+                    {mtg.private && <span style={{ marginRight: 3 }}>🔒</span>}
+                    <span style={{ opacity: .7, fontWeight: 500 }}>{fmtTime(mtg.startTime).replace(' ', '')}</span>{' '}
+                    {mtg.title}
+                  </div>
+                );
+              })}
+              {overflow > 0 && (
+                <div onClick={e => { e.stopPropagation(); onDayClick?.(ds); }}
+                  style={{ fontSize: 10, color: '#3D95CE', cursor: 'pointer', padding: '1px 5px', fontWeight: 600 }}>
+                  + {overflow} more
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Stat tile ──────────────────────────────────────────
+
+function StatTile({ label, value, sublabel, accent }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #f0f0f0', borderRadius: 12, padding: '12px 14px', borderLeft: `3px solid ${accent}` }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.1, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{sublabel}</div>
+    </div>
+  );
+}
+
+function TypeChip({ id, label, active, onClick, count, accent, bg }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        fontSize: 11, padding: '4px 10px', borderRadius: 20,
+        border: `1.5px solid ${active ? (accent || '#3D95CE') : '#d8d8d8'}`,
+        background: active ? (bg || '#eff6ff') : '#fff',
+        color: active ? (accent || '#3D95CE') : '#666',
+        cursor: 'pointer', fontFamily: 'inherit', fontWeight: active ? 700 : 500,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+      }}>
+      {label}
+      <span style={{ fontSize: 10, color: active ? (accent || '#3D95CE') : '#aaa', opacity: .8 }}>{count}</span>
+    </button>
+  );
+}
+
+function computeStats(meetings, today, myEmail) {
+  const monthPrefix = today.slice(0, 7);
+  const inMonth = meetings.filter(m => (m.date || '').startsWith(monthPrefix));
+  const thisMonthMin = inMonth.reduce((s, m) => s + (Number(m.duration) || 0), 0);
+
+  const next7End = new Date(today + 'T12:00:00'); next7End.setDate(next7End.getDate() + 7);
+  const next7EndStr = next7End.toISOString().slice(0, 10);
+  const upcomingWeek = meetings.filter(m => m.date >= today && m.date <= next7EndStr).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const next = upcomingWeek[0];
+
+  // Action items
+  const allActions = meetings.flatMap(m => (m.actionItems || []).map(a => ({ ...a, meetingTitle: m.title, meetingDate: m.date })));
+  const openActions = allActions.filter(a => a.status !== 'done');
+  const overdueActions = openActions.filter(a => a.dueDate && a.dueDate < today).length;
+  const myActions = openActions
+    .filter(a => myEmail && (a.assignee || '').toLowerCase() === myEmail.toLowerCase())
+    .map(a => ({ ...a, overdue: a.dueDate && a.dueDate < today }))
+    .sort((a, b) => (a.dueDate || '~').localeCompare(b.dueDate || '~'));
+
+  // Attendance %
+  let attendees = 0, present = 0;
+  meetings.forEach(m => {
+    if (m.date >= today) return;
+    const att = m.attendance || {};
+    Object.values(att).forEach(s => {
+      attendees++;
+      if (s === 'present' || s === 'late') present++;
+    });
+  });
+
+  return {
+    thisMonth: inMonth.length,
+    thisMonthHours: (thisMonthMin / 60).toFixed(thisMonthMin % 60 === 0 ? 0 : 1),
+    nextWeek: upcomingWeek.length,
+    nextMeetingDate: next?.date || null,
+    nextMeetingLabel: next ? `${new Date(next.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} ${fmtTime(next.startTime)}` : '',
+    openActions: openActions.length,
+    overdueActions,
+    myActions,
+    attendancePct: attendees ? Math.round((present / attendees) * 100) : null,
+    attendanceN: meetings.filter(m => m.date < today && Object.keys(m.attendance || {}).length).length,
+  };
+}
+
 // ── Meeting card ───────────────────────────────────────
 
-function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites }) {
+function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplicate }) {
   const parts = meeting.participants || [];
   const counts = parts.reduce((acc, p) => {
     if (p.response === 'accept')  acc.accepted++;
@@ -253,39 +594,84 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites }) {
   }, { accepted: 0, maybe: 0, declined: 0, pending: 0 });
   const anySent = parts.some(p => p.inviteSentAt);
   const [showAttendance, setShowAttendance] = useState(false);
+  const type = TYPE_BY_ID[meeting.type || 'other'] || TYPE_BY_ID.other;
+
+  const agenda      = meeting.agenda      || [];
+  const actionItems = meeting.actionItems || [];
+  const openItems   = actionItems.filter(a => a.status !== 'done').length;
+  const today       = todayStr();
+  const isToday     = meeting.date === today;
+  const daysAway    = !past ? daysBetween(today, meeting.date) : null;
 
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: `1.5px solid ${past ? '#f0f0f0' : '#e8e8e8'}`, overflow: 'hidden', opacity: past ? 0.65 : 1 }}>
+    <div style={{ background: '#fff', borderRadius: 12, border: `1.5px solid ${past ? '#f0f0f0' : isToday ? '#bfdbfe' : '#e8e8e8'}`, overflow: 'hidden', opacity: past ? 0.75 : 1, boxShadow: isToday ? '0 0 0 3px #eff6ff' : 'none' }}>
       <div style={{ display: 'flex', alignItems: 'stretch' }}>
 
         {/* Date column */}
-        <div style={{ width: 76, flexShrink: 0, background: past ? '#f5f5f5' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 6px', color: past ? '#bbb' : '#fff', textAlign: 'center' }}>
+        <div style={{ width: 76, flexShrink: 0, background: past ? '#f5f5f5' : `linear-gradient(135deg,${type.color},${type.color}cc)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 6px', color: past ? '#bbb' : '#fff', textAlign: 'center' }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', opacity: .85 }}>
             {new Date(meeting.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short' })}
           </div>
-          <div style={{ fontSize: 30, fontWeight: 800, lineHeight: 1.1 }}>
+          <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.1 }}>
             {new Date(meeting.date + 'T12:00:00').getDate()}
           </div>
           <div style={{ fontSize: 10, opacity: .75 }}>
             {new Date(meeting.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })}
           </div>
+          {!past && (
+            <div style={{ fontSize: 9, marginTop: 4, opacity: .85, fontWeight: 600 }}>
+              {isToday ? 'TODAY' : daysAway === 1 ? 'tomorrow' : daysAway > 0 ? `in ${daysAway}d` : ''}
+            </div>
+          )}
         </div>
 
         {/* Content */}
         <div style={{ flex: 1, padding: '12px 14px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>{meeting.title}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{meeting.title}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: type.bg, color: type.color, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                  {type.emoji} {type.short}
+                </span>
+                {meeting.private && (
+                  <span title="Private — only the creator and listed participants can see this meeting's contents"
+                    style={{ fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: '#fef2f2', color: '#991b1b', letterSpacing: '.04em', textTransform: 'uppercase', border: '1px solid #fecaca' }}>
+                    🔒 Private
+                  </span>
+                )}
+              </div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, color: '#666' }}>
                 <span>🕐 {fmtTime(meeting.startTime)}</span>
                 <span>⏱ {durationLabel(meeting.duration)}</span>
                 {meeting.location && <span>📍 {meeting.location}</span>}
               </div>
+
+              {/* Agenda + action item summary */}
+              {(agenda.length > 0 || actionItems.length > 0 || meeting.minutes) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, marginTop: 8 }}>
+                  {agenda.length > 0 && (
+                    <span style={{ background: '#f3f4f6', borderRadius: 4, padding: '1px 7px', color: '#374151' }}>
+                      📋 {agenda.filter(a => a.done).length}/{agenda.length} agenda
+                    </span>
+                  )}
+                  {actionItems.length > 0 && (
+                    <span style={{ background: openItems > 0 ? '#fef3c7' : '#dcfce7', borderRadius: 4, padding: '1px 7px', color: openItems > 0 ? '#92400e' : '#166534' }}>
+                      ⚡ {openItems > 0 ? `${openItems} open` : 'all done'} action item{actionItems.length === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {meeting.minutes && (
+                    <span style={{ background: '#eef2ff', borderRadius: 4, padding: '1px 7px', color: '#3730a3' }}>📝 minutes</span>
+                  )}
+                </div>
+              )}
+
               {meeting.description && (
-                <div style={{ fontSize: 12, color: '#888', marginTop: 5, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 6, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {meeting.description}
                 </div>
               )}
+
               {parts.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <button onClick={() => setShowAttendance(s => !s)}
@@ -306,6 +692,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites }) {
                   {showAttendance && (
                     <div style={{ marginTop: 8, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 12px' }}>
                       {parts.map((p, i) => {
+                        const att = (meeting.attendance || {})[p.email || p.name];
                         const sty = p.response === 'accept'  ? { color: '#16a34a', label: '✓ Accepted' }
                                   : p.response === 'maybe'   ? { color: '#f59e0b', label: '? Maybe' }
                                   : p.response === 'decline' ? { color: '#ef4444', label: '✗ Declined' }
@@ -317,7 +704,10 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites }) {
                               {p.name || p.email}
                               {p.email && p.name && <span style={{ color: '#aaa', marginLeft: 6, fontSize: 11 }}>{p.email}</span>}
                             </div>
-                            <span style={{ fontSize: 11, fontWeight: 600, color: sty.color, flexShrink: 0, marginLeft: 8 }}>{sty.label}</span>
+                            <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
+                              {att && <AttBadge value={att} />}
+                              <span style={{ fontSize: 11, fontWeight: 600, color: sty.color }}>{sty.label}</span>
+                            </span>
                           </div>
                         );
                       })}
@@ -332,16 +722,14 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites }) {
               {!past && parts.some(p => (p.email || '').trim()) && onSendInvites && (
                 <button onClick={onSendInvites} title={anySent ? 'Resend invitation emails' : 'Send invitation emails to all participants'}
                   style={{ ...btnStyle, background: anySent ? '#fafafa' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: anySent ? '#555' : '#fff', border: anySent ? '1px solid #d8d8d8' : 'none', fontWeight: 700 }}>
-                  {anySent ? '✉ Resend invites' : '✉ Send invites'}
+                  {anySent ? '✉ Resend' : '✉ Send invites'}
                 </button>
               )}
-              <button onClick={() => downloadICS(meeting)} title="Download .ics file"
-                style={btnStyle}>⬇ iCal</button>
-              <button onClick={() => window.open(googleCalendarUrl(meeting), '_blank')} title="Add to Google Calendar"
-                style={btnStyle}>📅 GCal</button>
-              <button onClick={onEdit} style={btnStyle}>Edit</button>
-              <button onClick={onDelete}
-                style={{ ...btnStyle, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444' }}>✕</button>
+              <button onClick={() => downloadICS(meeting)} title="Download .ics file" style={btnStyle}>⬇ iCal</button>
+              <button onClick={() => window.open(googleCalendarUrl(meeting), '_blank')} title="Add to Google Calendar" style={btnStyle}>📅 GCal</button>
+              {onDuplicate && <button onClick={onDuplicate} title="Duplicate (next week)" style={btnStyle}>⎘ Repeat</button>}
+              <button onClick={onEdit} style={btnStyle}>{past ? 'Notes' : 'Edit'}</button>
+              <button onClick={onDelete} style={{ ...btnStyle, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444' }}>✕</button>
             </div>
           </div>
         </div>
@@ -350,17 +738,43 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites }) {
   );
 }
 
-// ── Create / Edit modal ────────────────────────────────
+const ATT_STYLE = {
+  present: { color: '#166534', bg: '#dcfce7', label: 'PRESENT' },
+  late:    { color: '#92400e', bg: '#fef3c7', label: 'LATE' },
+  absent:  { color: '#991b1b', bg: '#fee2e2', label: 'ABSENT' },
+  excused: { color: '#3730a3', bg: '#eef2ff', label: 'EXCUSED' },
+};
+function AttBadge({ value }) {
+  const s = ATT_STYLE[value]; if (!s) return null;
+  return <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3, color: s.color, background: s.bg, letterSpacing: '.04em' }}>{s.label}</span>;
+}
 
-function MeetingModal({ existing, employees, onSave, onClose }) {
-  const [title,       setTitle]       = useState(existing?.title       || '');
-  const [date,        setDate]        = useState(existing?.date        || todayStr());
-  const [startTime,   setStartTime]   = useState(existing?.startTime   || '10:00');
-  const [duration,    setDuration]    = useState(existing?.duration    || 60);
-  const [location,    setLocation]    = useState(existing?.location    || 'Meraki Nail Studio');
-  const [desc,        setDesc]        = useState(existing?.description || '');
+// ── Create / Edit modal — tabbed ────────────────────────
+
+function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
+  const seed = existing || draft || {};
+  const [tab,         setTab]         = useState('details');
+  const [title,       setTitle]       = useState(seed.title       || '');
+  const [type,        setType]        = useState(seed.type        || 'team');
+  // _newOnDay is a calendar-cell click; pre-seed the date but leave the
+  // rest blank so the user can fill in title / time / participants.
+  const initialDate = seed.date || seed._newOnDay || todayStr();
+  // Private meetings hide their content from staff who aren't a participant
+  // or the organizer. Defaults true for 1:1s and performance reviews; the
+  // creator can override per meeting. Stamped explicitly so non-private
+  // public meetings keep `private: false` (not undefined) on the doc.
+  const [isPrivate, setIsPrivate] = useState(seed.private != null ? !!seed.private : PRIVATE_BY_DEFAULT.has(seed.type || 'team'));
+  const [date,        setDate]        = useState(initialDate);
+  const [startTime,   setStartTime]   = useState(seed.startTime   || '10:00');
+  const [duration,    setDuration]    = useState(seed.duration    || 60);
+  const [location,    setLocation]    = useState(seed.location    || 'Meraki Nail Studio');
+  const [desc,        setDesc]        = useState(seed.description || '');
+  const [agenda,      setAgenda]      = useState(seed.agenda      || []);
+  const [attendance,  setAttendance]  = useState(seed.attendance  || {});
+  const [actionItems, setActionItems] = useState(seed.actionItems || []);
+  const [minutes,     setMinutes]     = useState(seed.minutes     || '');
   const [selected,    setSelected]    = useState(() =>
-    (existing?.participants || []).map(p => `${p.name}||${p.email || ''}`)
+    (seed.participants || []).map(p => `${p.name}||${p.email || ''}`)
   );
   const [customEmail, setCustomEmail] = useState('');
   const [saving,      setSaving]      = useState(false);
@@ -371,7 +785,6 @@ function MeetingModal({ existing, employees, onSave, onClose }) {
     const key = `${emp.name}||${emp.email || ''}`;
     setSelected(s => s.includes(key) ? s.filter(x => x !== key) : [...s, key]);
   }
-
   function addCustomEmail() {
     const trimmed = customEmail.trim();
     if (!trimmed.includes('@')) return;
@@ -379,11 +792,32 @@ function MeetingModal({ existing, employees, onSave, onClose }) {
     if (!selected.includes(key)) setSelected(s => [...s, key]);
     setCustomEmail('');
   }
-
   function buildParticipants() {
     return selected.map(key => {
       const [name, email] = key.split('||');
-      return { name: name || email, email: email || '' };
+      const orig = (existing?.participants || []).find(p => p.email === email);
+      return orig
+        ? { ...orig, name: name || orig.name, email: email || orig.email }
+        : { name: name || email, email: email || '' };
+    });
+  }
+
+  // Agenda CRUD
+  function addAgenda()     { setAgenda(a => [...a, { id: uid(), text: '', done: false }]); }
+  function patchAgenda(i, patch) { setAgenda(a => a.map((x, idx) => idx === i ? { ...x, ...patch } : x)); }
+  function removeAgenda(i) { setAgenda(a => a.filter((_, idx) => idx !== i)); }
+
+  // Action item CRUD
+  function addAction()     { setActionItems(a => [...a, { id: uid(), text: '', assignee: '', dueDate: '', status: 'open', createdBy: author, createdAt: new Date().toISOString() }]); }
+  function patchAction(i, patch) { setActionItems(a => a.map((x, idx) => idx === i ? { ...x, ...patch } : x)); }
+  function removeAction(i) { setActionItems(a => a.filter((_, idx) => idx !== i)); }
+
+  // Attendance
+  function setAtt(key, value) {
+    setAttendance(a => {
+      const next = { ...a };
+      if (next[key] === value) delete next[key]; else next[key] = value;
+      return next;
     });
   }
 
@@ -394,6 +828,8 @@ function MeetingModal({ existing, employees, onSave, onClose }) {
       await onSave({
         ...(existing || {}),
         title:        title.trim(),
+        type,
+        private:      isPrivate,
         date,
         startTime,
         startTimestamp: new Date(`${date}T${startTime}:00`).getTime(),
@@ -401,124 +837,280 @@ function MeetingModal({ existing, employees, onSave, onClose }) {
         location:     location.trim(),
         description:  desc.trim(),
         participants: buildParticipants(),
+        agenda:       agenda.filter(a => (a.text || '').trim()),
+        actionItems:  actionItems.filter(a => (a.text || '').trim()),
+        attendance,
+        minutes:      minutes.trim(),
       });
       onClose();
-    } catch {
-      setSaving(false);
-    }
+    } catch { setSaving(false); }
   }
 
   const canSubmit = title.trim() && date && startTime && !saving;
+  const isPast = date < todayStr();
+  const participantsForAttendance = buildParticipants().filter(p => p.name || p.email);
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 200, overflowY: 'auto', padding: '20px 0' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,.3)', marginBottom: 20 }}
+      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 640, boxShadow: '0 20px 60px rgba(0,0,0,.3)', marginBottom: 20 }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>
-            {existing?.id ? 'Edit Meeting' : 'New Meeting'}
+            {existing?.id ? 'Edit Meeting' : draft ? 'Schedule (from copy)' : 'New Meeting'}
           </div>
           <button onClick={onClose}
             style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid rgba(255,255,255,.4)', background: 'rgba(255,255,255,.15)', cursor: 'pointer', fontSize: 16, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
 
-        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {/* Tabs */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', padding: '0 12px', overflowX: 'auto' }}>
+          {[
+            { id: 'details',    label: 'Details' },
+            { id: 'agenda',     label: `Agenda${agenda.length ? ` (${agenda.length})` : ''}` },
+            { id: 'attendance', label: 'Attendance', hide: !isPast && participantsForAttendance.length === 0 },
+            { id: 'outcomes',   label: `Outcomes${actionItems.length ? ` · ${actionItems.length}` : ''}` },
+          ].filter(t => !t.hide).map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              style={{
+                padding: '12px 14px', border: 'none', background: 'none', fontFamily: 'inherit', fontSize: 13,
+                fontWeight: tab === t.id ? 700 : 500, color: tab === t.id ? '#2D7A5F' : '#666',
+                borderBottom: tab === t.id ? '2px solid #2D7A5F' : '2px solid transparent',
+                cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-          {/* Title */}
-          <div>
-            <label style={lbl}>Title *</label>
-            <input value={title} onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Monthly team check-in" autoFocus style={inp} />
-          </div>
+        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14, minHeight: 320 }}>
 
-          {/* Date / Time / Duration */}
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <div style={{ flex: '2 1 140px' }}>
-              <label style={lbl}>Date *</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+          {tab === 'details' && (
+            <>
+              <div>
+                <label style={lbl}>Title *</label>
+                <input value={title} onChange={e => setTitle(e.target.value)}
+                  placeholder="e.g. Monthly team check-in" autoFocus={!existing} style={inp} />
+              </div>
+
+              <div>
+                <label style={lbl}>Type</label>
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                  {MEETING_TYPES.map(t => (
+                    <button key={t.id} onClick={() => {
+                      setType(t.id);
+                      // Re-default privacy when the user picks a new type and
+                      // hasn't customized it yet — sensitive types (1:1, review)
+                      // toggle private on; team / huddle toggle off.
+                      if (seed.private == null) setIsPrivate(PRIVATE_BY_DEFAULT.has(t.id));
+                    }} type="button"
+                      style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: `1.5px solid ${type === t.id ? t.color : '#d8d8d8'}`, background: type === t.id ? t.bg : '#fff', color: type === t.id ? t.color : '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: type === t.id ? 700 : 500 }}>
+                      {t.emoji} {t.short}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${isPrivate ? '#fca5a5' : '#e5e7eb'}`, background: isPrivate ? '#fef2f2' : '#fafafa', cursor: 'pointer' }}>
+                <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#991b1b', flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: isPrivate ? '#991b1b' : '#374151' }}>
+                    🔒 Private meeting
+                  </div>
+                  <div style={{ fontSize: 11, color: isPrivate ? '#7f1d1d' : '#888', marginTop: 2, lineHeight: 1.45 }}>
+                    {isPrivate
+                      ? 'Only you (the organizer) and listed participants can see the title, agenda, minutes, and action items. Other staff won\'t see this meeting in their list.'
+                      : 'Visible to all tenant staff. Recommended for team meetings, training, daily huddles.'}
+                  </div>
+                </div>
+              </label>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <div style={{ flex: '2 1 140px' }}>
+                  <label style={lbl}>Date *</label>
+                  <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+                </div>
+                <div style={{ flex: '1 1 100px' }}>
+                  <label style={lbl}>Start time *</label>
+                  <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={inp} />
+                </div>
+                <div style={{ flex: '1 1 100px' }}>
+                  <label style={lbl}>Duration</label>
+                  <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={inp}>
+                    {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={lbl}>Location</label>
+                <input value={location} onChange={e => setLocation(e.target.value)}
+                  placeholder="Meraki Nail Studio" style={inp} />
+              </div>
+
+              <div>
+                <label style={lbl}>Pre-meeting notes / brief</label>
+                <textarea value={desc} onChange={e => setDesc(e.target.value)}
+                  rows={3} placeholder="Why are we meeting? What's the goal?"
+                  style={{ ...inp, resize: 'vertical', lineHeight: 1.6 }} />
+              </div>
+
+              <div>
+                <label style={lbl}>Participants (receive email reminders)</label>
+                <div style={{ background: '#fafafa', borderRadius: 10, border: '1px solid #e8e8e8', padding: '10px 12px', maxHeight: 200, overflowY: 'auto' }}>
+                  {employees.length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#bbb' }}>No employees on record.</div>
+                  ) : employees.map(emp => {
+                    const key     = `${emp.name}||${emp.email || ''}`;
+                    const checked = selected.includes(key);
+                    return (
+                      <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleEmp(emp)}
+                          style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#2D7A5F' }} />
+                        <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{emp.name}</span>
+                        {emp.email
+                          ? <span style={{ fontSize: 11, color: '#aaa' }}>{emp.email}</span>
+                          : <span style={{ fontSize: 11, color: '#fca5a5' }}>no email</span>
+                        }
+                      </label>
+                    );
+                  })}
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <input type="email" value={customEmail}
+                    onChange={e => setCustomEmail(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addCustomEmail()}
+                    placeholder="Add guest email…"
+                    style={{ ...inp, flex: 1 }} />
+                  <button onClick={addCustomEmail} type="button"
+                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555', flexShrink: 0 }}>Add</button>
+                </div>
+                {selected.some(k => !empKeys.includes(k)) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                    {selected.filter(k => !empKeys.includes(k)).map(k => {
+                      const email = k.split('||')[1];
+                      return (
+                        <div key={k} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: '#EBF5FF', color: '#1a5f8a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {email}
+                          <button onClick={() => setSelected(s => s.filter(x => x !== k))}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1a5f8a', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {tab === 'agenda' && (
+            <div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                What needs to be discussed. Check items off as you go through the meeting.
+              </div>
+              {agenda.length === 0 && (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#bbb', fontSize: 12, border: '1px dashed #e0e0e0', borderRadius: 8 }}>No agenda items yet.</div>
+              )}
+              {agenda.map((a, i) => (
+                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < agenda.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                  <input type="checkbox" checked={!!a.done} onChange={e => patchAgenda(i, { done: e.target.checked })}
+                    style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#2D7A5F', flexShrink: 0 }} />
+                  <input value={a.text} onChange={e => patchAgenda(i, { text: e.target.value })}
+                    placeholder="Discuss…"
+                    style={{ flex: 1, border: 'none', background: 'none', fontFamily: 'inherit', fontSize: 13, padding: 4, outline: 'none', textDecoration: a.done ? 'line-through' : 'none', color: a.done ? '#999' : '#1a1a1a' }} />
+                  <button onClick={() => removeAgenda(i)} type="button" style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
+                </div>
+              ))}
+              <button onClick={addAgenda} type="button"
+                style={{ width: '100%', marginTop: 8, padding: '8px', borderRadius: 8, border: '1px dashed #d0d0d0', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555' }}>
+                + Add agenda item
+              </button>
             </div>
-            <div style={{ flex: '1 1 100px' }}>
-              <label style={lbl}>Start time *</label>
-              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)} style={inp} />
-            </div>
-            <div style={{ flex: '1 1 100px' }}>
-              <label style={lbl}>Duration</label>
-              <select value={duration} onChange={e => setDuration(Number(e.target.value))} style={inp}>
-                {DURATIONS.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
-              </select>
-            </div>
-          </div>
+          )}
 
-          {/* Location */}
-          <div>
-            <label style={lbl}>Location</label>
-            <input value={location} onChange={e => setLocation(e.target.value)}
-              placeholder="Meraki Nail Studio" style={inp} />
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label style={lbl}>Notes / Agenda</label>
-            <textarea value={desc} onChange={e => setDesc(e.target.value)}
-              rows={3} placeholder="Meeting agenda or notes…"
-              style={{ ...inp, resize: 'vertical', lineHeight: 1.6 }} />
-          </div>
-
-          {/* Participants */}
-          <div>
-            <label style={lbl}>Participants (receive email reminders)</label>
-            <div style={{ background: '#fafafa', borderRadius: 10, border: '1px solid #e8e8e8', padding: '10px 12px', maxHeight: 200, overflowY: 'auto' }}>
-              {employees.length === 0 ? (
-                <div style={{ fontSize: 12, color: '#bbb' }}>No employees on record.</div>
-              ) : employees.map(emp => {
-                const key     = `${emp.name}||${emp.email || ''}`;
-                const checked = selected.includes(key);
+          {tab === 'attendance' && (
+            <div>
+              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                Mark who actually showed up. Separate from RSVP — a "Present" mark stays even if RSVP was a maybe.
+              </div>
+              {participantsForAttendance.length === 0 && (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#bbb', fontSize: 12, border: '1px dashed #e0e0e0', borderRadius: 8 }}>No participants yet — add some on the Details tab.</div>
+              )}
+              {participantsForAttendance.map((p, i) => {
+                const key = p.email || p.name;
+                const cur = attendance[key];
                 return (
-                  <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={checked} onChange={() => toggleEmp(emp)}
-                      style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#2D7A5F' }} />
-                    <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{emp.name}</span>
-                    {emp.email
-                      ? <span style={{ fontSize: 11, color: '#aaa' }}>{emp.email}</span>
-                      : <span style={{ fontSize: 11, color: '#fca5a5' }}>no email</span>
-                    }
-                  </label>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < participantsForAttendance.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || p.email}</div>
+                      {p.email && p.name && <div style={{ fontSize: 11, color: '#aaa' }}>{p.email}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {Object.entries(ATT_STYLE).map(([k, s]) => (
+                        <button key={k} type="button" onClick={() => setAtt(key, k)}
+                          style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 6, border: `1px solid ${cur === k ? s.color : '#d8d8d8'}`, background: cur === k ? s.bg : '#fff', color: cur === k ? s.color : '#666', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '.04em' }}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 );
               })}
             </div>
+          )}
 
-            {/* Custom email */}
-            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-              <input type="email" value={customEmail}
-                onChange={e => setCustomEmail(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addCustomEmail()}
-                placeholder="Add guest email…"
-                style={{ ...inp, flex: 1 }} />
-              <button onClick={addCustomEmail}
-                style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555', flexShrink: 0 }}>
-                Add
-              </button>
-            </div>
-
-            {/* Guest chips */}
-            {selected.some(k => !empKeys.includes(k)) && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {selected.filter(k => !empKeys.includes(k)).map(k => {
-                  const email = k.split('||')[1];
-                  return (
-                    <div key={k} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: '#EBF5FF', color: '#1a5f8a', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      {email}
-                      <button onClick={() => setSelected(s => s.filter(x => x !== k))}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1a5f8a', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
-                    </div>
-                  );
-                })}
+          {tab === 'outcomes' && (
+            <div>
+              <div>
+                <label style={lbl}>Meeting minutes</label>
+                <textarea value={minutes} onChange={e => setMinutes(e.target.value)}
+                  rows={6} placeholder="What was discussed, decided, and concluded…"
+                  style={{ ...inp, resize: 'vertical', lineHeight: 1.6 }} />
               </div>
-            )}
-          </div>
+
+              <div style={{ marginTop: 18 }}>
+                <label style={lbl}>Action items</label>
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                  Tasks that came out of this meeting. Surface in each assignee's "My open action items" panel.
+                </div>
+                {actionItems.length === 0 && (
+                  <div style={{ padding: '18px', textAlign: 'center', color: '#bbb', fontSize: 12, border: '1px dashed #e0e0e0', borderRadius: 8 }}>No action items yet.</div>
+                )}
+                {actionItems.map((a, i) => (
+                  <div key={a.id} style={{ marginBottom: 8, padding: 10, background: a.status === 'done' ? '#f9fafb' : '#fffbeb', border: `1px solid ${a.status === 'done' ? '#e5e7eb' : '#fde68a'}`, borderRadius: 8, opacity: a.status === 'done' ? 0.7 : 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <input type="checkbox" checked={a.status === 'done'}
+                        onChange={e => patchAction(i, { status: e.target.checked ? 'done' : 'open', completedAt: e.target.checked ? new Date().toISOString() : '' })}
+                        style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#2D7A5F', marginTop: 4, flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <input value={a.text} onChange={e => patchAction(i, { text: e.target.value })}
+                          placeholder="What needs to happen…"
+                          style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d8d8d8', borderRadius: 6, padding: '5px 8px', fontFamily: 'inherit', fontSize: 13, marginBottom: 6, textDecoration: a.status === 'done' ? 'line-through' : 'none' }} />
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <select value={a.assignee} onChange={e => patchAction(i, { assignee: e.target.value })}
+                            style={{ flex: '1 1 140px', minWidth: 0, border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 8px', fontFamily: 'inherit', fontSize: 12, background: '#fff' }}>
+                            <option value="">Assign to…</option>
+                            {employees.map(e => e.email && <option key={e.id} value={e.email}>{e.name} ({e.email})</option>)}
+                          </select>
+                          <input type="date" value={a.dueDate || ''} onChange={e => patchAction(i, { dueDate: e.target.value })}
+                            style={{ flex: '1 1 120px', minWidth: 0, border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 8px', fontFamily: 'inherit', fontSize: 12, background: '#fff' }} />
+                        </div>
+                      </div>
+                      <button onClick={() => removeAction(i)} type="button"
+                        style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>
+                    </div>
+                  </div>
+                ))}
+                <button onClick={addAction} type="button"
+                  style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px dashed #d0d0d0', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555' }}>
+                  + Add action item
+                </button>
+              </div>
+            </div>
+          )}
 
         </div>
 

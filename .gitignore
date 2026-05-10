@@ -33,3 +33,8 @@ dist-ssr
 .claude/
 archive/
 scripts/
+
+# Playwright e2e artifacts
+test-results/
+playwright-report/
+playwright/.cache/

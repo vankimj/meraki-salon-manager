@@ -4,6 +4,7 @@ import { resizeImg, formatTime } from '../../utils/helpers';
 import { logActivity, logError } from '../../lib/logger';
 
 import { useApp } from '../../context/AppContext';
+import NotesEditor from '../../components/NotesEditor';
 
 // ── helpers ────────────────────────────────────────────
 function blankClient() {
@@ -60,13 +61,25 @@ function matchesSearch(c, q) {
 const PAGE_SIZE = 50;
 
 // ── main list ──────────────────────────────────────────
-export default function ClientsAdmin() {
+export default function ClientsAdmin({ initialClientId, onInitialClientOpened } = {}) {
   const { showToast } = useApp();
   const [clients,    setClients]    = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [search,     setSearch]     = useState('');
   const [page,       setPage]       = useState(0);
   const [modal,      setModal]      = useState(null);
+
+  // Cross-module deep-link: parent module (App.jsx) sets initialClientId
+  // when the user clicks a client name from the Schedule. Once we've loaded
+  // the clients list, find the target and pop the profile open in view mode,
+  // then signal the parent to clear the id so reopening this module fresh
+  // doesn't keep popping the same modal.
+  useEffect(() => {
+    if (!initialClientId || loading) return;
+    const c = clients.find(x => x.id === initialClientId);
+    if (c) setModal({ client: c, mode: 'view' });
+    onInitialClientOpened?.();
+  }, [initialClientId, loading, clients]); // eslint-disable-line
   // undo/redo — items live here instead of Firestore until evicted
   const [undoStack,  setUndoStack]  = useState([]); // pending deletes (max 2)
   const [redoStack,  setRedoStack]  = useState([]);
@@ -92,7 +105,16 @@ export default function ClientsAdmin() {
     finally { setLoading(false); }
   }
 
-  async function handleSave(client) {
+  async function handleSave(rawClient) {
+    // Keep legacy `notes` string in sync with the structured notesLog so
+    // any consumer still reading client.notes (email, AI chatbot, reports)
+    // sees the latest content. Newest-first joined; if no log entries,
+    // preserve any existing legacy string as-is.
+    const log = Array.isArray(rawClient.notesLog) ? rawClient.notesLog : [];
+    const derivedNotes = log.length
+      ? log.map(e => e?.text || '').filter(Boolean).join('\n\n')
+      : (rawClient.notes || '');
+    const client = { ...rawClient, notes: derivedNotes };
     try {
       if (client.id) {
         const { id, createdAt, ...data } = client;
@@ -285,6 +307,7 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
 
 // ── modal ──────────────────────────────────────────────
 function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, onSave, onClose }) {
+  const { gUser } = useApp();
   const { showToast, isAdmin, settings } = useApp();
   const [mode,             setMode]             = useState(initialMode);
   const [tab,              setTab]              = useState('profile');
@@ -505,10 +528,13 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                 }
               </Field>
               <Field label="Notes">
-                {isView
-                  ? <ViewVal style={{ whiteSpace: 'pre-wrap' }}>{client.notes || '—'}</ViewVal>
-                  : <textarea value={client.notes || ''} onChange={e => onChange({ notes: e.target.value })} rows={3} placeholder="Allergies, preferences, special notes…" style={{ ...inp, resize: 'vertical', lineHeight: 1.5 }} />
-                }
+                <NotesEditor
+                  entries={client.notesLog}
+                  legacy={client.notes}
+                  onChange={notesLog => onChange({ notesLog })}
+                  viewOnly={isView}
+                  author={gUser?.email || gUser?.displayName || ''}
+                />
               </Field>
               <Field label="Banned">
                 {isView

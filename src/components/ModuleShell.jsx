@@ -5,42 +5,31 @@ import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
 import { MODULE_ICONS, IconHome, IconSettings, IconMessage } from './Icons';
-
-// Module catalog (mirrors HomeScreen) so the sidebar can show the same items
-// with the same role-based visibility.
-const SIDEBAR_MODULES = [
-  { id: 'schedule',  label: 'Schedule',  adminOnly: false },
-  { id: 'clients',   label: 'Clients',   adminOnly: false },
-  { id: 'services',  label: 'Services',  adminOnly: false },
-  { id: 'employees', label: 'Employees', adminOnly: true  },
-  { id: 'reports',   label: 'Reports',   adminOnly: false },
-  { id: 'attendance',label: 'Attendance',adminOnly: true  },
-  { id: 'hr',        label: 'HR',        adminOnly: true  },
-  { id: 'giftcards', label: 'Gift Cards',adminOnly: true  },
-  { id: 'meetings',  label: 'Meetings',  adminOnly: true  },
-  { id: 'products',  label: 'Products',  adminOnly: true  },
-  { id: 'marketing', label: 'Marketing', adminOnly: true, proOnly: true },
-  { id: 'chat',      label: 'Messages',  adminOnly: false },
-];
+import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } from '../lib/modules';
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
   const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin } = useApp();
   const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
-  const isPro = !settings?.plan || settings.plan === 'pro';
+  const plan = effectivePlan(settings);
   const canManage = isAdmin || isReadOnly;
 
-  // Build the per-role sidebar item list, matching HomeScreen's logic.
+  // Build the per-role sidebar list. Single catalog (src/lib/modules.js) is
+  // the source of truth for plan gating + admin-only flags + per-tile hide
+  // preferences, matching HomeScreen's logic so the sidebar and dashboard
+  // never disagree.
   const sidebarItems = (() => {
     if (isTech) {
       return ['schedule','clients','services','employees','hr']
-        .map(id => SIDEBAR_MODULES.find(m => m.id === id)).filter(Boolean);
+        .map(id => MODULES.find(m => m.id === id)).filter(Boolean)
+        .filter(m => isModuleAvailableForPlan(m, plan));
     }
     if (isScheduler) {
       return ['schedule','clients','services','chat']
-        .map(id => SIDEBAR_MODULES.find(m => m.id === id)).filter(Boolean);
+        .map(id => MODULES.find(m => m.id === id)).filter(Boolean)
+        .filter(m => isModuleAvailableForPlan(m, plan));
     }
     if (canManage) {
-      return SIDEBAR_MODULES.filter(m => !m.adminOnly || isAdmin);
+      return getVisibleModules(settings, { isAdmin, hiddenTiles: settings?.hiddenTiles });
     }
     return [];
   })();
@@ -88,11 +77,11 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
             {sidebarItems.map(m => {
               const Icon   = MODULE_ICONS[m.id];
               const active = m.id === view;
-              const locked = m.proOnly && !isPro;
+              const locked = false; // gated upstream — locked items already filtered out
               const badge  = m.id === 'chat' ? totalChatUnread : 0;
               return (
                 <button key={m.id} onClick={() => guardedNavigate(m.id)}
-                  title={locked ? `${m.label} — upgrade to Pro to unlock` : m.label}
+                  title={m.label}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '9px 12px', borderRadius: 10,

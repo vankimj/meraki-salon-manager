@@ -3,7 +3,6 @@ import {
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
-  persistentMultipleTabManager,
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
@@ -20,18 +19,18 @@ const FIREBASE_CONFIG = {
 const app = initializeApp(FIREBASE_CONFIG);
 
 // Offline-first POS: enable IndexedDB persistence so writes queue locally
-// when the network drops and sync automatically when it returns. Multi-tab
-// manager lets the kiosk + admin browser tab + a tech's phone share one
-// IndexedDB on the same device without stomping each other.
+// when the network drops and sync automatically when it returns. Default
+// (single-tab) tab manager — we previously used persistentMultipleTabManager
+// but the SharedWorker startup added 1-2 seconds to every cold sign-in
+// without buying anything in practice (admins rarely run multiple app tabs
+// on the same device). Second tab silently falls back to memory cache.
 //
-// Fallback: if persistence init throws (private browsing, corrupted IDB,
-// multi-tab lock contention), drop to in-memory and keep the app working.
+// Fallback: if persistence init throws (private browsing, corrupted IDB),
+// drop to in-memory and keep the app working.
 let _db;
 try {
   _db = initializeFirestore(app, {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
+    localCache: persistentLocalCache({}),
   });
 } catch (e) {
   console.warn('[Firestore] persistent cache init failed, falling back to memory:', e?.message);

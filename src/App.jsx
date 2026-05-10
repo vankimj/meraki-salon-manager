@@ -40,6 +40,7 @@ import ManageAppointmentScreen from './components/ManageAppointmentScreen';
 import { TermsScreen, PrivacyScreen } from './components/PolicyScreen';
 import PinModal from './components/PinModal';
 import FirstLoginWizard from './components/FirstLoginWizard';
+import { isModuleAvailableForPlan, effectivePlan } from './lib/modules';
 
 const MODULE_TITLES = {
   schedule:   'Schedule',
@@ -104,6 +105,11 @@ function AppShell() {
   const [view,      setView]      = useState('home'); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
   const [showAdmin, setShowAdmin] = useState(false);
   const [showWizard, setShowWizard] = useState(false);
+  // Cross-module deep-link: when set, clicking a client name in Schedule
+  // jumps to the Clients module and auto-opens that client's profile.
+  // ClientsAdmin clears it once it's consumed the value.
+  const [openClientId, setOpenClientId] = useState(null);
+  const openClientProfile = (id) => { if (!id) return; setOpenClientId(id); setView('clients'); };
 
   // Auto-open the first-login wizard once per fresh tenant. We trigger if
   // the user is signed-in admin AND we haven't stamped _wizardCompleted on
@@ -170,11 +176,27 @@ function AppShell() {
         </>
       )}
 
-      {/* Management modules */}
+      {/* Management modules — defense-in-depth: a plan-locked module
+          shouldn't render even if `view` somehow points at it (stale
+          state, URL hash, etc). The home-screen tile filter is the
+          primary gate; this guard catches anything that slips through. */}
       {Object.keys(MODULE_TITLES).map(id => view === id && (
+        !isModuleAvailableForPlan(id, effectivePlan(settings)) ? (
+          <ModuleShell key={id} view="home" title="Upgrade required" onHome={() => setView('home')} onAdmin={() => setShowAdmin(true)} onNavigate={setView}>
+            <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>
+              <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>This feature isn't on your current plan</div>
+              <div style={{ fontSize: 13, color: '#888', marginBottom: 16 }}>Upgrade to unlock it. Talk to your account manager or visit Admin → Plan & Billing.</div>
+              <button onClick={() => setView('home')}
+                style={{ padding: '10px 20px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Back to home
+              </button>
+            </div>
+          </ModuleShell>
+        ) : (
         <ModuleShell key={id} view={id} title={MODULE_TITLES[id]} onHome={() => setView('home')} onAdmin={() => setShowAdmin(true)} onNavigate={setView}>
-          {id === 'schedule'  && <ScheduleAdmin />}
-          {id === 'clients'   && <ClientsAdmin />}
+          {id === 'schedule'  && <ScheduleAdmin onOpenClient={openClientProfile} />}
+          {id === 'clients'   && <ClientsAdmin initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)} />}
           {id === 'services'  && <ServicesAdmin />}
           {id === 'employees' && <EmployeesAdmin />}
           {id === 'reports'    && <ReportsAdmin />}
@@ -189,6 +211,7 @@ function AppShell() {
           {id === 'walkin'     && <WalkinKiosk />}
           {id === 'memberships' && <MembershipsAdmin />}
         </ModuleShell>
+        )
       ))}
 
       {/* Admin settings overlay */}

@@ -4,7 +4,7 @@ import {
   subscribeTurnRoster, saveTurnRoster,
   subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, addToWaitlist,
   subscribeToAppointments, createAppointment,
-  fetchEmployees, fetchServices,
+  fetchEmployees, fetchServices, fetchClient,
 } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 
@@ -155,6 +155,22 @@ export default function WalkinKiosk() {
   async function seatWalkIn(entry, techName) {
     if (!entry || !techName) return;
     try {
+      // Banned-client guard — walk-in flow has no override; banned clients
+      // get hard-blocked at seating. Admin must remove them from the queue.
+      // (For overriding a ban, use the calendar booking flow which has the
+      // explicit override checkbox + audit log.)
+      if (entry.clientId) {
+        try {
+          const c = await fetchClient(entry.clientId);
+          if (c?.banned) {
+            showToast(`🚫 ${c.name} is banned — cannot seat. Remove from queue.`);
+            logActivity('walkin_blocked_banned', `Blocked seating of banned client ${c.name} (${c.id})`);
+            return;
+          }
+        } catch (e) {
+          console.warn('[walkin] could not check ban status:', e?.message);
+        }
+      }
       // 1) +1 turn for the tech
       const updated = (roster || []).map(r =>
         r.techName === techName ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r

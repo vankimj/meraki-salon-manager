@@ -79,5 +79,15 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.js'],
+    // Exclude the e2e directory so Playwright specs aren't pulled into the
+    // unit suite — they need a real browser, not jsdom. Defaults from vitest
+    // (node_modules, dist, etc.) included explicitly because setting `exclude`
+    // overrides them.
+    exclude: [
+      '**/node_modules/**', '**/dist/**', '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*',
+      'e2e/**', 'platform-admin/**', 'plumenexus/**', 'mobile/**',
+    ],
   },
 });

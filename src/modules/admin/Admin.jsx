@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
 import { buildExportBundle } from '../../lib/exportBundle';
+import { TENANT_ID, currentSubdomain } from '../../lib/tenant';
 import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchFeedback, updateFeedbackStatus,
          fetchNotificationCenter,
-         fetchAllForBackup, restoreFromBackup,
+         fetchAllForBackup, restoreFromBackup, fetchTenantRecord,
          fetchBookingConfig, saveBookingConfig,
          fetchWebfrontConfig, saveWebfrontConfig,
          fetchReviewReceived, fetchReviewRequests,
@@ -13,6 +14,7 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchTenants, createTenantRecord, updateTenantRecord,
          provisionNewTenant, fetchTenantStats } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
+import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK } from '../../lib/modules';
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedDemoData, clearDemoData, addFutureAppointments, backfillDemoTransactions } from '../../data/seedDemo';
@@ -372,6 +374,8 @@ export default function Admin({ onClose }) {
             </Section>
             <TechRemindersSection settings={settings} updateSettings={updateSettings} />
             <PauseSection settings={settings} updateSettings={updateSettings} />
+            <DomainSection />
+            <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
             <BrandingSection settings={settings} updateSettings={updateSettings} />
             <UpgradeSection settings={settings} gUser={gUser} />
             <BackupRestoreSection />
@@ -2097,6 +2101,221 @@ function PauseSection({ settings, updateSettings }) {
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e' }}>✓ Saved</span>}
         </div>
       </div>
+    </Section>
+  );
+}
+
+// ── Tile visibility ───────────────────────────────────────────────────────────
+// Lets the salon owner hide individual home-screen tiles for features they
+// don't use. Plan-locked features (above their tier) are shown as disabled
+// with an "Upgrade required" hint — included so they know what's available
+// at the next tier without being surprised at billing.
+function TileVisibilitySection({ settings, updateSettings }) {
+  const plan   = effectivePlan(settings);
+  const hidden = new Set(settings?.hiddenTiles || []);
+  const [saving, setSaving] = useState(false);
+
+  async function toggle(id) {
+    setSaving(true);
+    try {
+      const next = new Set(hidden);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      await updateSettings({ ...settings, hiddenTiles: Array.from(next) });
+      logActivity('tiles_visibility_changed', `${id} → ${hidden.has(id) ? 'shown' : 'hidden'}`);
+    } finally { setSaving(false); }
+  }
+
+  const PLAN_LABEL = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
+
+  return (
+    <Section title="🧩 Home Tiles · what shows up on the dashboard">
+      <div style={{ padding: '10px 16px 14px' }}>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+          Toggle off tiles you don't use to keep the dashboard simple.
+          You can turn them back on any time. Greyed-out tiles are part of a
+          higher plan — upgrade to unlock.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+          {MODULES.map(m => {
+            const available = isModuleAvailableForPlan(m, plan);
+            const isHidden  = hidden.has(m.id);
+            const lockedReason = !available ? `Available on ${PLAN_LABEL[m.plan]} plan` : null;
+            return (
+              <label key={m.id}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 10,
+                  padding: '10px 12px', borderRadius: 10,
+                  border: `1px solid ${!available ? '#e5e7eb' : isHidden ? '#e5e7eb' : '#bfdbfe'}`,
+                  background: !available ? '#f9fafb' : isHidden ? '#fff' : '#eff6ff',
+                  cursor: available ? 'pointer' : 'not-allowed',
+                  opacity: available ? 1 : 0.6,
+                }}>
+                <input type="checkbox"
+                  checked={available && !isHidden}
+                  disabled={!available || saving}
+                  onChange={() => available && toggle(m.id)}
+                  style={{ width: 16, height: 16, cursor: available ? 'pointer' : 'not-allowed', accentColor: '#3D95CE', flexShrink: 0, marginTop: 2 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: available ? '#1a1a1a' : '#9ca3af', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {m.label}
+                    {!available && (
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                        🔒 {PLAN_LABEL[m.plan]}
+                      </span>
+                    )}
+                    {m.adminOnly && (
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                        Admin only
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.4 }}>
+                    {lockedReason || m.desc}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {hidden.size > 0 && (
+          <button onClick={() => updateSettings({ ...settings, hiddenTiles: [] })}
+            style={{ marginTop: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Show all tiles ({hidden.size} hidden)
+          </button>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+// ── Domain (placeholder UI for future "Change my URL" feature) ────────────────
+// Per principle #11 + plumenexus/SUBDOMAIN-CHANGE-DESIGN.md, tenants will
+// eventually be able to change their primary subdomain. Schema + resolver
+// helper are already built. The self-serve UI is a Phase-2 feature; for now
+// this section just shows the current URL + any aliases + a "coming soon"
+// modal so tenants know the feature is on the roadmap.
+function DomainSection() {
+  const [showSoon, setShowSoon] = useState(false);
+  const [tenantDoc, setTenantDoc] = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const sub = currentSubdomain();
+  const isLocal = typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname.startsWith('127.') || window.location.hostname.endsWith('.web.app'));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTenantRecord(TENANT_ID)
+      .then(t => { if (!cancelled) setTenantDoc(t); })
+      .catch(() => { if (!cancelled) setTenantDoc(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const primary = tenantDoc?.subdomain || sub;
+  const aliases = Array.isArray(tenantDoc?.aliases) ? tenantDoc.aliases : [];
+
+  return (
+    <Section title="🌐 Your Salon URL">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 14 }}>
+          The web address clients use to find your booking page and online presence.
+        </div>
+
+        {/* Current URL */}
+        <div style={{
+          padding: '14px 16px',
+          background: '#fafafa',
+          border: '1px solid #e8e8e8',
+          borderRadius: 10,
+          marginBottom: aliases.length > 0 ? 10 : 14,
+        }}>
+          <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Current URL</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+            https://{primary}.plumenexus.com
+          </div>
+          {isLocal && (
+            <div style={{ fontSize: 11, color: '#888', marginTop: 6, fontStyle: 'italic' }}>
+              You're on {window.location.hostname} right now — your live URL above is what clients see.
+            </div>
+          )}
+        </div>
+
+        {/* Aliases (if any) */}
+        {aliases.length > 0 && (
+          <div style={{
+            padding: '10px 14px',
+            background: '#f5f3fa',
+            border: '1px solid #e6e0ee',
+            borderRadius: 10,
+            marginBottom: 14,
+          }}>
+            <div style={{ fontSize: 11, color: '#5b3b8c', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
+              Previous URLs (still working as 301 redirects)
+            </div>
+            {aliases.map(a => (
+              <div key={a} style={{ fontSize: 12, color: '#5b3b8c', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+                https://{a}.plumenexus.com → redirects to current
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Coming-soon CTA */}
+        <button onClick={() => setShowSoon(true)} disabled={loading} style={{
+          padding: '8px 14px', fontSize: 13, fontWeight: 600,
+          background: '#fff', color: '#5b3b8c',
+          border: '1px solid #d8c8ec', borderRadius: 8,
+          cursor: loading ? 'default' : 'pointer', fontFamily: 'inherit',
+        }}>
+          {loading ? 'Loading…' : 'Change my URL'}
+        </button>
+
+        <div style={{ fontSize: 11, color: '#aaa', marginTop: 10, lineHeight: 1.5 }}>
+          When you change your URL, your old one keeps working forever as a redirect — so
+          existing bookmarks, QR codes, and shared links never break.
+        </div>
+      </div>
+
+      {showSoon && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 200, padding: 16,
+        }} onClick={() => setShowSoon(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: '#fff', borderRadius: 14, padding: 24,
+            maxWidth: 440, width: '100%', boxShadow: '0 16px 40px rgba(0,0,0,.2)',
+          }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: 12,
+              background: 'linear-gradient(135deg, #5b3b8c, #3d95ce)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 24, marginBottom: 14,
+            }}>🚧</div>
+            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', margin: '0 0 8px' }}>
+              Self-serve URL change — coming soon
+            </h3>
+            <p style={{ fontSize: 13, color: '#666', lineHeight: 1.6, margin: '0 0 14px' }}>
+              We're building a self-serve flow so you can change your salon URL anytime. Until then,
+              if you need to rename your subdomain, just email <a href="mailto:hello@plumenexus.com" style={{ color: '#5b3b8c', fontWeight: 600 }}>hello@plumenexus.com</a> and
+              we'll handle it within one business day. Your old URL will keep working
+              as a permanent 301 redirect so nothing breaks.
+            </p>
+            <div style={{ padding: '10px 12px', background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: '#5b3b8c', lineHeight: 1.55, marginBottom: 14 }}>
+              <strong>What you can change:</strong> the subdomain part (e.g. <code>sarahsbb</code> → <code>sarahsbeautybar</code>). The full domain stays <code>plumenexus.com</code>.
+              <br />
+              <strong>What stays the same:</strong> all your data, your old URL (as a redirect), and your existing client relationships.
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setShowSoon(false)} style={{
+                padding: '8px 18px', fontSize: 13, fontWeight: 600,
+                background: '#1a1a1a', color: '#fff', border: 'none',
+                borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+              }}>Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Section>
   );
 }

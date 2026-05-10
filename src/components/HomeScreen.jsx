@@ -6,24 +6,7 @@ import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
 import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRight, IconSettings, IconMessage } from './Icons';
-
-const MODULES = [
-  { id: 'schedule',  label: 'Schedule',  desc: 'Appointments & calendar',  adminOnly: false },
-  { id: 'clients',   label: 'Clients',   desc: 'Profiles & visit history', adminOnly: false },
-  { id: 'services',  label: 'Services',  desc: 'Menu & pricing',           adminOnly: false },
-  { id: 'employees', label: 'Employees', desc: 'Team & profiles',          adminOnly: true  },
-  { id: 'reports',   label: 'Reports',   desc: 'Revenue & analytics',      adminOnly: false },
-  { id: 'attendance',label: 'Attendance',desc: 'Clock-in / clock-out times', adminOnly: true },
-  { id: 'hr',        label: 'HR',        desc: 'Payroll & compensation',   adminOnly: true  },
-  { id: 'giftcards', label: 'Gift Cards', desc: 'Gift cards & promo codes', adminOnly: true  },
-  { id: 'meetings',  label: 'Meetings',  desc: 'Internal team meetings',   adminOnly: true  },
-  { id: 'products',  label: 'Products',  desc: 'Retail inventory & stock', adminOnly: true  },
-  { id: 'marketing', label: 'Marketing', desc: 'Email campaigns & outreach', adminOnly: true, proOnly: true },
-  { id: 'chat',      label: 'Communications', desc: 'SMS, email & in-app messages', adminOnly: false },
-  { id: 'earnings',  label: 'Earnings',  desc: 'Tips, services & take-home',  adminOnly: false },
-  { id: 'walkin',    label: 'Walk-in Kiosk', desc: 'Live turn rotation + waitlist', adminOnly: false },
-  { id: 'memberships', label: 'Memberships', desc: 'Recurring plans & members',     adminOnly: true },
-];
+import { MODULES, getVisibleModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
 
 function greeting() {
   const h = new Date().getHours();
@@ -37,7 +20,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const canManage = isAdmin || isReadOnly;
-  const isPro = !settings?.plan || settings.plan === 'pro';
+  const plan = effectivePlan(settings);
   const techUsers = users.filter(u => u.role === 'tech' && u.techName);
 
   function previewLabel(va) {
@@ -57,8 +40,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
 
   function navigate(viewId) {
     const mod = MODULES.find(m => m.id === viewId);
-    if (mod?.proOnly && !isPro) {
-      showToast('Upgrade to Pro to unlock Marketing campaigns.');
+    if (mod && !isModuleAvailableForPlan(mod, plan)) {
+      showToast(`Upgrade to ${mod.plan === 'pro' ? 'Pro' : 'Enterprise'} to unlock ${mod.label}.`);
       return;
     }
     requirePin(viewId, () => onNavigate(viewId));
@@ -183,8 +166,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           <>
             <SectionLabel>Manage</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-              {MODULES.filter(m => !m.adminOnly || isAdmin).map(m => (
-                <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} locked={m.proOnly && !isPro} />
+              {getVisibleModules(settings, { isAdmin, hiddenTiles: settings?.hiddenTiles }).map(m => (
+                <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
               ))}
             </div>
           </>

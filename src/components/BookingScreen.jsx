@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut as fbSignOut,
          sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth, callFn } from '../lib/firebase';
+import { TENANT_ID } from '../lib/tenant';
 import {
   fetchServices, fetchEmployees, fetchBookingConfig, fetchWebfrontConfig,
   fetchAppointments, fetchAppointmentsByRange, createAppointment, fetchClientByEmail, createClient,
@@ -93,6 +94,7 @@ export default function BookingScreen() {
   const [apptsByDate, setApptsByDate] = useState({});
   const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: true, optInEmail: true });
   const [submitting,      setSubmitting]      = useState(false);
+  const [bookingError,    setBookingError]    = useState('');
   const [confirmed,       setConfirmed]       = useState(null);
   const [emailLinkState,  setEmailLinkState]  = useState(null); // null|'sending'|'sent'|'error'
   const [emailLinkDevice, setEmailLinkDevice] = useState(false); // cross-device: need email to finish
@@ -215,35 +217,51 @@ export default function BookingScreen() {
 
   async function handleBook() {
     if (cart.length === 0 || !cartDate || cartSlot == null) return;
+    setBookingError('');
+    // Local-cached banned flag (only set if fetchClientByEmail succeeded
+    // earlier — public booking can't always read clients, so we ALSO
+    // re-check on the server below as the source of truth).
     if (client?.banned) {
-      alert('We are unable to accept your booking online. Please contact the salon directly.');
+      setBookingError("We're not able to accept this booking online. Please call the salon to discuss.");
       return;
     }
     setSubmitting(true);
     try {
-      // Auto-create a client record once per booking session.
+      // Resolve the booking to the right client record. We delegate to a
+      // server-side findOrCreateClient because the public booking page
+      // can't read the clients collection directly (firestore.rules
+      // gate it to tenant staff). The function dedupes by email +
+      // phone, refuses banned clients, and returns either an existing
+      // client's id or a freshly minted one — preventing duplicate
+      // records like Sonny / Son and blocking banned-customer booking
+      // even if they try a different email or sign-in method.
       let clientId = client?.id || '';
-      if (!clientId && gUser?.email && form.name.trim() && form.phone.trim()) {
+      if (!clientId && form.name.trim() && (form.phone.trim() || form.email.trim() || gUser?.email)) {
         try {
-          clientId = await createClient({
-            name:    form.name.trim(),
-            phone:   form.phone.trim(),
-            email:   form.email.trim() || gUser.email,
-            picture: gUser.photoURL || '',
-            source:  'online_booking',
-            // Default a new online-booking client to opted-in on both
-            // SMS + Email for both transactional and marketing. They
-            // can change this any time on their profile / via unsubscribe.
-            commPreferences: {
-              appointmentSms:   form.optInSms !== false,
-              appointmentEmail: form.optInEmail !== false,
-              appointmentVoice: false,
-              marketingSms:     form.optInSms !== false,
-              marketingEmail:   form.optInEmail !== false,
-              marketingVoice:   false,
+          const res = await callFn('findOrCreateClient')({
+            tenantId: TENANT_ID,
+            name:     form.name.trim(),
+            phone:    form.phone.trim(),
+            email:    form.email.trim() || gUser?.email || '',
+            extra: {
+              picture: gUser?.photoURL || '',
+              commPreferences: {
+                appointmentSms:   form.optInSms !== false,
+                appointmentEmail: form.optInEmail !== false,
+                appointmentVoice: false,
+                marketingSms:     form.optInSms !== false,
+                marketingEmail:   form.optInEmail !== false,
+                marketingVoice:   false,
+              },
             },
           });
-        } catch (e) { console.error('[Booking] auto-create client failed:', e); }
+          if (res?.data?.banned) {
+            setBookingError("We're not able to accept this booking online. Please call the salon to discuss.");
+            setSubmitting(false);
+            return;
+          }
+          clientId = res?.data?.id || '';
+        } catch (e) { console.error('[Booking] findOrCreateClient failed:', e); }
       }
 
       const removalDur = 15;
@@ -459,7 +477,7 @@ export default function BookingScreen() {
             cart={cart} allTechs={techs}
             cartTech={cartTech} cartDate={cartDate} cartSlot={cartSlot}
             apptsByDate={apptsByDate}
-            form={form} submitting={submitting}
+            form={form} submitting={submitting} bookingError={bookingError}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
             updateCartItem={updateCartItem}
             onEditInfo={() => setStep(4)}
@@ -1091,7 +1109,7 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
 }
 
 // ── Step 5: Confirm (multi-item) ────────────────────────
-function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDate, form, submitting, removalPrice, updateCartItem, onConfirm, onBack, onEditInfo }) {
+function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, onConfirm, onBack, onEditInfo }) {
   const removalDur = 15;
   const totalPrice = cart.reduce((sum, item) => {
     const base = resolveServicePricing(item.service, item.option).price || 0;
@@ -1188,9 +1206,15 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
         )}
       </div>
 
-      <button onClick={onConfirm} disabled={submitting}
-        style={{ width: '100%', padding: '16px', borderRadius: 14, border: 'none', background: submitting ? '#aaa' : 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 16, fontWeight: 800, cursor: submitting ? 'default' : 'pointer', fontFamily: 'inherit', marginBottom: 10, letterSpacing: '.01em' }}>
-        {submitting ? 'Booking…' : '✓ Confirm Booking'}
+      {bookingError && (
+        <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', fontSize: 13, lineHeight: 1.45, marginBottom: 10, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+          <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>⚠️</span>
+          <span>{bookingError}</span>
+        </div>
+      )}
+      <button onClick={onConfirm} disabled={submitting || !!bookingError}
+        style={{ width: '100%', padding: '16px', borderRadius: 14, border: 'none', background: (submitting || bookingError) ? '#aaa' : 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 16, fontWeight: 800, cursor: (submitting || bookingError) ? 'default' : 'pointer', fontFamily: 'inherit', marginBottom: 10, letterSpacing: '.01em' }}>
+        {submitting ? 'Booking…' : bookingError ? 'Booking unavailable' : '✓ Confirm Booking'}
       </button>
       <BackBtn onClick={onBack} />
       <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 12, lineHeight: 1.6 }}>

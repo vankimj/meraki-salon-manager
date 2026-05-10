@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import { useApp } from '../../context/AppContext';
@@ -8,6 +8,7 @@ import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
 import { notifyAffectedTechs } from '../../lib/notifications';
 import { resizeImg } from '../../utils/helpers';
 import VoiceAssistant from '../voice/VoiceAssistant';
+import NotesEditor from '../../components/NotesEditor';
 
 const FALLBACK_TECHS = ['Yasmin D', 'Audriana L', 'Samantha T', 'Tess D', 'Elizabeth L', 'Yan W', 'Jen T', 'Marisela I', 'Ana P', 'Jenesis B'];
 
@@ -128,6 +129,67 @@ function loadOverlay(allTechs) {
   return [...allTechs];
 }
 
+// US phone normalization. Strip everything that isn't a digit, drop a
+// leading "1" country code, then require exactly 10 digits. Returns
+// { digits, formatted, valid } so callers can validate AND store the
+// canonical "+1 (614) 555-0123" form (with explicit country code).
+// Used for both client-record write formatting and duplicate-detection
+// comparisons (which compare on `digits` only, ignoring formatting).
+function normalizePhone(input) {
+  const raw = String(input || '');
+  if (!raw.trim()) return { digits: '', formatted: '', valid: true, empty: true };
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  const valid = digits.length === 10;
+  const formatted = valid
+    ? `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+    : raw.trim();
+  return { digits, formatted, valid, empty: false };
+}
+
+// Display formatter for phones already in storage. Normalizes anything
+// stored as raw digits, dotted, dashed, or +1-prefixed to canonical
+// "(614) 555-0123". Falls back to the original string for non-US or
+// otherwise unparseable values so we never silently swallow data.
+function displayPhone(p) {
+  if (!p) return '';
+  const info = normalizePhone(p);
+  return info.valid ? info.formatted : String(p);
+}
+
+// Live "as you type" US phone formatter. Accepts any partial input,
+// returns the best-effort masked string for display. Differs from
+// normalizePhone() in that it DOESN'T require 10 digits — it formats
+// progressively while the user is still typing.
+function formatPhoneAsYouType(input) {
+  let d = String(input || '').replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('1')) d = d.slice(1);
+  d = d.slice(0, 10);
+  if (d.length === 0)  return '';
+  if (d.length <= 3)   return `+1 (${d}`;
+  if (d.length <= 6)   return `+1 (${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `+1 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+
+// Common email-domain suggestions, surfaced once the user has typed past
+// the "@" but no dot is present yet. Ordered by frequency in US salons.
+const COMMON_EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'icloud.com', 'hotmail.com', 'outlook.com', 'aol.com', 'me.com', 'comcast.net', 'live.com'];
+function emailSuggestions(input) {
+  const v = String(input || '');
+  const at = v.indexOf('@');
+  if (at < 0) return [];
+  const local = v.slice(0, at);
+  if (!local) return [];
+  const after = v.slice(at + 1).toLowerCase();
+  // Stop suggesting once the user has typed a TLD-style dot in the domain
+  if (after.includes('.')) return [];
+  return COMMON_EMAIL_DOMAINS
+    .filter(d => d.startsWith(after))
+    .slice(0, 5)
+    .map(d => `${local}@${d}`);
+}
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 function blankAppt(date, techName, startMins, clientName = '', serviceName = '') {
   return {
     clientId: '',
@@ -145,7 +207,7 @@ function blankAppt(date, techName, startMins, clientName = '', serviceName = '')
 }
 
 // ── Main ──────────────────────────────────────────────
-export default function ScheduleAdmin() {
+export default function ScheduleAdmin({ onOpenClient } = {}) {
   const { settings, updateSettings, isTech, isAdmin, isScheduler, myTechName, gUser, showToast, addApptToTicket } = useApp();
 
   const [date,         setDate]        = useState(todayStr());
@@ -175,6 +237,10 @@ export default function ScheduleAdmin() {
   const [showTimeOff,      setShowTimeOff]      = useState(false);
   const [timeOff,          setTimeOff]          = useState([]);
   const [visibleTechNames, setVisibleTechNames] = useState(null);
+  // Single-tech focus mode. Click a column header in the day grid to zoom
+  // into just that tech's schedule (full column width, overlap clusters
+  // become much more readable). Click the header again to back out.
+  const [focusedTech,      setFocusedTech]      = useState(null);
   const [empWorkDays,      setEmpWorkDays]      = useState({});
   const [employees,        setEmployeesData]    = useState([]);
   const [viewMode,         setViewMode]         = useState('day');
@@ -368,7 +434,14 @@ export default function ScheduleAdmin() {
       }
 
       const { recurrence, ...apptBase } = appt;
-      const full = { ...apptBase, duration: dur };
+      // Keep legacy `notes` string in sync with the structured notesLog so
+      // email templates / AI tools / reports that still read appt.notes
+      // continue to see the latest text. Joined newest-first.
+      const log = Array.isArray(apptBase.notesLog) ? apptBase.notesLog : [];
+      const derivedNotes = log.length
+        ? log.map(e => e?.text || '').filter(Boolean).join('\n\n')
+        : (apptBase.notes || '');
+      const full = { ...apptBase, notes: derivedNotes, duration: dur };
       const svcSummary = (full.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ') || 'no services';
       const totalPrice = (full.services || []).reduce((s, sv) => s + Number(sv.price || 0), 0);
       const logDetail  = `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} at ${appt.startTime} — ${svcSummary}${totalPrice > 0 ? ` ($${totalPrice.toFixed(2)})` : ''}`;
@@ -601,10 +674,14 @@ function openNew(techName, slotMins) {
   const isStoreClosed  = !!settings.storeHours?.[dow]?.closed;
   const displayTechs   = isTech && !showAll
     ? techs.filter(t => t === myTechName)
-    : visibleTechNames ? techs.filter(t => visibleTechNames.includes(t)) : techs;
+    : (focusedTech && techs.includes(focusedTech))
+      ? [focusedTech]
+      : visibleTechNames ? techs.filter(t => visibleTechNames.includes(t)) : techs;
 
   const personalView   = isTech && !showAll;
-  const techColWidth   = displayTechs.length === 1 ? 360 : displayTechs.length <= 3 ? 180 : 120;
+  // Focused (single-tech zoom) mode gets a wide column so overlapping
+  // appointments split into readable lanes even at 4–5 deep.
+  const techColWidth   = focusedTech ? 720 : displayTechs.length === 1 ? 360 : displayTechs.length <= 3 ? 180 : 120;
 
   // Today's summary (personal view only)
   const myAppts = personalView && date === todayStr()
@@ -796,27 +873,75 @@ function openNew(techName, slotMins) {
       )}
 
       {/* Tech overlay filter pills — day view only */}
-      {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && (
-        <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap', flexShrink: 0 }}>
-          {techs.map(t => {
-            const on  = visibleTechNames.includes(t);
-            const col = getTechColor(t, techs);
-            return (
-              <button key={t} onClick={() => toggleTechVisible(t)} style={{
-                fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                border: `1.5px solid ${on ? col.solid : '#d8d8d8'}`,
-                background: on ? col.bg : '#f5f5f5',
-                color: on ? col.text : '#bbb',
-                cursor: 'pointer', fontFamily: 'inherit', fontWeight: on ? 600 : 400,
-                display: 'flex', alignItems: 'center', gap: 5,
-              }}>
-                {on && <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: col.solid, flexShrink: 0 }} />}
-                {t}
-              </button>
-            );
-          })}
-        </div>
-      )}
+      {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && (() => {
+        // Quick-filter helpers. "Working today" = the tech's per-day shift
+        // (empWorkDays) is not explicitly off AND no all-day time-off block
+        // covers today. "Working now" tightens that to: current clock time
+        // falls inside the shift window AND no partial-day time-off covers
+        // it. We derive on every render — no extra state — so the buttons
+        // stay accurate as the day rolls forward.
+        const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
+        const techIsWorkingToday = (t) => {
+          const wd = empWorkDays[t]?.[dow];
+          if (wd && wd.on === false) return false;
+          // All-day time off blocks count the tech as off today.
+          const blocks = timeOffOnDate(timeOff, t, date);
+          if (blocks.some(b => b.allDay !== false)) return false;
+          return true;
+        };
+        const techIsWorkingNow = (t) => {
+          if (!techIsWorkingToday(t)) return false;
+          const wd = empWorkDays[t]?.[dow] || {};
+          const start = wd.start ? strToMins(wd.start) : strToMins(settings.apptHours?.open  || '09:00');
+          const end   = wd.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
+          if (nowMins < start || nowMins >= end) return false;
+          if (isSlotBlocked(timeOff, t, date, nowMins)) return false;
+          return true;
+        };
+        const applyFilter = (predicate) => {
+          const next = techs.filter(predicate);
+          setVisibleTechNames(next.length ? next : techs);
+          localStorage.setItem(OVERLAY_KEY, JSON.stringify(next.length ? next : techs));
+        };
+        const showAllTechs = () => { setVisibleTechNames(techs); localStorage.setItem(OVERLAY_KEY, JSON.stringify(techs)); };
+        const isToday = date === todayStr();
+        const Btn = ({ label, onClick, hint }) => (
+          <button onClick={onClick} title={hint}
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1.5px solid #d8d8d8', background: '#fff', color: '#444', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            {label}
+          </button>
+        );
+        return (
+          <>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+              <Btn label="All techs" hint="Show every tech" onClick={showAllTechs} />
+              <Btn label="Working today" hint="Show only techs scheduled to work today" onClick={() => applyFilter(techIsWorkingToday)} />
+              {isToday && (
+                <Btn label="Working right now" hint="Show only techs whose shift covers right now" onClick={() => applyFilter(techIsWorkingNow)} />
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 10, flexWrap: 'wrap', flexShrink: 0 }}>
+              {techs.map(t => {
+                const on  = visibleTechNames.includes(t);
+                const col = getTechColor(t, techs);
+                return (
+                  <button key={t} onClick={() => toggleTechVisible(t)} style={{
+                    fontSize: 11, padding: '3px 10px', borderRadius: 20,
+                    border: `1.5px solid ${on ? col.solid : '#d8d8d8'}`,
+                    background: on ? col.bg : '#f5f5f5',
+                    color: on ? col.text : '#bbb',
+                    cursor: 'pointer', fontFamily: 'inherit', fontWeight: on ? 600 : 400,
+                    display: 'flex', alignItems: 'center', gap: 5,
+                  }}>
+                    {on && <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: col.solid, flexShrink: 0 }} />}
+                    {t}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {/* Store closed banner — day view only */}
       {viewMode === 'day' && isStoreClosed && (
@@ -912,6 +1037,8 @@ function openNew(techName, slotMins) {
               walkInOpen={walkInOpen}
               walkInClose={walkInClose}
               techColWidth={techColWidth}
+              focusedTech={focusedTech}
+              onToggleFocusTech={(name) => setFocusedTech(prev => prev === name ? null : name)}
               onSlotClick={openNew}
               onApptClick={openView}
               onApptReschedule={(apptId, newTech, newMins) => {
@@ -946,6 +1073,8 @@ function openNew(techName, slotMins) {
           onCheckout={appt => { setModal(null); setCheckout({ appts: [appt], walkInClient: null }); }}
           onAddToTicket={appt => { setModal(null); addApptToTicket(appt); showToast(`Added ${appt.clientName || 'walk-in'} to ticket`); }}
           onRefund={appt => setRefund(appt)}
+          onOpenClient={(id) => { setModal(null); onOpenClient?.(id); }}
+          onClientCreated={(c) => setClients(prev => [...prev, c].sort((a, b) => (a.name || '').localeCompare(b.name || '')))}
         />
       )}
 
@@ -1295,7 +1424,7 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
 }
 
 // ── Day grid ──────────────────────────────────────────
-function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, onSlotClick, onApptClick, onApptReschedule }) {
+function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, focusedTech, onToggleFocusTech, onSlotClick, onApptClick, onApptReschedule }) {
   // Pointer-event drag-to-reschedule. Works on both mouse and touch
   // (iPad/iPhone) — HTML5 D&D doesn't work on touch devices natively.
   // Dragging happens in two phases:
@@ -1337,6 +1466,19 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
       const tech = cell.dataset.slotTech;
       const mins = parseInt(cell.dataset.slotMins, 10);
       if (!tech || !Number.isFinite(mins)) return;
+      // If the drop target is a tech-off slot or a time-off block, ask
+      // before reassigning. Mirrors the click-to-create confirm flow.
+      const blockedType = cell.dataset.slotBlockedType;
+      const blockedNotes = cell.dataset.slotBlockedNotes;
+      const isOffCell    = cell.dataset.slotOff === '1';
+      if (blockedType) {
+        const notes = blockedNotes ? ` — "${blockedNotes}"` : '';
+        const ok = window.confirm(`${tech} is on ${blockedType}${notes} on this day.\n\nReschedule to this slot anyway?`);
+        if (!ok) return;
+      } else if (isOffCell) {
+        const ok = window.confirm(`${tech} is not scheduled to work then.\n\nReschedule to this slot anyway?`);
+        if (!ok) return;
+      }
       onApptReschedule && onApptReschedule(cur.id, tech, mins);
     }
     document.addEventListener('pointermove', onMove, { passive: false });
@@ -1376,10 +1518,18 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
                : todayTimeOff[0].type === 'personal' ? '🏠 personal'
                : '🌴 vacation')
             : null;
+          const isFocused = focusedTech === tech;
+          const canFocus  = !!onToggleFocusTech;
           return (
-            <div key={tech} style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? '#bbb' : col.text, textAlign: 'center', borderLeft: '1px solid #e8e8e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? '#fafafa' : col.bg, paddingBottom: 6 }}>
+            <div
+              key={tech}
+              onClick={canFocus ? () => onToggleFocusTech(tech) : undefined}
+              title={canFocus ? (isFocused ? 'Click to back out and show all techs' : `Click to zoom into ${tech}'s schedule only`) : undefined}
+              style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? '#bbb' : col.text, textAlign: 'center', borderLeft: '1px solid #e8e8e8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? '#fafafa' : col.bg, paddingBottom: 6, cursor: canFocus ? 'pointer' : 'default', userSelect: 'none' }}>
               <div style={{ height: 3, background: isOff ? '#e0e0e0' : col.solid, marginBottom: 6 }} />
-              <div style={{ padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{tech}</div>
+              <div style={{ padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: canFocus ? 'underline dotted' : 'none', textUnderlineOffset: 3, textDecorationColor: '#bbb' }}>
+                {isFocused ? `← ${tech}` : tech}
+              </div>
               {isOff && (
                 <div style={{ fontSize: 8, color: '#d0d0d0', fontWeight: 500, letterSpacing: '.03em' }}>off today</div>
               )}
@@ -1388,6 +1538,9 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
               )}
               {!isOff && !hasTimeOff && hasApptOnlyZone && techExtended[tech] && (
                 <div style={{ fontSize: 8, color: col.solid, fontWeight: 600, letterSpacing: '.03em', opacity: .8 }}>extended hrs</div>
+              )}
+              {isFocused && (
+                <div style={{ fontSize: 8, color: col.solid, fontWeight: 700, letterSpacing: '.04em', opacity: .85, marginTop: 2 }}>FOCUSED · click to exit</div>
               )}
             </div>
           );
@@ -1437,33 +1590,46 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
             {techs.map(tech => {
               const isOff  = empWorkDays[tech]?.[dow]?.on === false;
               const blockedBy = isSlotBlocked(timeOff, tech, date, slotMins);
-              // `interactive` controls whether the cell is clickable / a valid
-              // drop target. We let the user click and drop anywhere the tech
-              // is working — handleSave's out-of-hours guard handles the
-              // confirm prompt for slots outside store / extended hours.
-              // Time-off blocks (vacation/sick/personal) are NOT interactive.
+              // `interactive` controls drag-drop reschedule (drop targets are
+              // limited to slots where the tech is actually working).
+              // `clickable` is broader — clicking an off / time-off slot still
+              // works; we just gate the new-appt modal behind a confirm so
+              // staff can't book over a tech's day off by mistake.
               const interactive = !isOff && !blockedBy;
+              const clickable   = true;
               const inExtended  = !inWalkIn && techExtended[tech];
               const slotKey = `${tech}:${slotMins}`;
-              const isDropHover = drag?.active && drag.hoverKey === slotKey && interactive;
+              // Drop hover lights up on every cell — interactive or not. The
+              // onUp handler gates the actual reschedule with a confirm
+              // when the drop lands on an off / time-off slot.
+              const isDropHover = drag?.active && drag.hoverKey === slotKey;
               const tooltipBlocked = blockedBy
                 ? `${tech} · ${blockedBy.type || 'time off'}${blockedBy.notes ? ` — ${blockedBy.notes}` : ''}`
                 : null;
               return (
                 <div
                   key={tech}
-                  data-slot-tech={interactive ? tech : undefined}
-                  data-slot-mins={interactive ? slotMins : undefined}
+                  data-slot-tech={tech}
+                  data-slot-mins={slotMins}
+                  data-slot-off={isOff ? '1' : undefined}
+                  data-slot-blocked-type={blockedBy?.type || undefined}
+                  data-slot-blocked-notes={blockedBy?.notes || undefined}
                   onClick={() => {
-                    if (!interactive) return;
-                    // Suppress the synthetic click after a drop so it doesn't
-                    // open a blank-new-appt modal over the reschedule edit modal.
                     if (Date.now() - justDroppedRef.current < 400) return;
+                    if (blockedBy) {
+                      const kind = blockedBy.type || 'time off';
+                      const notes = blockedBy.notes ? ` — "${blockedBy.notes}"` : '';
+                      const ok = window.confirm(`${tech} is on ${kind}${notes} on this day.\n\nBook this appointment anyway?`);
+                      if (!ok) return;
+                    } else if (isOff) {
+                      const ok = window.confirm(`${tech} is not scheduled to work on ${dow.charAt(0).toUpperCase() + dow.slice(1)}.\n\nBook this appointment anyway?`);
+                      if (!ok) return;
+                    }
                     onSlotClick(tech, slotMins);
                   }}
                   style={{
                     width: TECH_COL, flexShrink: 0, borderLeft: '1px solid #ececec',
-                    cursor: interactive ? 'pointer' : 'default',
+                    cursor: clickable ? 'pointer' : 'default',
                     position: 'relative',
                     background: isDropHover
                       ? 'rgba(45,122,95,.18)'
@@ -1504,14 +1670,77 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
           </div>
         )}
 
-        {/* Appointment overlays */}
-        {appts.map(appt => {
+        {/* Appointment overlays — with overlap layout. We compute a layout
+            map ahead of time so overlapping appts in the same tech column
+            split width side-by-side (Google-Calendar style) instead of
+            stacking on top of each other and hiding what's underneath. */}
+        {(() => {
+          // Build per-(tech, appt) layout: { laneIndex, laneCount }.
+          // Standard sweep-line: sort by startTime, place each appt in the
+          // lowest free lane, expand laneCount whenever a cluster grows.
+          const layoutById = {};
+          techs.forEach(techName => {
+            const techAppts = appts
+              .filter(a => a.techName === techName && a.status !== 'cancelled')
+              .map(a => ({
+                id: a.id,
+                start: strToMins(a.startTime || '00:00'),
+                end: strToMins(a.startTime || '00:00') + (Number(a.duration) || 60),
+              }))
+              .sort((x, y) => x.start - y.start || y.end - x.end);
+            // Cluster: appts that all transitively overlap. Lay each out.
+            let cluster = [];
+            const flush = () => {
+              if (!cluster.length) return;
+              // Greedy lane assignment within the cluster.
+              const lanes = []; // each lane = end-time of last appt placed
+              cluster.forEach(c => {
+                let laneIdx = lanes.findIndex(end => end <= c.start);
+                if (laneIdx === -1) { laneIdx = lanes.length; lanes.push(0); }
+                lanes[laneIdx] = c.end;
+                c.lane = laneIdx;
+              });
+              const laneCount = lanes.length;
+              cluster.forEach(c => { layoutById[c.id] = { lane: c.lane, laneCount }; });
+              cluster = [];
+            };
+            let clusterEnd = -1;
+            techAppts.forEach(c => {
+              if (c.start >= clusterEnd) flush();
+              cluster.push(c);
+              clusterEnd = Math.max(clusterEnd, c.end);
+            });
+            flush();
+          });
+          return appts.map(appt => {
           const techIdx = techs.indexOf(appt.techName);
           if (techIdx === -1) return null;
           const startMins = strToMins(appt.startTime);
           const topOffset = ((startMins - dayStart) / 30) * SLOT_H;
           const height    = Math.max((appt.duration / 30) * SLOT_H - 2, SLOT_H - 2);
-          const left      = TIME_COL + techIdx * TECH_COL + 2;
+          // Side-by-side lane geometry. If laneCount === 1 the block fills
+          // the column as before. Cancelled appts aren't included in the
+          // overlap clusters — they render full-width but at lower z.
+          const layout = layoutById[appt.id] || { lane: 0, laneCount: 1 };
+          const isOverlap = layout.laneCount > 1;
+          // Width-aware split. If the equal split is comfortably readable
+          // (>= 90px per lane), use Google-Calendar side-by-side. Only when
+          // the lane would be too narrow do we fall back to the cascade
+          // peek-out layout. This means a wide focused-tech column at 720px
+          // can fit 7+ overlaps cleanly instead of cascading them.
+          const equalLaneW = (TECH_COL - 4) / layout.laneCount;
+          let laneW, laneLeft, laneZ;
+          if (equalLaneW < 90 && layout.laneCount >= 2) {
+            const step = Math.max(14, Math.min(22, (TECH_COL - 4) * 0.18));
+            laneW    = (TECH_COL - 4) - step * (layout.laneCount - 1);
+            laneLeft = layout.lane * step;
+            laneZ    = 5 + layout.lane;
+          } else {
+            laneW    = equalLaneW;
+            laneLeft = layout.lane * laneW;
+            laneZ    = 5;
+          }
+          const left = TIME_COL + techIdx * TECH_COL + 2 + laneLeft;
           const col         = getTechColor(appt.techName, allTechs || techs);
           const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
           const isCancelled = appt.status === 'cancelled';
@@ -1524,9 +1753,20 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
           // historical state. Active scheduled appts are draggable.
           const isDraggable = !isDone && !isCancelled;
           const isBeingDragged = drag?.id === appt.id && drag.active;
+          // Native tooltip — invaluable when the lane is too narrow to show
+          // the full client name / services. Hover the block for full info.
+          const svcSummary = (appt.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ');
+          const tooltipText = [
+            appt.clientName || 'Walk-in',
+            `${minsToStr(startMins)} · ${appt.duration} min`,
+            svcSummary || '(no service)',
+            appt.techName,
+            isOverlap ? `Overlap ${layout.lane + 1} of ${layout.laneCount}` : null,
+          ].filter(Boolean).join('\n');
           return (
             <div
               key={appt.id}
+              title={tooltipText}
               onClick={e => {
                 e.stopPropagation();
                 // If we just finished an active drag, suppress the click so
@@ -1543,16 +1783,16 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
                 position: 'absolute',
                 top: topOffset + 1,
                 left,
-                width: TECH_COL - 4,
+                width: Math.max(laneW - 2, 30),
                 height,
                 background: blockBg,
                 border: `1px solid ${isCancelled ? '#fca5a5' : isDone ? '#d1d5db' : col.solid}`,
                 borderLeft: `3px solid ${blockBorder}`,
                 borderRadius: 6,
-                padding: '3px 5px',
+                padding: isOverlap ? '2px 4px' : '3px 5px',
                 cursor: isDraggable ? (isBeingDragged ? 'grabbing' : 'grab') : 'pointer',
                 overflow: 'hidden',
-                zIndex: isBeingDragged ? 20 : 5,
+                zIndex: isBeingDragged ? 20 : laneZ,
                 boxSizing: 'border-box',
                 display: 'flex',
                 flexDirection: 'column',
@@ -1561,58 +1801,111 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, techExtended, emp
                 boxShadow: isBeingDragged ? '0 6px 18px rgba(0,0,0,.25)' : 'none',
                 touchAction: isDraggable ? 'none' : 'auto',
                 userSelect: 'none',
-                // While dragging, make the ghost pointer-transparent so
-                // elementFromPoint returns the slot cell underneath (for
-                // both the hover indicator and the drop target lookup).
-                pointerEvents: isBeingDragged ? 'none' : 'auto',
+                // While ANY drag is active, ALL appt overlays must be
+                // pointer-transparent — not just the one being dragged.
+                // Otherwise elementFromPoint hits a sibling overlay and
+                // closest('[data-slot-tech]') returns null, silently
+                // killing the drop. This lets the user reschedule onto a
+                // slot already filled by another appt (i.e., create an
+                // overlap by drag-dropping into an occupied lane).
+                pointerEvents: drag?.active ? 'none' : 'auto',
                 transition: isBeingDragged ? 'none' : 'opacity .12s, box-shadow .12s',
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                {appt.techRequestType === 'specific' ? (
-                  <span title="Client specifically requested this tech" style={{ fontSize: 14, color: '#ef4444', flexShrink: 0, lineHeight: 1, fontWeight: 700 }}>★</span>
-                ) : appt.techRequestType === 'auto' ? (
-                  <span title="No preference — auto-assigned" style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>🎲</span>
-                ) : (
-                  <span title="Scheduler assigned this tech" style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>📋</span>
+                {!isOverlap && (
+                  appt.techRequestType === 'specific' ? (
+                    <span title="Client specifically requested this tech" style={{ fontSize: 14, color: '#ef4444', flexShrink: 0, lineHeight: 1, fontWeight: 700 }}>★</span>
+                  ) : appt.techRequestType === 'auto' ? (
+                    <span title="No preference — auto-assigned" style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>🎲</span>
+                  ) : (
+                    <span title="Scheduler assigned this tech" style={{ fontSize: 11, flexShrink: 0, lineHeight: 1 }}>📋</span>
+                  )
                 )}
-                <div style={{ fontSize: 13, fontWeight: 700, color: blockText, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                <div style={{ fontSize: isOverlap ? 11 : 13, fontWeight: 700, color: blockText, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                   {appt.clientName || 'Walk-in'}
                 </div>
                 <span title={appt.status} style={{ fontSize: 10, color: dot.color, flexShrink: 0, lineHeight: 1 }}>{dot.label}</span>
-                {appt.recurringGroupId && (
+                {!isOverlap && appt.recurringGroupId && (
                   <span title={`Recurring · ${appt.recurringIndex}/${appt.recurringTotal}`} style={{ fontSize: 10, flexShrink: 0, lineHeight: 1 }}>🔁</span>
                 )}
-                {appt.source === 'online_booking' && (
+                {!isOverlap && appt.source === 'online_booking' && (
                   <span title="Online booking" style={{ fontSize: 10, background: blockBorder, color: '#fff', borderRadius: 4, padding: '1px 5px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>WEB</span>
                 )}
-                {appt.checkedInAt && (
+                {!isOverlap && appt.checkedInAt && (
                   <span title="Client checked in" style={{ fontSize: 10, background: blockBorder, color: '#fff', borderRadius: 4, padding: '1px 5px', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>IN</span>
                 )}
               </div>
-              <div style={{ fontSize: 12, color: blockText, opacity: .85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {appt.services?.map(s => s.name).filter(Boolean).join(', ') || '—'}
+              <div style={{ fontSize: isOverlap ? 10 : 12, color: blockText, opacity: .85, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>
+                {appt.services?.map(s => s.name).filter(Boolean).join(', ') || (isOverlap ? minsToStr(startMins) : '—')}
               </div>
-              {height > SLOT_H && (
-                <div style={{ fontSize: 11, color: blockText, opacity: .65 }}>
+              {!isOverlap && height > SLOT_H && (
+                <div style={{ fontSize: 11, color: blockText, opacity: .65, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {minsToStr(startMins)} · {appt.duration} min
+                </div>
+              )}
+              {isOverlap && (
+                <div style={{ position: 'absolute', top: 1, right: 2, fontSize: 8, fontWeight: 700, color: '#92400e', opacity: .65, lineHeight: 1, pointerEvents: 'none' }}>
+                  {layout.lane + 1}/{layout.laneCount}
                 </div>
               )}
             </div>
           );
-        })}
+          });
+        })()}
       </div>
     </div>
   );
 }
 
 // ── Appointment modal ─────────────────────────────────
-function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, viewOnly }) {
+function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly }) {
+  const { gUser } = useApp();
   const [saving,    setSaving]    = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [manageCopied, setManageCopied] = useState(false);
-  const [manageLoading, setManageLoading] = useState(false);
+  // Inline service-history panel — always rendered when an existing
+  // appointment has a linked client. Fetched once on mount; appointments
+  // + imported GG receipts joined client-side, newest-first.
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [history,        setHistory]        = useState(null);
+  const [expandedVisitId, setExpandedVisitId] = useState(null);
+  // New-client mini-form state. Replaces the inline phone/email walk-in
+  // panel — when the user has no client linked, they tap "+ Create new
+  // client contact" and fill out a quick profile here. On save we mint a
+  // real client doc, set appt.clientId/clientName, and the ClientSearch
+  // above renders the new client as the linked one.
+  const [newClientOpen,   setNewClientOpen]   = useState(false);
+  const [newClient,       setNewClient]       = useState({ name: '', phone: '', email: '', birthday: '', notes: '' });
+  const [newClientSaving, setNewClientSaving] = useState(false);
+  // Banned-client guard — when an admin picks a banned client we surface a
+  // visible warning and require an explicit override checkbox before saving.
+  // Resets whenever the linked client changes.
+  const [banOverrideAck, setBanOverrideAck] = useState(false);
+  const linkedClient = clients.find(c => c.id === appt.clientId);
+  const linkedBanned = !!linkedClient?.banned;
+  useEffect(() => { setBanOverrideAck(false); }, [appt.clientId]);
+  const [emailFocused,    setEmailFocused]    = useState(false);
+  const [dupeCandidates,  setDupeCandidates]  = useState(null); // null | [{client, matchKind}]
+  const emailSuggestionList = emailFocused ? emailSuggestions(newClient.email) : [];
+  const emailVal      = (newClient.email || '').trim();
+  const emailValid    = !emailVal || EMAIL_RE.test(emailVal);
+  const showEmailErr  = !!emailVal && !emailValid && !emailFocused;
   const isView = mode === 'view';
+
+  useEffect(() => {
+    if (!appt.clientId || !appt.id) return;
+    let cancelled = false;
+    setHistoryLoading(true);
+    // Pass the resolved client record (if loaded) so fetchClientVisits can
+    // fan out on phone/email, surfacing prior walk-ins / imported receipts
+    // / orphaned-duplicate-client visits that aren't linked to this id.
+    const linkedClient = clients.find(c => c.id === appt.clientId);
+    fetchClientVisits(appt.clientId, linkedClient)
+      .then(rows => { if (!cancelled) setHistory(rows.filter(r => r.id !== appt.id)); })
+      .catch(() => { if (!cancelled) setHistory([]); })
+      .finally(() => { if (!cancelled) setHistoryLoading(false); });
+    return () => { cancelled = true; };
+  }, [appt.clientId, appt.id, clients]);
 
   function copyCheckinLink() {
     const url = `${window.location.origin}?checkin=${appt.id}`;
@@ -1622,32 +1915,97 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
     });
   }
 
-  // Fetches the signed manage URL (same one in booking confirmation emails)
-  // and copies it to clipboard. Falls back to a prompt() if clipboard
-  // write fails. Useful when a client says "I lost the email".
-  async function copyManageLink() {
-    if (!appt.id) return;
-    setManageLoading(true);
+  const isNew  = !appt.id;
+
+  function openNewClientForm() {
+    // Pre-fill name with whatever was typed into ClientSearch as a
+    // walk-in-style entry, and pre-fill any contact info already keyed.
+    setNewClient({
+      name:     (appt.clientName || '').trim(),
+      phone:    (appt.clientPhone || '').trim(),
+      email:    (appt.clientEmail || '').trim(),
+      birthday: '',
+      notes:    '',
+    });
+    setNewClientOpen(true);
+  }
+
+  async function saveNewClient() {
+    const name      = (newClient.name  || '').trim();
+    const rawPhone  = (newClient.phone || '').trim();
+    const emailRaw  = (newClient.email || '').trim();
+    const email     = emailRaw.toLowerCase();
+    if (!name) { window.alert('Please enter the client\'s name.'); return; }
+
+    // Phone: normalize to canonical "(xxx) xxx-xxxx", reject anything that
+    // isn't 10 digits (with optional leading +1). This way every client
+    // record stored from Schedule has a consistent format, and the
+    // duplicate-check below can compare digits-to-digits reliably.
+    const phoneInfo = normalizePhone(rawPhone);
+    if (!phoneInfo.empty && !phoneInfo.valid) {
+      window.alert('Phone number is not valid. Please enter a 10-digit US phone (e.g. 614-555-0123).');
+      return;
+    }
+    const phone = phoneInfo.formatted;
+    if (!phone && !email) { window.alert('Please add a phone or email so we can reach the client.'); return; }
+    if (email && !EMAIL_RE.test(email)) { window.alert('That email address looks invalid.'); return; }
+
+    // Duplicate check: scan the in-memory clients list for matches on
+    // normalized phone digits or lowercased email. If any are found,
+    // surface them in an inline picker so the user can either link to
+    // an existing record or override and create a new one anyway.
+    const phoneDigits = phoneInfo.digits;
+    const dupes = clients
+      .map(c => {
+        const cDigits = normalizePhone(c.phone).digits;
+        const cEmail  = (c.email || '').trim().toLowerCase();
+        const phoneHit = !!(phoneDigits && cDigits && cDigits === phoneDigits);
+        const emailHit = !!(email && cEmail && cEmail === email);
+        if (!phoneHit && !emailHit) return null;
+        return { client: c, matchKind: phoneHit && emailHit ? 'phone & email' : phoneHit ? 'phone' : 'email' };
+      })
+      .filter(Boolean);
+    if (dupes.length) {
+      setDupeCandidates(dupes);
+      return;
+    }
+
+    await actuallyCreateClient(name, phone, emailRaw);
+  }
+
+  // Bypasses the duplicate-check; called by the picker's "Create new
+  // anyway" button when the user has already seen the matches and decided
+  // they really do want a new record (e.g., two family members sharing a
+  // phone, or a stale duplicate they plan to clean up later).
+  async function actuallyCreateClient(name, phone, emailRaw) {
+    setNewClientSaving(true);
     try {
-      const { httpsCallable } = await import('firebase/functions');
-      const { functions } = await import('../../lib/firebase');
-      const res = await httpsCallable(functions, 'getApptManageLink')({ apptId: appt.id });
-      const url = res?.data?.url;
-      if (!url) throw new Error('No URL returned');
-      try {
-        await navigator.clipboard.writeText(url);
-        setManageCopied(true);
-        setTimeout(() => setManageCopied(false), 2000);
-      } catch {
-        window.prompt('Copy this manage link to share with the client:', url);
-      }
+      const data = {
+        name, phone, email: emailRaw,
+        birthday:  newClient.birthday || '',
+        notes:     newClient.notes || '',
+        commPreferences: { appointmentSms: true, appointmentEmail: true, appointmentVoice: false, marketingSms: true, marketingEmail: true, marketingVoice: false },
+        instagramTags: [], googleReviews: [], visits: [],
+      };
+      const id = await createClient(data);
+      const created = { id, ...data };
+      onClientCreated?.(created);
+      onChange({ clientId: id, clientName: name, clientPhone: phone, clientEmail: emailRaw });
+      logActivity('client_added', `${name}${phone ? ' · ' + phone : ''}${emailRaw ? ' · ' + emailRaw : ''} (from Schedule)`);
+      setNewClientOpen(false);
+      setDupeCandidates(null);
     } catch (e) {
-      window.alert(`Could not generate link: ${e.message || 'unknown error'}`);
+      window.alert(`Could not create client: ${e.message || 'unknown error'}`);
     } finally {
-      setManageLoading(false);
+      setNewClientSaving(false);
     }
   }
-  const isNew  = !appt.id;
+
+  function linkExistingFromPicker(client) {
+    onChange({ clientId: client.id, clientName: client.name, clientPhone: client.phone || '', clientEmail: client.email || '' });
+    setDupeCandidates(null);
+    setNewClientOpen(false);
+  }
 
   const totalDur = appt.services?.reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || 0;
 
@@ -1674,7 +2032,43 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
     patchService(i, { name, duration: svc?.duration || 60, price: svc?.basePrice || '' });
   }
 
+  // Every appointment — including walk-ins — must be tied to a contactable
+  // person. Either link to an existing client (clientId set), or give us a
+  // name plus a phone or email so reminders, conflict messages, and
+  // self-service reschedule links can reach them.
+  function missingContact() {
+    if (appt.clientId) return null;
+    const hasName  = !!(appt.clientName  || '').trim();
+    const hasPhone = !!(appt.clientPhone || '').trim();
+    const hasEmail = !!(appt.clientEmail || '').trim();
+    if (!hasName)            return 'Please enter the client\'s name (or pick from the list).';
+    if (!hasPhone && !hasEmail) return 'Please add a phone or email — every appointment needs a way to reach the client.';
+    return null;
+  }
+  const contactError = !isView ? missingContact() : null;
+
+  function hasAnyService() {
+    return (appt.services || []).some(s => (s.name || s.customName || '').trim());
+  }
+
   async function submit() {
+    const err = missingContact();
+    if (err) { window.alert(err); return; }
+    // Banned-client guard — enforced at save time. The override checkbox in
+    // the modal must be ticked before this call succeeds.
+    if (linkedBanned && !banOverrideAck) {
+      window.alert('This client is banned. Tick the override checkbox if you really want to book them.');
+      return;
+    }
+    if (linkedBanned && banOverrideAck) {
+      const ok = window.confirm(`Confirm: book a banned client (${linkedClient?.name || 'unknown'})? This action will be logged.`);
+      if (!ok) return;
+      logActivity('banned_booking_override', `Booked banned client ${linkedClient?.name || appt.clientName} (${appt.clientId}) with ${appt.techName} on ${appt.date} at ${appt.startTime}`);
+    }
+    if (!hasAnyService()) {
+      const ok = window.confirm('No service is selected for this appointment. Save it anyway?');
+      if (!ok) return;
+    }
     setSaving(true);
     try { await onSave(); } finally { setSaving(false); }
   }
@@ -1741,7 +2135,16 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
           {/* Client */}
           <Field label="Client">
             {isView ? (
-              <ViewVal>{appt.clientName || 'Walk-in'}</ViewVal>
+              appt.clientId ? (
+                <button
+                  onClick={() => onOpenClient?.(appt.clientId)}
+                  title="Open client profile"
+                  style={{ background: 'none', border: 'none', padding: 0, margin: 0, fontFamily: 'inherit', fontSize: 14, color: '#3D95CE', fontWeight: 600, textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer' }}>
+                  {appt.clientName || 'Walk-in'}
+                </button>
+              ) : (
+                <ViewVal>{appt.clientName || 'Walk-in'}</ViewVal>
+              )
             ) : (
               <ClientSearch
                 clients={clients}
@@ -1751,6 +2154,159 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
               />
             )}
           </Field>
+
+          {/* Banned-client warning — surfaces when the linked client has
+              banned: true. Requires explicit override checkbox before save. */}
+          {!isView && linkedBanned && (
+            <div style={{
+              marginBottom: 12,
+              padding: '12px 14px',
+              background: '#fef2f2',
+              border: '1.5px solid #fca5a5',
+              borderRadius: 10,
+              fontSize: 13, color: '#991b1b', lineHeight: 1.5,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 18 }}>🚫</span>
+                <strong style={{ fontSize: 14 }}>This client is banned</strong>
+              </div>
+              <div style={{ marginBottom: 10, color: '#b91c1c' }}>
+                <strong>{linkedClient?.name}</strong> is flagged as banned in the client profile — bookings should not be accepted.
+              </div>
+              <label style={{
+                display: 'flex', alignItems: 'flex-start', gap: 9,
+                padding: '8px 10px', background: '#fff',
+                border: '1px solid #fca5a5', borderRadius: 8,
+                cursor: 'pointer', fontSize: 12, color: '#991b1b',
+              }}>
+                <input type="checkbox" checked={banOverrideAck} onChange={e => setBanOverrideAck(e.target.checked)} style={{ marginTop: 1 }} />
+                <span>I understand this client is banned and want to book them anyway. <strong>This action will be logged.</strong></span>
+              </label>
+            </div>
+          )}
+
+          {/* New-client capture — required for unlinked appts (incl. walk-ins).
+              Click the button to open a mini profile form. On save we mint a
+              real client and link it to this appt. Hidden once a client is
+              picked from the search above. */}
+          {!isView && !appt.clientId && !newClientOpen && (
+            <div style={{ marginBottom: 10 }}>
+              <button onClick={openNewClientForm}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px dashed #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                + Create new client contact
+              </button>
+              {contactError && (
+                <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 6 }}>{contactError}</div>
+              )}
+            </div>
+          )}
+          {!isView && !appt.clientId && newClientOpen && dupeCandidates && (
+            <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fdba74' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: '#9a3412', fontWeight: 700 }}>
+                  Possible duplicate{dupeCandidates.length > 1 ? 's' : ''} found ({dupeCandidates.length})
+                </div>
+                <button onClick={() => setDupeCandidates(null)} style={{ border: 'none', background: 'none', color: '#9a3412', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+              <div style={{ fontSize: 11, color: '#9a3412', opacity: .85, marginBottom: 8 }}>
+                A client with that {dupeCandidates[0].matchKind} is already on file. Pick which one to use for this appointment, or create a new record anyway.
+              </div>
+              <div style={{ background: '#fff', borderRadius: 8, border: '1px solid #fed7aa', overflow: 'hidden', marginBottom: 8 }}>
+                {dupeCandidates.map(({ client, matchKind }, i) => (
+                  <div key={client.id} style={{ padding: '10px 12px', borderBottom: i < dupeCandidates.length - 1 ? '1px solid #fed7aa' : 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {client.name}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#666', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {displayPhone(client.phone) || '—'}{client.email ? ' · ' + client.email : ''}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#9a3412', fontWeight: 600, marginTop: 2 }}>
+                        Matched on {matchKind}
+                      </div>
+                    </div>
+                    <button onClick={() => linkExistingFromPicker(client)}
+                      title="Use this existing client for the current appointment"
+                      style={{ padding: '6px 12px', border: 'none', background: '#3D95CE', color: '#fff', fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                      Use this client
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setDupeCandidates(null)} disabled={newClientSaving}
+                  style={{ flex: 1, padding: '8px 10px', border: '1px solid #d0d0d0', background: '#fff', color: '#555', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancel
+                </button>
+                <button onClick={() => {
+                  const phoneInfo = normalizePhone(newClient.phone);
+                  actuallyCreateClient((newClient.name || '').trim(), phoneInfo.empty ? '' : phoneInfo.formatted, (newClient.email || '').trim());
+                }} disabled={newClientSaving}
+                  style={{ flex: 2, padding: '8px 10px', border: '1.5px solid #ea580c', background: '#fff', color: '#9a3412', fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: newClientSaving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  {newClientSaving ? 'Saving…' : 'Create new anyway'}
+                </button>
+              </div>
+            </div>
+          )}
+          {!isView && !appt.clientId && newClientOpen && !dupeCandidates && (
+            <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: '#92400e', fontWeight: 700 }}>New client profile</div>
+                <button onClick={() => setNewClientOpen(false)} style={{ border: 'none', background: 'none', color: '#92400e', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+              <input placeholder="Full name *" value={newClient.name}
+                onChange={e => setNewClient(p => ({ ...p, name: e.target.value }))}
+                style={{ ...inp, marginBottom: 6 }} />
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input type="tel" inputMode="tel" placeholder="+1 (555) 555-5555" value={newClient.phone}
+                  onChange={e => setNewClient(p => ({ ...p, phone: formatPhoneAsYouType(e.target.value) }))}
+                  style={{ ...inp, flex: 1 }} />
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <input type="email" inputMode="email" autoComplete="off" placeholder="name@example.com"
+                    value={newClient.email}
+                    onChange={e => setNewClient(p => ({ ...p, email: e.target.value }))}
+                    onFocus={() => setEmailFocused(true)}
+                    onBlur={() => setTimeout(() => setEmailFocused(false), 150)}
+                    style={{ ...inp, width: '100%', borderColor: showEmailErr ? '#fca5a5' : '#d8d8d8' }} />
+                  {emailSuggestionList.length > 0 && (
+                    <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: '#fff', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 220, maxHeight: 180, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+                      {emailSuggestionList.map(s => (
+                        <div key={s}
+                          onMouseDown={e => { e.preventDefault(); setNewClient(p => ({ ...p, email: s })); setEmailFocused(false); }}
+                          style={{ padding: '7px 10px', fontSize: 12, color: '#1a1a1a', cursor: 'pointer', borderBottom: '1px solid #f5f5f5' }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
+                          onMouseLeave={e => e.currentTarget.style.background = ''}>
+                          {s}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              {showEmailErr && (
+                <div style={{ fontSize: 11, color: '#b91c1c', marginBottom: 6, marginTop: -2 }}>That email address looks invalid.</div>
+              )}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                <input type="date" placeholder="Birthday" value={newClient.birthday}
+                  onChange={e => setNewClient(p => ({ ...p, birthday: e.target.value }))}
+                  style={{ ...inp, flex: 1 }} />
+              </div>
+              <textarea placeholder="Notes (optional)" rows={2} value={newClient.notes}
+                onChange={e => setNewClient(p => ({ ...p, notes: e.target.value }))}
+                style={{ ...inp, resize: 'vertical', marginBottom: 8 }} />
+              <div style={{ fontSize: 10, color: '#92400e', opacity: .7, marginBottom: 8 }}>Phone or email required.</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => setNewClientOpen(false)} disabled={newClientSaving}
+                  style={{ flex: 1, padding: '8px 10px', border: '1px solid #d0d0d0', background: '#fff', color: '#555', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Cancel
+                </button>
+                <button onClick={saveNewClient} disabled={newClientSaving}
+                  style={{ flex: 2, padding: '8px 10px', border: 'none', background: newClientSaving ? '#ccc' : '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 700, borderRadius: 8, cursor: newClientSaving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  {newClientSaving ? 'Saving…' : 'Save & link to appointment'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Tech + Date + Time row */}
           <div style={{ display: 'flex', gap: 8 }}>
@@ -1851,15 +2407,165 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
             )}
           </div>
 
-          {/* Notes */}
+          {/* Notes — multi-entry log + SOAP template */}
           <Field label="Notes">
-            {isView ? (
-              <ViewVal style={{ whiteSpace: 'pre-wrap' }}>{appt.notes || '—'}</ViewVal>
-            ) : (
-              <textarea value={appt.notes || ''} onChange={e => onChange({ notes: e.target.value })} rows={2}
-                placeholder="Special requests, reminders…" style={{ ...inp, resize: 'vertical', lineHeight: 1.5 }} />
-            )}
+            <NotesEditor
+              entries={appt.notesLog}
+              legacy={appt.notes}
+              onChange={notesLog => onChange({ notesLog })}
+              viewOnly={isView}
+              author={gUser?.email || gUser?.displayName || ''}
+            />
           </Field>
+
+          {/* Service history — always shown for linked clients on existing
+              appts. Joins appts + imported GG receipts so the staff sees
+              the full timeline, not just records this app generated. */}
+          {appt.clientId && appt.id && (
+            <div style={{ marginBottom: 10, border: '1px solid #e5e7eb', borderRadius: 10, background: '#fafafa', overflow: 'hidden' }}>
+              <div style={{ padding: '8px 12px', background: '#f3f4f6', borderBottom: '1px solid #e5e7eb', fontSize: 11, fontWeight: 700, color: '#374151', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                Service History {history && `· ${history.length}`}
+              </div>
+              {historyLoading ? (
+                <div style={{ padding: '14px', fontSize: 12, color: '#888', textAlign: 'center' }}>Loading…</div>
+              ) : (history?.length ? (
+                <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                  {history.map((v, i) => {
+                    const svcs = (v.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ');
+                    const raw = v.raw || {};
+                    const pay = raw.payment || {};
+                    const total = pay.total ?? raw.total ?? v.revenue ?? null;
+                    const isExpanded = expandedVisitId === v.id;
+                    const STATUS_STYLE = {
+                      scheduled:   { bg: '#dbeafe', fg: '#1e40af', label: 'Scheduled' },
+                      'in-progress':{ bg: '#fef3c7', fg: '#92400e', label: 'In progress' },
+                      done:        { bg: '#dcfce7', fg: '#166534', label: 'Done' },
+                      cancelled:   { bg: '#fee2e2', fg: '#991b1b', label: 'Cancelled' },
+                      no_show:     { bg: '#fef3c7', fg: '#92400e', label: 'No-show' },
+                      refunded:    { bg: '#ffedd5', fg: '#9a3412', label: 'Refunded' },
+                    };
+                    const sStyle = STATUS_STYLE[v.status] || { bg: '#e5e7eb', fg: '#374151', label: v.status || '—' };
+                    return (
+                      <div key={v.id || i} style={{ borderBottom: i < history.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+                        <div role="button" tabIndex={0}
+                          onClick={() => setExpandedVisitId(prev => prev === v.id ? null : v.id)}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedVisitId(prev => prev === v.id ? null : v.id); } }}
+                          title={isExpanded ? 'Hide details' : 'Show details'}
+                          style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer', background: isExpanded ? '#eff6ff' : 'transparent', userSelect: 'none' }}
+                          onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = '#f8f9fa'; }}
+                          onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <svg width="10" height="10" viewBox="0 0 10 10"
+                                style={{ flexShrink: 0, transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>
+                                <path d="M3 1 L7 5 L3 9" fill="none" stroke="#3D95CE" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                              {v.date || '—'}{v.startTime ? ` · ${minsToStr(strToMins(v.startTime))}` : ''}
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: sStyle.bg, color: sStyle.fg, letterSpacing: '.03em', textTransform: 'uppercase' }}>{sStyle.label}</span>
+                              {total != null && (
+                                <span style={{ fontSize: 12, fontWeight: 600, color: '#2D7A5F' }}>${Number(total).toFixed(2)}</span>
+                              )}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: '#555', lineHeight: 1.4, paddingLeft: 14 }}>
+                            {svcs || '(no services on file)'}
+                            {v.techName ? <span style={{ color: '#888' }}> · {v.techName}</span> : null}
+                          </div>
+                        </div>
+                        {isExpanded && (() => {
+                          // Compute extras shown only in the expanded view.
+                          const totalDur = (v.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || raw.duration || 0;
+                          const startMins = v.startTime ? strToMins(v.startTime) : null;
+                          const endStr    = startMins != null && totalDur ? minsToStr(startMins + totalDur) : null;
+                          const tipPct    = (pay.subtotal && pay.tip) ? (Number(pay.tip) / Number(pay.subtotal)) * 100 : null;
+                          const SOURCE_LABELS = {
+                            online_booking: '🌐 Booked online',
+                            rebook_prompt:  '🔁 Rebook',
+                            imported:       '📥 Imported (GG)',
+                            walk_in:        '🚶 Walk-in',
+                          };
+                          const sourceLabel = SOURCE_LABELS[raw.source] || (v.source === 'receipt' ? '🧾 Imported receipt' : '📅 Booked in-app');
+                          const fmtDateTime = (iso) => { try { return new Date(iso).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return iso; } };
+                          return (
+                          <div style={{ padding: '10px 14px 12px 26px', background: '#fff', borderTop: '1px solid #f0f0f0', fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                            {/* Header row — source · duration · star tag */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginBottom: 8, fontSize: 11 }}>
+                              <span style={{ color: '#888' }}>{sourceLabel}</span>
+                              {totalDur > 0 && <span style={{ color: '#888' }}>· {totalDur} min total{endStr ? ` (ends ${endStr})` : ''}</span>}
+                              {raw.techRequestType === 'specific' && (
+                                <span style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: 4, padding: '0 6px', fontWeight: 700 }}>★ Requested {v.techName}</span>
+                              )}
+                              {raw.recurringGroupId && (
+                                <span style={{ background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: 4, padding: '0 6px', fontWeight: 600 }}>
+                                  🔁 Recurring{raw.recurringIndex && raw.recurringTotal ? ` ${raw.recurringIndex}/${raw.recurringTotal}` : ''}
+                                </span>
+                              )}
+                            </div>
+
+                            {(v.services || []).length > 0 && (
+                              <div style={{ marginBottom: 8 }}>
+                                <div style={{ fontWeight: 700, color: '#1a1a1a', marginBottom: 4, fontSize: 11 }}>Services</div>
+                                {v.services.map((s, j) => (
+                                  <div key={j} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, padding: '2px 0', borderBottom: j < v.services.length - 1 ? '1px dashed #f0f0f0' : 'none' }}>
+                                    <span>
+                                      {s.name || s.customName || '—'}
+                                      {s.isRemoval && <span style={{ marginLeft: 4, fontSize: 9, color: '#888', fontWeight: 700, textTransform: 'uppercase' }}>(removal)</span>}
+                                    </span>
+                                    <span style={{ color: '#666', fontVariantNumeric: 'tabular-nums' }}>
+                                      {s.duration ? `${s.duration}m` : ''}
+                                      {s.price ? ` · $${Number(s.price).toFixed(2)}` : ''}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {(pay.subtotal != null || pay.tax != null || pay.tip != null || pay.total != null) && (
+                              <div style={{ marginBottom: 8, padding: '6px 10px', background: '#f9fafb', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+                                <div style={{ fontWeight: 700, color: '#1a1a1a', marginBottom: 4, fontSize: 11 }}>Payment</div>
+                                {pay.subtotal != null && <Row label="Subtotal" value={`$${Number(pay.subtotal).toFixed(2)}`} />}
+                                {pay.discount != null && Number(pay.discount) > 0 && <Row label="Discount" value={`-$${Number(pay.discount).toFixed(2)}`} muted />}
+                                {pay.tax != null      && <Row label="Tax"      value={`$${Number(pay.tax).toFixed(2)}`} />}
+                                {pay.tip != null      && <Row label={`Tip${tipPct ? ` (${tipPct.toFixed(0)}%)` : ''}`} value={`$${Number(pay.tip).toFixed(2)}`} />}
+                                {pay.total != null    && <Row label="Total"    value={`$${Number(pay.total).toFixed(2)}`} bold />}
+                                {pay.method && <Row label="Method" value={pay.method} muted />}
+                                {pay.paidAt && <Row label="Paid"   value={fmtDateTime(pay.paidAt)} muted />}
+                              </div>
+                            )}
+                            {raw.refund && (
+                              <div style={{ marginBottom: 8, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#991b1b' }}>
+                                <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 2 }}>Refunded ${Number(raw.refund.amount || 0).toFixed(2)}</div>
+                                {raw.refund.reason && <div style={{ fontSize: 11 }}>{raw.refund.reason}</div>}
+                                {raw.refund.refundedAt && <div style={{ fontSize: 10, opacity: .8, marginTop: 2 }}>{fmtDateTime(raw.refund.refundedAt)}</div>}
+                              </div>
+                            )}
+                            {raw.notes && (
+                              <div style={{ marginBottom: 6 }}>
+                                <div style={{ fontWeight: 700, color: '#1a1a1a', marginBottom: 2, fontSize: 11 }}>Notes</div>
+                                <div style={{ whiteSpace: 'pre-wrap', color: '#555' }}>{raw.notes}</div>
+                              </div>
+                            )}
+                            {/* Lifecycle stamps — keep at the bottom in a muted row */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 10, color: '#999', marginTop: 6, paddingTop: 6, borderTop: '1px dashed #f0f0f0' }}>
+                              {raw.createdAt   && <span>Booked {fmtDateTime(raw.createdAt)}</span>}
+                              {raw.checkedInAt && <span>Checked in {fmtDateTime(raw.checkedInAt)}</span>}
+                              {raw.updatedAt && raw.createdAt && raw.updatedAt !== raw.createdAt && (
+                                <span>Updated {fmtDateTime(raw.updatedAt)}</span>
+                              )}
+                            </div>
+                          </div>
+                          );
+                        })()}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ padding: '14px', fontSize: 12, color: '#888', textAlign: 'center' }}>No prior visits on file.</div>
+              ))}
+            </div>
+          )}
 
           {/* Repeat — new appointments only */}
           {!appt.id && !isView && (
@@ -1892,12 +2598,6 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
                 <button onClick={copyCheckinLink} title="Copy check-in link for client"
                   style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: `1px solid ${linkCopied ? '#bbf7d0' : '#d0d0d0'}`, background: linkCopied ? '#f0fdf4' : '#fff', color: linkCopied ? '#166534' : '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>
                   {linkCopied ? '✓ Copied!' : '🔗 Check-in'}
-                </button>
-              )}
-              {appt.id && appt.status !== 'done' && appt.status !== 'cancelled' && (
-                <button onClick={copyManageLink} disabled={manageLoading} title="Copy the client's reschedule/cancel link"
-                  style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: `1px solid ${manageCopied ? '#bbf7d0' : '#d0d0d0'}`, background: manageCopied ? '#f0fdf4' : '#fff', color: manageCopied ? '#166534' : '#555', cursor: manageLoading ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>
-                  {manageLoading ? '…' : manageCopied ? '✓ Copied!' : '📅 Manage link'}
                 </button>
               )}
               {!viewOnly && (
@@ -2221,9 +2921,12 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Sort alphabetically client-side so the dropdown order is predictable
+  // even if the upstream `clients` collection is unsorted.
+  const sortedAll = [...clients].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   const filtered = query.length >= 1
-    ? clients.filter(c => c.name.toLowerCase().includes(query.toLowerCase()) || (c.phone || '').includes(query)).slice(0, 15)
-    : clients.slice(0, 10);
+    ? sortedAll.filter(c => c.name.toLowerCase().includes(query.toLowerCase()) || (c.phone || '').includes(query)).slice(0, 50)
+    : sortedAll.slice(0, 100);
 
   function selectClient(c) {
     onChange({ clientId: c.id, clientName: c.name });
@@ -2238,9 +2941,18 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
 
   if (selected) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, ...inp, cursor: 'default', paddingTop: 6, paddingBottom: 6 }}>
-        <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{selected.name}</span>
-        {selected.phone && <span style={{ fontSize: 11, color: '#aaa' }}>{selected.phone}</span>}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        ...inp, cursor: 'default', paddingTop: 6, paddingBottom: 6,
+        ...(selected.banned ? { background: '#fef2f2', borderColor: '#fca5a5' } : {}),
+      }}>
+        {selected.banned && <span title="Banned client" style={{ fontSize: 14 }}>🚫</span>}
+        <span style={{
+          flex: 1, fontSize: 13,
+          color: selected.banned ? '#b91c1c' : '#1a1a1a',
+          fontWeight: selected.banned ? 600 : 400,
+        }}>{selected.name}{selected.banned && ' · Banned'}</span>
+        {selected.phone && <span style={{ fontSize: 11, color: '#aaa' }}>{displayPhone(selected.phone)}</span>}
         <button onClick={clearClient} style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
       </div>
     );
@@ -2261,7 +2973,7 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
         style={inp}
       />
       {open && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: '#fff', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 200, maxHeight: 220, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: '#fff', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 200, maxHeight: 320, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
           <div
             onMouseDown={() => { onChange({ clientId: '', clientName: query || '' }); setOpen(false); }}
             style={{ padding: '8px 12px', fontSize: 12, color: '#888', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 6 }}
@@ -2273,12 +2985,25 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
             <div
               key={c.id}
               onMouseDown={() => selectClient(c)}
-              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f5f5f5' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
-              onMouseLeave={e => e.currentTarget.style.background = ''}
+              style={{
+                padding: '8px 12px', fontSize: 13, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8,
+                borderBottom: '1px solid #f5f5f5',
+                background: c.banned ? '#fef2f2' : 'transparent',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = c.banned ? '#fee2e2' : '#f5f9ff'}
+              onMouseLeave={e => e.currentTarget.style.background = c.banned ? '#fef2f2' : ''}
             >
-              <span style={{ flex: 1, color: '#1a1a1a' }}>{c.name}</span>
-              {c.phone && <span style={{ fontSize: 11, color: '#bbb' }}>{c.phone}</span>}
+              {c.banned && <span title="Banned client — do not accept bookings" style={{ fontSize: 13 }}>🚫</span>}
+              <span style={{
+                flex: 1,
+                color: c.banned ? '#b91c1c' : '#1a1a1a',
+                fontWeight: c.banned ? 600 : 400,
+              }}>
+                {c.name}
+                {c.banned && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>· Banned</span>}
+              </span>
+              {c.phone && <span style={{ fontSize: 11, color: c.banned ? '#dc2626' : '#bbb' }}>{displayPhone(c.phone)}</span>}
             </div>
           ))}
           {filtered.length === 0 && query && (
@@ -2324,6 +3049,17 @@ function Field({ label, children, style }) {
 
 function ViewVal({ children, style }) {
   return <div style={{ fontSize: 13, color: '#1a1a1a', padding: '5px 0', minHeight: 24, lineHeight: 1.5, ...style }}>{children}</div>;
+}
+
+// Compact label/value row used inside the expanded service-history detail
+// view. `bold` highlights totals; `muted` greys out secondary fields.
+function Row({ label, value, bold, muted }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 11, padding: '1px 0', color: muted ? '#888' : '#374151' }}>
+      <span>{label}</span>
+      <span style={{ fontWeight: bold ? 700 : 400, fontVariantNumeric: 'tabular-nums' }}>{value}</span>
+    </div>
+  );
 }
 
 const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };

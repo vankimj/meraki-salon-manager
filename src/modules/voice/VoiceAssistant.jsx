@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
-import { createAppointment, saveAppointment } from '../../lib/firestore';
+import { createAppointment, saveAppointment, fetchClient } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 
 // Web Speech API wrapper. Returns null if unsupported (Firefox, etc.).
@@ -145,6 +145,21 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
     try {
       const { actionType, payload, summary } = propToUse;
       if (actionType === 'book') {
+        // Banned-client guard — voice flow has no override; banned clients
+        // get hard-blocked. Admin must use the schedule modal (with explicit
+        // override + audit log) if they really want to book a banned client.
+        if (payload.clientId) {
+          try {
+            const c = await fetchClient(payload.clientId);
+            if (c?.banned) {
+              setError(`${c.name} is banned. Voice booking is blocked. Use the calendar with explicit override if you really need to book them.`);
+              setExecuting(false);
+              return;
+            }
+          } catch (e) {
+            console.warn('[voice] could not check ban status:', e?.message);
+          }
+        }
         const dur = (payload.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (Number(payload.duration) || 60);
         const apptData = {
           clientId:        payload.clientId || '',
