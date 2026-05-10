@@ -282,7 +282,7 @@ export default function HRAdmin() {
           { id: 'gusto',    label: 'Gusto' },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '8px 20px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid #1a1a1a' : '2px solid transparent', cursor: 'pointer' }}>
+            style={{ padding: '8px 20px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid #1a1a1a' : '2px solid transparent', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
             {t.label}
             {t.badge > 0 && (
               <span style={{ marginLeft: 6, fontSize: 10, background: '#e8e8e8', color: '#555', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>

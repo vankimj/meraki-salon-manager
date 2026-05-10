@@ -272,15 +272,16 @@ export default function ReportsAdmin() {
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', paddingBottom: 24 }}>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #e8e8e8', paddingBottom: 0 }}>
+      {/* Tab bar — horizontal-scroll on narrow viewports so labels stay
+          single-line and the user can swipe through tabs. */}
+      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #e8e8e8', paddingBottom: 0 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
             padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: activeTab === t.id ? 600 : 400,
             background: 'none', border: 'none', cursor: 'pointer',
             color: activeTab === t.id ? '#1a1a1a' : '#888',
             borderBottom: activeTab === t.id ? '2px solid #2D7A5F' : '2px solid transparent',
-            marginBottom: -1, transition: 'color .15s',
+            marginBottom: -1, transition: 'color .15s', whiteSpace: 'nowrap', flexShrink: 0,
           }}>
             {t.label}
           </button>

@@ -51,10 +51,10 @@ export default function MembershipsAdmin() {
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid #e8e8e8' }}>
+      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid #e8e8e8' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, background: 'none', border: 'none', cursor: 'pointer', color: tab === t.id ? '#1a1a1a' : '#888', borderBottom: tab === t.id ? '2px solid #5b3b8c' : '2px solid transparent', marginBottom: -1 }}>
+            style={{ padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, background: 'none', border: 'none', cursor: 'pointer', color: tab === t.id ? '#1a1a1a' : '#888', borderBottom: tab === t.id ? '2px solid #5b3b8c' : '2px solid transparent', marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {t.label}{t.id === 'members' && members.length > 0 && <span style={{ marginLeft: 6, color: '#aaa' }}>({members.length})</span>}
           </button>
         ))}
