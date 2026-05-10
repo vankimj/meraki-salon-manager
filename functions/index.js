@@ -33,6 +33,27 @@ const apptManageSecret  = defineSecret('APPT_MANAGE_SECRET');
 const stripeKey       = defineSecret('STRIPE_SECRET_KEY');
 const anthropicKey    = defineSecret('ANTHROPIC_API_KEY');
 
+// ── Twilio + Stripe billing + Gusto params ───────────────────────────────────
+// Declared up here (rather than next to the SMS section) because some
+// scheduled-function options blocks reference these as `secrets:` at module
+// load time — referencing them later would hit the const temporal-dead-zone
+// and break codebase analysis at deploy.
+const twilioSid       = defineString('TWILIO_ACCOUNT_SID', { default: '' });
+// Twilio auth token (or API Key secret) — defineSecret so the value
+// lives in Cloud Secret Manager (encrypted at rest, scoped to the
+// runtime service account) instead of plaintext function config /
+// .env. Also lets `validateRequest` in the inbound-SMS webhook
+// verify signatures using the real secret.
+const twilioToken     = defineSecret('TWILIO_AUTH_TOKEN');
+const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
+const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
+const stripePriceId   = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
+const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
+const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
+const gustoClientId     = defineString('GUSTO_CLIENT_ID',     { default: '' });
+const gustoClientSecret = defineString('GUSTO_CLIENT_SECRET', { default: '' });
+const gustoRedirectUri  = defineString('GUSTO_REDIRECT_URI',  { default: '' });
+
 // CAN-SPAM unsubscribe link helpers. Token is an HMAC-truncated-to-16-hex of
 // the tenantId:clientId pair, signed with the UNSUBSCRIBE_SECRET. Not
 // security-critical (worst case: a determined attacker can mark a client
@@ -275,10 +296,11 @@ function buildHandbookReminderHtml(data, empName) {
 }
 
 exports.sendReceiptEmail = onDocumentCreated(
-  `tenants/${TENANT_ID}/receipts/{receiptId}`,
+  `tenants/{tenantId}/receipts/{receiptId}`,
   async (event) => {
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
 
     const data   = snap.data();
     if (!data || data.sent || data.error) return;
@@ -292,7 +314,7 @@ exports.sendReceiptEmail = onDocumentCreated(
     // Read Google review URL from settings (best-effort)
     let googleReviewUrl = null;
     try {
-      const settingsSnap = await getFirestore().doc(`tenants/${TENANT_ID}/data/settings`).get();
+      const settingsSnap = await getFirestore().doc(`tenants/${tenantId}/data/settings`).get();
       if (settingsSnap.exists) googleReviewUrl = settingsSnap.data().googleReviewUrl || null;
     } catch { /* non-fatal */ }
 
@@ -598,7 +620,7 @@ async function processEmailCampaign(tenantId, docRef, data) {
 }
 
 exports.sendMarketingCampaign = onDocumentCreated(
-  { document: `tenants/${TENANT_ID}/campaigns/{campaignId}`, timeoutSeconds: 540, secrets: [unsubscribeSecret] },
+  { document: `tenants/{tenantId}/campaigns/{campaignId}`, timeoutSeconds: 540, secrets: [unsubscribeSecret] },
   async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -1097,10 +1119,11 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
 });
 
 exports.sendReviewRequestEmail = onDocumentCreated(
-  `tenants/${TENANT_ID}/reviewRequests/{reqId}`,
+  `tenants/{tenantId}/reviewRequests/{reqId}`,
   async (event) => {
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
     const data = snap.data();
     if (!data || data.sent || data.error) return;
 
@@ -1161,7 +1184,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
       // Notify the tech who served this client (best-effort)
       if (data.techName) {
         const db = getFirestore();
-        const empSnap = await db.collection(`tenants/${TENANT_ID}/employees`)
+        const empSnap = await db.collection(`tenants/${tenantId}/employees`)
           .where('name', '==', data.techName).limit(1).get();
         const techEmail = empSnap.empty ? null : (empSnap.docs[0].data().email || '').trim();
         if (techEmail) {
@@ -1201,11 +1224,12 @@ exports.sendReviewRequestEmail = onDocumentCreated(
 );
 
 exports.sendAccessRequestNotification = onDocumentCreated(
-  `tenants/${TENANT_ID}/requests/{uid}`,
+  `tenants/{tenantId}/requests/{uid}`,
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
 
     const req    = snap.data();
     const apiKey = resendKey.value();
@@ -1216,7 +1240,7 @@ exports.sendAccessRequestNotification = onDocumentCreated(
     // Notification email content doesn't need names; the email IS the
     // identifier. If we ever need the display name, look it up from
     // data/usersFull explicitly here.
-    const usersSnap = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+    const usersSnap = await db.doc(`tenants/${tenantId}/data/users`).get();
     const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
     if (!adminEmails.length) return;
     const admins = adminEmails.map(email => ({ email }));
@@ -1269,14 +1293,15 @@ exports.sendAccessRequestNotification = onDocumentCreated(
 // so the public CheckInScreen doesn't need access to PII (clientName,
 // etc.) — it only sees the minimal slice from `getPublicAppointment`.
 exports.notifyOnCheckIn = onDocumentUpdated(
-  `tenants/${TENANT_ID}/appointments/{apptId}`,
+  `tenants/{tenantId}/appointments/{apptId}`,
   async (event) => {
     const before = event.data?.before?.data() || {};
     const after  = event.data?.after?.data()  || {};
     if (before.checkedInAt || !after.checkedInAt) return; // not a fresh check-in
-    const apptId = event.params?.apptId;
+    const tenantId = event.params?.tenantId;
+    const apptId   = event.params?.apptId;
     const db = getFirestore();
-    await db.collection(`tenants/${TENANT_ID}/notifications`).add({
+    await db.collection(`tenants/${tenantId}/notifications`).add({
       apptId,
       techName:    after.techName || '',
       clientName:  after.clientName || 'A client',
@@ -1291,11 +1316,12 @@ exports.notifyOnCheckIn = onDocumentUpdated(
 );
 
 exports.sendApptNotification = onDocumentCreated(
-  { document: `tenants/${TENANT_ID}/notifications/{notifId}`, secrets: [apptManageSecret] },
+  { document: `tenants/{tenantId}/notifications/{notifId}`, secrets: [apptManageSecret] },
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
 
     const data = snap.data();
     if (!data || data.sent || data.error) return;
@@ -1305,7 +1331,7 @@ exports.sendApptNotification = onDocumentCreated(
     try {
       // Look up tech email from employee record
       const empSnap = await db
-        .collection(`tenants/${TENANT_ID}/employees`)
+        .collection(`tenants/${tenantId}/employees`)
         .where('name', '==', data.techName)
         .limit(1)
         .get();
@@ -1365,11 +1391,11 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10);
 }
 
-function buildReminderHtml(appt, client) {
+function buildReminderHtml(appt, client, tenantId) {
   const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
-  const manageLink = apptManageUrl(TENANT_ID, appt.id);
+  const manageLink = apptManageUrl(tenantId, appt.id);
   return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -1553,7 +1579,7 @@ exports.sendDailyReminders = onSchedule(
             from:    resendFrom.value(),
             to:      email,
             subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
-            html:    buildReminderHtml(appt, client),
+            html:    buildReminderHtml(appt, client, tenantId),
           });
           if (error) throw new Error(error.message || JSON.stringify(error));
 
@@ -1578,6 +1604,7 @@ exports.sendTechAppointmentReminders = onSchedule(
   {
     schedule: 'every 5 minutes',
     timeZone: 'America/New_York',
+    secrets: [twilioToken],
   },
   async () => {
     const apiKey = resendKey.value();
@@ -1735,11 +1762,12 @@ exports.sendTechAppointmentReminders = onSchedule(
 );
 
 exports.sendBookingConfirmation = onDocumentCreated(
-  { document: `tenants/${TENANT_ID}/appointments/{apptId}`, secrets: [apptManageSecret] },
+  { document: `tenants/{tenantId}/appointments/{apptId}`, secrets: [apptManageSecret] },
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
 
     const appt = snap.data();
     if (!appt || appt.source !== 'online_booking') return;
@@ -1755,7 +1783,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
     const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
-    const manageLink = apptManageUrl(TENANT_ID, event.params?.apptId || snap.id);
+    const manageLink = apptManageUrl(tenantId, event.params?.apptId || snap.id);
 
     const clientHtml = `<!DOCTYPE html>
 <html>
@@ -1796,7 +1824,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
       let emailOk = true;
       if (appt.clientId) {
         try {
-          const cDoc = await db.doc(`tenants/${TENANT_ID}/clients/${appt.clientId}`).get();
+          const cDoc = await db.doc(`tenants/${tenantId}/clients/${appt.clientId}`).get();
           if (cDoc.exists && cDoc.data()?.commPreferences?.appointmentEmail === false) emailOk = false;
         } catch { /* fall through — assume opted-in */ }
       }
@@ -1815,7 +1843,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     // Notify admins — projection only (rich users[] now lives in
     // data/usersFull, admin-only).
     try {
-      const usersSnap   = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+      const usersSnap   = await db.doc(`tenants/${tenantId}/data/users`).get();
       const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
       const admins      = adminEmails.map(email => ({ email }));
       if (admins.length) {
@@ -1857,7 +1885,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
 
     // Write in-app notification for admin notification center
     try {
-      await db.collection(`tenants/${TENANT_ID}/notifications`).add({
+      await db.collection(`tenants/${tenantId}/notifications`).add({
         changeType:  'online_booking',
         clientName:  appt.clientName  || '',
         clientPhone: appt.clientPhone || '',
@@ -1938,18 +1966,19 @@ exports.generateAnnual1099s = onSchedule(
 );
 
 exports.sendChatNotification = onDocumentCreated(
-  `tenants/${TENANT_ID}/chatNotifications/{notifId}`,
+  `tenants/{tenantId}/chatNotifications/{notifId}`,
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
 
     const data   = snap.data();
     const apiKey = resendKey.value();
     if (!apiKey) return;
 
     // Read adminEmails projection (rich users[] is admin-only at data/usersFull).
-    const usersSnap   = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+    const usersSnap   = await db.doc(`tenants/${tenantId}/data/users`).get();
     const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
     const admins      = adminEmails.map(email => ({ email }));
     if (!admins.length) return;
@@ -1990,11 +2019,12 @@ exports.sendChatNotification = onDocumentCreated(
 );
 
 exports.sendReviewReceivedNotification = onDocumentCreated(
-  `tenants/${TENANT_ID}/reviewReceived/{docId}`,
+  `tenants/{tenantId}/reviewReceived/{docId}`,
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
     if (!snap) return;
+    const tenantId = event.params.tenantId;
 
     const data   = snap.data();
     const apiKey = resendKey.value();
@@ -2003,7 +2033,7 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
     const stars = '★'.repeat(data.rating || 5) + '☆'.repeat(5 - (data.rating || 5));
 
     // Projection only — rich users[] is admin-only at data/usersFull.
-    const usersSnap   = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+    const usersSnap   = await db.doc(`tenants/${tenantId}/data/users`).get();
     const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
     const admins      = adminEmails.map(email => ({ email }));
 
@@ -2031,7 +2061,7 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
 
     // Also notify the tech if specified
     if (data.techName) {
-      const empSnap = await db.collection(`tenants/${TENANT_ID}/employees`)
+      const empSnap = await db.collection(`tenants/${tenantId}/employees`)
         .where('name', '==', data.techName).limit(1).get();
       if (!empSnap.empty) {
         const techEmail = (empSnap.docs[0].data().email || '').trim();
@@ -3414,17 +3444,7 @@ function buildWelcomeHtml(salonName, ownerEmail, tenantId, url) {
 </div></body></html>`;
 }
 
-// ── Config params for new integrations ───────────────────────────────────────
-const twilioSid       = defineString('TWILIO_ACCOUNT_SID', { default: '' });
-const twilioToken     = defineString('TWILIO_AUTH_TOKEN',  { default: '' }); // master Auth Token OR API Key Secret
-const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
-const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
-const stripePriceId  = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
-const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
-const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
-const gustoClientId     = defineString('GUSTO_CLIENT_ID',     { default: '' });
-const gustoClientSecret = defineString('GUSTO_CLIENT_SECRET', { default: '' });
-const gustoRedirectUri  = defineString('GUSTO_REDIRECT_URI',  { default: '' });
+// ── Config params for new integrations (moved up — see top of file) ──────────
 
 // ── SMS Campaigns (Twilio) ────────────────────────────────────────────────────
 // Sends to the recipients list the Marketing UI resolved at "Send" time
@@ -3601,7 +3621,7 @@ async function processSMSCampaign(tenantId, docRef, data) {
 }
 
 exports.sendSMSCampaign = onDocumentCreated(
-  `tenants/{tenantId}/campaigns/{campaignId}`,
+  { document: `tenants/{tenantId}/campaigns/{campaignId}`, secrets: [twilioToken] },
   async (event) => {
     const data = event.data.data();
     if (data.channel !== 'sms') return;
@@ -3617,7 +3637,7 @@ exports.sendSMSCampaign = onDocumentCreated(
 // them. Idempotent: each one is flipped to 'sending' (atomically via a
 // status check) before processing so a duplicate sweep can't double-send.
 exports.runScheduledCampaigns = onSchedule(
-  { schedule: 'every 1 minutes', timeoutSeconds: 540, secrets: [unsubscribeSecret] },
+  { schedule: 'every 1 minutes', timeoutSeconds: 540, secrets: [unsubscribeSecret, twilioToken] },
   async () => {
     const nowIso = new Date().toISOString();
 
@@ -4258,12 +4278,20 @@ exports.gustoSyncEmployees = onCall({ cors: true }, async (request) => {
     const local    = localEmps.find(e => e.name?.toLowerCase() === fullName.toLowerCase());
     if (local) {
       const comp = ge.compensations?.find(c => c.active);
+      const now = new Date().toISOString();
+      // Sensitive comp fields go to the admin-only sub-doc; the public
+      // parent doc gets only `updatedAt`. Without this split, every Gusto
+      // sync silently re-published payRate/payType/gustoId/gustoEmail to
+      // the publicly-readable parent doc — undoing the comp-split lockdown.
+      await db.doc(`tenants/${TENANT_ID}/employees/${local.id}/private/comp`).set({
+        gustoId:    ge.id,
+        gustoEmail: ge.email || '',
+        payRate:    comp?.rate ? parseFloat(comp.rate) : (local.payRate || null),
+        payType:    comp?.payment_unit?.toLowerCase() || (local.payType || null),
+        updatedAt:  now,
+      }, { merge: true });
       await db.doc(`tenants/${TENANT_ID}/employees/${local.id}`).set({
-        gustoId:       ge.id,
-        gustoEmail:    ge.email || '',
-        payRate:       comp?.rate ? parseFloat(comp.rate) : local.payRate,
-        payType:       comp?.payment_unit?.toLowerCase() || local.payType,
-        updatedAt:     new Date().toISOString(),
+        updatedAt: now,
       }, { merge: true });
       matched++;
     }
@@ -4578,8 +4606,30 @@ function xmlEscape(s) {
   }[c]));
 }
 
-exports.twilioInboundSms = onRequest({ cors: false, secrets: [] }, async (req, res) => {
+exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, async (req, res) => {
   try {
+    // Verify the inbound POST really came from Twilio. Without this, anyone
+    // who knows the function URL can forge a webhook with arbitrary `From` /
+    // `Body` and inject a message into the chat thread of any client whose
+    // phone they know — phishing the staff inbox under a real client's
+    // identity. Validation uses the AUTH TOKEN secret (not API key) so
+    // this works for both account-token and API-key SDK initializations.
+    const tokenForSig = twilioToken.value();
+    const signature   = req.headers['x-twilio-signature'];
+    if (!tokenForSig || !signature) {
+      console.warn('[twilioInboundSms] missing signature or auth token');
+      res.status(403).send('Forbidden');
+      return;
+    }
+    const fullUrl = `https://${req.get('host')}${req.originalUrl || req.url}`;
+    const twilioSDK = require('twilio');
+    const valid = twilioSDK.validateRequest(tokenForSig, signature, fullUrl, req.body || {});
+    if (!valid) {
+      console.warn('[twilioInboundSms] invalid signature; rejecting webhook');
+      res.status(403).send('Forbidden');
+      return;
+    }
+
     // Twilio sends application/x-www-form-urlencoded; Firebase parses to req.body
     const From = req.body?.From || '';
     const To   = req.body?.To   || '';
@@ -4706,7 +4756,7 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [] }, async (req, r
 // Staff-side outbound: send an SMS to a client and append it to the chat.
 // Auth: requires a signed-in user. We trust the client to send sane content;
 // rules-layer enforcement of who-can-message-whom can be tightened later.
-exports.sendDirectSms = onCall({ cors: true }, async (request) => {
+exports.sendDirectSms = onCall({ cors: true, secrets: [twilioToken] }, async (request) => {
   const { tenantId: tid, clientId, body } = request.data || {};
   const tenantId = tid || TENANT_ID;
   await requireTenantStaff(getFirestore(), tenantId, request);

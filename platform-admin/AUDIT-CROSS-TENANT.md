@@ -1,6 +1,6 @@
 # Cross-Tenant Access Audit
 
-**Status:** Audit v2 (2026-05-09)
+**Status:** Audit v3 (2026-05-10)
 **Owner:** Jonathan VanKim
 **Purpose:** Methodical review of every cloud function and access path to verify principle #10 — *founder cannot read tenant customer data without invitation*. Documents what each function does, who can call it, what data it touches, and whether it could leak data to the founder's UI.
 **Cadence:** Re-run before every release that adds new functions or changes access patterns.
@@ -14,7 +14,7 @@
 | Category | Count | Principle #10 status |
 |---|---|---|
 | Auth-gated tenant operations (caller must be tenant staff/admin) | 21 | ✅ Safe — caller is acting on their own tenant |
-| Document triggers (fire on tenant doc change, act in same tenant) | 14 | ✅ Safe — scope locked by triggering doc |
+| Document triggers (fire on tenant doc change, act in same tenant) | 15 | ✅ Safe — all use `{tenantId}` wildcard (v3) |
 | Scheduled / batch | 8 | ✅ **6 multi-tenant via `forEachActiveTenant` (v2). 2 still single-tenant — see below.** |
 | Public unauthenticated (booking, contact form, Stripe/Twilio webhooks) | 4 | ✅ Safe — write to specific tenant identified by request |
 | Platform admin chokepoint | 2 | ✅ Safe — sanitized, returns metadata only |
@@ -24,7 +24,7 @@
 1. **Nothing in production violates principle #10.** The platform admin chokepoint returns sanitized metadata only; tenant-staff endpoints gate on the caller's tenant role.
 2. **Scheduled-function SaaS-readiness gap closed in v2.** All 6 cron-driven scheduled functions now iterate `tenants/*` via the `forEachActiveTenant` helper instead of hardcoded `TENANT_ID`. A new tenant onboarded today will receive reminders, birthday/lapsed campaigns, and scheduled marketing sends without code changes. Per-tenant failures are isolated so one broken tenant cannot block the rest of the sweep.
 3. **The platform admin chokepoint is the only intentional cross-tenant code path that returns data.** `listTenants` + `getTenantMetadata` are auth-gated to the platform admin allowlist and return only sanitized fields. They're the single audit surface to keep tight as the platform admin grows.
-4. **Document triggers (8 of the 14 in Category B) still bind their `document:` paths to `tenants/${TENANT_ID}/...` at module load time.** They cannot be made multi-tenant by a runtime helper; the path itself needs to use a `{tenantId}` wildcard (separate refactor — tracked under "Recommendations → Before tenant #2 onboards").
+4. **Document triggers fully multi-tenant (v3).** All 9 doc triggers that previously bound `document:` paths to `tenants/${TENANT_ID}/...` now use the `tenants/{tenantId}/...` wildcard and read `event.params.tenantId` inside the handler. A new tenant writing to their own `appointments`, `receipts`, `campaigns`, etc. will fire the same triggers as Meraki.
 
 ---
 
@@ -62,22 +62,23 @@ Pattern: `request.auth.token.email` is checked against the tenant's user list. C
 | `sendDirectEmail` | Outbound email from chat UI | Auth-checked tenant-staff |
 | `retryGiftCardEmail` | Re-send a gift card | Auth-checked tenant-staff |
 
-### Category B — Document triggers (14)
+### Category B — Document triggers (15) ✅ all multi-tenant
 
-Pattern: function fires when a Firestore doc changes. Scope is determined by the doc's path, which is already tenant-scoped. Function only acts on the tenant whose doc changed.
+Pattern: function fires when a Firestore doc changes. Scope determined by the doc's path. As of v3, every trigger uses the `tenants/{tenantId}/...` wildcard and reads `event.params.tenantId` to scope its work — so they fire identically for every tenant.
 
-| Function | Triggered on | Why safe |
+| Function | Triggered on | Multi-tenant |
 |---|---|---|
-| `sendReceiptEmail` | `tenants/{tid}/receipts/{rid}` create | Acts on the receipt's own tenant |
-| `sendMarketingCampaign` | `tenants/{tid}/campaigns/{cid}` create | Acts on the campaign's own tenant |
-| `sendReviewRequestEmail` | Receipt or appt completion | Tenant-scoped trigger |
-| `sendAccessRequestNotification` | `tenants/{tid}/requests/{uid}` create | Tenant-scoped |
-| `sendApptNotification` | Appt doc change | Tenant-scoped |
-| `sendBookingConfirmation` | Appt create | Tenant-scoped |
-| `sendChatNotification` | Chat message | Tenant-scoped |
-| `sendReviewReceivedNotification` | Google review event | Tenant-scoped |
-| `sendSMSCampaign` | SMS campaign create | Tenant-scoped |
-| `sendGiftCardEmail` | Gift card create | Tenant-scoped |
+| `sendReceiptEmail` | `tenants/{tenantId}/receipts/{rid}` create | ✅ wildcard |
+| `sendMarketingCampaign` | `tenants/{tenantId}/campaigns/{cid}` create | ✅ wildcard |
+| `sendReviewRequestEmail` | `tenants/{tenantId}/reviewRequests/{rid}` create | ✅ wildcard |
+| `sendAccessRequestNotification` | `tenants/{tenantId}/requests/{uid}` create | ✅ wildcard |
+| `notifyOnCheckIn` | `tenants/{tenantId}/appointments/{apptId}` update | ✅ wildcard |
+| `sendApptNotification` | `tenants/{tenantId}/notifications/{nid}` create | ✅ wildcard |
+| `sendBookingConfirmation` | `tenants/{tenantId}/appointments/{apptId}` create | ✅ wildcard |
+| `sendChatNotification` | `tenants/{tenantId}/chatNotifications/{nid}` create | ✅ wildcard |
+| `sendReviewReceivedNotification` | `tenants/{tenantId}/reviewReceived/{did}` create | ✅ wildcard |
+| `sendSMSCampaign` | `tenants/{tenantId}/campaigns/{cid}` create | ✅ wildcard (since launch) |
+| `sendGiftCardEmail` | `tenants/{tenantId}/giftCards/{cid}` create | ✅ wildcard (since launch) |
 | `twilioInboundSms` | Public webhook from Twilio | Routes by phone number → single tenant |
 | `stripeWebhook` | Public webhook from Stripe | Routes by Stripe account → single tenant |
 | `gustoOAuthCallback` | OAuth redirect | State param contains tenant ID |
@@ -170,7 +171,7 @@ Pattern: cron-driven functions that fan out across every active tenant via the `
 
 ### Before tenant #2 onboards
 1. ✅ **Done (v2 — 2026-05-09)** — 6 cron-driven scheduled functions refactored to iterate all active tenants via `forEachActiveTenant`.
-2. **Refactor 8 document triggers** (`sendReceiptEmail`, `sendMarketingCampaign`, `sendReviewRequestEmail`, `sendAccessRequestNotification`, `sendApptNotification`, `sendBookingConfirmation`, `sendChatNotification`, `sendReviewReceivedNotification`) to use `tenants/{tenantId}/...` wildcard paths instead of `tenants/${TENANT_ID}/...`. Currently they only fire for Meraki — not a security issue, but means new tenants get no triggers until refactored. Pattern: change `document: 'tenants/${TENANT_ID}/foo/{id}'` → `document: 'tenants/{tenantId}/foo/{id}'` and read `event.params.tenantId` inside the handler.
+2. ✅ **Done (v3 — 2026-05-10)** — 9 document triggers refactored to use `tenants/{tenantId}/...` wildcard paths and `event.params.tenantId`. Includes `notifyOnCheckIn` (added in the v2 PII hardening pass) which the v2 audit had missed. `buildReminderHtml` helper updated to take `tenantId` as a parameter so its `apptManageUrl` call resolves to the correct tenant.
 3. **Refactor `chatWithSalon`** (public-facing salon chatbot) to accept tenantId as a request parameter instead of hardcoded `TENANT_ID`. Tenant identified by subdomain or query param.
 4. **Audit all `webfront` config endpoints** to make sure they accept tenantId param.
 5. **Replace TenantsTab in salon app** with deep-link to platform admin (`platform-admin.web.app`).
@@ -186,5 +187,6 @@ Pattern: cron-driven functions that fan out across every active tenant via the `
 
 ## Document changelog
 
+- **v3 — 2026-05-10** — All 9 remaining document triggers refactored to `tenants/{tenantId}/...` wildcard paths with `event.params.tenantId` reads. Includes `notifyOnCheckIn` (which the v2 audit didn't flag — it was added during the v2 PII hardening pass and inherited the same hardcoded path). Twilio + Stripe billing + Gusto `defineString`/`defineSecret` declarations moved to top-of-file so scheduled-function `secrets:` arrays don't hit the const temporal-dead-zone at module load.
 - **v2 — 2026-05-09** — 6 of the 8 scheduled functions refactored to iterate all active tenants via the new `forEachActiveTenant(label, cb, options)` helper in functions/index.js. Birthday + lapsed campaigns opt into `{ skipPaused: true }`. `generateAnnual1099s` deferred (annual cadence, low priority). Document triggers (8 in Category B) still bind their `document:` paths to `${TENANT_ID}` and need a separate refactor — added to "Before tenant #2 onboards" recommendations.
 - **v1 — 2026-05-09** — initial audit. 49 functions classified, 0 violations of principle #10 found in current code. Identified 8 scheduled functions needing multi-tenant refactor before tenant #2 onboards (separate work item, not a principle violation).
