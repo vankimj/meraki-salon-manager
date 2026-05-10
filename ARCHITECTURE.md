@@ -184,6 +184,184 @@ Deploys via `firebase deploy --only hosting:meraki` etc. Staging via Firebase Ho
 
 ---
 
+## Multi-tenant architecture
+
+The single Firebase project (`meraki-salon-manager`) serves N tenants. Each tenant = one salon. The same SPA bundle is deployed once and serves all tenants; tenant identity is resolved at runtime from the request's hostname. Data isolation is enforced by Firestore security rules; cross-tenant operations go through the `requireTenantStaff` / `requireTenantAdmin` helpers and the `forEachActiveTenant` iterator.
+
+### Tenant data isolation
+
+Every business object lives under `tenants/{tid}/...`. Firestore rules block cross-tenant reads — a user authenticated as a staff member of tenant `meraki` cannot read tenant `demo`'s clients or appointments.
+
+```mermaid
+graph LR
+    subgraph Root["Firestore root"]
+        TenantsCol[("tenants/")]
+        OauthNonces[("_oauthNonces/<br/>(Gusto state pins)")]
+    end
+
+    subgraph Meraki["tenants/meraki/"]
+        direction TB
+        M_data["data/<br/>settings · users · usersFull<br/>settingsPrivate · slides"]
+        M_biz["clients · employees · appointments<br/>receipts · chats · notifications<br/>userPushTokens · giftCards · memberships<br/>meetings · timeOff · logs"]
+    end
+
+    subgraph Demo["tenants/demo/"]
+        direction TB
+        D_data["data/...<br/>(same shape)"]
+        D_biz["clients · employees ...<br/>(same shape, isolated)"]
+    end
+
+    subgraph Future["tenants/{newSalon}/"]
+        direction TB
+        F_data["..."]
+        F_biz["..."]
+    end
+
+    TenantsCol --> Meraki
+    TenantsCol --> Demo
+    TenantsCol --> Future
+
+    classDef firebase fill:#FFA000,stroke:#FF6F00,color:#fff
+    classDef tenant fill:#EBF4FB,stroke:#3D95CE,color:#1a5f8a
+    class TenantsCol,OauthNonces firebase
+    class M_data,M_biz,D_data,D_biz,F_data,F_biz tenant
+```
+
+### Request routing — how a subdomain becomes a tenant
+
+Tenant resolution happens client-side in [`src/lib/tenant.js`](src/lib/tenant.js). Order of precedence:
+
+1. `?tenant=<id>` query param (test override, persists in sessionStorage)
+2. `import.meta.env.VITE_TENANT_ID` build-time env (staging only)
+3. `window.location.hostname` subdomain match
+4. Fallback to `'meraki'` (legacy default)
+
+```mermaid
+sequenceDiagram
+    actor U as User
+    participant DNS as DNS / Cloudflare
+    participant CFW as Cloudflare Worker
+    participant FH as Firebase Hosting
+    participant SPA as SPA bundle
+    participant TJS as tenant.js detectTenantId()
+    participant FS as Firestore
+
+    U->>DNS: meraki.plumenexus.com
+    DNS->>CFW: route
+    CFW->>FH: rewrite host → meraki-salon-manager.web.app
+    FH-->>SPA: serve same bundle for all tenants
+    SPA->>TJS: detectTenantId()
+    Note over TJS: 1. ?tenant param?<br/>2. VITE_TENANT_ID env?<br/>3. hostname → "meraki"<br/>4. fallback "meraki"
+    TJS-->>SPA: TENANT_ID = "meraki"
+    SPA->>FS: getDoc(tenants/meraki/data/settings)
+    Note over FS: Rules enforce<br/>isTenantStaff(meraki)<br/>before read
+    FS-->>SPA: tenant data
+```
+
+### Per-tenant branding (dual-store)
+
+Two stores; admin UI dual-writes so public surfaces and auth surfaces stay in sync. Eventual consolidation is open work.
+
+| Store | Path | Audience | Holds |
+|---|---|---|---|
+| `data/settings` | `tenants/{tid}/data/settings` | Staff-only (rules-blocked pre-login) | `salonName`, `brandName`, `brandTagline` + everything else |
+| `data/webfront` | `tenants/{tid}/data/webfront` | Public read | Branding (mirrored) + `address`, `phone`, `instagram`, `hours` |
+
+**Resolution chain in client code:**
+
+```
+authenticated context: settings.salonName → webfront.salonName → "Plume Nexus"
+public  context (booking, check-in, kiosk, splash):
+                          webfront.salonName → tenant root doc .name → "Plume Nexus"
+```
+
+### Cross-tenant operations
+
+Three categories of code legitimately traverse tenants. All use Admin SDK (bypasses Firestore rules) AND verify caller authorization in code.
+
+```mermaid
+graph TB
+    subgraph Cron["Scheduled / cron jobs"]
+        CronFn["sendDailyReminders<br/>autoBirthdayCampaign<br/>autoLapsedCampaign<br/>sendTechAppointmentReminders<br/>generateAnnual1099s (TODO)<br/>runScheduledCampaigns"]
+        ForEach["forEachActiveTenant(label, cb, { skipPaused? })"]
+        CronFn --> ForEach
+        ForEach --> AllTenants[("for each tenant<br/>in tenants/*")]
+    end
+
+    subgraph Triggers["Doc triggers"]
+        TrigFn["notifyOnCheckIn<br/>sendApptNotification<br/>... 9 total"]
+        TrigPath["match path:<br/>tenants/{tenantId}/.../{id}<br/>→ event.params.tenantId"]
+        TrigFn --> TrigPath
+    end
+
+    subgraph Callables["Callable functions"]
+        CallFn["chatWithSalon<br/>chatWithReports<br/>createPaymentIntent<br/>createTenantOnboarding<br/>refreshGoogleReviews<br/>... 30+"]
+        CallGate["validate tenantId regex<br/>requireTenantStaff/Admin(db, tid, request)"]
+        CallFn --> CallGate
+    end
+
+    subgraph PlatAdmin["Platform admin console"]
+        PA["listTenants callable<br/>(bootstrap admin only)"]
+        PAList[("read across<br/>tenants/*")]
+        PA --> PAList
+    end
+
+    classDef firebase fill:#FFA000,stroke:#FF6F00,color:#fff
+    classDef rule fill:#fef3c7,stroke:#92400e,color:#92400e
+    class CronFn,TrigFn,CallFn,PA,AllTenants,TrigPath,PAList firebase
+    class ForEach,CallGate rule
+```
+
+### Tenant lifecycle — signup to active
+
+```mermaid
+sequenceDiagram
+    actor U as New owner
+    participant PN as plumenexus.com
+    participant CF as createTenantOnboarding<br/>Cloud Function
+    participant FS as Firestore
+    participant FA as Firebase Auth<br/>(magic link)
+    participant R as Resend
+    participant App as Web app at<br/>{newSalon}.plumenexus.com
+
+    U->>PN: signs up (salon name, email, plan)
+    PN->>CF: createTenantOnboarding(name, email, slug)
+    CF->>CF: rate-limit + validate slug<br/>(reserved-subdomain check)
+    CF->>FS: create tenants/{slug}<br/>root doc (ownerEmail, name, fromAddress)
+    CF->>FS: seed data/settings + data/webfront<br/>+ data/users (slim) + data/usersFull (rich)
+    CF->>FS: seed employees (if onboarding form provided any)
+    CF->>R: send magic-link sign-in email to owner
+    R-->>U: receives invite
+    U->>FA: clicks link → magic-link sign-in
+    FA-->>U: authenticated session
+    U->>App: redirected to {newSalon}.plumenexus.com
+    Note over App,FA: tenant.js detects subdomain → TENANT_ID = slug<br/>Now isTenantStaff(slug) === true → reads succeed
+    Note over CF,App: Manual blocker today: Firebase Auth<br/>authorized-domains list needs each subdomain<br/>added in console — no wildcards.
+```
+
+### Tenant identity matrix
+
+Quick reference for "where is tenant id known and how":
+
+| Layer | Where tenant comes from | Notes |
+|---|---|---|
+| **Web bundle** (browser) | `detectTenantId()` — query param > env > hostname | Pinned at first call; cached in `TENANT_ID` const |
+| **Cloud Function callable** | `request.data.tenantId` (client-supplied) | Server validates format + calls `requireTenantStaff/Admin` |
+| **Cloud Function trigger** | `event.params.tenantId` from path wildcard | Implicit — Firestore path encodes it |
+| **Cron job** | Iterates `tenants/*` via `forEachActiveTenant` | Skips `active: false`, optionally skips paused tenants |
+| **Mobile app** | Hardcoded `'meraki'` in `mobile/src/lib/firebase.js` | Single-tenant for now; mobile multi-tenant is future work |
+
+### Multi-tenant gotchas
+
+See [`reference_firebase_quirks.md`](memory) for the full list. Summary:
+
+- **Auth domains aren't wildcardable.** Each tenant subdomain must be added to Firebase Auth → Settings → Authorized domains manually. Plan to automate inside `createTenantOnboarding` (TODO).
+- **Cloudflare proxy can break Firebase SSL.** Plumenexus subdomains must be DNS-only (gray cloud), not proxied — otherwise SSL handshake fails on Firebase's side.
+- **Tenant root doc must exist for cron fan-out.** Meraki's `tenants/meraki` doc was missing for ~24hr because the schema predated SaaS; scheduled functions silently no-op'd. New tenants via `createTenantOnboarding` get the doc; legacy tenants need `scripts/set-meraki-from-address.cjs` style backfill.
+- **`SalonWebfront.jsx` is still Meraki-templated.** Tenant #2 needs a refactor pass before they can use the public booking surface.
+
+---
+
 ## Third-party integrations
 
 | Provider | Purpose | Where wired | Env vars / secrets | Account owner |
