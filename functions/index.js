@@ -1504,12 +1504,114 @@ exports.sendApptNotification = onDocumentCreated(
 
       await ref.update({ sent: true, sentAt: new Date().toISOString(), sentTo: email });
       console.log(`[Notif] Email sent to ${data.techName} (${email})`);
+
+      // ── Push fan-out (mobile app) ─────────────────────────
+      // In parallel with the email, send a push to every Expo token
+      // registered under this user's email. Failures are logged but
+      // don't fail the parent function — email is the source of truth,
+      // push is a best-effort channel.
+      try {
+        await sendPushToEmail(db, tenantId, email, {
+          title: subject,
+          body:  isHandbookReminder
+            ? `${data.handbookTitle || 'Handbook'} — please sign to acknowledge.`
+            : pushBody(data),
+          data:  { type: data.changeType, apptId: data.apptId, notifId: snap.id },
+        });
+      } catch (pushErr) {
+        console.warn('[Notif] Push fan-out failed (non-fatal):', pushErr?.message);
+      }
     } catch (e) {
       console.error('[Notif] Email failed:', e.message);
       await ref.update({ error: e.message });
     }
   }
 );
+
+// Build a push-notification body line from a notification doc. Mirrors
+// the email subject keywords but optimized for a 2-line phone preview.
+function pushBody(data) {
+  const who = data.clientName || 'a client';
+  const when = data.date ? fmtDate(data.date) : '';
+  const time = data.startTime ? ` at ${fmtTime(data.startTime)}` : '';
+  switch (data.changeType) {
+    case 'appt_added':       return `${who} booked${time ? ' ' + when + time : ''}`;
+    case 'appt_cancelled':   return `${who}'s appointment ${when} was cancelled`;
+    case 'appt_rescheduled': return `${who} moved to ${when}${time}`;
+    case 'appt_updated':     return `${who}'s appointment was updated`;
+    case 'client_checkin':   return `${who} just checked in 📍`;
+    default:                 return `${who} — see app for details`;
+  }
+}
+
+// Send a push to every Expo token registered for an email under this
+// tenant. We index userPushTokens by uid (doc id) but each doc carries
+// the user's email, so a single-field where() is enough — Firestore
+// auto-indexes single-field equality, no composite index needed.
+async function sendPushToEmail(db, tenantId, email, payload) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return;
+  const snap = await db.collection(`tenants/${tenantId}/userPushTokens`)
+    .where('email', '==', e).get();
+  if (snap.empty) return;
+
+  // Aggregate tokens across all of this user's devices.
+  const tokens = [];
+  snap.docs.forEach(d => {
+    const toks = d.data()?.tokens;
+    if (Array.isArray(toks)) toks.forEach(t => { if (t && typeof t === 'string') tokens.push(t); });
+  });
+  if (!tokens.length) return;
+
+  // Expo's push service handles APNS+FCM transparently. Batch up to 100
+  // per request per Expo's docs; we'll never have that many devices per
+  // user but the limit's there so future-Jonathan doesn't hit it.
+  const messages = tokens.map(to => ({
+    to,
+    sound: 'default',
+    title: payload.title?.slice(0, 100) || 'Meraki',
+    body:  (payload.body || '').slice(0, 240),
+    data:  payload.data || {},
+    priority: 'high',
+  }));
+
+  const resp = await fetch('https://exp.host/--/api/v2/push/send', {
+    method:  'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body:    JSON.stringify(messages),
+  });
+  if (!resp.ok) {
+    const text = await resp.text().catch(() => '');
+    throw new Error(`Expo push HTTP ${resp.status}: ${text.slice(0, 200)}`);
+  }
+  const result = await resp.json().catch(() => null);
+  // Per-message errors land in result.data[i].status === 'error' with
+  // details.error === 'DeviceNotRegistered'. Strip those tokens so we
+  // stop sending to dead devices on next attempt.
+  const items = result?.data || [];
+  const dead  = [];
+  items.forEach((item, i) => {
+    if (item?.status === 'error' && item?.details?.error === 'DeviceNotRegistered') {
+      dead.push(tokens[i]);
+    }
+  });
+  if (dead.length) await pruneDeadPushTokens(db, tenantId, e, dead);
+}
+
+async function pruneDeadPushTokens(db, tenantId, email, deadTokens) {
+  try {
+    const snap = await db.collection(`tenants/${tenantId}/userPushTokens`)
+      .where('email', '==', email).get();
+    const writes = snap.docs.map(d => {
+      const toks = (d.data()?.tokens || []).filter(t => !deadTokens.includes(t));
+      return d.ref.set({ tokens: toks }, { merge: true });
+    });
+    await Promise.all(writes);
+    console.log(`[Push] pruned ${deadTokens.length} dead token(s) for ${email}`);
+  } catch (e) {
+    console.warn('[Push] prune failed:', e?.message);
+  }
+}
 
 // ── Daily client appointment reminders ─────────────────
 // Runs every day at 9 AM Eastern. Sends a reminder email to every client

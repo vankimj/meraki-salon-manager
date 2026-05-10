@@ -238,6 +238,17 @@ service cloud.firestore {
         allow read, delete:   if isTenantAdmin(tenantId);
       }
 
+      // Mobile push tokens — keyed by uid, contain Expo push tokens used
+      // by sendApptNotification's push fan-out. Each user can read/write
+      // ONLY their own doc (so they can register a token from their own
+      // device). The Cloud Function uses Admin SDK and bypasses rules,
+      // so it can read across users for fan-out. Tokens are not secrets
+      // but they let anyone who learns one send arbitrary push to that
+      // device, so we still gate at the user-uid layer.
+      match /userPushTokens/{uid} {
+        allow read, write: if isAuthenticated() && request.auth.uid == uid;
+      }
+
       // Internal meetings.
       // Public meetings: any tenant staff can read.
       // Private meetings (1:1s, performance reviews, anything flagged

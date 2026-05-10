@@ -6,15 +6,25 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "scheme": "meraki",
+    "newArchEnabled": true,
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
       "backgroundColor": "#0f1923"
     },
+    "notification": {
+      "icon": "./assets/notification-icon.png",
+      "color": "#2D7A5F",
+      "iosDisplayInForeground": true
+    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.meraki.salonmanager",
-      "googleServicesFile": "./GoogleService-Info.plist"
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +32,8 @@
         "backgroundColor": "#0f1923"
       },
       "package": "com.meraki.salonmanager",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "useNextNotificationsApi": true
     },
     "plugins": [
       [
@@ -31,7 +42,19 @@
           "ios": { "useFrameworks": "static" }
         }
       ],
-      "@react-native-google-signin/google-signin"
-    ]
+      "@react-native-google-signin/google-signin",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#2D7A5F"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": ""
+      }
+    }
   }
 }
