@@ -118,7 +118,11 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         @media (max-width: 899px) { .ms-sidebar { display: none !important; } }
         @media (max-width: 768px) {
           .ms-topnav { padding: 0 10px !important; gap: 6px !important; }
-          .ms-home-btn { min-width: 40px !important; padding: 8px !important; }
+          .ms-home-btn {
+            width: 44px !important; height: 44px !important; min-width: 44px !important;
+            padding: 0 !important; border-radius: 22px !important;
+            border: 1px solid #e0e0e0 !important; background: #fff !important;
+          }
           .ms-content { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
         }
       `}</style>
@@ -140,10 +144,11 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         zIndex: 100,
         paddingTop: 'env(safe-area-inset-top, 0px)',
       }}>
-        {/* Home button */}
-        <button onClick={onHome} className="ms-home-btn"
+        {/* Home button — circular tap target on mobile (matches the other
+            right-side icon buttons) so it's an obvious target on phones. */}
+        <button onClick={onHome} className="ms-home-btn" title="Home"
           style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: 'var(--tm-accent, #3D95CE)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, padding: '8px 6px', borderRadius: 6, flexShrink: 0, minWidth: 44, minHeight: 44, justifyContent: 'center' }}>
-          <IconHome size={15} />
+          <IconHome size={22} />
           <span className="ms-home-label">Home</span>
         </button>
 
