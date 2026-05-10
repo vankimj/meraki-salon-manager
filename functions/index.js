@@ -139,6 +139,9 @@ async function requireTenantAdmin(db, tenantId, request) {
   }
 }
 // Returns 'admin' | 'scheduler' | 'tech' | 'readonly' | null.
+// Rich users[] lives in data/usersFull (admin-only at the rules layer);
+// data/users only carries staffEmails/adminEmails projections. Cloud
+// Functions use Admin SDK so rules don't gate this read.
 async function callerRole(db, tenantId, request) {
   if (!request?.auth) return null;
   const email = await callerEmail(request);
@@ -146,8 +149,8 @@ async function callerRole(db, tenantId, request) {
   if (await isBootstrapAdmin(request)) return 'admin';
   const tenDoc = await db.doc(`tenants/${tenantId}`).get();
   if (tenDoc.exists && (tenDoc.data().ownerEmail || '').toLowerCase() === email) return 'admin';
-  const usersDoc = await db.doc(`tenants/${tenantId}/data/users`).get();
-  const users = (usersDoc.exists ? (usersDoc.data().users || []) : []);
+  const fullDoc = await db.doc(`tenants/${tenantId}/data/usersFull`).get();
+  const users = (fullDoc.exists ? (fullDoc.data().users || []) : []);
   const u = users.find(x => (x.email || '').toLowerCase() === email);
   return u?.role || null;
 }
@@ -2232,7 +2235,23 @@ exports.chatWithSalon = onCall(
     const apiKey = anthropicKey.value();
     if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
 
-    const { messages = [] } = request.data;
+    // Public, unauthenticated, anyone-can-call. Rate-limit by IP so a
+    // single attacker can't drain Anthropic credits in a tight loop.
+    // 60 calls/hr per IP is generous for normal multi-turn chat (a real
+    // visitor sends maybe 5-10 messages a session).
+    const ip = request.rawRequest?.ip || '';
+    if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 60)) {
+      throw new HttpsError('resource-exhausted', 'Too many chat messages. Try again later.');
+    }
+
+    const { tenantId: tid, messages = [] } = request.data || {};
+    // Tenant id validation — public surface, so reject malformed values.
+    // Falls back to TENANT_ID for legacy callers that don't pass tenantId yet.
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new HttpsError('invalid-argument', 'messages required');
     }
@@ -2240,16 +2259,27 @@ exports.chatWithSalon = onCall(
 
     const db = getFirestore();
 
-    // Load live salon context from Firestore
-    const [wfSnap, svcSnap, settingsSnap] = await Promise.all([
-      db.doc(`tenants/${TENANT_ID}/data/webfront`).get(),
-      db.collection(`tenants/${TENANT_ID}/services`).get(),
-      db.doc(`tenants/${TENANT_ID}/data/settings`).get(),
+    // Load live salon context from Firestore. Tenant doc carries the
+    // display name; webfront/services/settings carry the user-facing
+    // copy. All four reads are publicly readable per firestore.rules.
+    const [tDocSnap, wfSnap, svcSnap, settingsSnap] = await Promise.all([
+      db.doc(`tenants/${tenantId}`).get(),
+      db.doc(`tenants/${tenantId}/data/webfront`).get(),
+      db.collection(`tenants/${tenantId}/services`).get(),
+      db.doc(`tenants/${tenantId}/data/settings`).get(),
     ]);
 
+    if (!tDocSnap.exists && svcSnap.empty && !wfSnap.exists) {
+      throw new HttpsError('not-found', 'Salon not found');
+    }
+
+    const tData    = tDocSnap.exists ? tDocSnap.data() : {};
     const cfg      = wfSnap.exists      ? wfSnap.data()      : {};
     const settings = settingsSnap.exists ? settingsSnap.data() : {};
     const services = svcSnap.docs.map(d => d.data());
+
+    // Salon name precedence: webfront override -> tenant doc -> id
+    const salonName = cfg.salonName || tData.name || tenantId;
 
     const hours = cfg.hours || {};
     const hoursText = [
@@ -2280,21 +2310,24 @@ exports.chatWithSalon = onCall(
       return `  ${cat}:\n${lines}`;
     }).join('\n\n');
 
-    const bookingUrl = settings.bookingUrl || cfg.bookingUrl || 'https://meraki-salon-manager.web.app/?book';
+    const bookingUrl = settings.bookingUrl
+      || cfg.bookingUrl
+      || (tenantId === 'meraki' ? 'https://meraki-salon-manager.web.app/?book' : `https://${tenantId}.plumenexus.com/?book`);
     const phone      = cfg.phone || '';
-    const address    = cfg.address || '5029 Olentangy River Rd, Columbus, OH 43214';
-    const instagram  = cfg.instagram ? `@${cfg.instagram}` : '@meraki_cbus';
+    const address    = cfg.address || '';
+    const instagram  = cfg.instagram ? `@${cfg.instagram}` : '';
 
-    const systemPrompt = `You are a friendly, helpful assistant for Meraki Nail Studio, a nail salon in Columbus, Ohio.
+    const systemPrompt = `You are a friendly, helpful assistant for ${salonName}.
 
 Your role: answer questions about services, pricing, hours, booking, the team, and anything else a visitor might ask. Help them book an appointment or find what they need quickly.
 
-Keep responses warm, concise, and conversational — 1-3 short paragraphs max. Never make up services or prices that aren't listed below. If you don't know something specific, direct them to call or book online.
+Keep responses warm, concise, and conversational — 1-3 short paragraphs max. Never make up services, prices, or salon details that aren't listed below. If you don't know something specific, direct them to call or book online.
 
 ━━━ SALON INFO ━━━
-Address: ${address}
+Name: ${salonName}
+Address: ${address || 'See website for address'}
 Phone: ${phone || 'See website for contact info'}
-Instagram: ${instagram}
+${instagram ? `Instagram: ${instagram}` : ''}
 Book online: ${bookingUrl}
 
 ━━━ HOURS ━━━

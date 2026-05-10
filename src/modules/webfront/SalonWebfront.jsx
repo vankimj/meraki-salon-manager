@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchServices, fetchEmployees, fetchWebfrontConfig, fetchBookingConfig, fetchGoogleReviews } from '../../lib/firestore';
 import { getTheme, detectAutoTheme } from '../../lib/themes';
+import { TENANT_ID } from '../../lib/tenant';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../lib/firebase';
 
@@ -760,7 +761,7 @@ export function SalonChatbot({ tm }) {
     setInput('');
     setLoading(true);
     try {
-      const { data } = await chatFn({ messages: next.map(m => ({ role: m.role, content: m.content })) });
+      const { data } = await chatFn({ tenantId: TENANT_ID, messages: next.map(m => ({ role: m.role, content: m.content })) });
       setMessages(m => [...m, { role: 'assistant', content: data.reply }]);
     } catch {
       setMessages(m => [...m, { role: 'assistant', content: 'Sorry, I had trouble connecting. Please try again or give us a call!' }]);
