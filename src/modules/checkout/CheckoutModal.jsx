@@ -8,6 +8,7 @@ import { logActivity } from '../../lib/logger';
 import { applyTurnCredit } from '../../lib/turnCredit';
 import { useApp } from '../../context/AppContext';
 import { escapeHtml } from '../../utils/helpers';
+import { TENANT_ID } from '../../lib/tenant';
 import RebookPrompt from './RebookPrompt';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
@@ -266,6 +267,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     if (method === 'card' && charged > 0 && stripe && elements) {
       try {
         const res = await callFn('createPaymentIntent')({
+          tenantId: TENANT_ID,
           amountCents: Math.round(total * 100),
           description: combinedClientLabel,
         });

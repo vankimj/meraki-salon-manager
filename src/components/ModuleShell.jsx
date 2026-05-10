@@ -114,7 +114,14 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
           )}
         </nav>
       )}
-      <style>{`@media (max-width: 899px) { .ms-sidebar { display: none !important; } }`}</style>
+      <style>{`
+        @media (max-width: 899px) { .ms-sidebar { display: none !important; } }
+        @media (max-width: 600px) {
+          .ms-action-label { display: none; }
+          .ms-action-btn { padding: 0 12px !important; }
+          .ms-content { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
+        }
+      `}</style>
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: '100dvh', minWidth: 0 }}>
       {/* Top nav — taller on mobile for easier tapping. position:relative
@@ -158,9 +165,9 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
             </button>
           )}
           {isAdmin && (
-            <button onClick={onAdmin} title="Admin Settings"
+            <button onClick={onAdmin} title="Admin Settings" className="ms-action-btn"
               style={{ height: 40, borderRadius: 20, border: 'none', background: 'var(--tm-primary, #2D7A5F)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.25)' }}>
-              <IconSettings size={16} /> Admin
+              <IconSettings size={16} /> <span className="ms-action-label">Admin</span>
             </button>
           )}
           {realIsAdmin && !viewAs && (
@@ -174,9 +181,9 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
               <option value="readonly">👁 Read-only</option>
             </select>
           )}
-          <button onClick={() => setShowFeedback(true)} title="Report a bug or idea"
+          <button onClick={() => setShowFeedback(true)} title="Report a bug or idea" className="ms-action-btn"
             style={{ height: 40, borderRadius: 20, border: 'none', background: 'var(--tm-accent, #3D95CE)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
-            <IconMessage size={16} /> Feedback
+            <IconMessage size={16} /> <span className="ms-action-label">Feedback</span>
           </button>
           <TicketPanel />
           <NotificationsBell />
@@ -212,7 +219,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
           Offline — your changes are being saved locally and will sync when you reconnect.
         </div>
       )}
-      <div style={{
+      <div className="ms-content" style={{
         flex: 1,
         overflowY: view === 'schedule' ? 'hidden' : 'auto',
         overflowX: 'hidden',

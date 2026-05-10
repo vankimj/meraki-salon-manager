@@ -2364,7 +2364,11 @@ exports.chatWithReports = onCall(
     const apiKey = anthropicKey.value();
     if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
 
-    const { messages = [] } = request.data || {};
+    const { tenantId: tid, messages = [] } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new HttpsError('invalid-argument', 'messages required');
     }
@@ -2374,12 +2378,12 @@ exports.chatWithReports = onCall(
     // Mirrors the original code intent ("admin-only, read-only" comment) which
     // was missing the actual server-side check.
     const dbAuth = getFirestore();
-    await requireTenantAdmin(dbAuth, TENANT_ID, request);
+    await requireTenantAdmin(dbAuth, tenantId, request);
 
     const db = dbAuth;
-    const APPTS    = `tenants/${TENANT_ID}/appointments`;
-    const RECEIPTS = `tenants/${TENANT_ID}/receipts`;
-    const CLIENTS  = `tenants/${TENANT_ID}/clients`;
+    const APPTS    = `tenants/${tenantId}/appointments`;
+    const RECEIPTS = `tenants/${tenantId}/receipts`;
+    const CLIENTS  = `tenants/${tenantId}/clients`;
 
     // ── Tool implementations ────────────────────────────
     const DOW = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -2769,7 +2773,11 @@ exports.voiceCommand = onCall(
     const apiKey = anthropicKey.value();
     if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
 
-    const { transcript } = request.data || {};
+    const { tenantId: tid, transcript } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
     if (!transcript || typeof transcript !== 'string') {
       throw new HttpsError('invalid-argument', 'transcript required');
     }
@@ -2782,13 +2790,13 @@ exports.voiceCommand = onCall(
     // gate behind isTenantStaff. Enforce the same gate here since Admin SDK
     // bypasses rules. Also derive role from the tenant's users doc — DO NOT
     // trust a caller-supplied role, which only goes into the AI system prompt.
-    await requireTenantStaff(db, TENANT_ID, request);
-    const role = (await callerRole(db, TENANT_ID, request)) || 'tech';
+    await requireTenantStaff(db, tenantId, request);
+    const role = (await callerRole(db, tenantId, request)) || 'tech';
 
-    const APPTS    = `tenants/${TENANT_ID}/appointments`;
-    const CLIENTS  = `tenants/${TENANT_ID}/clients`;
-    const EMPS     = `tenants/${TENANT_ID}/employees`;
-    const SVCS     = `tenants/${TENANT_ID}/services`;
+    const APPTS    = `tenants/${tenantId}/appointments`;
+    const CLIENTS  = `tenants/${tenantId}/clients`;
+    const EMPS     = `tenants/${tenantId}/employees`;
+    const SVCS     = `tenants/${tenantId}/services`;
 
     const todayISO = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
     const fmtTime = (m) => {
@@ -3078,20 +3086,27 @@ exports.draftConflictMessages = onCall(
     // reschedule/cancel links). Without this gate, any authed user could
     // call it with arbitrary apptIds (enumerable elsewhere) and chain into
     // mass-cancel via `manageAppointment`.
-    await requireTenantStaff(getFirestore(), TENANT_ID, request);
-    const apiKey = anthropicKey.value();
-    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
-
     const {
+      tenantId: tid,
       technicianName,
       reason,
       startDate,
       endDate,
       affected = [],
-      salonName = 'Meraki Nail Studio',
+      salonName: salonNameRaw,
       salonPhone,
-      bookingUrl = 'https://meraki-salon-manager.web.app/?book',
+      bookingUrl: bookingUrlRaw,
     } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    await requireTenantStaff(getFirestore(), tenantId, request);
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+
+    const salonName  = salonNameRaw  || 'your salon';
+    const bookingUrl = bookingUrlRaw || (tenantId === 'meraki' ? 'https://meraki-salon-manager.web.app/?book' : `https://${tenantId}.plumenexus.com/?book`);
 
     if (!technicianName || !Array.isArray(affected) || affected.length === 0) {
       throw new HttpsError('invalid-argument', 'technicianName and affected[] required');
@@ -3121,7 +3136,7 @@ exports.draftConflictMessages = onCall(
     // without calling the salon. Drops into both SMS and email drafts.
     const manageLinks = {};
     affected.forEach(a => {
-      const link = apptManageUrl(TENANT_ID, a.id);
+      const link = apptManageUrl(tenantId, a.id);
       if (link) manageLinks[a.id] = link;
     });
 
@@ -3402,19 +3417,28 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   // OUR publishable key + the returned clientSecret, scams victims into
   // paying us, then disputes / disappears — with the salon's brand on the
   // Stripe Element).
-  await requireTenantStaff(getFirestore(), TENANT_ID, request);
+  const { tenantId: tid, amountCents, description } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  }
+  await requireTenantStaff(getFirestore(), tenantId, request);
 
-  const { amountCents, description } = request.data || {};
   if (!amountCents || amountCents < 50) throw new HttpsError('invalid-argument', 'Amount must be at least $0.50');
 
   const key = stripeKey.value();
   if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
 
+  // Resolve a brand label for Stripe's payment intent description. Falls
+  // through to the tenant id if no name is set on the doc.
+  const tenSnap = await getFirestore().doc(`tenants/${tenantId}`).get();
+  const salonName = (tenSnap.exists ? tenSnap.data().name : null) || tenantId;
+
   const stripe = require('stripe')(key);
   const paymentIntent = await stripe.paymentIntents.create({
     amount:   Math.round(amountCents),
     currency: 'usd',
-    description: description || 'Meraki Nail Studio',
+    description: description || salonName,
     automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
   });
 

@@ -34,6 +34,19 @@ export default defineConfig({
     stderr: 'pipe',
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+      testIgnore: ['**/mobile.spec.js'],
+    },
+    // Mobile project — most techs use the app on a phone, so we exercise
+    // the public surfaces under an iPhone viewport too. Keeps regressions
+    // like horizontal-overflow modals and tiny tap targets out of prod.
+    // Mobile-only specs live under e2e/mobile.spec.js; the smoke suite
+    // also runs here to verify nothing breaks at narrow widths.
+    {
+      name: 'mobile-iphone',
+      use: { ...devices['iPhone 14'] },
+    },
   ],
 });

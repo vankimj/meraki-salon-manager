@@ -4,6 +4,7 @@ import { useApp } from '../../context/AppContext';
 import { generate1099NecPdf } from '../../lib/pdf1099';
 import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations } from './metrics';
 import CoachMark from '../../components/CoachMark';
+import { TENANT_ID } from '../../lib/tenant';
 
 
 function startOf(daysAgo) {
@@ -2515,7 +2516,7 @@ function AskAI() {
       const { httpsCallable } = await import('firebase/functions');
       const { functions } = await import('../../lib/firebase');
       const fn = httpsCallable(functions, 'chatWithReports');
-      const res = await fn({ messages: next });
+      const res = await fn({ tenantId: TENANT_ID, messages: next });
       const reply = res?.data?.reply || '(no answer)';
       setMessages([...next, { role: 'assistant', content: reply }]);
     } catch (e) {

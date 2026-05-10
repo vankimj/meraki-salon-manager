@@ -6,6 +6,7 @@ import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
 import { notifyAffectedTechs } from '../../lib/notifications';
+import { TENANT_ID } from '../../lib/tenant';
 import { resizeImg } from '../../utils/helpers';
 import VoiceAssistant from '../voice/VoiceAssistant';
 import NotesEditor from '../../components/NotesEditor';
@@ -259,6 +260,15 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   const [seriesConflict,   setSeriesConflict]   = useState(null);
   // Series edit prompt — { appt, original }; user picks scope (this / following / all)
   const [seriesEdit,       setSeriesEdit]       = useState(null);
+  // Track viewport width so the day grid can fit a tech's own column
+  // cleanly on a phone (techs are the primary mobile audience). 0 means
+  // "unknown / desktop" so the default widths stand.
+  const [viewportW,        setViewportW]        = useState(typeof window !== 'undefined' ? window.innerWidth : 0);
+  useEffect(() => {
+    const onResize = () => setViewportW(window.innerWidth);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const load = useCallback(async () => {
     // Kept for places that still trigger an explicit reload (e.g. modal save error paths).
@@ -644,8 +654,14 @@ function openNew(techName, slotMins) {
 
   const personalView   = isTech && !showAll;
   // Focused (single-tech zoom) mode gets a wide column so overlapping
-  // appointments split into readable lanes even at 4–5 deep.
-  const techColWidth   = focusedTech ? 720 : displayTechs.length === 1 ? 360 : displayTechs.length <= 3 ? 180 : 120;
+  // appointments split into readable lanes even at 4–5 deep. On a phone
+  // (≤480px) the single-tech view shrinks to fit the viewport so a tech
+  // can read their own day with no horizontal scroll. TIME_COL is 54.
+  const phoneW         = viewportW > 0 && viewportW <= 480 ? viewportW - 60 : null;
+  const techColWidth   = focusedTech
+    ? (phoneW || 720)
+    : displayTechs.length === 1 ? (phoneW || 360)
+    : displayTechs.length <= 3 ? 180 : 120;
 
   // Today's summary (personal view only)
   const myAppts = personalView && date === todayStr()
@@ -3764,6 +3780,7 @@ function ConflictMessagesPanel({ affected, draftEntry, reassignmentsByApptId, on
         const { functions } = await import('../../lib/firebase');
         const fn = httpsCallable(functions, 'draftConflictMessages');
         const res = await fn({
+          tenantId:       TENANT_ID,
           technicianName: draftEntry.techName,
           reason:         draftEntry.type,
           startDate:      draftEntry.startDate,

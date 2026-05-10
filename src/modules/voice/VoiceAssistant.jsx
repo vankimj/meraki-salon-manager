@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { createAppointment, saveAppointment, fetchClient } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
+import { TENANT_ID } from '../../lib/tenant';
 
 // Web Speech API wrapper. Returns null if unsupported (Firefox, etc.).
 function getSpeechRecognition() {
@@ -101,7 +102,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
       const { httpsCallable } = await import('firebase/functions');
       const { functions } = await import('../../lib/firebase');
       const fn = httpsCallable(functions, 'voiceCommand');
-      const res = await fn({ transcript: text, role });
+      const res = await fn({ tenantId: TENANT_ID, transcript: text, role });
       const out = res?.data || {};
       // Tech-role gating on the client too (defense in depth)
       if (!canActOnAppts && (out.actionType === 'book' || out.actionType === 'reschedule' || out.actionType === 'cancel')) {
