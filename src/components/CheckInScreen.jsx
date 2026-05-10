@@ -67,7 +67,7 @@ export default function CheckInScreen({ apptId }) {
   async function handleCheckIn() {
     setWorking(true);
     try {
-      await markCheckedIn(apptId, appt);
+      await markCheckedIn(apptId);
       setDone(true);
     } catch {
       setError('Check-in failed. Please try again.');
@@ -116,7 +116,7 @@ export default function CheckInScreen({ apptId }) {
                   We've let {appt.techName} know you're here. Please have a seat and we'll be right with you!
                 </div>
                 <div style={{ background: '#f0fdf4', borderRadius: 12, padding: '12px 16px', border: '1px solid #bbf7d0', textAlign: 'left' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#166534' }}>{appt.clientName || 'Guest'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#166534' }}>{appt.clientFirstName || 'Guest'}</div>
                   <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{fmtDate(appt.date)} at {fmtTime(appt.startTime)}</div>
                   <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>with {appt.techName}</div>
                 </div>
@@ -124,7 +124,7 @@ export default function CheckInScreen({ apptId }) {
             ) : (
               <>
                 <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>
-                  Welcome{appt.clientName ? `, ${appt.clientName.split(' ')[0]}` : ''}!
+                  Welcome{appt.clientFirstName ? `, ${appt.clientFirstName}` : ''}!
                 </div>
                 <div style={{ fontSize: 13, color: '#888', marginBottom: 16, lineHeight: 1.5 }}>
                   Confirm your appointment details and tap Check In below.

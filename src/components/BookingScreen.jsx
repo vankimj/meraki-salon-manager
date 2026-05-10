@@ -197,8 +197,13 @@ export default function BookingScreen() {
   // Lazy-fetch + cache appointments per date for any cart item that needs them.
   async function ensureApptsForDate(d) {
     if (!d || apptsByDate[d]) return;
+    // Public booking page goes through the Cloud Function callable —
+    // direct Firestore reads on the appointments collection are gated
+    // to tenant staff (the doc holds full client PII). The callable
+    // returns a minimal busy-slot slice with no client info.
     try {
-      const list = await fetchAppointments(d);
+      const res  = await callFn('getPublicAvailability')({ tenantId: TENANT_ID, dateStart: d, dateEnd: d });
+      const list = res?.data?.appts || [];
       setApptsByDate(prev => ({ ...prev, [d]: list }));
     } catch {
       setApptsByDate(prev => ({ ...prev, [d]: [] }));
@@ -282,7 +287,9 @@ export default function BookingScreen() {
         let weekAppts = [];
         if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
           const wk = startOfWeek(cartDate);
-          weekAppts = await fetchAppointmentsByRange(wk, endOfWeek(wk)).catch(() => []);
+          // Public surface — same callable as the date-fetch above.
+          weekAppts = await callFn('getPublicAvailability')({ tenantId: TENANT_ID, dateStart: wk, dateEnd: endOfWeek(wk) })
+            .then(r => r?.data?.appts || []).catch(() => []);
         }
         let turnRoster = null;
         const today = dateStr(todayDate());

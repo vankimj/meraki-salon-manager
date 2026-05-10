@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchEmployees, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
+import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
 import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
 import { useApp } from '../../context/AppContext';
@@ -58,7 +58,11 @@ export default function EmployeesAdmin() {
   async function load() {
     setLoading(true);
     try {
-      const [emps, svcs] = await Promise.all([fetchEmployees(), fetchServices()]);
+      // Admin view needs comp data merged in; fetchEmployeesWithComp pulls
+      // the private/comp sub-doc per employee and merges. Non-admin staff
+      // who somehow reach this page would silently get the public-only
+      // shape (sub-doc reads fail closed under the rule).
+      const [emps, svcs] = await Promise.all([fetchEmployeesWithComp(), fetchServices()]);
       setEmployees(emps);
       setServices(svcs.filter(s => s.active !== false));
     }
@@ -136,7 +140,7 @@ export default function EmployeesAdmin() {
     setSeeding(true);
     setEditing(null);  // close any open edit modal so it re-opens with fresh data
     try {
-      const fresh = await fetchEmployees();
+      const fresh = await fetchEmployeesWithComp();
       let patched = 0;
       let fieldsFilled = 0;
       for (let i = 0; i < fresh.length; i++) {

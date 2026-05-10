@@ -24,6 +24,11 @@ export function AppProvider({ children }) {
   const [def,      setDef]      = useState(0);
   const [cur,      setCur]      = useState(0);
   const [users,    setUsers]    = useState([]);
+  // Slim projection map (email → { role, techName? }) read from
+  // data/users.byEmail. Lets non-admin staff find their OWN role
+  // without reading the rich users[] array (which now lives in
+  // data/usersFull, admin-only).
+  const [byEmail,  setByEmail]  = useState({});
   const [settings, setSettings] = useState({ timeoutMin: 5 });
   const [gUser,           setGUser]           = useState(null);
   const [syncState,       setSyncState]       = useState('idle');
@@ -185,6 +190,7 @@ export function AppProvider({ children }) {
           setSlides(DEFAULTS.slides);
         }
         setUsers(data.users);
+        setByEmail(data.byEmail || {});
         setSettings(s => ({ ...s, ...data.settings }));
         setSyncDot('ok');
       } catch (e) {
@@ -219,8 +225,19 @@ export function AppProvider({ children }) {
       currentUsers = loadedData.users;
       currentTimeoutMin = loadedData.settings?.timeoutMin || currentTimeoutMin;
       setUsers(currentUsers);
+      setByEmail(loadedData.byEmail || {});
       setSettings(s => ({ ...s, ...loadedData.settings }));
     } catch (_) {}
+
+    // For non-admin staff (techs/scheduler/readonly), data/usersFull is
+    // rules-blocked, so currentUsers comes back empty. Synthesize a
+    // 1-element stub from the byEmail projection so the access checks
+    // below + the downstream `_rec` lookup find the right record.
+    if ((!currentUsers || !currentUsers.length) && loadedData?.byEmail) {
+      const emailLower = (user.email || '').toLowerCase();
+      const slim = loadedData.byEmail[emailLower];
+      if (slim) currentUsers = [{ email: user.email, ...slim }];
+    }
 
     if (ALLOWED_EMAILS.includes(user.email)) {
       let rec = currentUsers.find(u => u.email === user.email);
@@ -533,7 +550,16 @@ export function AppProvider({ children }) {
     return getTheme(settings?.themeId);
   }, [settings?.themeId, settings?.autoTheme]);
 
-  const _rec        = gUser ? users.find(u => u.email === gUser.email) : null;
+  // Self-record lookup. Admin reads users[] (rich) from data/usersFull;
+  // non-admin only has the byEmail projection — fall back to that so
+  // role/techName checks below still resolve correctly.
+  const _rec = gUser
+    ? (users.find(u => u.email === gUser.email)
+        || (() => {
+          const slim = byEmail[(gUser.email || '').toLowerCase()];
+          return slim ? { email: gUser.email, ...slim } : null;
+        })())
+    : null;
   const realIsAdmin = _rec?.role === 'admin';
   const isAdmin     = viewAs ? false : realIsAdmin;
   const isReadOnly  = viewAs ? viewAs.role === 'readonly' : ['admin', 'readonly'].includes(_rec?.role);

@@ -1,4 +1,4 @@
-const { onDocumentCreated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { onSchedule }       = require('firebase-functions/v2/scheduler');
 const { onCall, onRequest, HttpsError }= require('firebase-functions/v2/https');
 const { initializeApp }    = require('firebase-admin/app');
@@ -18,7 +18,18 @@ const resendKey       = defineString('RESEND_API_KEY',      { default: '' });
 const resendFrom      = defineString('RESEND_FROM',         { default: 'Meraki Nail Studio <noreply@merakinailstudio.com>' });
 const mapsApiKey      = defineString('GOOGLE_MAPS_API_KEY', { default: '' });
 const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://meraki-salon-manager.web.app' });
-const unsubscribeSecret = defineString('UNSUBSCRIBE_SECRET', { default: 'change-me-in-prod-env' });
+// HMAC signing keys for two distinct token types. Split into separate
+// secrets (per security audit) so a leak of one only compromises one
+// token surface — and so each can be rotated on its own cadence.
+//   UNSUBSCRIBE_SECRET  — low-stakes; signs CAN-SPAM unsubscribe links
+//   APPT_MANAGE_SECRET  — high-stakes; signs reschedule/cancel links that
+//                          let the holder mutate any appointment by id
+// Both are `defineSecret` (not `defineString`) so deploys hard-fail
+// without a real value, and the values live in Cloud Secret Manager
+// rather than function config (no plaintext echo in `firebase
+// functions:config:get`, no exposure to anyone with raw config read).
+const unsubscribeSecret = defineSecret('UNSUBSCRIBE_SECRET');
+const apptManageSecret  = defineSecret('APPT_MANAGE_SECRET');
 const stripeKey       = defineSecret('STRIPE_SECRET_KEY');
 const anthropicKey    = defineSecret('ANTHROPIC_API_KEY');
 
@@ -42,13 +53,14 @@ function unsubUrl(tenantId, clientId) {
 }
 
 // Per-appointment HMAC token for client-facing "manage my appointment" links.
-// Same threat model as unsubscribe: not security-critical (the worst case is
-// a guessed token cancels a single appointment, which the client can re-
-// confirm with the salon). Lets us include reschedule/cancel links in emails
-// + SMS without the client needing to log in.
+// Higher stakes than unsubscribe — token-holder can reschedule/cancel any
+// named appointment without logging in. Signed with a dedicated secret
+// (APPT_MANAGE_SECRET) so its blast radius is contained: a leak of the
+// unsub key doesn't enable mass-cancel, and rotating one doesn't invalidate
+// the other's outstanding tokens.
 function apptManageToken(tenantId, apptId) {
   const crypto = require('crypto');
-  return crypto.createHmac('sha256', unsubscribeSecret.value())
+  return crypto.createHmac('sha256', apptManageSecret.value())
     .update(`appt:${tenantId}:${apptId}`)
     .digest('hex')
     .slice(0, 16);
@@ -542,7 +554,7 @@ async function processEmailCampaign(tenantId, docRef, data) {
 }
 
 exports.sendMarketingCampaign = onDocumentCreated(
-  { document: `tenants/${TENANT_ID}/campaigns/{campaignId}`, timeoutSeconds: 540 },
+  { document: `tenants/${TENANT_ID}/campaigns/{campaignId}`, timeoutSeconds: 540, secrets: [unsubscribeSecret] },
   async (event) => {
     const snap = event.data;
     if (!snap) return;
@@ -560,7 +572,7 @@ exports.sendMarketingCampaign = onDocumentCreated(
 // /?unsub=1&tid=&cid=&t= public page that the email's unsubscribe link
 // points at. Token-based — no auth required (CAN-SPAM forbids requiring
 // auth or info beyond email to unsubscribe).
-exports.processUnsubscribe = onCall({ cors: true }, async (request) => {
+exports.processUnsubscribe = onCall({ cors: true, secrets: [unsubscribeSecret] }, async (request) => {
   const { tid, cid, token } = request.data || {};
   if (!tid || !cid || !token) throw new HttpsError('invalid-argument', 'Missing parameters');
   const expected = unsubToken(tid, cid);
@@ -707,6 +719,90 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
 });
 
 // Send a branded "you've been invited to your salon's Plume Nexus account"
+// Public callable for the booking page slot picker. Returns the busy
+// time-slots in a date range as a minimal slice — date, startTime,
+// duration, techId, techName, status — with NO PII. The booking page
+// previously did `getDocs(collection(... appointments))` directly,
+// which exposed every client's name/phone/email/notes via a public
+// rule (`appointments` had `read: if true`). After tightening the
+// rule to staff-only, the public page calls this instead.
+exports.getPublicAvailability = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 240)) {
+    throw new HttpsError('resource-exhausted', 'Too many availability checks. Try again in a few minutes.');
+  }
+  const { tenantId: tid, dateStart, dateEnd } = request.data || {};
+  const tenantId = String(tid || TENANT_ID);
+  if (!dateStart || !dateEnd) throw new HttpsError('invalid-argument', 'dateStart and dateEnd are required (YYYY-MM-DD).');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStart) || !/^\d{4}-\d{2}-\d{2}$/.test(dateEnd)) {
+    throw new HttpsError('invalid-argument', 'Dates must be YYYY-MM-DD.');
+  }
+  // Cap the window so this can't be used to enumerate large slices.
+  // 90 days covers any realistic public booking horizon.
+  const startDt = new Date(dateStart + 'T00:00:00Z');
+  const endDt   = new Date(dateEnd   + 'T00:00:00Z');
+  if ((endDt - startDt) / (1000 * 60 * 60 * 24) > 90) {
+    throw new HttpsError('invalid-argument', 'Date range too large (max 90 days).');
+  }
+  const db = getFirestore();
+  const snap = await db.collection(`tenants/${tenantId}/appointments`)
+    .where('date', '>=', dateStart)
+    .where('date', '<=', dateEnd)
+    .get();
+  // STRICT minimum slice — no clientName/Phone/Email, no notes, no
+  // services-array (services have prices and ids that aren't necessary
+  // for availability checks). Cancelled appts skipped client-side too,
+  // but we include status so the picker can reason about no-shows etc.
+  const appts = snap.docs.map(d => {
+    const a = d.data();
+    return {
+      id:        d.id,
+      date:      a.date || '',
+      startTime: a.startTime || '',
+      duration:  Number(a.duration) || 0,
+      techId:    a.techId || '',
+      techName:  a.techName || '',
+      status:    a.status || 'scheduled',
+    };
+  });
+  return { appts };
+});
+
+// Public callable for the check-in flow (a client clicks the link in
+// their booking confirmation email). Returns the minimal display info
+// for the check-in screen — date, time, tech name, services (just name
+// + duration), client first name (so they can confirm it's their appt
+// without leaking other clients' identities). Does NOT return phone,
+// email, full client name, notes, or anything else not needed for the
+// "is this you?" confirm screen.
+exports.getPublicAppointment = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 60)) {
+    throw new HttpsError('resource-exhausted', 'Too many lookups. Try again later.');
+  }
+  const { tenantId: tid, apptId } = request.data || {};
+  const tenantId = String(tid || TENANT_ID);
+  if (!apptId) throw new HttpsError('invalid-argument', 'apptId is required.');
+  const db = getFirestore();
+  const snap = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Appointment not found.');
+  const a = snap.data();
+  return {
+    id:        snap.id,
+    date:      a.date || '',
+    startTime: a.startTime || '',
+    duration:  Number(a.duration) || 0,
+    techName:  a.techName || '',
+    services:  (a.services || []).map(s => ({
+      name:     s.name || s.customName || '',
+      duration: Number(s.duration) || 0,
+    })),
+    clientFirstName: ((a.clientName || '').trim().split(/\s+/)[0] || ''),
+    status:          a.status || 'scheduled',
+    checkedInAt:     a.checkedInAt || null,
+  };
+});
+
 // email to a newly-added employee. Owner clicks "Send invite" in
 // EmployeesAdmin and we email a Google sign-in link (tenant subdomain) so
 // the tech can join with one click. Admin gate; uses the owner's verified
@@ -762,7 +858,7 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 // Returns the signed manage-appointment URL for staff. Same URL the booking
 // confirmation + reminder emails contain, so staff can resend it directly
 // from the appt edit modal when a client says "I lost the email".
-exports.getApptManageLink = onCall({ cors: true }, async (request) => {
+exports.getApptManageLink = onCall({ cors: true, secrets: [apptManageSecret] }, async (request) => {
   const { apptId, tenantId: tid } = request.data || {};
   const tenantId = tid || TENANT_ID;
   if (!apptId) throw new HttpsError('invalid-argument', 'apptId required');
@@ -792,7 +888,7 @@ exports.getApptManageLink = onCall({ cors: true }, async (request) => {
 // settings.bookingConfig.cancellationLeadHours of the start time
 // (defaults to 24 hours). Frontend reads the policy via 'get' to show
 // the right UX.
-exports.manageAppointment = onCall({ cors: true }, async (request) => {
+exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, async (request) => {
   const { tid, apptId, token, action, payload = {} } = request.data || {};
   if (!tid || !apptId || !token || !action) {
     throw new HttpsError('invalid-argument', 'Missing parameters');
@@ -1071,12 +1167,15 @@ exports.sendAccessRequestNotification = onDocumentCreated(
     const apiKey = resendKey.value();
     if (!apiKey) return;
 
-    // Find all admin emails from the users data doc
+    // Find admin emails — read the projection (data/users.adminEmails[])
+    // not the rich users[] array (now in data/usersFull, admin-only).
+    // Notification email content doesn't need names; the email IS the
+    // identifier. If we ever need the display name, look it up from
+    // data/usersFull explicitly here.
     const usersSnap = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
-    const usersData  = usersSnap.exists ? usersSnap.data() : {};
-    const admins     = (usersData.users || []).filter(u => u.role === 'admin' && u.email);
-
-    if (!admins.length) return;
+    const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
+    if (!adminEmails.length) return;
+    const admins = adminEmails.map(email => ({ email }));
 
     const resend = new Resend(apiKey);
     const name   = req.name || req.email;
@@ -1121,8 +1220,34 @@ exports.sendAccessRequestNotification = onDocumentCreated(
   }
 );
 
+// Fires when a public client check-in writes `checkedInAt` to an
+// appointment doc. We create the staff-facing notification server-side
+// so the public CheckInScreen doesn't need access to PII (clientName,
+// etc.) — it only sees the minimal slice from `getPublicAppointment`.
+exports.notifyOnCheckIn = onDocumentUpdated(
+  `tenants/${TENANT_ID}/appointments/{apptId}`,
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after  = event.data?.after?.data()  || {};
+    if (before.checkedInAt || !after.checkedInAt) return; // not a fresh check-in
+    const apptId = event.params?.apptId;
+    const db = getFirestore();
+    await db.collection(`tenants/${TENANT_ID}/notifications`).add({
+      apptId,
+      techName:    after.techName || '',
+      clientName:  after.clientName || 'A client',
+      date:        after.date || '',
+      startTime:   after.startTime || '',
+      changeType:  'client_checkin',
+      message:     `${after.clientName || 'Your client'} has arrived and checked in! 📍`,
+      createdAt:   new Date().toISOString(),
+      sent:        false,
+    });
+  }
+);
+
 exports.sendApptNotification = onDocumentCreated(
-  `tenants/${TENANT_ID}/notifications/{notifId}`,
+  { document: `tenants/${TENANT_ID}/notifications/{notifId}`, secrets: [apptManageSecret] },
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
@@ -1586,7 +1711,7 @@ exports.sendTechAppointmentReminders = onSchedule(
 );
 
 exports.sendBookingConfirmation = onDocumentCreated(
-  `tenants/${TENANT_ID}/appointments/{apptId}`,
+  { document: `tenants/${TENANT_ID}/appointments/{apptId}`, secrets: [apptManageSecret] },
   async (event) => {
     const db   = getFirestore();
     const snap = event.data;
@@ -1663,10 +1788,12 @@ exports.sendBookingConfirmation = onDocumentCreated(
       }
     }
 
-    // Notify admins
+    // Notify admins — projection only (rich users[] now lives in
+    // data/usersFull, admin-only).
     try {
-      const usersSnap = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
-      const admins    = ((usersSnap.exists ? usersSnap.data().users : []) || []).filter(u => u.role === 'admin' && u.email);
+      const usersSnap   = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+      const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
+      const admins      = adminEmails.map(email => ({ email }));
       if (admins.length) {
         const adminHtml = `<!DOCTYPE html>
 <html>
@@ -1797,8 +1924,10 @@ exports.sendChatNotification = onDocumentCreated(
     const apiKey = resendKey.value();
     if (!apiKey) return;
 
-    const usersSnap = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
-    const admins    = ((usersSnap.exists ? usersSnap.data().users : []) || []).filter(u => u.role === 'admin' && u.email);
+    // Read adminEmails projection (rich users[] is admin-only at data/usersFull).
+    const usersSnap   = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+    const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
+    const admins      = adminEmails.map(email => ({ email }));
     if (!admins.length) return;
 
     const resend    = new Resend(apiKey);
@@ -1849,8 +1978,10 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
 
     const stars = '★'.repeat(data.rating || 5) + '☆'.repeat(5 - (data.rating || 5));
 
-    const usersSnap = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
-    const admins    = ((usersSnap.exists ? usersSnap.data().users : []) || []).filter(u => u.role === 'admin' && u.email);
+    // Projection only — rich users[] is admin-only at data/usersFull.
+    const usersSnap   = await db.doc(`tenants/${TENANT_ID}/data/users`).get();
+    const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
+    const admins      = adminEmails.map(email => ({ email }));
 
     const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
@@ -2764,7 +2895,7 @@ You MUST call finalizeAction exactly once at the end.`;
 // edits, then sends via existing sendDirectSms / sendDirectEmail.
 // Hard read-only: function never sends — frontend does, after user confirms.
 exports.draftConflictMessages = onCall(
-  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  { secrets: [anthropicKey, apptManageSecret], cors: true, timeoutSeconds: 60 },
   async (request) => {
     // Staff-only — function returns per-appt manage URLs (HMAC-signed
     // reschedule/cancel links). Without this gate, any authed user could
@@ -2945,7 +3076,7 @@ function buildAutoEmail(headerSub, firstName, bodyHtml, ctaText, ctaUrl) {
 // Runs daily at 10am Eastern. Sends birthday email to clients whose birthday is today.
 // Deduplicates via automationSent collection (one per client per year).
 exports.autoBirthdayCampaign = onSchedule(
-  { schedule: 'every day 10:00', timeZone: 'America/New_York' },
+  { schedule: 'every day 10:00', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
     const db     = getFirestore();
     const apiKey = resendKey.value();
@@ -3007,7 +3138,7 @@ exports.autoBirthdayCampaign = onSchedule(
 // haven't visited in N days. Deduplicates: won't re-email the same client until
 // another full lapse window has passed.
 exports.autoLapsedCampaign = onSchedule(
-  { schedule: 'every monday 11:00', timeZone: 'America/New_York' },
+  { schedule: 'every monday 11:00', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
     const db     = getFirestore();
     const apiKey = resendKey.value();
@@ -3179,10 +3310,17 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
     db.doc(`tenants/${tenantId}`).set({ name: salonName, ownerName: ownerName || '', ownerEmail, plan: planVal, active: true, createdAt: now }),
     db.doc(`tenants/${tenantId}/data/settings`).set({ timeoutMin: 5, createdAt: now }),
     db.doc(`tenants/${tenantId}/data/slides`).set({ slides: [], def: 0, cur: 0 }),
+    // Slim projection — staff readable. Holds membership lists +
+    // self-lookup map. The rich users[] array now lives in data/usersFull
+    // (admin-only), see the next write below.
     db.doc(`tenants/${tenantId}/data/users`).set({
-      users: [{ email: ownerEmail, role: 'admin', uid: '', addedAt: now }],
       staffEmails: [ownerEmailLower],
       adminEmails: [ownerEmailLower],
+      byEmail:     { [ownerEmailLower]: { role: 'admin' } },
+    }),
+    // Rich users array — admin-only.
+    db.doc(`tenants/${tenantId}/data/usersFull`).set({
+      users: [{ email: ownerEmail, role: 'admin', uid: '', addedAt: now }],
     }),
   ]);
 
@@ -3442,7 +3580,7 @@ exports.sendSMSCampaign = onDocumentCreated(
 // them. Idempotent: each one is flipped to 'sending' (atomically via a
 // status check) before processing so a duplicate sweep can't double-send.
 exports.runScheduledCampaigns = onSchedule(
-  { schedule: 'every 1 minutes', timeoutSeconds: 540 },
+  { schedule: 'every 1 minutes', timeoutSeconds: 540, secrets: [unsubscribeSecret] },
   async () => {
     const db = getFirestore();
     const tenantsSnap = await db.collection('tenants').get();
@@ -3922,18 +4060,63 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
 
 // ── Gusto Integration ─────────────────────────────────────────────────────────
 exports.gustoGetAuthUrl = onCall({ cors: true }, async (request) => {
-  await requireTenantAdmin(getFirestore(), TENANT_ID, request);
+  const db = getFirestore();
+  await requireTenantAdmin(db, TENANT_ID, request);
   const clientId    = gustoClientId.value();
   const redirectUri = gustoRedirectUri.value();
   if (!clientId) throw new HttpsError('unavailable', 'Gusto not configured');
-  const state = request.auth.uid;
-  const url   = `https://api.gusto.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${state}`;
+
+  // Mint a fresh single-use OAuth state nonce. We persist it server-side
+  // with a 10-minute TTL and the callback validates + deletes it before
+  // accepting the token exchange. Without this, an attacker who controls
+  // a Gusto company could initiate the OAuth flow under their credentials
+  // and our callback would happily overwrite the salon's stored
+  // accessToken/companyId — silently rerouting payroll to the attacker.
+  const nonce = require('crypto').randomBytes(16).toString('hex');
+  await db.doc(`_oauthNonces/${nonce}`).set({
+    provider:  'gusto',
+    tenantId:  TENANT_ID,
+    uid:       request.auth.uid,
+    email:     (request.auth.token.email || '').toLowerCase(),
+    createdAt: new Date().toISOString(),
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  });
+  const url = `https://api.gusto.com/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&state=${nonce}`;
   return { url };
 });
 
 exports.gustoOAuthCallback = onRequest({ cors: true }, async (req, res) => {
-  const { code, state: uid } = req.query;
+  const { code, state } = req.query;
   if (!code) { res.status(400).send('Missing code'); return; }
+  // State must be the nonce we minted in `gustoGetAuthUrl` — exactly 32
+  // hex chars. Validate format first to short-circuit obvious garbage.
+  if (!state || typeof state !== 'string' || !/^[a-f0-9]{32}$/.test(state)) {
+    res.status(400).send('Invalid OAuth state. Please retry the connection.');
+    return;
+  }
+
+  const db = getFirestore();
+  const nonceRef = db.doc(`_oauthNonces/${state}`);
+  const nonceSnap = await nonceRef.get();
+  if (!nonceSnap.exists) {
+    res.status(400).send('OAuth state expired or already used. Please retry the connection from the HR settings.');
+    return;
+  }
+  const nonce = nonceSnap.data();
+  if (nonce.provider !== 'gusto') {
+    await nonceRef.delete().catch(() => {});
+    res.status(400).send('OAuth state mismatch. Please retry the connection.');
+    return;
+  }
+  if (Number(nonce.expiresAt) < Date.now()) {
+    await nonceRef.delete().catch(() => {});
+    res.status(400).send('OAuth state expired (links are valid for 10 minutes). Please retry the connection.');
+    return;
+  }
+  // Single-use: delete BEFORE the token exchange so a slow / failed
+  // exchange can't be replayed with the same state.
+  await nonceRef.delete();
+  const tenantId = nonce.tenantId || TENANT_ID;
 
   const clientId     = gustoClientId.value();
   const clientSecret = gustoClientSecret.value();
@@ -3955,13 +4138,12 @@ exports.gustoOAuthCallback = onRequest({ cors: true }, async (req, res) => {
     const me = await meRes.json();
     const company = me.roles?.payroll_admin?.companies?.[0];
 
-    const db = getFirestore();
     // Sensitive credentials live in the admin-only `settingsPrivate` doc
     // — `data/settings` is staff-readable (so non-admin tech roles can
     // open the JS console and dump it). Public-facing connection metadata
     // (companyName, connectedAt) stays on `data/settings` so the HR tab
     // can show "Connected · Acme Salon" without hitting the private doc.
-    await db.doc(`tenants/${TENANT_ID}/data/settingsPrivate`).set({
+    await db.doc(`tenants/${tenantId}/data/settingsPrivate`).set({
       gusto: {
         accessToken:  tokens.access_token,
         refreshToken: tokens.refresh_token,
@@ -3969,7 +4151,7 @@ exports.gustoOAuthCallback = onRequest({ cors: true }, async (req, res) => {
         connectedAt:  new Date().toISOString(),
       },
     }, { merge: true });
-    await db.doc(`tenants/${TENANT_ID}/data/settings`).set({
+    await db.doc(`tenants/${tenantId}/data/settings`).set({
       gusto: {
         // Indicator only; never the access token.
         connected:    true,
@@ -5095,7 +5277,9 @@ exports.getTenantMetadata = onCall(
       createdAt:        registry.createdAt        || null,
       legacyPlan:       registry.legacyPlan       || null,
       provisioned:      usersSnap.exists,
-      userCount:        Array.isArray(users.users) ? users.users.length : 0,
+      // staffEmails projection is the canonical count post-split
+      // (rich users[] now lives in data/usersFull, not read here).
+      userCount:        Array.isArray(users.staffEmails) ? users.staffEmails.length : 0,
       apptCount:        apptCountSnap ? apptCountSnap.data().count : 0,
       lastActivityIso,
       pauseActive:      Boolean(settings.pause?.until && settings.pause.until >= new Date().toISOString().slice(0, 10)),

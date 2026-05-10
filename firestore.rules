@@ -64,6 +64,16 @@ service cloud.firestore {
       allow create: if isAuthenticated();
     }
 
+    // ── OAuth state nonces (gustoGetAuthUrl mints them, gustoOAuthCallback
+    //    verifies + deletes them). Server-side only — admin SDK in
+    //    Cloud Functions bypasses rules; client SDK must never see these.
+    //    Default-deny would already block this, but the explicit rule
+    //    documents the intent and prevents a future broader rule from
+    //    accidentally exposing them.
+    match /_oauthNonces/{nonce} {
+      allow read, write: if false;
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document (plan, owner, name) — super-admin only
@@ -74,9 +84,25 @@ service cloud.firestore {
         allow read:  if true;
         allow write: if isTenantAdmin(tenantId);
       }
+      // Slim user projections — staff readable. Holds ONLY:
+      //   staffEmails  (array of every staff email; rules use this for
+      //                  isTenantStaff() membership checks)
+      //   adminEmails  (array of admin emails; rules use it for
+      //                  isTenantAdmin() and admin-notification fanout)
+      //   byEmail      (map of email -> { role, techName? }; lets a
+      //                  staff member look up their OWN role without
+      //                  seeing coworkers' names / pictures / addedAt)
+      // The rich users[] array (with names, photos, addedAt, etc.) lives
+      // in data/usersFull below, admin-only.
       match /data/users {
         allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
+      }
+      // Rich user records — admin-only. A staff member cannot
+      // enumerate every coworker's name + photo + techName + role +
+      // grantedAt timestamp from the JS console.
+      match /data/usersFull {
+        allow read, write: if isTenantAdmin(tenantId);
       }
       match /data/settings {
         allow read:  if isTenantStaff(tenantId);
@@ -123,19 +149,33 @@ service cloud.firestore {
         allow read, write: if isTenantStaff(tenantId);
       }
 
-      // Employees: public read (names/photos shown on booking page); only admin can write
+      // Employees.
+      // Parent doc: public read (booking page needs name/photo/services/social).
+      // Private comp sub-doc: admin-only — holds taxId (SSN), payRate,
+      // commissionPct, hourlyRate, paymentPref, paymentNotes (banking
+      // info), gustoId, gustoEmail. Without this split the parent doc
+      // (publicly readable for the booking flow) was leaking SSNs to
+      // anyone on the internet.
       match /employees/{employeeId} {
         allow read:  if true;
         allow write: if isTenantAdmin(tenantId);
+        match /private/{docId} {
+          allow read, write: if isTenantAdmin(tenantId);
+        }
       }
 
-      // Appointments: public read (check-in) + public create (online booking).
-      // Public create caps name/phone/notes/email lengths so the print-receipt
-      // template and staff dashboards can't be abused as an XSS / oversized-
-      // payload sink. Staff (this tenant only) get full update/delete; the
-      // single-field client-checkin update path stays public.
+      // Appointments.
+      // Reads are tenant-staff only — appointments hold full client PII
+      // (name, phone, email, notes incl. allergies). Public surfaces that
+      // need busy-slot info (booking page) or single-appt info (check-in)
+      // go through the `getPublicAvailability` / `getPublicAppointment`
+      // Cloud Function callables, which return a minimum slice with no PII.
+      // Public create stays — online booking writes a new appt directly,
+      // with length caps so the public payload can't be abused as a
+      // XSS / oversized-payload sink. Public single-field check-in update
+      // also stays so the booking confirmation link works without auth.
       match /appointments/{apptId} {
-        allow read:           if true;
+        allow read:           if isTenantStaff(tenantId);
         allow create:         if (
           (!('clientName'  in request.resource.data) || isShortString(request.resource.data.clientName, 80)) &&
           (!('clientPhone' in request.resource.data) || isShortString(request.resource.data.clientPhone, 32)) &&

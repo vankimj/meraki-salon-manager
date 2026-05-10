@@ -1,6 +1,6 @@
 import {
   doc, collection,
-  getDoc, getDocs, setDoc, addDoc, deleteDoc, updateDoc,
+  getDoc, getDocs, setDoc, addDoc, deleteDoc, deleteField, updateDoc,
   orderBy, where, query, limit,
   onSnapshot, arrayUnion, increment, writeBatch,
 } from 'firebase/firestore';
@@ -13,46 +13,73 @@ const tenantDoc = (path) => doc(db, 'tenants', TENANT_ID, 'data', ...path.split(
 const tenantCol = (path) => collection(db, 'tenants', TENANT_ID, path);
 
 // ── Refs ───────────────────────────────────────────────
-const SLIDES_REF   = tenantDoc('slides');
-const USERS_REF    = tenantDoc('users');
-const SETTINGS_REF = tenantDoc('settings');
+const SLIDES_REF      = tenantDoc('slides');
+const USERS_REF       = tenantDoc('users');     // slim projection (staff readable)
+const USERS_FULL_REF  = tenantDoc('usersFull'); // rich users[] (admin only)
+const SETTINGS_REF    = tenantDoc('settings');
 const LOGS_COL     = tenantCol('logs');
 const SERVICES_COL = tenantCol('services');
 
 // ── Bootstrap load (slides + users + settings) ─────────
-// Uses allSettled so a permission error on users/settings (unauthenticated)
-// doesn't block the publicly-readable slides from loading.
+// Uses allSettled so a permission error doesn't block the publicly-readable
+// slides from loading.
+//
+// Read strategy after the user-doc split:
+//   - data/users (staff readable): always tries — returns staffEmails,
+//     adminEmails, byEmail map, and any legacy users[] array still present.
+//   - data/usersFull (admin only): tries in parallel — succeeds for admin
+//     callers, fails closed for techs/scheduler/readonly. The rich array
+//     is what the user-management UI needs.
+//
+// `users[]` returned to the caller is whichever is freshest (full > legacy
+// > byEmail-derived stub). Non-admin callers get a 1-element array of just
+// their own slim record so AppContext's `users.find(u => u.email === me)`
+// keeps working without leaking coworkers' details.
 export async function loadAll() {
-  const [sd, ud, stg] = await Promise.allSettled([
+  const [sd, ud, ufd, stg] = await Promise.allSettled([
     getDoc(SLIDES_REF),
     getDoc(USERS_REF),
+    getDoc(USERS_FULL_REF),
     getDoc(SETTINGS_REF),
   ]);
-  const slidesDoc   = sd.status  === 'fulfilled' ? sd.value  : null;
-  const usersDoc    = ud.status  === 'fulfilled' ? ud.value  : null;
-  const settingsDoc = stg.status === 'fulfilled' ? stg.value : null;
+  const slidesDoc     = sd.status  === 'fulfilled' ? sd.value  : null;
+  const usersDoc      = ud.status  === 'fulfilled' ? ud.value  : null;
+  const usersFullDoc  = ufd.status === 'fulfilled' ? ufd.value : null;
+  const settingsDoc   = stg.status === 'fulfilled' ? stg.value : null;
+
+  const projection   = usersDoc?.exists() ? usersDoc.data() : {};
+  const fullArray    = usersFullDoc?.exists() ? (usersFullDoc.data().users || []) : null;
+  // Legacy fallback — pre-split tenants still have users[] on data/users.
+  // The next admin save runs the migration and purges it.
+  const legacyArray  = projection.users || null;
+
   return {
-    slides:        slidesDoc?.exists()   ? (slidesDoc.data().slides       ?? []) : null,
-    def:           slidesDoc?.exists()   ? (slidesDoc.data().def          ?? 0)  : 0,
-    cur:           slidesDoc?.exists()   ? (slidesDoc.data().cur          ?? 0)  : 0,
-    users:         usersDoc?.exists()    ? (usersDoc.data().users         ?? []) : [],
-    staffEmails:   usersDoc?.exists()    ? (usersDoc.data().staffEmails   ?? null) : null,
-    adminEmails:   usersDoc?.exists()    ? (usersDoc.data().adminEmails   ?? null) : null,
-    settings:      settingsDoc?.exists() ? settingsDoc.data()                    : {},
+    slides:        slidesDoc?.exists()   ? (slidesDoc.data().slides ?? []) : null,
+    def:           slidesDoc?.exists()   ? (slidesDoc.data().def    ?? 0)  : 0,
+    cur:           slidesDoc?.exists()   ? (slidesDoc.data().cur    ?? 0)  : 0,
+    users:         fullArray ?? legacyArray ?? [],
+    staffEmails:   projection.staffEmails ?? null,
+    adminEmails:   projection.adminEmails ?? null,
+    byEmail:       projection.byEmail     ?? {},
+    settings:      settingsDoc?.exists() ? settingsDoc.data() : {},
   };
 }
 
 // One-time backfill: write the derived `staffEmails`/`adminEmails` arrays
-// onto an existing users doc that was created before those fields existed.
-// Called silently from AppContext on admin load — admins are the only callers
-// with permission to write the users doc, so non-admin invocations are inert.
+// to data/users and the rich array to data/usersFull. Called from
+// AppContext on admin load — non-admin invocations no-op silently because
+// the rules block both writes for them.
 export async function ensureStaffEmailsBackfill(users) {
   try {
-    await setDoc(USERS_REF, {
-      users,
-      staffEmails: buildStaffEmails(users),
-      adminEmails: buildAdminEmails(users),
-    });
+    await Promise.all([
+      setDoc(USERS_REF, {
+        users:       deleteField(),                     // purge from projection
+        staffEmails: buildStaffEmails(users),
+        adminEmails: buildAdminEmails(users),
+        byEmail:     buildByEmail(users),
+      }, { merge: true }),
+      setDoc(USERS_FULL_REF, { users }, { merge: true }),
+    ]);
   } catch (e) { console.warn('[ensureStaffEmailsBackfill] skipped:', e?.code || e?.message); }
 }
 
@@ -81,11 +108,39 @@ export function buildStaffEmails(users) {
 export function buildAdminEmails(users) {
   return emailsByRole(users, u => u.role === 'admin');
 }
-export const saveUsers    = (users)    => setDoc(USERS_REF, {
-  users,
-  staffEmails: buildStaffEmails(users),
-  adminEmails: buildAdminEmails(users),
-});
+// Slim self-lookup map: email -> { role, techName? }. Lets a non-admin
+// staff member find their own role without exposing every coworker's
+// name / picture / addedAt timestamps. Stored on data/users (staff
+// readable). Email keys are lowercased so lookup is consistent.
+export function buildByEmail(users) {
+  const out = {};
+  (users || []).forEach(u => {
+    const email = String(u?.email || '').trim().toLowerCase();
+    if (!email || !u.role) return;
+    const slice = { role: u.role };
+    if (u.techName) slice.techName = u.techName;
+    out[email] = slice;
+  });
+  return out;
+}
+// Save splits the write across two docs:
+//   data/users      — slim projection (staff readable)
+//   data/usersFull  — rich users[] (admin only)
+// Atomic in spirit (best effort): any failure mid-flight leaves the
+// projection in a known state, since rules require admin for both, and
+// admins are the only callers. Always purges any legacy `users[]` field
+// from data/users — completes the one-shot migration on first admin save.
+export const saveUsers = async (users) => {
+  await Promise.all([
+    setDoc(USERS_REF, {
+      users:       deleteField(),                       // purge legacy users[]
+      staffEmails: buildStaffEmails(users),
+      adminEmails: buildAdminEmails(users),
+      byEmail:     buildByEmail(users),
+    }, { merge: true }),
+    setDoc(USERS_FULL_REF, { users }, { merge: true }),
+  ]);
+};
 
 // ── Settings ───────────────────────────────────────────
 export const saveSettings = (settings) => setDoc(SETTINGS_REF, settings);
@@ -212,23 +267,79 @@ export async function saveAttendance(date, entries) {
 // ── Employees ─────────────────────────────────────────
 const EMPLOYEES_COL = tenantCol('employees');
 
+// Compensation & tax-form fields — moved off the public employee doc and
+// stored under `employees/{id}/private/comp`, admin-only readable.
+// `employees/{id}` itself is publicly readable (booking page needs names,
+// photos, services). This split keeps SSNs, pay rate, banking info etc.
+// out of any unauthenticated reader's reach.
+const PRIVATE_EMP_FIELDS = [
+  'taxId', 'paymentNotes', 'payRate', 'payType', 'rateType',
+  'commissionPct', 'hourlyRate', 'paymentPref',
+  'gustoId', 'gustoEmail',
+];
+const empPrivateRef = (id) => doc(EMPLOYEES_COL, id, 'private', 'comp');
+
+function splitEmployeeFields(data) {
+  const publicFields = { ...data };
+  const privateFields = {};
+  for (const k of PRIVATE_EMP_FIELDS) {
+    if (k in publicFields) {
+      privateFields[k] = publicFields[k];
+      delete publicFields[k];
+    }
+  }
+  return { publicFields, privateFields };
+}
+
 export async function fetchEmployees() {
+  // Public read path. Returns only the public slice (parent doc only).
+  // Booking page, schedule, walk-in kiosk all use this — they don't need
+  // comp data. Compensation views call fetchEmployeesWithComp instead.
   const snap = await getDocs(query(EMPLOYEES_COL, orderBy('sortOrder')));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// Admin-only. Fetches the public doc + the private/comp sub-doc per
+// employee, returning a merged object identical in shape to the legacy
+// pre-split data so EmployeesAdmin / HR / payroll continue to read fields
+// at their original paths. Falls through gracefully on permission denial.
+export async function fetchEmployeesWithComp() {
+  const snap = await getDocs(query(EMPLOYEES_COL, orderBy('sortOrder')));
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  await Promise.all(list.map(async emp => {
+    try {
+      const compSnap = await getDoc(empPrivateRef(emp.id));
+      if (compSnap.exists()) Object.assign(emp, compSnap.data());
+    } catch (_) { /* non-admin caller — leave the merge empty */ }
+  }));
+  return list;
+}
+
 export async function saveEmployee(id, data) {
-  const ref = id ? doc(EMPLOYEES_COL, id) : doc(EMPLOYEES_COL);
-  await setDoc(ref, { ...data, updatedAt: new Date().toISOString() }, { merge: true });
-  return ref.id;
+  const targetId = id || doc(EMPLOYEES_COL).id;
+  const { publicFields, privateFields } = splitEmployeeFields(data);
+  const ref = doc(EMPLOYEES_COL, targetId);
+  const now = new Date().toISOString();
+  // Self-healing: ensure any legacy private fields living on the public
+  // doc are explicitly removed (deleteField markers below). On a write
+  // through this path, the doc is normalized to public-only — even if it
+  // came back from Firestore with embedded sensitive fields.
+  const purgeMarkers = {};
+  for (const k of PRIVATE_EMP_FIELDS) purgeMarkers[k] = deleteField();
+  await setDoc(ref, { ...purgeMarkers, ...publicFields, updatedAt: now }, { merge: true });
+  if (Object.keys(privateFields).length) {
+    await setDoc(empPrivateRef(targetId), { ...privateFields, updatedAt: now }, { merge: true });
+  }
+  return targetId;
 }
 
 export async function createEmployee(data) {
-  const ref = await addDoc(EMPLOYEES_COL, {
-    ...data,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-  });
+  const { publicFields, privateFields } = splitEmployeeFields(data);
+  const now = new Date().toISOString();
+  const ref = await addDoc(EMPLOYEES_COL, { ...publicFields, createdAt: now, updatedAt: now });
+  if (Object.keys(privateFields).length) {
+    await setDoc(empPrivateRef(ref.id), { ...privateFields, createdAt: now, updatedAt: now });
+  }
   return ref.id;
 }
 
@@ -791,27 +902,26 @@ export async function deleteMeeting(id) {
 }
 
 // ── Check-in (public, no auth required) ────────────────
+// Public read of an appointment via its id used to be a direct getDoc()
+// against the publicly-readable appointments collection, but that
+// collection now requires staff to read (it holds full client PII).
+// The public Cloud Function `getPublicAppointment` returns only the
+// minimal slice the check-in confirm screen needs — no phone, email,
+// notes, or full client name.
 export async function getAppointmentById(id) {
-  const snap = await getDoc(doc(APPTS_COL, id));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./firebase');
+  try {
+    const res = await httpsCallable(functions, 'getPublicAppointment')({ tenantId: TENANT_ID, apptId: id });
+    return res?.data ? { id: res.data.id, ...res.data } : null;
+  } catch (_) { return null; }
 }
 
-export async function markCheckedIn(apptId, appt) {
-  const now = new Date().toISOString();
-  await updateDoc(doc(APPTS_COL, apptId), { checkedInAt: now });
-  // Notify the tech via the existing notifications collection
-  const col = collection(db, 'tenants', TENANT_ID, 'notifications');
-  await addDoc(col, {
-    apptId,
-    techName:    appt.techName || '',
-    clientName:  appt.clientName || 'A client',
-    date:        appt.date,
-    startTime:   appt.startTime || '',
-    changeType:  'client_checkin',
-    message:     `${appt.clientName || 'Your client'} has arrived and checked in! 📍`,
-    createdAt:   now,
-    sent:        false,
-  });
+export async function markCheckedIn(apptId) {
+  // Public single-field update only. The staff-facing notification doc
+  // is created server-side by `notifyOnCheckIn` (Firestore trigger),
+  // so the public client doesn't need access to the full appt PII.
+  await updateDoc(doc(APPTS_COL, apptId), { checkedInAt: new Date().toISOString() });
 }
 
 // ── Receipts (post-checkout outreach) ──────────────────
