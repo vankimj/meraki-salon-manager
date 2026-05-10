@@ -2183,9 +2183,13 @@ exports.refreshGoogleReviews = onCall(async (request) => {
   // public webfront) and burns Google Maps API quota. Without an admin
   // gate, any authed user could overwrite our reviews with reviews from
   // an arbitrary placeId (defacement) or drain quota with junk lookups.
-  await requireTenantAdmin(getFirestore(), TENANT_ID, request);
+  const { tenantId: tid, placeId } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  }
+  await requireTenantAdmin(getFirestore(), tenantId, request);
 
-  const placeId = (request.data || {}).placeId;
   if (!placeId) throw new HttpsError('invalid-argument', 'placeId is required');
 
   const apiKey = mapsApiKey.value();
@@ -2215,7 +2219,7 @@ exports.refreshGoogleReviews = onCall(async (request) => {
   }));
 
   const db = getFirestore();
-  await db.doc(`tenants/${TENANT_ID}/data/googleReviews`).set({
+  await db.doc(`tenants/${tenantId}/data/googleReviews`).set({
     placeId,
     reviews,
     rating:          result.rating              || null,

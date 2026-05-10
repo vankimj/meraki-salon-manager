@@ -1339,7 +1339,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
     setRefreshMsg(null);
     try {
       const { callFn } = await import('../../lib/firebase.js');
-      const result = await callFn('refreshGoogleReviews')({ placeId });
+      const result = await callFn('refreshGoogleReviews')({ tenantId: TENANT_ID, placeId });
       const { count, rating, total } = result.data;
       const ts = new Date().toISOString();
       patch('googleReviewsRefreshedAt', ts);
