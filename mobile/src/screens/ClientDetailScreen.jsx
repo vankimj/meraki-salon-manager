@@ -4,6 +4,7 @@ import {
   ActivityIndicator, Image, Alert, KeyboardAvoidingView, Platform, Linking,
 } from 'react-native';
 import { fetchClient, saveClient, fetchClientAppointments } from '../lib/firestore';
+import Icon from '../components/Icon';
 
 const TABS = [
   { id: 'profile', label: 'Profile' },
@@ -100,8 +101,8 @@ export default function ClientDetailScreen({ route, navigation }) {
   if (!client) {
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>👤</Text>
-        <Text style={styles.emptyTitle}>Client not found</Text>
+        <Icon name="person" size={56} color="#cbd0d6" strokeWidth={1.5} />
+        <Text style={[styles.emptyTitle, { marginTop: 14 }]}>Client not found</Text>
       </View>
     );
   }
@@ -169,8 +170,8 @@ export default function ClientDetailScreen({ route, navigation }) {
           {tab === 'visits' && (
             visits.length === 0
               ? <View style={styles.visitEmpty}>
-                  <Text style={styles.visitEmptyIcon}>📅</Text>
-                  <Text style={styles.visitEmptyText}>No appointments yet</Text>
+                  <Icon name="calendar" size={40} color="#cbd0d6" strokeWidth={1.5} />
+                  <Text style={[styles.visitEmptyText, { marginTop: 10 }]}>No appointments yet</Text>
                 </View>
               : visits.map(v => (
                   <View key={v.id} style={styles.visitCard}>

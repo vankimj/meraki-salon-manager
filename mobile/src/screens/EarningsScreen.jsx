@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../lib/firestore';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
+import Icon from '../components/Icon';
 
 function todayStr() {
   const d = new Date();
@@ -131,8 +132,8 @@ export default function EarningsScreen() {
   if (!techName) {
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>💰</Text>
-        <Text style={styles.emptyTitle}>No employee record</Text>
+        <Icon name="dollar" size={56} color="#cbd0d6" strokeWidth={1.5} />
+        <Text style={[styles.emptyTitle, { marginTop: 14 }]}>No employee record</Text>
         <Text style={styles.emptyBody}>
           Your account isn't linked to an employee profile yet. Ask your salon owner to add you in Employees.
         </Text>
@@ -191,8 +192,8 @@ export default function EarningsScreen() {
 
           {data.serviceCount === 0 && data.tips === 0 && (
             <View style={styles.welcomeCard}>
-              <Text style={styles.welcomeIcon}>✨</Text>
-              <Text style={styles.welcomeTitle}>You're all set up</Text>
+              <Icon name="sparkles" size={36} color="#3D9E8A" strokeWidth={2} />
+              <Text style={[styles.welcomeTitle, { marginTop: 10 }]}>You're all set up</Text>
               <Text style={styles.welcomeBody}>
                 As soon as appointments wrap up and tips come in, your take-home and stats will populate here.
               </Text>

@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes } from '../lib/firestore';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
+import Icon from '../components/Icon';
 
 function todayStr() {
   const d = new Date();
@@ -103,8 +104,8 @@ export default function ScheduleScreen() {
         <ActivityIndicator style={{ marginTop: 40 }} color="#3D95CE" />
       ) : filtered.length === 0 ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyIcon}>📅</Text>
-          <Text style={styles.emptyTitle}>Nothing on the books</Text>
+          <Icon name="calendar" size={56} color="#cbd0d6" strokeWidth={1.5} />
+          <Text style={[styles.emptyTitle, { marginTop: 14 }]}>Nothing on the books</Text>
           <Text style={styles.emptyBody}>
             {showAll ? 'No appointments this day.' : `No appointments for ${techName || 'you'} this day.`}
           </Text>

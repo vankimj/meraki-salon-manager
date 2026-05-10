@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { auth } from '../lib/firebase';
 import { subscribeToChat, sendChatMessage, markChatRead } from '../lib/firestore';
+import Icon from '../components/Icon';
 
 function fmtTime(iso) {
   if (!iso) return '';
@@ -80,8 +81,8 @@ export default function ChatThreadScreen({ route }) {
         contentContainerStyle={{ padding: 12, gap: 6 }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>💬</Text>
-            <Text style={styles.emptyTitle}>No messages yet</Text>
+            <Icon name="chat" size={48} color="#cbd0d6" strokeWidth={1.5} />
+            <Text style={[styles.emptyTitle, { marginTop: 12 }]}>No messages yet</Text>
             <Text style={styles.emptyBody}>Send the first message — clients see them in their portal and can reply.</Text>
           </View>
         }

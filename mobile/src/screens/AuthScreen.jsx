@@ -11,7 +11,7 @@ import { auth, ALLOWED_EMAILS } from '../lib/firebase';
 // Web client ID is what Firebase Auth expects for
 // `GoogleAuthProvider.credential(idToken)` — it's the audience the
 // returned id_token is signed for.
-const WEB_CLIENT_ID = '721171829996-d54s6djk8ph1bvjajaarat4bgvdf16po.apps.googleusercontent.com';
+const WEB_CLIENT_ID = '721171829996-l4r31smgf04r3fnagshfh4hpld1eb91n.apps.googleusercontent.com';
 const IOS_CLIENT_ID = '721171829996-ap9a74l13h4c9rdtf4vv168c4kq1q5ep.apps.googleusercontent.com';
 
 // In Expo Go the native module isn't available — guard the configure

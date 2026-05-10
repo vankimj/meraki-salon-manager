@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { subscribeToChats } from '../lib/firestore';
+import Icon from '../components/Icon';
 
 function fmtRelative(iso) {
   if (!iso) return '';
@@ -33,8 +34,8 @@ export default function ChatScreen({ navigation }) {
   if (threads.length === 0) {
     return (
       <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>💬</Text>
-        <Text style={styles.emptyTitle}>No messages yet</Text>
+        <Icon name="chat" size={56} color="#cbd0d6" strokeWidth={1.5} />
+        <Text style={[styles.emptyTitle, { marginTop: 14 }]}>No messages yet</Text>
         <Text style={styles.emptyBody}>
           Client conversations show up here. You'll get a push when a client replies.
         </Text>
