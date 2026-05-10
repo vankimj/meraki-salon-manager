@@ -30,7 +30,7 @@ function CountDown({ secs, onDone }) {
 
 // Module-scope Shell so it keeps a stable component identity between renders;
 // otherwise inputs inside lose focus on every keystroke.
-function Shell({ children, narrow, theme }) {
+function Shell({ children, narrow, theme, brand }) {
   const bgStyle = {
     position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden',
     background: `radial-gradient(ellipse at top, ${theme.dark}f5 0%, ${theme.dark} 55%, #050a0a 100%)`,
@@ -46,8 +46,10 @@ function Shell({ children, narrow, theme }) {
         pointerEvents: 'none',
       }} />
       <div style={{ position: 'relative', textAlign: 'center', paddingTop: 36, paddingBottom: 12, zIndex: 1 }}>
-        <div style={{ fontFamily: "'Great Vibes', cursive", fontSize: 38, lineHeight: 1, color: '#fff', letterSpacing: '-.01em' }}>Meraki</div>
-        <div style={{ fontFamily: "'Cinzel', serif", fontSize: 11, color: 'rgba(255,255,255,.42)', letterSpacing: '.32em', textTransform: 'uppercase', marginTop: 2 }}>Nail Studio</div>
+        <div style={{ fontFamily: "'Great Vibes', cursive", fontSize: 38, lineHeight: 1, color: '#fff', letterSpacing: '-.01em' }}>{brand?.name || 'Plume Nexus'}</div>
+        {brand?.tagline && (
+          <div style={{ fontFamily: "'Cinzel', serif", fontSize: 11, color: 'rgba(255,255,255,.42)', letterSpacing: '.32em', textTransform: 'uppercase', marginTop: 2 }}>{brand.tagline}</div>
+        )}
       </div>
       <div style={{ position: 'relative', zIndex: 1, maxWidth: narrow ? 540 : 720, margin: '0 auto', padding: '20px 28px 56px' }}>
         {children}
@@ -62,6 +64,7 @@ export default function QueueKiosk() {
   const [techs,      setTechs]      = useState([]);
   const [queueCount, setQueueCount] = useState(0);
   const [theme,      setTheme]      = useState(getTheme('meraki'));
+  const [brand,      setBrand]      = useState(null);
 
   // Walk-in form
   const [name,     setName]     = useState('');
@@ -88,6 +91,7 @@ export default function QueueKiosk() {
       if (!wf) return;
       const t = wf.autoTheme ? (detectAutoTheme() || getTheme(wf.themeId || 'meraki')) : getTheme(wf.themeId || 'meraki');
       setTheme(t);
+      setBrand({ name: wf.brandName || wf.salonName || 'Plume Nexus', tagline: wf.brandTagline || '' });
     }).catch(() => {});
   }, []);
 
@@ -162,7 +166,7 @@ export default function QueueKiosk() {
   // ── Welcome ──────────────────────────────────────────────
   if (step === 'welcome') {
     return (
-      <Shell theme={theme}>
+      <Shell theme={theme} brand={brand}>
         <div style={{ textAlign: 'center', marginTop: 24, marginBottom: 36 }}>
           <h1 style={{ fontSize: 38, fontWeight: 800, color: '#fff', margin: 0, letterSpacing: '-.6px' }}>How can we help?</h1>
           <p style={{ fontSize: 16, color: 'rgba(255,255,255,.55)', marginTop: 10 }}>Pick one to get started.</p>
@@ -198,7 +202,7 @@ export default function QueueKiosk() {
   if (step === 'walkin') {
     const canSubmit = name.trim() && svcSel && !working;
     return (
-      <Shell theme={theme} narrow>
+      <Shell theme={theme} narrow brand={brand}>
         <SectionHeader title="Join the Walk-in Queue" subtitle="Tell us a bit about yourself." />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -241,7 +245,7 @@ export default function QueueKiosk() {
   if (step === 'arrival') {
     const canSubmit = arrName.trim() && arrPhone.trim() && !working;
     return (
-      <Shell theme={theme} narrow>
+      <Shell theme={theme} narrow brand={brand}>
         <SectionHeader title="Let us know you're here" subtitle="A couple quick details so we can find your appointment." />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -264,7 +268,7 @@ export default function QueueKiosk() {
   // ── Done: walk-in ───────────────────────────────────────
   if (step === 'done-walkin') {
     return (
-      <Shell theme={theme} narrow>
+      <Shell theme={theme} narrow brand={brand}>
         <SuccessHero
           tint={theme.primary}
           big={position > 1 ? `You're #${position} in line` : "You're next!"}
@@ -285,7 +289,7 @@ export default function QueueKiosk() {
       ? `${appt.startTime ? formatTimeStr(appt.startTime) : ''}${appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : ''}${appt.services?.[0]?.name ? ` · ${appt.services[0].name}` : ''}`.trim()
       : null;
     return (
-      <Shell theme={theme} narrow>
+      <Shell theme={theme} narrow brand={brand}>
         <SuccessHero
           tint={theme.accent}
           title={firstName ? `Welcome, ${firstName}!` : "You're checked in!"}

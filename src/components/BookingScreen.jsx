@@ -381,7 +381,7 @@ export default function BookingScreen() {
   return (
     <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
       <Header
-        step={step} cfg={cfg} flow={flow}
+        step={step} cfg={cfg} flow={flow} webCfg={webCfg}
         gUser={gUser} client={client}
         onSignIn={handleGoogleSignIn}
         onSignOut={handleSignOut}
@@ -498,7 +498,7 @@ export default function BookingScreen() {
 }
 
 // ── Header ─────────────────────────────────────────────
-function Header({ step, cfg, flow, gUser, client, onSignIn, onSignOut }) {
+function Header({ step, cfg, flow, webCfg, gUser, client, onSignIn, onSignOut }) {
   const labels = flow === 'tech-first'
     ? ['Stylist','Services','Schedule','Info','Confirm']
     : ['Cart','Stylists','Schedule','Info','Confirm'];
@@ -512,7 +512,7 @@ function Header({ step, cfg, flow, gUser, client, onSignIn, onSignOut }) {
               <svg viewBox="0 0 60 60" fill="none" width={20} height={20}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
             </div>
             <div>
-              <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>Meraki Nail Studio</div>
+              <div style={{ fontSize: 15, fontWeight: 800, color: '#fff', letterSpacing: '-.2px' }}>{webCfg?.salonName || 'Plume Nexus'}</div>
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)' }}>Book an Appointment</div>
             </div>
           </div>
@@ -1249,7 +1249,7 @@ function SuccessScreen({ appts, techs, webCfg }) {
     <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', display: 'flex', flexDirection: 'column' }}>
       <div style={{ background: 'var(--tm-grad-dark, linear-gradient(135deg,#1e6b50,#2D7A5F 40%,#3D7FBF))', padding: '20px 20px 40px' }}>
         <div style={{ maxWidth: 600, margin: '0 auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>Meraki Nail Studio</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: '#fff' }}>{webCfg?.salonName || 'Plume Nexus'}</div>
         </div>
       </div>
       <div style={{ maxWidth: 600, margin: '-24px auto 0', padding: '0 16px 48px', width: '100%', boxSizing: 'border-box' }}>
@@ -1325,7 +1325,7 @@ function SuccessScreen({ appts, techs, webCfg }) {
         </div>
 
         <a href="/?web" style={{ display: 'block', textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#fff', textDecoration: 'none', background: 'var(--tm-accent, #3D95CE)', borderRadius: 14, padding: '15px', boxShadow: '0 2px 8px rgba(61,149,206,.35)' }}>
-          ← Back to Meraki Nail Studio
+          ← Back to {webCfg?.salonName || 'site'}
         </a>
       </div>
     </div>

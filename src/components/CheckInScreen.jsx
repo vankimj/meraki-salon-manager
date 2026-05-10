@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getAppointmentById, markCheckedIn, fetchBookingConfig } from '../lib/firestore';
+import { getAppointmentById, markCheckedIn, fetchBookingConfig, fetchWebfrontConfig } from '../lib/firestore';
 
 function fmtDate(str) {
   if (!str) return '';
@@ -32,6 +32,11 @@ export default function CheckInScreen({ apptId }) {
   const [working,     setWorking]     = useState(false);
   const [geoStatus,   setGeoStatus]   = useState('idle'); // idle | requesting | nearby | far | denied | unavailable
   const [geoDistance, setGeoDistance] = useState(null);
+  const [webCfg,      setWebCfg]      = useState(null);
+
+  useEffect(() => {
+    fetchWebfrontConfig().then(setWebCfg).catch(() => {});
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -90,8 +95,10 @@ export default function CheckInScreen({ apptId }) {
       <div style={{ width: '100%', maxWidth: 380, background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.4)' }}>
 
         <div style={{ background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', padding: '24px 24px 20px' }}>
-          <div style={{ fontFamily: "'Great Vibes', cursive", fontSize: 34, color: '#fff', lineHeight: 1.1 }}>Meraki</div>
-          <div style={{ fontFamily: "'Cinzel', serif", fontSize: 11, color: 'rgba(255,255,255,.7)', letterSpacing: '.15em', marginTop: 2 }}>NAIL STUDIO</div>
+          <div style={{ fontFamily: "'Great Vibes', cursive", fontSize: 34, color: '#fff', lineHeight: 1.1 }}>{webCfg?.brandName || webCfg?.salonName || 'Plume Nexus'}</div>
+          {webCfg?.brandTagline && (
+            <div style={{ fontFamily: "'Cinzel', serif", fontSize: 11, color: 'rgba(255,255,255,.7)', letterSpacing: '.15em', marginTop: 2 }}>{String(webCfg.brandTagline).toUpperCase()}</div>
+          )}
         </div>
 
         <div style={{ padding: 24 }}>
@@ -169,7 +176,7 @@ export default function CheckInScreen({ apptId }) {
         </div>
 
         <div style={{ padding: '10px 24px 18px', textAlign: 'center', borderTop: '1px solid #f5f5f5' }}>
-          <div style={{ fontSize: 11, color: '#ccc' }}>Meraki Nail Studio · Columbus, OH</div>
+          <div style={{ fontSize: 11, color: '#ccc' }}>{webCfg?.salonName || 'Plume Nexus'}{webCfg?.address ? ' · ' + String(webCfg.address).split('\n').map(s => s.trim()).filter(Boolean).join(', ') : ''}</div>
         </div>
       </div>
     </div>

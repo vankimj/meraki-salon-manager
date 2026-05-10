@@ -152,22 +152,25 @@ export default function Splash() {
             textShadow: '0 2px 24px rgba(45,122,95,.5), 0 0 48px rgba(61,149,206,.3)',
             letterSpacing: '0.01em',
           }}>
-            {settings?.brandName || 'Meraki'}
+            {settings?.brandName || settings?.salonName || 'Plume Nexus'}
           </div>
 
-          <div style={{ height: 14 }} />
-
-          {/* Brand tagline below name */}
-          <div style={{
-            fontFamily: '"Cinzel", serif',
-            fontSize: 13,
-            fontWeight: 600,
-            color: 'rgba(255,255,255,0.82)',
-            letterSpacing: '0.32em',
-            textTransform: 'uppercase',
-          }}>
-            {settings?.brandTagline || 'Nail Studio'}
-          </div>
+          {settings?.brandTagline && (
+            <>
+              <div style={{ height: 14 }} />
+              {/* Brand tagline below name — only renders when the tenant has set one. */}
+              <div style={{
+                fontFamily: '"Cinzel", serif',
+                fontSize: 13,
+                fontWeight: 600,
+                color: 'rgba(255,255,255,0.82)',
+                letterSpacing: '0.32em',
+                textTransform: 'uppercase',
+              }}>
+                {settings.brandTagline}
+              </div>
+            </>
+          )}
 
         </div>
       </div>

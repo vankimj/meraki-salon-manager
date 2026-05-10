@@ -129,7 +129,9 @@ const SEGMENTS = [
 
 function fmtNum(n) { return Number(n || 0).toLocaleString(); }
 
-function buildPreviewHtml(bodyText, promoCode, promoLabel, ctaText, ctaUrl) {
+function buildPreviewHtml(bodyText, promoCode, promoLabel, ctaText, ctaUrl, brand) {
+  const salonName  = brand?.salonName  || 'your salon';
+  const footerLine = brand?.footerLine || salonName;
   const bodyHtml = (bodyText || '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/\{firstName\}/gi, 'there')
@@ -147,7 +149,7 @@ function buildPreviewHtml(bodyText, promoCode, promoLabel, ctaText, ctaUrl) {
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
   <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
     <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">Meraki Nail Studio</div>
+      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">${salonName}</div>
       <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Message from the team</div>
     </div>
     <div style="padding:24px;">
@@ -156,7 +158,7 @@ function buildPreviewHtml(bodyText, promoCode, promoLabel, ctaText, ctaUrl) {
       ${ctaBlock}
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">Meraki Nail Studio · Columbus, OH</p>
+      <p style="font-size:11px;color:#bbb;margin:0;">${footerLine}</p>
       <p style="font-size:10px;color:#ccc;margin:4px 0 0;">You're receiving this as a valued client. Reply to this email to unsubscribe.</p>
     </div>
   </div></body></html>`;
@@ -1429,7 +1431,11 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
 // ── Email preview modal ────────────────────────────────
 function PreviewModal({ subject, body, promoCode, promoLabel, ctaText, ctaUrl, onClose }) {
-  const html = buildPreviewHtml(body, promoCode, promoLabel, ctaText, ctaUrl);
+  const { settings } = useApp();
+  const brand = settings?.salonName
+    ? { salonName: settings.salonName, footerLine: settings.salonName }
+    : null;
+  const html = buildPreviewHtml(body, promoCode, promoLabel, ctaText, ctaUrl, brand);
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>

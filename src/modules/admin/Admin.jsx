@@ -18,7 +18,6 @@ import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK } from '../
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedDemoData, clearDemoData, addFutureAppointments, backfillDemoTransactions } from '../../data/seedDemo';
-import { seedProducts, clearSeedProducts } from '../../data/seedProducts';
 import FeedbackModal from '../../components/FeedbackModal';
 import CsvImportSection from '../../components/CsvImportSection';
 
@@ -28,6 +27,9 @@ export default function Admin({ onClose }) {
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
   const [ein,            setEin]           = useState(settings.ein || '');
+  const [salonName,      setSalonName]     = useState(settings.salonName    || '');
+  const [brandName,      setBrandName]     = useState(settings.brandName    || '');
+  const [brandTagline,   setBrandTagline]  = useState(settings.brandTagline || '');
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
@@ -235,6 +237,62 @@ export default function Admin({ onClose }) {
 
         {tab === 'settings' && (
           <>
+            <Section title="🏷 Branding">
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Salon name</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Full business name shown in the header, sidebar, and customer emails.</div>
+                </div>
+                <input
+                  value={salonName}
+                  onChange={e => setSalonName(e.target.value)}
+                  placeholder="e.g. Meraki Nail Studio"
+                  maxLength={80}
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}
+                />
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Brand name (short)</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used in cursive on the launch splash. Often the first word of your salon name.</div>
+                </div>
+                <input
+                  value={brandName}
+                  onChange={e => setBrandName(e.target.value)}
+                  placeholder="e.g. Meraki"
+                  maxLength={40}
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}
+                />
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Tagline</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Small caps under the brand name on the splash. Leave blank to hide.</div>
+                </div>
+                <input
+                  value={brandTagline}
+                  onChange={e => setBrandTagline(e.target.value)}
+                  placeholder="e.g. Nail Studio"
+                  maxLength={40}
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }}
+                />
+              </div>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                <Btn color="#3D95CE" onClick={async () => {
+                  const sName = salonName.trim() || null;
+                  const bName = brandName.trim() || null;
+                  const bTag  = brandTagline.trim() || null;
+                  // Save to both stores: settings (staff-only, drives the
+                  // signed-in admin UI) AND webfront (publicly readable, drives
+                  // the booking page / check-in screen / kiosk before sign-in).
+                  await Promise.all([
+                    updateSettings({ ...settings, salonName: sName, brandName: bName, brandTagline: bTag }),
+                    fetchWebfrontConfig().then(wf => saveWebfrontConfig({ ...(wf || {}), salonName: sName, brandName: bName, brandTagline: bTag })),
+                  ]);
+                  showToast('Branding saved');
+                }}>Save</Btn>
+              </div>
+            </Section>
             <Section title="⚙ Settings">
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -383,10 +441,18 @@ export default function Admin({ onClose }) {
             <Section title="📦 Data Imports">
               <div style={{ padding: '12px 14px' }}>
                 <CsvImportSection />
-                <ProductSeedSection />
-                <DemoSeedSection />
               </div>
             </Section>
+            {/* Super-admin-only test data tools. Hidden from regular salon
+                owners — these create / wipe sample records and aren't
+                appropriate for production-tenant admin panels. */}
+            {isSuperAdmin && (
+              <Section title="🧪 Test Data (Super Admin)">
+                <div style={{ padding: '12px 14px' }}>
+                  <DemoSeedSection />
+                </div>
+              </Section>
+            )}
           </>
         )}
 
@@ -1127,58 +1193,6 @@ function BackupRestoreSection() {
         {status && (
           <div style={{ marginTop: 12, fontSize: 12, color: '#444' }}>{status}</div>
         )}
-      </div>
-    </Section>
-  );
-}
-
-function ProductSeedSection() {
-  const [status,  setStatus]  = useState('');
-  const [running, setRunning] = useState(false);
-  const [phase,   setPhase]   = useState('idle');
-
-  async function runSeed() {
-    setRunning(true); setPhase('idle'); setStatus('');
-    try {
-      const count = await seedProducts(msg => setStatus(msg));
-      setStatus(`Added ${count} demo products.`);
-      setPhase('seeded');
-    } catch (e) {
-      setStatus('Error: ' + e.message); setPhase('error');
-    } finally { setRunning(false); }
-  }
-
-  async function runClear() {
-    if (!confirm('Remove all demo products?')) return;
-    setRunning(true); setPhase('idle'); setStatus('');
-    try {
-      const count = await clearSeedProducts(msg => setStatus(msg));
-      setStatus(`Removed ${count} demo products.`);
-      setPhase('cleared');
-    } catch (e) {
-      setStatus('Error: ' + e.message); setPhase('error');
-    } finally { setRunning(false); }
-  }
-
-  return (
-    <Section title="🛍 Product Catalog Seed">
-      <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 12, color: '#555', marginBottom: 10 }}>
-          Populate the Products module with 25 demo nail retail products (OPI, Essie, CND, Gelish, etc.) including prices, costs, and stock counts.
-        </div>
-        {status && (
-          <div style={{ fontSize: 12, color: phase === 'error' ? '#ef4444' : phase === 'cleared' || phase === 'seeded' ? '#16a34a' : '#888', marginBottom: 10, fontStyle: 'italic' }}>
-            {status}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: 8 }}>
-          <Btn color="#2D7A5F" onClick={runSeed} disabled={running}>
-            {running && phase === 'idle' ? 'Adding…' : '↓ Seed Products'}
-          </Btn>
-          <Btn color="#ef4444" onClick={runClear} disabled={running}>
-            {running && phase === 'idle' ? 'Removing…' : '× Clear Demo Products'}
-          </Btn>
-        </div>
       </div>
     </Section>
   );

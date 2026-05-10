@@ -8,13 +8,37 @@
 // in here as placeholders the salon owner should adjust.
 
 import { useEffect, useState } from 'react';
+import { fetchWebfrontConfig, fetchTenantRecord } from '../lib/firestore';
+import { TENANT_ID } from '../lib/tenant';
 
-const SALON = {
-  name:    'Meraki Nail Studio',
-  address: '5029 Olentangy River Rd, Columbus, OH 43214',
-  email:   'merakinailstudiocolumbus@gmail.com',
-  state:   'Ohio',
+// Default fallback when webfront / tenant data hasn't loaded yet (or is
+// missing fields). These are placeholders; the salon owner customizes via
+// Admin → Webfront tab.
+const SALON_FALLBACK = {
+  name:    'your salon',
+  address: '',
+  email:   '',
+  state:   '',
 };
+
+function useSalonInfo() {
+  const [salon, setSalon] = useState(SALON_FALLBACK);
+  useEffect(() => {
+    Promise.all([
+      fetchWebfrontConfig().catch(() => null),
+      fetchTenantRecord(TENANT_ID).catch(() => null),
+    ]).then(([wf, tRec]) => {
+      const name    = wf?.salonName || tRec?.name || SALON_FALLBACK.name;
+      const addr    = (wf?.address || '').split('\n').map(s => s.trim()).filter(Boolean).join(', ') || SALON_FALLBACK.address;
+      const email   = tRec?.ownerEmail || SALON_FALLBACK.email;
+      // Naive state extraction from "City, ST 12345" — fine for US addresses.
+      const stateMatch = addr.match(/,\s*([A-Z]{2})\s+\d{5}/);
+      const state   = stateMatch ? stateMatch[1] : SALON_FALLBACK.state;
+      setSalon({ name, address: addr, email, state });
+    });
+  }, []);
+  return salon;
+}
 
 const SHELL = {
   display: 'flex', justifyContent: 'center', minHeight: '100dvh',
@@ -29,7 +53,8 @@ const NOTE = { background: '#fffbeb', border: '1px solid #fde68a', color: '#9240
 const BTN  = { display: 'inline-block', background: '#2D7A5F', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontSize: 13, fontWeight: 600, marginTop: 32 };
 
 export function TermsScreen() {
-  useEffect(() => { document.title = `Terms of Service · ${SALON.name}`; }, []);
+  const SALON = useSalonInfo();
+  useEffect(() => { document.title = `Terms of Service · ${SALON.name}`; }, [SALON.name]);
   const lastUpdated = '2026-05-08';
   return (
     <div style={SHELL}>
@@ -94,7 +119,8 @@ export function TermsScreen() {
 }
 
 export function PrivacyScreen() {
-  useEffect(() => { document.title = `Privacy Policy · ${SALON.name}`; }, []);
+  const SALON = useSalonInfo();
+  useEffect(() => { document.title = `Privacy Policy · ${SALON.name}`; }, [SALON.name]);
   const lastUpdated = '2026-05-08';
   return (
     <div style={SHELL}>

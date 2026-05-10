@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { callFn } from '../lib/firebase';
+import { fetchWebfrontConfig } from '../lib/firestore';
 
 // Public unsubscribe page hit by the link in marketing emails. Reads
 // tid/cid/t from the query string, calls processUnsubscribe to flag
@@ -8,6 +9,10 @@ import { callFn } from '../lib/firebase';
 // require any further confirmation.
 export default function UnsubscribeScreen() {
   const [state, setState] = useState({ status: 'working', message: '' });
+  const [salonName, setSalonName] = useState('the salon');
+  useEffect(() => {
+    fetchWebfrontConfig().then(wf => { if (wf?.salonName) setSalonName(wf.salonName); }).catch(() => {});
+  }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tid   = params.get('tid');
@@ -45,7 +50,7 @@ export default function UnsubscribeScreen() {
             <div style={{ fontSize: 36, marginBottom: 10 }}>✓</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: '#16a34a', marginBottom: 6 }}>You've been unsubscribed</div>
             <div style={{ fontSize: 13, color: '#666', lineHeight: 1.55 }}>
-              {state.name ? `${state.name}, you'll` : "You'll"} no longer receive marketing emails or text messages from Meraki Nail Studio.
+              {state.name ? `${state.name}, you'll` : "You'll"} no longer receive marketing emails or text messages from {salonName}.
               <br /><br />
               Appointment confirmations and receipts will still be sent — those aren't marketing.
               <br /><br />

@@ -57,13 +57,13 @@ function generateICS(meeting) {
     .join('\r\n');
   return [
     'BEGIN:VCALENDAR', 'VERSION:2.0',
-    'PRODID:-//Meraki Nail Studio//Salon Manager//EN',
+    'PRODID:-//Plume Nexus//Salon Manager//EN',
     'CALSCALE:GREGORIAN', 'METHOD:REQUEST', 'BEGIN:VEVENT',
     `DTSTART:${fmtISOCompact(start)}`, `DTEND:${fmtISOCompact(end)}`,
     `SUMMARY:${meeting.title}`,
     meeting.description ? `DESCRIPTION:${meeting.description.replace(/\n/g, '\\n')}` : null,
-    `LOCATION:${meeting.location || 'Meraki Nail Studio, Columbus OH'}`,
-    `UID:${meeting.id}@meraki-salon-manager`,
+    meeting.location ? `LOCATION:${meeting.location}` : null,
+    `UID:${meeting.id}@plumenexus.com`,
     'ORGANIZER:mailto:jvankim@gmail.com',
     attendees || null, 'STATUS:CONFIRMED',
     `DTSTAMP:${fmtISOCompact(new Date())}`,
@@ -88,7 +88,7 @@ function googleCalendarUrl(meeting) {
     action: 'TEMPLATE', text: meeting.title,
     dates: `${fmtISOCompact(start)}/${fmtISOCompact(end)}`,
     details: meeting.description || '',
-    location: meeting.location || 'Meraki Nail Studio, Columbus OH',
+    location: meeting.location || '',
   });
   return `https://calendar.google.com/calendar/render?${params}`;
 }
@@ -767,7 +767,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
   const [date,        setDate]        = useState(initialDate);
   const [startTime,   setStartTime]   = useState(seed.startTime   || '10:00');
   const [duration,    setDuration]    = useState(seed.duration    || 60);
-  const [location,    setLocation]    = useState(seed.location    || 'Meraki Nail Studio');
+  const [location,    setLocation]    = useState(seed.location    || '');
   const [desc,        setDesc]        = useState(seed.description || '');
   const [agenda,      setAgenda]      = useState(seed.agenda      || []);
   const [attendance,  setAttendance]  = useState(seed.attendance  || {});
@@ -948,7 +948,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
               <div>
                 <label style={lbl}>Location</label>
                 <input value={location} onChange={e => setLocation(e.target.value)}
-                  placeholder="Meraki Nail Studio" style={inp} />
+                  placeholder="e.g. salon back room, Zoom link" style={inp} />
               </div>
 
               <div>

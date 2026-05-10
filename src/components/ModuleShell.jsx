@@ -69,7 +69,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
               <svg viewBox="0 0 60 60" fill="none" width={16} height={16}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>Meraki</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>{settings?.brandName || settings?.salonName || 'Plume Nexus'}</div>
               <div style={{ fontSize: 10, color: 'var(--tm-muted, #aaa)' }}>Salon Manager</div>
             </div>
           </button>

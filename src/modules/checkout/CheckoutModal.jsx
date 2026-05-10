@@ -940,7 +940,7 @@ function ReceiptScreen({ receipt, onDone }) {
         .row.total { font-weight: 700; font-size: 15px; margin-top: 10px; }
         .footer { text-align: center; font-size: 12px; color: #aaa; margin-top: 24px; }
       </style></head><body>
-      <h2>Meraki Nail Studio</h2>
+      <h2>${escapeHtml(settings?.salonName || 'Plume Nexus')}</h2>
       <p class="sub">${escapeHtml(fmtDate)} &nbsp;·&nbsp; ${escapeHtml(tech)}</p>
       <hr>
       ${services.map(s => `<div class="row"><span>${escapeHtml(s.name || '—')}</span><span>$${(Number(s.price) || 0).toFixed(2)}</span></div>`).join('')}

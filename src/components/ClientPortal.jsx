@@ -16,7 +16,8 @@ function fmtTime(str) {
 }
 
 export default function ClientPortal() {
-  const { gUser, portalClientId, signOut, showToast } = useApp();
+  const { gUser, portalClientId, signOut, showToast, settings } = useApp();
+  const salonName = settings?.salonName || 'Plume Nexus';
   const [tab,      setTab]      = useState('upcoming');
   const [client,   setClient]   = useState(null);
   const [appts,    setAppts]    = useState(null);
@@ -69,7 +70,7 @@ export default function ClientPortal() {
             <svg viewBox="0 0 60 60" fill="none" width={16} height={16}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>Meraki Nail Studio</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>{salonName}</div>
             <div style={{ fontSize: 10, color: '#aaa' }}>My Account</div>
           </div>
         </div>
@@ -91,7 +92,7 @@ export default function ClientPortal() {
             }
             <div>
               <div style={{ fontSize: 18, fontWeight: 700 }}>Hi, {client.name?.split(' ')[0] || 'there'}!</div>
-              <div style={{ fontSize: 12, opacity: .8, marginTop: 2 }}>Welcome back to Meraki Nail Studio</div>
+              <div style={{ fontSize: 12, opacity: .8, marginTop: 2 }}>Welcome back to {salonName}</div>
               {(client.credit || 0) > 0 && (
                 <div style={{ fontSize: 11, marginTop: 4, background: 'rgba(255,255,255,.2)', borderRadius: 8, padding: '3px 10px', display: 'inline-block' }}>
                   💳 ${Number(client.credit).toFixed(2)} store credit
@@ -310,7 +311,7 @@ function ClientChatView({ clientId, clientName, clientEmail, chat }) {
               }}>
                 {!isMe && (
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#888', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-                    {m.senderName || 'Meraki'}
+                    {m.senderName || salonName}
                   </div>
                 )}
                 <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{m.text}</div>
@@ -329,7 +330,7 @@ function ClientChatView({ clientId, clientName, clientEmail, chat }) {
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-          placeholder="Message Meraki Nail Studio…"
+          placeholder={`Message ${salonName}…`}
           style={{ flex: 1, fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 22, padding: '9px 16px', fontSize: 13, outline: 'none', background: '#fafafa' }}
         />
         <button onClick={handleSend} disabled={!text.trim() || sending}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../lib/firebase';
+import { fetchWebfrontConfig } from '../lib/firestore';
 
 // Public RSVP page hit via the /?rsvp=<meetingId>&token=<t>[&r=accept|maybe|decline] link
 // in meeting invitation emails. Token is the credential — no login required.
@@ -16,6 +17,11 @@ export default function RsvpScreen() {
   const [me,       setMe]       = useState(null);
   const [response, setResponse] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  const [salonName, setSalonName] = useState('Plume Nexus');
+
+  useEffect(() => {
+    fetchWebfrontConfig().then(wf => { if (wf?.salonName) setSalonName(wf.salonName); }).catch(() => {});
+  }, []);
 
   // Load the meeting + participant details by token
   useEffect(() => {
@@ -64,7 +70,7 @@ export default function RsvpScreen() {
   return (
     <div style={{ position: 'fixed', inset: 0, background: '#f5f6f8', overflowY: 'auto', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', display: 'flex', flexDirection: 'column' }}>
       <div style={{ background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', padding: '24px 20px', textAlign: 'center', color: '#fff' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .85 }}>Meraki Nail Studio</div>
+        <div style={{ fontSize: 14, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .85 }}>{salonName}</div>
         <div style={{ fontSize: 11, opacity: .7, marginTop: 3 }}>Meeting RSVP</div>
       </div>
 
@@ -87,7 +93,7 @@ export default function RsvpScreen() {
             <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', marginBottom: 16, boxShadow: '0 2px 8px rgba(0,0,0,.06)' }}>
               <div style={{ padding: '18px 20px 12px' }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: '.08em', textTransform: 'uppercase' }}>You're invited</div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginTop: 4, lineHeight: 1.25 }}>{meeting.title || 'Meraki team meeting'}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginTop: 4, lineHeight: 1.25 }}>{meeting.title || `${salonName} team meeting`}</div>
                 {me?.name && <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>Hi {me.name.split(' ')[0]} 👋</div>}
               </div>
               <div style={{ borderTop: '1px solid #f0f0f0', padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: '#444' }}>

@@ -1,5 +1,5 @@
 import { useApp } from '../context/AppContext';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AuthModal from './AuthModal';
 import FeedbackModal from './FeedbackModal';
 import UserMenu from './UserMenu';
@@ -7,6 +7,7 @@ import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
 import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRight, IconSettings, IconMessage } from './Icons';
 import { MODULES, getVisibleModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
+import { fetchWebfrontConfig } from '../lib/firestore';
 
 function greeting() {
   const h = new Date().getHours();
@@ -19,8 +20,19 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   const { gUser, isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin } = useApp();
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [webCfg,       setWebCfg]       = useState(null);
   const canManage = isAdmin || isReadOnly;
   const plan = effectivePlan(settings);
+
+  // Pre-login, settings is rules-blocked (staff-only). Fall back to the
+  // publicly-readable webfront config so the header / hero show the
+  // tenant's actual brand instead of "Plume Nexus" / "Meraki" defaults.
+  useEffect(() => {
+    if (!gUser && !webCfg) fetchWebfrontConfig().then(setWebCfg).catch(() => {});
+  }, [gUser, webCfg]);
+  // Resolution order: settings (signed-in) > webfront (public) > generic.
+  const displayName = settings?.salonName || webCfg?.salonName || 'Plume Nexus';
+  const heroBrand   = settings?.brandName || settings?.salonName || webCfg?.salonName || 'Plume Nexus';
   const techUsers = users.filter(u => u.role === 'tech' && u.techName);
 
   function previewLabel(va) {
@@ -57,7 +69,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             <svg viewBox="0 0 60 60" fill="none" width={18} height={18}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
           </div>
           <div style={{ minWidth: 0 }}>
-            <div className="ms-brand-title" style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-text, #1a1a1a)', lineHeight: 1.2 }}>Meraki Nail Studio</div>
+            <div className="ms-brand-title" style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-text, #1a1a1a)', lineHeight: 1.2 }}>{displayName}</div>
             <div className="ms-brand-subtitle" style={{ fontSize: 11, color: 'var(--tm-muted, #aaa)' }}>
               Salon Manager{t?.seasonal ? ` · ${t.seasonal.emoji}` : ''}
             </div>
@@ -125,7 +137,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           <div style={{ width: 76, height: 76, borderRadius: 22, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', boxShadow: '0 12px 32px rgba(45,122,95,.25)' }}>
             <svg viewBox="0 0 60 60" fill="none" width={42} height={42}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
           </div>
-          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#1a1a1a', margin: 0, letterSpacing: '-.5px' }}>Welcome to Meraki</h1>
+          <h1 style={{ fontSize: 28, fontWeight: 800, color: '#1a1a1a', margin: 0, letterSpacing: '-.5px' }}>Welcome to {heroBrand}</h1>
           <p style={{ fontSize: 14, color: '#888', marginTop: 8, marginBottom: 24, lineHeight: 1.6 }}>
             Sign in to manage appointments, clients, and your team.
           </p>

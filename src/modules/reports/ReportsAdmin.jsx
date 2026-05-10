@@ -1602,7 +1602,7 @@ function TaxReport() {
       emp = employees.find(e => e.name === techName) || {};
     }
     const payer = {
-      name:    settings?.brandName    || 'Meraki Nail Studio',
+      name:    settings?.salonName || settings?.brandName || '',
       address: settings?.brandAddress || '',
       city:    settings?.brandCity    || '',
       state:   settings?.brandState   || '',
@@ -1752,7 +1752,7 @@ function TaxReport() {
     ].join(' | ');
 
     const rows = [
-      ['Meraki Nail Studio — IRS / Tax Report'],
+      [`${settings?.salonName || 'Salon'} — IRS / Tax Report`],
       [filterLabel],
       ['Generated', todayStr()],
       [],
