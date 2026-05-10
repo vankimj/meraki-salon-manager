@@ -1,6 +1,6 @@
 # Cross-Tenant Access Audit
 
-**Status:** Audit v1 (2026-05-09)
+**Status:** Audit v2 (2026-05-09)
 **Owner:** Jonathan VanKim
 **Purpose:** Methodical review of every cloud function and access path to verify principle #10 — *founder cannot read tenant customer data without invitation*. Documents what each function does, who can call it, what data it touches, and whether it could leak data to the founder's UI.
 **Cadence:** Re-run before every release that adds new functions or changes access patterns.
@@ -15,15 +15,16 @@
 |---|---|---|
 | Auth-gated tenant operations (caller must be tenant staff/admin) | 21 | ✅ Safe — caller is acting on their own tenant |
 | Document triggers (fire on tenant doc change, act in same tenant) | 14 | ✅ Safe — scope locked by triggering doc |
-| Scheduled / batch (currently hardcoded to Meraki only) | 8 | ⚠️ **Needs refactor before tenant #2** — see "Single-tenant functions" below |
+| Scheduled / batch | 8 | ✅ **6 multi-tenant via `forEachActiveTenant` (v2). 2 still single-tenant — see below.** |
 | Public unauthenticated (booking, contact form, Stripe/Twilio webhooks) | 4 | ✅ Safe — write to specific tenant identified by request |
 | Platform admin chokepoint | 2 | ✅ Safe — sanitized, returns metadata only |
 
 **Top findings:**
 
-1. **Right now, nothing in production violates principle #10.** Most functions hardcode `TENANT_ID = 'meraki'` — they only operate on Meraki. Since Jonathan is the legitimate owner of Meraki via the tenant-admin role mechanism, there's no cross-tenant data flow happening at all yet.
-2. **Big SaaS-readiness gap:** the same hardcoding means once tenant #2 onboards, scheduled functions (daily reminders, marketing sweeps, tech appointment reminders) won't fire for them. This needs refactoring before any second tenant goes live.
-3. **The platform admin chokepoint is the only intentional cross-tenant code path.** `listTenants` + `getTenantMetadata` are auth-gated to the platform admin allowlist and return only sanitized fields. They're the single audit surface to keep tight as the platform admin grows.
+1. **Nothing in production violates principle #10.** The platform admin chokepoint returns sanitized metadata only; tenant-staff endpoints gate on the caller's tenant role.
+2. **Scheduled-function SaaS-readiness gap closed in v2.** All 6 cron-driven scheduled functions now iterate `tenants/*` via the `forEachActiveTenant` helper instead of hardcoded `TENANT_ID`. A new tenant onboarded today will receive reminders, birthday/lapsed campaigns, and scheduled marketing sends without code changes. Per-tenant failures are isolated so one broken tenant cannot block the rest of the sweep.
+3. **The platform admin chokepoint is the only intentional cross-tenant code path that returns data.** `listTenants` + `getTenantMetadata` are auth-gated to the platform admin allowlist and return only sanitized fields. They're the single audit surface to keep tight as the platform admin grows.
+4. **Document triggers (8 of the 14 in Category B) still bind their `document:` paths to `tenants/${TENANT_ID}/...` at module load time.** They cannot be made multi-tenant by a runtime helper; the path itself needs to use a `{tenantId}` wildcard (separate refactor — tracked under "Recommendations → Before tenant #2 onboards").
 
 ---
 
@@ -82,30 +83,35 @@ Pattern: function fires when a Firestore doc changes. Scope is determined by the
 | `gustoOAuthCallback` | OAuth redirect | State param contains tenant ID |
 | `trackReviewClick` | Public click tracking | Token-based, single-record scope |
 
-### Category C — Scheduled / batch (8) — currently single-tenant
+### Category C — Scheduled / batch (6) — multi-tenant via `forEachActiveTenant` ✅
 
-Pattern: functions run on cron, currently iterate ONLY the Meraki tenant via hardcoded `TENANT_ID`. **Once tenant #2 onboards, these need refactoring** to iterate the `tenants/*` collection. None of them currently leak data to the founder — they fire emails/SMS to clients on Meraki's behalf — but the multi-tenant rewrite is required for SaaS readiness.
+Pattern: cron-driven functions that fan out across every active tenant via the `forEachActiveTenant(label, cb, options)` helper (functions/index.js, defined just below the auth helpers). Per-tenant failures are isolated (try/catch around each `cb` call) and aggregate stats logged. Marketing sends opt into `{ skipPaused: true }` so they don't fire CTAs against a closed-for-pause booking page.
 
-| Function | What | Tenant scope today | Tenant scope needed for SaaS |
-|---|---|---|---|
-| `sendMeetingReminders` | Pre-meeting reminder emails | Meraki only (hardcoded) | Iterate all active tenants |
-| `sendDailyReminders` | Daily appt reminder sweep | Meraki only | Iterate all active tenants |
-| `sendTechAppointmentReminders` | T-15min tech reminder | Meraki only | Iterate all active tenants |
-| `autoBirthdayCampaign` | Daily birthday wishes | Meraki only | Iterate all active tenants |
-| `autoLapsedCampaign` | Win-back campaigns | Meraki only | Iterate all active tenants |
-| `runScheduledCampaigns` | Marketing sweep | Meraki only | Iterate all active tenants |
+| Function | What | Multi-tenant strategy |
+|---|---|---|
+| `sendMeetingReminders` | Pre-meeting reminder emails (every 15m) | `forEachActiveTenant` — meetings collection per tenant |
+| `sendDailyReminders` | Daily appt reminder sweep (09:00 ET) | `forEachActiveTenant` — subject line uses tenant name |
+| `sendTechAppointmentReminders` | T-15min tech reminder (every 5m) | `forEachActiveTenant` — settings, employees, timeOff per tenant |
+| `autoBirthdayCampaign` | Daily birthday wishes (10:00 ET) | `forEachActiveTenant` + `skipPaused` — body/subject use tenant name |
+| `autoLapsedCampaign` | Win-back campaigns (Mon 11:00 ET) | `forEachActiveTenant` + `skipPaused` |
+| `runScheduledCampaigns` | Marketing campaign sweep (every 1m) | `forEachActiveTenant` — race-safe per-campaign claim transaction |
 
-**Important:** when refactoring these, the cross-tenant access is **intentional and necessary** — the function HAS to read appointment data for ALL tenants to send reminders. The principle #10 enforcement is that **none of this data is ever returned to the platform admin or any UI accessible to the founder**. The functions only push it back out to the tenant's own clients.
+**Important:** the cross-tenant iteration is **intentional and necessary** — these functions HAVE to read appointment/client data for ALL tenants to send reminders on each tenant's behalf. The principle #10 enforcement is that **none of this data is ever returned to the platform admin or any UI accessible to the founder**. The functions only push it back out to each tenant's own clients (via Resend / Twilio with the tenant's own from-domain / sending number).
 
-**Refactor pattern (when needed):**
-```javascript
-// Pseudocode — iterate all active tenants
-const tenants = await db.collection('tenants').where('active', '==', true).get();
-for (const tenantDoc of tenants.docs) {
-  const tenantId = tenantDoc.id;
-  // do the per-tenant work using `tenantId` instead of hardcoded TENANT_ID
-}
-```
+**`forEachActiveTenant` semantics:**
+- Iterates `db.collection('tenants').get()` (no `where`, so legacy tenants without an `active` field are still included)
+- Skips when `tenant.active === false` (reserved for admin-suspended tenants)
+- Optional `{ skipPaused: true }` — also skips when `data/settings.pause.until` is today or in the future (used by birthday/lapsed marketing only)
+- Per-tenant try/catch — a broken tenant logs and continues; the rest of the sweep still runs
+- Logs `[label] tenants=N ran=N skipped=N failed=N` at the end for Cloud Logs visibility
+
+**Branding caveat:** the `from:` address for emails is currently a single shared `RESEND_FROM` env var (`Meraki Nail Studio <noreply@merakinailstudio.com>`). When tenants want their own verified domain, this needs to read from the tenant doc. Not a security issue — just a per-tenant branding follow-up.
+
+### Category C-bis — Single-tenant scheduled (1)
+
+| Function | What | Refactor priority |
+|---|---|---|
+| `generateAnnual1099s` | January 30 annual 1099 generation from `payrollRuns` | **Low** — runs once per year, easy to convert to `forEachActiveTenant` before the next cycle. Doesn't violate principle #10; just won't generate forms for non-Meraki tenants until refactored. |
 
 ### Category D — Public unauthenticated (4)
 
@@ -163,10 +169,12 @@ for (const tenantDoc of tenants.docs) {
 - ✅ Done — principle #10 codified, rules updated, chokepoint functions deployed, marketing updated
 
 ### Before tenant #2 onboards
-1. **Refactor scheduled functions** (`sendDailyReminders`, `sendTechAppointmentReminders`, `runScheduledCampaigns`, etc.) to iterate all active tenants instead of hardcoded `TENANT_ID`. Pattern documented above.
-2. **Refactor `chatWithSalon`** (public-facing salon chatbot) to accept tenantId as a request parameter instead of hardcoded `TENANT_ID`. Tenant identified by subdomain or query param.
-3. **Audit all `webfront` config endpoints** to make sure they accept tenantId param.
-4. **Replace TenantsTab in salon app** with deep-link to platform admin (`platform-admin.web.app`).
+1. ✅ **Done (v2 — 2026-05-09)** — 6 cron-driven scheduled functions refactored to iterate all active tenants via `forEachActiveTenant`.
+2. **Refactor 8 document triggers** (`sendReceiptEmail`, `sendMarketingCampaign`, `sendReviewRequestEmail`, `sendAccessRequestNotification`, `sendApptNotification`, `sendBookingConfirmation`, `sendChatNotification`, `sendReviewReceivedNotification`) to use `tenants/{tenantId}/...` wildcard paths instead of `tenants/${TENANT_ID}/...`. Currently they only fire for Meraki — not a security issue, but means new tenants get no triggers until refactored. Pattern: change `document: 'tenants/${TENANT_ID}/foo/{id}'` → `document: 'tenants/{tenantId}/foo/{id}'` and read `event.params.tenantId` inside the handler.
+3. **Refactor `chatWithSalon`** (public-facing salon chatbot) to accept tenantId as a request parameter instead of hardcoded `TENANT_ID`. Tenant identified by subdomain or query param.
+4. **Audit all `webfront` config endpoints** to make sure they accept tenantId param.
+5. **Replace TenantsTab in salon app** with deep-link to platform admin (`platform-admin.web.app`).
+6. **Per-tenant `RESEND_FROM`** — currently a single env var. New tenants need to either send from a shared `noreply@plumenexus.com` (with their salon name in the display name) or bring their own verified domain. Decide before onboarding tenant #2.
 
 ### Ongoing
 1. **Re-run this audit** before any release that adds new cloud functions.
@@ -178,4 +186,5 @@ for (const tenantDoc of tenants.docs) {
 
 ## Document changelog
 
+- **v2 — 2026-05-09** — 6 of the 8 scheduled functions refactored to iterate all active tenants via the new `forEachActiveTenant(label, cb, options)` helper in functions/index.js. Birthday + lapsed campaigns opt into `{ skipPaused: true }`. `generateAnnual1099s` deferred (annual cadence, low priority). Document triggers (8 in Category B) still bind their `document:` paths to `${TENANT_ID}` and need a separate refactor — added to "Before tenant #2 onboards" recommendations.
 - **v1 — 2026-05-09** — initial audit. 49 functions classified, 0 violations of principle #10 found in current code. Identified 8 scheduled functions needing multi-tenant refactor before tenant #2 onboards (separate work item, not a principle violation).

@@ -128,6 +128,50 @@ async function callerRole(db, tenantId, request) {
   return u?.role || null;
 }
 
+// ── Multi-tenant iteration helper ─────────────────────────────────────────────
+// Cron jobs serving the SaaS fan out across every active tenant instead of the
+// legacy single-tenant `tenants/${TENANT_ID}/...` paths. Per-tenant failures
+// are isolated so one broken tenant can't block the rest of the sweep.
+//
+// Skip rules:
+//   active === false   → tenant is suspended/disabled (admin action)
+//   skipPaused option  → also skip when data/settings.pause.until is today or
+//                        in the future. Used by marketing sends that would
+//                        feel tone-deaf during a closure window. Operational
+//                        sends (appointment reminders) opt out and still fire.
+async function forEachActiveTenant(label, cb, options = {}) {
+  const { skipPaused = false } = options;
+  const db = getFirestore();
+  const tenantsSnap = await db.collection('tenants').get();
+  let total = 0, ran = 0, skipped = 0, failed = 0;
+  for (const tDoc of tenantsSnap.docs) {
+    total++;
+    const tData = tDoc.data() || {};
+    if (tData.active === false) { skipped++; continue; }
+    if (skipPaused) {
+      try {
+        const sDoc = await db.doc(`tenants/${tDoc.id}/data/settings`).get();
+        const pauseUntil = String(((sDoc.exists ? sDoc.data() : {}).pause || {}).until || '').trim();
+        if (pauseUntil) {
+          const tz = 'America/New_York';
+          const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+          if (todayLocal <= pauseUntil) { skipped++; continue; }
+        }
+      } catch (e) {
+        console.warn(`[${label}] pause-check failed for ${tDoc.id}:`, e?.message);
+      }
+    }
+    try {
+      await cb(tDoc.id, tData);
+      ran++;
+    } catch (e) {
+      failed++;
+      console.error(`[${label}] tenant ${tDoc.id} failed:`, e?.message);
+    }
+  }
+  console.log(`[${label}] tenants=${total} ran=${ran} skipped=${skipped} failed=${failed}`);
+}
+
 function fmtTime(str) {
   if (!str) return '';
   const [h, m] = str.split(':').map(Number);
@@ -1424,115 +1468,105 @@ async function sendMeetingReminderBatch(resend, meeting, participants, timeLabel
 exports.sendMeetingReminders = onSchedule(
   { schedule: 'every 15 minutes', timeZone: 'America/New_York' },
   async () => {
-    const db     = getFirestore();
     const apiKey = resendKey.value();
     if (!apiKey) { console.warn('[MeetingReminders] RESEND_API_KEY not set — skipping'); return; }
+    const resend = new Resend(apiKey);
+    const today  = new Date().toISOString().slice(0, 10);
+    const now    = Date.now();
 
-    const today = new Date().toISOString().slice(0, 10);
-    const snap  = await db.collection(`tenants/${TENANT_ID}/meetings`)
-      .where('date', '>=', today)
-      .get();
+    await forEachActiveTenant('MeetingReminders', async (tenantId) => {
+      const db = getFirestore();
+      const snap = await db.collection(`tenants/${tenantId}/meetings`)
+        .where('date', '>=', today)
+        .get();
 
-    const resend    = new Resend(apiKey);
-    const now       = Date.now();
-    let batchesSent = 0;
+      let batchesSent = 0;
+      for (const docSnap of snap.docs) {
+        const meeting = { id: docSnap.id, ...docSnap.data() };
+        const { startTimestamp, reminders = {}, participants = [] } = meeting;
+        if (!startTimestamp) continue;
 
-    for (const docSnap of snap.docs) {
-      const meeting = { id: docSnap.id, ...docSnap.data() };
-      const { startTimestamp, reminders = {}, participants = [] } = meeting;
-      if (!startTimestamp) continue;
+        const diffMin = (startTimestamp - now) / 60000;
 
-      const diffMin = (startTimestamp - now) / 60000;
-
-      if (diffMin >= 55 && diffMin <= 75 && !reminders.sent60) {
-        await sendMeetingReminderBatch(resend, meeting, participants, '1 hour',     docSnap.ref, 'sent60');
-        batchesSent++;
+        if (diffMin >= 55 && diffMin <= 75 && !reminders.sent60) {
+          await sendMeetingReminderBatch(resend, meeting, participants, '1 hour',     docSnap.ref, 'sent60');
+          batchesSent++;
+        }
+        if (diffMin >= 10 && diffMin <= 25 && !reminders.sent15) {
+          await sendMeetingReminderBatch(resend, meeting, participants, '15 minutes', docSnap.ref, 'sent15');
+          batchesSent++;
+        }
       }
-      if (diffMin >= 10 && diffMin <= 25 && !reminders.sent15) {
-        await sendMeetingReminderBatch(resend, meeting, participants, '15 minutes', docSnap.ref, 'sent15');
-        batchesSent++;
-      }
-    }
 
-    console.log(`[MeetingReminders] Checked ${snap.size} meetings, sent ${batchesSent} reminder batch(es)`);
+      if (snap.size || batchesSent) {
+        console.log(`[MeetingReminders] tenant=${tenantId} meetings=${snap.size} batches=${batchesSent}`);
+      }
+    });
   }
 );
 
 exports.sendDailyReminders = onSchedule(
   { schedule: 'every day 09:00', timeZone: 'America/New_York' },
   async () => {
-    const db     = getFirestore();
     const apiKey = resendKey.value();
-
     if (!apiKey) {
       console.warn('[Reminders] RESEND_API_KEY not set — skipping');
       return;
     }
-
+    const resend   = new Resend(apiKey);
     const tomorrow = tomorrowStr();
-    console.log('[Reminders] Checking appointments for', tomorrow);
 
-    // Fetch all of tomorrow's appointments (filter status + reminderSent client-side
-    // to avoid needing a composite index)
-    const apptSnap = await db
-      .collection(`tenants/${TENANT_ID}/appointments`)
-      .where('date', '==', tomorrow)
-      .get();
+    await forEachActiveTenant('Reminders', async (tenantId, tData) => {
+      const db = getFirestore();
+      const tenantName = tData.name || tenantId;
 
-    const toRemind = apptSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(a => a.status === 'scheduled' && a.clientId && !a.reminderSent);
+      const apptSnap = await db
+        .collection(`tenants/${tenantId}/appointments`)
+        .where('date', '==', tomorrow)
+        .get();
 
-    if (!toRemind.length) {
-      console.log('[Reminders] Nothing to send for', tomorrow);
-      return;
-    }
+      const toRemind = apptSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(a => a.status === 'scheduled' && a.clientId && !a.reminderSent);
 
-    // Batch-fetch unique clients
-    const clientIds = [...new Set(toRemind.map(a => a.clientId))];
-    const clientSnaps = await Promise.all(
-      clientIds.map(id => db.doc(`tenants/${TENANT_ID}/clients/${id}`).get())
-    );
-    const clientMap = {};
-    clientSnaps.forEach(snap => { if (snap.exists) clientMap[snap.id] = snap.data(); });
+      if (!toRemind.length) return;
 
-    const resend = new Resend(apiKey);
-    let sent = 0, skipped = 0;
+      const clientIds = [...new Set(toRemind.map(a => a.clientId))];
+      const clientSnaps = await Promise.all(
+        clientIds.map(id => db.doc(`tenants/${tenantId}/clients/${id}`).get())
+      );
+      const clientMap = {};
+      clientSnaps.forEach(snap => { if (snap.exists) clientMap[snap.id] = snap.data(); });
 
-    await Promise.all(toRemind.map(async appt => {
-      const client = clientMap[appt.clientId];
-      const email  = client?.email?.trim();
+      let sent = 0, skipped = 0;
+      await Promise.all(toRemind.map(async appt => {
+        const client = clientMap[appt.clientId];
+        const email  = client?.email?.trim();
+        if (!email) { skipped++; return; }
+        if (client?.commPreferences?.appointmentEmail === false) {
+          skipped++;
+          return;
+        }
 
-      if (!email) { skipped++; return; }
-      // Honor the client's appointment-email preference. Default to opted-in
-      // when the field is missing (legacy clients).
-      if (client?.commPreferences?.appointmentEmail === false) {
-        skipped++;
-        console.log(`[Reminders] Skipping ${client.name} — opted out of appointment email`);
-        return;
-      }
+        try {
+          const { error } = await resend.emails.send({
+            from:    resendFrom.value(),
+            to:      email,
+            subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
+            html:    buildReminderHtml(appt, client),
+          });
+          if (error) throw new Error(error.message || JSON.stringify(error));
 
-      try {
-        const { error } = await resend.emails.send({
-          from:    resendFrom.value(),
-          to:      email,
-          subject: `Reminder: Your appointment tomorrow at Meraki Nail Studio`,
-          html:    buildReminderHtml(appt, client),
-        });
+          await db.doc(`tenants/${tenantId}/appointments/${appt.id}`)
+            .update({ reminderSent: true, reminderSentAt: new Date().toISOString() });
+          sent++;
+        } catch (e) {
+          console.error(`[Reminders] Failed for ${client?.name} (tenant=${tenantId}):`, e.message);
+        }
+      }));
 
-        if (error) throw new Error(error.message || JSON.stringify(error));
-
-        await db.doc(`tenants/${TENANT_ID}/appointments/${appt.id}`)
-          .update({ reminderSent: true, reminderSentAt: new Date().toISOString() });
-
-        sent++;
-        console.log(`[Reminders] Sent to ${client.name} (${email})`);
-      } catch (e) {
-        console.error(`[Reminders] Failed for ${client?.name}:`, e.message);
-      }
-    }));
-
-    console.log(`[Reminders] Done for ${tomorrow}. Sent: ${sent}, Skipped (no email): ${skipped}`);
+      console.log(`[Reminders] tenant=${tenantId} sent=${sent} skipped=${skipped} (date=${tomorrow})`);
+    });
   }
 );
 
@@ -1546,67 +1580,6 @@ exports.sendTechAppointmentReminders = onSchedule(
     timeZone: 'America/New_York',
   },
   async () => {
-    const db = getFirestore();
-    const sDoc = await db.doc(`tenants/${TENANT_ID}/data/settings`).get();
-    const cfg  = ((sDoc.exists ? sDoc.data() : {}).techReminders) || {};
-    if (cfg.enabled === false) {
-      console.log('[TechReminders] Disabled via settings — skipping');
-      return;
-    }
-    const leadMin = Number(cfg.leadMinutes) > 0 ? Number(cfg.leadMinutes) : 15;
-    const channel = cfg.channel || 'email'; // 'email' | 'sms' | 'both'
-
-    // "now" in salon timezone
-    const tz = 'America/New_York';
-    const now = new Date();
-    const localToday = now.toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
-    const hm = now.toLocaleTimeString('en-US', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' });
-    const [h, m] = hm.split(':').map(Number);
-    const nowMins   = h * 60 + m;
-    const upperMins = nowMins + leadMin;
-
-    const apptSnap = await db
-      .collection(`tenants/${TENANT_ID}/appointments`)
-      .where('date', '==', localToday)
-      .get();
-
-    const candidates = apptSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => {
-      if (a.status !== 'scheduled') return false;
-      if (a.techReminderSent) return false;
-      if (!a.startTime || !a.techName) return false;
-      const [ah, am] = String(a.startTime).split(':').map(Number);
-      if (!Number.isFinite(ah) || !Number.isFinite(am)) return false;
-      const sm = ah * 60 + am;
-      return sm > nowMins && sm <= upperMins;
-    });
-
-    if (!candidates.length) {
-      console.log(`[TechReminders] Nothing pending at ${hm} (lead=${leadMin}m)`);
-      return;
-    }
-
-    const empSnap = await db.collection(`tenants/${TENANT_ID}/employees`).get();
-    const empByName = {};
-    empSnap.docs.forEach(d => { const e = d.data(); if (e.name) empByName[e.name] = e; });
-
-    // Pull today's time-off entries up-front so we can skip reminders for
-    // techs who are out (vacation/sick/personal). Per-day check; covers
-    // multi-day blocks via startDate/endDate range and partial-day blocks
-    // via startTime/endTime.
-    const toSnap = await db.collection(`tenants/${TENANT_ID}/timeOff`).get();
-    const timeOffEntries = toSnap.docs.map(d => d.data())
-      .filter(t => (t.startDate || '') <= localToday && localToday <= (t.endDate || t.startDate || ''));
-    const isTechOnTimeOff = (techName, apptStartMins) => {
-      for (const t of timeOffEntries) {
-        if (t.techName !== techName) continue;
-        if (t.allDay !== false) return true;
-        const sM = t.startTime ? (() => { const [h, m] = t.startTime.split(':').map(Number); return h * 60 + m; })() : 0;
-        const eM = t.endTime   ? (() => { const [h, m] = t.endTime.split(':').map(Number); return h * 60 + m; })() : 24 * 60;
-        if (apptStartMins >= sM && apptStartMins < eM) return true;
-      }
-      return false;
-    };
-
     const apiKey = resendKey.value();
     const resend = apiKey ? new Resend(apiKey) : null;
 
@@ -1618,95 +1591,146 @@ exports.sendTechAppointmentReminders = onSchedule(
       ? require('twilio')(twApiKeySid || twSid, twToken, twApiKeySid ? { accountSid: twSid } : undefined)
       : null;
 
-    let emailsSent = 0, smsSent = 0, skipped = 0, skippedTimeOff = 0;
+    // "now" in salon timezone — assumes all tenants are America/New_York for
+    // now. Per-tenant timezone preference can replace this when tenants
+    // outside ET onboard.
+    const tz = 'America/New_York';
+    const now = new Date();
+    const localToday = now.toLocaleDateString('en-CA', { timeZone: tz });
+    const hm = now.toLocaleTimeString('en-US', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    const [h, m] = hm.split(':').map(Number);
+    const nowMins = h * 60 + m;
 
-    for (const appt of candidates) {
-      const emp = empByName[appt.techName];
-      if (!emp || emp.techReminderOptOut) { skipped++; continue; }
+    await forEachActiveTenant('TechReminders', async (tenantId, tData) => {
+      const db = getFirestore();
+      const tenantName = tData.name || tenantId;
+      const tenantShort = String(tenantName).split(/\s+/)[0] || tenantName;
 
-      // If the tech is on time-off today (and the appt time falls in the
-      // off window for partial-day blocks), skip the reminder. The appt
-      // itself shouldn't be on a tech who's out, but stale schedules can
-      // happen — better safe than waking someone on vacation.
-      const apptStartMinsCheck = (() => {
-        const [h, m] = (appt.startTime || '00:00').split(':').map(Number);
-        return (h || 0) * 60 + (m || 0);
-      })();
-      if (isTechOnTimeOff(appt.techName, apptStartMinsCheck)) {
-        skippedTimeOff++;
-        // Still mark as "sent" so we don't retry every 5 min — tech is out
-        await db.doc(`tenants/${TENANT_ID}/appointments/${appt.id}`).update({
+      const sDoc = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const cfg  = ((sDoc.exists ? sDoc.data() : {}).techReminders) || {};
+      if (cfg.enabled === false) return;
+      const leadMin = Number(cfg.leadMinutes) > 0 ? Number(cfg.leadMinutes) : 15;
+      const channel = cfg.channel || 'email';
+      const upperMins = nowMins + leadMin;
+
+      const apptSnap = await db
+        .collection(`tenants/${tenantId}/appointments`)
+        .where('date', '==', localToday)
+        .get();
+
+      const candidates = apptSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => {
+        if (a.status !== 'scheduled') return false;
+        if (a.techReminderSent) return false;
+        if (!a.startTime || !a.techName) return false;
+        const [ah, am] = String(a.startTime).split(':').map(Number);
+        if (!Number.isFinite(ah) || !Number.isFinite(am)) return false;
+        const sm = ah * 60 + am;
+        return sm > nowMins && sm <= upperMins;
+      });
+
+      if (!candidates.length) return;
+
+      const empSnap = await db.collection(`tenants/${tenantId}/employees`).get();
+      const empByName = {};
+      empSnap.docs.forEach(d => { const e = d.data(); if (e.name) empByName[e.name] = e; });
+
+      const toSnap = await db.collection(`tenants/${tenantId}/timeOff`).get();
+      const timeOffEntries = toSnap.docs.map(d => d.data())
+        .filter(t => (t.startDate || '') <= localToday && localToday <= (t.endDate || t.startDate || ''));
+      const isTechOnTimeOff = (techName, apptStartMins) => {
+        for (const t of timeOffEntries) {
+          if (t.techName !== techName) continue;
+          if (t.allDay !== false) return true;
+          const sM = t.startTime ? (() => { const [hh, mm] = t.startTime.split(':').map(Number); return hh * 60 + mm; })() : 0;
+          const eM = t.endTime   ? (() => { const [hh, mm] = t.endTime.split(':').map(Number);   return hh * 60 + mm; })() : 24 * 60;
+          if (apptStartMins >= sM && apptStartMins < eM) return true;
+        }
+        return false;
+      };
+
+      let emailsSent = 0, smsSent = 0, skipped = 0, skippedTimeOff = 0;
+
+      for (const appt of candidates) {
+        const emp = empByName[appt.techName];
+        if (!emp || emp.techReminderOptOut) { skipped++; continue; }
+
+        const apptStartMinsCheck = (() => {
+          const [hh, mm] = (appt.startTime || '00:00').split(':').map(Number);
+          return (hh || 0) * 60 + (mm || 0);
+        })();
+        if (isTechOnTimeOff(appt.techName, apptStartMinsCheck)) {
+          skippedTimeOff++;
+          await db.doc(`tenants/${tenantId}/appointments/${appt.id}`).update({
+            techReminderSent: true,
+            techReminderSentAt: new Date().toISOString(),
+            techReminderSkippedReason: 'tech_on_time_off',
+          });
+          continue;
+        }
+
+        const [ah, am] = appt.startTime.split(':').map(Number);
+        const apptMins = ah * 60 + am;
+        const minutesAway = Math.max(0, apptMins - nowMins);
+        const startLabel = (() => {
+          const hh = ah > 12 ? ah - 12 : ah === 0 ? 12 : ah;
+          const ampm = ah >= 12 ? 'PM' : 'AM';
+          return `${hh}:${String(am).padStart(2, '0')} ${ampm}`;
+        })();
+        const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'no services listed';
+        const clientLabel = appt.clientName || 'Walk-in';
+
+        const wantsEmail = (channel === 'email' || channel === 'both');
+        const wantsSms   = (channel === 'sms'   || channel === 'both');
+
+        if (wantsEmail && resend && emp.email) {
+          try {
+            const subject = `[${minutesAway}m] ${clientLabel} at ${startLabel} — ${services}`;
+            const html = buildAutoEmail(
+              'Upcoming appointment',
+              emp.name?.split(' ')[0] || 'there',
+              `<p style="font-size:14px;color:#222;margin:0 0 12px;">Heads-up — your next appointment starts in <strong>${minutesAway} minute${minutesAway === 1 ? '' : 's'}</strong>.</p>
+               <table style="width:100%;border-collapse:collapse;font-size:14px;color:#222;margin:0 0 12px;">
+                 <tr><td style="padding:6px 0;color:#888;width:90px;">Time</td><td style="padding:6px 0;font-weight:600;">${startLabel}</td></tr>
+                 <tr><td style="padding:6px 0;color:#888;">Client</td><td style="padding:6px 0;font-weight:600;">${clientLabel}</td></tr>
+                 <tr><td style="padding:6px 0;color:#888;">Services</td><td style="padding:6px 0;">${services}</td></tr>
+                 ${appt.notes ? `<tr><td style="padding:6px 0;color:#888;">Notes</td><td style="padding:6px 0;font-style:italic;">${String(appt.notes).slice(0, 280)}</td></tr>` : ''}
+               </table>`,
+              null, null
+            );
+            const { error } = await resend.emails.send({
+              from: resendFrom.value(),
+              to: emp.email.trim(),
+              subject,
+              html,
+            });
+            if (error) throw new Error(error.message || JSON.stringify(error));
+            emailsSent++;
+          } catch (e) {
+            console.error(`[TechReminders] Email failed for ${emp.name} (tenant=${tenantId}):`, e.message);
+          }
+        }
+
+        if (wantsSms && smsClient && emp.phone) {
+          try {
+            const phone = normalizePhone(emp.phone);
+            if (phone) {
+              const body = `${tenantShort}: ${clientLabel} at ${startLabel} (in ${minutesAway} min) — ${services.slice(0, 80)}`;
+              await smsClient.messages.create({ from: twFrom, to: phone, body });
+              smsSent++;
+            }
+          } catch (e) {
+            console.error(`[TechReminders] SMS failed for ${emp.name} (tenant=${tenantId}):`, e.message);
+          }
+        }
+
+        await db.doc(`tenants/${tenantId}/appointments/${appt.id}`).update({
           techReminderSent: true,
           techReminderSentAt: new Date().toISOString(),
-          techReminderSkippedReason: 'tech_on_time_off',
         });
-        continue;
       }
 
-      const [ah, am] = appt.startTime.split(':').map(Number);
-      const apptMins = ah * 60 + am;
-      const minutesAway = Math.max(0, apptMins - nowMins);
-      const startLabel = (() => {
-        const hh = ah > 12 ? ah - 12 : ah === 0 ? 12 : ah;
-        const ampm = ah >= 12 ? 'PM' : 'AM';
-        return `${hh}:${String(am).padStart(2, '0')} ${ampm}`;
-      })();
-      const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'no services listed';
-      const clientLabel = appt.clientName || 'Walk-in';
-
-      const wantsEmail = (channel === 'email' || channel === 'both');
-      const wantsSms   = (channel === 'sms'   || channel === 'both');
-
-      // Email
-      if (wantsEmail && resend && emp.email) {
-        try {
-          const subject = `[${minutesAway}m] ${clientLabel} at ${startLabel} — ${services}`;
-          const html = buildAutoEmail(
-            'Upcoming appointment',
-            emp.name?.split(' ')[0] || 'there',
-            `<p style="font-size:14px;color:#222;margin:0 0 12px;">Heads-up — your next appointment starts in <strong>${minutesAway} minute${minutesAway === 1 ? '' : 's'}</strong>.</p>
-             <table style="width:100%;border-collapse:collapse;font-size:14px;color:#222;margin:0 0 12px;">
-               <tr><td style="padding:6px 0;color:#888;width:90px;">Time</td><td style="padding:6px 0;font-weight:600;">${startLabel}</td></tr>
-               <tr><td style="padding:6px 0;color:#888;">Client</td><td style="padding:6px 0;font-weight:600;">${clientLabel}</td></tr>
-               <tr><td style="padding:6px 0;color:#888;">Services</td><td style="padding:6px 0;">${services}</td></tr>
-               ${appt.notes ? `<tr><td style="padding:6px 0;color:#888;">Notes</td><td style="padding:6px 0;font-style:italic;">${String(appt.notes).slice(0, 280)}</td></tr>` : ''}
-             </table>`,
-            null, null
-          );
-          const { error } = await resend.emails.send({
-            from: resendFrom.value(),
-            to: emp.email.trim(),
-            subject,
-            html,
-          });
-          if (error) throw new Error(error.message || JSON.stringify(error));
-          emailsSent++;
-        } catch (e) {
-          console.error(`[TechReminders] Email failed for ${emp.name}:`, e.message);
-        }
-      }
-
-      // SMS
-      if (wantsSms && smsClient && emp.phone) {
-        try {
-          const phone = normalizePhone(emp.phone);
-          if (phone) {
-            const body = `Meraki: ${clientLabel} at ${startLabel} (in ${minutesAway} min) — ${services.slice(0, 80)}`;
-            await smsClient.messages.create({ from: twFrom, to: phone, body });
-            smsSent++;
-          }
-        } catch (e) {
-          console.error(`[TechReminders] SMS failed for ${emp.name}:`, e.message);
-        }
-      }
-
-      await db.doc(`tenants/${TENANT_ID}/appointments/${appt.id}`).update({
-        techReminderSent: true,
-        techReminderSentAt: new Date().toISOString(),
-      });
-    }
-
-    console.log(`[TechReminders] ${candidates.length} due. emails:${emailsSent} sms:${smsSent} skipped:${skipped} skippedTimeOff:${skippedTimeOff}`);
+      console.log(`[TechReminders] tenant=${tenantId} due=${candidates.length} emails=${emailsSent} sms=${smsSent} skipped=${skipped} skippedTimeOff=${skippedTimeOff}`);
+    });
   }
 );
 
@@ -3078,13 +3102,9 @@ function buildAutoEmail(headerSub, firstName, bodyHtml, ctaText, ctaUrl) {
 exports.autoBirthdayCampaign = onSchedule(
   { schedule: 'every day 10:00', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
-    const db     = getFirestore();
     const apiKey = resendKey.value();
     if (!apiKey) return;
-
-    const settingsSnap = await db.doc(`tenants/${TENANT_ID}/data/settings`).get();
-    const settings     = settingsSnap.exists ? settingsSnap.data() : {};
-    if (!settings.autoBirthday) { console.log('[BirthdayAuto] Disabled — skipping'); return; }
+    const resend = new Resend(apiKey);
 
     const now  = new Date();
     const mm   = String(now.getMonth() + 1).padStart(2, '0');
@@ -3092,45 +3112,56 @@ exports.autoBirthdayCampaign = onSchedule(
     const mdKey = `${mm}-${dd}`;
     const year  = now.getFullYear();
 
-    const clientsSnap = await db.collection(`tenants/${TENANT_ID}/clients`).get();
-    const targets = clientsSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.email && !c.marketingOptOut && c.birthday && c.birthday.slice(5, 10) === mdKey);
+    // skipPaused: birthday emails CTA "Book your birthday visit" — sending
+    // during a closure window would prompt customers to book against a
+    // disabled booking page.
+    await forEachActiveTenant('BirthdayAuto', async (tenantId, tData) => {
+      const db = getFirestore();
+      const tenantName = tData.name || tenantId;
+      const tenantShort = String(tenantName).split(/\s+/)[0] || tenantName;
 
-    if (!targets.length) { console.log('[BirthdayAuto] No birthdays today'); return; }
+      const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings     = settingsSnap.exists ? settingsSnap.data() : {};
+      if (!settings.autoBirthday) return;
 
-    const resend = new Resend(apiKey);
-    let sent = 0;
-    for (const client of targets) {
-      const sentDocId  = `birthday_${year}_${client.id}`;
-      const alreadySent = await db.doc(`tenants/${TENANT_ID}/automationSent/${sentDocId}`).get();
-      if (alreadySent.exists) continue;
+      const clientsSnap = await db.collection(`tenants/${tenantId}/clients`).get();
+      const targets = clientsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => c.email && !c.marketingOptOut && c.birthday && c.birthday.slice(5, 10) === mdKey);
+      if (!targets.length) return;
 
-      const firstName = (client.name || 'there').split(' ')[0];
-      const bookingUrl = settings.bookingUrl || 'https://meraki-salon-manager.web.app/?book';
-      const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
-        🎉 Happy Birthday! We hope your special day is as fabulous as you are.
-        As a little gift from all of us at Meraki, we'd love to treat you to something special this month.
-        Come celebrate with us — you deserve it!
-      </p>`;
-      const html = buildAutoEmail("Happy Birthday! 🎂", firstName, body, "Book Your Birthday Visit", bookingUrl);
+      let sent = 0;
+      for (const client of targets) {
+        const sentDocId   = `birthday_${year}_${client.id}`;
+        const alreadySent = await db.doc(`tenants/${tenantId}/automationSent/${sentDocId}`).get();
+        if (alreadySent.exists) continue;
 
-      try {
-        const { error } = await resend.emails.send({
-          from:    resendFrom.value(),
-          to:      client.email,
-          subject: `Happy Birthday, ${firstName}! 🎂 A gift from Meraki`,
-          html,
-        });
-        if (!error) {
-          await db.doc(`tenants/${TENANT_ID}/automationSent/${sentDocId}`).set({
-            type: 'birthday', clientId: client.id, clientName: client.name, year, sentAt: new Date().toISOString(),
+        const firstName  = (client.name || 'there').split(' ')[0];
+        const bookingUrl = settings.bookingUrl || 'https://meraki-salon-manager.web.app/?book';
+        const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
+          🎉 Happy Birthday! We hope your special day is as fabulous as you are.
+          As a little gift from all of us at ${esc(tenantShort)}, we'd love to treat you to something special this month.
+          Come celebrate with us — you deserve it!
+        </p>`;
+        const html = buildAutoEmail("Happy Birthday! 🎂", firstName, body, "Book Your Birthday Visit", bookingUrl);
+
+        try {
+          const { error } = await resend.emails.send({
+            from:    resendFrom.value(),
+            to:      client.email,
+            subject: `Happy Birthday, ${firstName}! 🎂 A gift from ${tenantShort}`,
+            html,
           });
-          sent++;
-        }
-      } catch (e) { console.error('[BirthdayAuto] Failed for', client.name, ':', e.message); }
-    }
-    console.log(`[BirthdayAuto] Sent ${sent}/${targets.length} birthday emails`);
+          if (!error) {
+            await db.doc(`tenants/${tenantId}/automationSent/${sentDocId}`).set({
+              type: 'birthday', clientId: client.id, clientName: client.name, year, sentAt: new Date().toISOString(),
+            });
+            sent++;
+          }
+        } catch (e) { console.error(`[BirthdayAuto] Failed for ${client.name} (tenant=${tenantId}):`, e.message); }
+      }
+      console.log(`[BirthdayAuto] tenant=${tenantId} sent=${sent}/${targets.length}`);
+    }, { skipPaused: true });
   }
 );
 
@@ -3140,66 +3171,72 @@ exports.autoBirthdayCampaign = onSchedule(
 exports.autoLapsedCampaign = onSchedule(
   { schedule: 'every monday 11:00', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
-    const db     = getFirestore();
     const apiKey = resendKey.value();
     if (!apiKey) return;
-
-    const settingsSnap = await db.doc(`tenants/${TENANT_ID}/data/settings`).get();
-    const settings     = settingsSnap.exists ? settingsSnap.data() : {};
-    if (!settings.autoLapsed) { console.log('[LapsedAuto] Disabled — skipping'); return; }
-
-    const lapDays  = settings.autoLapsedDays || 60;
-    const now      = new Date();
-    const endDate  = now.toISOString().slice(0, 10);
-    const startDate = new Date(now - lapDays * 86400000).toISOString().slice(0, 10);
-    const cutoffIso = new Date(now - lapDays * 86400000).toISOString();
-
-    const clientsSnap = await db.collection(`tenants/${TENANT_ID}/clients`).get();
-    const clients = clientsSnap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .filter(c => c.email && !c.marketingOptOut);
-
-    const apptsSnap = await db.collection(`tenants/${TENANT_ID}/appointments`)
-      .where('date', '>=', startDate)
-      .where('date', '<=', endDate)
-      .get();
-    const activeIds = new Set(apptsSnap.docs.map(d => d.data().clientId).filter(Boolean));
-
-    const lapsed = clients.filter(c => !activeIds.has(c.id));
-    if (!lapsed.length) { console.log('[LapsedAuto] No lapsed clients'); return; }
-
     const resend = new Resend(apiKey);
-    let sent = 0;
-    for (const client of lapsed) {
-      const sentDocId  = `lapsed_${client.id}`;
-      const sentSnap   = await db.doc(`tenants/${TENANT_ID}/automationSent/${sentDocId}`).get();
-      if (sentSnap.exists && sentSnap.data().sentAt > cutoffIso) continue;
 
-      const firstName  = (client.name || 'there').split(' ')[0];
-      const bookingUrl = settings.bookingUrl || 'https://meraki-salon-manager.web.app/?book';
-      const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
-        It's been a while since your last visit, and we genuinely miss you!
-        We have exciting new styles and services waiting for you.
-        Come back and let us take care of you — your nails (and you!) deserve it.
-      </p>`;
-      const html = buildAutoEmail("We miss you! 💅", firstName, body, "Book Your Next Visit", bookingUrl);
+    // skipPaused: re-engagement CTA points at booking — pointless during a
+    // closure window.
+    await forEachActiveTenant('LapsedAuto', async (tenantId, tData) => {
+      const db = getFirestore();
+      const tenantName = String(tData.name || tenantId);
 
-      try {
-        const { error } = await resend.emails.send({
-          from:    resendFrom.value(),
-          to:      client.email,
-          subject: `We miss you, ${firstName}! Come see us 💅`,
-          html,
-        });
-        if (!error) {
-          await db.doc(`tenants/${TENANT_ID}/automationSent/${sentDocId}`).set({
-            type: 'lapsed', clientId: client.id, clientName: client.name, lapDays, sentAt: new Date().toISOString(),
+      const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings     = settingsSnap.exists ? settingsSnap.data() : {};
+      if (!settings.autoLapsed) return;
+
+      const lapDays   = settings.autoLapsedDays || 60;
+      const now       = new Date();
+      const endDate   = now.toISOString().slice(0, 10);
+      const startDate = new Date(now - lapDays * 86400000).toISOString().slice(0, 10);
+      const cutoffIso = new Date(now - lapDays * 86400000).toISOString();
+
+      const clientsSnap = await db.collection(`tenants/${tenantId}/clients`).get();
+      const clients = clientsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(c => c.email && !c.marketingOptOut);
+
+      const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`)
+        .where('date', '>=', startDate)
+        .where('date', '<=', endDate)
+        .get();
+      const activeIds = new Set(apptsSnap.docs.map(d => d.data().clientId).filter(Boolean));
+
+      const lapsed = clients.filter(c => !activeIds.has(c.id));
+      if (!lapsed.length) return;
+
+      let sent = 0;
+      for (const client of lapsed) {
+        const sentDocId = `lapsed_${client.id}`;
+        const sentSnap  = await db.doc(`tenants/${tenantId}/automationSent/${sentDocId}`).get();
+        if (sentSnap.exists && sentSnap.data().sentAt > cutoffIso) continue;
+
+        const firstName  = (client.name || 'there').split(' ')[0];
+        const bookingUrl = settings.bookingUrl || 'https://meraki-salon-manager.web.app/?book';
+        const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
+          It's been a while since your last visit, and we genuinely miss you!
+          We have exciting new styles and services waiting for you.
+          Come back and let us take care of you — your nails (and you!) deserve it.
+        </p>`;
+        const html = buildAutoEmail("We miss you! 💅", firstName, body, "Book Your Next Visit", bookingUrl);
+
+        try {
+          const { error } = await resend.emails.send({
+            from:    resendFrom.value(),
+            to:      client.email,
+            subject: `We miss you, ${firstName}! Come see us 💅`,
+            html,
           });
-          sent++;
-        }
-      } catch (e) { console.error('[LapsedAuto] Failed for', client.name, ':', e.message); }
-    }
-    console.log(`[LapsedAuto] Sent ${sent}/${lapsed.length} lapsed emails`);
+          if (!error) {
+            await db.doc(`tenants/${tenantId}/automationSent/${sentDocId}`).set({
+              type: 'lapsed', clientId: client.id, clientName: client.name, lapDays, sentAt: new Date().toISOString(),
+            });
+            sent++;
+          }
+        } catch (e) { console.error(`[LapsedAuto] Failed for ${client.name} (tenant=${tenantId}):`, e.message); }
+      }
+      console.log(`[LapsedAuto] tenant=${tenantId} (${tenantName}) sent=${sent}/${lapsed.length}`);
+    }, { skipPaused: true });
   }
 );
 
@@ -3582,21 +3619,15 @@ exports.sendSMSCampaign = onDocumentCreated(
 exports.runScheduledCampaigns = onSchedule(
   { schedule: 'every 1 minutes', timeoutSeconds: 540, secrets: [unsubscribeSecret] },
   async () => {
-    const db = getFirestore();
-    const tenantsSnap = await db.collection('tenants').get();
     const nowIso = new Date().toISOString();
 
-    for (const tDoc of tenantsSnap.docs) {
-      let dueSnap;
-      try {
-        dueSnap = await db.collection(`tenants/${tDoc.id}/campaigns`)
-          .where('status', '==', 'scheduled')
-          .where('scheduleAt', '<=', nowIso)
-          .get();
-      } catch (e) {
-        console.error(`[runScheduledCampaigns] query failed for tenant ${tDoc.id}:`, e?.message);
-        continue;
-      }
+    await forEachActiveTenant('runScheduledCampaigns', async (tenantId) => {
+      const db = getFirestore();
+      const dueSnap = await db.collection(`tenants/${tenantId}/campaigns`)
+        .where('status', '==', 'scheduled')
+        .where('scheduleAt', '<=', nowIso)
+        .get();
+
       for (const cDoc of dueSnap.docs) {
         // Race-safe claim: only ONE sweep instance gets to process this row.
         // Pre-flip to 'sending' inside a transaction; the per-channel
@@ -3611,22 +3642,22 @@ exports.runScheduledCampaigns = onSchedule(
             claimedData = d;
           });
         } catch (e) {
-          console.error(`[runScheduledCampaigns] claim failed for ${cDoc.id}:`, e?.message);
+          console.error(`[runScheduledCampaigns] claim failed for ${cDoc.id} (tenant=${tenantId}):`, e?.message);
           continue;
         }
         if (!claimedData) continue;
         try {
           if (claimedData.channel === 'sms') {
-            await processSMSCampaign(tDoc.id, cDoc.ref, claimedData);
+            await processSMSCampaign(tenantId, cDoc.ref, claimedData);
           } else {
-            await processEmailCampaign(tDoc.id, cDoc.ref, claimedData);
+            await processEmailCampaign(tenantId, cDoc.ref, claimedData);
           }
         } catch (e) {
-          console.error(`[runScheduledCampaigns] processor failed for ${cDoc.id} (${claimedData.channel}):`, e?.message);
+          console.error(`[runScheduledCampaigns] processor failed for ${cDoc.id} (${claimedData.channel}, tenant=${tenantId}):`, e?.message);
           await cDoc.ref.update({ status: 'failed', error: e?.message || 'scheduled_run_failed' }).catch(() => {});
         }
       }
-    }
+    });
   }
 );
 
