@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f1923" />
+
+    <title>Plume Nexus · Platform Admin</title>
+    <meta name="description" content="Internal platform administration for Plume Nexus." />
+
+    <!-- This is internal-only. Do not index. -->
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <meta name="googlebot" content="noindex, nofollow" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        color: #0f1923;
+        background: #f5f6f9;
+        -webkit-font-smoothing: antialiased;
+        line-height: 1.5;
+      }
+      a { color: inherit; }
+      ::selection { background: #c8b5e8; color: #0f1923; }
+      :focus-visible { outline: 2px solid #5b3b8c; outline-offset: 2px; border-radius: 6px; }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

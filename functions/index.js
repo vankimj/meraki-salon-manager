@@ -584,6 +584,128 @@ exports.processUnsubscribe = onCall({ cors: true }, async (request) => {
   return { ok: true, name: doc.data().name || null };
 });
 
+// Public callable used by the online booking page to attach a booking
+// to the right client record without exposing the clients collection
+// to the public (firestore.rules limit reads to tenant staff).
+//
+// Flow: client supplies { tenantId, name, phone, email, extra }.
+// Server normalizes the phone, looks for an existing match by email
+// (exact, lowercase) or phone digits (10-digit normalized scan). If
+// found, returns that client's id and merges any newly-supplied
+// non-empty fields onto blank fields on the existing record (never
+// overwrites existing data — guards against typos or impersonation).
+// If not found, mints a new client and returns its id.
+//
+// Security: rate-limited per IP. Returns ONLY the id (no client info)
+// so a public caller can't enumerate the customer database via this
+// endpoint. Only fills missing fields, so a phone match can't be
+// abused to overwrite an existing customer's email.
+exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many booking attempts. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const name     = String(request.data?.name  || '').trim().slice(0, 80);
+  const phone    = String(request.data?.phone || '').trim().slice(0, 32);
+  const email    = String(request.data?.email || '').trim().slice(0, 200);
+  const extra    = (request.data?.extra && typeof request.data.extra === 'object') ? request.data.extra : {};
+  if (!name) throw new HttpsError('invalid-argument', 'name is required');
+  if (!phone && !email) throw new HttpsError('invalid-argument', 'phone or email is required');
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new HttpsError('invalid-argument', 'email is invalid');
+  }
+
+  // Phone normalize (mirrors client-side normalizePhone).
+  let phoneDigits = phone.replace(/\D/g, '');
+  if (phoneDigits.length === 11 && phoneDigits.startsWith('1')) phoneDigits = phoneDigits.slice(1);
+  const validPhone     = phoneDigits.length === 10;
+  const formattedPhone = validPhone
+    ? `+1 (${phoneDigits.slice(0, 3)}) ${phoneDigits.slice(3, 6)}-${phoneDigits.slice(6)}`
+    : phone;
+  const emailLower = email.toLowerCase();
+
+  const db         = getFirestore();
+  const clientsRef = db.collection(`tenants/${tenantId}/clients`);
+
+  let existingId   = null;
+  let existingData = null;
+
+  // Email match first (single equality query, indexed).
+  if (emailLower) {
+    for (const v of new Set([email, emailLower])) {
+      const snap = await clientsRef.where('email', '==', v).limit(1).get().catch(() => null);
+      if (snap && !snap.empty) {
+        existingId   = snap.docs[0].id;
+        existingData = snap.docs[0].data();
+        break;
+      }
+    }
+  }
+  // Phone match: stored phones are mixed-format, so we scan + filter
+  // client-side. Cap at 5000 docs as a safety rail; in practice every
+  // tenant we expect to onboard sits well below this.
+  if (!existingId && validPhone) {
+    const allSnap = await clientsRef.limit(5000).get().catch(() => null);
+    if (allSnap) {
+      for (const d of allSnap.docs) {
+        const data = d.data();
+        let cDigits = String(data.phone || '').replace(/\D/g, '');
+        if (cDigits.length === 11 && cDigits.startsWith('1')) cDigits = cDigits.slice(1);
+        if (cDigits === phoneDigits) {
+          existingId   = d.id;
+          existingData = data;
+          break;
+        }
+      }
+    }
+  }
+
+  if (existingId) {
+    // Hard-stop banned clients before they can book — even if they try
+    // a different email or a typo on the phone, the dedup query above
+    // resolves them to their original record and we refuse the booking.
+    // Returns a structured payload (no thrown HttpsError) so the public
+    // booking UI can render a friendly inline message instead of a
+    // generic "function failed" toast.
+    if (existingData.banned) {
+      return { banned: true };
+    }
+    // Backfill ONLY blank fields. Never overwrite existing data — guards
+    // against typo'd phone matches inadvertently rewriting a real
+    // customer's email or name.
+    const updates = {};
+    if (email && !existingData.email) updates.email = email;
+    if (validPhone && !existingData.phone) updates.phone = formattedPhone;
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = new Date().toISOString();
+      await clientsRef.doc(existingId).set(updates, { merge: true });
+    }
+    return { id: existingId, matched: true };
+  }
+
+  // Sanitize the optional `extra` payload — strip any keys that try to
+  // bypass the field guards above or inject server-only fields.
+  const safeExtra = {};
+  ['picture', 'commPreferences', 'birthday', 'notes', 'address', 'instagram', 'facebook', 'tiktok', 'venmo']
+    .forEach(k => { if (extra[k] !== undefined) safeExtra[k] = extra[k]; });
+
+  const now = new Date().toISOString();
+  const newDoc = await clientsRef.add({
+    name,
+    phone:  validPhone ? formattedPhone : phone,
+    email,
+    ...safeExtra,
+    source:    'online_booking',
+    createdAt: now,
+    updatedAt: now,
+    visits:    [],
+    instagramTags: safeExtra.instagramTags || [],
+    googleReviews: safeExtra.googleReviews || [],
+  });
+  return { id: newDoc.id, matched: false };
+});
+
 // Send a branded "you've been invited to your salon's Plume Nexus account"
 // email to a newly-added employee. Owner clicks "Send invite" in
 // EmployeesAdmin and we email a Google sign-in link (tenant subdomain) so
@@ -1783,7 +1905,11 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
 //   firebase functions:config:set google.maps_api_key="AIza..."
 // (or via Firebase console → Functions → Configuration)
 exports.refreshGoogleReviews = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  // Admin-only: this writes the salon's reviews doc (rendered on the
+  // public webfront) and burns Google Maps API quota. Without an admin
+  // gate, any authed user could overwrite our reviews with reviews from
+  // an arbitrary placeId (defacement) or drain quota with junk lookups.
+  await requireTenantAdmin(getFirestore(), TENANT_ID, request);
 
   const placeId = (request.data || {}).placeId;
   if (!placeId) throw new HttpsError('invalid-argument', 'placeId is required');
@@ -2089,6 +2215,66 @@ exports.chatWithReports = onCall(
       return { clients: list, totalUniqueClients: Object.keys(byClient).length };
     }
 
+    // First-time visitors in a date range: clients whose earliest visit
+    // (across appointments AND imported receipts) falls inside the window.
+    // Implementation: collect candidate clientIds with at least one visit in
+    // the range, then for each candidate check whether they had any visit
+    // before startDate. Walk-ins (no clientId) are excluded by definition —
+    // there's no way to attribute a walk-in to a "returning" identity.
+    async function getNewClientsInRange({ startDate, endDate, limit = 50 }) {
+      if (!startDate || !endDate) return { error: 'startDate and endDate are required' };
+      const [aSnap, rSnap] = await Promise.all([
+        db.collection(APPTS).where('date', '>=', startDate).where('date', '<=', endDate).get(),
+        db.collection(RECEIPTS).where('date', '>=', startDate).where('date', '<=', endDate).get().catch(() => ({ docs: [] })),
+      ]);
+      const candidates = new Map(); // clientId -> { name, firstSeenInRange }
+      aSnap.docs.forEach(d => {
+        const a = d.data();
+        if (!a.clientId || !a.clientName || a.clientName === 'Walk-in') return;
+        if (a.status === 'cancelled' || a.status === 'no_show') return;
+        const prev = candidates.get(a.clientId);
+        if (!prev || (a.date || '') < prev.firstSeenInRange) {
+          candidates.set(a.clientId, { name: a.clientName, firstSeenInRange: a.date || '' });
+        }
+      });
+      rSnap.docs.forEach(d => {
+        const r = d.data();
+        if (!r.clientId || !r.clientName) return;
+        const prev = candidates.get(r.clientId);
+        if (!prev || (r.date || '') < prev.firstSeenInRange) {
+          candidates.set(r.clientId, { name: r.clientName, firstSeenInRange: r.date || '' });
+        }
+      });
+
+      // Per-candidate existence check, but using only single-field where()
+      // so we don't trip Firestore's composite-index requirement
+      // (where(clientId) + where(date) needs a composite index — same
+      //  gotcha CLAUDE.md calls out for the day-view query). Fetch all
+      // visits for the candidate, scan client-side for anything dated
+      // before startDate.
+      const newClients = [];
+      for (const [clientId, info] of candidates) {
+        const [allAppts, allReceipts] = await Promise.all([
+          db.collection(APPTS).where('clientId', '==', clientId).get(),
+          db.collection(RECEIPTS).where('clientId', '==', clientId).get().catch(() => ({ docs: [] })),
+        ]);
+        const hasOlderAppt    = allAppts.docs.some(d => (d.data().date || '') < startDate);
+        const hasOlderReceipt = allReceipts.docs.some(d => (d.data().date || '') < startDate);
+        if (!hasOlderAppt && !hasOlderReceipt) {
+          newClients.push({ clientId, name: info.name, firstVisitDate: info.firstSeenInRange });
+        }
+      }
+      newClients.sort((a, b) => (a.firstVisitDate || '').localeCompare(b.firstVisitDate || ''));
+      return {
+        startDate,
+        endDate,
+        candidatesChecked: candidates.size,
+        newClientCount: newClients.length,
+        sample: newClients.slice(0, Math.min(Math.max(1, limit), 100)),
+        note: 'Walk-ins (no clientId) are excluded — they cannot be reliably attributed to a returning identity.',
+      };
+    }
+
     async function getClientHistory({ nameQuery, limit = 5 }) {
       if (!nameQuery) return { error: 'nameQuery is required' };
       const cSnap = await db.collection(CLIENTS).get();
@@ -2174,9 +2360,22 @@ exports.chatWithReports = onCall(
           required: ['nameQuery'],
         },
       },
+      {
+        name: 'getNewClientsInRange',
+        description: 'Count first-time visitors / new clients in a date range. A "new client" is one whose earliest visit (across appointments AND imported GG receipts) falls inside the given window — i.e., they had no prior visit before startDate. Use this for questions like "how many first-time visitors did I get in February 2025" or "how many new clients last quarter". Walk-ins are excluded.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            startDate: { type: 'string', description: 'YYYY-MM-DD inclusive' },
+            endDate:   { type: 'string', description: 'YYYY-MM-DD inclusive' },
+            limit:     { type: 'number', description: 'Max sample rows, default 50, max 100' },
+          },
+          required: ['startDate', 'endDate'],
+        },
+      },
     ];
 
-    const TOOL_DISPATCH = { queryAppointments, getRevenueSummary, getTopClients, getClientHistory };
+    const TOOL_DISPATCH = { queryAppointments, getRevenueSummary, getTopClients, getClientHistory, getNewClientsInRange };
 
     const today = new Date().toISOString().slice(0, 10);
     const systemPrompt = `You are a read-only analytics assistant for Meraki Nail Studio (a nail salon in Columbus, OH).
@@ -2567,7 +2766,11 @@ You MUST call finalizeAction exactly once at the end.`;
 exports.draftConflictMessages = onCall(
   { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
   async (request) => {
-    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    // Staff-only — function returns per-appt manage URLs (HMAC-signed
+    // reschedule/cancel links). Without this gate, any authed user could
+    // call it with arbitrary apptIds (enumerable elsewhere) and chain into
+    // mass-cancel via `manageAppointment`.
+    await requireTenantStaff(getFirestore(), TENANT_ID, request);
     const apiKey = anthropicKey.value();
     if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
 
@@ -2870,7 +3073,13 @@ exports.autoLapsedCampaign = onSchedule(
 );
 
 exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  // POS checkout is staff-only — preventing arbitrary signed-in users from
+  // minting PaymentIntents in the salon's Stripe account (would otherwise
+  // be a phishing primitive: attacker builds a fake checkout page using
+  // OUR publishable key + the returned clientSecret, scams victims into
+  // paying us, then disputes / disappears — with the salon's brand on the
+  // Stripe Element).
+  await requireTenantStaff(getFirestore(), TENANT_ID, request);
 
   const { amountCents, description } = request.data || {};
   if (!amountCents || amountCents < 50) throw new HttpsError('invalid-argument', 'Amount must be at least $0.50');
@@ -2922,10 +3131,28 @@ exports.trackReviewClick = onRequest({ cors: false }, async (req, res) => {
 
 // ── Tenant onboarding ─────────────────────────────────────────────────────────
 // Creates a new tenant record, provisions Firestore data, and sends a welcome email.
-// Callable without auth so the public signup page can use it.
+// Callable without auth so the public signup page can use it. Rate-limited and
+// input-validated so the public surface can't be abused to mint phishing emails
+// from the salon's verified Resend sender or squat arbitrary subdomain slugs.
 exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
-  const { salonName, ownerName, ownerEmail, plan } = request.data || {};
-  if (!salonName || !ownerEmail) throw new HttpsError('invalid-argument', 'salonName and ownerEmail are required');
+  const ip = request.rawRequest?.ip || '';
+  // 5 signups / IP / hour — same envelope as submitContactInquiry. Provisioning
+  // is heavy (4 doc writes + 1 outbound email), so this is the right tightness.
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 5)) {
+    throw new HttpsError('resource-exhausted', 'Too many signups. Try again later or use the contact form.');
+  }
+
+  const rawSalon = String(request.data?.salonName || '').trim().slice(0, 80);
+  const rawOwner = String(request.data?.ownerName  || '').trim().slice(0, 80);
+  const rawEmail = String(request.data?.ownerEmail || '').trim().slice(0, 200);
+  const plan     = request.data?.plan;
+
+  if (!rawSalon || !rawEmail) throw new HttpsError('invalid-argument', 'salonName and ownerEmail are required');
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) throw new HttpsError('invalid-argument', 'Email is invalid.');
+
+  const salonName  = rawSalon;
+  const ownerName  = rawOwner;
+  const ownerEmail = rawEmail;
 
   // Derive slug from salon name
   const base = salonName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 20) || 'salon';
@@ -2975,6 +3202,11 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
 });
 
 function buildWelcomeHtml(salonName, ownerEmail, tenantId, url) {
+  // url is server-derived from the slug, but escape regardless so a future
+  // refactor that lets a caller seed the URL can't smuggle markup in.
+  const sName  = esc(salonName);
+  const sEmail = esc(ownerEmail);
+  const sUrl   = esc(url);
   return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;padding:32px 16px">
 <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
   <div style="background:#0f1923;padding:32px;text-align:center">
@@ -2983,23 +3215,23 @@ function buildWelcomeHtml(salonName, ownerEmail, tenantId, url) {
   </div>
   <div style="padding:32px">
     <h2 style="color:#1a1a1a;margin:0 0 8px">Your salon is ready 🎉</h2>
-    <p style="color:#555;margin:0 0 24px"><strong>${salonName}</strong> has been set up on TipFlow. Here's everything you need to get started.</p>
+    <p style="color:#555;margin:0 0 24px"><strong>${sName}</strong> has been set up on TipFlow. Here's everything you need to get started.</p>
 
     <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:24px">
       <div style="font-size:11px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Your TipFlow URL</div>
-      <a href="${url}" style="font-size:18px;color:#2D7A5F;font-weight:700;text-decoration:none">${url}</a>
+      <a href="${sUrl}" style="font-size:18px;color:#2D7A5F;font-weight:700;text-decoration:none">${sUrl}</a>
     </div>
 
     <h3 style="color:#1a1a1a;margin:0 0 12px;font-size:14px">Getting started checklist</h3>
     <ol style="color:#555;font-size:13px;line-height:2;padding-left:20px;margin:0 0 24px">
-      <li>Visit your URL and sign in with Google using <strong>${ownerEmail}</strong></li>
+      <li>Visit your URL and sign in with Google using <strong>${sEmail}</strong></li>
       <li>Add your employees (Employees module)</li>
       <li>Set up your service menu (Services module)</li>
       <li>Configure your public booking page (Admin → Settings)</li>
       <li>Customise your public website (Admin → Webfront)</li>
     </ol>
 
-    <a href="${url}" style="display:block;background:#2D7A5F;color:#fff;text-align:center;padding:14px;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none">Open ${salonName} →</a>
+    <a href="${sUrl}" style="display:block;background:#2D7A5F;color:#fff;text-align:center;padding:14px;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none">Open ${sName} →</a>
   </div>
   <div style="padding:16px 32px;border-top:1px solid #f0f0f0;font-size:11px;color:#aaa;text-align:center">
     TipFlow · Salon Management Platform · <a href="https://tipflow.app" style="color:#aaa">tipflow.app</a>
@@ -3340,8 +3572,15 @@ function substitutePlaceholders(body, vars) {
 // ── Stripe Billing ────────────────────────────────────────────────────────────
 exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const { plan, tenantId: tid, successUrl, cancelUrl } = request.data || {};
+  const { plan, tenantId: tid } = request.data || {};
   const tId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  // Cross-tenant guard: the caller must be an admin of the tenant they're
+  // billing for. Without this, any authed user could supply someone else's
+  // tenantId and overwrite their stripeCustomerId / hijack billing state via
+  // the webhook's metadata.tenantId routing.
+  await requireTenantAdmin(db, tId, request);
 
   const key = stripeKey.value ? stripeKey.value() : null;
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
@@ -3350,7 +3589,6 @@ exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
   const priceId  = plan === 'starter' ? stripeStarterPriceId.value() : stripePriceId.value();
   if (!priceId)  throw new HttpsError('invalid-argument', `Price ID for plan "${plan}" not set`);
 
-  const db      = getFirestore();
   const tenDoc  = await db.doc(`tenants/${tId}`).get();
   const ownerEmail = tenDoc.exists ? tenDoc.data().ownerEmail : request.auth.token.email;
 
@@ -3362,12 +3600,16 @@ exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
     await db.doc(`tenants/${tId}`).set({ stripeCustomerId: customerId }, { merge: true });
   }
 
+  // Always send the user back to our own app — never accept a caller-supplied
+  // returnUrl, which would be an open-redirect / phishing primitive (the
+  // post-checkout redirect comes from the legit Stripe-hosted page).
+  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode:     'subscription',
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: successUrl || 'https://tipflow.app/?stripe=success',
-    cancel_url:  cancelUrl  || 'https://tipflow.app/?stripe=cancel',
+    success_url: `${baseUrl}/?stripe=success`,
+    cancel_url:  `${baseUrl}/?stripe=cancel`,
     metadata: { tenantId: tId, plan },
   });
 
@@ -3680,7 +3922,7 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
 
 // ── Gusto Integration ─────────────────────────────────────────────────────────
 exports.gustoGetAuthUrl = onCall({ cors: true }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  await requireTenantAdmin(getFirestore(), TENANT_ID, request);
   const clientId    = gustoClientId.value();
   const redirectUri = gustoRedirectUri.value();
   if (!clientId) throw new HttpsError('unavailable', 'Gusto not configured');
@@ -3713,13 +3955,24 @@ exports.gustoOAuthCallback = onRequest({ cors: true }, async (req, res) => {
     const me = await meRes.json();
     const company = me.roles?.payroll_admin?.companies?.[0];
 
-    // Store auth + company in the tenant's settings
     const db = getFirestore();
-    await db.doc(`tenants/${TENANT_ID}/data/settings`).set({
+    // Sensitive credentials live in the admin-only `settingsPrivate` doc
+    // — `data/settings` is staff-readable (so non-admin tech roles can
+    // open the JS console and dump it). Public-facing connection metadata
+    // (companyName, connectedAt) stays on `data/settings` so the HR tab
+    // can show "Connected · Acme Salon" without hitting the private doc.
+    await db.doc(`tenants/${TENANT_ID}/data/settingsPrivate`).set({
       gusto: {
         accessToken:  tokens.access_token,
         refreshToken: tokens.refresh_token,
         companyId:    company?.id || '',
+        connectedAt:  new Date().toISOString(),
+      },
+    }, { merge: true });
+    await db.doc(`tenants/${TENANT_ID}/data/settings`).set({
+      gusto: {
+        // Indicator only; never the access token.
+        connected:    true,
         companyName:  company?.name || '',
         connectedAt:  new Date().toISOString(),
       },
@@ -3731,11 +3984,50 @@ exports.gustoOAuthCallback = onRequest({ cors: true }, async (req, res) => {
   }
 });
 
+// Read Gusto OAuth credentials, transparently migrating from the legacy
+// `data/settings.gusto.accessToken` location (staff-readable) to the new
+// `data/settingsPrivate.gusto` location (admin-only). Migration runs
+// at-most-once per tenant — first call after deploy moves the token,
+// purges the legacy field, and writes the public indicator. Subsequent
+// calls just read from the private doc.
+async function getGustoCredentials(db, tenantId) {
+  const FieldValue = require('firebase-admin/firestore').FieldValue;
+  const privateRef = db.doc(`tenants/${tenantId}/data/settingsPrivate`);
+  const priv = (await privateRef.get()).data() || {};
+  if (priv.gusto?.accessToken) return priv.gusto;
+  // Legacy migration path
+  const legacyRef = db.doc(`tenants/${tenantId}/data/settings`);
+  const legacy = (await legacyRef.get()).data() || {};
+  const legacyGusto = legacy.gusto;
+  if (legacyGusto?.accessToken) {
+    await privateRef.set({ gusto: {
+      accessToken:  legacyGusto.accessToken,
+      refreshToken: legacyGusto.refreshToken || '',
+      companyId:    legacyGusto.companyId || '',
+      connectedAt:  legacyGusto.connectedAt || new Date().toISOString(),
+      _migratedAt:  new Date().toISOString(),
+    }}, { merge: true });
+    // Replace the staff-readable doc's gusto field with a connection
+    // indicator (no token). FieldValue.delete() on the access/refresh
+    // tokens specifically.
+    await legacyRef.set({ gusto: {
+      connected:    true,
+      companyName:  legacyGusto.companyName || '',
+      connectedAt:  legacyGusto.connectedAt || new Date().toISOString(),
+      // explicitly remove tokens
+      accessToken:  FieldValue.delete(),
+      refreshToken: FieldValue.delete(),
+      companyId:    FieldValue.delete(),
+    }}, { merge: true });
+    return legacyGusto;
+  }
+  return null;
+}
+
 exports.gustoSyncEmployees = onCall({ cors: true }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const db       = getFirestore();
-  const settings = (await db.doc(`tenants/${TENANT_ID}/data/settings`).get()).data();
-  const gusto    = settings?.gusto;
+  const db = getFirestore();
+  await requireTenantAdmin(db, TENANT_ID, request);
+  const gusto = await getGustoCredentials(db, TENANT_ID);
   if (!gusto?.accessToken) throw new HttpsError('failed-precondition', 'Gusto not connected');
 
   const empRes = await fetch(`https://api.gusto.com/v1/companies/${gusto.companyId}/employees?include=jobs,compensations`, {
@@ -3747,7 +4039,7 @@ exports.gustoSyncEmployees = onCall({ cors: true }, async (request) => {
   const localEmpsSnap = await db.collection(`tenants/${TENANT_ID}/employees`).get();
   const localEmps     = localEmpsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  let synced = 0;
+  let matched = 0;
   for (const ge of gustoEmps) {
     const fullName = `${ge.first_name} ${ge.last_name}`.trim();
     const local    = localEmps.find(e => e.name?.toLowerCase() === fullName.toLowerCase());
@@ -3760,21 +4052,20 @@ exports.gustoSyncEmployees = onCall({ cors: true }, async (request) => {
         payType:       comp?.payment_unit?.toLowerCase() || local.payType,
         updatedAt:     new Date().toISOString(),
       }, { merge: true });
-      synced++;
+      matched++;
     }
   }
 
-  return { synced, total: gustoEmps.length };
+  return { matched, updated: matched, total: gustoEmps.length };
 });
 
 exports.gustoSubmitPayroll = onCall({ cors: true }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, TENANT_ID, request);
   const { payrollRunId } = request.data || {};
   if (!payrollRunId) throw new HttpsError('invalid-argument', 'payrollRunId required');
 
-  const db       = getFirestore();
-  const settings = (await db.doc(`tenants/${TENANT_ID}/data/settings`).get()).data();
-  const gusto    = settings?.gusto;
+  const gusto = await getGustoCredentials(db, TENANT_ID);
   if (!gusto?.accessToken) throw new HttpsError('failed-precondition', 'Gusto not connected');
 
   const runSnap = await db.doc(`tenants/${TENANT_ID}/payrollRuns/${payrollRunId}`).get();
@@ -3901,7 +4192,10 @@ function meetingInviteHtml({ meeting, token, recipientName, baseUrl }) {
 }
 
 exports.sendMeetingInvites = onCall(async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  // Admin-only: matches the firestore.rules write gate on /meetings.
+  // Also prevents leaking a private meeting's title/description into an
+  // invite email body for someone who shouldn't see it.
+  await requireTenantAdmin(getFirestore(), TENANT_ID, request);
   const { meetingId } = request.data || {};
   if (!meetingId) throw new HttpsError('invalid-argument', 'meetingId required');
   const apiKey = resendKey.value();
@@ -4200,9 +4494,9 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [] }, async (req, r
 // Auth: requires a signed-in user. We trust the client to send sane content;
 // rules-layer enforcement of who-can-message-whom can be tightened later.
 exports.sendDirectSms = onCall({ cors: true }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { tenantId: tid, clientId, body } = request.data || {};
   const tenantId = tid || TENANT_ID;
+  await requireTenantStaff(getFirestore(), tenantId, request);
   if (!clientId || !body) throw new HttpsError('invalid-argument', 'Missing clientId or body');
 
   const sid       = twilioSid.value();
@@ -4258,9 +4552,9 @@ exports.sendDirectSms = onCall({ cors: true }, async (request) => {
 // threading (Phase 2B) requires Resend Inbound webhook + MX records on
 // the verified domain — deferred until that infra is set up.
 exports.sendDirectEmail = onCall({ cors: true }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { tenantId: tid, clientId, subject, body } = request.data || {};
   const tenantId = tid || TENANT_ID;
+  await requireTenantStaff(getFirestore(), tenantId, request);
   if (!clientId || !subject || !body) throw new HttpsError('invalid-argument', 'Missing clientId, subject, or body');
 
   const apiKey = resendKey.value();
@@ -4436,9 +4730,9 @@ exports.sendGiftCardEmail = onDocumentCreated(
 // Manual retry: callable from the GiftCardsAdmin UI on a card whose
 // initial send failed. Resets emailStatus + re-runs the send.
 exports.retryGiftCardEmail = onCall({ cors: true }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { tenantId: tid, cardId } = request.data || {};
   const tenantId = tid || TENANT_ID;
+  await requireTenantStaff(getFirestore(), tenantId, request);
   if (!cardId) throw new HttpsError('invalid-argument', 'Missing cardId');
   const db = getFirestore();
   const ref = db.doc(`tenants/${tenantId}/giftCards/${cardId}`);
@@ -4551,6 +4845,14 @@ Examples:
 - Never paywalled, never gated behind a support ticket, never delayed.
 - This is a core principle, not a feature. If a customer is leaving because the service isn't working for them, we will not make leaving harder. We'd rather they leave with everything intact and recommend us to a friend than feel trapped.
 - If asked about lock-in, vendor risk, or "what if I want to leave?": lead with this answer.
+
+━━━ FOUNDER ACCESS IS BY INVITATION ONLY ━━━
+- The Plume Nexus team CANNOT read a customer's clients, appointments, receipts, or messages without that customer's explicit invitation.
+- Our internal platform admin dashboard returns only metadata (plan, billing, last activity, total counts) — never PII.
+- If a customer wants the founder to see something specific (for support), they invite him as an admin via their own salon-app users settings — the same Google-Auth flow used to add any of their staff. They control who has access, and they can revoke it any time.
+- There is NO "view as tenant" impersonation feature. There is NO super-user override. There is NO production data extract.
+- Most SaaS quietly keeps god-mode access via support impersonation. We architected the platform so we can't.
+- If asked about vendor data access, privacy, or "can your team see my data?": lead with this answer. It's a real differentiator competitors can't match without re-architecting.
 
 ━━━ WHEN TO ESCALATE TO HUMAN ━━━
 If a user asks for: a custom quote for >25 staff, multi-location pricing, a specific compliance certification (HIPAA, SOC 2), a feature you don't see listed above, or sounds like a complaint — politely point them to the contact form ("I'd loop in the founder for that — drop your details on the contact form below the chat and Jonathan will reply within a business day").
@@ -4706,5 +5008,129 @@ exports.submitContactInquiry = onCall(
     }
 
     return { ok: true, id: ref.id };
+  }
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Platform admin — single chokepoint for tenant metadata.
+//
+// PRINCIPLE #10: The founder cannot read tenant customer data without that
+// tenant's invitation. This function returns ONLY sanitized aggregate fields:
+// counts, timestamps, plan/billing metadata. NEVER PII (no client names,
+// no appointment details, no message content).
+//
+// Anything that wants to surface in the platform admin UI must go through
+// this function. If a future field would expose customer data, do not add it.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Authoritative platform-admin allowlist check. Always allows the bootstrap
+// email; otherwise consults `platform/admins` Firestore doc.
+async function isPlatformAdmin(authEmail) {
+  if (!authEmail) return false;
+  if (String(authEmail).toLowerCase() === 'jvankim@gmail.com') return true;
+  try {
+    const db = getFirestore();
+    const snap = await db.doc('platform/admins').get();
+    if (!snap.exists) return false;
+    const list = (snap.data().emails || []).map(e => String(e).toLowerCase().trim());
+    return list.includes(String(authEmail).toLowerCase().trim());
+  } catch (e) {
+    console.error('[isPlatformAdmin] check failed:', e?.message);
+    return false;
+  }
+}
+
+exports.getTenantMetadata = onCall(
+  { cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    const callerEmail = request.auth.token.email;
+    if (!await isPlatformAdmin(callerEmail)) {
+      throw new HttpsError('permission-denied', 'Platform admin only');
+    }
+
+    const { tenantId } = request.data || {};
+    if (!tenantId || typeof tenantId !== 'string') {
+      throw new HttpsError('invalid-argument', 'tenantId required');
+    }
+
+    const db = getFirestore();
+    const [
+      registrySnap, usersSnap, settingsSnap,
+      apptCountSnap, latestApptSnap, latestReceiptSnap, latestChatSnap,
+    ] = await Promise.all([
+      db.doc(`tenants/${tenantId}`).get(),
+      db.doc(`tenants/${tenantId}/data/users`).get(),
+      db.doc(`tenants/${tenantId}/data/settings`).get(),
+      db.collection(`tenants/${tenantId}/appointments`).count().get().catch(() => null),
+      db.collection(`tenants/${tenantId}/appointments`).orderBy('updatedAt', 'desc').limit(1).get().catch(() => null),
+      db.collection(`tenants/${tenantId}/receipts`).orderBy('createdAt', 'desc').limit(1).get().catch(() => null),
+      db.collection(`tenants/${tenantId}/chats`).orderBy('lastMessageAt', 'desc').limit(1).get().catch(() => null),
+    ]);
+
+    if (!registrySnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+
+    const registry = registrySnap.data();
+    const users    = usersSnap.exists  ? usersSnap.data()    : {};
+    const settings = settingsSnap.exists ? settingsSnap.data() : {};
+
+    const timestamps = [];
+    if (latestApptSnap?.docs[0])    timestamps.push(latestApptSnap.docs[0].data().updatedAt);
+    if (latestReceiptSnap?.docs[0]) timestamps.push(latestReceiptSnap.docs[0].data().createdAt);
+    if (latestChatSnap?.docs[0])    timestamps.push(latestChatSnap.docs[0].data().lastMessageAt);
+    const lastActivityIso = timestamps.filter(Boolean).sort().pop() || null;
+
+    // EXPLICIT enumerated safe fields. If you're tempted to add a field here
+    // that exposes customer data (names, emails, message content, appointment
+    // details), DON'T. Add an aggregate count or boolean instead.
+    return {
+      id:               tenantId,
+      name:             registry.name             || null,
+      ownerEmail:       registry.ownerEmail       || null,
+      plan:             registry.plan             || null,
+      packs:            registry.packs            || [],
+      atomicAddOns:     registry.atomicAddOns     || [],
+      foundersMember:   registry.foundersMember   === true,
+      active:           registry.active           !== false,
+      createdAt:        registry.createdAt        || null,
+      legacyPlan:       registry.legacyPlan       || null,
+      provisioned:      usersSnap.exists,
+      userCount:        Array.isArray(users.users) ? users.users.length : 0,
+      apptCount:        apptCountSnap ? apptCountSnap.data().count : 0,
+      lastActivityIso,
+      pauseActive:      Boolean(settings.pause?.until && settings.pause.until >= new Date().toISOString().slice(0, 10)),
+      techRemindersEnabled: settings.techReminders?.enabled !== false,
+      timeoutMin:       Number(settings.timeoutMin) || null,
+    };
+  }
+);
+
+exports.listTenants = onCall(
+  { cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    if (!await isPlatformAdmin(request.auth.token.email)) {
+      throw new HttpsError('permission-denied', 'Platform admin only');
+    }
+
+    const db = getFirestore();
+    const snap = await db.collection('tenants').orderBy('createdAt', 'desc').get();
+    // Registry-level metadata only. NO sub-document reads here.
+    return {
+      tenants: snap.docs.map(d => {
+        const t = d.data();
+        return {
+          id:             d.id,
+          name:           t.name           || null,
+          ownerEmail:     t.ownerEmail     || null,
+          plan:           t.plan           || null,
+          packs:          t.packs          || [],
+          foundersMember: t.foundersMember === true,
+          active:         t.active         !== false,
+          createdAt:      t.createdAt      || null,
+          legacyPlan:     t.legacyPlan     || null,
+        };
+      }),
+    };
   }
 );

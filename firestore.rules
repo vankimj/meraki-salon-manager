@@ -15,13 +15,18 @@ service cloud.firestore {
         request.auth.token.email ==
           get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerEmail;
     }
-    // Tenant admin: bootstrap admin, the tenant's ownerEmail, OR any user
-    // whose role is 'admin' in the tenant's data/users doc (mirrored into
-    // `adminEmails` by saveUsers). This lets the app's "make this user an
-    // admin" flow grant rules-level admin access without requiring the
-    // bootstrap email to be the only true admin.
+    // Tenant admin: the tenant's ownerEmail, OR any user whose role is
+    // 'admin' in the tenant's data/users doc (mirrored into `adminEmails`
+    // by saveUsers).
+    //
+    // PRINCIPLE #10: bootstrap admin (the platform founder) is intentionally
+    // NOT in this list. Founder access is by invitation only — to access a
+    // tenant's data, the founder must be added to that tenant's users array
+    // via the salon app's normal Admin → Users flow, exactly like adding any
+    // staff member. The Meraki tenant already lists jvankim@gmail.com via
+    // this mechanism, so Meraki access works unchanged.
     function isTenantAdmin(tenantId) {
-      return isBootstrapAdmin() || isTenantOwner(tenantId) || (
+      return isTenantOwner(tenantId) || (
         isAuthenticated() &&
         request.auth.token.email is string &&
         request.auth.token.email.lower() in
@@ -76,6 +81,13 @@ service cloud.firestore {
       match /data/settings {
         allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
+      }
+      // Sensitive credentials (OAuth tokens, third-party API keys cached
+      // at runtime, anything that grants out-of-band access). Admin-only
+      // read so a non-admin tenant staff member can't pull stored Gusto
+      // / Stripe / Twilio credentials from the JS console.
+      match /data/settingsPrivate {
+        allow read, write: if isTenantAdmin(tenantId);
       }
       match /data/handbook {
         allow read:  if isTenantStaff(tenantId);
@@ -178,9 +190,23 @@ service cloud.firestore {
         allow read, delete:   if isTenantAdmin(tenantId);
       }
 
-      // Internal meetings: admin writes, this tenant's staff can read
+      // Internal meetings.
+      // Public meetings: any tenant staff can read.
+      // Private meetings (1:1s, performance reviews, anything flagged
+      // `private: true`) restrict reads to: the organizer (createdBy
+      // matches the caller's email), tenant admins, or listed participants.
+      // Participants are checked against a `participantEmails` list (the
+      // app maintains it on every save) because Firestore rules can't
+      // iterate over the structured `participants` array.
+      // Legacy meetings without `participantEmails` default to admin-only
+      // when private — safe fallback if the projection is missing.
       match /meetings/{meetingId} {
-        allow read:  if isTenantStaff(tenantId);
+        allow read: if isTenantStaff(tenantId) && (
+          resource.data.private != true
+          || isTenantAdmin(tenantId)
+          || (resource.data.createdBy is string && resource.data.createdBy == request.auth.token.email.lower())
+          || (resource.data.participantEmails is list && request.auth.token.email.lower() in resource.data.participantEmails)
+        );
         allow write: if isTenantAdmin(tenantId);
       }
 
@@ -194,14 +220,21 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
-      // Gift cards: only this tenant's staff (mint, balance changes, redemption)
+      // Gift cards: staff can read (so checkout can validate balance);
+      // admin can write (mint, redeem-server-side, top-up). Without the
+      // admin gate on writes, a tech could open the JS console and
+      // self-issue an arbitrary balance.
       match /giftCards/{cardId} {
-        allow read, write: if isTenantStaff(tenantId);
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if isTenantAdmin(tenantId);
       }
 
-      // Promo codes: only this tenant's staff
+      // Promo codes: staff can read (checkout validates code); only admin
+      // can write (create / disable / change percent). Otherwise a tech
+      // could mint a 100%-off, unlimited-use code from the console.
       match /promoCodes/{promoId} {
-        allow read, write: if isTenantStaff(tenantId);
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if isTenantAdmin(tenantId);
       }
 
       // Feedback (bugs/ideas): any authenticated user can create; admin reads/updates
@@ -220,9 +253,16 @@ service cloud.firestore {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;
       }
 
-      // Retail products: only this tenant's staff (stock changes happen at checkout)
+      // Retail products: staff can read (POS checkout needs the catalog);
+      // admin can do everything else. Stock-only updates by non-admin
+      // staff during checkout are permitted via a narrow diff allowlist.
       match /products/{productId} {
-        allow read, write: if isTenantStaff(tenantId);
+        allow read:   if isTenantStaff(tenantId);
+        allow create, delete: if isTenantAdmin(tenantId);
+        allow update: if isTenantAdmin(tenantId)
+          || (isTenantStaff(tenantId)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['stock', 'updatedAt', 'lastSoldAt']));
       }
 
       // Receipts (post-checkout outreach): staff create — this triggers an
@@ -299,11 +339,12 @@ service cloud.firestore {
         allow read, write: if isTenantStaff(tenantId);
       }
 
-      // Attendance / time cards (one doc per day) — staff can read; only
-      // admin can edit clock-in / clock-out times.
+      // Attendance / time cards (one doc per day). Admin-only — the React
+      // UI already restricts AttendanceAdmin to admins, but rules must
+      // match: a tech reading attendance from the console would expose
+      // every coworker's clock-in/clock-out times across every day.
       match /attendance/{date} {
-        allow read:  if isTenantStaff(tenantId);
-        allow write: if isTenantAdmin(tenantId);
+        allow read, write: if isTenantAdmin(tenantId);
       }
 
       // Tax forms (1099-NEC): admin manages all; tenant staff with the
@@ -322,6 +363,38 @@ service cloud.firestore {
     match /plumenexus_inquiries/{inquiryId} {
       allow read:  if isBootstrapAdmin();
       allow write: if false;
+    }
+
+    // ── Platform admin (internal-only) ─────────────────────
+    // Authoritative platform-admin email allowlist. Bootstrap admin manages.
+    // Platform admin app reads it on every sign-in.
+    function isPlatformAdmin() {
+      return isBootstrapAdmin() || (
+        isAuthenticated() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in
+          get(/databases/$(database)/documents/platform/admins).data.get('emails', [])
+      );
+    }
+
+    match /platform/admins {
+      allow read:  if isAuthenticated();
+      allow write: if isBootstrapAdmin();
+    }
+
+    // Audit log — append-only by platform admins. Read only by platform admins.
+    // No deletes, no updates — immutable history. Uses subcollection so we can
+    // shard if it grows huge.
+    match /platform/audit_log/entries/{entryId} {
+      allow read:   if isPlatformAdmin();
+      allow create: if isPlatformAdmin() &&
+                       request.resource.data.actor == request.auth.token.email;
+      allow update, delete: if false;
+    }
+
+    // Other future platform/* docs (settings, feature flags, etc.) — admin-only.
+    match /platform/{docId} {
+      allow read, write: if isBootstrapAdmin();
     }
   }
 }
