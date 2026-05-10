@@ -27,33 +27,16 @@ const app = initializeApp(FIREBASE_CONFIG);
 //
 // Fallback: if persistence init throws (private browsing, corrupted IDB),
 // drop to in-memory and keep the app working.
-//
-// Watchdog: if the IDB layer hangs at runtime (mobile Safari/Chrome under
-// storage pressure can leave queries pending forever), App.jsx times the
-// first ping query and stamps `meraki:persistFailedAt`. We respect that
-// stamp here for 1 hour and skip persistence — preserves the app's
-// usability at the cost of offline-write queueing for that window.
 let _db;
-let persistSkipped = false;
 try {
-  const failedTs = parseInt(localStorage.getItem('meraki:persistFailedAt') || '0', 10);
-  if (failedTs && Date.now() - failedTs < 3600 * 1000) persistSkipped = true;
-} catch {}
-if (persistSkipped) {
-  console.warn('[Firestore] skipping IDB persistence — recent watchdog trip');
+  _db = initializeFirestore(app, {
+    localCache: persistentLocalCache({}),
+  });
+} catch (e) {
+  console.warn('[Firestore] persistent cache init failed, falling back to memory:', e?.message);
   _db = getFirestore(app);
-} else {
-  try {
-    _db = initializeFirestore(app, {
-      localCache: persistentLocalCache({}),
-    });
-  } catch (e) {
-    console.warn('[Firestore] persistent cache init failed, falling back to memory:', e?.message);
-    _db = getFirestore(app);
-  }
 }
 export const db = _db;
-export const persistSkippedThisLoad = persistSkipped;
 export const auth      = getAuth(app);
 export const functions = getFunctions(app);
 export const callFn    = (name) => httpsCallable(functions, name);

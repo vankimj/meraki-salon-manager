@@ -141,39 +141,6 @@ function AppShell() {
 
   const openClientProfile = (id) => { if (!id) return; setOpenClientId(id); setView('clients'); };
 
-  // IDB-persistence watchdog. On mobile WebKit (and Chrome under storage
-  // pressure) Firestore's IndexedDB cache layer can hang silently — every
-  // query pends forever. Time a tiny ping; if it hasn't resolved in 5s and
-  // the user is signed in, stamp localStorage and reload — firebase.js
-  // will respect the stamp for the next hour and skip persistence.
-  useEffect(() => {
-    if (!gUser) return; // only watchdog signed-in sessions (queries gated on auth)
-    if (localStorage.getItem('meraki:persistFailedAt')) return; // already in fallback mode
-    let resolved = false;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      if (resolved || cancelled) return;
-      console.warn('[Firestore] watchdog tripped — IDB cache appears blocked, reloading without persistence');
-      try { localStorage.setItem('meraki:persistFailedAt', String(Date.now())); } catch {}
-      window.location.reload();
-    }, 5000);
-    (async () => {
-      try {
-        const { getDoc, doc } = await import('firebase/firestore');
-        const { db } = await import('./lib/firebase');
-        await getDoc(doc(db, 'tenants', TENANT_ID));
-        resolved = true;
-        clearTimeout(timer);
-      } catch {
-        // Permission denied / network — Firestore IS responding, just rejecting.
-        // Not a cache hang; cancel the watchdog.
-        resolved = true;
-        clearTimeout(timer);
-      }
-    })();
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [gUser?.uid]);
-
   // Auto-open the first-login wizard once per fresh tenant. We trigger if
   // the user is signed-in admin AND we haven't stamped _wizardCompleted on
   // settings AND the tenant looks empty (low service count). Owner can
