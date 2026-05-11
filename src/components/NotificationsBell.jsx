@@ -104,7 +104,7 @@ export default function NotificationsBell() {
   }
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', zIndex: 1000 }}>
+    <div ref={wrapRef} style={{ position: 'relative' }}>
       <button onClick={() => setOpen(!open)} title="Notifications"
         style={{ height: 40, width: 40, borderRadius: 20, border: '1px solid #e0e0e0', background: open ? '#f0f0f0' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
         <IconBell size={18} />
