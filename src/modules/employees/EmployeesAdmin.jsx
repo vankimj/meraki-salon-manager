@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
 import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
+import { seedDemoEmployeeContactInfo } from '../../data/seedDemo';
 import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
 import EmptyState from '../../components/EmptyState';
@@ -9,27 +10,6 @@ import EmptyState from '../../components/EmptyState';
 
 const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DEFAULT_WORK_DAY = { on: true, start: '09:00', end: '18:00' };
-
-// Pool of Columbus-area addresses used to fill demo data for employees who
-// aren't in SEED_EMPLOYEES (so the backfill works for any tech).
-const FALLBACK_ADDRS = [
-  { address: '215 Graceland Blvd', city: 'Columbus', state: 'OH', zip: '43214' },
-  { address: '4400 N High St',     city: 'Columbus', state: 'OH', zip: '43202' },
-  { address: '7500 Sawmill Rd',    city: 'Columbus', state: 'OH', zip: '43235' },
-  { address: '1100 Neil Ave',      city: 'Columbus', state: 'OH', zip: '43201' },
-  { address: '5200 Brand Rd',      city: 'Dublin',   state: 'OH', zip: '43017' },
-  { address: '340 W Norwich Ave',  city: 'Columbus', state: 'OH', zip: '43201' },
-  { address: '1650 Old Henderson Rd', city: 'Columbus', state: 'OH', zip: '43220' },
-  { address: '3800 Riverside Dr',  city: 'Columbus', state: 'OH', zip: '43221' },
-];
-
-// Deterministic 9-digit demo TIN in SSN form (XXX-XX-XXXX). Synthetic — not real.
-function generateDemoTin(i) {
-  const a = String(100 + ((i * 173) % 800)).padStart(3, '0');
-  const b = String(10  + ((i * 47)  % 90)).padStart(2, '0');
-  const c = String(1000 + ((i * 281) % 9000)).padStart(4, '0');
-  return `${a}-${b}-${c}`;
-}
 
 function blankEmployee() {
   return {
@@ -131,68 +111,21 @@ export default function EmployeesAdmin() {
     finally { setSeeding(false); }
   }
 
-  // Fully populate demo contact + TIN data on every employee. Reloads from
-  // Firestore first so any newly-added employees are included. Aggressively
-  // fills any falsy field — including empty strings — with seed-matched or
-  // deterministic fallback values. Also seeds the salon's own EIN/address
-  // into settings if missing.
+  // Fully populate demo contact + TIN data on every employee. Idempotent —
+  // only fills empty fields; real values are preserved. Shared with
+  // seedFullDemo via seedDemoEmployeeContactInfo so the manual button and
+  // the bundled seed flow do the same work.
   async function backfillContactInfo() {
     if (!confirm('Fill in demo contact info + TIN on every employee, and set demo salon EIN/address. Real values are preserved.')) return;
     setSeeding(true);
     setEditing(null);  // close any open edit modal so it re-opens with fresh data
     try {
-      const fresh = await fetchEmployeesWithComp();
-      let patched = 0;
-      let fieldsFilled = 0;
-      for (let i = 0; i < fresh.length; i++) {
-        const emp  = fresh[i];
-        const seed = SEED_EMPLOYEES.find(s => s.name === emp.name) || {};
-        const fb   = FALLBACK_ADDRS[i % FALLBACK_ADDRS.length];
-        const slug = (emp.name || `tech${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
-
-        const candidates = {
-          phone:   seed.phone   || `(614) 555-${String(1000 + (i * 137) % 9000).padStart(4, '0')}`,
-          email:   seed.email   || `${slug || 'tech'}@example.com`,
-          address: seed.address || fb.address,
-          city:    seed.city    || fb.city,
-          state:   seed.state   || fb.state,
-          zip:     seed.zip     || fb.zip,
-          tin:     seed.tin     || generateDemoTin(i),
-        };
-        const updates = {};
-        Object.entries(candidates).forEach(([k, v]) => {
-          // Treat undefined/null/empty-string as "not set" — anything else is real data.
-          const cur = emp[k];
-          if ((cur === undefined || cur === null || cur === '') && v) {
-            updates[k] = v;
-          }
-        });
-        if (Object.keys(updates).length > 0) {
-          await saveEmployee(emp.id, { ...emp, ...updates });
-          patched++;
-          fieldsFilled += Object.keys(updates).length;
-        }
-      }
-
-      const salonDefaults = {
-        ein:          '83-2917458',
-        brandAddress: '4500 N High St',
-        brandCity:    'Columbus',
-        brandState:   'OH',
-        brandZip:     '43214',
-        brandPhone:   '(614) 555-0100',
-      };
-      const salonUpdates = {};
-      Object.entries(salonDefaults).forEach(([k, v]) => {
-        const cur = settings?.[k];
-        if ((cur === undefined || cur === null || cur === '') && v) salonUpdates[k] = v;
-      });
-      if (Object.keys(salonUpdates).length > 0) {
-        await updateSettings({ ...settings, ...salonUpdates });
-      }
-
-      logActivity('employees_contact_backfilled', `${patched}/${fresh.length} employees · ${fieldsFilled} fields · salon: ${Object.keys(salonUpdates).join(', ') || 'no changes'}`);
-      showToast(`Updated ${patched}/${fresh.length} employees · ${fieldsFilled} fields filled${Object.keys(salonUpdates).length > 0 ? ' + salon defaults' : ''}`, 3500);
+      const { patched, total, fieldsFilled, salonFilled } = await seedDemoEmployeeContactInfo(
+        null,
+        { settings, updateSettings }
+      );
+      logActivity('employees_contact_backfilled', `${patched}/${total} employees · ${fieldsFilled} fields · salon: ${salonFilled} fields`);
+      showToast(`Updated ${patched}/${total} employees · ${fieldsFilled} fields filled${salonFilled > 0 ? ' + salon defaults' : ''}`, 3500);
       await load();
     } catch (e) {
       console.error('[Employees] backfill failed:', e);

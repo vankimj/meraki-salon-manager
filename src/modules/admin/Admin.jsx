@@ -1283,16 +1283,18 @@ function BackupRestoreSection() {
 }
 
 function DemoSeedSection() {
+  const { gUser, settings, updateSettings } = useApp();
   const [status,  setStatus]  = useState('');
   const [running, setRunning] = useState(false);
   const [phase,   setPhase]   = useState('idle');
 
   async function runSeed() {
-    if (!confirm('Populate the demo tenant with: 25 retail products · 1,000 clients · ~2,500 appointments · receipts (with cancellations + no-shows + gift cards + retail sales) · 6 promo codes · 1 membership plan + 20 active members · 5 time-off entries · 8 Google reviews · 5 HR bonuses · 20 walk-in queue history entries · 3 marketing campaigns. Takes 10–15 min. Continue?')) return;
+    if (!confirm('Populate the demo tenant with: 25 retail products · 1,000 clients · ~2,500 appointments · receipts (with cancellations + no-shows + gift cards + retail sales) · 6 promo codes · 1 membership plan + 20 active members · 5 time-off entries · 8 Google reviews · 5 HR bonuses · 20 walk-in queue history entries · 3 marketing campaigns · admin-as-tech employee + contact/TIN backfill on every tech. Takes 10–15 min. Continue?')) return;
     setRunning(true); setPhase('idle'); setStatus('');
     try {
-      const stats = await seedFullDemo(msg => setStatus(msg));
-      setStatus(`Seeded: ${stats.clients} clients · ${stats.appointments} appts · ${stats.receipts} receipts · ${stats.products} products · ${stats.promos} promos · ${stats.memberships} members · ${stats.timeOff} time-off · ${stats.reviews} reviews · ${stats.bonuses} bonuses · ${stats.waitlist} walk-ins · ${stats.campaigns} campaigns.`);
+      const stats = await seedFullDemo(msg => setStatus(msg), { gUser, settings, updateSettings });
+      const adminTechNote = stats.adminAsTech === 'created' ? ' · admin-as-tech created' : stats.adminAsTech === 'already_existed' ? ' · admin-as-tech existed' : '';
+      setStatus(`Seeded: ${stats.clients} clients · ${stats.appointments} appts · ${stats.receipts} receipts · ${stats.products} products · ${stats.promos} promos · ${stats.memberships} members · ${stats.timeOff} time-off · ${stats.reviews} reviews · ${stats.bonuses} bonuses · ${stats.waitlist} walk-ins · ${stats.campaigns} campaigns${adminTechNote} · ${stats.employeesFilled || 0} techs filled (${stats.fieldsFilled || 0} fields).`);
       setPhase('seeded');
       logActivity('demo_seeded', `full seed: ${JSON.stringify(stats)}`);
     } catch (e) {

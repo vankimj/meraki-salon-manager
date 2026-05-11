@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Welcome — merge of 5+6+7</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cinzel:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #0f1923;
+    color: #fff;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 56px 24px 96px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page-head {
+    max-width: 1320px;
+    margin: 0 auto 40px;
+    text-align: center;
+  }
+  .page-head h1 {
+    font-family: 'Cinzel', serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+    color: #fff;
+  }
+  .page-head p {
+    margin: 0;
+    color: rgba(255,255,255,.55);
+    font-size: 14px;
+    letter-spacing: .04em;
+  }
+  .grid {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(680px, 1fr));
+    gap: 32px;
+  }
+
+  /* ── Tile wrapper ── */
+  .tile {
+    background: #1a232f;
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 18px 48px rgba(0,0,0,.35);
+    border: 1px solid rgba(255,255,255,.05);
+  }
+  .tile-label {
+    padding: 14px 18px 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+  }
+  .tile-num {
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: .26em;
+    color: rgba(255,255,255,.4);
+  }
+  .tile-name {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: rgba(193,154,74,.85);
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .tile-blurb {
+    padding: 10px 18px 0;
+    color: rgba(255,255,255,.5);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  /* ── Inner screen mock ── */
+  .screen {
+    background: #fbfaf8;
+    color: #1a1a1a;
+    height: 580px;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+  }
+  .topbar {
+    flex-shrink: 0;
+    background: #fefcfa;
+    border-bottom: 1px solid #eee7dc;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    z-index: 5;
+  }
+  .topbar .brand { display: flex; align-items: center; gap: 9px; }
+  .topbar .mono {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(135deg, #3d9e8a, #3d95ce);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Cinzel', serif; font-weight: 700; font-size: 15px; color: #fff;
+    box-shadow: 0 2px 6px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.18);
+  }
+  .topbar .name { font-size: 13px; font-weight: 700; color: #1a1a1a; line-height: 1.2; }
+  .topbar .sub  { font-size: 10px; color: #a89776; }
+  .topbar .feedback {
+    height: 30px; padding: 0 12px; border: none; border-radius: 15px;
+    background: #3D95CE; color: #fff; font-size: 11px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 5px; font-family: inherit;
+  }
+
+  /* ── Shared typography ── */
+  .moon {
+    width: 30px; height: 30px; display: block; margin: 0 auto 14px; opacity: .85;
+  }
+  .greeting {
+    font-family: 'Cinzel', serif; font-size: 11px; font-weight: 600;
+    color: #5b3b8c; letter-spacing: .34em; text-transform: uppercase;
+  }
+  .lockup-meraki {
+    font-family: 'Cinzel', serif; font-weight: 600; font-size: 48px;
+    color: #1a1a1a; margin: 0; letter-spacing: -.005em; line-height: 1;
+  }
+  .lockup-script {
+    font-family: 'Great Vibes', cursive; font-weight: 400; font-size: 64px;
+    color: #5b3b8c; letter-spacing: 0; display: inline-block;
+    line-height: .7; margin-top: 6px;
+  }
+  .tagline {
+    font-family: 'Inter', sans-serif; font-style: italic; font-size: 14px;
+    color: #7a7a7a; line-height: 1.55; margin: 18px auto 0; max-width: 360px;
+  }
+  .boutique-link {
+    font-family: 'Cinzel', serif; font-size: 13px; font-weight: 600;
+    color: #1a1a1a; text-decoration: none; letter-spacing: .18em;
+    text-transform: uppercase; border-bottom: 1px solid #c19a4a;
+    padding-bottom: 4px; display: inline-block;
+  }
+  .boutique-link:hover { color: #5b3b8c; border-bottom-color: #5b3b8c; }
+  .credit {
+    font-size: 9px; letter-spacing: .22em; text-transform: uppercase;
+    color: #a89776; font-weight: 500;
+  }
+  .credit a { color: #7a6a4a; text-decoration: none; font-weight: 600; }
+
+  .foot {
+    max-width: 1320px; margin: 56px auto 0; text-align: center;
+    color: rgba(255,255,255,.4); font-size: 13px; letter-spacing: .04em;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Welcome &mdash; Boutique Evening</h1>
+  <p>Five executions of &ldquo;Good evening + boutique typography.&rdquo; A&ndash;C are light surfaces, D&ndash;E layer the boutique lockup over a photo backdrop.</p>
+</div>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="moon-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#c19a4a"/>
+      <stop offset="100%" stop-color="#a288c9"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="grid">
+
+  <!-- ─── A · CENTERED ─── -->
+  <div class="tile">
+    <div class="tile-label"><span class="tile-num">A · CENTERED</span><span class="tile-name">No split</span></div>
+    <div class="tile-blurb">The clean answer to &ldquo;do we even need a split?&rdquo; — pure single-column boutique with the time-aware greeting and a discreet text-link CTA. Most restraint, most elegant.</div>
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand"><div class="mono">M</div><div><div class="name">Meraki Nail Studio</div><div class="sub">Salon Manager</div></div></div>
+        <button class="feedback">💬 Feedback</button>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 28px;text-align:center;position:relative">
+        <svg class="moon" viewBox="0 0 36 36">
+          <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill="url(#moon-grad)"/>
+          <circle cx="6" cy="10" r="1" fill="#c19a4a" opacity=".5"/>
+          <circle cx="30" cy="6" r="1.4" fill="#a288c9" opacity=".5"/>
+        </svg>
+        <div class="greeting">Good evening</div>
+        <h1 class="lockup-meraki" style="margin-top:18px">Meraki</h1>
+        <span class="lockup-script">Nail Studio</span>
+        <p class="tagline">A calm place to wind down today.</p>
+        <div style="margin-top:30px"><a href="#" class="boutique-link">Sign in &rarr;</a></div>
+        <div class="credit" style="margin-top:46px">Powered by <a href="#">Plume Nexus</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── B · QUIET HAIRLINE SPLIT ─── -->
+  <div class="tile">
+    <div class="tile-label"><span class="tile-num">B · HAIRLINE SPLIT</span><span class="tile-name">Tasteful side-by-side</span></div>
+    <div class="tile-blurb">Same cream surface across both sides &mdash; separation comes from a single gold hairline, not duelling backgrounds. Left holds the boutique title, right is a quiet sign-in column.</div>
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand"><div class="mono">M</div><div><div class="name">Meraki Nail Studio</div><div class="sub">Salon Manager</div></div></div>
+        <button class="feedback">💬 Feedback</button>
+      </div>
+      <div style="flex:1;display:grid;grid-template-columns:1.25fr 1px 1fr;align-items:stretch">
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 36px;text-align:center;position:relative">
+          <svg class="moon" viewBox="0 0 36 36">
+            <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill="url(#moon-grad)"/>
+          </svg>
+          <div class="greeting">Good evening</div>
+          <h1 class="lockup-meraki" style="margin-top:18px;font-size:42px">Meraki</h1>
+          <span class="lockup-script" style="font-size:54px">Nail Studio</span>
+          <p class="tagline" style="margin-top:14px">A calm place to wind down today.</p>
+        </div>
+        <div style="background:linear-gradient(180deg,transparent 10%,#c19a4a 50%,transparent 90%);opacity:.35"></div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 26px;text-align:center">
+          <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#a89776;margin-bottom:24px">Sign in to continue</div>
+          <a href="#" class="boutique-link">Continue &rarr;</a>
+          <div style="margin-top:14px;font-size:11px;color:#a89776"><a href="#" style="color:#7a6a4a;text-decoration:none">Use email instead</a></div>
+          <div class="credit" style="margin-top:auto;padding-top:36px">Powered by <a href="#">Plume Nexus</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── C · STACKED CTA CARD ─── -->
+  <div class="tile">
+    <div class="tile-label"><span class="tile-num">C · STACKED</span><span class="tile-name">Card below content</span></div>
+    <div class="tile-blurb">Hero content sits centered top; the CTA sits below in a discreet rounded ivory card. Not really a split &mdash; just visual separation by elevation. Lets the boutique typography stay centered + dignified.</div>
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand"><div class="mono">M</div><div><div class="name">Meraki Nail Studio</div><div class="sub">Salon Manager</div></div></div>
+        <button class="feedback">💬 Feedback</button>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 28px;text-align:center;position:relative">
+        <svg class="moon" viewBox="0 0 36 36">
+          <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill="url(#moon-grad)"/>
+        </svg>
+        <div class="greeting">Good evening</div>
+        <h1 class="lockup-meraki" style="margin-top:16px;font-size:44px">Meraki</h1>
+        <span class="lockup-script" style="font-size:58px">Nail Studio</span>
+        <p class="tagline" style="margin-top:14px">A calm place to wind down today.</p>
+
+        <!-- CTA card -->
+        <div style="margin-top:28px;background:#fff;border:1px solid #eee7dc;border-radius:18px;padding:18px 26px;display:flex;align-items:center;gap:18px;box-shadow:0 12px 28px rgba(58,44,26,.06)">
+          <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:#a89776">Ready when you are</div>
+          <div style="width:1px;height:24px;background:#eee7dc"></div>
+          <a href="#" class="boutique-link" style="border-bottom:none">Sign in &rarr;</a>
+        </div>
+
+        <div class="credit" style="margin-top:30px">Powered by <a href="#">Plume Nexus</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── D · PHOTO BACKDROP CENTERED ─── -->
+  <div class="tile">
+    <div class="tile-label"><span class="tile-num">D · PHOTO BACKDROP</span><span class="tile-name">Centered, dark</span></div>
+    <div class="tile-blurb">Boutique typography on a warm-cool photo gradient (real salon photo can drop in later). Single centered column, white pill CTA. Most cinematic; reads luxury hotel/spa.</div>
+    <div class="screen" style="background:linear-gradient(135deg,#3a2c4a 0%,#2a4858 50%,#1f3a4e 100%);color:#fff">
+      <div style="position:absolute;inset:0;background:radial-gradient(ellipse 55% 50% at 30% 28%,rgba(193,154,74,.32) 0%,transparent 60%),radial-gradient(ellipse 50% 50% at 72% 78%,rgba(91,59,140,.45) 0%,transparent 62%);pointer-events:none"></div>
+      <div class="topbar" style="background:rgba(15,25,35,.5);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-bottom-color:rgba(255,255,255,.08);color:#fff">
+        <div class="brand"><div class="mono">M</div><div><div class="name" style="color:#fff">Meraki Nail Studio</div><div class="sub" style="color:rgba(255,255,255,.55)">Salon Manager</div></div></div>
+        <button class="feedback" style="background:rgba(255,255,255,.18);backdrop-filter:blur(8px)">💬 Feedback</button>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:30px 28px;text-align:center;position:relative">
+        <svg class="moon" style="opacity:.95" viewBox="0 0 36 36">
+          <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill="url(#moon-grad)"/>
+          <circle cx="6" cy="10" r="1" fill="#c19a4a" opacity=".7"/>
+          <circle cx="30" cy="6" r="1.4" fill="#fff" opacity=".7"/>
+        </svg>
+        <div class="greeting" style="color:rgba(255,255,255,.78)">Good evening</div>
+        <h1 class="lockup-meraki" style="margin-top:18px;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.4)">Meraki</h1>
+        <span class="lockup-script" style="color:#c19a4a;text-shadow:0 2px 18px rgba(193,154,74,.3)">Nail Studio</span>
+        <p class="tagline" style="color:rgba(255,255,255,.72)">A calm place to wind down today.</p>
+        <button style="margin-top:28px;height:48px;padding:0 36px;border-radius:24px;border:none;background:#fff;color:#1a1a1a;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;letter-spacing:.01em;box-shadow:0 14px 32px rgba(0,0,0,.32)">Sign in &rarr;</button>
+        <div class="credit" style="margin-top:38px;color:rgba(255,255,255,.55)">Powered by <a href="#" style="color:rgba(255,255,255,.78)">Plume Nexus</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── E · PHOTO SPLIT ─── -->
+  <div class="tile">
+    <div class="tile-label"><span class="tile-num">E · PHOTO SPLIT</span><span class="tile-name">Photo + quiet pane</span></div>
+    <div class="tile-blurb">Photo backdrop fills 60% with the boutique lockup; right 40% is a calm ivory pane holding just the sign-in. Both languages preserved &mdash; cinematic + Apple-quiet &mdash; the gold hairline stitches them.</div>
+    <div class="screen">
+      <div class="topbar">
+        <div class="brand"><div class="mono">M</div><div><div class="name">Meraki Nail Studio</div><div class="sub">Salon Manager</div></div></div>
+        <button class="feedback">💬 Feedback</button>
+      </div>
+      <div style="flex:1;display:grid;grid-template-columns:1.4fr 1px 1fr;align-items:stretch">
+        <div style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px;text-align:center;color:#fff;background:linear-gradient(135deg,#3a2c4a 0%,#2a4858 60%,#1f3a4e 100%);overflow:hidden">
+          <div style="position:absolute;inset:0;background:radial-gradient(ellipse 60% 50% at 30% 30%,rgba(193,154,74,.32) 0%,transparent 60%),radial-gradient(ellipse 50% 60% at 75% 80%,rgba(91,59,140,.45) 0%,transparent 60%);pointer-events:none"></div>
+          <div style="position:relative;display:flex;flex-direction:column;align-items:center">
+            <svg class="moon" viewBox="0 0 36 36">
+              <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill="url(#moon-grad)"/>
+            </svg>
+            <div class="greeting" style="color:rgba(255,255,255,.8)">Good evening</div>
+            <h1 class="lockup-meraki" style="margin-top:16px;font-size:42px;color:#fff;text-shadow:0 2px 24px rgba(0,0,0,.35)">Meraki</h1>
+            <span class="lockup-script" style="font-size:54px;color:#c19a4a;text-shadow:0 2px 18px rgba(193,154,74,.3)">Nail Studio</span>
+            <p class="tagline" style="margin-top:14px;color:rgba(255,255,255,.72);font-size:13px">A calm place to wind down today.</p>
+          </div>
+        </div>
+        <div style="background:linear-gradient(180deg,transparent 10%,#c19a4a 50%,transparent 90%);opacity:.55"></div>
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 26px;text-align:center;background:#fbfaf8">
+          <div style="font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#a89776;margin-bottom:24px">Sign in to continue</div>
+          <a href="#" class="boutique-link">Continue &rarr;</a>
+          <div style="margin-top:14px;font-size:11px;color:#a89776"><a href="#" style="color:#7a6a4a;text-decoration:none">Use email instead</a></div>
+          <div class="credit" style="margin-top:auto;padding-top:36px">Powered by <a href="#">Plume Nexus</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="foot">
+  Pick a letter (A&ndash;E) or a mash-up. Time-aware copy will swap for Good&nbsp;morning / afternoon / evening based on the hour.
+</div>
+
+</body>
+</html>

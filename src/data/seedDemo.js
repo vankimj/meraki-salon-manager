@@ -13,11 +13,13 @@ import {
   saveWebfrontConfig, fetchWebfrontConfig,
   addToWaitlist,
   createCampaign,
+  fetchEmployeesWithComp, saveEmployee, fetchEmployees, createEmployee,
 } from '../lib/firestore';
 import { db } from '../lib/firebase';
 import { TENANT_ID } from '../lib/tenant';
 import { collection, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { seedProducts as seedProductCatalog } from './seedProducts';
+import { SEED_EMPLOYEES } from './seedEmployees';
 
 // ── Name pools ─────────────────────────────────────────
 const FIRST_NAMES = [
@@ -1432,14 +1434,152 @@ export async function seedDemoCampaigns(onProgress) {
 // — each sub-seeder is idempotent against `_demo: true` so re-running adds
 // duplicates rather than failing. Use clearDemoData first if you need a
 // clean slate.
-export async function seedFullDemo(onProgress) {
+// ── Employee contact + TIN backfill ────────────────────
+// Pool of Columbus-area addresses used to fill demo data for employees who
+// aren't in SEED_EMPLOYEES (works for any tech, named or freshly added).
+const FALLBACK_ADDRS = [
+  { address: '215 Graceland Blvd', city: 'Columbus', state: 'OH', zip: '43214' },
+  { address: '4400 N High St',     city: 'Columbus', state: 'OH', zip: '43202' },
+  { address: '7500 Sawmill Rd',    city: 'Columbus', state: 'OH', zip: '43235' },
+  { address: '1100 Neil Ave',      city: 'Columbus', state: 'OH', zip: '43201' },
+  { address: '5200 Brand Rd',      city: 'Dublin',   state: 'OH', zip: '43017' },
+  { address: '340 W Norwich Ave',  city: 'Columbus', state: 'OH', zip: '43201' },
+  { address: '1650 Old Henderson Rd', city: 'Columbus', state: 'OH', zip: '43220' },
+  { address: '3800 Riverside Dr',  city: 'Columbus', state: 'OH', zip: '43221' },
+];
+
+// Deterministic 9-digit demo TIN in SSN form (XXX-XX-XXXX). Synthetic — not real.
+function generateDemoTin(i) {
+  const a = String(100 + ((i * 173) % 800)).padStart(3, '0');
+  const b = String(10  + ((i * 47)  % 90)).padStart(2, '0');
+  const c = String(1000 + ((i * 281) % 9000)).padStart(4, '0');
+  return `${a}-${b}-${c}`;
+}
+
+// Fills demo contact + TIN data on every existing employee. Idempotent:
+// only fills falsy/empty fields; real values are preserved. Optional
+// settings + updateSettings args also seed salon-level EIN/address.
+// Shared between EmployeesAdmin's "✚ Fill demo contact/TIN" button and
+// the seedFullDemo orchestrator so both routes do the same work.
+export async function seedDemoEmployeeContactInfo(onProgress, opts = {}) {
+  const { settings, updateSettings } = opts;
+  const fresh = await fetchEmployeesWithComp();
+  let patched = 0;
+  let fieldsFilled = 0;
+  for (let i = 0; i < fresh.length; i++) {
+    const emp  = fresh[i];
+    const seed = SEED_EMPLOYEES.find(s => s.name === emp.name) || {};
+    const fb   = FALLBACK_ADDRS[i % FALLBACK_ADDRS.length];
+    const slug = (emp.name || `tech${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
+
+    const candidates = {
+      phone:   seed.phone   || `(614) 555-${String(1000 + (i * 137) % 9000).padStart(4, '0')}`,
+      email:   seed.email   || `${slug || 'tech'}@example.com`,
+      address: seed.address || fb.address,
+      city:    seed.city    || fb.city,
+      state:   seed.state   || fb.state,
+      zip:     seed.zip     || fb.zip,
+      tin:     seed.tin     || generateDemoTin(i),
+    };
+    const updates = {};
+    Object.entries(candidates).forEach(([k, v]) => {
+      const cur = emp[k];
+      if ((cur === undefined || cur === null || cur === '') && v) updates[k] = v;
+    });
+    if (Object.keys(updates).length > 0) {
+      await saveEmployee(emp.id, { ...emp, ...updates });
+      patched++;
+      fieldsFilled += Object.keys(updates).length;
+      onProgress?.(`Filled ${patched}/${fresh.length} techs (${fieldsFilled} fields)`);
+    }
+  }
+
+  let salonFilled = 0;
+  if (settings && typeof updateSettings === 'function') {
+    const salonDefaults = {
+      ein:          '83-2917458',
+      brandAddress: '4500 N High St',
+      brandCity:    'Columbus',
+      brandState:   'OH',
+      brandZip:     '43214',
+      brandPhone:   '(614) 555-0100',
+    };
+    const salonUpdates = {};
+    Object.entries(salonDefaults).forEach(([k, v]) => {
+      const cur = settings?.[k];
+      if ((cur === undefined || cur === null || cur === '') && v) salonUpdates[k] = v;
+    });
+    if (Object.keys(salonUpdates).length > 0) {
+      await updateSettings({ ...settings, ...salonUpdates });
+      salonFilled = Object.keys(salonUpdates).length;
+    }
+  }
+
+  return { patched, total: fresh.length, fieldsFilled, salonFilled };
+}
+
+// Ensures an employee record exists for the currently-signed-in admin so
+// the demo includes the "admin who is also a tech" persona out of the box.
+// Idempotent: if an employee with this email already exists, returns it
+// unchanged. Otherwise creates one with sensible defaults.
+//
+// Without this, the demo's mobile profile screen shows "No employee record
+// linked to this account" for the founder, and the web "My tech view"
+// toggle is dim — both real product features whose demo paths break without
+// an employee record matching the signed-in admin's email.
+export async function seedAdminAsTechEmployee(gUser, onProgress) {
+  if (!gUser?.email) return { created: false, reason: 'no_signed_in_user' };
+  const emailLower = gUser.email.toLowerCase();
+  const existing = await fetchEmployees();
+  const match = existing.find(e => (e.email || '').toLowerCase() === emailLower);
+  if (match) {
+    onProgress?.(`Employee record for ${gUser.email} already exists`);
+    return { created: false, employee: match };
+  }
+
+  const displayName = gUser.displayName || gUser.email.split('@')[0];
+  const i = existing.length;
+  const fb = FALLBACK_ADDRS[i % FALLBACK_ADDRS.length];
+  const slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
+
+  const data = {
+    name:        displayName,
+    email:       gUser.email,
+    phone:       `(614) 555-${String(1000 + (i * 137) % 9000).padStart(4, '0')}`,
+    photo:       gUser.photoURL || '',
+    address:     fb.address,
+    city:        fb.city,
+    state:       fb.state,
+    zip:         fb.zip,
+    tin:         generateDemoTin(i),
+    active:      true,
+    sortOrder:   i + 1,
+    serviceIds:  [],
+    workDays:    {
+      Mon: { on: true, start: '09:00', end: '18:00' },
+      Tue: { on: true, start: '09:00', end: '18:00' },
+      Wed: { on: true, start: '09:00', end: '18:00' },
+      Thu: { on: true, start: '09:00', end: '18:00' },
+      Fri: { on: true, start: '09:00', end: '18:00' },
+      Sat: { on: true, start: '09:00', end: '18:00' },
+      Sun: { on: false, start: '09:00', end: '18:00' },
+    },
+    _demo:       true,
+  };
+  const id = await createEmployee(data);
+  onProgress?.(`Created admin-as-tech employee: ${displayName}`);
+  return { created: true, employee: { id, ...data } };
+}
+
+export async function seedFullDemo(onProgress, opts = {}) {
+  const { gUser, settings, updateSettings } = opts;
   const stats = {};
 
-  onProgress?.('Step 1/9 · Seeding products…');
+  onProgress?.('Step 1/11 · Seeding products…');
   await seedProductCatalog(onProgress);
   stats.products = 25;
 
-  onProgress?.('Step 2/9 · Seeding clients + appointments…');
+  onProgress?.('Step 2/11 · Seeding clients + appointments…');
   const base = await seedDemoData(onProgress);
   stats.clients      = base.clients;
   stats.appointments = base.appointments;
@@ -1448,7 +1588,7 @@ export async function seedFullDemo(onProgress) {
   // seeders need real ids.
   const allClients = await fetchDemoClients();
 
-  onProgress?.('Step 3/9 · Backfilling receipts (services, gift cards, retail)…');
+  onProgress?.('Step 3/11 · Backfilling receipts (services, gift cards, retail)…');
   const tx = await backfillDemoTransactions(onProgress);
   stats.receipts        = tx.receipts;
   stats.cancelled       = tx.cancelled;
@@ -1456,25 +1596,35 @@ export async function seedFullDemo(onProgress) {
   stats.giftCardSales   = tx.giftCardSales || 0;
   stats.productSales    = tx.productSales || 0;
 
-  onProgress?.('Step 4/9 · Seeding promo codes…');
+  onProgress?.('Step 4/11 · Seeding promo codes…');
   stats.promos = await seedDemoPromos(onProgress);
 
-  onProgress?.('Step 5/9 · Seeding memberships…');
+  onProgress?.('Step 5/11 · Seeding memberships…');
   const mem = await seedDemoMemberships(onProgress, allClients);
   stats.memberships = mem.members;
 
-  onProgress?.('Step 6/9 · Seeding time off…');
+  onProgress?.('Step 6/11 · Seeding time off…');
   stats.timeOff = await seedDemoTimeOff(onProgress);
 
-  onProgress?.('Step 7/9 · Seeding Google reviews…');
+  onProgress?.('Step 7/11 · Seeding Google reviews…');
   stats.reviews = await seedDemoReviews(onProgress);
 
-  onProgress?.('Step 8/9 · Seeding HR bonuses…');
+  onProgress?.('Step 8/11 · Seeding HR bonuses…');
   stats.bonuses = await seedDemoBonuses(onProgress);
 
-  onProgress?.('Step 9/9 · Seeding walk-in queue history + marketing campaigns…');
+  onProgress?.('Step 9/11 · Seeding walk-in queue history + marketing campaigns…');
   stats.waitlist  = await seedDemoWaitlist(onProgress, allClients);
   stats.campaigns = await seedDemoCampaigns(onProgress);
+
+  onProgress?.('Step 10/11 · Ensuring admin-as-tech employee record…');
+  const adminTech = await seedAdminAsTechEmployee(gUser, onProgress);
+  stats.adminAsTech = adminTech.created ? 'created' : (adminTech.employee ? 'already_existed' : 'skipped_no_user');
+
+  onProgress?.('Step 11/11 · Filling demo contact/TIN for all techs + salon defaults…');
+  const contact = await seedDemoEmployeeContactInfo(onProgress, { settings, updateSettings });
+  stats.employeesFilled = contact.patched;
+  stats.fieldsFilled    = contact.fieldsFilled;
+  stats.salonFilled     = contact.salonFilled;
 
   onProgress?.('Done!');
   return stats;
