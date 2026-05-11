@@ -1,13 +1,13 @@
 import {
   createClient, createAppointment,
-  deleteClient, deleteAppointment,
+  purgeClient, purgeAppointment,
   fetchDemoClients, fetchDemoAppointments,
   saveAppointment, saveClient, createReceipt,
-  fetchDemoReceipts, deleteReceipt,
-  createGiftCard, fetchDemoGiftCards, deleteGiftCard,
+  fetchDemoReceipts, purgeReceipt,
+  createGiftCard, fetchDemoGiftCards, purgeGiftCard,
   fetchProducts, deleteProduct,
   createPromoCode, fetchPromoCodes,
-  createMembership, createMembershipPlan, fetchMembershipPlans, fetchMemberships, deleteMembership, saveMembership,
+  createMembership, createMembershipPlan, fetchMembershipPlans, fetchMemberships, purgeMembership, saveMembership,
   createTimeOff, fetchTimeOff, deleteTimeOff,
   createBonus, fetchBonuses, deleteBonus,
   saveWebfrontConfig, fetchWebfrontConfig,
@@ -1486,7 +1486,7 @@ export async function clearDemoData(onProgress) {
   const demoClients = await fetchDemoClients();
   onProgress?.(`Removing ${demoClients.length} clients…`);
   for (let i = 0; i < demoClients.length; i++) {
-    await deleteClient(demoClients[i].id);
+    await purgeClient(demoClients[i].id);
     if ((i + 1) % 50 === 0) onProgress?.(`Clients removed: ${i + 1} / ${demoClients.length}`);
   }
 
@@ -1494,7 +1494,7 @@ export async function clearDemoData(onProgress) {
   const demoAppts = await fetchDemoAppointments();
   onProgress?.(`Removing ${demoAppts.length} appointments…`);
   for (let i = 0; i < demoAppts.length; i++) {
-    await deleteAppointment(demoAppts[i].id);
+    await purgeAppointment(demoAppts[i].id);
     if ((i + 1) % 50 === 0) onProgress?.(`Appointments removed: ${i + 1} / ${demoAppts.length}`);
   }
 
@@ -1502,7 +1502,7 @@ export async function clearDemoData(onProgress) {
   const demoReceipts = await fetchDemoReceipts();
   onProgress?.(`Removing ${demoReceipts.length} receipts…`);
   for (let i = 0; i < demoReceipts.length; i++) {
-    await deleteReceipt(demoReceipts[i].id);
+    await purgeReceipt(demoReceipts[i].id);
     if ((i + 1) % 50 === 0) onProgress?.(`Receipts removed: ${i + 1} / ${demoReceipts.length}`);
   }
 
@@ -1510,7 +1510,7 @@ export async function clearDemoData(onProgress) {
   const demoGcs = await fetchDemoGiftCards();
   onProgress?.(`Removing ${demoGcs.length} gift cards…`);
   for (let i = 0; i < demoGcs.length; i++) {
-    await deleteGiftCard(demoGcs[i].id);
+    await purgeGiftCard(demoGcs[i].id);
     if ((i + 1) % 50 === 0) onProgress?.(`Gift cards removed: ${i + 1} / ${demoGcs.length}`);
   }
 

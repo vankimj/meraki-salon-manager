@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Plume Nexus — Lotus / Bloom round</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Great+Vibes&family=Cinzel:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: #0f1923;
+    color: #fff;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+    padding: 48px 24px 96px;
+  }
+  .page-head {
+    max-width: 1320px;
+    margin: 0 auto 36px;
+    text-align: center;
+  }
+  .page-head h1 {
+    font-family: 'Cinzel', serif;
+    font-weight: 600;
+    font-size: 22px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+    color: #fff;
+  }
+  .page-head p {
+    margin: 0;
+    color: rgba(255,255,255,.55);
+    font-size: 14px;
+    letter-spacing: .04em;
+  }
+  .grid {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 24px;
+  }
+  .tile {
+    position: relative;
+    background:
+      radial-gradient(ellipse at center, rgba(91,59,140,.18) 0%, rgba(61,149,206,.08) 50%, transparent 75%),
+      #131e2a;
+    border: 1px solid rgba(255,255,255,.06);
+    border-radius: 18px;
+    padding: 28px 24px 22px;
+    min-height: 360px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: transform .2s ease, border-color .2s ease;
+  }
+  .tile:hover {
+    transform: translateY(-2px);
+    border-color: rgba(162,136,201,.4);
+  }
+  .tile.pinned {
+    border-color: rgba(193,154,74,.5);
+    background:
+      radial-gradient(ellipse at center, rgba(193,154,74,.10) 0%, rgba(91,59,140,.10) 50%, transparent 75%),
+      #131e2a;
+  }
+  .tile-num {
+    position: absolute;
+    top: 14px;
+    left: 16px;
+    font-family: 'Cinzel', serif;
+    font-size: 11px;
+    letter-spacing: .28em;
+    color: rgba(255,255,255,.35);
+  }
+  .tile.pinned .tile-num { color: #c19a4a; }
+  .tile-name {
+    position: absolute;
+    top: 14px;
+    right: 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    letter-spacing: .1em;
+    color: rgba(193,154,74,.85);
+    text-transform: uppercase;
+  }
+  .mark {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 14px;
+  }
+  .brand {
+    font-family: 'Great Vibes', cursive;
+    font-size: 66px;
+    line-height: .95;
+    color: #fff;
+    text-shadow: 0 2px 24px rgba(91,59,140,.55), 0 0 48px rgba(61,149,206,.25);
+    letter-spacing: .01em;
+  }
+  .tagline {
+    font-family: 'Cinzel', serif;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .32em;
+    text-transform: uppercase;
+    color: rgba(255,255,255,.55);
+    margin-top: 8px;
+  }
+  .foot {
+    max-width: 1320px;
+    margin: 48px auto 0;
+    text-align: center;
+    color: rgba(255,255,255,.4);
+    font-size: 13px;
+    letter-spacing: .04em;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Plume Nexus &mdash; Lotus / Bloom Round</h1>
+  <p>Ten new directions building on your favorite (Lotus Nexus). First tile is the original, pinned for comparison.</p>
+</div>
+
+<div class="grid">
+
+  <!-- ───────── 00 · Pinned: original Lotus Nexus ───────── -->
+  <div class="tile pinned">
+    <div class="tile-num">00 · PINNED</div>
+    <div class="tile-name">Original Lotus</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g0" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <g fill="url(#g0)" opacity=".95">
+        <path d="M60 18 C52 36 52 56 60 70 C68 56 68 36 60 18 Z"/>
+        <g transform="rotate(72 60 64)"><path d="M60 18 C52 36 52 56 60 70 C68 56 68 36 60 18 Z"/></g>
+        <g transform="rotate(144 60 64)"><path d="M60 18 C52 36 52 56 60 70 C68 56 68 36 60 18 Z"/></g>
+        <g transform="rotate(216 60 64)"><path d="M60 18 C52 36 52 56 60 70 C68 56 68 36 60 18 Z"/></g>
+        <g transform="rotate(288 60 64)"><path d="M60 18 C52 36 52 56 60 70 C68 56 68 36 60 18 Z"/></g>
+      </g>
+      <circle cx="60" cy="64" r="10" fill="#fff"/>
+      <circle cx="60" cy="64" r="5" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 11 · Lotus 8-petal ───────── -->
+  <div class="tile">
+    <div class="tile-num">11</div>
+    <div class="tile-name">Octalotus</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g11" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <g fill="url(#g11)" opacity=".9">
+        <path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/>
+        <g transform="rotate(45 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+        <g transform="rotate(90 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+        <g transform="rotate(135 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+        <g transform="rotate(180 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+        <g transform="rotate(225 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+        <g transform="rotate(270 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+        <g transform="rotate(315 60 60)"><path d="M60 20 C54 36 54 54 60 66 C66 54 66 36 60 20 Z"/></g>
+      </g>
+      <circle cx="60" cy="60" r="9" fill="#fff"/>
+      <circle cx="60" cy="60" r="4" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 12 · Rounded Camellia ───────── -->
+  <div class="tile">
+    <div class="tile-num">12</div>
+    <div class="tile-name">Camellia</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <radialGradient id="g12" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#c19a4a" stop-opacity=".25"/>
+          <stop offset="50%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#5b3b8c"/>
+        </radialGradient>
+      </defs>
+      <g fill="url(#g12)" opacity=".95">
+        <ellipse cx="60" cy="34" rx="14" ry="22"/>
+        <g transform="rotate(72 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
+        <g transform="rotate(144 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
+        <g transform="rotate(216 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
+        <g transform="rotate(288 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
+      </g>
+      <circle cx="60" cy="60" r="11" fill="#fff" opacity=".95"/>
+      <circle cx="60" cy="60" r="5" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 13 · Dahlia Burst ───────── -->
+  <div class="tile">
+    <div class="tile-num">13</div>
+    <div class="tile-name">Dahlia Burst</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g13" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#1f6ea3"/>
+        </linearGradient>
+      </defs>
+      <g fill="url(#g13)" opacity=".95">
+        <path d="M60 14 L63 60 L57 60 Z"/>
+        <g transform="rotate(30 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(60 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(90 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(120 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(150 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(180 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(210 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(240 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(270 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(300 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+        <g transform="rotate(330 60 60)"><path d="M60 14 L63 60 L57 60 Z"/></g>
+      </g>
+      <circle cx="60" cy="60" r="10" fill="#fff"/>
+      <circle cx="60" cy="60" r="5" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 14 · Trillium (3-petal) ───────── -->
+  <div class="tile">
+    <div class="tile-num">14</div>
+    <div class="tile-name">Trillium</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g14" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <g fill="url(#g14)" opacity=".95">
+        <path d="M60 14 C46 32 46 52 60 64 C74 52 74 32 60 14 Z"/>
+        <g transform="rotate(120 60 60)"><path d="M60 14 C46 32 46 52 60 64 C74 52 74 32 60 14 Z"/></g>
+        <g transform="rotate(240 60 60)"><path d="M60 14 C46 32 46 52 60 64 C74 52 74 32 60 14 Z"/></g>
+      </g>
+      <circle cx="60" cy="60" r="9" fill="#fff"/>
+      <circle cx="60" cy="60" r="4" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 15 · Mandala Lotus ───────── -->
+  <div class="tile">
+    <div class="tile-num">15</div>
+    <div class="tile-name">Mandala Lotus</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g15" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <circle cx="60" cy="60" r="54" fill="none" stroke="url(#g15)" stroke-width="1" opacity=".4"/>
+      <circle cx="60" cy="60" r="42" fill="none" stroke="url(#g15)" stroke-width=".8" opacity=".3"/>
+      <g fill="url(#g15)" opacity=".9">
+        <path d="M60 22 C54 36 54 52 60 62 C66 52 66 36 60 22 Z"/>
+        <g transform="rotate(72 60 60)"><path d="M60 22 C54 36 54 52 60 62 C66 52 66 36 60 22 Z"/></g>
+        <g transform="rotate(144 60 60)"><path d="M60 22 C54 36 54 52 60 62 C66 52 66 36 60 22 Z"/></g>
+        <g transform="rotate(216 60 60)"><path d="M60 22 C54 36 54 52 60 62 C66 52 66 36 60 22 Z"/></g>
+        <g transform="rotate(288 60 60)"><path d="M60 22 C54 36 54 52 60 62 C66 52 66 36 60 22 Z"/></g>
+      </g>
+      <g fill="#c19a4a" opacity=".8">
+        <circle cx="60" cy="14" r="1.4"/>
+        <g transform="rotate(72 60 60)"><circle cx="60" cy="14" r="1.4"/></g>
+        <g transform="rotate(144 60 60)"><circle cx="60" cy="14" r="1.4"/></g>
+        <g transform="rotate(216 60 60)"><circle cx="60" cy="14" r="1.4"/></g>
+        <g transform="rotate(288 60 60)"><circle cx="60" cy="14" r="1.4"/></g>
+      </g>
+      <circle cx="60" cy="60" r="8" fill="#fff"/>
+      <circle cx="60" cy="60" r="4" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 16 · Lily Pad (top-down) ───────── -->
+  <div class="tile">
+    <div class="tile-num">16</div>
+    <div class="tile-name">Lily Pad</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g16" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3d9e8a"/>
+          <stop offset="100%" stop-color="#1f6ea3"/>
+        </linearGradient>
+        <linearGradient id="g16b" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <ellipse cx="60" cy="64" rx="46" ry="34" fill="url(#g16)" opacity=".55"/>
+      <path d="M60 64 L102 64" stroke="#fff" stroke-width=".7" opacity=".25"/>
+      <path d="M60 64 L18 64" stroke="#fff" stroke-width=".7" opacity=".25"/>
+      <path d="M60 64 L60 30" stroke="#fff" stroke-width=".7" opacity=".25"/>
+      <path d="M60 64 L86 38" stroke="#fff" stroke-width=".7" opacity=".25"/>
+      <path d="M60 64 L34 38" stroke="#fff" stroke-width=".7" opacity=".25"/>
+      <g fill="url(#g16b)" opacity=".95">
+        <path d="M60 36 C54 48 54 58 60 64 C66 58 66 48 60 36 Z"/>
+        <g transform="rotate(72 60 64)"><path d="M60 36 C54 48 54 58 60 64 C66 58 66 48 60 36 Z"/></g>
+        <g transform="rotate(144 60 64)"><path d="M60 36 C54 48 54 58 60 64 C66 58 66 48 60 36 Z"/></g>
+        <g transform="rotate(216 60 64)"><path d="M60 36 C54 48 54 58 60 64 C66 58 66 48 60 36 Z"/></g>
+        <g transform="rotate(288 60 64)"><path d="M60 36 C54 48 54 58 60 64 C66 58 66 48 60 36 Z"/></g>
+      </g>
+      <circle cx="60" cy="64" r="7" fill="#fff"/>
+      <circle cx="60" cy="64" r="3.5" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 17 · Folded (origami) Lotus ───────── -->
+  <div class="tile">
+    <div class="tile-num">17</div>
+    <div class="tile-name">Folded Lotus</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g17a" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#5b3b8c"/>
+        </linearGradient>
+        <linearGradient id="g17b" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#3d95ce"/>
+          <stop offset="100%" stop-color="#1f6ea3"/>
+        </linearGradient>
+      </defs>
+      <g opacity=".95">
+        <path d="M60 22 L72 60 L48 60 Z" fill="url(#g17a)"/>
+        <g transform="rotate(72 60 60)"><path d="M60 22 L72 60 L48 60 Z" fill="url(#g17b)"/></g>
+        <g transform="rotate(144 60 60)"><path d="M60 22 L72 60 L48 60 Z" fill="url(#g17a)"/></g>
+        <g transform="rotate(216 60 60)"><path d="M60 22 L72 60 L48 60 Z" fill="url(#g17b)"/></g>
+        <g transform="rotate(288 60 60)"><path d="M60 22 L72 60 L48 60 Z" fill="url(#g17a)"/></g>
+      </g>
+      <circle cx="60" cy="60" r="8" fill="#fff"/>
+      <circle cx="60" cy="60" r="4" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 18 · Pinwheel Bloom ───────── -->
+  <div class="tile">
+    <div class="tile-num">18</div>
+    <div class="tile-name">Pinwheel</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g18" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <g fill="url(#g18)" opacity=".95">
+        <path d="M60 60 C60 30 78 22 88 30 C78 38 70 50 60 60 Z"/>
+        <g transform="rotate(60 60 60)"><path d="M60 60 C60 30 78 22 88 30 C78 38 70 50 60 60 Z"/></g>
+        <g transform="rotate(120 60 60)"><path d="M60 60 C60 30 78 22 88 30 C78 38 70 50 60 60 Z"/></g>
+        <g transform="rotate(180 60 60)"><path d="M60 60 C60 30 78 22 88 30 C78 38 70 50 60 60 Z"/></g>
+        <g transform="rotate(240 60 60)"><path d="M60 60 C60 30 78 22 88 30 C78 38 70 50 60 60 Z"/></g>
+        <g transform="rotate(300 60 60)"><path d="M60 60 C60 30 78 22 88 30 C78 38 70 50 60 60 Z"/></g>
+      </g>
+      <circle cx="60" cy="60" r="8" fill="#fff"/>
+      <circle cx="60" cy="60" r="4" fill="#c19a4a"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 19 · Lotus + Dew Drop ───────── -->
+  <div class="tile">
+    <div class="tile-num">19</div>
+    <div class="tile-name">Lotus &amp; Dew</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g19" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#a288c9"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+        <linearGradient id="g19drop" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#fff"/>
+          <stop offset="100%" stop-color="#c19a4a"/>
+        </linearGradient>
+      </defs>
+      <g fill="url(#g19)" opacity=".85">
+        <path d="M60 28 C52 42 52 58 60 68 C68 58 68 42 60 28 Z"/>
+        <g transform="rotate(72 60 64)"><path d="M60 28 C52 42 52 58 60 68 C68 58 68 42 60 28 Z"/></g>
+        <g transform="rotate(144 60 64)"><path d="M60 28 C52 42 52 58 60 68 C68 58 68 42 60 28 Z"/></g>
+        <g transform="rotate(216 60 64)"><path d="M60 28 C52 42 52 58 60 68 C68 58 68 42 60 28 Z"/></g>
+        <g transform="rotate(288 60 64)"><path d="M60 28 C52 42 52 58 60 68 C68 58 68 42 60 28 Z"/></g>
+      </g>
+      <path d="M60 50 C56 56 54 60 54 64 C54 68 57 70 60 70 C63 70 66 68 66 64 C66 60 64 56 60 50 Z" fill="url(#g19drop)"/>
+      <ellipse cx="58" cy="58" rx="1.4" ry="2" fill="#fff" opacity=".9"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+  <!-- ───────── 20 · Bloom Inside Frame ───────── -->
+  <div class="tile">
+    <div class="tile-num">20</div>
+    <div class="tile-name">Bloom Plate</div>
+    <svg class="mark" viewBox="0 0 120 120">
+      <defs>
+        <linearGradient id="g20a" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#5b3b8c"/>
+          <stop offset="100%" stop-color="#3d95ce"/>
+        </linearGradient>
+      </defs>
+      <rect x="4" y="4" width="112" height="112" rx="26" fill="url(#g20a)"/>
+      <g fill="#fff" opacity=".95">
+        <path d="M60 24 C54 40 54 56 60 66 C66 56 66 40 60 24 Z"/>
+        <g transform="rotate(72 60 60)"><path d="M60 24 C54 40 54 56 60 66 C66 56 66 40 60 24 Z"/></g>
+        <g transform="rotate(144 60 60)"><path d="M60 24 C54 40 54 56 60 66 C66 56 66 40 60 24 Z"/></g>
+        <g transform="rotate(216 60 60)"><path d="M60 24 C54 40 54 56 60 66 C66 56 66 40 60 24 Z"/></g>
+        <g transform="rotate(288 60 60)"><path d="M60 24 C54 40 54 56 60 66 C66 56 66 40 60 24 Z"/></g>
+      </g>
+      <circle cx="60" cy="60" r="9" fill="#c19a4a"/>
+      <circle cx="60" cy="60" r="4" fill="#fff"/>
+    </svg>
+    <div class="brand">Plume Nexus</div>
+    <div class="tagline">Salon Manager</div>
+  </div>
+
+</div>
+
+<div class="foot">
+  Pick a number &mdash; the chosen design will replace the splash mark in <code style="color:#a288c9;">src/components/Splash.jsx</code>.
+  &nbsp; · &nbsp; All marks are original SVGs; no third-party imagery or trademarked symbols used.
+</div>
+
+</body>
+</html>

@@ -17,5 +17,15 @@
       }
     }
   },
-  "etags": {}
+  "etags": {
+    "meraki-salon-manager": {
+      "extensionInstances": {
+        "fs-bq-appointments": "8d36861a1d4a384d593cba902e922b28a932f49e0ed905bb125c43ddc5f5dd8b",
+        "fs-bq-clients": "7235fe54da6eedd831cf79767b16d61a3a0611ae0bbc3592e846460944dab2fc",
+        "fs-bq-data": "f5b78b799e330bcb1e907477543c67c839309278de07b06819a71ad68857a5b9",
+        "fs-bq-employees": "a4afe8b608f1e4ee9a7d3bca2aad43b2948462e397c4eb2fff769ed8b38b86e1",
+        "fs-bq-receipts": "9ae150455a5fcf47be2d2e281727e002c2a8b0f57b31c640a814345c56bc1134"
+      }
+    }
+  }
 }

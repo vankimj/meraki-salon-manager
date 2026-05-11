@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchClients, createClient, saveClient, deleteClient, fetchServices, fetchClientAppointments, createReviewRequest, saveReviewReceived } from '../../lib/firestore';
+import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { resizeImg, formatTime } from '../../utils/helpers';
 import { logActivity, logError } from '../../lib/logger';
 
@@ -341,6 +342,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
   const [clientLightbox,  setClientLightbox]  = useState(null);
   const [addingVisit,  setAddingVisit]  = useState(false);
   const [newVisit,     setNewVisit]     = useState(blankVisit());
+  const [restoreOpen,  setRestoreOpen]  = useState(false);
   const fileRef = useRef(null);
   const isNew   = !client.id;
   const isView  = mode === 'view';
@@ -1027,6 +1029,13 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
           {isView ? (
             <>
               <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Close</button>
+              {!isNew && isAdmin && (
+                <button onClick={() => setRestoreOpen(true)}
+                  title="Restore an earlier version of this client from the BigQuery mirror"
+                  style={{ ...btnBase, padding: '8px 12px', fontSize: 12, color: '#666' }}>
+                  ⏳ History
+                </button>
+              )}
               {!isNew && (
                 <button onClick={() => setMode('edit')} style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE' }}>
                   Edit
@@ -1044,6 +1053,16 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
           )}
         </div>
       </div>
+
+      {restoreOpen && client.id && (
+        <RestoreFromBQModal
+          collection="clients"
+          docId={client.id}
+          label={client.name}
+          onClose={() => setRestoreOpen(false)}
+          onRestored={() => { setRestoreOpen(false); onClose(); showToast('Client restored from BigQuery snapshot — refresh to see'); }}
+        />
+      )}
 
       {clientLightbox && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.92)', zIndex: 300, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12 }}

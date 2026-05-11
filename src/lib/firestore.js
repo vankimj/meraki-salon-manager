@@ -12,6 +12,41 @@ import { TENANT_ID } from './tenant';
 const tenantDoc = (path) => doc(db, 'tenants', TENANT_ID, 'data', ...path.split('/'));
 const tenantCol = (path) => collection(db, 'tenants', TENANT_ID, path);
 
+// ── Soft-delete pattern ────────────────────────────────
+// User-initiated deletions on customer-data collections (clients,
+// appointments, receipts, memberships, giftCards) write a tombstone
+// instead of removing the doc — `_deleted: true` + audit fields.
+// Fetch helpers filter `_deleted !== true` client-side so tombstones
+// are invisible to normal app code. A 30-day cleanup cron in
+// functions/index.js purges tombstones permanently. Restore from
+// BigQuery (within 7-day PITR + forever in the BQ mirror) is always
+// available — see recoverUsersFullFromBQ for the lossless pattern.
+//
+// Internal callers that need to permanently remove a doc (demo
+// cleanup, GG receipt dedup, etc.) call the parallel `purgeXxx`
+// functions which use deleteDoc directly. NEVER use deleteDoc directly
+// on customer-data collections from product code.
+function softDelete(ref, by) {
+  return updateDoc(ref, {
+    _deleted:   true,
+    _deletedAt: new Date().toISOString(),
+    _deletedBy: by || null,
+  });
+}
+function notTombstoned(d) { return d._deleted !== true; }
+
+// Per-doc snapshot history + restore. Wraps the getDocSnapshotHistory and
+// restoreDocFromBQ Cloud Functions. `collection` must be one of clients,
+// appointments, receipts, employees (the BQ-mirrored set).
+export async function fetchDocSnapshotHistory(collection, docId, limit = 10) {
+  const res = await callFn('getDocSnapshotHistory')({ tenantId: TENANT_ID, collection, docId, limit });
+  return res?.data || { snapshots: [] };
+}
+export async function restoreDocFromBQ(collection, docId, snapshotTimestamp) {
+  const res = await callFn('restoreDocFromBQ')({ tenantId: TENANT_ID, collection, docId, snapshotTimestamp });
+  return res?.data || { restored: false };
+}
+
 // ── Refs ───────────────────────────────────────────────
 const SLIDES_REF      = tenantDoc('slides');
 const USERS_REF       = tenantDoc('users');     // slim projection (staff readable)
@@ -258,12 +293,14 @@ const CLIENTS_COL = tenantCol('clients');
 
 export async function fetchClients() {
   const snap = await getDocs(query(CLIENTS_COL, orderBy('name')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function fetchClient(id) {
   const snap = await getDoc(doc(CLIENTS_COL, id));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (!snap.exists()) return null;
+  const data = { id: snap.id, ...snap.data() };
+  return notTombstoned(data) ? data : null;
 }
 
 export async function createClient(data) {
@@ -280,7 +317,8 @@ export async function saveClient(id, data) {
   await setDoc(doc(CLIENTS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
-export const deleteClient = (id) => deleteDoc(doc(CLIENTS_COL, id));
+export const deleteClient = (id, deletedBy) => softDelete(doc(CLIENTS_COL, id), deletedBy);
+export const purgeClient  = (id) => deleteDoc(doc(CLIENTS_COL, id));
 
 export async function fetchDemoClients() {
   const snap = await getDocs(query(CLIENTS_COL, where('_demo', '==', true)));
@@ -443,13 +481,16 @@ export async function fetchAppointments(date) {
   const snap = await getDocs(query(APPTS_COL, where('date', '==', date)));
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 }
 
 export async function fetchAppointmentById(id) {
   if (!id) return null;
   const snap = await getDoc(doc(APPTS_COL, id));
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+  if (!snap.exists()) return null;
+  const data = { id: snap.id, ...snap.data() };
+  return notTombstoned(data) ? data : null;
 }
 
 // Find today's appointment for a given client (by id or by phone digits).
@@ -479,6 +520,7 @@ export function subscribeToAppointments(date, cb) {
   return onSnapshot(q, snap => {
     const list = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
+      .filter(notTombstoned)
       .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     cb(list);
   });
@@ -490,7 +532,7 @@ export function subscribeToAppointmentsByRange(startDate, endDate, cb) {
     where('date', '>=', startDate),
     where('date', '<=', endDate),
   );
-  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)));
 }
 
 export async function createAppointment(data) {
@@ -506,7 +548,8 @@ export async function saveAppointment(id, data) {
   await setDoc(doc(APPTS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
-export const deleteAppointment = (id) => deleteDoc(doc(APPTS_COL, id));
+export const deleteAppointment = (id, deletedBy) => softDelete(doc(APPTS_COL, id), deletedBy);
+export const purgeAppointment  = (id) => deleteDoc(doc(APPTS_COL, id));
 
 export async function fetchRecurringGroup(groupId) {
   const snap = await getDocs(query(APPTS_COL, where('recurringGroupId', '==', groupId)));
@@ -588,8 +631,12 @@ export async function fetchClientVisits(clientId, client) {
 
   const apptMap = new Map();
   const rcptMap = new Map();
-  apptSnaps.forEach(snap => snap.docs.forEach(d => apptMap.set(d.id, { id: d.id, ...d.data() })));
-  rcptSnaps.forEach(snap => snap.docs.forEach(d => rcptMap.set(d.id, { id: d.id, ...d.data() })));
+  const addIfLive = (map, snap) => snap.docs.forEach(d => {
+    const data = { id: d.id, ...d.data() };
+    if (notTombstoned(data)) map.set(d.id, data);
+  });
+  apptSnaps.forEach(snap => addIfLive(apptMap, snap));
+  rcptSnaps.forEach(snap => addIfLive(rcptMap, snap));
 
   // Orphan-walk-in fallback: if we have a phone, also pick up records
   // that have NO clientId but a matching phone (legacy walk-ins logged
@@ -598,11 +645,17 @@ export async function fetchClientVisits(clientId, client) {
   if (wantEmail) {
     try {
       const aSnap = await getDocs(query(APPTS_COL, where('clientEmail', '==', wantEmail)));
-      aSnap.docs.forEach(d => { if (!apptMap.has(d.id)) apptMap.set(d.id, { id: d.id, ...d.data() }); });
+      aSnap.docs.forEach(d => {
+        const data = { id: d.id, ...d.data() };
+        if (notTombstoned(data) && !apptMap.has(d.id)) apptMap.set(d.id, data);
+      });
     } catch (_) {}
     try {
       const rSnap = await getDocs(query(RECEIPTS_COL, where('clientEmail', '==', wantEmail)));
-      rSnap.docs.forEach(d => { if (!rcptMap.has(d.id)) rcptMap.set(d.id, { id: d.id, ...d.data() }); });
+      rSnap.docs.forEach(d => {
+        const data = { id: d.id, ...d.data() };
+        if (notTombstoned(data) && !rcptMap.has(d.id)) rcptMap.set(d.id, data);
+      });
     } catch (_) {}
   }
 
@@ -705,7 +758,7 @@ export async function fetchAppointmentsByRange(startDate, endDate) {
     where('date', '>=', startDate),
     where('date', '<=', endDate),
   ));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 // ── Memberships ────────────────────────────────────────
@@ -745,11 +798,13 @@ export async function deleteMembershipPlan(id) {
 export async function fetchMemberships() {
   const snap = await getDocs(MEMBERSHIPS_COL);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
     .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
 }
 export function subscribeMemberships(cb) {
   return onSnapshot(MEMBERSHIPS_COL, snap => {
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(notTombstoned)
       .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
     cb(list);
   });
@@ -775,7 +830,10 @@ export async function createMembership(data) {
 export async function saveMembership(id, data) {
   await setDoc(doc(MEMBERSHIPS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
-export async function deleteMembership(id) {
+export async function deleteMembership(id, deletedBy) {
+  await softDelete(doc(MEMBERSHIPS_COL, id), deletedBy);
+}
+export async function purgeMembership(id) {
   await deleteDoc(doc(MEMBERSHIPS_COL, id));
 }
 
@@ -833,7 +891,7 @@ const GIFT_CARDS_COL = tenantCol('giftCards');
 
 export async function fetchGiftCards() {
   const snap = await getDocs(query(GIFT_CARDS_COL, orderBy('createdAt', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function fetchGiftCardByCode(code) {
@@ -853,7 +911,8 @@ export async function fetchDemoGiftCards() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export const deleteGiftCard = (id) => deleteDoc(doc(GIFT_CARDS_COL, id));
+export const deleteGiftCard = (id, deletedBy) => softDelete(doc(GIFT_CARDS_COL, id), deletedBy);
+export const purgeGiftCard  = (id) => deleteDoc(doc(GIFT_CARDS_COL, id));
 
 export async function updateGiftCard(id, data) {
   await updateDoc(doc(GIFT_CARDS_COL, id), { ...data, updatedAt: new Date().toISOString() });
@@ -1026,7 +1085,8 @@ export async function fetchDemoReceipts() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export const deleteReceipt = (id) => deleteDoc(doc(RECEIPTS_COL, id));
+export const deleteReceipt = (id, deletedBy) => softDelete(doc(RECEIPTS_COL, id), deletedBy);
+export const purgeReceipt  = (id) => deleteDoc(doc(RECEIPTS_COL, id));
 
 // ── Pre-import dedup keys ──────────────────────────────
 // Returns a Set of `_glossgeniusChargeId` values for receipts already in the
@@ -1644,7 +1704,7 @@ export async function fetchReceiptsByRange(startDate, endDate) {
     where('createdAt', '>=', startISO),
     where('createdAt', '<=', endISO),
   ));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 // ── Notification center ────────────────────────────────

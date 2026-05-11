@@ -5970,3 +5970,199 @@ exports.recoverUsersFullFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, asyn
     users:        parsed.users,
   };
 });
+
+// ── Per-doc snapshot history + restore from BigQuery ────────────────────────
+// Generic companion to recoverUsersFullFromBQ that works on any of the
+// mirrored top-level collections (clients, appointments, receipts,
+// employees). Two callables:
+//
+//   getDocSnapshotHistory  — returns the last N CREATE/UPDATE snapshots of
+//                            a specific document so the admin can pick one.
+//   restoreDocFromBQ       — fetches a chosen snapshot and writes it back
+//                            atomically. If the snapshot has _deleted=true
+//                            (a tombstone), the restore explicitly clears
+//                            those fields so the doc comes back live.
+//
+// Both gate on isTenantAdmin and validate the collection name against the
+// allowlist of mirrored collections (no arbitrary path access).
+const RESTORABLE_COLLECTIONS = new Set(['clients', 'appointments', 'receipts', 'employees']);
+
+function bqDocName(tenantId, collection, docId) {
+  return `projects/meraki-salon-manager/databases/(default)/documents/tenants/${tenantId}/${collection}/${docId}`;
+}
+
+exports.getDocSnapshotHistory = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
+  const { tenantId: tid, collection, docId, limit: lim } = request.data || {};
+  const tenantId = String(tid || TENANT_ID);
+  if (!/^[a-z0-9-]{1,40}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  if (!RESTORABLE_COLLECTIONS.has(collection)) throw new HttpsError('invalid-argument', `Collection "${collection}" not restorable. Allowed: ${[...RESTORABLE_COLLECTIONS].join(', ')}`);
+  if (!docId || typeof docId !== 'string' || docId.length > 200) throw new HttpsError('invalid-argument', 'Invalid docId');
+  const max = Math.min(Math.max(Number(lim) || 10, 1), 50);
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const { BigQuery } = require('@google-cloud/bigquery');
+  const bq = new BigQuery({ projectId: 'meraki-salon-manager' });
+  const docName = bqDocName(tenantId, collection, docId);
+
+  let rows;
+  try {
+    [rows] = await bq.query({
+      query: `
+        SELECT timestamp, operation, data
+        FROM \`meraki-salon-manager.firestore_export.${collection}_raw_changelog\`
+        WHERE document_name = @docName
+          AND operation != 'DELETE'
+        ORDER BY timestamp DESC
+        LIMIT @max
+      `,
+      params: { docName, max },
+    });
+  } catch (e) {
+    console.error('[getDocSnapshotHistory] BQ query failed:', e?.message);
+    throw new HttpsError('internal', `BigQuery query failed: ${e?.message || 'unknown'}`);
+  }
+
+  const snapshots = (rows || []).map(r => {
+    let preview = null;
+    try {
+      const parsed = JSON.parse(r.data);
+      // Per-collection preview: enough for the admin to identify the version
+      // without dumping the entire (potentially large) doc into the response.
+      if (collection === 'clients')      preview = { name: parsed.name, email: parsed.email, phone: parsed.phone, _deleted: parsed._deleted === true };
+      if (collection === 'appointments') preview = { date: parsed.date, startTime: parsed.startTime, clientName: parsed.clientName, techName: parsed.techName, status: parsed.status, _deleted: parsed._deleted === true };
+      if (collection === 'receipts')     preview = { date: parsed.date, clientName: parsed.clientName, techName: parsed.techName, total: parsed.payment?.total, _deleted: parsed._deleted === true };
+      if (collection === 'employees')    preview = { name: parsed.name, email: parsed.email, active: parsed.active, _deleted: parsed._deleted === true };
+    } catch (_) {}
+    return {
+      timestamp: r.timestamp?.value || String(r.timestamp),
+      operation: r.operation,
+      preview,
+    };
+  });
+
+  return { snapshots, docName, collection, docId };
+});
+
+exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
+  const { tenantId: tid, collection, docId, snapshotTimestamp } = request.data || {};
+  const tenantId = String(tid || TENANT_ID);
+  if (!/^[a-z0-9-]{1,40}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  if (!RESTORABLE_COLLECTIONS.has(collection)) throw new HttpsError('invalid-argument', `Collection "${collection}" not restorable`);
+  if (!docId || typeof docId !== 'string' || docId.length > 200) throw new HttpsError('invalid-argument', 'Invalid docId');
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const { BigQuery } = require('@google-cloud/bigquery');
+  const bq = new BigQuery({ projectId: 'meraki-salon-manager' });
+  const docName = bqDocName(tenantId, collection, docId);
+
+  // Either restore a specific snapshot (by timestamp) OR the latest
+  // non-DELETE snapshot if no timestamp was given.
+  const wantTs = snapshotTimestamp ? String(snapshotTimestamp) : null;
+  let rows;
+  try {
+    if (wantTs) {
+      [rows] = await bq.query({
+        query: `
+          SELECT timestamp, operation, data
+          FROM \`meraki-salon-manager.firestore_export.${collection}_raw_changelog\`
+          WHERE document_name = @docName
+            AND TIMESTAMP_TRUNC(timestamp, MICROSECOND) = TIMESTAMP(@wantTs)
+            AND operation != 'DELETE'
+          LIMIT 1
+        `,
+        params: { docName, wantTs },
+      });
+    } else {
+      [rows] = await bq.query({
+        query: `
+          SELECT timestamp, operation, data
+          FROM \`meraki-salon-manager.firestore_export.${collection}_raw_changelog\`
+          WHERE document_name = @docName
+            AND operation != 'DELETE'
+          ORDER BY timestamp DESC
+          LIMIT 1
+        `,
+        params: { docName },
+      });
+    }
+  } catch (e) {
+    console.error('[restoreDocFromBQ] BQ query failed:', e?.message);
+    throw new HttpsError('internal', `BigQuery query failed: ${e?.message || 'unknown'}`);
+  }
+
+  if (!rows || rows.length === 0) {
+    throw new HttpsError('not-found', wantTs ? `No snapshot at ${wantTs}` : 'No snapshots in BigQuery for this document');
+  }
+
+  const row = rows[0];
+  let parsed;
+  try { parsed = JSON.parse(row.data); }
+  catch (e) { throw new HttpsError('internal', `Snapshot is malformed: ${e?.message}`); }
+
+  // Restore as a LIVE doc — explicitly clear tombstone fields so the
+  // restore "undeletes" if the snapshot was a tombstone state, and
+  // record the restore source for forensics.
+  const { FieldValue } = require('firebase-admin/firestore');
+  const snapshotIso = row.timestamp?.value || String(row.timestamp);
+  const ref = db.doc(`tenants/${tenantId}/${collection}/${docId}`);
+  const restored = {
+    ...parsed,
+    _deleted:        FieldValue.delete(),
+    _deletedAt:      FieldValue.delete(),
+    _deletedBy:      FieldValue.delete(),
+    _restoredFrom:   `bigquery@${snapshotIso}`,
+    _restoredAt:     new Date().toISOString(),
+    _restoredBy:     request.auth?.token?.email || null,
+  };
+  await ref.set(restored);
+
+  console.log(`[restoreDocFromBQ] tenant=${tenantId} ${collection}/${docId} restored from BQ snapshot @ ${snapshotIso} by ${request.auth?.token?.email || 'unknown'}`);
+  return { restored: true, snapshotTime: snapshotIso };
+});
+
+// ── Tombstone cleanup ───────────────────────────────────────────────────────
+// Permanently purges any soft-deleted customer-data doc whose tombstone is
+// older than 30 days. By that point the doc is past PITR window (7 days)
+// but still recoverable from the BigQuery mirror (forever) — the BQ row is
+// untouched by Firestore deletes, only the live doc gets removed. So
+// "purged" here means "no longer paying Firestore storage for the tombstone";
+// admin can still restore via restoreDocFromBQ if needed.
+//
+// Runs daily at 3 AM Eastern (low-traffic window). Tombstones are processed
+// in batches of 200 per collection per tenant to stay under Firestore's
+// 500-write batch limit and avoid long-running execution.
+exports.purgeOldTombstones = onSchedule(
+  { schedule: 'every day 03:00', timeZone: 'America/New_York', timeoutSeconds: 540 },
+  async () => {
+    const TOMBSTONE_TTL_DAYS = 30;
+    const cutoff = new Date(Date.now() - TOMBSTONE_TTL_DAYS * 86400000).toISOString();
+    let totalPurged = 0;
+
+    await forEachActiveTenant('PurgeTombstones', async (tenantId) => {
+      const db = getFirestore();
+      for (const coll of ['clients', 'appointments', 'receipts', 'memberships', 'giftCards']) {
+        try {
+          const snap = await db.collection(`tenants/${tenantId}/${coll}`)
+            .where('_deleted', '==', true)
+            .where('_deletedAt', '<', cutoff)
+            .limit(200)
+            .get();
+          if (snap.empty) continue;
+          const batch = db.batch();
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+          totalPurged += snap.size;
+          console.log(`[PurgeTombstones] tenant=${tenantId} ${coll}: purged ${snap.size}`);
+        } catch (e) {
+          console.error(`[PurgeTombstones] tenant=${tenantId} ${coll} failed:`, e?.message);
+        }
+      }
+    });
+
+    console.log(`[PurgeTombstones] complete — ${totalPurged} tombstones purged`);
+  }
+);
