@@ -54,16 +54,53 @@ test.describe('Public surfaces', () => {
     const errors = [];
     page.on('pageerror', e => errors.push(`PAGE ERROR: ${e.message}`));
     page.on('console', msg => {
-      if (msg.type() === 'error') {
-        const text = msg.text();
-        // Firebase emits noisy benign warnings in dev (cache-init, persistence,
-        // emulator hints). We only fail on app-level errors.
-        if (/firestore|firebase|persistence|cache|service worker/i.test(text)) return;
-        errors.push(`CONSOLE: ${text}`);
-      }
+      if (msg.type() !== 'error') return;
+      const text = msg.text();
+      // Allowed-list of known-benign Firebase console warnings. Anything
+      // not on this list — including "Service firestore is not available"
+      // and "is not a constructor" — fails the test. The 2026-05-10
+      // Vite/Rolldown chunk-order regression produced exactly that
+      // shape and would have been caught here pre-deploy.
+      const benign = [
+        /persistent cache init failed, falling back to memory/i,
+        /Firestore.*Connection .* will not be retried/i,
+        /service worker.*registration/i,
+        /apple-mobile-web-app-capable.*deprecated/i,
+      ];
+      if (benign.some(rx => rx.test(text))) return;
+      errors.push(`CONSOLE: ${text}`);
     });
     await page.goto('/');
     await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
     expect(errors, errors.join('\n')).toEqual([]);
+  });
+
+  // Sentinel test for the Firebase chunk-order class of bug. Passes when
+  // the bundle is healthy; fails the moment any Firebase service throws
+  // "Ap is not a constructor" / "Service X is not available" / similar
+  // class-resolution failure during init. Shape-matched to the 2026-05-10
+  // Vite 8 + Rolldown regression so the same hole can't reopen silently.
+  test('firebase services initialize without constructor errors', async ({ page }) => {
+    const fatals = [];
+    page.on('pageerror', e => {
+      const m = e.message || '';
+      if (/is not a constructor|Service \w+ is not available|firestore.*not available/i.test(m)) {
+        fatals.push(`PAGE ERROR: ${m}`);
+      }
+    });
+    page.on('console', msg => {
+      if (msg.type() !== 'error') return;
+      const m = msg.text();
+      if (/is not a constructor|Service \w+ is not available/i.test(m)) {
+        fatals.push(`CONSOLE: ${m}`);
+      }
+    });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    // Page should also have non-empty body; a constructor failure leaves
+    // it blank because React never mounts.
+    const bodyText = await page.locator('body').innerText();
+    expect(fatals, fatals.join('\n')).toEqual([]);
+    expect(bodyText.length, 'body is empty — bundle likely failed to mount').toBeGreaterThan(20);
   });
 });

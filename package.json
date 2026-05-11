@@ -10,6 +10,7 @@
     "version:print": "node -e \"const p=require('./package.json'); const sha=require('child_process').execSync('git rev-parse --short HEAD').toString().trim(); console.log('\\n🚀 Deployed: v'+p.version+' · '+sha+' · '+new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})+'\\n   Look for this in the bottom-right badge of the app.\\n')\"",
     "lint:deploy-gate": "eslint -c eslint.deploy-gate.config.js src/ --max-warnings 999",
     "deploy:prod": "npm test && npm run lint:deploy-gate && npm run build && firebase deploy --only hosting:meraki && npm run version:print",
+    "deploy:safe": "npm test && npm run lint:deploy-gate && node scripts/deploy-safe.cjs && npm run version:print",
     "deploy:staging": "npm test && npm run lint:deploy-gate && npm run build:staging && firebase hosting:channel:deploy staging --only meraki && npm run version:print",
     "deploy:prod:skip-tests": "npm run build && firebase deploy --only hosting:meraki && npm run version:print",
     "deploy:plumenexus": "cd plumenexus && npm install && npm run build && cd .. && firebase deploy --only hosting:plumenexus",

@@ -12,6 +12,13 @@ import { defineConfig, devices } from '@playwright/test';
 // Update snapshots:   npm run e2e -- --update-snapshots
 //
 // CI tip: set CI=1 to enable retries + html-only reporter.
+//
+// Pre-deploy smoke against a remote Firebase preview channel:
+//   PLAYWRIGHT_BASE_URL=https://<channel>.web.app npm run e2e
+// When PLAYWRIGHT_BASE_URL is set, the local dev server is skipped and
+// tests run against the remote URL. Used by `npm run deploy:safe`.
+const REMOTE_BASE_URL = process.env.PLAYWRIGHT_BASE_URL;
+
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: true,
@@ -20,19 +27,21 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['html', { open: 'never' }]] : 'list',
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: REMOTE_BASE_URL || 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },
-  // Spin up Vite dev server before tests; reuse if already running.
-  webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:5173',
-    timeout: 120 * 1000,
-    reuseExistingServer: !process.env.CI,
-    stdout: 'ignore',
-    stderr: 'pipe',
-  },
+  // Skip the local dev server when running against a remote URL.
+  ...(REMOTE_BASE_URL ? {} : {
+    webServer: {
+      command: 'npm run dev',
+      url: 'http://localhost:5173',
+      timeout: 120 * 1000,
+      reuseExistingServer: !process.env.CI,
+      stdout: 'ignore',
+      stderr: 'pipe',
+    },
+  }),
   projects: [
     {
       name: 'chromium',
