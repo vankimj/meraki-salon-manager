@@ -681,10 +681,19 @@ function pickService() {
   return { ...SERVICES[0] };
 }
 
-const TECH_NAMES = [
+// Tech roster used by the demo seed. Resolved at seed-time from the
+// tenant's actual employees collection so demo appointments land in
+// real calendar columns. Falls back to the canonical Meraki roster
+// only if no employees exist yet (e.g. fresh tenant). seedDemoData
+// rebinds this via setSeedTechNames() before generating appointments.
+const FALLBACK_TECH_NAMES = [
   'Yasmin D','Audriana L','Samantha T','Tess D','Elizabeth L',
   'Yan W','Jen T','Marisela I','Ana P','Jenesis B',
 ];
+let TECH_NAMES = FALLBACK_TECH_NAMES;
+function setSeedTechNames(names) {
+  TECH_NAMES = (Array.isArray(names) && names.length) ? names : FALLBACK_TECH_NAMES;
+}
 
 // ── Date helpers ────────────────────────────────────────
 function today() { return new Date(); }
@@ -866,6 +875,15 @@ function buildAppointments(clientRecords, celebRecords) {
 
 // ── Seed ───────────────────────────────────────────────
 export async function seedDemoData(onProgress) {
+  // Bind the tech roster to the tenant's actual active employees so
+  // generated appointments land in real calendar columns. Without this,
+  // appointments reference techNames that no employee record matches and
+  // the schedule grid renders empty even though appts exist in Firestore.
+  const employees = await fetchEmployees();
+  const activeNames = employees.filter(e => e.active !== false).map(e => e.name).filter(Boolean);
+  setSeedTechNames(activeNames);
+  onProgress?.(`Using tech roster: ${TECH_NAMES.join(', ')}`);
+
   const clientDefs = generateClients();
   const celebDefs  = generateCelebrities();
 
@@ -1575,11 +1593,24 @@ export async function seedFullDemo(onProgress, opts = {}) {
   const { gUser, settings, updateSettings } = opts;
   const stats = {};
 
-  onProgress?.('Step 1/11 · Seeding products…');
+  // Employees first — appointments need a real tech roster to land in
+  // calendar columns. Admin-as-tech runs before contact-fill so the
+  // founder's new record gets the same backfill treatment as the others.
+  onProgress?.('Step 1/11 · Ensuring admin-as-tech employee record…');
+  const adminTech = await seedAdminAsTechEmployee(gUser, onProgress);
+  stats.adminAsTech = adminTech.created ? 'created' : (adminTech.employee ? 'already_existed' : 'skipped_no_user');
+
+  onProgress?.('Step 2/11 · Filling demo contact/TIN for all techs + salon defaults…');
+  const contact = await seedDemoEmployeeContactInfo(onProgress, { settings, updateSettings });
+  stats.employeesFilled = contact.patched;
+  stats.fieldsFilled    = contact.fieldsFilled;
+  stats.salonFilled     = contact.salonFilled;
+
+  onProgress?.('Step 3/11 · Seeding products…');
   await seedProductCatalog(onProgress);
   stats.products = 25;
 
-  onProgress?.('Step 2/11 · Seeding clients + appointments…');
+  onProgress?.('Step 4/11 · Seeding clients + appointments…');
   const base = await seedDemoData(onProgress);
   stats.clients      = base.clients;
   stats.appointments = base.appointments;
@@ -1588,7 +1619,7 @@ export async function seedFullDemo(onProgress, opts = {}) {
   // seeders need real ids.
   const allClients = await fetchDemoClients();
 
-  onProgress?.('Step 3/11 · Backfilling receipts (services, gift cards, retail)…');
+  onProgress?.('Step 5/11 · Backfilling receipts (services, gift cards, retail)…');
   const tx = await backfillDemoTransactions(onProgress);
   stats.receipts        = tx.receipts;
   stats.cancelled       = tx.cancelled;
@@ -1596,35 +1627,25 @@ export async function seedFullDemo(onProgress, opts = {}) {
   stats.giftCardSales   = tx.giftCardSales || 0;
   stats.productSales    = tx.productSales || 0;
 
-  onProgress?.('Step 4/11 · Seeding promo codes…');
+  onProgress?.('Step 6/11 · Seeding promo codes…');
   stats.promos = await seedDemoPromos(onProgress);
 
-  onProgress?.('Step 5/11 · Seeding memberships…');
+  onProgress?.('Step 7/11 · Seeding memberships…');
   const mem = await seedDemoMemberships(onProgress, allClients);
   stats.memberships = mem.members;
 
-  onProgress?.('Step 6/11 · Seeding time off…');
+  onProgress?.('Step 8/11 · Seeding time off…');
   stats.timeOff = await seedDemoTimeOff(onProgress);
 
-  onProgress?.('Step 7/11 · Seeding Google reviews…');
+  onProgress?.('Step 9/11 · Seeding Google reviews…');
   stats.reviews = await seedDemoReviews(onProgress);
 
-  onProgress?.('Step 8/11 · Seeding HR bonuses…');
+  onProgress?.('Step 10/11 · Seeding HR bonuses…');
   stats.bonuses = await seedDemoBonuses(onProgress);
 
-  onProgress?.('Step 9/11 · Seeding walk-in queue history + marketing campaigns…');
+  onProgress?.('Step 11/11 · Seeding walk-in queue history + marketing campaigns…');
   stats.waitlist  = await seedDemoWaitlist(onProgress, allClients);
   stats.campaigns = await seedDemoCampaigns(onProgress);
-
-  onProgress?.('Step 10/11 · Ensuring admin-as-tech employee record…');
-  const adminTech = await seedAdminAsTechEmployee(gUser, onProgress);
-  stats.adminAsTech = adminTech.created ? 'created' : (adminTech.employee ? 'already_existed' : 'skipped_no_user');
-
-  onProgress?.('Step 11/11 · Filling demo contact/TIN for all techs + salon defaults…');
-  const contact = await seedDemoEmployeeContactInfo(onProgress, { settings, updateSettings });
-  stats.employeesFilled = contact.patched;
-  stats.fieldsFilled    = contact.fieldsFilled;
-  stats.salonFilled     = contact.salonFilled;
 
   onProgress?.('Done!');
   return stats;
