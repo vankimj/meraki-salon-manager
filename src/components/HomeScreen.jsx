@@ -7,7 +7,7 @@ import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
 import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRight, IconSettings, IconMessage } from './Icons';
 import { MODULES, getVisibleModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
-import { fetchWebfrontConfig } from '../lib/firestore';
+import { fetchWebfrontConfig, fetchEmployees } from '../lib/firestore';
 
 function greeting() {
   const h = new Date().getHours();
@@ -21,6 +21,18 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [webCfg,       setWebCfg]       = useState(null);
+  // Match the signed-in admin against the employees collection — if their
+  // email is on a tech's record, expose a one-click "switch to my tech
+  // view" button. The user record's `techName` is auto-nulled when role
+  // is admin (AppContext.grantAccess), so we have to discover it here.
+  const [myTechEmpName, setMyTechEmpName] = useState(null);
+  useEffect(() => {
+    if (!gUser?.email || !realIsAdmin) { setMyTechEmpName(null); return; }
+    fetchEmployees().then(emps => {
+      const me = emps.find(e => (e.email || '').toLowerCase() === gUser.email.toLowerCase() && (e.active !== false));
+      setMyTechEmpName(me?.name || null);
+    }).catch(() => setMyTechEmpName(null));
+  }, [gUser?.email, realIsAdmin]);
   const canManage = isAdmin || isReadOnly;
   const plan = effectivePlan(settings);
 
@@ -86,6 +98,13 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             <button onClick={() => setViewAs(null)} title={`Exit preview: ${previewLabel(viewAs)}`}
               style={{ height: 40, borderRadius: 20, border: 'none', background: '#f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>
               ← Exit <span className="ms-impersonate-name">{previewLabel(viewAs)}</span>
+            </button>
+          )}
+          {realIsAdmin && !viewAs && myTechEmpName && (
+            <button onClick={() => setViewAs({ role: 'tech', techName: myTechEmpName })}
+              title={`See your day as ${myTechEmpName}`} className="ms-action-btn"
+              style={{ height: 40, borderRadius: 20, border: '1px solid #5b3b8c', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#5b3b8c', fontFamily: 'inherit' }}>
+              👩‍💼 <span className="ms-action-label">My tech view</span>
             </button>
           )}
           {realIsAdmin && !viewAs && (
