@@ -6103,17 +6103,17 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
   try { parsed = JSON.parse(row.data); }
   catch (e) { throw new HttpsError('internal', `Snapshot is malformed: ${e?.message}`); }
 
-  // Restore as a LIVE doc — explicitly clear tombstone fields so the
-  // restore "undeletes" if the snapshot was a tombstone state, and
-  // record the restore source for forensics.
-  const { FieldValue } = require('firebase-admin/firestore');
+  // Restore as a LIVE doc. Strip any tombstone markers from the snapshot
+  // (in case the snapshot itself captured a tombstone state) and full-
+  // replace via set() — no merge, so the restored doc looks exactly like
+  // the snapshot moment plus our forensic markers. Cleaner than trying to
+  // FieldValue.delete() the tombstone fields, which requires merge:true
+  // and risks leaving other current-state fields stranded.
   const snapshotIso = row.timestamp?.value || String(row.timestamp);
   const ref = db.doc(`tenants/${tenantId}/${collection}/${docId}`);
+  const { _deleted, _deletedAt, _deletedBy, ...clean } = parsed;
   const restored = {
-    ...parsed,
-    _deleted:        FieldValue.delete(),
-    _deletedAt:      FieldValue.delete(),
-    _deletedBy:      FieldValue.delete(),
+    ...clean,
     _restoredFrom:   `bigquery@${snapshotIso}`,
     _restoredAt:     new Date().toISOString(),
     _restoredBy:     request.auth?.token?.email || null,

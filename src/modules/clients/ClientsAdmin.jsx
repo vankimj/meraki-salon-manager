@@ -283,6 +283,7 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
           onChange={patch => setModal(m => ({ ...m, client: { ...m.client, ...patch } }))}
           onSave={() => handleSave(modal.client)}
           onClose={() => setModal(null)}
+          onReload={load}
         />
       )}
 
@@ -328,7 +329,7 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
 }
 
 // ── modal ──────────────────────────────────────────────
-function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, onSave, onClose }) {
+function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, onSave, onClose, onReload }) {
   const { gUser, settings, showToast, isAdmin } = useApp();
   const [mode,             setMode]             = useState(initialMode);
   const [tab,              setTab]              = useState('profile');
@@ -1060,7 +1061,12 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
           docId={client.id}
           label={client.name}
           onClose={() => setRestoreOpen(false)}
-          onRestored={() => { setRestoreOpen(false); onClose(); showToast('Client restored from BigQuery snapshot — refresh to see'); }}
+          onRestored={async () => {
+            setRestoreOpen(false);
+            await onReload?.();
+            onClose();
+            showToast('Client restored from BigQuery snapshot');
+          }}
         />
       )}
 
