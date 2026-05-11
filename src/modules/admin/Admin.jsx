@@ -31,6 +31,7 @@ export default function Admin({ onClose }) {
   const [brandTaglineTop,  setBrandTaglineTop]  = useState(settings.brandTaglineTop  || '');
   const [brandColor,       setBrandColor]       = useState(settings.brandColor       || '#2D7A5F');
   const [brandLogoUrl,     setBrandLogoUrl]     = useState(settings.brandLogoUrl     || '');
+  const [welcomeStyle,     setWelcomeStyle]     = useState(settings.welcomeStyle     || 'centered');
   const [showUrlSoon,      setShowUrlSoon]      = useState(false);
   const [tenantRecord,     setTenantRecord]     = useState(null);
   const tenantSubdomain = tenantRecord?.subdomain || currentSubdomain();
@@ -318,6 +319,20 @@ export default function Admin({ onClose }) {
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
                 <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Welcome screen style</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Layout of the pre-login welcome card. &ldquo;Centered&rdquo; is the default.</div>
+                </div>
+                <select value={welcomeStyle} onChange={e => setWelcomeStyle(e.target.value)}
+                  style={{ width: 240, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff', cursor: 'pointer' }}>
+                  <option value="centered">Boutique &mdash; centered (default)</option>
+                  <option value="hairlineSplit">Boutique &mdash; split (hairline)</option>
+                  <option value="stacked">Boutique &mdash; stacked card</option>
+                  <option value="photo">Photo backdrop &mdash; centered</option>
+                  <option value="photoSplit">Photo backdrop &mdash; split</option>
+                </select>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
                   <div style={{ fontSize: 13, color: '#333' }}>Brand color</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Primary accent for buttons, headers, and email gradients.</div>
                 </div>
@@ -338,12 +353,12 @@ export default function Admin({ onClose }) {
                     updateSettings({
                       ...settings,
                       salonName: sName, brandName: bName, brandTagline: bTag, brandTaglineTop: bTop,
-                      brandColor, brandLogoUrl: bLogo,
+                      brandColor, brandLogoUrl: bLogo, welcomeStyle,
                     }),
                     fetchWebfrontConfig().then(wf => saveWebfrontConfig({
                       ...(wf || {}),
                       salonName: sName, brandName: bName, brandTagline: bTag, brandTaglineTop: bTop,
-                      brandColor, brandLogoUrl: bLogo,
+                      brandColor, brandLogoUrl: bLogo, welcomeStyle,
                     })),
                   ]);
                   showToast('Brand saved');

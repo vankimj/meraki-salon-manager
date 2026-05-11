@@ -16,6 +16,22 @@ function greeting() {
   return 'Good evening';
 }
 
+function timeAware() {
+  const h = new Date().getHours();
+  if (h < 12) return { text: 'Good morning',   icon: 'sun' };
+  if (h < 17) return { text: 'Good afternoon', icon: 'sun' };
+  return { text: 'Good evening', icon: 'moon' };
+}
+
+function splitBrandName(name) {
+  if (!name) return ['Plume', 'Nexus'];
+  const words = name.trim().split(/\s+/);
+  if (words.length === 1) return [words[0], ''];
+  return [words[0], words.slice(1).join(' ')];
+}
+
+const WELCOME_STYLES = ['centered', 'hairlineSplit', 'stacked', 'photo', 'photoSplit'];
+
 export default function HomeScreen({ onNavigate, onAdmin }) {
   const { gUser, isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
   const [showAuth,     setShowAuth]     = useState(false);
@@ -54,6 +70,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   // Resolution order: settings (signed-in) > webfront (public) > generic.
   const displayName = settings?.salonName || webCfg?.salonName || 'Plume Nexus';
   const heroBrand   = settings?.brandName || settings?.salonName || webCfg?.salonName || 'Plume Nexus';
+  const welcomeStyleRaw = settings?.welcomeStyle || webCfg?.welcomeStyle || 'centered';
+  const welcomeStyle = WELCOME_STYLES.includes(welcomeStyleRaw) ? welcomeStyleRaw : 'centered';
   const techUsers = users.filter(u => u.role === 'tech' && u.techName);
 
   function previewLabel(va) {
@@ -161,39 +179,14 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
         </div>
       )}
 
-      {/* Hero — only shown when not signed in */}
+      {/* Hero — only shown when not signed in. Style switchable via
+          settings/webfront `welcomeStyle`. Default = centered boutique. */}
       {!gUser && (
-        <div style={{ position: 'relative', padding: '88px 24px 56px', flexShrink: 0, maxWidth: 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
-          <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(91,59,140,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 11, fontWeight: 600, color: 'var(--tm-muted, #9ca3af)', letterSpacing: '.34em', textTransform: 'uppercase', marginBottom: 18 }}>
-              Welcome
-            </div>
-            <h1 style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 'clamp(34px, 5vw, 50px)', fontWeight: 700, color: 'var(--tm-text, #1a1a1a)', margin: 0, letterSpacing: '-.01em', lineHeight: 1.1 }}>
-              {heroBrand}
-            </h1>
-            <p style={{ fontSize: 16, color: 'var(--tm-muted, #6b7280)', marginTop: 18, marginBottom: 40, lineHeight: 1.55, maxWidth: 440, marginLeft: 'auto', marginRight: 'auto', fontWeight: 400 }}>
-              Sign in to manage your day &mdash; appointments, clients, and team.
-            </p>
-            <button onClick={() => setShowAuth(true)}
-              style={{ fontSize: 15, fontWeight: 600, padding: '0 40px', height: 52, borderRadius: 26, border: 'none', background: 'var(--tm-primary, #2D7A5F)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 10px 28px rgba(45,122,95,.22), inset 0 1px 0 rgba(255,255,255,.16)', letterSpacing: '.01em', transition: 'transform .18s ease, box-shadow .18s ease' }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 14px 36px rgba(45,122,95,.28), inset 0 1px 0 rgba(255,255,255,.2)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 28px rgba(45,122,95,.22), inset 0 1px 0 rgba(255,255,255,.16)'; }}>
-              Sign in
-            </button>
-            {heroBrand !== 'Plume Nexus' && (
-              <div style={{ marginTop: 56, fontSize: 10, color: '#a8a8a8', letterSpacing: '.22em', textTransform: 'uppercase', fontWeight: 500 }}>
-                Powered by{' '}
-                <a href="https://plumenexus.com" target="_blank" rel="noopener noreferrer"
-                  style={{ color: '#7a7a7a', textDecoration: 'none', fontWeight: 600 }}
-                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--tm-primary, #2D7A5F)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.color = '#7a7a7a'; }}>
-                  Plume Nexus
-                </a>
-              </div>
-            )}
-          </div>
-        </div>
+        <WelcomeHero
+          style={welcomeStyle}
+          heroBrand={heroBrand}
+          onSignIn={() => setShowAuth(true)}
+        />
       )}
 
       {/* Module tiles */}
@@ -317,6 +310,299 @@ function KioskCard({ Icon, label, desc, background, ArrowIcon, onClick }) {
         <ArrowIcon size={20} />
       </div>
     </button>
+  );
+}
+
+/* ── Pre-login welcome variants ─────────────────────────────────────── */
+
+function useIsNarrow(threshold = 760) {
+  const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.innerWidth < threshold);
+  useEffect(() => {
+    const onResize = () => setNarrow(window.innerWidth < threshold);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [threshold]);
+  return narrow;
+}
+
+function WelcomeHero({ style, heroBrand, onSignIn }) {
+  const greet = timeAware();
+  const [primary, script] = splitBrandName(heroBrand);
+  const props = { greet, primary, script, onSignIn, heroBrand };
+  if (style === 'hairlineSplit') return <HeroHairlineSplit {...props} />;
+  if (style === 'stacked')       return <HeroStacked {...props} />;
+  if (style === 'photo')         return <HeroPhoto {...props} />;
+  if (style === 'photoSplit')    return <HeroPhotoSplit {...props} />;
+  return <HeroCentered {...props} />;
+}
+
+function TimeIcon({ kind, light = false, size = 34 }) {
+  const stop2 = light ? '#e1c8f0' : '#a288c9';
+  const id = `tm-time-${kind}-${light ? 'l' : 'd'}`;
+  if (kind === 'moon') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden style={{ marginBottom: 14, opacity: .92 }}>
+        <defs>
+          <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#c19a4a"/>
+            <stop offset="100%" stopColor={stop2}/>
+          </linearGradient>
+        </defs>
+        <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill={`url(#${id})`}/>
+        <circle cx="6" cy="10" r="1" fill="#c19a4a" opacity={light ? 0.7 : 0.5}/>
+        <circle cx="30" cy="6" r="1.3" fill={light ? '#fff' : '#a288c9'} opacity={light ? 0.7 : 0.5}/>
+      </svg>
+    );
+  }
+  return (
+    <svg width={size} height={size} viewBox="0 0 36 36" aria-hidden style={{ marginBottom: 14, opacity: .92 }}>
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#c19a4a"/>
+          <stop offset="100%" stopColor="#e6c47e"/>
+        </linearGradient>
+      </defs>
+      <circle cx="18" cy="18" r="5.5" fill={`url(#${id})`}/>
+      <g stroke={light ? '#e6c47e' : '#c19a4a'} strokeWidth="1.5" strokeLinecap="round" opacity={light ? 0.85 : 1}>
+        <line x1="18" y1="3.5"  x2="18" y2="7.5"/>
+        <line x1="18" y1="28.5" x2="18" y2="32.5"/>
+        <line x1="3.5"  y1="18" x2="7.5"  y2="18"/>
+        <line x1="28.5" y1="18" x2="32.5" y2="18"/>
+        <line x1="7.5"  y1="7.5"  x2="10.5" y2="10.5"/>
+        <line x1="25.5" y1="25.5" x2="28.5" y2="28.5"/>
+        <line x1="7.5"  y1="28.5" x2="10.5" y2="25.5"/>
+        <line x1="25.5" y1="10.5" x2="28.5" y2="7.5"/>
+      </g>
+    </svg>
+  );
+}
+
+function BoutiqueLockup({ primary, script, size = 'md', light = false }) {
+  const sz = size === 'sm'
+    ? { primary: 'clamp(30px, 4vw, 40px)', script: 'clamp(40px, 5.5vw, 56px)' }
+    : { primary: 'clamp(34px, 5vw, 48px)', script: 'clamp(46px, 7vw, 64px)' };
+  return (
+    <>
+      <h1 style={{
+        fontFamily: '"Cinzel", Georgia, serif',
+        fontWeight: 600,
+        fontSize: sz.primary,
+        color: light ? '#fff' : 'var(--tm-text, #1a1a1a)',
+        margin: '18px 0 0',
+        letterSpacing: '-.005em',
+        lineHeight: 1,
+        textShadow: light ? '0 2px 24px rgba(0,0,0,.35)' : 'none',
+      }}>
+        {primary}
+      </h1>
+      {script && (
+        <div style={{
+          fontFamily: '"Great Vibes", cursive',
+          fontWeight: 400,
+          fontSize: sz.script,
+          color: light ? '#c19a4a' : 'var(--tm-primary, #5b3b8c)',
+          lineHeight: .8,
+          marginTop: 6,
+          textShadow: light ? '0 2px 18px rgba(193,154,74,.3)' : 'none',
+        }}>
+          {script}
+        </div>
+      )}
+    </>
+  );
+}
+
+function Greeting({ greet, light = false }) {
+  return (
+    <div style={{
+      fontFamily: '"Cinzel", Georgia, serif',
+      fontSize: 11,
+      fontWeight: 600,
+      color: light ? 'rgba(255,255,255,.78)' : '#5b3b8c',
+      letterSpacing: '.34em',
+      textTransform: 'uppercase',
+    }}>
+      {greet.text}
+    </div>
+  );
+}
+
+function Tagline({ light = false }) {
+  return (
+    <p style={{
+      fontFamily: '"Inter", sans-serif',
+      fontStyle: 'italic',
+      fontSize: 15,
+      color: light ? 'rgba(255,255,255,.72)' : '#7a7a7a',
+      margin: '22px auto 0',
+      maxWidth: 380,
+      lineHeight: 1.55,
+    }}>
+      A calm place to manage your day.
+    </p>
+  );
+}
+
+function BoutiqueLink({ onClick, label = 'Sign in' }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button onClick={onClick}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        fontFamily: '"Cinzel", Georgia, serif',
+        fontSize: 12,
+        fontWeight: 600,
+        color: hover ? '#5b3b8c' : '#1a1a1a',
+        background: 'transparent',
+        border: 'none',
+        borderBottom: `1px solid ${hover ? '#5b3b8c' : '#c19a4a'}`,
+        padding: '6px 4px',
+        cursor: 'pointer',
+        letterSpacing: '.18em',
+        textTransform: 'uppercase',
+        transition: 'color .18s, border-color .18s',
+      }}>
+      {label} &rarr;
+    </button>
+  );
+}
+
+function PoweredBy({ heroBrand, light = false }) {
+  if (heroBrand === 'Plume Nexus') return null;
+  return (
+    <div style={{
+      marginTop: 48,
+      fontSize: 10,
+      color: light ? 'rgba(255,255,255,.55)' : '#a89776',
+      letterSpacing: '.22em',
+      textTransform: 'uppercase',
+      fontWeight: 500,
+    }}>
+      Powered by{' '}
+      <a href="https://plumenexus.com" target="_blank" rel="noopener noreferrer"
+        style={{ color: light ? 'rgba(255,255,255,.78)' : '#7a6a4a', textDecoration: 'none', fontWeight: 600 }}>
+        Plume Nexus
+      </a>
+    </div>
+  );
+}
+
+function HeroCentered({ greet, primary, script, onSignIn, heroBrand }) {
+  return (
+    <div style={{ position: 'relative', padding: '72px 24px 56px', flexShrink: 0, maxWidth: 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
+      <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(91,59,140,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <TimeIcon kind={greet.icon} />
+        <Greeting greet={greet} />
+        <BoutiqueLockup primary={primary} script={script} />
+        <Tagline />
+        <div style={{ marginTop: 28 }}>
+          <BoutiqueLink onClick={onSignIn} />
+        </div>
+        <PoweredBy heroBrand={heroBrand} />
+      </div>
+    </div>
+  );
+}
+
+function HeroHairlineSplit(props) {
+  const narrow = useIsNarrow();
+  if (narrow) return <HeroCentered {...props} />;
+  const { greet, primary, script, onSignIn, heroBrand } = props;
+  return (
+    <div style={{ width: '100%', maxWidth: 1040, alignSelf: 'center', boxSizing: 'border-box', padding: '12px 16px 32px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.25fr 1px 1fr', alignItems: 'stretch', minHeight: 420, background: 'transparent' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 36px', textAlign: 'center' }}>
+          <TimeIcon kind={greet.icon} />
+          <Greeting greet={greet} />
+          <BoutiqueLockup primary={primary} script={script} size="sm" />
+          <Tagline />
+        </div>
+        <div style={{ background: 'linear-gradient(180deg, transparent 8%, #c19a4a 50%, transparent 92%)', opacity: .4 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 28px', textAlign: 'center' }}>
+          <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 10, letterSpacing: '.32em', textTransform: 'uppercase', color: '#a89776', marginBottom: 24 }}>
+            Sign in to continue
+          </div>
+          <BoutiqueLink onClick={onSignIn} label="Continue" />
+          <PoweredBy heroBrand={heroBrand} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeroStacked({ greet, primary, script, onSignIn, heroBrand }) {
+  return (
+    <div style={{ position: 'relative', padding: '64px 24px 48px', flexShrink: 0, maxWidth: 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
+      <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(91,59,140,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <TimeIcon kind={greet.icon} />
+        <Greeting greet={greet} />
+        <BoutiqueLockup primary={primary} script={script} size="sm" />
+        <Tagline />
+        <div style={{ marginTop: 28, background: '#fff', border: '1px solid #eee7dc', borderRadius: 18, padding: '16px 24px', display: 'inline-flex', alignItems: 'center', gap: 18, boxShadow: '0 12px 28px rgba(58,44,26,.06)' }}>
+          <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 10, letterSpacing: '.28em', textTransform: 'uppercase', color: '#a89776' }}>
+            Ready when you are
+          </div>
+          <div style={{ width: 1, height: 22, background: '#eee7dc' }} />
+          <BoutiqueLink onClick={onSignIn} />
+        </div>
+        <PoweredBy heroBrand={heroBrand} />
+      </div>
+    </div>
+  );
+}
+
+function HeroPhoto({ greet, primary, script, onSignIn, heroBrand }) {
+  return (
+    <div style={{ position: 'relative', width: '100%', flexShrink: 0, alignSelf: 'stretch', overflow: 'hidden', minHeight: 480, display: 'flex', flexDirection: 'column' }}>
+      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #3a2c4a 0%, #2a4858 50%, #1f3a4e 100%)' }} />
+      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 55% 50% at 30% 28%, rgba(193,154,74,.32) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 72% 78%, rgba(91,59,140,.45) 0%, transparent 62%)' }} />
+      <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 24px 56px', textAlign: 'center', color: '#fff' }}>
+        <TimeIcon kind={greet.icon} light />
+        <Greeting greet={greet} light />
+        <BoutiqueLockup primary={primary} script={script} light />
+        <Tagline light />
+        <button onClick={onSignIn}
+          style={{ marginTop: 28, height: 48, padding: '0 38px', borderRadius: 24, border: 'none', background: '#fff', color: '#1a1a1a', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '.01em', boxShadow: '0 14px 32px rgba(0,0,0,.32)', transition: 'transform .18s ease, box-shadow .18s ease' }}
+          onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 18px 40px rgba(0,0,0,.38)'; }}
+          onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 14px 32px rgba(0,0,0,.32)'; }}>
+          Sign in &rarr;
+        </button>
+        <PoweredBy heroBrand={heroBrand} light />
+      </div>
+    </div>
+  );
+}
+
+function HeroPhotoSplit(props) {
+  const narrow = useIsNarrow();
+  if (narrow) return <HeroPhoto {...props} />;
+  const { greet, primary, script, onSignIn, heroBrand } = props;
+  return (
+    <div style={{ width: '100%', alignSelf: 'stretch', overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1px 1fr', alignItems: 'stretch', minHeight: 480 }}>
+        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 36px', textAlign: 'center', color: '#fff', overflow: 'hidden' }}>
+          <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #3a2c4a 0%, #2a4858 60%, #1f3a4e 100%)' }} />
+          <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 30% 30%, rgba(193,154,74,.32) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 75% 80%, rgba(91,59,140,.45) 0%, transparent 60%)' }} />
+          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <TimeIcon kind={greet.icon} light />
+            <Greeting greet={greet} light />
+            <BoutiqueLockup primary={primary} script={script} size="sm" light />
+            <Tagline light />
+          </div>
+        </div>
+        <div style={{ background: 'linear-gradient(180deg, transparent 8%, #c19a4a 50%, transparent 92%)', opacity: .55 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 28px', textAlign: 'center', background: '#fbfaf8' }}>
+          <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 10, letterSpacing: '.32em', textTransform: 'uppercase', color: '#a89776', marginBottom: 24 }}>
+            Sign in to continue
+          </div>
+          <BoutiqueLink onClick={onSignIn} label="Continue" />
+          <PoweredBy heroBrand={heroBrand} />
+        </div>
+      </div>
+    </div>
   );
 }
 
