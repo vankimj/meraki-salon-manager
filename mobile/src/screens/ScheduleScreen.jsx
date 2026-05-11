@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import {
   subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes,
-  fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices,
+  fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
 } from '../lib/firestore';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import Icon from '../components/Icon';
@@ -59,6 +59,33 @@ const STATUS_META = {
   no_show:   { label: 'No-show',   color: '#92400e', bg: '#fef3c7' },
 };
 
+// Per-tech color palette + helpers — mirrors the web ScheduleAdmin so
+// appt blocks look consistent across web and mobile. 10 distinct hues
+// assigned by stable index in the active-tech list. Cancelled overrides
+// to red, done to grey, otherwise the tech's color is used.
+const TECH_PALETTE = [
+  { solid: '#2D7A5F', bg: '#e8f5ef', text: '#1a4d3a' },
+  { solid: '#3D95CE', bg: '#e8f2fb', text: '#1a4d7a' },
+  { solid: '#9333EA', bg: '#f3eeff', text: '#4a1d96' },
+  { solid: '#D97706', bg: '#fef3c7', text: '#78350f' },
+  { solid: '#BE185D', bg: '#fdf2f8', text: '#831843' },
+  { solid: '#059669', bg: '#d1fae5', text: '#065f46' },
+  { solid: '#0891B2', bg: '#e0f7fa', text: '#164e63' },
+  { solid: '#EA580C', bg: '#fff7ed', text: '#7c2d12' },
+  { solid: '#4F46E5', bg: '#eef2ff', text: '#3730a3' },
+  { solid: '#0F766E', bg: '#f0fdfa', text: '#134e4a' },
+];
+function getTechColor(techName, allTechs) {
+  const idx = (allTechs || []).indexOf(techName);
+  return TECH_PALETTE[idx >= 0 ? idx % TECH_PALETTE.length : 0];
+}
+function colorsForAppt(appt, allTechs) {
+  const col = getTechColor(appt.techName, allTechs);
+  if (appt.status === 'cancelled') return { bg: '#fef2f2', border: '#EF4444', text: '#991b1b', faded: true };
+  if (appt.status === 'done')      return { bg: '#f3f4f6', border: '#9ca3af', text: '#6b7280', faded: false };
+  return { bg: col.bg, border: col.solid, text: col.text, faded: false };
+}
+
 export default function ScheduleScreen() {
   const { techName, loading: empLoading } = useCurrentEmployee();
   const [date,    setDate]    = useState(todayStr());
@@ -69,6 +96,25 @@ export default function ScheduleScreen() {
   const [detail,  setDetail]  = useState(null);  // selected appt for the modal
   const [view,    setView]    = useState('day'); // 'day' | 'week' | 'month'
   const [createPrefill, setCreatePrefill] = useState(null);  // { date, startTime, techName } or null
+  const [allTechs, setAllTechs] = useState([]);  // ordered tech-name list for color assignment
+
+  // Stable tech list for color indexing — fetched once on mount, refreshed
+  // on tenant change (RootNav re-mounts when tenant switches, so this re-runs).
+  useEffect(() => {
+    let cancelled = false;
+    fetchEmployees()
+      .then(emps => {
+        if (cancelled) return;
+        const names = (emps || [])
+          .filter(e => e.active !== false)
+          .sort((a, b) => (a.sortOrder || 999) - (b.sortOrder || 999))
+          .map(e => e.name)
+          .filter(Boolean);
+        setAllTechs(names);
+      })
+      .catch(() => { if (!cancelled) setAllTechs([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Live subscription so an iPad check-in (or another tech editing) shows
   // up here immediately. Re-subscribes when `date` changes.
@@ -191,6 +237,7 @@ export default function ScheduleScreen() {
           date={date}
           techName={techName}
           showAll={showAll}
+          allTechs={allTechs}
           onTapAppt={(a) => setDetail(a)}
           onTapEmpty={(d, startTime) => setCreatePrefill({ date: d, startTime, techName: showAll ? '' : (techName || '') })}
           onPickDay={(d) => { setDate(d); setView('day'); }}
@@ -205,6 +252,7 @@ export default function ScheduleScreen() {
             appts={filtered}
             date={date}
             showAll={showAll}
+            allTechs={allTechs}
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 600); }}
             onTapAppt={(a) => setDetail(a)}
@@ -238,7 +286,7 @@ export default function ScheduleScreen() {
 // to that slot. Filled rows render the appt block sized to its
 // duration (1 SLOT_PX per 30 min). Multi-tech overlaps are stacked
 // horizontally; "Just me" mode never overlaps so most days are clean.
-function DayTimelineView({ appts, date, showAll, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+function DayTimelineView({ appts, date, showAll, allTechs, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
   // Build a map of slot-index → appts that START in that slot, so
   // we can render appts overlaid on top of the slot grid.
   const slotAppts = useMemo(() => {
@@ -276,18 +324,29 @@ function DayTimelineView({ appts, date, showAll, refreshing, onRefresh, onTapApp
               {isHourMark && <Text style={styles.dayTimeLabelText}>{fmtTime(startTime)}</Text>}
             </View>
             <View style={[styles.dayTimelineSlot, isHourMark && styles.dayTimelineSlotHour]}>
-              {slotAppt ? (
-                <View style={[styles.dayApptBlock, { height: Math.max(SLOT_PX - 4, ((slotAppt.duration || 30) / SLOT_MINUTES) * SLOT_PX - 4) }]}>
-                  <Text style={styles.dayApptClient} numberOfLines={1}>
-                    {slotAppt.clientName || 'Walk-in'}
-                    {overlapCount > 1 ? ` +${overlapCount - 1}` : ''}
-                  </Text>
-                  <Text style={styles.dayApptMeta} numberOfLines={1}>
-                    {showAll ? `${slotAppt.techName} · ` : ''}
-                    {(slotAppt.services || []).map(s => s.name).filter(Boolean).join(', ') || ''}
-                  </Text>
-                </View>
-              ) : (
+              {slotAppt ? (() => {
+                const c = colorsForAppt(slotAppt, allTechs);
+                return (
+                  <View style={[
+                    styles.dayApptBlock,
+                    {
+                      height: Math.max(SLOT_PX - 4, ((slotAppt.duration || 30) / SLOT_MINUTES) * SLOT_PX - 4),
+                      backgroundColor: c.bg,
+                      borderLeftColor: c.border,
+                      opacity: c.faded ? 0.65 : 1,
+                    },
+                  ]}>
+                    <Text style={[styles.dayApptClient, { color: c.text }]} numberOfLines={1}>
+                      {slotAppt.clientName || 'Walk-in'}
+                      {overlapCount > 1 ? ` +${overlapCount - 1}` : ''}
+                    </Text>
+                    <Text style={[styles.dayApptMeta, { color: c.text, opacity: 0.75 }]} numberOfLines={1}>
+                      {showAll ? `${slotAppt.techName} · ` : ''}
+                      {(slotAppt.services || []).map(s => s.name).filter(Boolean).join(', ') || ''}
+                    </Text>
+                  </View>
+                );
+              })() : (
                 <Text style={styles.dayEmptyHint}>＋</Text>
               )}
             </View>
@@ -305,7 +364,7 @@ function DayTimelineView({ appts, date, showAll, refreshing, onRefresh, onTapApp
 // open hour, tap a block opens the detail modal.
 const WEEK_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-function WeekView({ date, techName, showAll, onTapAppt, onTapEmpty, onPickDay }) {
+function WeekView({ date, techName, showAll, allTechs, onTapAppt, onTapEmpty, onPickDay }) {
   const [byDay, setByDay] = useState({});  // 'YYYY-MM-DD' → appts[]
   const [loading, setLoading] = useState(true);
 
@@ -366,23 +425,26 @@ function WeekView({ date, techName, showAll, onTapAppt, onTapEmpty, onPickDay })
               </TouchableOpacity>
             ) : (
               <View style={{ paddingHorizontal: 8, paddingBottom: 8 }}>
-                {appts.map(a => (
-                  <TouchableOpacity
-                    key={a.id}
-                    style={styles.weekApptBlock}
-                    onPress={() => onTapAppt(a)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.weekApptTime}>{fmtTime(a.startTime)}</Text>
-                    <View style={{ flex: 1, marginLeft: 8 }}>
-                      <Text style={styles.weekApptClient} numberOfLines={1}>{a.clientName || 'Walk-in'}</Text>
-                      <Text style={styles.weekApptMeta} numberOfLines={1}>
-                        {showAll ? `${a.techName} · ` : ''}
-                        {(a.services || []).map(s => s.name).filter(Boolean).join(', ')}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                {appts.map(a => {
+                  const c = colorsForAppt(a, allTechs);
+                  return (
+                    <TouchableOpacity
+                      key={a.id}
+                      style={[styles.weekApptBlock, { backgroundColor: c.bg, borderLeftColor: c.border, opacity: c.faded ? 0.65 : 1 }]}
+                      onPress={() => onTapAppt(a)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.weekApptTime, { color: c.border }]}>{fmtTime(a.startTime)}</Text>
+                      <View style={{ flex: 1, marginLeft: 8 }}>
+                        <Text style={[styles.weekApptClient, { color: c.text }]} numberOfLines={1}>{a.clientName || 'Walk-in'}</Text>
+                        <Text style={[styles.weekApptMeta, { color: c.text, opacity: 0.75 }]} numberOfLines={1}>
+                          {showAll ? `${a.techName} · ` : ''}
+                          {(a.services || []).map(s => s.name).filter(Boolean).join(', ')}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
                 <TouchableOpacity
                   style={[styles.weekDayEmpty, { marginTop: 6 }]}
                   onPress={() => onTapEmpty(d.iso, '10:00')}
@@ -846,8 +908,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12, paddingHorizontal: 8,
     borderBottomWidth: 1, borderBottomColor: '#ebebeb',
   },
-  navBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  navBtnText: { fontSize: 28, color: '#3D95CE', lineHeight: 32 },
+  navBtn: { width: 56, height: 48, alignItems: 'center', justifyContent: 'center' },
+  navBtnText: { fontSize: 32, color: '#3D95CE', lineHeight: 36, fontWeight: '300' },
   dateCenter: { flex: 1, alignItems: 'center' },
   dateText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
   apptCount: { fontSize: 11, color: '#888', marginTop: 2 },
@@ -856,16 +918,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ebebeb',
     alignItems: 'center', flexWrap: 'wrap',
   },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
+  // Tap targets bumped to ≥44pt (Apple HIG) — techs with long nails
+  // were missing the 12pt-padded chips. minHeight is the key win;
+  // fontSize bumps for legibility too.
+  chip: { paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, borderRadius: 22, borderWidth: 1, justifyContent: 'center' },
   chipBlue: { backgroundColor: '#EBF4FB', borderColor: '#3D95CE' },
-  chipBlueText: { color: '#1a5f8a', fontSize: 12, fontWeight: '600' },
+  chipBlueText: { color: '#1a5f8a', fontSize: 14, fontWeight: '600' },
   chipMuted: { backgroundColor: '#fff', borderColor: '#e0e0e0' },
-  chipMutedText: { color: '#555', fontSize: 12, fontWeight: '500' },
+  chipMutedText: { color: '#555', fontSize: 14, fontWeight: '500' },
 
-  viewSwitch:           { flexDirection: 'row', backgroundColor: '#f0f0f0', borderRadius: 8, padding: 2, marginRight: 4 },
-  viewSwitchBtn:        { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 6 },
-  viewSwitchBtnActive:  { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 2, elevation: 1 },
-  viewSwitchText:       { fontSize: 12, color: '#666', fontWeight: '500' },
+  viewSwitch:           { flexDirection: 'row', backgroundColor: '#f0f0f0', borderRadius: 10, padding: 3, marginRight: 4 },
+  viewSwitchBtn:        { paddingHorizontal: 16, paddingVertical: 10, minHeight: 38, minWidth: 60, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  viewSwitchBtnActive:  { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.10, shadowRadius: 2, elevation: 2 },
+  viewSwitchText:       { fontSize: 14, color: '#666', fontWeight: '500' },
   viewSwitchTextActive: { color: '#1a1a1a', fontWeight: '700' },
 
   // Day timeline
