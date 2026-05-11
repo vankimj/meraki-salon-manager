@@ -1706,6 +1706,21 @@ export async function fetchClientByEmail(email) {
   return null;
 }
 
+// Booking-page self-lookup: the unauthenticated/public booking flow can't
+// read `clients` directly (staff-only rules). After Firebase Auth issues
+// a token (Google / magic link / phone OTP), this callable returns the
+// caller's own slim client record matched on token-verified email or phone.
+// Response: { client: {...} | null, banned?: true, requiresIdentityConfirm?: boolean }
+export async function callMyClientRecord() {
+  try {
+    const res = await callFn('getMyClientRecord')({ tenantId: TENANT_ID });
+    return res?.data || { client: null };
+  } catch (e) {
+    console.warn('[getMyClientRecord]', e?.message);
+    return { client: null };
+  }
+}
+
 // ── Backup / Restore ────────────────────────────────────
 // Comprehensive data export. Per Plume Nexus principle #8, this captures
 // EVERYTHING the customer owns so they can leave with their entire history

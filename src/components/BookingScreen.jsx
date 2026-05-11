@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut as fbSignOut,
-         sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
+         sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
+         RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
 import { auth, callFn } from '../lib/firebase';
 import { TENANT_ID } from '../lib/tenant';
 import {
   fetchServices, fetchEmployees, fetchBookingConfig, fetchWebfrontConfig,
-  fetchAppointments, fetchAppointmentsByRange, createAppointment, fetchClientByEmail, createClient,
-  saveBookingConfig, fetchTurnRoster,
+  fetchAppointments, fetchAppointmentsByRange, createAppointment, createClient,
+  saveBookingConfig, fetchTurnRoster, callMyClientRecord,
 } from '../lib/firestore';
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { groupByCategory, formatPrice, formatDuration, resolveServicePricing } from '../utils/serviceHelpers';
@@ -50,6 +51,30 @@ function dateStr(d) { return d.toISOString().slice(0, 10); }
 
 function firstName(s) {
   return (s || '').trim().split(/\s+/)[0].toLowerCase();
+}
+
+// Detect whether the user is typing an email vs a phone vs nothing yet.
+// Anything containing '@' is treated as email (covers partially-typed). If
+// the trimmed string has any digit and no '@', treat as phone. Empty falls
+// through to 'unknown' so we can show both call-to-actions.
+function detectAuthInputKind(s) {
+  const v = (s || '').trim();
+  if (!v) return 'unknown';
+  if (v.includes('@')) return 'email';
+  if (/\d/.test(v))    return 'phone';
+  return 'unknown';
+}
+
+// Normalize a US-style phone to E.164 (+1XXXXXXXXXX). Returns null for
+// anything that isn't a clean 10-digit (or 11-digit-leading-1) number.
+// We deliberately don't try to support international yet — the salon's
+// client base is local and Firebase Phone Auth bills per-region. Tighten
+// rather than guess.
+function toE164(raw) {
+  const digits = (raw || '').replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) return '+' + digits;
+  if (digits.length === 10) return '+1' + digits;
+  return null;
 }
 
 function applyThemeVars(theme) {
@@ -98,6 +123,19 @@ export default function BookingScreen() {
   const [confirmed,       setConfirmed]       = useState(null);
   const [emailLinkState,  setEmailLinkState]  = useState(null); // null|'sending'|'sent'|'error'
   const [emailLinkDevice, setEmailLinkDevice] = useState(false); // cross-device: need email to finish
+  // SMS OTP state. otpState: null|'sending'|'awaiting-code'|'verifying'|'error'
+  const [otpState,        setOtpState]        = useState(null);
+  const [otpError,        setOtpError]        = useState('');
+  const [otpPhonePretty,  setOtpPhonePretty]  = useState('');
+  const otpConfirmation   = useRef(null);
+  const recaptchaVerifier = useRef(null);
+  // When the booking auth matches an existing client but they haven't been
+  // seen in >180 days AND we matched on phone alone, the server withholds
+  // ALL client PII (phone-recycling defense) and returns only a first
+  // initial. We surface a modal informing the visitor — no PII has been or
+  // will be released to this session; the modal is transparency + UX, not
+  // a security gate.
+  const [pendingFirstInitial, setPendingFirstInitial] = useState(null);
 
   // Complete email-link sign-in if returning from magic link
   useEffect(() => {
@@ -130,34 +168,161 @@ export default function BookingScreen() {
     }
   }
 
-  // listen for Google auth state
+  // SMS OTP — lazy-initialize the invisible reCAPTCHA verifier on first send,
+  // then signInWithPhoneNumber stashes a ConfirmationResult we use to verify
+  // the user-entered 6-digit code. The verifier MUST attach to a DOM node
+  // that exists at call time — we render a hidden #recaptcha-container near
+  // the auth UI for this.
+  async function sendOtp(phoneRaw) {
+    const e164 = toE164(phoneRaw);
+    if (!e164) {
+      setOtpError('Please enter a 10-digit US phone number.');
+      setOtpState('error');
+      return;
+    }
+    setOtpError('');
+    setOtpState('sending');
+    try {
+      if (!recaptchaVerifier.current) {
+        recaptchaVerifier.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible',
+        });
+      }
+      const conf = await signInWithPhoneNumber(auth, e164, recaptchaVerifier.current);
+      otpConfirmation.current = conf;
+      const last4 = e164.slice(-4);
+      setOtpPhonePretty(`•••-${last4}`);
+      setOtpState('awaiting-code');
+    } catch (e) {
+      console.error('[OTP send]', e.code, e.message);
+      // Reset verifier on failure so a retry creates a fresh one — stale
+      // verifiers throw on second use after some error states.
+      try { recaptchaVerifier.current?.clear(); } catch (_) {}
+      recaptchaVerifier.current = null;
+      // Map a couple of common Firebase error codes to friendlier copy;
+      // everything else falls through to a generic message.
+      if (e.code === 'auth/invalid-phone-number')      setOtpError('That number doesn\'t look right. Check the digits.');
+      else if (e.code === 'auth/too-many-requests')    setOtpError('Too many attempts. Try again in a few minutes.');
+      else if (e.code === 'auth/quota-exceeded')       setOtpError('SMS quota reached for now. Use email or Google instead.');
+      else                                             setOtpError('Couldn\'t send code. Use email or Google instead.');
+      setOtpState('error');
+    }
+  }
+
+  async function verifyOtp(code) {
+    if (!otpConfirmation.current) return;
+    const trimmed = (code || '').replace(/\D/g, '');
+    if (trimmed.length !== 6) {
+      setOtpError('Enter the 6-digit code from the text.');
+      return;
+    }
+    setOtpState('verifying');
+    setOtpError('');
+    try {
+      await otpConfirmation.current.confirm(trimmed);
+      // Success — onAuthStateChanged will pick up the new auth user and
+      // run the client lookup. We clear OTP-local state but leave the
+      // verifier in place; sign-out will clear it.
+      otpConfirmation.current = null;
+      setOtpState(null);
+    } catch (e) {
+      console.error('[OTP verify]', e.code, e.message);
+      if (e.code === 'auth/invalid-verification-code') setOtpError('That code didn\'t match. Try again.');
+      else if (e.code === 'auth/code-expired')         setOtpError('Code expired. Send a new one.');
+      else                                             setOtpError('Couldn\'t verify code. Try again or use email.');
+      setOtpState('awaiting-code');
+    }
+  }
+
+  function resetOtp() {
+    otpConfirmation.current = null;
+    try { recaptchaVerifier.current?.clear(); } catch (_) {}
+    recaptchaVerifier.current = null;
+    setOtpState(null);
+    setOtpError('');
+    setOtpPhonePretty('');
+  }
+
+  // listen for auth state (Google / magic link / SMS OTP all land here).
+  // The booking page can't read `clients` directly — rules gate that to
+  // staff. We go through the `getMyClientRecord` callable, which trusts
+  // the token's verified email/phone claims and returns the caller's own
+  // slim record.
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async user => {
       setGUser(user || null);
-      if (user?.email) {
-        fetchClientByEmail(user.email).then(c => {
-          // Defensive: only treat as a returning client if the names plausibly match.
-          // Guards against shared/typo'd email entries pointing at someone else's record.
-          const matches = c && (!user.displayName || firstName(c.name) === firstName(user.displayName));
-          setClient(matches ? c : null);
-          if (matches) setForm(f => ({
+      if (!user) { setClient(null); setPendingFirstInitial(null); return; }
+      try {
+        const res = await callMyClientRecord();
+        if (res?.banned) {
+          // Server flagged this caller as banned. Don't pre-fill; the
+          // booking-submit path also re-checks server-side and rejects.
+          setClient({ banned: true });
+          return;
+        }
+        if (res?.requiresIdentityConfirm) {
+          // Server withheld PII because the matched record is stale (>180d)
+          // and we authed by phone alone. No client object is ever delivered
+          // in this case — we just notify the visitor with a first initial.
+          setClient(null);
+          setPendingFirstInitial(res.firstInitial || '?');
+          setForm(f => ({
             ...f,
-            name:  f.name  || c.name  || user.displayName || '',
-            phone: f.phone || c.phone || '',
-            email: user.email,
+            phone: f.phone || user.phoneNumber || '',
           }));
-          else setForm(f => ({
+          return;
+        }
+        const c = res?.client || null;
+        if (!c) {
+          // Authed but no matching client record yet — pre-fill what the
+          // auth provider gives us (Google displayName / email; phone for
+          // OTP) and let Step4 collect the rest.
+          setClient(null);
+          setForm(f => ({
             ...f,
             name:  f.name  || user.displayName || '',
-            email: f.email || user.email,
+            email: f.email || user.email       || '',
+            phone: f.phone || user.phoneNumber || '',
           }));
-        }).catch(() => {});
-      } else {
+          return;
+        }
+        // Defensive name-match for Google sign-in: if displayName disagrees
+        // with the matched client's stored name, the email was likely typo'd
+        // onto someone else's record. Don't prefill PII in that case.
+        const googleNameClash =
+          !!user.email && user.displayName &&
+          firstName(c.name) !== firstName(user.displayName);
+        if (googleNameClash) {
+          setClient(null);
+          setForm(f => ({
+            ...f,
+            name:  f.name  || user.displayName || '',
+            email: f.email || user.email       || '',
+          }));
+          return;
+        }
+        setClient(c);
+        setForm(f => ({
+          ...f,
+          name:  f.name  || c.name  || user.displayName || '',
+          phone: f.phone || c.phone || user.phoneNumber || '',
+          email: f.email || c.email || user.email       || '',
+        }));
+      } catch (e) {
+        console.warn('[booking auth lookup]', e?.message);
         setClient(null);
       }
     });
     return unsub;
   }, []);
+
+  function dismissPendingIdentity() {
+    // No-op beyond hiding the modal. The server never released PII for this
+    // session — the visitor proceeds with manual entry. If their typed phone
+    // matches an existing record at book-submit, findOrCreateClient dedups
+    // server-side (the existing accepted dedup boundary).
+    setPendingFirstInitial(null);
+  }
 
   useEffect(() => {
     Promise.all([fetchBookingConfig(), fetchServices(), fetchEmployees(), fetchWebfrontConfig()])
@@ -217,15 +382,16 @@ export default function BookingScreen() {
   async function handleSignOut() {
     await fbSignOut(auth);
     setClient(null);
-    setForm({ name: '', phone: '', email: '', notes: '' });
+    setPendingFirstInitial(null);
+    resetOtp();
+    setForm({ name: '', phone: '', email: '', notes: '', optInSms: true, optInEmail: true });
   }
 
   async function handleBook() {
     if (cart.length === 0 || !cartDate || cartSlot == null) return;
     setBookingError('');
-    // Local-cached banned flag (only set if fetchClientByEmail succeeded
-    // earlier — public booking can't always read clients, so we ALSO
-    // re-check on the server below as the source of truth).
+    // Local-cached banned flag (set by callMyClientRecord on auth) — the
+    // server also re-checks on book submit, so this is just a fast path.
     if (client?.banned) {
       setBookingError("We're not able to accept this booking online. Please call the salon to discuss.");
       return;
@@ -391,6 +557,17 @@ export default function BookingScreen() {
         <CrossDevicePrompt onDone={() => setEmailLinkDevice(false)} />
       )}
 
+      {pendingFirstInitial && (
+        <IdentityConfirmPrompt
+          firstInitial={pendingFirstInitial}
+          onDismiss={dismissPendingIdentity}
+        />
+      )}
+
+      {/* Hidden DOM anchor for the invisible reCAPTCHA used by Phone Auth.
+          Must exist at the time signInWithPhoneNumber is called. */}
+      <div id="recaptcha-container" style={{ display: 'none' }} />
+
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '14px 12px 48px' }}>
         {/* Returning customer welcome */}
         {gUser && client && (
@@ -474,6 +651,13 @@ export default function BookingScreen() {
             gUser={gUser} client={client}
             emailLinkState={emailLinkState}
             onSendEmailLink={sendEmailLink}
+            otpState={otpState}
+            otpError={otpError}
+            otpPhonePretty={otpPhonePretty}
+            onSendOtp={sendOtp}
+            onVerifyOtp={verifyOtp}
+            onResetOtp={resetOtp}
+            onGoogleSignIn={handleGoogleSignIn}
             onChange={patch => setForm(f => ({ ...f, ...patch }))}
             onNext={() => setStep(5)}
             onBack={() => setStep(3)}
@@ -997,7 +1181,13 @@ function Step3PickSlot({ cart, cartTech, allTechs, cartDate, setCartDate, cartSl
 }
 
 // ── Step 4: Info ───────────────────────────────────────
-function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onChange, onNext, onBack }) {
+function Step4Info({
+  form, gUser, client,
+  emailLinkState, onSendEmailLink,
+  otpState, otpError, otpPhonePretty,
+  onSendOtp, onVerifyOtp, onResetOtp, onGoogleSignIn,
+  onChange, onNext, onBack,
+}) {
   // Required: name + phone (signed-in users skip this step entirely so they bypass the validation)
   const valid = form.name.trim() && form.phone.trim();
 
@@ -1084,15 +1274,21 @@ function Step4Info({ form, gUser, client, emailLinkState, onSendEmailLink, onCha
             <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>Sign in with Google</div>
             <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>One tap, no password</div>
           </div>
-          <GoogleSignInBtn />
+          <GoogleSignInBtn onClick={onGoogleSignIn} />
         </div>
 
-        {/* Email magic link */}
-        <EmailLinkRow
+        {/* Phone OR email — auto-detects what the user is typing */}
+        <UnifiedAuthRow
           form={form}
           onChange={onChange}
           emailLinkState={emailLinkState}
           onSendEmailLink={onSendEmailLink}
+          otpState={otpState}
+          otpError={otpError}
+          otpPhonePretty={otpPhonePretty}
+          onSendOtp={onSendOtp}
+          onVerifyOtp={onVerifyOtp}
+          onResetOtp={onResetOtp}
         />
       </div>
 
@@ -1395,6 +1591,33 @@ function BookingCalendar({ value, onChange }) {
   );
 }
 
+// ── Identity confirmation modal ────────────────────────
+// Shown when a phone-auth caller matched an existing client record that
+// hasn't been used in >180 days. The server has already WITHHELD all
+// account PII for this session (phone-recycling defense). This modal is
+// transparency-only: it tells the visitor we recognized the number, asks
+// them to manually re-enter their info, and links them to their history
+// at book-submit time via the existing server-side dedup.
+function IdentityConfirmPrompt({ firstInitial, onDismiss }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', width: '100%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,.3)', textAlign: 'center' }}>
+        <div style={{ fontSize: 36, marginBottom: 10 }}>👋</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>
+          Welcome back{firstInitial ? `, ${firstInitial}.` : ''}
+        </div>
+        <div style={{ fontSize: 13, color: '#666', lineHeight: 1.5, marginBottom: 18 }}>
+          We recognize this phone number from a past visit. For your privacy, we'll have you re-enter your name and email — we'll connect this booking to your history once you complete it.
+        </div>
+        <button onClick={onDismiss}
+          style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', background: 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Cross-device email link prompt ────────────────────
 // Shown when user clicks a magic link on a different device than where they requested it
 function CrossDevicePrompt({ onDone }) {
@@ -1441,14 +1664,35 @@ function CrossDevicePrompt({ onDone }) {
 }
 
 // ── Shared UI ──────────────────────────────────────────
-function EmailLinkRow({ form, onChange, emailLinkState, onSendEmailLink }) {
-  const [localEmail, setLocalEmail] = useState(form.email || '');
-  const isValidEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(localEmail.trim());
+// One input that auto-detects whether the user is typing an email (sends a
+// magic link) or a phone number (sends an SMS one-time code). Once a code is
+// in flight we swap the input for a 6-digit code entry. Anything else (Google)
+// is offered as a sibling button by the parent.
+function UnifiedAuthRow({
+  form, onChange,
+  emailLinkState, onSendEmailLink,
+  otpState, otpError, otpPhonePretty,
+  onSendOtp, onVerifyOtp, onResetOtp,
+}) {
+  const [local, setLocal] = useState(form.email || form.phone || '');
+  const [code,  setCode]  = useState('');
+  const kind = detectAuthInputKind(local);
+  const isValidEmail = kind === 'email' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(local.trim());
+  const isValidPhone = kind === 'phone' && !!toE164(local);
+
+  const otpActive = otpState === 'sending' || otpState === 'awaiting-code' || otpState === 'verifying';
+  const sendBusy  = emailLinkState === 'sending' || otpState === 'sending';
+  const canSend   = !sendBusy && (isValidEmail || isValidPhone);
 
   function send() {
-    if (!isValidEmail || emailLinkState === 'sending') return;
-    onChange({ email: localEmail.trim() });
-    onSendEmailLink(localEmail.trim());
+    if (!canSend) return;
+    if (isValidEmail) {
+      onChange({ email: local.trim() });
+      onSendEmailLink(local.trim());
+    } else if (isValidPhone) {
+      onChange({ phone: local.trim() });
+      onSendOtp(local.trim());
+    }
   }
 
   if (emailLinkState === 'sent') {
@@ -1458,30 +1702,78 @@ function EmailLinkRow({ form, onChange, emailLinkState, onSendEmailLink }) {
         <div>
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 3 }}>Check your email!</div>
           <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
-            We sent a sign-in link to <strong>{localEmail}</strong>. Click it to come back and finish.
+            We sent a sign-in link to <strong>{local}</strong>. Click it to come back and finish.
           </div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div style={{ padding: '14px 16px', borderTop: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>Sign in with email link</div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
-        <input
-          type="email" value={localEmail} onChange={e => setLocalEmail(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && send()}
-          placeholder="you@example.com" autoComplete="email"
-          style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 10, padding: '10px 12px', fontSize: 16, outline: 'none', background: '#fafafa', color: '#1a1a1a', minWidth: 0 }}
-        />
-        <button onClick={send} disabled={!isValidEmail || emailLinkState === 'sending'}
-          style={{ flexShrink: 0, padding: '0 16px', borderRadius: 10, border: 'none', background: isValidEmail && emailLinkState !== 'sending' ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 700, cursor: isValidEmail && emailLinkState !== 'sending' ? 'pointer' : 'default', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
-          {emailLinkState === 'sending' ? 'Sending…' : 'Send link ✉️'}
+  if (otpActive) {
+    const verifying = otpState === 'verifying';
+    return (
+      <div style={{ padding: '14px 16px', borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Enter the 6-digit code</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 8 }}>
+          {otpPhonePretty ? <>Texted to <strong>{otpPhonePretty}</strong>.</> : <>We texted you a code.</>}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+          <input
+            type="tel" inputMode="numeric" autoComplete="one-time-code"
+            value={code}
+            onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onKeyDown={e => e.key === 'Enter' && onVerifyOtp(code)}
+            placeholder="123456" autoFocus disabled={verifying}
+            style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 10, padding: '10px 12px', fontSize: 18, letterSpacing: '0.3em', textAlign: 'center', outline: 'none', background: '#fafafa', color: '#1a1a1a', minWidth: 0 }}
+          />
+          <button onClick={() => onVerifyOtp(code)} disabled={verifying || code.length !== 6}
+            style={{ flexShrink: 0, padding: '0 16px', borderRadius: 10, border: 'none', background: !verifying && code.length === 6 ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 700, cursor: !verifying && code.length === 6 ? 'pointer' : 'default', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+            {verifying ? 'Verifying…' : 'Verify →'}
+          </button>
+        </div>
+        {otpError && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>{otpError}</div>}
+        <button onClick={() => { setCode(''); onResetOtp(); }}
+          style={{ marginTop: 8, background: 'none', border: 'none', color: '#888', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', padding: 0, textDecoration: 'underline' }}>
+          Use a different number or email
         </button>
       </div>
+    );
+  }
+
+  // Default: one smart input. Button label flips based on what they're typing.
+  const btnLabel = isValidEmail ? 'Send link ✉️'
+                : isValidPhone ? 'Send code 📱'
+                : kind === 'email' ? 'Send link ✉️'
+                : kind === 'phone' ? 'Send code 📱'
+                : 'Send';
+  return (
+    <div style={{ padding: '14px 16px', borderTop: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 8 }}>
+        Sign in with phone or email
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+        <input
+          type="text"
+          value={local}
+          onChange={e => setLocal(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && send()}
+          placeholder="(555) 555-0100  or  you@example.com"
+          autoComplete="email"
+          style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 10, padding: '10px 12px', fontSize: 16, outline: 'none', background: '#fafafa', color: '#1a1a1a', minWidth: 0 }}
+        />
+        <button onClick={send} disabled={!canSend}
+          style={{ flexShrink: 0, padding: '0 16px', borderRadius: 10, border: 'none', background: canSend ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 700, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          {sendBusy ? 'Sending…' : btnLabel}
+        </button>
+      </div>
+      <div style={{ fontSize: 11, color: '#999', marginTop: 6 }}>
+        We'll text or email a one-time link — no password needed.
+      </div>
       {emailLinkState === 'error' && (
-        <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>Couldn't send link. Try Google or continue as guest.</div>
+        <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>Couldn't send link. Try a different method.</div>
+      )}
+      {otpState === 'error' && otpError && (
+        <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6 }}>{otpError}</div>
       )}
     </div>
   );
@@ -1514,8 +1806,9 @@ function TechAvatar({ tech, size = 56 }) {
     </div>
   );
 }
-function GoogleSignInBtn() {
+function GoogleSignInBtn({ onClick }) {
   async function go() {
+    if (onClick) return onClick();
     try { await signInWithPopup(auth, new GoogleAuthProvider()); }
     catch { /* cancelled */ }
   }

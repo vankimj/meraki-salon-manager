@@ -992,6 +992,117 @@ exports.getMyTenantRole = onCall({ cors: true }, async (request) => {
   };
 });
 
+// Returns the CALLER's own client record for the public booking flow.
+// The clients/{id} collection is staff-read-only at the rules layer, so
+// the booking page can't read it directly. After the visitor authenticates
+// (Google / magic link / phone OTP), Firebase issues a token with verified
+// `email` and/or `phone_number` claims. We trust those claims and use them
+// to dedup against the existing clients collection, returning ONLY that
+// caller's slim slice.
+//
+// Phone-recycling guard: if the caller authed by phone only AND the matched
+// client hasn't been seen in >180 days (or has no visit history), we return
+// `requiresIdentityConfirm: true` so the UI shows "Is this you, <name>?"
+// before pre-filling. US carriers recycle numbers after ~90 days of disuse.
+exports.getMyClientRecord = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 60)) {
+    throw new HttpsError('resource-exhausted', 'Too many lookups. Try again later.');
+  }
+  const tenantId   = String(request.data?.tenantId || TENANT_ID);
+  const token      = request.auth.token || {};
+  const tokenEmail = String(token.email || '').toLowerCase();
+  const tokenPhone = String(token.phone_number || '');
+  if (!tokenEmail && !tokenPhone) {
+    throw new HttpsError('failed-precondition', 'Auth token has no verified email or phone.');
+  }
+
+  let phoneDigits = tokenPhone.replace(/\D/g, '');
+  if (phoneDigits.length === 11 && phoneDigits.startsWith('1')) phoneDigits = phoneDigits.slice(1);
+
+  const db         = getFirestore();
+  const clientsRef = db.collection(`tenants/${tenantId}/clients`);
+
+  let match = null;
+
+  if (tokenEmail) {
+    for (const v of new Set([tokenEmail, token.email].filter(Boolean))) {
+      const snap = await clientsRef.where('email', '==', v).limit(1).get().catch(() => null);
+      if (snap && !snap.empty) {
+        match = { id: snap.docs[0].id, ...snap.docs[0].data() };
+        break;
+      }
+    }
+  }
+  // Phone-format mismatch in storage means we scan + filter client-side.
+  // Cap mirrors findOrCreateClient's 5000-doc rail.
+  if (!match && phoneDigits.length === 10) {
+    const allSnap = await clientsRef.limit(5000).get().catch(() => null);
+    if (allSnap) {
+      for (const d of allSnap.docs) {
+        const data = d.data();
+        let c = String(data.phone || '').replace(/\D/g, '');
+        if (c.length === 11 && c.startsWith('1')) c = c.slice(1);
+        if (c === phoneDigits) { match = { id: d.id, ...data }; break; }
+      }
+    }
+  }
+
+  if (!match) return { client: null };
+  if (match.banned) return { banned: true };
+
+  let requiresIdentityConfirm = false;
+  if (tokenPhone && !tokenEmail) {
+    const visits = Array.isArray(match.visits) ? match.visits : [];
+    const lastVisitDate = visits
+      .map(v => v?.date).filter(Boolean).sort().slice(-1)[0];
+    const lastTs = lastVisitDate
+      ? new Date(lastVisitDate + 'T00:00:00').getTime()
+      : (match.updatedAt ? new Date(match.updatedAt).getTime() : 0);
+    const daysSince = lastTs ? (Date.now() - lastTs) / 86400000 : Infinity;
+    if (daysSince > 180) requiresIdentityConfirm = true;
+  }
+
+  // Audit log every match attempt regardless of PII release decision.
+  try {
+    await db.collection(`tenants/${tenantId}/logs`).add({
+      timestamp: new Date().toISOString(),
+      email:     tokenEmail || null,
+      name:      tokenEmail || tokenPhone || null,
+      action:    'client.self_lookup',
+      details:   `Booking auth matched client ${match.id} via ${tokenPhone ? 'phone' : 'email'}${requiresIdentityConfirm ? ' (stale — PII withheld)' : ''}`,
+    });
+  } catch (_) {}
+
+  // Phone-recycling defense: if the matched record is stale and we matched on
+  // phone alone, we cannot safely confirm this is the same human. Return only
+  // a first initial — enough to render an "is this you?" prompt — and withhold
+  // every other field. The booking flow continues as if no match, and the
+  // server-side findOrCreateClient on book-submit handles dedup at write-time
+  // (which is safe because that path requires a full set of typed details).
+  if (requiresIdentityConfirm) {
+    const firstName = String(match.name || '').trim().split(/\s+/)[0] || '';
+    const firstInitial = firstName ? firstName[0].toUpperCase() : '';
+    return { client: null, requiresIdentityConfirm: true, firstInitial };
+  }
+
+  // Slim projection. `notes` is staff-authored internal observations and is
+  // never released. `picture`, `birthday`, `instagram`, `commPreferences`,
+  // `name`, `phone`, `email` are the only fields the booking form prefills.
+  const safe = {
+    id:              match.id,
+    name:            match.name || '',
+    phone:           match.phone || '',
+    email:           match.email || '',
+    picture:         match.picture || '',
+    birthday:        match.birthday || '',
+    commPreferences: match.commPreferences || {},
+    instagram:       match.instagram || '',
+  };
+  return { client: safe };
+});
+
 // email to a newly-added employee. Owner clicks "Send invite" in
 // EmployeesAdmin and we email a Google sign-in link (tenant subdomain) so
 // the tech can join with one click. Admin gate; uses the owner's verified
