@@ -187,15 +187,19 @@ export default function Admin({ onClose }) {
                       <option value="admin">Admin</option>
                       <option value="denied">Denied</option>
                     </select>
-                    {u.role === 'tech' && (
+                    {/* Tech-name picker — required for 'tech' role, optional
+                        for admin/scheduler/readonly so an owner who's also
+                        a working tech can flip into their own tech view via
+                        the HomeScreen "My tech view" toggle. */}
+                    {(u.role === 'tech' || u.role === 'admin' || u.role === 'scheduler' || u.role === 'readonly') && (
                       <select value={u.techName || ''} onChange={async e => {
-                        const newTechName = e.target.value;
-                        grantAccess(u.email, 'tech', newTechName);
-                        const emp = employees.find(ex => ex.name === newTechName);
+                        const newTechName = e.target.value || null;
+                        grantAccess(u.email, u.role, newTechName);
+                        const emp = newTechName && employees.find(ex => ex.name === newTechName);
                         if (emp) await saveEmployee(emp.id, { email: u.email });
                       }}
                         style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit' }}>
-                        <option value="">Assign tech…</option>
+                        <option value="">{u.role === 'tech' ? 'Assign tech…' : 'Also a tech? (optional)'}</option>
                         {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
                       </select>
                     )}

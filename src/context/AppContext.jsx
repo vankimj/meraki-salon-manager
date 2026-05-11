@@ -349,11 +349,15 @@ export function AppProvider({ children }) {
   const setDefault  = useCallback(async (i) => { await persistSlides(slides, i, cur); }, [slides, cur, persistSlides]);
 
   // ── User ops ───────────────────────────────────────────
+  // techName is preserved across role changes — an admin or scheduler
+  // who's also a working tech can keep their tech identity, which the
+  // HomeScreen "My tech view" toggle keys off of. Pass `techName: null`
+  // explicitly to clear it.
   const grantAccess = useCallback(async (email, role, techName) => {
     const prev    = users.find(u => u.email === email)?.role;
     const updated = users.map(u => u.email === email ? {
       ...u, role,
-      techName: role === 'tech' ? (techName !== undefined ? techName : u.techName) : null,
+      techName: techName !== undefined ? techName : (u.techName || null),
       grantedAt: new Date().toISOString(),
     } : u);
     setUsers(updated);

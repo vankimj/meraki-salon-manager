@@ -21,18 +21,27 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [webCfg,       setWebCfg]       = useState(null);
-  // Match the signed-in admin against the employees collection — if their
-  // email is on a tech's record, expose a one-click "switch to my tech
-  // view" button. The user record's `techName` is auto-nulled when role
-  // is admin (AppContext.grantAccess), so we have to discover it here.
-  const [myTechEmpName, setMyTechEmpName] = useState(null);
+  // Decide whether to show the one-click "My tech view" button. Two
+  // independent signals — either is sufficient:
+  //   1. The admin's user record has a `techName` set explicitly (Admin →
+  //      Users → "Also a tech?" picker). Preserved across role changes by
+  //      AppContext.grantAccess.
+  //   2. The admin's email matches an active employee's email (auto-detect
+  //      for tenants where the owner forgot the manual link).
+  const myUserRec = users.find(u => (u.email || '').toLowerCase() === (gUser?.email || '').toLowerCase());
+  const techNameFromUserRec = myUserRec?.techName || null;
+  const [techNameFromEmployee, setTechNameFromEmployee] = useState(null);
   useEffect(() => {
-    if (!gUser?.email || !realIsAdmin) { setMyTechEmpName(null); return; }
+    if (!gUser?.email || !realIsAdmin || techNameFromUserRec) {
+      setTechNameFromEmployee(null);
+      return;
+    }
     fetchEmployees().then(emps => {
       const me = emps.find(e => (e.email || '').toLowerCase() === gUser.email.toLowerCase() && (e.active !== false));
-      setMyTechEmpName(me?.name || null);
-    }).catch(() => setMyTechEmpName(null));
-  }, [gUser?.email, realIsAdmin]);
+      setTechNameFromEmployee(me?.name || null);
+    }).catch(() => setTechNameFromEmployee(null));
+  }, [gUser?.email, realIsAdmin, techNameFromUserRec]);
+  const myTechEmpName = techNameFromUserRec || techNameFromEmployee;
   const canManage = isAdmin || isReadOnly;
   const plan = effectivePlan(settings);
 
