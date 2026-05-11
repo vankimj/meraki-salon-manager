@@ -446,26 +446,24 @@ function BoutiqueLink({ onClick, label = 'Sign in' }) {
       onMouseLeave={() => setHover(false)}
       style={{
         fontFamily: '"Cinzel", Georgia, serif',
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: 600,
-        color: '#fff',
-        background: hover
-          ? 'linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%)'
-          : 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
-        border: 'none',
+        color: hover ? '#fff' : '#1a1a1a',
+        background: hover ? '#c19a4a' : 'rgba(193, 154, 74, 0.07)',
+        border: '1.5px solid #c19a4a',
         borderRadius: 30,
-        padding: '15px 40px',
+        padding: '13px 36px',
         cursor: 'pointer',
         letterSpacing: '.24em',
         textTransform: 'uppercase',
         display: 'inline-flex',
         alignItems: 'center',
-        gap: 14,
+        gap: 12,
         boxShadow: hover
-          ? '0 14px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.1)'
-          : '0 8px 22px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08)',
+          ? '0 10px 26px rgba(193, 154, 74, 0.30), inset 0 1px 0 rgba(255, 255, 255, 0.18)'
+          : '0 3px 12px rgba(193, 154, 74, 0.10)',
         transform: hover ? 'translateY(-1px)' : 'translateY(0)',
-        transition: 'transform .2s ease, box-shadow .2s ease, background .2s ease',
+        transition: 'background .22s ease, color .22s ease, transform .22s ease, box-shadow .22s ease',
       }}>
       {label}
       <span style={{ display: 'inline-block', transform: hover ? 'translateX(4px)' : 'translateX(0)', transition: 'transform .2s ease' }}>&rarr;</span>
