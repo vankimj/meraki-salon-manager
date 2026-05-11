@@ -233,19 +233,17 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
         {!isTech && !isScheduler && (
           <div style={{ marginBottom: 24 }}>
             <SectionLabel>Kiosk</SectionLabel>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <KioskCard
                 Icon={IconLightbulb}
-                label="Launch Tip Flow"
-                desc="Full-screen kiosk for front desk iPad"
+                label="Tip Flow"
                 background="var(--tm-grad)"
                 ArrowIcon={IconChevronRight}
                 onClick={() => navigate('tipflow')}
               />
               <KioskCard
                 Icon={IconChair}
-                label="Walk-in Queue Kiosk"
-                desc="Self check-in for walk-ins & arrivals"
+                label="Walk-in Queue"
                 background="var(--tm-grad-dark)"
                 ArrowIcon={IconArrowUpRight}
                 onClick={() => window.open('/?queue', '_blank')}
@@ -287,28 +285,25 @@ function SectionLabel({ children }) {
   );
 }
 
-function KioskCard({ Icon, label, desc, background, ArrowIcon, onClick }) {
+function KioskCard({ Icon, label, background, ArrowIcon, onClick }) {
   const [hover, setHover] = useState(false);
   return (
     <button onClick={onClick} onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
       style={{
-        width: '100%', background, border: 'none', borderRadius: 16,
-        padding: '20px 22px', cursor: 'pointer', display: 'flex',
-        alignItems: 'center', gap: 16, fontFamily: 'inherit', textAlign: 'left',
-        boxShadow: hover ? '0 12px 32px rgba(0,0,0,.18)' : '0 4px 14px rgba(0,0,0,.10)',
-        transform: hover ? 'translateY(-2px)' : 'translateY(0)',
+        background, border: 'none', borderRadius: 22,
+        padding: '8px 14px 8px 8px', cursor: 'pointer', display: 'inline-flex',
+        alignItems: 'center', gap: 10, fontFamily: 'inherit',
+        boxShadow: hover ? '0 6px 16px rgba(0,0,0,.14)' : '0 2px 6px rgba(0,0,0,.08)',
+        transform: hover ? 'translateY(-1px)' : 'translateY(0)',
         transition: 'transform .18s ease, box-shadow .18s ease',
       }}>
-      <div style={{ width: 48, height: 48, borderRadius: 14, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, backdropFilter: 'blur(4px)', color: '#fff' }}>
-        <Icon size={24} />
+      <div style={{ width: 28, height: 28, borderRadius: 8, background: 'rgba(255,255,255,.22)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#fff' }}>
+        <Icon size={14} />
       </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', marginBottom: 2, letterSpacing: '-.1px' }}>{label}</div>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.78)', lineHeight: 1.4 }}>{desc}</div>
-      </div>
-      <div style={{ marginLeft: 'auto', color: 'rgba(255,255,255,.85)', display: 'flex', alignItems: 'center', transform: hover ? 'translateX(3px)' : 'translateX(0)', transition: 'transform .18s ease', flexShrink: 0 }}>
-        <ArrowIcon size={20} />
-      </div>
+      <span style={{ fontSize: 12, fontWeight: 600, color: '#fff', letterSpacing: '.01em' }}>{label}</span>
+      <span style={{ marginLeft: 2, color: 'rgba(255,255,255,.85)', display: 'inline-flex', alignItems: 'center', transform: hover ? 'translateX(2px)' : 'translateX(0)', transition: 'transform .18s ease', flexShrink: 0 }}>
+        <ArrowIcon size={13} />
+      </span>
     </button>
   );
 }
@@ -451,19 +446,29 @@ function BoutiqueLink({ onClick, label = 'Sign in' }) {
       onMouseLeave={() => setHover(false)}
       style={{
         fontFamily: '"Cinzel", Georgia, serif',
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: 600,
-        color: hover ? '#5b3b8c' : '#1a1a1a',
-        background: 'transparent',
+        color: '#fff',
+        background: hover
+          ? 'linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 100%)'
+          : 'linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%)',
         border: 'none',
-        borderBottom: `1px solid ${hover ? '#5b3b8c' : '#c19a4a'}`,
-        padding: '6px 4px',
+        borderRadius: 30,
+        padding: '15px 40px',
         cursor: 'pointer',
-        letterSpacing: '.18em',
+        letterSpacing: '.24em',
         textTransform: 'uppercase',
-        transition: 'color .18s, border-color .18s',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 14,
+        boxShadow: hover
+          ? '0 14px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.1)'
+          : '0 8px 22px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08)',
+        transform: hover ? 'translateY(-1px)' : 'translateY(0)',
+        transition: 'transform .2s ease, box-shadow .2s ease, background .2s ease',
       }}>
-      {label} &rarr;
+      {label}
+      <span style={{ display: 'inline-block', transform: hover ? 'translateX(4px)' : 'translateX(0)', transition: 'transform .2s ease' }}>&rarr;</span>
     </button>
   );
 }
