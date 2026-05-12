@@ -3,6 +3,7 @@ import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
+import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
@@ -1112,6 +1113,8 @@ function openNew(techName, slotMins) {
           onRefund={appt => setRefund(appt)}
           onOpenClient={(id) => { setModal(null); onOpenClient?.(id); }}
           onClientCreated={(c) => setClients(prev => [...prev, c].sort((a, b) => (a.name || '').localeCompare(b.name || '')))}
+          isAdmin={isAdmin}
+          onReload={load}
         />
       )}
 
@@ -1922,7 +1925,8 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
 }
 
 // ── Appointment modal ─────────────────────────────────
-function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly }) {
+function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const { gUser, settings } = useApp();
   const [saving,    setSaving]    = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -2760,6 +2764,13 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
                   {linkCopied ? '✓ Copied!' : '🔗 Check-in'}
                 </button>
               )}
+              {appt.id && isAdmin && !viewOnly && (
+                <button onClick={() => setRestoreOpen(true)}
+                  title="Restore an earlier version of this appointment from the BigQuery mirror"
+                  style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                  ⏳ History
+                </button>
+              )}
               {!viewOnly && (
                 <button onClick={onSwitchEdit} style={{ flex: 1, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE', whiteSpace: 'nowrap' }}>Edit</button>
               )}
@@ -2817,6 +2828,19 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
           )}
         </div>
       </div>
+      {restoreOpen && appt.id && (
+        <RestoreFromBQModal
+          collection="appointments"
+          docId={appt.id}
+          label={`${appt.clientName || 'Walk-in'} · ${appt.date}`}
+          onClose={() => setRestoreOpen(false)}
+          onRestored={async () => {
+            setRestoreOpen(false);
+            await onReload?.();
+            onClose();
+          }}
+        />
+      )}
     </div>
   );
 }

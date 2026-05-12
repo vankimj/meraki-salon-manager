@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
 import { TENANT_ID } from '../../lib/tenant';
+import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
 import { useApp } from '../../context/AppContext';
@@ -178,6 +179,7 @@ async function assignAllServicesToAll() {
           onChange={patch => setEditing(e => ({ ...e, ...patch }))}
           onSave={() => handleSave(editing)}
           onClose={() => setEditing(null)}
+          onReload={load}
         />
       )}
       {viewing && (
@@ -190,6 +192,7 @@ async function assignAllServicesToAll() {
           onSave={() => {}}
           onClose={() => setViewing(null)}
           onSwitchToEdit={() => { setEditing({ ...viewing }); setViewing(null); }}
+          onReload={load}
         />
       )}
     </div>
@@ -248,10 +251,11 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
   );
 }
 
-function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, viewOnly = false, onSwitchToEdit }) {
+function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, viewOnly = false, onSwitchToEdit, onReload }) {
   const { showToast } = useApp();
   const [tab,    setTab]    = useState('profile');
   const [saving, setSaving] = useState(false);
+  const [restoreOpen, setRestoreOpen] = useState(false);
   const fileRef = useRef(null);
   const isNew   = !emp.id;
   const TABS    = isAdmin
@@ -545,6 +549,13 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
           {viewOnly ? (
             <>
               <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Close</button>
+              {!isNew && isAdmin && (
+                <button onClick={() => setRestoreOpen(true)}
+                  title="Restore an earlier version of this employee from the BigQuery mirror"
+                  style={{ ...btnBase, padding: '8px 12px', fontSize: 12, color: '#666' }}>
+                  ⏳ History
+                </button>
+              )}
               {onSwitchToEdit && (
                 <button onClick={onSwitchToEdit}
                   style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE' }}>
@@ -563,6 +574,15 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
           )}
         </div>
       </div>
+      {restoreOpen && emp.id && (
+        <RestoreFromBQModal
+          collection="employees"
+          docId={emp.id}
+          label={emp.name}
+          onClose={() => setRestoreOpen(false)}
+          onRestored={async () => { setRestoreOpen(false); await onReload?.(); onClose(); }}
+        />
+      )}
     </div>
   );
 }

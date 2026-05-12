@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
+import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
 import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations } from './metrics';
 import CoachMark from '../../components/CoachMark';
@@ -1513,9 +1514,12 @@ function PerTechTable({ rows }) {
 }
 
 function TransactionList({ receipts }) {
+  const { isAdmin } = useApp();
+  const [restoreId, setRestoreId] = useState(null);
+  const [restoreLabel, setRestoreLabel] = useState('');
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 880 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isAdmin ? 920 : 880 }}>
         <thead>
           <tr style={{ background: '#fafafa', textAlign: 'left' }}>
             <Th>Date</Th>
@@ -1529,6 +1533,7 @@ function TransactionList({ receipts }) {
             <Th>GC sold</Th>
             <Th>CC fee</Th>
             <Th>Total</Th>
+            {isAdmin && <Th>{''}</Th>}
           </tr>
         </thead>
         <tbody>
@@ -1557,11 +1562,30 @@ function TransactionList({ receipts }) {
                 <Td>{p.gcSalesTotal > 0 ? fmt$(p.gcSalesTotal) : '—'}</Td>
                 <Td muted>{p.ccFee > 0 ? fmt$(p.ccFee) : '—'}</Td>
                 <Td bold green>{fmt$(p.total || 0)}</Td>
+                {isAdmin && (
+                  <Td>
+                    <button
+                      onClick={() => { setRestoreId(r.id); setRestoreLabel(`${r.clientName || '—'} · ${dt}`); }}
+                      title="Restore an earlier version of this receipt from the BigQuery mirror"
+                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid #d0d0d0', background: '#fafafa', color: '#666', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      ⏳
+                    </button>
+                  </Td>
+                )}
               </tr>
             );
           })}
         </tbody>
       </table>
+      {restoreId && (
+        <RestoreFromBQModal
+          collection="receipts"
+          docId={restoreId}
+          label={restoreLabel}
+          onClose={() => setRestoreId(null)}
+          onRestored={() => setRestoreId(null)}
+        />
+      )}
     </div>
   );
 }
