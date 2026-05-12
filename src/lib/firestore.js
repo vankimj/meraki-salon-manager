@@ -2037,14 +2037,13 @@ export async function callMyClientRecord() {
 // intact. Skips only in-app-only state (notifications, chatNotifications,
 // userPrefs, requests, turnRoster) which are transient and non-portable.
 export async function fetchAllForBackup() {
-  const [slidesSnap, settingsSnap, usersSnap, handbookSnap, webfrontSnap, bookingCfgSnap] = await Promise.all([
-    getDoc(tenantDoc('slides')),
-    getDoc(tenantDoc('settings')),
-    getDoc(tenantDoc('users')),
-    getDoc(tenantDoc('handbook')),
-    getDoc(tenantDoc('webfront')),
-    getDoc(tenantDoc('bookingConfig')),
-  ]);
+  // All single-doc settings paths we back up. Order doesn't matter — they
+  // all get their own slot in the returned object under `_<name>`.
+  const settingsPaths = [
+    'slides', 'settings', 'users', 'usersFull', 'settingsPrivate',
+    'handbook', 'webfront', 'bookingConfig',
+  ];
+  const settingsSnaps = await Promise.all(settingsPaths.map(p => getDoc(tenantDoc(p))));
 
   const cols = [
     // Core operational
@@ -2069,12 +2068,23 @@ export async function fetchAllForBackup() {
     data[c] = colSnaps[i].docs.map(d => ({ _id: d.id, ...d.data() }));
   });
 
-  data._slides       = slidesSnap.exists()     ? slidesSnap.data()     : null;
-  data._settings     = settingsSnap.exists()   ? settingsSnap.data()   : null;
-  data._users        = usersSnap.exists()      ? usersSnap.data()      : null;
-  data._handbook     = handbookSnap.exists()   ? handbookSnap.data()   : null;
-  data._webfront     = webfrontSnap.exists()   ? webfrontSnap.data()   : null;
-  data._bookingConfig= bookingCfgSnap.exists() ? bookingCfgSnap.data() : null;
+  settingsPaths.forEach((p, i) => {
+    data['_' + p] = settingsSnaps[i].exists() ? settingsSnaps[i].data() : null;
+  });
+
+  // Employee compensation subcollection (employees/{id}/private/comp).
+  // Holds tax IDs, SSNs, pay rates, banking info, Gusto IDs — moved off
+  // the public employee doc during PII hardening. Without this in the
+  // backup, every employee loses comp data on restore.
+  const empCompMap = {};
+  await Promise.all((data.employees || []).map(async emp => {
+    if (!emp._id) return;
+    try {
+      const compSnap = await getDoc(doc(tenantCol('employees'), emp._id, 'private', 'comp'));
+      if (compSnap.exists()) empCompMap[emp._id] = compSnap.data();
+    } catch (_) { /* per-employee permission/network failure — leave it out, don't abort the whole backup */ }
+  }));
+  data._employeeComp = empCompMap;
 
   return data;
 }
@@ -2098,12 +2108,23 @@ export async function restoreFromBackup(data) {
       if (_id) await setDoc(doc(tenantCol(col), _id), docData);
     }
   }
-  if (data._slides)        await setDoc(tenantDoc('slides'),        data._slides);
-  if (data._settings)      await setDoc(tenantDoc('settings'),      data._settings);
-  if (data._users)         await setDoc(tenantDoc('users'),         data._users);
-  if (data._handbook)      await setDoc(tenantDoc('handbook'),      data._handbook);
-  if (data._webfront)      await setDoc(tenantDoc('webfront'),      data._webfront);
-  if (data._bookingConfig) await setDoc(tenantDoc('bookingConfig'), data._bookingConfig);
+  const settingsPaths = [
+    'slides', 'settings', 'users', 'usersFull', 'settingsPrivate',
+    'handbook', 'webfront', 'bookingConfig',
+  ];
+  for (const p of settingsPaths) {
+    const val = data['_' + p];
+    if (val) await setDoc(tenantDoc(p), val);
+  }
+  // Employee compensation subcollection — restore each employee's
+  // private/comp doc.
+  if (data._employeeComp && typeof data._employeeComp === 'object') {
+    for (const [empId, comp] of Object.entries(data._employeeComp)) {
+      if (empId && comp && typeof comp === 'object') {
+        await setDoc(doc(tenantCol('employees'), empId, 'private', 'comp'), comp);
+      }
+    }
+  }
 }
 
 // ── Online booking config (publicly readable) ─────────

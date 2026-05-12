@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
 import { buildExportBundle } from '../../lib/exportBundle';
+import JSZip from 'jszip';
 import { TENANT_ID, currentSubdomain } from '../../lib/tenant';
 import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchFeedback, updateFeedbackStatus,
@@ -1230,15 +1231,41 @@ function BackupRestoreSection() {
     if (!confirm('Restore will overwrite all existing data. This cannot be undone. Continue?')) return;
     setBusy(true); setStatus('Reading file…');
     try {
-      const text   = await file.text();
-      const parsed = JSON.parse(text);
-      const data   = parsed.data || parsed;
+      // Accept either:
+      //   - .json  → parsed directly
+      //   - .zip   → the export bundle; unzip and pull everything.json
+      // Detect by extension first; fall back to magic-bytes check for files
+      // dragged in without an extension.
+      const lowerName = (file.name || '').toLowerCase();
+      let parsed;
+      if (lowerName.endsWith('.zip') || file.type === 'application/zip' || await isProbablyZip(file)) {
+        setStatus('Unzipping bundle…');
+        const zip = await JSZip.loadAsync(file);
+        const jsonEntry = zip.file('everything.json');
+        if (!jsonEntry) throw new Error('ZIP does not contain everything.json (expected from a Plume Nexus export)');
+        const text = await jsonEntry.async('string');
+        parsed = JSON.parse(text);
+      } else {
+        const text = await file.text();
+        parsed = JSON.parse(text);
+      }
+      const data = parsed.data || parsed;
       setStatus('Writing to Firestore…');
       await restoreFromBackup(data);
       setStatus('Restore complete. Reload the page to see changes.');
       logActivity('backup_restored', file.name);
     } catch (e) { setStatus('Restore failed: ' + e.message); }
     finally { setBusy(false); e.target.value = ''; }
+  }
+
+  // Magic-byte sniff for ZIP files (PK\x03\x04). Catches the case where
+  // a user renames or strips the .zip extension. Cheap — 4-byte read.
+  async function isProbablyZip(file) {
+    try {
+      const head = await file.slice(0, 4).arrayBuffer();
+      const b = new Uint8Array(head);
+      return b[0] === 0x50 && b[1] === 0x4b && b[2] === 0x03 && b[3] === 0x04;
+    } catch { return false; }
   }
 
   return (
@@ -1265,8 +1292,8 @@ function BackupRestoreSection() {
             JSON only
           </button>
           <label style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? '#fafafa' : '#fff1f1', fontSize: 12, color: busy ? '#aaa' : '#ef4444', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-            ⬆ Restore from JSON
-            <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleRestore} disabled={busy} />
+            ⬆ Restore from ZIP or JSON
+            <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={handleRestore} disabled={busy} />
           </label>
         </div>
 
