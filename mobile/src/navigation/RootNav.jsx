@@ -10,6 +10,7 @@ import ChatStack      from './ChatStack';
 import ProfileScreen  from '../screens/ProfileScreen';
 import usePushRegistration from '../hooks/usePushRegistration';
 import { getCurrentTenant, subscribeTenant } from '../lib/currentTenant';
+import HeaderTitle from '../components/HeaderTitle';
 
 const Tab = createBottomTabNavigator();
 
@@ -39,6 +40,17 @@ function TabIcon({ name, color }) {
   }
 }
 
+// Map nav route name → header title. Mirrors the per-screen `title`
+// options below — kept here so HeaderTitle (in screenOptions) can read
+// the right label per tab without each screen needing to set
+// `headerTitle` individually.
+const HEADER_TITLES = {
+  Schedule: 'Today',
+  Earnings: 'Earnings',
+  Profile:  'Profile',
+};
+function titleFor(routeName) { return HEADER_TITLES[routeName] || routeName; }
+
 export default function RootNav() {
   // Register the device for push as soon as the user is signed in. No-op on
   // simulators / unsupported devices; failures are swallowed (push is a
@@ -60,7 +72,11 @@ export default function RootNav() {
         screenOptions={({ route }) => ({
           headerStyle:     { backgroundColor: '#fff' },
           headerTintColor: BRAND_GREEN,
-          headerTitleStyle:{ fontWeight: '700', fontSize: 16 },
+          // Custom 2-line title: screen name on top, current salon name
+          // beneath, so multi-tenant users can never lose track of which
+          // salon they're scoped to. Sourced from the per-screen options
+          // `title` (or the route name as fallback).
+          headerTitle: () => <HeaderTitle title={titleFor(route.name)} />,
           tabBarActiveTintColor:   BRAND_BLUE,
           tabBarInactiveTintColor: TAB_INACTIVE,
           tabBarLabelStyle:        { fontSize: 11, fontWeight: '600' },
