@@ -643,6 +643,130 @@ What breaks when each integration is down, and what the user sees:
 
 ---
 
+## Customer-data recovery runbook
+
+Five layers protect customer data, each with a different recovery use case. Pick the **lowest-effort** layer that can produce the state you need.
+
+### Quick reference — "I need to recover X"
+
+| Scenario | Layer to reach for | RTO |
+|---|---|---|
+| Admin accidentally deleted a single client/appointment/receipt/employee | Soft-delete tombstone (Layer 3) — restore via Admin UI | Seconds |
+| Admin edited the wrong field on a single doc; need previous version | Per-doc BigQuery restore (Layer 5) — ⏳ History button in detail modal | <1 minute |
+| `data/usersFull` went missing entirely (the May 10 incident) | Auto-heal on next admin load (Layer 2) | Automatic, seconds |
+| Bulk collection corruption / wipe | PITR (Layer 4) — full database point-in-time restore | 5-15 minutes manual |
+| Need state from more than 7 days ago | Daily GCS snapshot — *not yet enabled at time of writing* | Hours |
+| Want to see what changed when (no restore needed) | BigQuery forensic log — query `firestore_export.*_raw_changelog` | Read-only |
+
+### Layer 1 — Atomic writes (prevent, not recover)
+
+Every multi-doc save is committed via `writeBatch().commit()`. Either every doc commits or none does. Eliminates the "partial state" failure mode that hit `data/usersFull` on 2026-05-10.
+
+**Code paths:** `saveUsers`, `ensureStaffEmailsBackfill`, `saveEmployee`, `createEmployee` in `src/lib/firestore.js`; `createTenantOnboarding`, `gustoOAuthCallback`, `getGustoCredentials` migration in `functions/index.js`.
+
+**Nothing to invoke manually** — this layer is preventive.
+
+### Layer 2 — `healUsersFullIfMissing` auto-heal
+
+Runs automatically on every admin login. Detects "slim projection has staff emails, but `data/usersFull` is missing/empty" and rebuilds losslessly from BigQuery (`recoverUsersFullFromBQ` Cloud Function) — preserves real timestamps, custom names, all per-record metadata. Falls back to lossy reconstruction from `staffEmails` only if BQ has no snapshot (e.g. brand-new tenant with no realtime writes since extension install).
+
+**Code path:** `healUsersFullIfMissing` in `src/lib/firestore.js`, called from `AppContext.checkUserAccess`.
+
+**Invoke manually if needed:** sign out and sign back in as a tenant admin; the function fires automatically. Console line: `[healUsersFullIfMissing] LOSSLESS recovery via BigQuery snapshot @ <iso>`.
+
+### Layer 3 — Soft-delete tombstones
+
+User-initiated deletes on 15 customer-data-adjacent collections write `{ _deleted: true, _deletedAt, _deletedBy }` instead of removing the doc. Live for 30 days, then the `purgeOldTombstones` cron purges them at 3am ET.
+
+**Collections covered:** clients, appointments, receipts, memberships, giftCards, services, employees, bonuses, membershipPlans, timeOff, promoCodes, reviews, meetings, products, campaigns.
+
+**To restore an accidentally-deleted record:**
+
+1. **You know the doc ID** → open the detail view, click "⏳ History", pick the snapshot before the deletion, click Restore. The restore strips `_deleted/_deletedAt/_deletedBy` and writes a `_restoredFrom: bigquery@<iso>` marker.
+2. **You don't know the doc ID** → use the "Recently deleted" tab in Admin → Users *(once Task 4 ships)*. Or, as a fallback, find the tombstone by hand: Firestore Console → tenant collection → filter `_deleted == true`, then call `restoreDocFromBQ` from a script.
+
+**One-off script:** `scripts/restore-meraki-users.cjs` is the template — read both sides of a split, union the surviving signal with canonical mappings, write back atomically with `_healed: true` markers for forensics.
+
+### Layer 4 — Point-in-Time Recovery (PITR)
+
+Firestore retains every write at 1-microsecond granularity for **7 days**. Restores the entire database (or specific collections) to any past timestamp into a NEW database — you then migrate or swap.
+
+**When to use:** bulk corruption, ransomware-style scenarios, "everything looks wrong, roll back to 30 minutes ago." Not for single-doc work (use Layer 3/5 instead).
+
+**How to restore:**
+
+```bash
+# Verify PITR is enabled
+gcloud firestore databases describe --database='(default)' --project=meraki-salon-manager --format='value(pointInTimeRecoveryEnablement)'
+# Should print: POINT_IN_TIME_RECOVERY_ENABLED
+
+# Restore to a new database — REPLACE timestamp with desired past instant in RFC3339
+gcloud firestore databases restore \
+  --source-database='(default)' \
+  --destination-database=restore-YYYYMMDD \
+  --snapshot-time='2026-05-12T10:00:00.000Z' \
+  --project=meraki-salon-manager
+```
+
+Then either point the app at the new database (env var) or use `gcloud firestore export` + import to move the data into a recovered version of `(default)`. Coordinate with users — the swap window has visible read inconsistency.
+
+**Cost:** $0.18/GB/month for the PITR overlay. At Meraki's volume (~500MB), pennies per month.
+
+### Layer 5 — BigQuery forensic log + per-doc lossless restore
+
+Every change to clients / appointments / receipts / employees / `tenants/{id}/data` is mirrored to BigQuery within ~5 seconds and retained **forever** (until manually deleted from BQ). This is the lossless source for both `recoverUsersFullFromBQ` and per-doc restore in the UI.
+
+**Tables:**
+```
+meraki-salon-manager.firestore_export.clients_raw_changelog
+meraki-salon-manager.firestore_export.appointments_raw_changelog
+meraki-salon-manager.firestore_export.receipts_raw_changelog
+meraki-salon-manager.firestore_export.employees_raw_changelog
+meraki-salon-manager.firestore_export.data_raw_changelog
+```
+
+**Per-doc UI restore:** every detail modal (Clients, Schedule appointments, Reports receipts, Employees) has a ⏳ History button for admins. Lists last 20 CREATE/UPDATE snapshots with collection-aware previews. Pick one, click Restore — full-doc replacement via `restoreDocFromBQ` callable.
+
+**Forensic query — "show me everything that happened to this client":**
+```sql
+SELECT timestamp, operation, JSON_EXTRACT(data, '$.notes') AS notes
+FROM `meraki-salon-manager.firestore_export.clients_raw_changelog`
+WHERE document_name = 'projects/meraki-salon-manager/databases/(default)/documents/tenants/meraki/clients/CLIENT_ID'
+ORDER BY timestamp ASC
+```
+
+**Gotcha:** backfill `IMPORT` rows have `path_params: null` (only realtime triggers populate the wildcard binding). Filter on `document_name` LIKE patterns, NOT on `JSON_EXTRACT_SCALAR(path_params, '$.tenantId')`, or you'll silently miss every backfilled row.
+
+### Defense-in-depth at a glance
+
+| Layer | Coverage | Cost | RTO |
+|---|---|---|---|
+| 1. writeBatch atomicity | Every split-doc write | $0 (built-in) | N/A (preventive) |
+| 2. Auto-heal on load | `data/usersFull` only | $0 | <1s |
+| 3. Soft-delete tombstones | 15 customer-data collections, 30-day window | $0 storage delta | Seconds (admin click) |
+| 4. PITR | Whole database, 7-day window | ~$0.10/mo | 5-15 min manual |
+| 5. BQ mirror | 4 collections + `data` subcoll, forever | ~$0.20/mo | <1 min per doc |
+
+### Recovery escalation order
+
+If you don't know which layer to reach for, follow this:
+
+1. **Is it ONE specific doc?** → Layer 5 (⏳ History button in the UI)
+2. **Is the doc itself missing entirely?** → Check the tombstone first (Layer 3 — Recently Deleted), then BQ snapshot (Layer 5)
+3. **Did `data/usersFull` go missing?** → Don't do anything; sign in, Layer 2 self-heals
+4. **Is more than a single collection wrong?** → PITR (Layer 4)
+5. **Older than 7 days?** → Daily GCS snapshots (when enabled) or accept the loss
+
+**Don't reach for PITR for single-doc work** — it restores to a new database. Use the per-doc ⏳ History instead.
+
+### Phone-a-friend
+
+- Founder: jvankim@gmail.com — the only account in `ALLOWED_EMAILS` allowlist
+- All restore callables require `requireTenantAdmin` (tenant admin OR tenant ownerEmail on parent doc)
+- Firebase Console direct edits: avoid except as last resort — they bypass writeBatch atomicity and won't trigger the BQ mirror's onWrite trigger
+
+---
+
 ## Versioning
 
 This doc is checked into `main`. Update it when:
@@ -653,4 +777,4 @@ This doc is checked into `main`. Update it when:
 - The deploy workflow changes
 - A new failure mode is discovered (with mitigation)
 
-Last updated: 2026-05-10.
+Last updated: 2026-05-12.
