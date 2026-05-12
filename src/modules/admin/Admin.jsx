@@ -1186,6 +1186,7 @@ function Empty({ children }) {
 }
 
 function BackupRestoreSection() {
+  const { pauseLogoutTimer, resumeLogoutTimer } = useApp();
   const [busy,   setBusy]   = useState(false);
   const [status, setStatus] = useState('');
 
@@ -1230,6 +1231,7 @@ function BackupRestoreSection() {
     if (!file) return;
     if (!confirm('Restore will overwrite all existing data. This cannot be undone. Continue?')) return;
     setBusy(true); setStatus('Reading file…');
+    pauseLogoutTimer?.();  // restore can be 30s-2min for a big tenant; don't let 5-min idle timer kill it
     try {
       // Accept either:
       //   - .json  → parsed directly
@@ -1251,11 +1253,11 @@ function BackupRestoreSection() {
       }
       const data = parsed.data || parsed;
       setStatus('Writing to Firestore…');
-      await restoreFromBackup(data);
+      await restoreFromBackup(data, setStatus);
       setStatus('Restore complete. Reload the page to see changes.');
       logActivity('backup_restored', file.name);
     } catch (e) { setStatus('Restore failed: ' + e.message); }
-    finally { setBusy(false); e.target.value = ''; }
+    finally { setBusy(false); resumeLogoutTimer?.(); e.target.value = ''; }
   }
 
   // Magic-byte sniff for ZIP files (PK\x03\x04). Catches the case where

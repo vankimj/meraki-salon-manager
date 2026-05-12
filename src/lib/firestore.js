@@ -2089,7 +2089,7 @@ export async function fetchAllForBackup() {
   return data;
 }
 
-export async function restoreFromBackup(data) {
+export async function restoreFromBackup(data, onProgress) {
   // Keep this list aligned with fetchAllForBackup's cols so a backup → restore
   // round-trip doesn't silently drop collections.
   const cols = [
@@ -2101,29 +2101,50 @@ export async function restoreFromBackup(data) {
     'memberships', 'membershipPlans',
     'products', 'handbookSigs', 'logs', 'feedback',
   ];
+  const SIZE = 450;
+  // Batched per-collection restore. Without this, a 12k-doc tenant would
+  // restore in ~15 min (same root-cause as the seed-flow bottleneck);
+  // batched is ~30 seconds.
   for (const col of cols) {
-    if (!Array.isArray(data[col])) continue;
-    for (const item of data[col]) {
-      const { _id, ...docData } = item;
-      if (_id) await setDoc(doc(tenantCol(col), _id), docData);
+    const items = data[col];
+    if (!Array.isArray(items) || items.length === 0) continue;
+    let written = 0;
+    for (let i = 0; i < items.length; i += SIZE) {
+      const chunk = items.slice(i, i + SIZE);
+      const batch = writeBatch(db);
+      for (const item of chunk) {
+        const { _id, ...docData } = item;
+        if (_id) batch.set(doc(tenantCol(col), _id), docData);
+      }
+      await batch.commit();
+      written += chunk.length;
+      onProgress?.(`${col}: ${written.toLocaleString()} / ${items.length.toLocaleString()}`);
     }
   }
+  // Settings docs + employee comp can all share a single batch — there
+  // are only ~10 settings + however many employees with comp (~10-20).
+  // Well under the 500-op limit.
   const settingsPaths = [
     'slides', 'settings', 'users', 'usersFull', 'settingsPrivate',
     'handbook', 'webfront', 'bookingConfig',
   ];
+  const tailBatch = writeBatch(db);
+  let tailOps = 0;
   for (const p of settingsPaths) {
     const val = data['_' + p];
-    if (val) await setDoc(tenantDoc(p), val);
+    if (val) { tailBatch.set(tenantDoc(p), val); tailOps++; }
   }
-  // Employee compensation subcollection — restore each employee's
-  // private/comp doc.
   if (data._employeeComp && typeof data._employeeComp === 'object') {
     for (const [empId, comp] of Object.entries(data._employeeComp)) {
       if (empId && comp && typeof comp === 'object') {
-        await setDoc(doc(tenantCol('employees'), empId, 'private', 'comp'), comp);
+        tailBatch.set(doc(tenantCol('employees'), empId, 'private', 'comp'), comp);
+        tailOps++;
       }
     }
+  }
+  if (tailOps > 0) {
+    await tailBatch.commit();
+    onProgress?.(`Settings + comp: ${tailOps} docs`);
   }
 }
 
