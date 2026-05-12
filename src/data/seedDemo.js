@@ -1658,6 +1658,25 @@ export async function seedAdminAsTechEmployee(gUser, onProgress) {
   return { created: true, employee: { id, ...data } };
 }
 
+// Creates any SEED_EMPLOYEES entry whose name doesn't already exist on the
+// tenant (case-insensitive). Idempotent — re-runs are no-ops once everyone
+// is in place. New employees are tagged _demo: true so clearDemoData can
+// roll them back without touching real staff that lived in the tenant
+// before the demo seed ever ran.
+async function seedMissingEmployees(onProgress) {
+  const existing = await fetchEmployees();
+  const existingNames = new Set(existing.map(e => (e.name || '').trim().toLowerCase()));
+  let created = 0;
+  for (const seed of SEED_EMPLOYEES) {
+    const norm = (seed.name || '').trim().toLowerCase();
+    if (!norm || existingNames.has(norm)) continue;
+    await createEmployee({ ...seed, _demo: true });
+    created++;
+    onProgress?.(`Added tech: ${seed.name}`);
+  }
+  return { created, seedTotal: SEED_EMPLOYEES.length };
+}
+
 // Ordered list of seed steps. Each runs at most once per checkpoint
 // cycle — if seedFullDemo is interrupted (auto-logout, tab close, crash)
 // and re-invoked, completed steps are skipped via the state doc at
@@ -1671,8 +1690,9 @@ export async function seedAdminAsTechEmployee(gUser, onProgress) {
 function seedSteps(opts) {
   const { gUser, settings, updateSettings } = opts;
   return [
-    { key: 'adminAsTech',  label: 'Ensuring admin-as-tech employee record',   run: async (op) => { const r = await seedAdminAsTechEmployee(gUser, op); return { adminAsTech: r.created ? 'created' : (r.employee ? 'already_existed' : 'skipped_no_user') }; } },
-    { key: 'contactInfo',  label: 'Filling demo contact/TIN on all techs',    run: async (op) => { const r = await seedDemoEmployeeContactInfo(op, { settings, updateSettings }); return { employeesFilled: r.patched, fieldsFilled: r.fieldsFilled, salonFilled: r.salonFilled }; } },
+    { key: 'adminAsTech',     label: 'Ensuring admin-as-tech employee record',      run: async (op) => { const r = await seedAdminAsTechEmployee(gUser, op); return { adminAsTech: r.created ? 'created' : (r.employee ? 'already_existed' : 'skipped_no_user') }; } },
+    { key: 'missingTechs',    label: 'Adding missing techs from the seed roster',   run: async (op) => { const r = await seedMissingEmployees(op); return { newTechs: r.created, seedTotal: r.seedTotal }; } },
+    { key: 'contactInfo',     label: 'Filling demo contact/TIN on all techs',       run: async (op) => { const r = await seedDemoEmployeeContactInfo(op, { settings, updateSettings }); return { employeesFilled: r.patched, fieldsFilled: r.fieldsFilled, salonFilled: r.salonFilled }; } },
     { key: 'services',     label: 'Seeding service menu (Meraki catalog)',    run: async (op) => { const r = await seedDemoServices(op); return { servicesAdded: r.added, servicesTotal: r.total }; } },
     { key: 'products',     label: 'Seeding products',                         run: async (op) => { await seedProductCatalog(op); return { products: 25 }; } },
     { key: 'baseClients',  label: 'Seeding clients + appointments',           run: async (op) => { const r = await seedDemoData(op); return { clients: r.clients, appointments: r.appointments }; } },

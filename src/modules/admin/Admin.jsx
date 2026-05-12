@@ -1340,11 +1340,11 @@ function DemoSeedSection() {
     const cur = await fetchSeedState();
     const isResume = cur?.phase === 'running' || cur?.phase === 'failed';
     const completedCount = cur?.completedSteps?.length || 0;
-    const totalSteps = 11;
+    const totalSteps = 12;
 
     const prompt = isResume
       ? `Resume previous seed (paused at step ${completedCount + 1}/${totalSteps})? Already-completed steps will be skipped to avoid duplicates.`
-      : 'Populate the demo tenant with: 25 retail products · 1,000 clients · ~2,500 appointments · receipts · 6 promos · 1 membership plan + 20 members · 5 time-off · 8 reviews · 5 bonuses · 20 walk-ins · 3 campaigns · admin-as-tech + contact/TIN backfill. Takes 10–15 min. Continue?';
+      : 'Populate the demo tenant with: 25 retail products · 1,000 clients · ~2,500 appointments · receipts · 6 promos · 1 membership plan + 20 members · 5 time-off · 8 reviews · 5 bonuses · 20 walk-ins · 3 campaigns · admin-as-tech + missing techs from seed + contact/TIN/profile backfill. Takes 10–15 min. Continue?';
     if (!confirm(prompt)) return;
 
     setRunning(true); setPhase('idle'); setStatus(isResume ? 'Resuming previous seed…' : '');
