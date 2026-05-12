@@ -13,16 +13,29 @@ export default function TipFlow() {
   const [editIndex,      setEditIndex]        = useState(-1);
   const [authPending,    setAuthPending]      = useState(null);
   const [showAuth,       setShowAuth]         = useState(false);
+  const [isFullscreen,   setIsFullscreen]     = useState(false);
 
   const actionsTimer = useRef(null);
   const trackRef     = useRef(null);
   const swipeStart   = useRef(null);
 
-  // ── Actions panel ──────────────────────────────────────
+  // ── Fullscreen state mirroring (so the icon flips correctly) ──
+  useEffect(() => {
+    const sync = () => setIsFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', sync);
+    document.addEventListener('webkitfullscreenchange', sync);
+    sync();
+    return () => {
+      document.removeEventListener('fullscreenchange', sync);
+      document.removeEventListener('webkitfullscreenchange', sync);
+    };
+  }, []);
+
+  // ── Actions panel: 5s auto-hide after reveal ──────────
   const showActions = useCallback(() => {
     setActionsVisible(true);
     clearTimeout(actionsTimer.current);
-    actionsTimer.current = setTimeout(() => setActionsVisible(false), 3500);
+    actionsTimer.current = setTimeout(() => setActionsVisible(false), 5000);
   }, []);
   const hideActions = useCallback(() => { setActionsVisible(false); clearTimeout(actionsTimer.current); }, []);
   const toggleActions = useCallback(() => actionsVisible ? hideActions() : showActions(), [actionsVisible, showActions, hideActions]);
@@ -100,6 +113,28 @@ export default function TipFlow() {
 
   return (
     <>
+      {/* Top bar — Fullscreen on the left, tap anywhere to reveal action buttons */}
+      <div onClick={showActions}
+        style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', borderBottom: '1px solid #e8e8e8', background: '#fff', minHeight: 48, cursor: 'pointer', userSelect: 'none', zIndex: 2 }}>
+        <button className="btn-icon" onClick={(e) => { e.stopPropagation(); toggleFS(); }} title="Fullscreen"
+          style={{ background: 'none', border: '1px solid #e0e0e0', borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#333' }}>
+          {isFullscreen ? COL_ICON : EXP_ICON}
+        </button>
+
+        <div style={{
+          display: 'flex', gap: 6,
+          opacity: actionsVisible ? 1 : 0,
+          transform: actionsVisible ? 'translateY(0)' : 'translateY(-4px)',
+          pointerEvents: actionsVisible ? 'auto' : 'none',
+          transition: 'opacity .28s ease, transform .28s ease',
+        }}>
+          <ActionBtn onClick={handleDelete}>🗑 Delete</ActionBtn>
+          <ActionBtn onClick={handleEdit}>✎ Edit</ActionBtn>
+          <ActionBtn onClick={handleAdd}>+ Add</ActionBtn>
+          <ActionBtn onClick={handleSetDefault}>{isDefault ? '★ Default ✓' : '★ Default'}</ActionBtn>
+        </div>
+      </div>
+
       {/* Slider */}
       <div style={{ flex: 1, overflow: 'hidden', cursor: 'grab', userSelect: 'none', minHeight: 0 }}
            onMouseDown={onPointerDown} onMouseUp={onPointerUp}
@@ -115,19 +150,14 @@ export default function TipFlow() {
         </div>
       </div>
 
-      {/* Bottom nav */}
-      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px 16px', borderTop: '1px solid #e8e8e8', background: '#fff', zIndex: 2 }}>
+      {/* Bottom nav — prev / next only */}
+      <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, padding: '10px 16px', borderTop: '1px solid #e8e8e8', background: '#fff', zIndex: 2 }}>
         <button onClick={() => navigate(-1)} disabled={cur === 0 || !slides.length} style={circleBtn}>
           <svg width={13} height={13} viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M8.5 1.5l-4 5 4 5"/></svg>
         </button>
-
-        <div style={{ display: 'flex', gap: 5, opacity: actionsVisible ? 1 : 0, transform: actionsVisible ? 'translateY(0) scale(1)' : 'translateY(5px) scale(.95)', pointerEvents: actionsVisible ? 'auto' : 'none', transition: 'opacity .28s, transform .28s' }}>
-          <ActionBtn onClick={handleDelete}>🗑 Delete</ActionBtn>
-          <ActionBtn onClick={handleEdit}>✎ Edit</ActionBtn>
-          <ActionBtn onClick={handleAdd}>+ Add</ActionBtn>
-          <ActionBtn onClick={handleSetDefault}>{isDefault ? '★ Default ✓' : '★ Default'}</ActionBtn>
-        </div>
-
+        <span style={{ fontSize: 11, fontWeight: 500, color: '#888', minWidth: 44, textAlign: 'center' }}>
+          {slides.length ? `${cur + 1} / ${slides.length}` : '—'}
+        </span>
         <button onClick={() => navigate(1)} disabled={cur === slides.length - 1 || !slides.length} style={circleBtn}>
           <svg width={13} height={13} viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M4.5 1.5l4 5-4 5"/></svg>
         </button>
@@ -145,6 +175,9 @@ export default function TipFlow() {
   );
 }
 
+const EXP_ICON = <svg width={15} height={15} viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M1 5V2h3M11 2h3v3M14 10v3h-3M4 13H1v-3"/></svg>;
+const COL_ICON = <svg width={15} height={15} viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M4 1v3H1M11 1v3h3M11 14v-3h3M4 14v-3H1"/></svg>;
+
 function toggleFS() {
   const a = document.getElementById('deck-app');
   if (document.fullscreenElement || document.webkitFullscreenElement) {
@@ -158,7 +191,8 @@ const circleBtn = { width: 34, height: 34, borderRadius: '50%', padding: 0, disp
 
 function ActionBtn({ onClick, children }) {
   return (
-    <button onClick={onClick} style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 500, cursor: 'pointer', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, padding: '0 9px', height: 28, color: '#333' }}>
+    <button onClick={(e) => { e.stopPropagation(); onClick?.(e); }}
+      style={{ fontFamily: 'inherit', fontSize: 11, fontWeight: 500, cursor: 'pointer', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, padding: '0 9px', height: 28, color: '#333' }}>
       {children}
     </button>
   );

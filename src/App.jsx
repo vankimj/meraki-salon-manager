@@ -7,7 +7,6 @@ import Toast from './components/Toast';
 import ThemeProvider from './components/ThemeProvider';
 import HomeScreen from './components/HomeScreen';
 import ModuleShell from './components/ModuleShell';
-import Header from './components/Header';
 import TipFlow from './modules/tipflow/TipFlow';
 import Admin from './modules/admin/Admin';
 import ScheduleAdmin from './modules/schedule/ScheduleAdmin';
@@ -99,7 +98,7 @@ function MagicLinkPrompt() {
 }
 
 function AppShell({ initialView = 'home' }) {
-  const { slides, def, cur, magicLinkPending, handbookPending, isPortalUser, settings, updateSettings, isAdmin, gUser, pinPrompt, acceptPinPrompt, dismissPinPrompt } = useApp();
+  const { magicLinkPending, handbookPending, isPortalUser, settings, updateSettings, isAdmin, gUser, pinPrompt, acceptPinPrompt, dismissPinPrompt } = useApp();
 
   if (isPortalUser) return <ClientPortal />;
   const [view,      setViewState] = useState(initialView); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
@@ -195,16 +194,8 @@ function AppShell({ initialView = 'home' }) {
         />
       )}
 
-      {/* Tip Flow kiosk */}
-      {isTipFlow && (
-        <>
-          <Header
-            slides={slides} cur={cur} def={def}
-            onHome={() => setView('home')}
-          />
-          <TipFlow />
-        </>
-      )}
+      {/* Tip Flow kiosk — TipFlow renders its own minimal top bar (FS + tap-reveal actions). */}
+      {isTipFlow && <TipFlow />}
 
       {/* Management modules — defense-in-depth: a plan-locked module
           shouldn't render even if `view` somehow points at it (stale
