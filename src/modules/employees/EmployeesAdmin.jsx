@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
 import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
-import { seedDemoEmployeeContactInfo } from '../../data/seedDemo';
 import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
 import EmptyState from '../../components/EmptyState';
@@ -111,29 +110,7 @@ export default function EmployeesAdmin() {
     finally { setSeeding(false); }
   }
 
-  // Fully populate demo contact + TIN data on every employee. Idempotent —
-  // only fills empty fields; real values are preserved. Shared with
-  // seedFullDemo via seedDemoEmployeeContactInfo so the manual button and
-  // the bundled seed flow do the same work.
-  async function backfillContactInfo() {
-    if (!confirm('Fill in demo contact info + TIN on every employee, and set demo salon EIN/address. Real values are preserved.')) return;
-    setSeeding(true);
-    setEditing(null);  // close any open edit modal so it re-opens with fresh data
-    try {
-      const { patched, total, fieldsFilled, salonFilled } = await seedDemoEmployeeContactInfo(
-        null,
-        { settings, updateSettings }
-      );
-      logActivity('employees_contact_backfilled', `${patched}/${total} employees · ${fieldsFilled} fields · salon: ${salonFilled} fields`);
-      showToast(`Updated ${patched}/${total} employees · ${fieldsFilled} fields filled${salonFilled > 0 ? ' + salon defaults' : ''}`, 3500);
-      await load();
-    } catch (e) {
-      console.error('[Employees] backfill failed:', e);
-      showToast('Backfill failed — ' + (e.message || 'unknown'), 4000);
-    } finally { setSeeding(false); }
-  }
-
-  async function assignAllServicesToAll() {
+async function assignAllServicesToAll() {
     if (!confirm(`Mark every employee as able to perform all ${services.length} services? You can fine-tune individual techs after.`)) return;
     const allIds = services.map(s => s.id);
     try {
@@ -158,11 +135,6 @@ export default function EmployeesAdmin() {
         {employees.length === 0 && (
           <Btn onClick={seedEmployees} disabled={seeding} color="#f59e0b">
             {seeding ? 'Adding…' : '↺ Seed from defaults'}
-          </Btn>
-        )}
-        {employees.length > 0 && isAdmin && (
-          <Btn onClick={backfillContactInfo} disabled={seeding} color="#7c3aed">
-            {seeding ? 'Filling…' : '✚ Fill demo contact/TIN'}
           </Btn>
         )}
         <Btn color="#3D95CE" onClick={() => setEditing(blankEmployee())}>+ Add</Btn>
