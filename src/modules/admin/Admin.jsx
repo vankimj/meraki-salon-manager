@@ -17,7 +17,7 @@ import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK } from '../
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedFullDemo, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
-import { fetchSeedState } from '../../lib/firestore';
+import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ } from '../../lib/firestore';
 import FeedbackModal from '../../components/FeedbackModal';
 import NotificationsBell from '../../components/NotificationsBell';
 import CsvImportSection from '../../components/CsvImportSection';
@@ -72,6 +72,11 @@ export default function Admin({ onClose }) {
     { id: 'settings', label: 'Settings' },
     { id: 'webfront', label: 'Webfront' },
     { id: 'feedback', label: 'Feedback' },
+    // Trash exposes tombstone records (including deleted client names,
+    // deletion attribution). Admin-only — scheduler/readonly shouldn't
+    // see who deleted what. Server-side rules still enforce per-write,
+    // this is the UI-side narrowing.
+    ...(isAdmin ? [{ id: 'trash', label: '🗑 Trash' }] : []),
     { id: 'logs',     label: 'Logs'     },
   ];
 
@@ -232,6 +237,10 @@ export default function Admin({ onClose }) {
 
         {tab === 'feedback' && (
           <FeedbackTab items={feedback} onStatus={handleFeedbackStatus} onRefresh={loadFeedback} />
+        )}
+
+        {tab === 'trash' && (
+          <TrashTab />
         )}
 
         {tab === 'logs' && (
@@ -2403,5 +2412,109 @@ function PlanBadge({ p }) {
   const colors = { starter: ['#f0fdf4','#16a34a'], pro: ['#eff6ff','#2563eb'], enterprise: ['#faf5ff','#7c3aed'] };
   const [bg, c] = colors[p] || ['#f5f5f5','#888'];
   return <span style={{ background: bg, color: c, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase' }}>{p}</span>;
+}
+
+// ── Recently deleted / trash ─────────────────────────────────────────────
+// Lists every tombstone across the 15 soft-deleted collections, newest
+// first. Each row offers a Restore button:
+//   - BQ-mirrored collections (clients/appointments/receipts/employees)
+//     restore losslessly from BigQuery (forensic markers preserved).
+//   - Non-mirrored collections (services, promos, etc.) restore by
+//     clearing the _deleted tombstone fields directly. State is whatever
+//     was on the doc at deletion time.
+// Tombstones older than 30 days are purged by the purgeOldTombstones
+// cron; this UI only shows what's still alive in Firestore.
+function TrashTab() {
+  const { showToast } = useApp();
+  const [items,   setItems]   = useState(null);
+  const [busy,    setBusy]    = useState(false);
+
+  async function load() {
+    setItems(null);
+    try {
+      const list = await fetchRecentlyDeleted();
+      setItems(list);
+    } catch (e) {
+      console.error('[trash] load failed:', e);
+      setItems([]);
+      showToast('Failed to load trash: ' + (e?.message || 'unknown'), 4000);
+    }
+  }
+
+  useEffect(() => { load(); }, []); // eslint-disable-line
+
+  async function handleRestore(item) {
+    if (!window.confirm(`Restore this ${item.collection.replace(/s$/, '')}?`)) return;
+    setBusy(true);
+    try {
+      if (item.restorable) {
+        // BQ lossless restore — strips tombstone, writes forensic markers
+        const res = await restoreDocFromBQ(item.collection, item.id);
+        if (!res?.restored) throw new Error('Restore did not complete — see Cloud Function logs');
+      } else {
+        // Just un-tombstone in place (no BQ history for these collections)
+        await clearTombstone(item.collection, item.id);
+      }
+      showToast(`Restored from ${item.collection}`);
+      await load();
+    } catch (e) {
+      console.error('[trash] restore failed:', e);
+      showToast('Restore failed: ' + (e?.message || 'unknown'), 4000);
+    } finally { setBusy(false); }
+  }
+
+  function previewLabel(item) {
+    const c = item.collection;
+    if (c === 'clients' || c === 'employees') return item.name || '(no name)';
+    if (c === 'appointments') return `${item.date || '?'} ${item.startTime || ''} · ${item.clientName || '?'} w/ ${item.techName || '?'}`;
+    if (c === 'receipts') return `${item.date || '?'} · ${item.clientName || '?'} · $${(item.payment?.total || 0).toFixed(2)}`;
+    if (c === 'services' || c === 'products') return item.name || '(no name)';
+    if (c === 'giftCards') return `${item.code || '?'} · $${(item.originalAmount || item.balance || 0).toFixed(0)}`;
+    if (c === 'promoCodes') return `${item.code || '?'}`;
+    if (c === 'memberships') return `${item.clientName || '?'} · ${item.planId || ''}`;
+    if (c === 'membershipPlans') return item.name || '(no name)';
+    if (c === 'timeOff') return `${item.techName || '?'} · ${item.startDate || ''}–${item.endDate || item.startDate || ''}`;
+    if (c === 'bonuses') return `${item.techName || '?'} · $${item.amount || 0}`;
+    if (c === 'reviews') return `${item.techName || '?'} · ${item.period || ''}`;
+    if (c === 'meetings') return `${item.subject || '?'} · ${item.startTimestamp ? new Date(item.startTimestamp).toLocaleDateString() : ''}`;
+    if (c === 'campaigns') return `${item.subject || item.name || '?'}`;
+    return '(no preview)';
+  }
+
+  if (items === null) return <Empty>Loading trash…</Empty>;
+
+  return (
+    <Section title={`🗑 Recently deleted (${items.length})`} action={<Btn onClick={load}>Refresh</Btn>}>
+      <div style={{ padding: '10px 16px', fontSize: 12, color: '#666', lineHeight: 1.55, background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
+        Tombstones from the last 30 days. After 30 days the <code>purgeOldTombstones</code> cron permanently deletes them from Firestore — BigQuery still has a copy for the 4 mirrored collections (clients, appointments, receipts, employees) and the per-doc ⏳ History button can still recover them. Other collections are gone forever past 30 days.
+      </div>
+      {items.length === 0 ? (
+        <Empty>Nothing in the trash</Empty>
+      ) : (
+        items.map(item => (
+          <div key={`${item.collection}-${item.id}`}
+            style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#7f1d1d', background: '#fef2f2', padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase', flexShrink: 0, minWidth: 86, textAlign: 'center' }}>
+              {item.collection}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {previewLabel(item)}
+              </div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+                Deleted {item._deletedAt ? new Date(item._deletedAt).toLocaleString() : 'unknown time'}
+                {item._deletedBy ? ` by ${item._deletedBy}` : ''}
+                {!item.restorable && <span style={{ marginLeft: 6, color: '#92400e' }}>· no BQ history</span>}
+              </div>
+            </div>
+            <button onClick={() => handleRestore(item)} disabled={busy}
+              style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #16a34a', background: busy ? '#f0fdf4' : '#fff', color: '#16a34a', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, flexShrink: 0 }}>
+              {busy ? '…' : '↩ Restore'}
+            </button>
+          </div>
+        ))
+      )}
+    </Section>
+  );
 }
 

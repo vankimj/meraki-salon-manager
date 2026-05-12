@@ -47,6 +47,73 @@ export async function restoreDocFromBQ(collection, docId, snapshotTimestamp) {
   return res?.data || { restored: false };
 }
 
+// List recently soft-deleted records across every collection that uses the
+// tombstone pattern. Returns a flat array sorted by `_deletedAt` desc with
+// a `collection` field per row so the UI can group/render appropriately.
+// Per-collection query is `where('_deleted', '==', true)` — uses the
+// auto-maintained single-field index on `_deleted`, no composite needed.
+// Sorting + limiting happens client-side (small N, ~30 tombstones max per
+// collection given the 30-day cleanup cron).
+const SOFT_DELETED_COLLECTIONS = [
+  { key: 'clients',         col: () => CLIENTS_COL,          restorable: true  },
+  { key: 'appointments',    col: () => APPTS_COL,            restorable: true  },
+  { key: 'receipts',        col: () => RECEIPTS_COL,         restorable: true  },
+  { key: 'employees',       col: () => EMPLOYEES_COL,        restorable: true  },
+  // Below are NOT BigQuery-mirrored, so the per-doc BQ restore path won't
+  // work for them. They show in the list for visibility + can be undeleted
+  // via a separate tombstone-clear callable (added below).
+  { key: 'memberships',     col: () => MEMBERSHIPS_COL,      restorable: false },
+  { key: 'giftCards',       col: () => GIFT_CARDS_COL,       restorable: false },
+  { key: 'services',        col: () => SERVICES_COL,         restorable: false },
+  { key: 'bonuses',         col: () => BONUSES_COL,          restorable: false },
+  { key: 'membershipPlans', col: () => MEMBERSHIP_PLANS_COL, restorable: false },
+  { key: 'timeOff',         col: () => TIMEOFF_COL,          restorable: false },
+  { key: 'promoCodes',      col: () => PROMO_COL,            restorable: false },
+  { key: 'reviews',         col: () => REVIEWS_COL,          restorable: false },
+  { key: 'meetings',        col: () => MEETINGS_COL,         restorable: false },
+  { key: 'products',        col: () => PRODUCTS_COL,         restorable: false },
+  { key: 'campaigns',       col: () => CAMPAIGNS_COL,        restorable: false },
+];
+export async function fetchRecentlyDeleted({ maxPerCollection = 50 } = {}) {
+  const results = await Promise.all(SOFT_DELETED_COLLECTIONS.map(async ({ key, col, restorable }) => {
+    try {
+      const snap = await getDocs(query(col(), where('_deleted', '==', true), limit(maxPerCollection)));
+      return snap.docs.map(d => ({
+        id:          d.id,
+        collection:  key,
+        restorable,
+        ...d.data(),
+      }));
+    } catch (e) {
+      // Permission-denied / network / index-pending: skip this collection
+      // rather than aborting the whole list.
+      console.warn(`[fetchRecentlyDeleted] ${key} failed:`, e?.code || e?.message);
+      return [];
+    }
+  }));
+  const flat = results.flat();
+  // Newest deletions first
+  flat.sort((a, b) => (b._deletedAt || '').localeCompare(a._deletedAt || ''));
+  return flat;
+}
+
+// Clear a tombstone for non-BQ-mirrored collections — simply removes the
+// _deleted markers, bringing the doc back live. The "live" doc state
+// returned is whatever was on the tombstone (sans deletion fields).
+// Admin-only via Firestore rules. BQ-mirrored collections should use the
+// per-doc restoreDocFromBQ instead since that's lossless and forensic-marked.
+export async function clearTombstone(collection, docId) {
+  const colMap = Object.fromEntries(SOFT_DELETED_COLLECTIONS.map(s => [s.key, s.col]));
+  const getCol = colMap[collection];
+  if (!getCol) throw new Error(`Collection "${collection}" not in soft-delete allowlist`);
+  await updateDoc(doc(getCol(), docId), {
+    _deleted:   deleteField(),
+    _deletedAt: deleteField(),
+    _deletedBy: deleteField(),
+    _restoredAt: new Date().toISOString(),
+  });
+}
+
 // ── Refs ───────────────────────────────────────────────
 const SLIDES_REF      = tenantDoc('slides');
 const USERS_REF       = tenantDoc('users');     // slim projection (staff readable)
