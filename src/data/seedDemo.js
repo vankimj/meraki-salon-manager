@@ -15,12 +15,14 @@ import {
   createCampaign,
   fetchEmployeesWithComp, saveEmployee, fetchEmployees, createEmployee,
   fetchSeedState, saveSeedState, clearSeedState,
+  fetchServices, createService,
 } from '../lib/firestore';
 import { db } from '../lib/firebase';
 import { TENANT_ID } from '../lib/tenant';
 import { collection, getDocs, query, where, deleteDoc, doc } from 'firebase/firestore';
 import { seedProducts as seedProductCatalog } from './seedProducts';
 import { SEED_EMPLOYEES } from './seedEmployees';
+import { SEED_SERVICES }  from './seedServices';
 
 // ── Name pools ─────────────────────────────────────────
 const FIRST_NAMES = [
@@ -1546,6 +1548,42 @@ export async function seedDemoEmployeeContactInfo(onProgress, opts = {}) {
 // linked to this account" for the founder, and the web "My tech view"
 // toggle is dim — both real product features whose demo paths break without
 // an employee record matching the signed-in admin's email.
+// Seeds the Meraki canonical service catalog (16 services across
+// Manicures / Pedicures / Add-ons) into the tenant's services
+// collection. Idempotent: matches existing services by lowercased
+// name and skips any already on file. Real prices/descriptions
+// preserved — admin can still override per-service after seeding.
+//
+// Returns { added, skipped, total }. Useful for the toast/log so the
+// user knows whether anything was actually added vs the catalog was
+// already complete.
+export async function seedDemoServices(onProgress) {
+  const existing = await fetchServices();
+  const existingByName = new Set(
+    (existing || []).map(s => String(s.name || '').trim().toLowerCase()).filter(Boolean)
+  );
+  let added = 0;
+  let skipped = 0;
+  for (let i = 0; i < SEED_SERVICES.length; i++) {
+    const svc = SEED_SERVICES[i];
+    const key = String(svc.name || '').trim().toLowerCase();
+    if (existingByName.has(key)) { skipped++; continue; }
+    await createService({
+      ...svc,
+      // For backward compat with code paths that read `price` / `duration`
+      // on the service doc (vs `basePrice` / `duration` from seedServices),
+      // mirror basePrice into a `price` field too. seedServices uses
+      // basePrice for the from-pricing UX but downstream lookups expect
+      // both fields to be set.
+      price: svc.basePrice,
+      _demo: true,
+    });
+    added++;
+    onProgress?.(`Added service ${added}/${SEED_SERVICES.length}: ${svc.name}`);
+  }
+  return { added, skipped, total: SEED_SERVICES.length };
+}
+
 export async function seedAdminAsTechEmployee(gUser, onProgress) {
   if (!gUser?.email) return { created: false, reason: 'no_signed_in_user' };
   const emailLower = gUser.email.toLowerCase();
@@ -1605,6 +1643,7 @@ function seedSteps(opts) {
   return [
     { key: 'adminAsTech',  label: 'Ensuring admin-as-tech employee record',   run: async (op) => { const r = await seedAdminAsTechEmployee(gUser, op); return { adminAsTech: r.created ? 'created' : (r.employee ? 'already_existed' : 'skipped_no_user') }; } },
     { key: 'contactInfo',  label: 'Filling demo contact/TIN on all techs',    run: async (op) => { const r = await seedDemoEmployeeContactInfo(op, { settings, updateSettings }); return { employeesFilled: r.patched, fieldsFilled: r.fieldsFilled, salonFilled: r.salonFilled }; } },
+    { key: 'services',     label: 'Seeding service menu (Meraki catalog)',    run: async (op) => { const r = await seedDemoServices(op); return { servicesAdded: r.added, servicesTotal: r.total }; } },
     { key: 'products',     label: 'Seeding products',                         run: async (op) => { await seedProductCatalog(op); return { products: 25 }; } },
     { key: 'baseClients',  label: 'Seeding clients + appointments',           run: async (op) => { const r = await seedDemoData(op); return { clients: r.clients, appointments: r.appointments }; } },
     { key: 'receipts',     label: 'Backfilling receipts (services + retail)', run: async (op) => { const r = await backfillDemoTransactions(op); return { receipts: r.receipts, cancelled: r.cancelled, noShow: r.noShow, giftCardSales: r.giftCardSales || 0, productSales: r.productSales || 0 }; } },
