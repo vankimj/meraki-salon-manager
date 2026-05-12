@@ -4,7 +4,7 @@ import {
   subscribeTurnRoster, saveTurnRoster,
   subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, addToWaitlist,
   subscribeToAppointments, createAppointment,
-  fetchEmployees, fetchServices, fetchClient,
+  fetchEmployees, fetchServices, fetchClient, fetchClients, createClient,
 } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 
@@ -91,6 +91,7 @@ export default function WalkinKiosk() {
   const [appts, setAppts]     = useState([]);
   const [employees, setEmployees] = useState([]);
   const [services, setServices]   = useState([]);
+  const [clients, setClients]     = useState([]);
   const [showAdd, setShowAdd]   = useState(false);
   const [seatPrompt, setSeatPrompt] = useState(null); // { entry, techName }
   const [now, setNow] = useState(new Date());
@@ -124,7 +125,14 @@ export default function WalkinKiosk() {
   useEffect(() => {
     fetchEmployees().then(emps => setEmployees(emps.filter(e => e.active !== false))).catch(() => {});
     fetchServices().then(svcs => setServices(svcs.filter(s => s.active !== false))).catch(() => {});
+    fetchClients().then(setClients).catch(() => {});
   }, []);
+
+  // Refresh client list after a walk-in is added so a freshly-created
+  // client shows up in the picker on the next "Add walk-in" tap.
+  function refreshClients() {
+    fetchClients().then(setClients).catch(() => {});
+  }
 
   // Tick the clock every 30s for "waiting X min" displays
   useEffect(() => {
@@ -290,8 +298,9 @@ export default function WalkinKiosk() {
         <AddWalkinModal
           services={services}
           employees={employees}
+          clients={clients}
           onClose={() => setShowAdd(false)}
-          onAdded={() => setShowAdd(false)}
+          onAdded={() => { setShowAdd(false); refreshClients(); }}
         />
       )}
 
@@ -493,28 +502,83 @@ function RotationPanel({ roster, fullscreen }) {
   );
 }
 
-function AddWalkinModal({ services, employees, onClose, onAdded }) {
-  const [name, setName] = useState('');
+// Loose US phone format ((NNN) NNN-NNNN). Walk-ins are local — full
+// libphonenumber-style international parsing isn't needed here.
+function formatWalkInPhone(input) {
+  const digits = String(input || '').replace(/\D/g, '').slice(0, 10);
+  if (digits.length < 4) return digits;
+  if (digits.length < 7) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+}
+
+function AddWalkinModal({ services, employees, clients, onClose, onAdded }) {
+  // Existing-client picker state
+  const [clientId,    setClientId]    = useState('');
+  const [clientName,  setClientName]  = useState('');
+  const [clientPhone, setClientPhone] = useState('');
+  // New-client inline form (mirrors the appointment modal)
+  const [newOpen, setNewOpen]   = useState(false);
+  const [newName, setNewName]   = useState('');
+  const [newPhone, setNewPhone] = useState('');
+
   const [serviceName, setServiceName] = useState('');
-  const [techName, setTechName] = useState(''); // '' = Any
+  const [techName,    setTechName]    = useState('');
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState('');
+  const [err,    setErr]    = useState('');
   const today = todayStr();
+
+  function pickClient(c) {
+    setClientId(c.id);
+    setClientName(c.name);
+    setClientPhone(c.phone || '');
+    setNewOpen(false);
+  }
+  function clearClient() {
+    setClientId('');
+    setClientName('');
+    setClientPhone('');
+  }
 
   async function submit() {
     setErr('');
-    if (!name.trim()) { setErr('Name required'); return; }
-    setSaving(true);
+    let resolvedId    = clientId;
+    let resolvedName  = clientName.trim();
+    let resolvedPhone = clientPhone.trim();
+
+    // New client flow: validate, create, then add to waitlist.
+    if (newOpen) {
+      const n = newName.trim();
+      const p = newPhone.trim();
+      if (!n) { setErr('Name required'); return; }
+      if (!p) { setErr('Phone required for new client'); return; }
+      setSaving(true);
+      try {
+        resolvedId    = await createClient({ name: n, phone: p });
+        resolvedName  = n;
+        resolvedPhone = p;
+      } catch (e) {
+        setErr(e?.message || 'Could not create client');
+        setSaving(false);
+        return;
+      }
+    } else {
+      if (!resolvedId)   { setErr('Pick a client (or tap + New client)'); return; }
+      if (!resolvedName) { setErr('Name required'); return; }
+      setSaving(true);
+    }
+
     try {
       await addToWaitlist({
         date: today,
-        clientName: name.trim(),
+        clientId:    resolvedId,
+        clientName:  resolvedName,
+        clientPhone: resolvedPhone,
         serviceName: serviceName || '',
-        techName: techName || 'Any',
-        status: 'waiting',
-        createdAt: new Date().toISOString(),
+        techName:    techName || 'Any',
+        status:      'waiting',
+        createdAt:   new Date().toISOString(),
       });
-      logActivity('walkin_added', `${name.trim()} on waitlist (${serviceName || 'service tbd'})`);
+      logActivity('walkin_added', `${resolvedName} on waitlist (${serviceName || 'service tbd'})`);
       onAdded();
     } catch (e) {
       setErr(e?.message || 'Could not add');
@@ -526,12 +590,51 @@ function AddWalkinModal({ services, employees, onClose, onAdded }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 380, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 420, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Add walk-in</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <FieldRow label="Name">
-            <input autoFocus value={name} onChange={e => setName(e.target.value)} style={kioskInput} placeholder="Client name" />
-          </FieldRow>
+
+          {!newOpen && (
+            <FieldRow label="Client">
+              <ClientPicker
+                clients={clients}
+                clientId={clientId}
+                onSelect={pickClient}
+                onClear={clearClient}
+              />
+            </FieldRow>
+          )}
+
+          {!newOpen && !clientId && (
+            <button onClick={() => { setNewOpen(true); setNewName(''); setNewPhone(''); }}
+              style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+              + New client
+            </button>
+          )}
+
+          {newOpen && (
+            <div style={{ padding: 12, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ fontSize: 12, color: '#92400e', fontWeight: 700 }}>New client profile</div>
+                <button onClick={() => setNewOpen(false)}
+                  style={{ border: 'none', background: 'none', color: '#92400e', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+              </div>
+              <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+                placeholder="Full name *" style={{ ...kioskInput, marginBottom: 6 }} />
+              <input type="tel" inputMode="tel" value={newPhone}
+                onChange={e => setNewPhone(formatWalkInPhone(e.target.value))}
+                placeholder="Phone *  (614) 555-0123" style={kioskInput} />
+            </div>
+          )}
+
+          {clientId && (
+            <FieldRow label="Phone">
+              <input type="tel" inputMode="tel" value={clientPhone}
+                onChange={e => setClientPhone(formatWalkInPhone(e.target.value))}
+                placeholder="(614) 555-0123" style={kioskInput} />
+            </FieldRow>
+          )}
+
           <FieldRow label="Service">
             <select value={serviceName} onChange={e => setServiceName(e.target.value)} style={kioskInput}>
               <option value="">Pick service…</option>
@@ -557,6 +660,66 @@ function AddWalkinModal({ services, employees, onClose, onAdded }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ClientPicker({ clients, clientId, onSelect, onClear }) {
+  const [query, setQuery] = useState('');
+  const [open,  setOpen]  = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const selected = clients.find(c => c.id === clientId);
+
+  if (selected) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...kioskInput, paddingTop: 8, paddingBottom: 8, cursor: 'default' }}>
+        <span style={{ flex: 1, fontSize: 14, color: '#1a1a1a' }}>{selected.name}</span>
+        {selected.phone && <span style={{ fontSize: 11, color: '#aaa' }}>{selected.phone}</span>}
+        <button onClick={onClear} style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
+      </div>
+    );
+  }
+
+  const sortedAll = [...(clients || [])].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const filtered = query.length >= 1
+    ? sortedAll.filter(c => (c.name || '').toLowerCase().includes(query.toLowerCase()) || (c.phone || '').includes(query)).slice(0, 50)
+    : sortedAll.slice(0, 100);
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      <input
+        value={query}
+        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        placeholder="Search clients by name or phone…"
+        style={kioskInput}
+      />
+      {open && (
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: '#fff', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 220, maxHeight: 260, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '12px', fontSize: 12, color: '#888', textAlign: 'center' }}>
+              No matches{query ? ` for “${query}”` : ''}. Tap <strong style={{ color: '#92400e' }}>+ New client</strong> below.
+            </div>
+          ) : filtered.map(c => (
+            <div key={c.id} onMouseDown={() => { onSelect(c); setQuery(''); setOpen(false); }}
+              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f5f5f5' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              <span style={{ flex: 1 }}>{c.name}</span>
+              {c.phone && <span style={{ fontSize: 11, color: '#888' }}>{c.phone}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
