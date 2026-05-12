@@ -333,8 +333,58 @@ export async function createClient(data) {
   return ref.id;
 }
 
+// Bulk create N clients in batches of 450 (Firestore caps writeBatch at
+// 500; leave headroom for transient retries). Returns array of newly-
+// generated IDs in input order, so callers that need to reference them
+// (e.g. building appointments off freshly-created clients) can.
+// Used by the demo seeder — sequential addDoc was the main 15-minute
+// bottleneck (~80ms RTT × 1000 clients). One round trip per 450 docs.
+export async function createClientsBatch(arr, onProgress) {
+  if (!Array.isArray(arr) || arr.length === 0) return [];
+  const now = new Date().toISOString();
+  const SIZE = 450;
+  const ids = [];
+  for (let i = 0; i < arr.length; i += SIZE) {
+    const chunk = arr.slice(i, i + SIZE);
+    const batch = writeBatch(db);
+    for (const data of chunk) {
+      const ref = doc(CLIENTS_COL);
+      batch.set(ref, {
+        ...data,
+        visits: data.visits ?? [],
+        createdAt: data.createdAt || now,
+        updatedAt: now,
+      });
+      ids.push(ref.id);
+    }
+    await batch.commit();
+    onProgress?.(`Clients: ${ids.length.toLocaleString()} / ${arr.length.toLocaleString()}`);
+  }
+  return ids;
+}
+
 export async function saveClient(id, data) {
   await setDoc(doc(CLIENTS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// Bulk-update N clients in batches of 450. Caller supplies an array of
+// { id, data }. Used by demo backfills that touch many existing clients.
+export async function saveClientsBatch(updates, onProgress) {
+  if (!Array.isArray(updates) || updates.length === 0) return 0;
+  const now = new Date().toISOString();
+  const SIZE = 450;
+  let written = 0;
+  for (let i = 0; i < updates.length; i += SIZE) {
+    const chunk = updates.slice(i, i + SIZE);
+    const batch = writeBatch(db);
+    for (const { id, data } of chunk) {
+      batch.set(doc(CLIENTS_COL, id), { ...data, updatedAt: now }, { merge: true });
+    }
+    await batch.commit();
+    written += chunk.length;
+    onProgress?.(`Client updates: ${written.toLocaleString()} / ${updates.length.toLocaleString()}`);
+  }
+  return written;
 }
 
 export const deleteClient = (id, deletedBy) => softDelete(doc(CLIENTS_COL, id), deletedBy);
@@ -562,6 +612,51 @@ export async function createAppointment(data) {
     updatedAt: new Date().toISOString(),
   });
   return ref.id;
+}
+
+// Bulk create N appointments — see createClientsBatch for the rationale.
+// ~2,500 appointments × ~80ms sequential = 3+ min; batched = ~1 second.
+// Returns array of newly-generated IDs in input order.
+export async function createAppointmentsBatch(arr, onProgress) {
+  if (!Array.isArray(arr) || arr.length === 0) return [];
+  const now = new Date().toISOString();
+  const SIZE = 450;
+  const ids = [];
+  for (let i = 0; i < arr.length; i += SIZE) {
+    const chunk = arr.slice(i, i + SIZE);
+    const batch = writeBatch(db);
+    for (const data of chunk) {
+      const ref = doc(APPTS_COL);
+      batch.set(ref, {
+        ...data,
+        createdAt: data.createdAt || now,
+        updatedAt: now,
+      });
+      ids.push(ref.id);
+    }
+    await batch.commit();
+    onProgress?.(`Appointments: ${ids.length.toLocaleString()} / ${arr.length.toLocaleString()}`);
+  }
+  return ids;
+}
+
+// Bulk-update N appointments — same shape as saveClientsBatch.
+export async function saveAppointmentsBatch(updates, onProgress) {
+  if (!Array.isArray(updates) || updates.length === 0) return 0;
+  const now = new Date().toISOString();
+  const SIZE = 450;
+  let written = 0;
+  for (let i = 0; i < updates.length; i += SIZE) {
+    const chunk = updates.slice(i, i + SIZE);
+    const batch = writeBatch(db);
+    for (const { id, data } of chunk) {
+      batch.set(doc(APPTS_COL, id), { ...data, updatedAt: now }, { merge: true });
+    }
+    await batch.commit();
+    written += chunk.length;
+    onProgress?.(`Appointment updates: ${written.toLocaleString()} / ${updates.length.toLocaleString()}`);
+  }
+  return written;
 }
 
 export async function saveAppointment(id, data) {
@@ -926,6 +1021,28 @@ export async function createGiftCard(data) {
   return ref.id;
 }
 
+// Bulk-create N gift cards. Returns IDs in input order — receipt records
+// for the matching sale need to reference the gift card ID in
+// payment.giftCardsSold[].
+export async function createGiftCardsBatch(arr, onProgress) {
+  if (!Array.isArray(arr) || arr.length === 0) return [];
+  const now = new Date().toISOString();
+  const SIZE = 450;
+  const ids = [];
+  for (let i = 0; i < arr.length; i += SIZE) {
+    const chunk = arr.slice(i, i + SIZE);
+    const batch = writeBatch(db);
+    for (const data of chunk) {
+      const ref = doc(GIFT_CARDS_COL);
+      batch.set(ref, { ...data, createdAt: data.createdAt || now });
+      ids.push(ref.id);
+    }
+    await batch.commit();
+    onProgress?.(`Gift cards: ${ids.length.toLocaleString()} / ${arr.length.toLocaleString()}`);
+  }
+  return ids;
+}
+
 export async function fetchDemoGiftCards() {
   const snap = await getDocs(query(GIFT_CARDS_COL, where('_demo', '==', true)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1098,6 +1215,31 @@ export async function createReceipt(data) {
     ...data,
     createdAt: data.createdAt || new Date().toISOString(),
   });
+}
+
+// Bulk create N receipts. ~8,000 receipts × ~80ms = 11 min sequential;
+// batched ~3 sec. The biggest single line item in the seed run.
+export async function createReceiptsBatch(arr, onProgress) {
+  if (!Array.isArray(arr) || arr.length === 0) return 0;
+  const now = new Date().toISOString();
+  const SIZE = 450;
+  let written = 0;
+  for (let i = 0; i < arr.length; i += SIZE) {
+    const chunk = arr.slice(i, i + SIZE);
+    const batch = writeBatch(db);
+    for (const data of chunk) {
+      const ref = doc(RECEIPTS_COL);
+      batch.set(ref, {
+        sent: false,
+        ...data,
+        createdAt: data.createdAt || now,
+      });
+    }
+    await batch.commit();
+    written += chunk.length;
+    onProgress?.(`Receipts: ${written.toLocaleString()} / ${arr.length.toLocaleString()}`);
+  }
+  return written;
 }
 
 export async function fetchDemoReceipts() {

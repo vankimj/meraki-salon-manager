@@ -1,5 +1,7 @@
 import {
   createClient, createAppointment,
+  createClientsBatch, createAppointmentsBatch, createReceiptsBatch,
+  saveClientsBatch, saveAppointmentsBatch, createGiftCardsBatch,
   purgeClient, purgeAppointment,
   fetchDemoClients, fetchDemoAppointments,
   saveAppointment, saveClient, createReceipt,
@@ -926,27 +928,17 @@ export async function seedDemoData(onProgress) {
   const celebDefs  = generateCelebrities();
 
   onProgress?.(`Creating ${clientDefs.length} clients…`);
-  const clientRecords = [];
-  for (let i = 0; i < clientDefs.length; i++) {
-    const id = await createClient(clientDefs[i]);
-    clientRecords.push({ id, name: clientDefs[i].name, favoriteTech: clientDefs[i].favoriteTech || '' });
-    if ((i + 1) % 50 === 0) onProgress?.(`Clients: ${i + 1} / ${clientDefs.length}`);
-  }
+  const clientIds = await createClientsBatch(clientDefs, onProgress);
+  const clientRecords = clientDefs.map((c, i) => ({ id: clientIds[i], name: c.name, favoriteTech: c.favoriteTech || '' }));
 
   onProgress?.(`Creating ${celebDefs.length} celebrity clients…`);
-  const celebRecords = [];
-  for (let i = 0; i < celebDefs.length; i++) {
-    const id = await createClient(celebDefs[i]);
-    celebRecords.push({ id, name: celebDefs[i].name, favoriteTech: celebDefs[i].favoriteTech || '' });
-  }
+  const celebIds = await createClientsBatch(celebDefs, onProgress);
+  const celebRecords = celebDefs.map((c, i) => ({ id: celebIds[i], name: c.name, favoriteTech: c.favoriteTech || '' }));
 
   const allClients = [...clientRecords, ...celebRecords];
   const apptDefs   = buildAppointments(allClients, celebRecords);
   onProgress?.(`Creating ${apptDefs.length} appointments…`);
-  for (let i = 0; i < apptDefs.length; i++) {
-    await createAppointment(apptDefs[i]);
-    if ((i + 1) % 50 === 0) onProgress?.(`Appointments: ${i + 1} / ${apptDefs.length}`);
-  }
+  await createAppointmentsBatch(apptDefs, onProgress);
 
   onProgress?.('Done!');
   return { clients: clientRecords.length + celebRecords.length, appointments: apptDefs.length };
@@ -1006,10 +998,7 @@ export async function addFutureAppointments(onProgress) {
   }
 
   onProgress?.(`Creating ${appts.length} appointments…`);
-  for (let i = 0; i < appts.length; i++) {
-    await createAppointment(appts[i]);
-    if ((i + 1) % 20 === 0) onProgress?.(`Appointments: ${i + 1} / ${appts.length}`);
-  }
+  await createAppointmentsBatch(appts, onProgress);
 
   onProgress?.('Done!');
   return { appointments: appts.length };
@@ -1041,8 +1030,8 @@ export async function backfillDemoTransactions(onProgress) {
   onProgress?.('Assigning favorite techs to demo clients…');
   const demoClients = await fetchDemoClients().catch(() => []);
   const favTechByClient = new Map();
-  for (let i = 0; i < demoClients.length; i++) {
-    const c = demoClients[i];
+  const clientFavUpdates = [];
+  for (const c of demoClients) {
     if (typeof c.favoriteTech === 'string') {
       favTechByClient.set(c.id, c.favoriteTech || '');
       continue;
@@ -1052,39 +1041,35 @@ export async function backfillDemoTransactions(onProgress) {
       ? TECH_NAMES[Math.floor(Math.random() * TECH_NAMES.length)]
       : '';
     favTechByClient.set(c.id, fav);
-    try {
-      const { id, createdAt, ...data } = c;
-      await saveClient(id, { ...data, favoriteTech: fav });
-    } catch (e) { console.warn('[backfill fav]', c.id, e?.message || e); }
+    const { id, createdAt, ...data } = c;
+    clientFavUpdates.push({ id, data: { ...data, favoriteTech: fav } });
   }
+  await saveClientsBatch(clientFavUpdates, onProgress);
 
   // Pass 0b: re-stamp techRequestType on every demo appointment, this time
   // biasing toward the client's favorite tech so the calendar shows the
   // realistic ⭐ clustering ("regulars always see Yan W"). For clients with a
   // favorite, 70% of their appts are realigned to that tech as 'specific'.
   onProgress?.(`Re-aligning request types on ${all.length} appointments…`);
-  for (let i = 0; i < all.length; i++) {
-    const a = all[i];
-    try {
-      const fav = a.clientId ? favTechByClient.get(a.clientId) : '';
-      const update = { ...a };
-      if (fav) {
-        const r = Math.random();
-        if (r < 0.70) {
-          update.techRequestType = 'specific';
-          update.techName = fav;
-        } else if (r < 0.85) {
-          update.techRequestType = 'specific';
-        } else {
-          update.techRequestType = Math.random() < 0.5 ? 'auto' : 'scheduler';
-        }
+  const apptRtUpdates = all.map(a => {
+    const fav = a.clientId ? favTechByClient.get(a.clientId) : '';
+    const update = { ...a };
+    if (fav) {
+      const r = Math.random();
+      if (r < 0.70) {
+        update.techRequestType = 'specific';
+        update.techName = fav;
+      } else if (r < 0.85) {
+        update.techRequestType = 'specific';
       } else {
-        update.techRequestType = randomRequestType();
+        update.techRequestType = Math.random() < 0.5 ? 'auto' : 'scheduler';
       }
-      await saveAppointment(a.id, update);
-    } catch (e) { console.warn('[backfill rt]', a.id, e?.message || e); }
-    if ((i + 1) % 100 === 0) onProgress?.(`Re-aligned ${i + 1} / ${all.length}…`);
-  }
+    } else {
+      update.techRequestType = randomRequestType();
+    }
+    return { id: a.id, data: update };
+  });
+  await saveAppointmentsBatch(apptRtUpdates, onProgress);
 
   onProgress?.(`Backfilling ${candidates.length} appointments…`);
   const TAX_RATE   = 7.5;
@@ -1098,109 +1083,175 @@ export async function backfillDemoTransactions(onProgress) {
   ];
   const round2 = n => Math.round(n * 100) / 100;
 
+  // Pass 1: collect appointment updates + new receipts, then commit both
+  // in two big batched writes. Sequential addDoc/setDoc here used to be
+  // the dominant cost (~2000 status updates + ~1500 receipts = 3500
+  // round trips, ~5 min).
   let receiptCount = 0, cancelledCount = 0, noShowCount = 0;
-  for (let i = 0; i < candidates.length; i++) {
-    const a = candidates[i];
+  const apptStatusUpdates = [];
+  const receiptsToCreate  = [];
+  for (const a of candidates) {
     const roll = Math.random();
-    try {
-      if (roll < 0.10) {
-        // No-show
-        await saveAppointment(a.id, { ...a, status: 'no_show' });
-        noShowCount++;
-      } else if (roll < 0.25) {
-        // Cancelled
-        await saveAppointment(a.id, { ...a, status: 'cancelled' });
-        cancelledCount++;
-      } else {
-        // Done — build a payment + receipt
-        const subtotal   = (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
-        const tax        = round2(subtotal * TAX_RATE / 100);
-        const tipPct     = TIP_PCTS[Math.floor(Math.random() * TIP_PCTS.length)];
-        const tip        = round2(subtotal * tipPct / 100);
-        const total      = round2(subtotal + tax + tip);
-        const method     = METHODS[Math.floor(Math.random() * METHODS.length)];
-        const ccFee      = method === 'card' ? round2(total * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
-        const startISO   = `${a.date}T${(a.startTime || '12:00')}:00.000Z`;
-        const payment = {
-          subtotal, tax, taxRate: TAX_RATE,
-          discountAmount: 0, promoAmount: 0,
-          tip,
-          charged: total - tip, total,
-          method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
-          techSplit: null,
-          retailProducts: null,
-          giftCardsSold: null,
-          gcSalesTotal: 0,
-          apptIds: [a.id],
-          paidAt: startISO,
-          amountForThisAppt: subtotal,
-        };
-        await saveAppointment(a.id, { ...a, payment });
-        await createReceipt({
-          _demo: true,
-          clientId:    a.clientId || null,
-          clientName:  a.clientName || 'Walk-in',
-          clientEmail: null,
-          techName:    a.techName || '',
-          date:        a.date,
-          startTime:   a.startTime || '',
-          services:    (a.services || []).map(sv => ({ name: sv.name, price: sv.price, techName: a.techName })),
-          retailProducts: null,
-          giftCardsSold: null,
-          apptIds:     [a.id],
-          payment,
-        });
-        receiptCount++;
-      }
-    } catch (e) {
-      console.warn('[backfill]', a.id, e?.message || e);
+    if (roll < 0.10) {
+      apptStatusUpdates.push({ id: a.id, data: { ...a, status: 'no_show' } });
+      noShowCount++;
+    } else if (roll < 0.25) {
+      apptStatusUpdates.push({ id: a.id, data: { ...a, status: 'cancelled' } });
+      cancelledCount++;
+    } else {
+      const subtotal   = (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+      const tax        = round2(subtotal * TAX_RATE / 100);
+      const tipPct     = TIP_PCTS[Math.floor(Math.random() * TIP_PCTS.length)];
+      const tip        = round2(subtotal * tipPct / 100);
+      const total      = round2(subtotal + tax + tip);
+      const method     = METHODS[Math.floor(Math.random() * METHODS.length)];
+      const ccFee      = method === 'card' ? round2(total * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
+      const startISO   = `${a.date}T${(a.startTime || '12:00')}:00.000Z`;
+      const payment = {
+        subtotal, tax, taxRate: TAX_RATE,
+        discountAmount: 0, promoAmount: 0,
+        tip,
+        charged: total - tip, total,
+        method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
+        techSplit: null,
+        retailProducts: null,
+        giftCardsSold: null,
+        gcSalesTotal: 0,
+        apptIds: [a.id],
+        paidAt: startISO,
+        amountForThisAppt: subtotal,
+      };
+      apptStatusUpdates.push({ id: a.id, data: { ...a, payment } });
+      receiptsToCreate.push({
+        _demo: true,
+        clientId:    a.clientId || null,
+        clientName:  a.clientName || 'Walk-in',
+        clientEmail: null,
+        techName:    a.techName || '',
+        date:        a.date,
+        startTime:   a.startTime || '',
+        services:    (a.services || []).map(sv => ({ name: sv.name, price: sv.price, techName: a.techName })),
+        retailProducts: null,
+        giftCardsSold: null,
+        apptIds:     [a.id],
+        payment,
+      });
+      receiptCount++;
     }
-    if ((i + 1) % 50 === 0) onProgress?.(`Backfilled ${i + 1} / ${candidates.length}…`);
   }
+  onProgress?.(`Writing ${apptStatusUpdates.length} appointment updates + ${receiptsToCreate.length} receipts…`);
+  await saveAppointmentsBatch(apptStatusUpdates, onProgress);
+  await createReceiptsBatch(receiptsToCreate, onProgress);
 
   // ── Gift card sales ─────────────────────────────────
   // ~40 standalone sales spread over the past 12 months, no service / no tech,
-  // amounts $25/$50/$75/$100/$150/$200, paid mostly by card.
+  // amounts $25/$50/$75/$100/$150/$200, paid mostly by card. Two-phase
+  // batch: create gift cards (collect IDs), then create receipts that
+  // reference those IDs in payment.giftCardsSold[].
   const GC_AMOUNTS = [25, 50, 75, 100, 100, 150, 200];
   const GC_COUNT   = 40;
   const allClients = await fetchDemoClients().catch(() => []);
-  let gcSaleCount = 0;
-  onProgress?.('Seeding gift card sales…');
+  onProgress?.('Building gift card sales…');
+  const gcDefs    = [];
+  const gcContext = []; // parallel array: per-gc { buyer, code, amount, date, method, ccFee, payment-time }
   for (let g = 0; g < GC_COUNT; g++) {
-    try {
+    const daysAgo = 1 + Math.floor(Math.random() * 360);
+    const date    = offsetDate(today(), -daysAgo);
+    const amount  = GC_AMOUNTS[Math.floor(Math.random() * GC_AMOUNTS.length)];
+    const buyer   = allClients.length > 0 && Math.random() < 0.7
+      ? allClients[Math.floor(Math.random() * allClients.length)]
+      : null;
+    const code    = `MK-${randomCode(6)}`;
+    gcDefs.push({
+      _demo: true,
+      code,
+      balance: amount,
+      originalAmount: amount,
+      recipientName: buyer?.name || `Walk-in #${g + 1}`,
+      recipientEmail: null,
+      soldAt: `${date}T${randomTimeStr()}:00.000Z`,
+      soldVia: 'demo_seed',
+      active: true,
+    });
+    gcContext.push({ buyer, code, amount, date });
+  }
+  const gcIds = await createGiftCardsBatch(gcDefs, onProgress);
+  const gcReceipts = gcContext.map((ctx, i) => {
+    const { buyer, code, amount, date } = ctx;
+    const method = METHODS[Math.floor(Math.random() * METHODS.length)];
+    const ccFee  = method === 'card' ? round2(amount * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
+    const startISO = `${date}T${(randomTimeStr())}:00.000Z`;
+    const payment = {
+      subtotal: amount, tax: 0, taxRate: TAX_RATE,
+      discountAmount: 0, promoAmount: 0,
+      tip: 0, charged: amount, total: amount,
+      method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
+      techSplit: null, retailProducts: null,
+      gcSalesTotal: amount,
+      giftCardsSold: [{ id: gcIds[i], code, amount, recipientName: buyer?.name || null, recipientEmail: null }],
+      apptIds: [],
+      paidAt: startISO,
+    };
+    return {
+      _demo: true,
+      clientId: buyer?.id || null,
+      clientName: buyer?.name || 'Walk-in retail',
+      clientEmail: null,
+      techName: '',
+      date,
+      startTime: '',
+      services: [],
+      retailProducts: null,
+      giftCardsSold: payment.giftCardsSold,
+      apptIds: [],
+      payment,
+    };
+  });
+  await createReceiptsBatch(gcReceipts, onProgress);
+  const gcSaleCount = gcReceipts.length;
+
+  // ── Retail product sales ────────────────────────────
+  // ~50 standalone retail purchases (no service) across active products.
+  // Collect first, batch-commit at the end.
+  let productSaleCount = 0;
+  const products = await fetchProducts().catch(() => []);
+  const sellableProducts = products.filter(p => p.active !== false && (Number(p.price) || 0) > 0);
+  if (sellableProducts.length > 0) {
+    onProgress?.('Building retail product sales…');
+    const PRODUCT_SALE_COUNT = 50;
+    const retailReceipts = [];
+    for (let s = 0; s < PRODUCT_SALE_COUNT; s++) {
       const daysAgo = 1 + Math.floor(Math.random() * 360);
       const date    = offsetDate(today(), -daysAgo);
-      const amount  = GC_AMOUNTS[Math.floor(Math.random() * GC_AMOUNTS.length)];
-      const buyer   = allClients.length > 0 && Math.random() < 0.7
+      const lineCount = 1 + Math.floor(Math.random() * 3);
+      const lines = [];
+      for (let l = 0; l < lineCount; l++) {
+        const p   = sellableProducts[Math.floor(Math.random() * sellableProducts.length)];
+        const qty = 1 + Math.floor(Math.random() * 2);
+        if (lines.find(x => x.id === p.id)) continue;
+        lines.push({ id: p.id, name: p.name, price: Number(p.price) || 0, qty });
+      }
+      const subtotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
+      if (subtotal <= 0) continue;
+      const tax    = round2(subtotal * TAX_RATE / 100);
+      const total  = round2(subtotal + tax);
+      const method = METHODS[Math.floor(Math.random() * METHODS.length)];
+      const ccFee  = method === 'card' ? round2(total * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
+      const buyer  = allClients.length > 0 && Math.random() < 0.6
         ? allClients[Math.floor(Math.random() * allClients.length)]
         : null;
-      const code    = `MK-${randomCode(6)}`;
-      const giftCardId = await createGiftCard({
-        _demo: true,
-        code,
-        balance: amount,
-        originalAmount: amount,
-        recipientName: buyer?.name || `Walk-in #${g + 1}`,
-        recipientEmail: null,
-        soldAt: `${date}T${randomTimeStr()}:00.000Z`,
-        soldVia: 'demo_seed',
-        active: true,
-      });
-      const method = METHODS[Math.floor(Math.random() * METHODS.length)];
-      const ccFee  = method === 'card' ? round2(amount * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
-      const startISO = `${date}T${(randomTimeStr())}:00.000Z`;
+      const startISO = `${date}T${randomTimeStr()}:00.000Z`;
       const payment = {
-        subtotal: amount, tax: 0, taxRate: TAX_RATE,
+        subtotal, tax, taxRate: TAX_RATE,
         discountAmount: 0, promoAmount: 0,
-        tip: 0, charged: amount, total: amount,
+        tip: 0, charged: total, total,
         method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
-        techSplit: null, retailProducts: null,
-        gcSalesTotal: amount,
-        giftCardsSold: [{ id: giftCardId, code, amount, recipientName: buyer?.name || null, recipientEmail: null }],
+        techSplit: null, retailProducts: lines,
+        gcSalesTotal: 0, giftCardsSold: null,
         apptIds: [],
         paidAt: startISO,
       };
-      await createReceipt({
+      retailReceipts.push({
         _demo: true,
         clientId: buyer?.id || null,
         clientName: buyer?.name || 'Walk-in retail',
@@ -1209,77 +1260,14 @@ export async function backfillDemoTransactions(onProgress) {
         date,
         startTime: '',
         services: [],
-        retailProducts: null,
-        giftCardsSold: payment.giftCardsSold,
+        retailProducts: lines,
+        giftCardsSold: null,
         apptIds: [],
         payment,
       });
-      gcSaleCount++;
-    } catch (e) {
-      console.warn('[backfill gc]', e?.message || e);
     }
-  }
-
-  // ── Retail product sales ────────────────────────────
-  // ~50 standalone retail purchases (no service) across active products.
-  let productSaleCount = 0;
-  const products = await fetchProducts().catch(() => []);
-  const sellableProducts = products.filter(p => p.active !== false && (Number(p.price) || 0) > 0);
-  if (sellableProducts.length > 0) {
-    onProgress?.('Seeding retail product sales…');
-    const PRODUCT_SALE_COUNT = 50;
-    for (let s = 0; s < PRODUCT_SALE_COUNT; s++) {
-      try {
-        const daysAgo = 1 + Math.floor(Math.random() * 360);
-        const date    = offsetDate(today(), -daysAgo);
-        // 1-3 different products per ticket
-        const lineCount = 1 + Math.floor(Math.random() * 3);
-        const lines = [];
-        for (let l = 0; l < lineCount; l++) {
-          const p   = sellableProducts[Math.floor(Math.random() * sellableProducts.length)];
-          const qty = 1 + Math.floor(Math.random() * 2); // 1 or 2
-          if (lines.find(x => x.id === p.id)) continue;
-          lines.push({ id: p.id, name: p.name, price: Number(p.price) || 0, qty });
-        }
-        const subtotal = lines.reduce((sum, l) => sum + l.price * l.qty, 0);
-        if (subtotal <= 0) continue;
-        const tax    = round2(subtotal * TAX_RATE / 100);
-        const total  = round2(subtotal + tax);
-        const method = METHODS[Math.floor(Math.random() * METHODS.length)];
-        const ccFee  = method === 'card' ? round2(total * CC_FEE_PCT / 100 + CC_FEE_FLAT) : 0;
-        const buyer  = allClients.length > 0 && Math.random() < 0.6
-          ? allClients[Math.floor(Math.random() * allClients.length)]
-          : null;
-        const startISO = `${date}T${randomTimeStr()}:00.000Z`;
-        const payment = {
-          subtotal, tax, taxRate: TAX_RATE,
-          discountAmount: 0, promoAmount: 0,
-          tip: 0, charged: total, total,
-          method, ccFee, ccFeePct: CC_FEE_PCT, ccFeeFlat: CC_FEE_FLAT,
-          techSplit: null, retailProducts: lines,
-          gcSalesTotal: 0, giftCardsSold: null,
-          apptIds: [],
-          paidAt: startISO,
-        };
-        await createReceipt({
-          _demo: true,
-          clientId: buyer?.id || null,
-          clientName: buyer?.name || 'Walk-in retail',
-          clientEmail: null,
-          techName: '',
-          date,
-          startTime: '',
-          services: [],
-          retailProducts: lines,
-          giftCardsSold: null,
-          apptIds: [],
-          payment,
-        });
-        productSaleCount++;
-      } catch (e) {
-        console.warn('[backfill product]', e?.message || e);
-      }
-    }
+    await createReceiptsBatch(retailReceipts, onProgress);
+    productSaleCount = retailReceipts.length;
   }
 
   onProgress?.('Done!');
