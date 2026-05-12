@@ -7,11 +7,11 @@ import {
   saveAppointment, saveClient, createReceipt,
   fetchDemoReceipts, purgeReceipt,
   createGiftCard, fetchDemoGiftCards, purgeGiftCard,
-  fetchProducts, deleteProduct,
+  fetchProducts,
   createPromoCode, fetchPromoCodes,
   createMembership, createMembershipPlan, fetchMembershipPlans, fetchMemberships, purgeMembership, saveMembership,
-  createTimeOff, fetchTimeOff, deleteTimeOff,
-  createBonus, fetchBonuses, deleteBonus,
+  createTimeOff, fetchTimeOff,
+  createBonus, fetchBonuses,
   saveWebfrontConfig, fetchWebfrontConfig,
   addToWaitlist,
   createCampaign,
@@ -1500,9 +1500,12 @@ function generateDemoTin(i) {
   return `${a}-${b}-${c}`;
 }
 
-// Fills demo contact + TIN data on every existing employee. Idempotent:
-// only fills falsy/empty fields; real values are preserved. Optional
-// settings + updateSettings args also seed salon-level EIN/address.
+// Fills demo profile + contact + TIN data on every existing employee.
+// Idempotent: only fills falsy/empty fields; real values are preserved.
+// For seeded employees (matched by name), pulls photo / instagram /
+// facebook / venmo from SEED_EMPLOYEES. Non-seeded employees keep those
+// fields blank — they can be filled in-app. Optional settings +
+// updateSettings args also seed salon-level EIN/address.
 // Shared between EmployeesAdmin's "✚ Fill demo contact/TIN" button and
 // the seedFullDemo orchestrator so both routes do the same work.
 export async function seedDemoEmployeeContactInfo(onProgress, opts = {}) {
@@ -1517,13 +1520,17 @@ export async function seedDemoEmployeeContactInfo(onProgress, opts = {}) {
     const slug = (emp.name || `tech${i}`).toLowerCase().replace(/[^a-z0-9]+/g, '.').replace(/^\.|\.$/g, '');
 
     const candidates = {
-      phone:   seed.phone   || `(614) 555-${String(1000 + (i * 137) % 9000).padStart(4, '0')}`,
-      email:   seed.email   || `${slug || 'tech'}@example.com`,
-      address: seed.address || fb.address,
-      city:    seed.city    || fb.city,
-      state:   seed.state   || fb.state,
-      zip:     seed.zip     || fb.zip,
-      tin:     seed.tin     || generateDemoTin(i),
+      phone:     seed.phone     || `(614) 555-${String(1000 + (i * 137) % 9000).padStart(4, '0')}`,
+      email:     seed.email     || `${slug || 'tech'}@example.com`,
+      address:   seed.address   || fb.address,
+      city:      seed.city      || fb.city,
+      state:     seed.state     || fb.state,
+      zip:       seed.zip       || fb.zip,
+      tin:       seed.tin       || generateDemoTin(i),
+      photo:     seed.photo     || '',
+      instagram: seed.instagram || '',
+      facebook:  seed.facebook  || '',
+      venmo:     seed.venmo     || '',
     };
     const updates = {};
     Object.entries(candidates).forEach(([k, v]) => {

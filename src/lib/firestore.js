@@ -288,7 +288,7 @@ export async function fetchLogs(n = 100) {
 // ── Services ───────────────────────────────────────────
 export async function fetchServices() {
   const snap = await getDocs(query(SERVICES_COL, orderBy('sortOrder')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function saveService(id, data) {
@@ -306,7 +306,8 @@ export async function createService(data) {
   return ref.id;
 }
 
-export const deleteService = (id) => deleteDoc(doc(SERVICES_COL, id));
+export const deleteService = (id, deletedBy) => softDelete(doc(SERVICES_COL, id), deletedBy);
+export const purgeService  = (id) => deleteDoc(doc(SERVICES_COL, id));
 
 // ── Clients ────────────────────────────────────────────
 const CLIENTS_COL = tenantCol('clients');
@@ -481,7 +482,7 @@ export async function fetchEmployees() {
   // Booking page, schedule, walk-in kiosk all use this — they don't need
   // comp data. Compensation views call fetchEmployeesWithComp instead.
   const snap = await getDocs(query(EMPLOYEES_COL, orderBy('sortOrder')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 // Admin-only. Fetches the public doc + the private/comp sub-doc per
@@ -490,7 +491,7 @@ export async function fetchEmployees() {
 // at their original paths. Falls through gracefully on permission denial.
 export async function fetchEmployeesWithComp() {
   const snap = await getDocs(query(EMPLOYEES_COL, orderBy('sortOrder')));
-  const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
   await Promise.all(list.map(async emp => {
     try {
       const compSnap = await getDoc(empPrivateRef(emp.id));
@@ -537,7 +538,8 @@ export async function createEmployee(data) {
   return ref.id;
 }
 
-export const deleteEmployee = (id) => deleteDoc(doc(EMPLOYEES_COL, id));
+export const deleteEmployee = (id, deletedBy) => softDelete(doc(EMPLOYEES_COL, id), deletedBy);
+export const purgeEmployee  = (id) => deleteDoc(doc(EMPLOYEES_COL, id));
 
 export async function employeesExist() {
   const snap = await getDocs(query(EMPLOYEES_COL, limit(1)));
@@ -840,7 +842,7 @@ const BONUSES_COL = tenantCol('bonuses');
 
 export async function fetchBonuses() {
   const snap = await getDocs(query(BONUSES_COL, orderBy('createdAt', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function createBonus(data) {
@@ -848,7 +850,8 @@ export async function createBonus(data) {
   return ref.id;
 }
 
-export const deleteBonus = (id) => deleteDoc(doc(BONUSES_COL, id));
+export const deleteBonus = (id, deletedBy) => softDelete(doc(BONUSES_COL, id), deletedBy);
+export const purgeBonus  = (id) => deleteDoc(doc(BONUSES_COL, id));
 
 // ── Payroll runs ───────────────────────────────────────
 const PAYROLL_COL = tenantCol('payrollRuns');
@@ -885,11 +888,13 @@ const MEMBERSHIPS_COL      = tenantCol('memberships');
 export async function fetchMembershipPlans() {
   const snap = await getDocs(MEMBERSHIP_PLANS_COL);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
     .sort((a, b) => (a.price || 0) - (b.price || 0));
 }
 export function subscribeMembershipPlans(cb) {
   return onSnapshot(MEMBERSHIP_PLANS_COL, snap => {
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(notTombstoned)
       .sort((a, b) => (a.price || 0) - (b.price || 0));
     cb(list);
   });
@@ -906,7 +911,10 @@ export async function createMembershipPlan(data) {
 export async function saveMembershipPlan(id, data) {
   await setDoc(doc(MEMBERSHIP_PLANS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
-export async function deleteMembershipPlan(id) {
+export async function deleteMembershipPlan(id, deletedBy) {
+  await softDelete(doc(MEMBERSHIP_PLANS_COL, id), deletedBy);
+}
+export async function purgeMembershipPlan(id) {
   await deleteDoc(doc(MEMBERSHIP_PLANS_COL, id));
 }
 
@@ -958,12 +966,14 @@ const TIMEOFF_COL = tenantCol('timeOff');
 export async function fetchTimeOff() {
   const snap = await getDocs(TIMEOFF_COL);
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
     .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
 }
 
 export function subscribeTimeOff(cb) {
   return onSnapshot(TIMEOFF_COL, snap => {
     const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(notTombstoned)
       .sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
     cb(list);
   });
@@ -982,7 +992,10 @@ export async function updateTimeOff(id, data) {
   await setDoc(doc(TIMEOFF_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
-export async function deleteTimeOff(id) {
+export async function deleteTimeOff(id, deletedBy) {
+  await softDelete(doc(TIMEOFF_COL, id), deletedBy);
+}
+export async function purgeTimeOff(id) {
   await deleteDoc(doc(TIMEOFF_COL, id));
 }
 
@@ -1060,14 +1073,15 @@ const PROMO_COL = tenantCol('promoCodes');
 
 export async function fetchPromoCodes() {
   const snap = await getDocs(PROMO_COL);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function fetchPromoByCode(code) {
   const snap = await getDocs(query(PROMO_COL, where('code', '==', code.trim().toUpperCase())));
   if (snap.empty) return null;
   const d = snap.docs[0];
-  return { id: d.id, ...d.data() };
+  const data = { id: d.id, ...d.data() };
+  return notTombstoned(data) ? data : null;
 }
 
 export async function createPromoCode(data) {
@@ -1079,7 +1093,8 @@ export async function savePromoCode(id, data) {
   await updateDoc(doc(PROMO_COL, id), { ...data, updatedAt: new Date().toISOString() });
 }
 
-export const deletePromoCode = (id) => deleteDoc(doc(PROMO_COL, id));
+export const deletePromoCode = (id, deletedBy) => softDelete(doc(PROMO_COL, id), deletedBy);
+export const purgePromoCode  = (id) => deleteDoc(doc(PROMO_COL, id));
 
 // ── Feedback ───────────────────────────────────────────
 const FEEDBACK_COL = tenantCol('feedback');
@@ -1103,7 +1118,7 @@ const REVIEWS_COL = tenantCol('reviews');
 
 export async function fetchReviews() {
   const snap = await getDocs(query(REVIEWS_COL, orderBy('createdAt', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function saveReview(id, data) {
@@ -1116,7 +1131,8 @@ export async function saveReview(id, data) {
   return ref.id;
 }
 
-export const deleteReview = (id) => deleteDoc(doc(REVIEWS_COL, id));
+export const deleteReview = (id, deletedBy) => softDelete(doc(REVIEWS_COL, id), deletedBy);
+export const purgeReview  = (id) => deleteDoc(doc(REVIEWS_COL, id));
 
 // ── User preferences (per-uid, e.g. tech overlay) ─────
 const USER_PREFS_COL = tenantCol('userPrefs');
@@ -1162,7 +1178,7 @@ const MEETINGS_COL = tenantCol('meetings');
 
 export async function fetchMeetings() {
   const snap = await getDocs(query(MEETINGS_COL, orderBy('startTimestamp', 'asc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function createMeeting(data) {
@@ -1179,7 +1195,10 @@ export async function updateMeeting(id, data) {
   await updateDoc(doc(MEETINGS_COL, id), { ...data, updatedAt: new Date().toISOString() });
 }
 
-export async function deleteMeeting(id) {
+export async function deleteMeeting(id, deletedBy) {
+  await softDelete(doc(MEETINGS_COL, id), deletedBy);
+}
+export async function purgeMeeting(id) {
   await deleteDoc(doc(MEETINGS_COL, id));
 }
 
@@ -1910,7 +1929,7 @@ const PRODUCTS_COL = tenantCol('products');
 
 export async function fetchProducts() {
   const snap = await getDocs(query(PRODUCTS_COL, orderBy('name')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 export async function saveProduct(id, data) {
@@ -1921,7 +1940,10 @@ export async function createProduct(data) {
   await addDoc(PRODUCTS_COL, { ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
 }
 
-export async function deleteProduct(id) {
+export async function deleteProduct(id, deletedBy) {
+  await softDelete(doc(PRODUCTS_COL, id), deletedBy);
+}
+export async function purgeProduct(id) {
   await deleteDoc(doc(PRODUCTS_COL, id));
 }
 
@@ -1930,21 +1952,24 @@ const CAMPAIGNS_COL = tenantCol('campaigns');
 
 export async function fetchCampaigns() {
   const snap = await getDocs(query(CAMPAIGNS_COL, orderBy('createdAt', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 // Real-time subscription so the UI sees status='pending' → 'sent' updates
 // from sendSMSCampaign without a manual reload. Returns unsubscribe.
 export function subscribeToCampaigns(cb) {
   const q = query(CAMPAIGNS_COL, orderBy('createdAt', 'desc'));
-  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+  return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)));
 }
 
 export async function createCampaign(data) {
   await addDoc(CAMPAIGNS_COL, { ...data, createdAt: new Date().toISOString() });
 }
 
-export async function deleteCampaign(id) {
+export async function deleteCampaign(id, deletedBy) {
+  return softDelete(doc(CAMPAIGNS_COL, id), deletedBy);
+}
+export async function purgeCampaign(id) {
   return deleteDoc(doc(CAMPAIGNS_COL, id));
 }
 

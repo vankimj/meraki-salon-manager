@@ -67,7 +67,8 @@
     }
   ],
   "firestore": {
-    "rules": "firestore.rules"
+    "rules":   "firestore.rules",
+    "indexes": "firestore.indexes.json"
   },
   "extensions": {
     "fs-bq-clients":      "firebase/firestore-bigquery-export@0.3.1",

@@ -6213,7 +6213,13 @@ exports.purgeOldTombstones = onSchedule(
 
     await forEachActiveTenant('PurgeTombstones', async (tenantId) => {
       const db = getFirestore();
-      for (const coll of ['clients', 'appointments', 'receipts', 'memberships', 'giftCards']) {
+      for (const coll of [
+        // Original 5 (commit d44a170)
+        'clients', 'appointments', 'receipts', 'memberships', 'giftCards',
+        // Smaller collections added in the wider soft-delete pass
+        'services', 'employees', 'bonuses', 'membershipPlans', 'timeOff',
+        'promoCodes', 'reviews', 'meetings', 'products', 'campaigns',
+      ]) {
         try {
           const snap = await db.collection(`tenants/${tenantId}/${coll}`)
             .where('_deleted', '==', true)

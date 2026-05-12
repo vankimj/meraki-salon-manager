@@ -1,0 +1,24 @@
+{
+  "// indexes": "Composite indexes Firestore can't derive automatically. Auto-discovered missing ones fail at query time with FAILED_PRECONDITION: ...create_composite=... — copy that URL into a comment and add an entry here so it deploys via firebase deploy --only firestore:indexes instead of getting created ad-hoc in Console.",
+  "indexes": [
+    {
+      "//": "purgeOldTombstones cron — needs (_deleted == true) AND (_deletedAt < cutoff) per soft-deleted customer-data collection",
+      "collectionGroup": "clients",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]
+    },
+    {"collectionGroup": "appointments",     "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "receipts",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "memberships",      "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "giftCards",        "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "services",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "employees",        "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "bonuses",          "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "membershipPlans",  "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "timeOff",          "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "promoCodes",       "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "reviews",          "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "meetings",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "products",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "campaigns",        "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]}
+  ],
+  "fieldOverrides": []
+}

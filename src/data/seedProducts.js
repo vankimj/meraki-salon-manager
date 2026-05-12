@@ -1,4 +1,4 @@
-import { createProduct, fetchProducts, deleteProduct } from '../lib/firestore';
+import { createProduct, fetchProducts, purgeProduct } from '../lib/firestore';
 
 // picsum.photos/seed/{slug}/200/200 gives a stable deterministic image for each product
 function img(slug) {
@@ -210,7 +210,7 @@ export async function clearSeedProducts(onProgress) {
   const demo = all.filter(p => p._demo === true);
   onProgress?.(`Removing ${demo.length} demo products…`);
   for (const p of demo) {
-    await deleteProduct(p.id);
+    await purgeProduct(p.id);
   }
   return demo.length;
 }
