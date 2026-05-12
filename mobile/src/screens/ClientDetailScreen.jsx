@@ -202,9 +202,25 @@ function Field({ label, value, onChange, editing, multiline, rows, placeholder, 
       <View style={styles.viewRow}>
         <Text style={styles.fieldLabel}>{label}</Text>
         {tel ? (
-          <TouchableOpacity onPress={() => Linking.openURL(`tel:${value.replace(/[^0-9+]/g,'')}`)}>
-            <Text style={[styles.fieldValue, styles.linkText]}>{value}</Text>
-          </TouchableOpacity>
+          <View>
+            <Text style={styles.fieldValue}>{value}</Text>
+            <View style={styles.contactBtnRow}>
+              <TouchableOpacity
+                style={styles.contactBtn}
+                onPress={() => Linking.openURL(`tel:${value}`).catch(() => {})}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.contactBtnText}>📞 Call</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.contactBtn}
+                onPress={() => Linking.openURL(`sms:${value}`).catch(() => {})}
+                activeOpacity={0.6}
+              >
+                <Text style={styles.contactBtnText}>💬 Text</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
         ) : mail ? (
           <TouchableOpacity onPress={() => Linking.openURL(`mailto:${value}`)}>
             <Text style={[styles.fieldValue, styles.linkText]}>{value}</Text>
@@ -268,6 +284,9 @@ const styles = StyleSheet.create({
   fieldLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', marginBottom: 4 },
   fieldValue: { fontSize: 14, color: '#1a1a1a' },
   linkText:   { color: '#3D95CE', textDecorationLine: 'underline' },
+  contactBtnRow:  { flexDirection: 'row', gap: 8, marginTop: 8 },
+  contactBtn:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14, backgroundColor: '#EBF4FB', borderWidth: 1, borderColor: '#3D95CE' },
+  contactBtnText: { fontSize: 13, fontWeight: '700', color: '#1a5f8a' },
   editInput:  { fontSize: 14, color: '#1a1a1a', padding: 0 },
 
   visitCard:  { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
