@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
+import { TENANT_ID } from '../../lib/tenant';
 import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
 import { useApp } from '../../context/AppContext';
@@ -31,6 +32,7 @@ export default function EmployeesAdmin() {
   const [services,  setServices]  = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [editing,   setEditing]   = useState(null);
+  const [viewing,   setViewing]   = useState(null);
   const [seeding,   setSeeding]   = useState(false);
 
   useEffect(() => { load(); }, []);
@@ -89,7 +91,7 @@ export default function EmployeesAdmin() {
     try {
       const { httpsCallable } = await import('firebase/functions');
       const { functions } = await import('../../lib/firebase');
-      await httpsCallable(functions, 'emailEmployeeInvite')({ employeeId: emp.id });
+      await httpsCallable(functions, 'emailEmployeeInvite')({ tenantId: TENANT_ID, employeeId: emp.id });
       logActivity('employee_invite_sent', `${emp.name} → ${emp.email}`);
       showToast(`Invite sent to ${emp.email}`);
       // Optimistic update so the badge flips locally
@@ -158,6 +160,7 @@ async function assignAllServicesToAll() {
               emp={emp}
               totalServices={services.length}
               last={i === employees.length - 1}
+              onView={() => setViewing({ ...emp })}
               onEdit={() => setEditing({ ...emp })}
               onDelete={() => handleDelete(emp)}
               onToggleActive={() => handleToggleActive(emp)}
@@ -177,19 +180,39 @@ async function assignAllServicesToAll() {
           onClose={() => setEditing(null)}
         />
       )}
+      {viewing && (
+        <EmployeeModal
+          viewOnly
+          emp={viewing}
+          services={services}
+          isAdmin={isAdmin}
+          onChange={() => {}}
+          onSave={() => {}}
+          onClose={() => setViewing(null)}
+          onSwitchToEdit={() => { setEditing({ ...viewing }); setViewing(null); }}
+        />
+      )}
     </div>
   );
 }
 
-function EmployeeRow({ emp, totalServices, last, onEdit, onDelete, onToggleActive, onSendInvite }) {
+function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onToggleActive, onSendInvite }) {
   const svcCount = emp.serviceIds?.length || 0;
   const svcConfigured = svcCount > 0;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid #f0f0f0', opacity: emp.active ? 1 : .5 }}>
-      <EmpAvatar emp={emp} size={40} />
+      <button onClick={onView}
+        title="View profile"
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
+        <EmpAvatar emp={emp} size={40} />
+      </button>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>
-          {emp.name}
+          <button onClick={onView}
+            title="View profile"
+            style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}>
+            {emp.name}
+          </button>
           {!emp.active && <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6, fontWeight: 400 }}>inactive</span>}
           {totalServices > 0 && (
             <span title={svcConfigured ? `Performs ${svcCount} of ${totalServices} services` : 'No services configured — defaults to all services'}
@@ -225,7 +248,7 @@ function EmployeeRow({ emp, totalServices, last, onEdit, onDelete, onToggleActiv
   );
 }
 
-function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose }) {
+function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, viewOnly = false, onSwitchToEdit }) {
   const { showToast } = useApp();
   const [tab,    setTab]    = useState('profile');
   const [saving, setSaving] = useState(false);
@@ -263,7 +286,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose }) {
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
-          <span style={{ fontSize: 15, fontWeight: 600 }}>{isNew ? 'New Employee' : 'Edit Employee'}</span>
+          <span style={{ fontSize: 15, fontWeight: 600 }}>{isNew ? 'New Employee' : viewOnly ? (emp.name || 'Employee') : 'Edit Employee'}</span>
           <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
 
@@ -276,15 +299,18 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose }) {
           ))}
         </div>
 
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 18px' }}>
+        {/* Body — `fieldset disabled` flips every nested input/select/textarea/
+            button into the readOnly variant in one line, so view-mode doesn't
+            require touching each form control. Tab buttons live OUTSIDE the
+            fieldset so the user can still switch tabs while viewing. */}
+        <fieldset disabled={viewOnly} style={{ flex: 1, overflowY: 'auto', padding: '14px 18px', border: 'none', margin: 0, minWidth: 0 }}>
 
           {/* ── Profile ── */}
           {tab === 'profile' && (
             <>
               <div style={{ display: 'flex', gap: 14, marginBottom: 14, alignItems: 'flex-start' }}>
                 <div style={{ flexShrink: 0 }}>
-                  <div onClick={() => fileRef.current?.click()} style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: '#f0f0f0', cursor: 'pointer', border: '2px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div onClick={viewOnly ? undefined : () => fileRef.current?.click()} style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: '#f0f0f0', cursor: viewOnly ? 'default' : 'pointer', border: '2px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {emp.photo
                       ? <img src={emp.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <EmpAvatar emp={emp} size={72} />
@@ -512,15 +538,29 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose }) {
               ))}
             </>
           )}
-        </div>
+        </fieldset>
 
         {/* Footer */}
         <div style={{ padding: '12px 18px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, flexShrink: 0 }}>
-          <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Cancel</button>
-          <button onClick={submit} disabled={saving || !emp.name?.trim()}
-            style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE', opacity: (saving || !emp.name?.trim()) ? .6 : 1 }}>
-            {saving ? 'Saving…' : isNew ? 'Add Employee' : 'Save'}
-          </button>
+          {viewOnly ? (
+            <>
+              <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Close</button>
+              {onSwitchToEdit && (
+                <button onClick={onSwitchToEdit}
+                  style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE' }}>
+                  Edit
+                </button>
+              )}
+            </>
+          ) : (
+            <>
+              <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Cancel</button>
+              <button onClick={submit} disabled={saving || !emp.name?.trim()}
+                style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE', opacity: (saving || !emp.name?.trim()) ? .6 : 1 }}>
+                {saving ? 'Saving…' : isNew ? 'Add Employee' : 'Save'}
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
