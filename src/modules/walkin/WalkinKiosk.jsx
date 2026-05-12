@@ -279,9 +279,23 @@ export default function WalkinKiosk() {
             onAdd={() => setShowAdd(true)}
             onSeat={(entry) => setSeatPrompt({ entry, techName: next?.techName })}
             onRemove={async (entry) => {
-              if (!confirm(`Remove ${entry.clientName} from waitlist?`)) return;
-              await removeWaitlistEntry(entry.id).catch(() => {});
-              logActivity('walkin_removed', `${entry.clientName} removed from waitlist`);
+              if (!confirm(`Remove ${entry.clientName || 'walk-in'} from waitlist?`)) return;
+              // Cancel rather than hard-delete: the existing `waiting`
+              // filter excludes status='cancelled' so the row disappears
+              // from the panel, and we keep a row in the collection for
+              // audit / analytics. Falls back to deleteDoc if the update
+              // ever fails (e.g. doc was already removed by a sibling).
+              try {
+                await updateWaitlistEntry(entry.id, { status: 'cancelled', cancelledAt: new Date().toISOString() });
+                logActivity('walkin_removed', `${entry.clientName || 'walk-in'} cancelled from waitlist`);
+              } catch (e) {
+                try {
+                  await removeWaitlistEntry(entry.id);
+                  logActivity('walkin_removed', `${entry.clientName || 'walk-in'} removed from waitlist`);
+                } catch (e2) {
+                  showToast(`Could not remove: ${e2?.message || e?.message || 'unknown error'}`, 5000);
+                }
+              }
             }}
             fullscreen={fullscreen}
           />
