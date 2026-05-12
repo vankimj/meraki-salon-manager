@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, Image,
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Linking, ActionSheetIOS,
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Linking, ActionSheetIOS, Modal,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
