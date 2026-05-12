@@ -9,6 +9,7 @@ import { auth } from '../lib/firebase';
 import { saveEmployee } from '../lib/firestore';
 import { clearPushTokenForUser } from '../hooks/usePushRegistration';
 import { clearCurrentTenant } from '../lib/currentTenant';
+import { getPrefs, setTheme, setAutoLogoutMin, subscribePrefs } from '../lib/userPrefs';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import useMyTenants from '../hooks/useMyTenants';
 
@@ -20,6 +21,8 @@ export default function ProfileScreen({ navigation }) {
   const [editing, setEditing] = useState(false);
   const [saving,  setSaving]  = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [prefs, setPrefs] = useState(getPrefs());
+  useEffect(() => subscribePrefs(setPrefs), []);
 
   useEffect(() => {
     if (employee) setDraft(employee);
@@ -132,6 +135,104 @@ export default function ProfileScreen({ navigation }) {
       setUploadingPhoto(false);
     }
   }, [employee?.id]);
+
+  // ── Settings sheet pickers ────────────────────────────
+  // Each one shows an iOS action sheet (with Android Alert fallback)
+  // listing the options. Picking a row applies immediately — no save
+  // confirmation, since each is a single setting and the change is
+  // visible in the row's right-aligned label.
+
+  function pickFromSheet({ title, options, currentLabel, onPick }) {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title, options: ['Cancel', ...options.map(o => o.label + (o.label === currentLabel ? '  ✓' : ''))], cancelButtonIndex: 0 },
+        (idx) => { if (idx > 0) onPick(options[idx - 1].value); },
+      );
+    } else {
+      Alert.alert(title, undefined, [
+        ...options.map(o => ({ text: o.label, onPress: () => onPick(o.value) })),
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  }
+
+  function pickTheme() {
+    pickFromSheet({
+      title: 'Theme',
+      options: [
+        { label: 'System (auto)', value: 'system' },
+        { label: 'Light',         value: 'light' },
+        { label: 'Dark',          value: 'dark' },
+      ],
+      currentLabel: prefs.theme === 'dark' ? 'Dark' : prefs.theme === 'light' ? 'Light' : 'System (auto)',
+      onPick: setTheme,
+    });
+  }
+
+  function pickAutoLogout() {
+    pickFromSheet({
+      title: 'Auto sign-out after inactivity',
+      options: [
+        { label: 'Off',         value: 0 },
+        { label: '5 minutes',   value: 5 },
+        { label: '15 minutes',  value: 15 },
+        { label: '30 minutes',  value: 30 },
+        { label: '1 hour',      value: 60 },
+      ],
+      currentLabel: prefs.autoLogoutMin === 0 ? 'Off'
+        : prefs.autoLogoutMin === 60 ? '1 hour'
+        : `${prefs.autoLogoutMin} minutes`,
+      onPick: setAutoLogoutMin,
+    });
+  }
+
+  // Notification preferences live on the employee doc (shared with web's
+  // tech-reminder system). Three independent fields:
+  //   techReminderOptOut      — master toggle (true = no appt reminders)
+  //   techReminderLeadMinutes — how far ahead to send (15 default)
+  //   techReminderChannel     — 'email' | 'sms' | 'push' | 'all' etc.
+  async function setNotifPref(patch) {
+    if (!employee?.id) return;
+    try {
+      await saveEmployee(employee.id, patch);
+      setDraft(d => ({ ...(d || {}), ...patch }));
+    } catch (e) {
+      Alert.alert('Couldn\'t save', e?.message || 'Try again.');
+    }
+  }
+  function pickNotifLead() {
+    pickFromSheet({
+      title: 'Send reminder this far ahead',
+      options: [
+        { label: '5 minutes',   value: 5 },
+        { label: '15 minutes',  value: 15 },
+        { label: '30 minutes',  value: 30 },
+        { label: '1 hour',      value: 60 },
+      ],
+      currentLabel: `${(draft?.techReminderLeadMinutes || employee?.techReminderLeadMinutes || 15)} minutes`,
+      onPick: (v) => setNotifPref({ techReminderLeadMinutes: v }),
+    });
+  }
+  function pickNotifChannel() {
+    const labels = { email: 'Email', sms: 'SMS', push: 'Push', 'email+push': 'Email + Push', 'email+sms': 'Email + SMS', all: 'All channels' };
+    const cur = draft?.techReminderChannel || employee?.techReminderChannel || 'email';
+    pickFromSheet({
+      title: 'Reminder delivery',
+      options: [
+        { label: 'Push only',     value: 'push' },
+        { label: 'Email only',    value: 'email' },
+        { label: 'SMS only',      value: 'sms' },
+        { label: 'Email + Push',  value: 'email+push' },
+        { label: 'All channels',  value: 'all' },
+      ],
+      currentLabel: labels[cur] || cur,
+      onPick: (v) => setNotifPref({ techReminderChannel: v }),
+    });
+  }
+  function toggleNotifOptOut() {
+    const next = !(draft?.techReminderOptOut ?? employee?.techReminderOptOut ?? false);
+    setNotifPref({ techReminderOptOut: next });
+  }
 
   function presentPhotoOptions() {
     if (!employee?.id) return;   // no-op if no employee record
@@ -266,13 +367,51 @@ export default function ProfileScreen({ navigation }) {
           </View>
         )}
 
-        <View style={{ marginTop: 18 }}>
-          <Text style={styles.sectionLabel}>Settings</Text>
-          <View style={styles.cardRow}>
-            <Text style={styles.settingsBody}>
-              Notification preferences, theme, auto-logout — coming soon.
-            </Text>
+        {/* Notifications — only show when an employee record exists,
+            since the prefs live on that doc. */}
+        {employee?.id && (
+          <View style={{ marginTop: 18 }}>
+            <Text style={styles.sectionLabel}>Notifications</Text>
+            <SettingRow
+              label="Appointment reminders"
+              value={(draft?.techReminderOptOut ?? employee?.techReminderOptOut) ? 'Off' : 'On'}
+              onPress={toggleNotifOptOut}
+            />
+            {!(draft?.techReminderOptOut ?? employee?.techReminderOptOut) && (
+              <>
+                <SettingRow
+                  label="Send reminder ahead"
+                  value={`${draft?.techReminderLeadMinutes || employee?.techReminderLeadMinutes || 15} min`}
+                  onPress={pickNotifLead}
+                />
+                <SettingRow
+                  label="Delivery channel"
+                  value={(() => {
+                    const v = draft?.techReminderChannel || employee?.techReminderChannel || 'email';
+                    const map = { email: 'Email', sms: 'SMS', push: 'Push', 'email+push': 'Email + Push', 'email+sms': 'Email + SMS', all: 'All channels' };
+                    return map[v] || v;
+                  })()}
+                  onPress={pickNotifChannel}
+                />
+              </>
+            )}
           </View>
+        )}
+
+        <View style={{ marginTop: 18 }}>
+          <Text style={styles.sectionLabel}>Appearance & security</Text>
+          <SettingRow
+            label="Theme"
+            value={prefs.theme === 'dark' ? 'Dark' : prefs.theme === 'light' ? 'Light' : 'System'}
+            onPress={pickTheme}
+          />
+          <SettingRow
+            label="Auto sign-out"
+            value={prefs.autoLogoutMin === 0 ? 'Off'
+              : prefs.autoLogoutMin === 60 ? '1 hour'
+              : `${prefs.autoLogoutMin} min`}
+            onPress={pickAutoLogout}
+          />
         </View>
 
         <TouchableOpacity style={styles.signOutBtn} onPress={handleSignOut}>
@@ -280,6 +419,21 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
+  );
+}
+
+// One row in the Settings list — shows a label on the left + the
+// current value on the right, tap to open a sheet picker. Same pattern
+// as iOS native Settings.
+function SettingRow({ label, value, onPress }) {
+  return (
+    <TouchableOpacity onPress={onPress} style={styles.settingRow} activeOpacity={0.6}>
+      <Text style={styles.settingRowLabel}>{label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <Text style={styles.settingRowValue}>{value}</Text>
+        <Text style={styles.settingRowChevron}>›</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -349,6 +503,11 @@ const styles = StyleSheet.create({
 
   cardRow:      { backgroundColor: '#fff', borderRadius: 12, padding: 16 },
   settingsBody: { fontSize: 13, color: '#888', lineHeight: 19 },
+
+  settingRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', paddingVertical: 14, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
+  settingRowLabel:   { fontSize: 14, color: '#1a1a1a', fontWeight: '500' },
+  settingRowValue:   { fontSize: 14, color: '#888', fontWeight: '500' },
+  settingRowChevron: { fontSize: 20, color: '#cbd0d6', lineHeight: 22 },
 
   tenantRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
   tenantRowActive: { backgroundColor: '#f0faf6', borderWidth: 1, borderColor: '#2D7A5F' },
