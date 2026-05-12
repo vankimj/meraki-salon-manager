@@ -188,6 +188,16 @@ export async function loadAll() {
   };
 }
 
+// Integrity report — written by the runIntegrityScan cron each night,
+// read by the Admin UI to render a green/yellow/red health badge.
+// Returns null if no scan has run yet (first 24h after deploy).
+export async function fetchIntegrityReport() {
+  try {
+    const snap = await getDoc(tenantDoc('integrityReport'));
+    return snap.exists() ? snap.data() : null;
+  } catch (_) { return null; }
+}
+
 // Self-heal: rebuild data/usersFull when the rich array doc has gone
 // missing (or empty) but the slim projection is intact. Two-tier recovery:
 //

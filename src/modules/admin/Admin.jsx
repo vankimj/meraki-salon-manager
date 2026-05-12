@@ -17,7 +17,7 @@ import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK } from '../
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedFullDemo, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
-import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ } from '../../lib/firestore';
+import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ, fetchIntegrityReport } from '../../lib/firestore';
 import FeedbackModal from '../../components/FeedbackModal';
 import NotificationsBell from '../../components/NotificationsBell';
 import CsvImportSection from '../../components/CsvImportSection';
@@ -145,6 +145,7 @@ export default function Admin({ onClose }) {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: { syncing: '#f59e0b', ok: '#22c55e', err: '#ef4444', idle: '#ddd' }[syncState] || '#ddd', transition: 'background .3s', animation: syncState === 'syncing' ? 'pulse .8s infinite' : 'none', marginRight: 2 }} />
+          {isAdmin && <IntegrityBadge onJumpToTrash={() => setTab('trash')} />}
           <button onClick={() => setShowFeedback(true)}
             style={{ height: 40, borderRadius: 20, border: 'none', background: '#EBF5FF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 600, color: '#1a5f8a', fontFamily: 'inherit' }}>
             <span style={{ fontSize: 15 }}>💬</span> Feedback
@@ -2407,6 +2408,120 @@ function UpgradeSection({ settings, gUser }) {
 
 // ── Tenant management (super-admin only) ─────────────────────────────────────
 const PLANS = ['starter', 'pro', 'enterprise'];
+
+// ── Integrity badge ──────────────────────────────────────────────────────
+// Reads tenants/{id}/data/integrityReport (written nightly by the
+// runIntegrityScan cron) and renders green/yellow/red. Click for details.
+// Read-only — admin can't fake a green badge (rules deny client writes).
+function IntegrityBadge({ onJumpToTrash }) {
+  const [report,   setReport]   = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [open,     setOpen]     = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchIntegrityReport()
+      .then(r => { if (!cancelled) { setReport(r); setLoading(false); } })
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading) return null;
+
+  const overall = report?.overall || 'gray';
+  const colors = {
+    green:  { bg: '#f0fdf4', fg: '#16a34a', label: '✓' },
+    yellow: { bg: '#fffbeb', fg: '#b45309', label: '⚠' },
+    red:    { bg: '#fef2f2', fg: '#dc2626', label: '⚠' },
+    gray:   { bg: '#f5f5f5', fg: '#888',    label: '?' },
+  };
+  const c = colors[overall] || colors.gray;
+  const title = report
+    ? `Integrity: ${overall.toUpperCase()} (last scan ${new Date(report.ranAt).toLocaleString()})`
+    : 'Integrity: no scan yet (runs nightly)';
+
+  return (
+    <>
+      <button onClick={() => setOpen(true)} title={title}
+        style={{ height: 28, padding: '0 9px', borderRadius: 14, border: `1px solid ${c.fg}33`, background: c.bg, color: c.fg, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
+        {c.label} health
+      </button>
+      {open && (
+        <IntegrityReportModal report={report} onClose={() => setOpen(false)} onJumpToTrash={onJumpToTrash} />
+      )}
+    </>
+  );
+}
+
+function IntegrityReportModal({ report, onClose, onJumpToTrash }) {
+  if (!report) {
+    return (
+      <div onClick={onClose}
+        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div onClick={e => e.stopPropagation()}
+          style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 480, padding: 24 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Integrity report</div>
+          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.5 }}>
+            No scan has run yet. The <code>runIntegrityScan</code> cron runs nightly at 4am ET and writes a report doc the next morning.
+          </div>
+          <button onClick={onClose} style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
+        </div>
+      </div>
+    );
+  }
+  const checks = report.checks || {};
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '85vh', overflow: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Integrity report — {report.overall?.toUpperCase()}</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Scanned {new Date(report.ranAt).toLocaleString()}</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#888' }}>×</button>
+        </div>
+        <div style={{ padding: '12px 20px' }}>
+          <IntegrityCheckRow name="data/usersFull sync" check={checks.usersFullSync} renderDetail={c => `${c.staffEmails} staff in slim projection, ${c.usersFullStaff} in rich array`} />
+          <IntegrityCheckRow name="Orphaned appointments" check={checks.orphanedAppointments} renderDetail={c => `${c.orphaned}/${c.total} (${c.pct}%) reference missing clients`} sampleKey="apptId" />
+          <IntegrityCheckRow name="Orphaned receipts" check={checks.orphanedReceipts} renderDetail={c => `${c.orphaned}/${c.total} (${c.pct}%) reference missing appointments`} sampleKey="receiptId" />
+          <IntegrityCheckRow name="Employees without comp" check={checks.employeesWithoutComp} renderDetail={c => `${c.missing}/${c.total} (${c.pct}%) active employees missing tax/payroll info`} sampleKey="name" />
+          <IntegrityCheckRow name="Stale tombstones" check={checks.staleTombstones} renderDetail={c => c.total === 0 ? 'All purged on schedule' : `${c.total} tombstones older than 35 days — purge cron may not be running`} />
+          <div style={{ marginTop: 16, padding: 10, fontSize: 11, color: '#666', background: '#fafafa', borderRadius: 8, lineHeight: 1.55 }}>
+            For specific deleted records, use the <button onClick={() => { onClose(); onJumpToTrash?.(); }} style={{ background: 'none', border: 'none', color: '#3D95CE', cursor: 'pointer', padding: 0, font: 'inherit' }}>Trash tab</button> or each detail view's ⏳ History button. Scanner runs nightly at 4am ET.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IntegrityCheckRow({ name, check, renderDetail, sampleKey }) {
+  if (!check) return null;
+  const colors = {
+    green:  { bg: '#f0fdf4', fg: '#16a34a' },
+    yellow: { bg: '#fffbeb', fg: '#b45309' },
+    red:    { bg: '#fef2f2', fg: '#dc2626' },
+  };
+  const c = colors[check.status] || colors.green;
+  return (
+    <div style={{ padding: '10px 12px', marginBottom: 8, background: c.bg, borderRadius: 8, border: `1px solid ${c.fg}33` }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{name}</div>
+        <div style={{ fontSize: 11, fontWeight: 700, color: c.fg, textTransform: 'uppercase' }}>{check.status}</div>
+      </div>
+      <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>
+        {check.error ? `Error: ${check.error}` : (renderDetail ? renderDetail(check) : JSON.stringify(check))}
+      </div>
+      {check.sample && check.sample.length > 0 && (
+        <div style={{ fontSize: 10, color: '#888', marginTop: 4, fontFamily: 'monospace' }}>
+          Sample: {check.sample.slice(0, 5).map(s => sampleKey ? s[sampleKey] : s.apptId || s.receiptId || s.empId || s.name).filter(Boolean).join(', ')}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function PlanBadge({ p }) {
   const colors = { starter: ['#f0fdf4','#16a34a'], pro: ['#eff6ff','#2563eb'], enterprise: ['#faf5ff','#7c3aed'] };

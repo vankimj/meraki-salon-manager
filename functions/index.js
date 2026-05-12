@@ -6241,3 +6241,168 @@ exports.purgeOldTombstones = onSchedule(
     console.log(`[PurgeTombstones] complete — ${totalPurged} tombstones purged`);
   }
 );
+
+// ── Integrity scanner ────────────────────────────────────────────────────────
+// Nightly sanity scan across each tenant, writing a report doc that the
+// Admin UI reads to show a green/yellow/red health badge. Catches the
+// silent-corruption shape of the May 10 users incident, plus a handful of
+// other "did the assumption break" invariants.
+//
+// Checks (all per-tenant):
+//   - usersFullSync: data/users.staffEmails.length === data/usersFull.users.length.
+//     Mismatch = red (this is the exact shape of the May 10 incident).
+//   - orphanedAppointments: appointments with clientId pointing to a
+//     non-existent client (excluding walk-ins where clientId is empty).
+//     >1% = yellow, >5% = red.
+//   - orphanedReceipts: receipts with apptIds referencing non-existent
+//     appointments. Same thresholds.
+//   - employeesWithoutComp: active employees without a private/comp doc.
+//     >0 = yellow (might just not be filled out), >50% = red (payroll
+//     would break).
+//   - staleTombstones: any _deleted doc older than 35 days (purge cron
+//     should have removed them). Any = yellow (cron not firing).
+//
+// Writes tenants/{tenantId}/data/integrityReport. UI reads this on admin
+// load and renders a badge. Empty/missing doc = "never scanned" (gray).
+exports.runIntegrityScan = onSchedule(
+  { schedule: 'every day 04:00', timeZone: 'America/New_York', timeoutSeconds: 540 },
+  async () => {
+    await forEachActiveTenant('IntegrityScan', async (tenantId) => {
+      const db = getFirestore();
+      const checks = {};
+      const sampleSize = 5;
+
+      // 1. usersFull sync
+      try {
+        const [usersSnap, usersFullSnap] = await Promise.all([
+          db.doc(`tenants/${tenantId}/data/users`).get(),
+          db.doc(`tenants/${tenantId}/data/usersFull`).get(),
+        ]);
+        const staffEmails = (usersSnap.exists ? (usersSnap.data().staffEmails || []) : []);
+        const usersFull   = (usersFullSnap.exists ? (usersFullSnap.data().users || []) : []);
+        // staffEmails excludes pending/denied, usersFull includes everyone.
+        // Compare staffEmail count to (usersFull where role is staff).
+        const STAFF_ROLES = new Set(['admin', 'readonly', 'tech', 'scheduler']);
+        const usersFullStaff = usersFull.filter(u => u && STAFF_ROLES.has(u.role));
+        const match = staffEmails.length === usersFullStaff.length;
+        checks.usersFullSync = {
+          status: match ? 'green' : 'red',
+          staffEmails: staffEmails.length,
+          usersFullStaff: usersFullStaff.length,
+        };
+      } catch (e) {
+        checks.usersFullSync = { status: 'red', error: e?.message || 'failed' };
+      }
+
+      // 2. Orphaned appointments (clientId references missing client, non-walk-in only)
+      try {
+        const [apptsSnap, clientsSnap] = await Promise.all([
+          db.collection(`tenants/${tenantId}/appointments`).get(),
+          db.collection(`tenants/${tenantId}/clients`).get(),
+        ]);
+        const clientIds = new Set(clientsSnap.docs.map(d => d.id));
+        const orphans = [];
+        let total = 0;
+        for (const d of apptsSnap.docs) {
+          const a = d.data();
+          if (a._deleted) continue;
+          if (!a.clientId) continue; // walk-in
+          total++;
+          if (!clientIds.has(a.clientId)) {
+            orphans.push({ apptId: d.id, clientId: a.clientId, clientName: a.clientName || null, date: a.date || null });
+          }
+        }
+        const pct = total > 0 ? (orphans.length / total) * 100 : 0;
+        const status = pct > 5 ? 'red' : pct > 1 ? 'yellow' : 'green';
+        checks.orphanedAppointments = { status, total, orphaned: orphans.length, pct: Number(pct.toFixed(2)), sample: orphans.slice(0, sampleSize) };
+      } catch (e) {
+        checks.orphanedAppointments = { status: 'red', error: e?.message || 'failed' };
+      }
+
+      // 3. Orphaned receipts (apptIds reference missing appointments)
+      try {
+        const [receiptsSnap, apptsSnap2] = await Promise.all([
+          db.collection(`tenants/${tenantId}/receipts`).get(),
+          db.collection(`tenants/${tenantId}/appointments`).get(),
+        ]);
+        const apptIdSet = new Set(apptsSnap2.docs.map(d => d.id));
+        const orphans = [];
+        let total = 0;
+        for (const d of receiptsSnap.docs) {
+          const r = d.data();
+          if (r._deleted) continue;
+          const refs = r.apptIds || [];
+          if (refs.length === 0) continue; // standalone (gift card sale, retail-only)
+          total++;
+          const missing = refs.filter(id => !apptIdSet.has(id));
+          if (missing.length > 0) {
+            orphans.push({ receiptId: d.id, date: r.date || null, clientName: r.clientName || null, missingApptIds: missing });
+          }
+        }
+        const pct = total > 0 ? (orphans.length / total) * 100 : 0;
+        const status = pct > 5 ? 'red' : pct > 1 ? 'yellow' : 'green';
+        checks.orphanedReceipts = { status, total, orphaned: orphans.length, pct: Number(pct.toFixed(2)), sample: orphans.slice(0, sampleSize) };
+      } catch (e) {
+        checks.orphanedReceipts = { status: 'red', error: e?.message || 'failed' };
+      }
+
+      // 4. Active employees without comp
+      try {
+        const empSnap = await db.collection(`tenants/${tenantId}/employees`).get();
+        const active = empSnap.docs.filter(d => {
+          const e = d.data();
+          return !e._deleted && e.active !== false;
+        });
+        const compSnaps = await Promise.all(active.map(d =>
+          db.doc(`tenants/${tenantId}/employees/${d.id}/private/comp`).get().catch(() => null)
+        ));
+        const missing = [];
+        compSnaps.forEach((cs, i) => {
+          if (!cs || !cs.exists) missing.push({ empId: active[i].id, name: active[i].data().name || null });
+        });
+        const pct = active.length > 0 ? (missing.length / active.length) * 100 : 0;
+        const status = pct > 50 ? 'red' : missing.length > 0 ? 'yellow' : 'green';
+        checks.employeesWithoutComp = { status, total: active.length, missing: missing.length, pct: Number(pct.toFixed(2)), sample: missing.slice(0, sampleSize) };
+      } catch (e) {
+        checks.employeesWithoutComp = { status: 'red', error: e?.message || 'failed' };
+      }
+
+      // 5. Stale tombstones (purge cron not firing)
+      try {
+        const TOMBSTONE_TTL_DAYS = 30;
+        const staleCutoff = new Date(Date.now() - (TOMBSTONE_TTL_DAYS + 5) * 86400000).toISOString();
+        const colNames = ['clients', 'appointments', 'receipts', 'memberships', 'giftCards',
+                          'services', 'employees', 'bonuses', 'membershipPlans', 'timeOff',
+                          'promoCodes', 'reviews', 'meetings', 'products', 'campaigns'];
+        let staleTotal = 0;
+        for (const coll of colNames) {
+          try {
+            const snap = await db.collection(`tenants/${tenantId}/${coll}`)
+              .where('_deleted', '==', true)
+              .where('_deletedAt', '<', staleCutoff)
+              .limit(50)
+              .get();
+            staleTotal += snap.size;
+          } catch (_) { /* index missing or empty — skip */ }
+        }
+        const status = staleTotal === 0 ? 'green' : 'yellow';
+        checks.staleTombstones = { status, total: staleTotal };
+      } catch (e) {
+        checks.staleTombstones = { status: 'red', error: e?.message || 'failed' };
+      }
+
+      // Overall: max severity across all checks
+      const severities = Object.values(checks).map(c => c.status || 'green');
+      const overall = severities.includes('red') ? 'red'
+                    : severities.includes('yellow') ? 'yellow'
+                    : 'green';
+
+      await db.doc(`tenants/${tenantId}/data/integrityReport`).set({
+        ranAt: new Date().toISOString(),
+        overall,
+        checks,
+      });
+      console.log(`[IntegrityScan] tenant=${tenantId} overall=${overall}`);
+    });
+  }
+);

@@ -137,6 +137,14 @@ service cloud.firestore {
       match /data/seedState {
         allow read, write: if isTenantAdmin(tenantId);
       }
+      // Integrity scanner report. Read: tenant admin (UI badge). Write:
+      // server-side only (the runIntegrityScan cron runs as admin SDK
+      // which bypasses rules). Clients are denied write so a compromised
+      // admin can't fake a green badge.
+      match /data/integrityReport {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
 
       // Handbook signatures — each user reads/writes their own; admin reads all
       match /handbookSigs/{userId} {
