@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from './src/lib/firebase';
 import { loadInitialTenant } from './src/lib/currentTenant';
+import { loadInitialTab } from './src/lib/currentTab';
 import AuthScreen from './src/screens/AuthScreen';
 import RootNav    from './src/navigation/RootNav';
 
@@ -19,6 +20,7 @@ export default function App() {
     let unsub;
     (async () => {
       await loadInitialTenant();
+      await loadInitialTab();
       unsub = onAuthStateChanged(auth, u => {
         setUser(u);
         setLoading(false);

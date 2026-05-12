@@ -8,6 +8,7 @@ import {
   fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
   fetchTimeOff, createClient, updateAppointment, fetchClient,
 } from '../lib/firestore';
+import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import Icon from '../components/Icon';
 
@@ -163,6 +164,10 @@ export default function ScheduleScreen() {
   const [view,    setView]    = useState('day'); // 'day' | 'week' | 'month'
   const [createPrefill, setCreatePrefill] = useState(null);  // { date, startTime, techName } or null
   const [editAppt, setEditAppt] = useState(null);            // existing appt being edited or null
+  const [tabOpen,  setTabOpen]  = useState(false);
+  const [tabSnap,  setTabSnap]  = useState(getCurrentTab()); // re-rendered on tab change
+
+  useEffect(() => subscribeTab(setTabSnap), []);
   const [allTechs, setAllTechs] = useState([]);  // ordered tech-name list for color assignment
   const [timeOff,  setTimeOff]  = useState([]);  // [{ techName, startDate, endDate }]
 
@@ -263,6 +268,16 @@ export default function ScheduleScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Tab / cart pill — only when something's been staged */}
+      {tabSnap.appts.length + tabSnap.products.length > 0 && (
+        <TouchableOpacity style={styles.cartPill} onPress={() => setTabOpen(true)} activeOpacity={0.8}>
+          <Text style={styles.cartPillText}>
+            🛒 Tab · {tabSnap.appts.length} appt{tabSnap.appts.length !== 1 ? 's' : ''}
+            {' · $'}{tabTotal().toFixed(2)}
+          </Text>
+        </TouchableOpacity>
+      )}
+
       {/* View + filter toggles */}
       <View style={styles.toggleRow}>
         <View style={styles.viewSwitch}>
@@ -340,8 +355,10 @@ export default function ScheduleScreen() {
 
       <ApptDetailModal
         appt={detail}
+        cartTab={tabSnap}
         onClose={() => setDetail(null)}
         onEdit={(a) => { setDetail(null); setEditAppt(a); }}
+        onAddToTab={(a) => addApptToTab(a)}
         onUpdate={(patch) => {
           // Optimistic local update; live sub will reconcile.
           setAppts(prev => prev.map(a => a.id === detail.id ? { ...a, ...patch } : a));
@@ -355,6 +372,8 @@ export default function ScheduleScreen() {
         onClose={() => { setCreatePrefill(null); setEditAppt(null); }}
         onCreated={() => { setCreatePrefill(null); setEditAppt(null); }}
       />
+
+      <TabModal open={tabOpen} tab={tabSnap} onClose={() => setTabOpen(false)} />
     </View>
   );
 }
@@ -1057,8 +1076,102 @@ function buildClientLinks(client) {
 }
 const SOCIAL_EMOJI = { instagram: '📸', facebook: '👥', tiktok: '🎵', venmo: '💸' };
 
+// ── Tab / cart modal ───────────────────────────────────
+// Shows everything currently staged for checkout. NFC tap-to-pay is
+// the planned terminal flow (physical reader on the way) — for now the
+// pay button is disabled with a "coming soon" affordance so the
+// interaction is documented in the UI but the code path doesn't
+// silently do nothing.
+function TabModal({ open, tab, onClose }) {
+  if (!open) return null;
+  const total = tab.appts.reduce((s, a) => {
+    const svcSum = (a.services || []).reduce((ss, sv) => ss + (Number(sv.price) || 0), 0);
+    return s + svcSum;
+  }, 0);
+
+  return (
+    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalSheet}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>🛒 Tab</Text>
+              <Text style={styles.modalSubtitle}>
+                {tab.appts.length} appt{tab.appts.length !== 1 ? 's' : ''} · ${total.toFixed(2)}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+              <Text style={styles.modalCloseText}>×</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+            {tab.appts.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                <Text style={{ fontSize: 56, marginBottom: 12 }}>🛒</Text>
+                <Text style={styles.emptyTitle}>Tab is empty</Text>
+                <Text style={styles.emptyBody}>Open an appointment and tap "🛒 Add to tab" to stage it for checkout.</Text>
+              </View>
+            ) : (
+              <>
+                {tab.appts.map(a => {
+                  const svcSum = (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+                  const svcSummary = (a.services || []).map(s => s.name).filter(Boolean).join(', ') || '—';
+                  return (
+                    <View key={a.id} style={styles.tabRow}>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={styles.tabRowClient} numberOfLines={1}>{a.clientName || 'Walk-in'}</Text>
+                        <Text style={styles.tabRowMeta} numberOfLines={1}>
+                          {a.date} · {fmtTime(a.startTime)} · {svcSummary}
+                        </Text>
+                      </View>
+                      <Text style={styles.tabRowPrice}>${svcSum.toFixed(2)}</Text>
+                      <TouchableOpacity
+                        style={styles.tabRowRemove}
+                        onPress={() => removeApptFromTab(a.id)}
+                        activeOpacity={0.6}
+                      >
+                        <Text style={styles.tabRowRemoveText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+
+                <View style={styles.tabTotalRow}>
+                  <Text style={styles.tabTotalLabel}>Subtotal</Text>
+                  <Text style={styles.tabTotalValue}>${total.toFixed(2)}</Text>
+                </View>
+
+                <TouchableOpacity
+                  disabled
+                  style={[styles.primaryBtn, { marginTop: 18, opacity: 0.55 }]}
+                  activeOpacity={1}
+                >
+                  <Text style={styles.primaryBtnText}>📲 Tap to pay (NFC) — coming soon</Text>
+                </TouchableOpacity>
+                <Text style={styles.tabFootnote}>
+                  NFC checkout will activate once the physical terminals arrive. For now the tab
+                  is just a staging area — settle these appts manually on the web checkout flow.
+                </Text>
+
+                <TouchableOpacity
+                  style={styles.tabClearBtn}
+                  onPress={() => clearTab()}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.tabClearBtnText}>Clear tab</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── Detail modal (status, check-in, notes, client snapshot) ─────────────
-function ApptDetailModal({ appt, onClose, onUpdate, onEdit }) {
+function ApptDetailModal({ appt, cartTab, onClose, onUpdate, onEdit, onAddToTab }) {
   const [notes,   setNotes]   = useState('');
   const [working, setWorking] = useState(false);
   const [tab,     setTab]     = useState('actions');
@@ -1235,6 +1348,25 @@ function ApptDetailModal({ appt, onClose, onUpdate, onEdit }) {
                     <Text style={styles.primaryBtnText}>📍 Mark client checked-in</Text>
                   </TouchableOpacity>
                 )}
+
+                {/* Add to tab — single tap stages this appt for checkout.
+                    Already-on-tab disables the button so accidental
+                    double-taps don't no-op silently. */}
+                {(() => {
+                  const onTab = (cartTab?.appts || []).some(a => a.id === appt.id);
+                  return (
+                    <TouchableOpacity
+                      style={[styles.tabAddBtn, onTab && styles.tabAddBtnActive]}
+                      onPress={() => onAddToTab?.(appt)}
+                      disabled={onTab}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.tabAddBtnText, onTab && styles.tabAddBtnTextActive]}>
+                        {onTab ? '✓ On the tab' : '🛒 Add to tab'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })()}
 
                 {/* Status */}
                 <Text style={[styles.sectionLabel, { marginTop: 22 }]}>Appointment status</Text>
@@ -1464,6 +1596,30 @@ const styles = StyleSheet.create({
   modalPhoneText:      { fontSize: 12, color: '#1a1a1a', fontWeight: '600', marginRight: 4 },
   modalContactBtn:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#EBF4FB', borderWidth: 1, borderColor: '#3D95CE' },
   modalContactBtnText: { fontSize: 12, fontWeight: '700', color: '#1a5f8a' },
+
+  // Cart / tab pill in the date-row header
+  cartPill:        { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#fde68a' },
+  cartPillText:    { fontSize: 13, color: '#92400e', fontWeight: '700' },
+
+  // Add-to-tab button on detail modal
+  tabAddBtn:           { backgroundColor: '#fffbeb', borderWidth: 1.5, borderColor: '#fde68a', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  tabAddBtnActive:     { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+  tabAddBtnText:       { fontSize: 14, fontWeight: '700', color: '#92400e' },
+  tabAddBtnTextActive: { color: '#16a34a' },
+
+  // TabModal rows + summary
+  tabRow:            { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  tabRowClient:      { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
+  tabRowMeta:        { fontSize: 11, color: '#888', marginTop: 2 },
+  tabRowPrice:       { fontSize: 14, fontWeight: '700', color: '#1a5f8a' },
+  tabRowRemove:      { width: 28, height: 28, borderRadius: 14, backgroundColor: '#fef2f2', alignItems: 'center', justifyContent: 'center' },
+  tabRowRemoveText:  { fontSize: 18, color: '#ef4444', lineHeight: 20 },
+  tabTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14, marginTop: 4, borderTopWidth: 2, borderTopColor: '#1a1a1a' },
+  tabTotalLabel:     { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
+  tabTotalValue:     { fontSize: 18, fontWeight: '800', color: '#1a1a1a' },
+  tabFootnote:       { fontSize: 11, color: '#888', marginTop: 8, lineHeight: 16, textAlign: 'center' },
+  tabClearBtn:       { marginTop: 14, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb' },
+  tabClearBtnText:   { fontSize: 12, color: '#888', fontWeight: '600' },
 
   tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
