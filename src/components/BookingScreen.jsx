@@ -997,7 +997,7 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 
       <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, paddingTop: 2 }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
-          {hasOptions ? `from $${minOptPrice}` : formatPrice(svc.basePrice, svc.priceFrom)}
+          {hasOptions ? `from $${minOptPrice}` : formatPrice(svc)}
         </span>
         <button onClick={handleAddClick}
           style={{

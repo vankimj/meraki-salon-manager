@@ -1,7 +1,14 @@
 import { CATEGORY_ORDER } from '../data/seedServices';
 
-export function formatPrice(basePrice, priceFrom) {
-  return priceFrom ? `$${basePrice}+` : `$${basePrice}`;
+// Accepts either a number or a service object. The object form is the
+// safe path — legacy service docs use `price` instead of `basePrice`
+// (renamed during the service-options schema change); falling through
+// to that field stops "$undefined" from rendering on un-migrated docs.
+export function formatPrice(basePriceOrSvc, priceFrom) {
+  const isObj = basePriceOrSvc != null && typeof basePriceOrSvc === 'object';
+  const base  = isObj ? (basePriceOrSvc.basePrice ?? basePriceOrSvc.price ?? 0) : (basePriceOrSvc ?? 0);
+  const from  = isObj ? !!basePriceOrSvc.priceFrom : !!priceFrom;
+  return from ? `$${base}+` : `$${base}`;
 }
 
 export function formatDuration(duration, durationMin) {
@@ -36,8 +43,11 @@ export function blankService() {
 // Resolve effective price + duration for a service given an optional selected option.
 // Options can override (price, duration) or just adjust (priceAdd, durationAdd) the base.
 export function resolveServicePricing(svc, opt) {
-  if (!opt) return { price: svc?.basePrice ?? 0, duration: svc?.duration ?? 0 };
-  const price    = opt.price    != null ? Number(opt.price)    : (svc.basePrice ?? 0) + Number(opt.priceAdd    || 0);
+  // Legacy services stored `price` instead of `basePrice` — fall through
+  // so booking + checkout don't display $0 / NaN on un-migrated docs.
+  const svcBase = svc?.basePrice ?? svc?.price ?? 0;
+  if (!opt) return { price: svcBase, duration: svc?.duration ?? 0 };
+  const price    = opt.price    != null ? Number(opt.price)    : svcBase + Number(opt.priceAdd    || 0);
   const duration = opt.duration != null ? Number(opt.duration) : (svc.duration  ?? 0) + Number(opt.durationAdd || 0);
   return { price, duration };
 }
