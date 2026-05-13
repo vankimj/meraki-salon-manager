@@ -38,7 +38,9 @@ import UnsubscribeScreen from './components/UnsubscribeScreen';
 import ManageAppointmentScreen from './components/ManageAppointmentScreen';
 import { TermsScreen, PrivacyScreen } from './components/PolicyScreen';
 import PinModal from './components/PinModal';
-import FirstLoginWizard from './components/FirstLoginWizard';
+import OnboardingWizard from './modules/onboarding/OnboardingWizard';
+import OnboardingBanner from './components/OnboardingBanner';
+import { subscribeOnboarding, isOnboardingComplete } from './lib/onboarding';
 import { isModuleAvailableForPlan, effectivePlan } from './lib/modules';
 
 const MODULE_TITLES = {
@@ -103,7 +105,9 @@ function AppShell({ initialView = 'home' }) {
   if (isPortalUser) return <ClientPortal />;
   const [view,      setViewState] = useState(initialView); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
   const [showAdmin, setShowAdmin] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
+  const [showWizard, setShowWizard]   = useState(false);
+  const [onboarding, setOnboarding]   = useState(null);
+  const [dismissedThisSession, setDismissedThisSession] = useState(false);
   // Cross-module deep-link: when set, clicking a client name in Schedule
   // jumps to the Clients module and auto-opens that client's profile.
   // ClientsAdmin clears it once it's consumed the value.
@@ -140,30 +144,26 @@ function AppShell({ initialView = 'home' }) {
 
   const openClientProfile = (id) => { if (!id) return; setOpenClientId(id); setView('clients'); };
 
-  // Auto-open the first-login wizard once per fresh tenant. We trigger if
-  // the user is signed-in admin AND we haven't stamped _wizardCompleted on
-  // settings AND the tenant looks empty (low service count). Owner can
-  // re-open it later from Admin if they need to (TODO).
+  // Subscribe to onboarding state for the banner + auto-open logic.
   useEffect(() => {
-    if (!gUser || !isAdmin) return;
-    if (settings?._wizardCompleted) return;
-    // Use service count as a proxy for "fresh tenant". Existing tenants
-    // (like Meraki) won't see this even if the flag isn't set.
-    let cancelled = false;
-    (async () => {
-      try {
-        const { fetchServices } = await import('./lib/firestore');
-        const services = await fetchServices();
-        if (!cancelled && (services?.length || 0) < 3) {
-          setShowWizard(true);
-        } else if (!cancelled) {
-          // Tenant already has services — stamp the flag so we never check again.
-          updateSettings({ ...settings, _wizardCompleted: true }).catch(() => {});
-        }
-      } catch {}
-    })();
-    return () => { cancelled = true; };
-  }, [gUser?.uid, isAdmin, settings?._wizardCompleted]); // eslint-disable-line
+    if (!gUser || !isAdmin) { setOnboarding(null); return; }
+    return subscribeOnboarding(setOnboarding);
+  }, [gUser?.uid, isAdmin]);
+
+  // Auto-open the onboarding wizard when:
+  //   - the signed-in user is admin
+  //   - they haven't dismissed it this session
+  //   - onboarding is not yet complete
+  // After dismissal the persistent OnboardingBanner takes over until
+  // they finish. Existing tenants (Meraki) hit this once on next sign-in
+  // and run through audit mode (mostly ✓/skip).
+  useEffect(() => {
+    if (!gUser || !isAdmin)        return;
+    if (dismissedThisSession)      return;
+    if (onboarding === null)       { /* not yet loaded — wait */ return; }
+    if (isOnboardingComplete(onboarding)) return;
+    setShowWizard(true);
+  }, [gUser?.uid, isAdmin, onboarding, dismissedThisSession]);
 
   const isTipFlow = view === 'tipflow';
   const isHome    = view === 'home';
@@ -185,6 +185,13 @@ function AppShell({ initialView = 'home' }) {
     <div id="deck-app" style={shellStyle}>
       <Splash />
       <Toast />
+
+      {/* Persistent onboarding banner — hidden when complete or not started.
+          Sits above all view chrome so it's visible regardless of which
+          view the user is on. */}
+      {gUser && isAdmin && !isOnboardingComplete(onboarding) && onboarding && !isTipFlow && (
+        <OnboardingBanner onboarding={onboarding} onOpen={() => { setShowWizard(true); setDismissedThisSession(false); }} />
+      )}
 
       {/* Home */}
       {isHome && (
@@ -239,12 +246,9 @@ function AppShell({ initialView = 'home' }) {
       {showAdmin && <Admin onClose={() => setShowAdmin(false)} />}
 
       {showWizard && (
-        <FirstLoginWizard onClose={() => {
+        <OnboardingWizard onDismiss={() => {
           setShowWizard(false);
-          // Stamp the flag so we don't auto-reopen even if the tenant is still
-          // empty (owner explicitly chose to dismiss / finish).
-          updateSettings({ ...settings, _wizardCompleted: true, _wizardCompletedAt: new Date().toISOString() }).catch(() => {});
-          setView('schedule');
+          setDismissedThisSession(true);
         }} />
       )}
 
