@@ -20,6 +20,7 @@ import { seedFullDemo, clearDemoData, addFutureAppointments } from '../../data/s
 import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ, fetchIntegrityReport } from '../../lib/firestore';
 import FeedbackModal from '../../components/FeedbackModal';
 import NotificationsBell from '../../components/NotificationsBell';
+import SmsSetup from './SmsSetup';
 import CsvImportSection from '../../components/CsvImportSection';
 
 export default function Admin({ onClose }) {
@@ -71,6 +72,7 @@ export default function Admin({ onClose }) {
     { id: 'reviews',  label: 'Reviews'  },
     { id: 'settings', label: 'Settings' },
     { id: 'webfront', label: 'Webfront' },
+    { id: 'sms',      label: 'SMS'      },
     { id: 'feedback', label: 'Feedback' },
     // Trash exposes tombstone records (including deleted client names,
     // deletion attribution). Admin-only — scheduler/readonly shouldn't
@@ -234,6 +236,10 @@ export default function Admin({ onClose }) {
 
         {tab === 'webfront' && (
           <WebfrontTab cfg={webfrontCfg} setCfg={setWebfrontCfg} employees={employees} />
+        )}
+
+        {tab === 'sms' && (
+          <SmsSetup />
         )}
 
         {tab === 'feedback' && (

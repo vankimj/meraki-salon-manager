@@ -2030,8 +2030,10 @@ exports.sendTechAppointmentReminders = onSchedule(
     const twSid       = twilioSid.value();
     const twToken     = twilioToken.value();
     const twApiKeySid = twilioApiKeySid.value();
-    const twFrom      = twilioFrom.value();
-    const smsClient = (twSid && twToken && twFrom)
+    // `from` is resolved per-tenant inside the forEachActiveTenant loop
+    // below so each tenant uses their own approved TFN. Platform default
+    // is only used as fallback when the tenant hasn't completed SMS Setup.
+    const smsClient = (twSid && twToken)
       ? require('twilio')(twApiKeySid || twSid, twToken, twApiKeySid ? { accountSid: twSid } : undefined)
       : null;
 
@@ -2177,7 +2179,9 @@ exports.sendTechAppointmentReminders = onSchedule(
             const phone = normalizePhone(emp.phone);
             if (phone) {
               const body = `${tenantShort}: ${clientLabel} at ${startLabel} (in ${minutesAway} min) — ${services.slice(0, 80)}`;
-              await smsClient.messages.create({ from: twFrom, to: phone, body });
+              const fromNumber = await tenantSmsFrom(db, tenantId);
+              if (!fromNumber) { console.warn(`[techReminders] no SMS from-number for tenant ${tenantId}, skipping`); continue; }
+              await smsClient.messages.create({ from: fromNumber, to: phone, body });
               smsSent++;
             }
           } catch (e) {
@@ -4000,7 +4004,8 @@ async function processSMSCampaign(tenantId, docRef, data) {
   const sid       = twilioSid.value();
   const token     = twilioToken.value();
   const apiKeySid = twilioApiKeySid.value();
-  const from      = twilioFrom.value();
+  // From-number is the tenant's approved TFN if any, else platform default.
+  const from      = await tenantSmsFrom(getFirestore(), tenantId);
   if (!sid || !token || !from) {
     await docRef.update({ status: 'failed', error: 'twilio_not_configured' });
     return;
@@ -5216,7 +5221,7 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, as
             const twSid       = twilioSid.value();
             const twToken     = twilioToken.value();
             const twApiKeySid = twilioApiKeySid.value();
-            const twFrom      = twilioFrom.value();
+            const twFrom      = await tenantSmsFrom(db0, tenantId);
             const fwdTo       = normalizePhone(pauseCfg.forwardPhone);
             if (twSid && twToken && twFrom && fwdTo) {
               const tw = require('twilio')(twApiKeySid || twSid, twToken,
@@ -5309,10 +5314,10 @@ exports.sendDirectSms = onCall({ cors: true, secrets: [twilioToken] }, async (re
   const sid       = twilioSid.value();
   const token     = twilioToken.value();
   const apiKeySid = twilioApiKeySid.value();
-  const from      = twilioFrom.value();
+  const db = getFirestore();
+  const from      = await tenantSmsFrom(db, tenantId);
   if (!sid || !token || !from) throw new HttpsError('failed-precondition', 'Twilio not configured');
 
-  const db = getFirestore();
   const cDoc = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
   if (!cDoc.exists) throw new HttpsError('not-found', 'Client not found');
   const client = { id: cDoc.id, ...cDoc.data() };
@@ -6197,13 +6202,302 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
 // Permanently purges any soft-deleted customer-data doc whose tombstone is
 // older than 30 days. By that point the doc is past PITR window (7 days)
 // but still recoverable from the BigQuery mirror (forever) — the BQ row is
-// untouched by Firestore deletes, only the live doc gets removed. So
-// "purged" here means "no longer paying Firestore storage for the tombstone";
-// admin can still restore via restoreDocFromBQ if needed.
+// ─────────────────────────────────────────────────────────────────────
+// SMS / TFN provisioning (multi-tenant)
+// ─────────────────────────────────────────────────────────────────────
+// Tenants on the Pro tier get an individually-verified Toll-Free
+// number provisioned through Plume Nexus's Twilio account. The flow:
 //
-// Runs daily at 3 AM Eastern (low-traffic window). Tombstones are processed
-// in batches of 200 per collection per tenant to stay under Firestore's
-// 500-write batch limit and avoid long-running execution.
+//   1. Tenant fills the SMS wizard in Admin → SMS Setup.
+//   2. provisionTenantSMS validates form + auth, searches for a TFN
+//      matching their area-code preference, buys it ($2/mo), submits
+//      Toll-Free Verification to Twilio TrustHub on behalf of the
+//      tenant's legal business identity.
+//   3. We poll TrustHub status (or accept Twilio webhooks) and flip
+//      tenants/{id}/data/sms.status as it moves
+//      pending_twilio → pending_carrier → approved / rejected.
+//   4. On Pro→Solo downgrade or churn, releaseTenantSMS releases the
+//      TFN back to Twilio (no $2/mo bleed) and tombstones the doc.
+//
+// IMPORTANT: TrustHub policy SIDs and exact field names are versioned
+// by Twilio. The values below are correct as of 2026-05-12 but should
+// be re-confirmed against the Twilio Console output the first time
+// provisionTenantSMS runs against a real tenant.
+//   - Toll-free verification policy: RNdfbf3fbdfae010d44ad9b0c95dec5a23
+//   - Use case object types depend on business profile category.
+
+function trimOrNull(v) { const s = String(v || '').trim(); return s || null; }
+
+// Resolves the SMS `from` number for a tenant. If the tenant has gone
+// through SMS Setup and their TFN is approved, use it. Otherwise fall
+// back to the platform-wide TWILIO_FROM env var (Meraki's number).
+//
+// Every outbound SMS send path in this file should route through this
+// helper so multi-tenant routing stays consistent. Cache is process-
+// local (Cloud Functions cold-starts cycle the cache automatically).
+const _tenantSmsFromCache = new Map();
+async function tenantSmsFrom(db, tenantId) {
+  if (_tenantSmsFromCache.has(tenantId)) {
+    const cached = _tenantSmsFromCache.get(tenantId);
+    if (Date.now() - cached.at < 5 * 60 * 1000) return cached.from;
+  }
+  let from = twilioFrom.value() || null;
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/sms`).get();
+    const sms = snap.exists ? snap.data() : null;
+    if (sms && sms.status === 'approved' && sms.tfnNumber) from = sms.tfnNumber;
+  } catch (_) { /* fall back to platform default */ }
+  _tenantSmsFromCache.set(tenantId, { from, at: Date.now() });
+  return from;
+}
+
+function validateSmsForm(form) {
+  const errors = [];
+  const f = form || {};
+  if (!trimOrNull(f.businessName))      errors.push('Business name required');
+  if (!trimOrNull(f.contactEmail))      errors.push('Contact email required');
+  if (!trimOrNull(f.contactPhone))      errors.push('Contact phone required');
+  if (!trimOrNull(f.address))           errors.push('Business address required');
+  if (!trimOrNull(f.city))              errors.push('City required');
+  if (!trimOrNull(f.state))             errors.push('State required');
+  if (!trimOrNull(f.zip))               errors.push('ZIP required');
+  if (!trimOrNull(f.useCaseDescription))errors.push('Use case description required');
+  if (!trimOrNull(f.optInDescription))  errors.push('Opt-in description required');
+  if (!trimOrNull(f.privacyPolicyUrl))  errors.push('Privacy policy URL required');
+  if (!Array.isArray(f.sampleMessages) || f.sampleMessages.filter(m => trimOrNull(m)).length < 1) {
+    errors.push('At least one sample message required');
+  }
+  if (f.privacyPolicyUrl && !/^https?:\/\//i.test(f.privacyPolicyUrl)) {
+    errors.push('Privacy policy URL must start with http(s)://');
+  }
+  return errors;
+}
+
+// Lightweight Twilio client builder for the platform account.
+function platformTwilioClient() {
+  const sid       = twilioSid.value();
+  const token     = twilioToken.value();
+  const apiKeySid = twilioApiKeySid.value();
+  if (!sid || !token) throw new HttpsError('failed-precondition', 'Platform Twilio not configured (TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN).');
+  const twilioSDK = require('twilio');
+  return apiKeySid
+    ? twilioSDK(apiKeySid, token, { accountSid: sid })
+    : twilioSDK(sid, token);
+}
+
+// Provisions a TFN + submits Toll-Free Verification for the given
+// tenant. Idempotent: if a TFN was already bought (state stored in
+// data/sms) we skip the purchase and resubmit verification only.
+exports.provisionTenantSMS = onCall(
+  { cors: true, secrets: [twilioToken], timeoutSeconds: 60 },
+  async (request) => {
+    const { tenantId: tid, form, areaCode } = request.data || {};
+    const tenantId = tid || TENANT_ID;
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+
+    const errors = validateSmsForm(form);
+    if (errors.length) throw new HttpsError('invalid-argument', errors.join('; '));
+
+    const smsRef = db.doc(`tenants/${tenantId}/data/sms`);
+    const existing = (await smsRef.get()).data() || {};
+    if (existing.status === 'approved') {
+      return { status: 'approved', tfnNumber: existing.tfnNumber, alreadyApproved: true };
+    }
+    if (existing.status === 'pending_twilio' || existing.status === 'pending_carrier') {
+      // Already in flight — return current state so the wizard shows the status card.
+      return { status: existing.status, tfnNumber: existing.tfnNumber, alreadySubmitted: true };
+    }
+
+    const client = platformTwilioClient();
+    const callerUid = request.auth?.uid || null;
+    const now = new Date().toISOString();
+
+    // 1. Buy the TFN (or reuse if a previous attempt purchased one).
+    let tfnNumber = existing.tfnNumber || null;
+    let tfnSid    = existing.tfnSid    || null;
+    if (!tfnNumber) {
+      const found = await client.availablePhoneNumbers('US')
+        .tollFree.list({ areaCode: trimOrNull(areaCode) || undefined, limit: 5 });
+      if (!found || found.length === 0) {
+        throw new HttpsError('unavailable', 'No toll-free numbers available' + (areaCode ? ` in area code ${areaCode}` : '') + ' right now. Try a different area code.');
+      }
+      const bought = await client.incomingPhoneNumbers.create({ phoneNumber: found[0].phoneNumber });
+      tfnNumber = bought.phoneNumber;
+      tfnSid    = bought.sid;
+      await smsRef.set({
+        status:     'draft',
+        formData:   form,
+        tfnNumber, tfnSid,
+        createdBy:  callerUid,
+        createdAt:  existing.createdAt || now,
+        updatedAt:  now,
+      }, { merge: true });
+    }
+
+    // 2. Submit Toll-Free Verification via Twilio Messaging Compliance.
+    //    Two API surfaces work here:
+    //      a) client.messaging.v1.tollfreeVerifications.create({...}) — newest path
+    //      b) TrustHub TrustProducts with policy RNdfbf3fbdfae010d44ad9b0c95dec5a23 (legacy)
+    //    Path (a) is the recommended one as of 2026 and accepts everything
+    //    inline; we use it here. The first real run should be sanity-checked
+    //    against Twilio's response — if (a) is unavailable on this account,
+    //    fall back to TrustHub TrustProducts.
+    const f = form;
+    const samples = (f.sampleMessages || []).map(s => String(s || '').trim()).filter(Boolean).slice(0, 5);
+
+    let verificationSid = existing.verificationSid || null;
+    try {
+      const verification = await client.messaging.v1.tollfreeVerifications.create({
+        tollfreePhoneNumberSid:        tfnSid,
+        businessName:                  f.businessName,
+        businessWebsite:               f.website || `https://${tenantId}.plumenexus.com`,
+        businessStreetAddress:         f.address,
+        businessCity:                  f.city,
+        businessStateProvinceRegion:   f.state,
+        businessPostalCode:            f.zip,
+        businessCountry:               'US',
+        businessContactFirstName:      (f.contactFirstName || f.businessName || '').split(' ')[0] || 'Owner',
+        businessContactLastName:       f.contactLastName || 'Owner',
+        businessContactEmail:          f.contactEmail,
+        businessContactPhone:          f.contactPhone,
+        notificationEmail:             f.contactEmail,
+        useCaseCategories:             [f.useCase || 'MIXED'],
+        useCaseSummary:                f.useCaseDescription,
+        productionMessageSample:       samples[0] || `Hi from ${f.businessName}. Reply STOP to opt out.`,
+        optInImageUrls:                f.optInProofUrl ? [f.optInProofUrl] : [],
+        optInType:                     'WEB_FORM',
+        messageVolume:                 String(f.estimatedDailyVolume || 100),
+        additionalInformation:         `Privacy policy: ${f.privacyPolicyUrl}\nOpt-in flow: ${f.optInDescription}\nSample messages:\n${samples.join('\n---\n')}`,
+      });
+      verificationSid = verification.sid;
+    } catch (e) {
+      // Persist the buy so we don't re-pay $2/mo on retry; surface error.
+      await smsRef.set({ status: 'error', lastError: e?.message || String(e), updatedAt: now }, { merge: true });
+      throw new HttpsError('internal', `Twilio Verification submit failed: ${e?.message || e}`);
+    }
+
+    await smsRef.set({
+      status:           'pending_twilio',
+      formData:         form,
+      tfnNumber, tfnSid,
+      verificationSid,
+      submittedAt:      now,
+      createdBy:        existing.createdBy || callerUid,
+      lastError:        null,
+      rejectionReason:  null,
+      updatedAt:        now,
+    }, { merge: true });
+
+    return { status: 'pending_twilio', tfnNumber, verificationSid };
+  }
+);
+
+// Webhook for Twilio Messaging Compliance status callbacks. Configured
+// in Twilio Console at: Messaging → Compliance → Toll-Free Verification
+// → Status callback URL = `https://<region>-<project>.cloudfunctions.net/twilioStatusWebhook`.
+// Body is form-urlencoded: { TollfreeVerificationSid, Status, RejectionReason? }.
+exports.twilioStatusWebhook = onRequest({ cors: false, timeoutSeconds: 30 }, async (req, res) => {
+  try {
+    const verificationSid = String(req.body?.TollfreeVerificationSid || req.query?.TollfreeVerificationSid || '');
+    const status          = String(req.body?.Status                  || req.query?.Status                  || '');
+    const rejectionReason = String(req.body?.RejectionReason         || req.query?.RejectionReason         || '');
+    if (!verificationSid || !status) { res.status(400).send('missing sid/status'); return; }
+
+    const db = getFirestore();
+    // Locate the tenant whose data/sms.verificationSid matches.
+    const matches = await db.collectionGroup('data').where('verificationSid', '==', verificationSid).limit(1).get();
+    if (matches.empty) { res.status(404).send('no tenant for sid'); return; }
+    const docRef = matches.docs[0].ref;
+    const tenantId = docRef.path.split('/')[1];
+    const now = new Date().toISOString();
+
+    // Twilio status values: PENDING_REVIEW | IN_REVIEW | TWILIO_APPROVED |
+    // TWILIO_REJECTED | APPROVED | REJECTED. We collapse to our enum.
+    let mapped = 'pending_twilio';
+    if (/IN_REVIEW/i.test(status))                              mapped = 'pending_carrier';
+    if (/TWILIO_APPROVED|^APPROVED$/i.test(status))             mapped = 'approved';
+    if (/TWILIO_REJECTED|^REJECTED$/i.test(status))             mapped = 'rejected';
+
+    const patch = { status: mapped, twilioRawStatus: status, updatedAt: now };
+    if (mapped === 'approved')  patch.approvedAt        = now;
+    if (mapped === 'rejected') { patch.rejectionReason  = rejectionReason || 'Carrier did not provide a reason.'; patch.rejectedAt = now; }
+    await docRef.set(patch, { merge: true });
+
+    // Best-effort email notify (don't fail the webhook if email is broken).
+    try {
+      const apiKey = resendKey.value();
+      if (apiKey) {
+        const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+        const ownerEmail = tenSnap.exists ? trimOrNull(tenSnap.data().ownerEmail) : null;
+        if (ownerEmail) {
+          const resend = new Resend(apiKey);
+          const subject = mapped === 'approved' ? 'Your SMS is live ✅' :
+                          mapped === 'rejected' ? 'SMS verification needs changes' :
+                          mapped === 'pending_carrier' ? 'SMS verification — now in carrier review' : null;
+          if (subject) {
+            const body = mapped === 'approved'
+              ? `<p>Your Toll-Free number has been verified by carriers. SMS is now ready to send from Admin → Marketing.</p>`
+              : mapped === 'rejected'
+                ? `<p>The carriers flagged a change needed for verification:</p><blockquote style="border-left:3px solid #f59e0b;padding-left:12px;color:#666">${esc(rejectionReason || 'No reason provided.')}</blockquote><p>Open Admin → SMS Setup to edit and resubmit.</p>`
+                : `<p>Twilio approved your submission. It's now in front of the carriers (typically 2–7 business days).</p>`;
+            await resend.emails.send({
+              from:    await tenantFromAddress(db, tenantId),
+              to:      ownerEmail,
+              subject,
+              html:    `<div style="font-family:Inter,sans-serif;color:#222;padding:24px 0">${body}</div>`,
+            });
+          }
+        }
+      }
+    } catch (_) { /* best effort */ }
+
+    res.status(200).send('ok');
+  } catch (e) {
+    console.error('twilioStatusWebhook error', e);
+    res.status(500).send('error');
+  }
+});
+
+// Releases a tenant's TFN back to Twilio (stopping the $2/mo bleed) and
+// tombstones the data/sms doc. Triggered when a tenant downgrades from
+// Pro to Solo, cancels, or just explicitly disables SMS in their Admin.
+exports.releaseTenantSMS = onCall(
+  { cors: true, secrets: [twilioToken], timeoutSeconds: 30 },
+  async (request) => {
+    const { tenantId: tid } = request.data || {};
+    const tenantId = tid || TENANT_ID;
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+
+    const smsRef = db.doc(`tenants/${tenantId}/data/sms`);
+    const sms = (await smsRef.get()).data() || {};
+    if (!sms.tfnSid) {
+      await smsRef.set({ status: 'released', releasedAt: new Date().toISOString() }, { merge: true });
+      return { released: true, hadNumber: false };
+    }
+
+    try {
+      const client = platformTwilioClient();
+      await client.incomingPhoneNumbers(sms.tfnSid).remove();
+    } catch (e) {
+      // If the number was already released elsewhere, swallow and proceed.
+      if (!/not found|20404/i.test(String(e?.message || ''))) {
+        throw new HttpsError('internal', `Twilio number release failed: ${e?.message || e}`);
+      }
+    }
+
+    await smsRef.set({
+      status:      'released',
+      releasedAt:  new Date().toISOString(),
+      tfnNumber:   null,
+      tfnSid:      null,
+      updatedAt:   new Date().toISOString(),
+    }, { merge: true });
+    return { released: true, hadNumber: true };
+  }
+);
+
 exports.purgeOldTombstones = onSchedule(
   { schedule: 'every day 03:00', timeZone: 'America/New_York', timeoutSeconds: 540 },
   async () => {

@@ -2351,6 +2351,37 @@ export async function retryGiftCardEmail(cardId) {
   return res?.data || { ok: true };
 }
 
+// ── SMS / TFN provisioning (multi-tenant) ──────────────
+// Buys a Toll-Free number for this tenant and submits Twilio Toll-Free
+// Verification on their behalf. Backend: provisionTenantSMS in
+// functions/index.js. Idempotent — re-calling while in flight returns
+// the existing state.
+export async function provisionTenantSMS(form, areaCode) {
+  const fn = callFn('provisionTenantSMS');
+  const res = await fn({ tenantId: TENANT_ID, form, areaCode });
+  return res?.data || {};
+}
+
+// Releases the TFN back to Twilio (stops $2/mo) and tombstones data/sms.
+// Used on Pro→Solo downgrade or when the tenant explicitly turns SMS off.
+export async function releaseTenantSMS() {
+  const fn = callFn('releaseTenantSMS');
+  const res = await fn({ tenantId: TENANT_ID });
+  return res?.data || {};
+}
+
+// Live subscription on the SMS provisioning state. The wizard uses this
+// to show pending_twilio → pending_carrier → approved transitions
+// without polling.
+export function subscribeTenantSms(cb) {
+  return onSnapshot(tenantDoc('sms'), s => cb(s.exists() ? s.data() : null));
+}
+
+export async function fetchTenantSms() {
+  const s = await getDoc(tenantDoc('sms'));
+  return s.exists() ? s.data() : null;
+}
+
 // ── Review received tracking ───────────────────────────
 const REVIEW_RECEIVED_COL = tenantCol('reviewReceived');
 

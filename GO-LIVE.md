@@ -44,7 +44,7 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 
 - [ ] **Resend** (staff notifications, daily reminders, receipts) — verify API key in Functions config, send test from a Cloud Function.
 - [ ] **Stripe** — secrets configured, test mode → live keys swap, run a $1 charge through checkout to confirm.
-- [ ] **Twilio** SMS — secrets configured if you want SMS campaigns / reminders. OK to defer if email-only.
+- [ ] **Twilio** SMS — Meraki launches as Pro tier so the platform Twilio path is in play. See "SMS tier policy" + "SMS setup (Pro tier only)" sections below for the full ISV/brand/campaign work. Skip entirely if Meraki launches email-only.
 - [ ] **Gusto** payroll — only needed when you actually run payroll through the app. Defer unless you're running a pay period imminently.
 - [ ] **Google Review URL** in settings — check the review prompt fires after checkout.
 
@@ -66,12 +66,52 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 - [ ] **Click the Unsubscribe link** in the test email → land on green confirmation page. Verify the client profile shows 🔕 with `marketingOptOutVia: email_unsubscribe_link`.
 - [ ] **Re-send to that audience** — opted-out client should be excluded automatically; recipient count drops by one.
 
-### SMS setup
-- [ ] **Twilio domain status:** A2P 10DLC registration approved OR Toll-Free Verified — without this, US carriers throttle/drop messages. Check Twilio Console → Messaging → Regulatory Compliance.
-- [ ] **Twilio Advanced Opt-Out** (Console → Messaging → Services → Settings) is **enabled**. Without this Twilio doesn't auto-handle STOP and your account can be flagged.
-- [ ] **Twilio creds** in `functions/.env` (TWILIO_ACCOUNT_SID = AC..., either AUTH_TOKEN or API_KEY_SID + secret) and `TWILIO_FROM` is your purchased number.
-- [ ] **Send a test SMS campaign** to yourself via Test subjects audience. Confirm: arrives within ~5s, `{firstName}` and `{bookingLink}` substituted, the link actually opens the booking screen.
-- [ ] **Reply STOP** from your phone → next campaign should auto-flag your client record (`marketingOptOutVia: sms_stop_keyword_code_21610`) and exclude you.
+### SMS tier policy (decided 2026-05-12; revised same day to TFN-default)
+
+| Tier | SMS path | Platform cost |
+|---|---|---|
+| **Solo (free)** | **Email + push only.** No SMS. Resend handles reminders + marketing. | $0 |
+| **Pro** | Platform-owned **Toll-Free number per tenant** via Plume Nexus's Twilio account, with TFN Verification submitted per tenant. | **$2/mo fixed per tenant** + ~$0.008/segment usage |
+| **Any tier (BYOT)** | Tenant plugs their own Twilio creds + number into Admin → Settings → SMS. Their account, their verification. | $0 |
+
+**Why toll-free, not A2P 10DLC:** A2P 10DLC carries ~$15/mo per tenant fixed (brand vetting + campaign + local number) vs. $2/mo for a verified TFN. Per-message cost is essentially the same. TFN's ~3 msg/sec / 2,000/day throughput cap is well above typical salon volume (~50–100/day). One regime to support, $13/mo saved per Pro tenant. Full reasoning in memory `project_rollout_discipline.md` → "SMS / Twilio tier policy."
+
+**One TFN per tenant — not shareable.** TFN Verification ties a number to one EIN. STOP-keyword opt-out applies to the whole number (sharing → one tenant's unsubscribes silently kill another tenant's delivery). Customers save their salon's number; sharing breaks recognition. Cost scales linearly but stays ~4% of Pro subscription revenue at any tenant count.
+
+**Cost-control levers in the eventual `provisionTenantSMS(tenantId)`:** provision-on-activation (not at signup), release-on-cancellation (`DELETE /IncomingPhoneNumbers/{sid}`), surface verification status in Admin so the tenant isn't in the dark during the 1–3 week approval window.
+
+Everything below is **Meraki-as-Pro-tier launch**: Meraki uses the platform Twilio path with a verified TFN, so the platform credentials matter. Solo-tier launches in the future will skip every item in this section.
+
+### SMS setup (Pro tier only — skip for Solo tenants)
+
+**Automation is built.** The full TFN provisioning flow — buy number, submit Twilio Toll-Free Verification, poll status, status-change emails, downgrade-release — runs from Admin → SMS tab → 3-step wizard. Tenant fills the form, clicks Submit, and the platform handles the rest. Implementation lives in `provisionTenantSMS`, `twilioStatusWebhook`, `releaseTenantSMS` in `functions/index.js` + `src/modules/admin/SmsSetup.jsx`.
+
+**Realistic approval timing:** 2–7 business days typical for a clean submission, occasionally 2–3 weeks if a carrier (usually T-Mobile) is slow or asks for changes.
+
+#### Platform-level one-time setup
+- [ ] **Twilio account funded** with at least ~$25 to cover the first TFN buy + initial messages.
+- [ ] **Twilio creds** in `functions/.env` — `TWILIO_ACCOUNT_SID = AC...`, `TWILIO_AUTH_TOKEN` (Firebase Secret), optionally `TWILIO_API_KEY_SID` + secret for API-key auth. `TWILIO_FROM` becomes a fallback for tenants who haven't completed SMS Setup yet.
+- [ ] **Twilio Advanced Opt-Out enabled** (Console → Messaging → Services → Settings) so STOP/HELP auto-handle. Account-wide, one-time.
+- [ ] **Configure status-callback webhook URL** in Twilio Console → Messaging → Toll-Free Verifications → Settings → Status Callback URL = `https://us-central1-meraki-salon-manager.cloudfunctions.net/twilioStatusWebhook`. Without this the Admin status card won't auto-update (the `releaseTenantSMS` polling fallback can be added if Twilio doesn't reliably webhook).
+
+#### Per-tenant flow (no human at the Twilio Console)
+- [ ] **Tenant clicks Admin → SMS → fills wizard → clicks Submit.** Form pre-fills from settings + webfront, so most fields are one-tap-confirm.
+- [ ] **`provisionTenantSMS` buys the TFN** ($2/mo starts) and submits Toll-Free Verification programmatically using `client.messaging.v1.tollfreeVerifications.create(...)`.
+- [ ] **Status card in Admin shows live progress**: pending_twilio → pending_carrier → approved / rejected. Status emails sent to ownerEmail on every transition.
+- [ ] **If rejected**, the wizard re-opens with the original form data; tenant edits and resubmits in one click.
+- [ ] **On Pro→Solo downgrade or cancellation**, `releaseTenantSMS` releases the number back to Twilio (stops the $2/mo bleed) and tombstones the doc.
+
+#### Meraki-specific verification dress rehearsal
+- [ ] **First run is Meraki**: complete the wizard with real data, validate the actual Twilio API responses match what the code expects. The TrustHub policy SIDs + field names were correct as of 2026-05-12 but Twilio versions these — first real run is the dry-run for the automation.
+- [ ] **Send a test SMS** once approved — Admin → Marketing → Test subjects audience. Confirm arrives in ~5s with `{firstName}` + `{bookingLink}` substituted, link opens booking screen.
+- [ ] **Reply STOP** from your phone → next campaign auto-excludes you with `marketingOptOutVia: sms_stop_keyword_code_21610`.
+
+**Known limitations of v1 automation** (flagged for follow-up):
+- BYOT (tenant brings own Twilio creds) — schema reserved but send-path doesn't yet read tenant-level creds. Add when first non-Pro tenant requests BYOT.
+- TrustHub TrustProducts fallback — if `messaging.v1.tollfreeVerifications.create` is unavailable on a specific account, fall back to the legacy TrustProducts flow with policy SID `RNdfbf3fbdfae010d44ad9b0c95dec5a23`.
+- Resubmit-on-rejection sets state back to `draft` — verify Twilio doesn't require canceling the old TrustProduct first; if so, add a cleanup step.
+
+**Future: outgrowing TFN.** If Meraki ever exceeds ~2,000 SMS/day or wants a local-area-code feel, migrate that specific tenant to A2P 10DLC. The rest stay on TFN. Don't pre-optimize.
 
 ### Personalized promos (if you plan to use them)
 - [ ] Send a campaign with **Personalized promo per recipient** toggle on. Verify: each recipient receives a unique code in `{promoCode}`. Visit Admin → Gift Cards & Promos → confirm one code per recipient was created with the right discount + expiry + clientId binding.

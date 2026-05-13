@@ -145,6 +145,15 @@ service cloud.firestore {
         allow read:  if isTenantAdmin(tenantId);
         allow write: if false;
       }
+      // SMS / TFN provisioning state. Read: tenant admin (status UI).
+      // Write: server-only — the provisionTenantSMS / twilioStatusWebhook
+      // Cloud Functions update this via admin SDK. Holds the form data
+      // the tenant submitted, the Twilio TrustHub SIDs, and the current
+      // verification status. No raw credentials live here.
+      match /data/sms {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
 
       // Handbook signatures — each user reads/writes their own; admin reads all
       match /handbookSigs/{userId} {
