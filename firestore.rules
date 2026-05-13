@@ -154,6 +154,23 @@ service cloud.firestore {
         allow read:  if isTenantAdmin(tenantId);
         allow write: if false;
       }
+      // Onboarding wizard state — which phase the tenant is on,
+      // completion timestamps, per-phase status. Read: tenant admin
+      // (the wizard reads to know where to resume). Write: server-only
+      // via markOnboardingPhase Cloud Function so side effects fire.
+      match /data/onboarding {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      // Multi-location config. Read: tenant admin (wizard + Admin →
+      // Locations). Write: server-only — the wizard writes this via
+      // markOnboardingPhase or a future setTenantLocations callable
+      // so the schema stays consistent (defaultLocationId always
+      // resolves, IDs unique, etc.).
+      match /data/locations {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
 
       // Handbook signatures — each user reads/writes their own; admin reads all
       match /handbookSigs/{userId} {

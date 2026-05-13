@@ -6203,6 +6203,66 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
 // older than 30 days. By that point the doc is past PITR window (7 days)
 // but still recoverable from the BigQuery mirror (forever) — the BQ row is
 // ─────────────────────────────────────────────────────────────────────
+// Onboarding wizard
+// ─────────────────────────────────────────────────────────────────────
+// Tenants land in the 7-phase wizard on first sign-in. Each phase's
+// "Save & continue" or "Skip for now" hits this callable, which writes
+// the phase result to tenants/{id}/data/onboarding and runs any phase-
+// specific server-side side effects (sending tech invites, generating
+// the launch kit, etc.).
+//
+// Schema documented in src/lib/onboarding.js. PHASE_KEYS must stay in
+// sync with that file.
+
+const ONBOARDING_PHASE_KEYS = ['welcome', 'profile', 'import', 'money', 'branding', 'team', 'reach', 'launch'];
+
+exports.markOnboardingPhase = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
+  const { tenantId: tid, phaseKey, payload = {} } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!ONBOARDING_PHASE_KEYS.includes(phaseKey)) {
+    throw new HttpsError('invalid-argument', `Unknown onboarding phase: ${phaseKey}`);
+  }
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const now = new Date().toISOString();
+  const ref = db.doc(`tenants/${tenantId}/data/onboarding`);
+  const cur = (await ref.get()).data() || {};
+
+  const status = payload.skip === true ? 'skipped' : 'done';
+  const phases = { ...(cur.phases || {}) };
+  phases[phaseKey] = {
+    ...(phases[phaseKey] || {}),
+    ...(payload.phaseData || {}),
+    status,
+    updatedAt: now,
+  };
+
+  const updates = {
+    branch:    payload.branch   || cur.branch   || null,
+    industry:  payload.industry || cur.industry || 'nails',
+    phases,
+    updatedAt: now,
+  };
+  if (!cur.startedAt) updates.startedAt = now;
+
+  // Auto-mark completed when every phase is done or skipped. The
+  // 'welcome' phase is always counted (the user must at least pick a
+  // branch + industry); other phases can be skipped without blocking.
+  const allDone = ONBOARDING_PHASE_KEYS.every(k =>
+    phases[k]?.status === 'done' || phases[k]?.status === 'skipped'
+  );
+  if (allDone && !cur.completedAt) updates.completedAt = now;
+
+  await ref.set(updates, { merge: true });
+  return {
+    ok:           true,
+    status,
+    completedAt:  updates.completedAt || cur.completedAt || null,
+  };
+});
+
+// ─────────────────────────────────────────────────────────────────────
 // SMS / TFN provisioning (multi-tenant)
 // ─────────────────────────────────────────────────────────────────────
 // Tenants on the Pro tier get an individually-verified Toll-Free
