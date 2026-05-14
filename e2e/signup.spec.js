@@ -33,6 +33,35 @@ test.describe('signup page', () => {
     expect(fatal, `Unexpected console errors:\n${fatal.join('\n')}`).toEqual([]);
   });
 
+  test('CSP allows the reCAPTCHA + Firebase Auth iframes (no CSP violation in console)', async ({ page }) => {
+    // reCAPTCHA + Firebase Auth load iframes from www.google.com /
+    // recaptcha.google.com / accounts.google.com / firebaseapp.com.
+    // Missing any of those in CSP frame-src causes the Phone OTP send
+    // to fail with auth/internal-error. This test catches the CSP gap
+    // before deploy.
+    const violations = [];
+    page.on('console', msg => {
+      const t = msg.text();
+      if (msg.type() === 'error' && /Content Security Policy|Refused to (frame|load)/i.test(t)) {
+        violations.push(t);
+      }
+    });
+    page.on('pageerror', err => {
+      if (/Content Security Policy/i.test(err.message)) violations.push(err.message);
+    });
+
+    await page.goto(`${BASE}/signup`);
+    await page.waitForTimeout(2500); // let any deferred iframes/scripts attempt to load
+    // Touch the phone field to nudge any pre-mounted reCAPTCHA verifier
+    // initialization (some Firebase Auth versions defer this until first use).
+    const phoneInput = page.getByPlaceholder('(555) 123-4567');
+    if (await phoneInput.isVisible().catch(() => false)) {
+      await phoneInput.fill('5551234567');
+      await page.waitForTimeout(500);
+    }
+    expect(violations, `CSP violations:\n${violations.join('\n')}`).toEqual([]);
+  });
+
   test('renders all five form sections', async ({ page }) => {
     await page.goto(`${BASE}/signup`);
     for (const label of ['1 · Sign in', '2 · Salon name', '3 · Phone', '4 · Your salon URL', '5 · Plan']) {
