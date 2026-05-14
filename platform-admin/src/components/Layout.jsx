@@ -1,5 +1,6 @@
 import { signOutNow } from '../lib/firebase.js';
 import { C, FONT, shadow } from '../theme.js';
+import SessionTimeout from './SessionTimeout.jsx';
 
 export default function Layout({ user, currentPath, children }) {
   return (
@@ -28,11 +29,11 @@ export default function Layout({ user, currentPath, children }) {
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <NavLink href="/"           label="Tenants"  active={currentPath === '/'} />
+          <NavLink href="/audit"      label="Audit log" active={currentPath === '/audit'} />
           {/* Future tabs — disabled placeholders */}
           <NavLink href="#"          label="Onboarding" disabled />
           <NavLink href="#"          label="Financials" disabled />
           <NavLink href="#"          label="Support"    disabled />
-          <NavLink href="#"          label="Audit log"  disabled />
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -50,6 +51,8 @@ export default function Layout({ user, currentPath, children }) {
       <main style={{ maxWidth: 1280, margin: '0 auto', padding: '24px 24px 48px' }}>
         {children}
       </main>
+
+      <SessionTimeout />
     </div>
   );
 }

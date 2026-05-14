@@ -5,6 +5,7 @@ import SignIn from './components/SignIn.jsx';
 import Layout from './components/Layout.jsx';
 import TenantList from './components/TenantList.jsx';
 import TenantDetail from './components/TenantDetail.jsx';
+import AuditLog from './components/AuditLog.jsx';
 import { C, FONT } from './theme.js';
 
 const norm = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
@@ -42,8 +43,8 @@ export default function App() {
   if (allowed === false) return <SignIn deniedEmail={user.email} />;
 
   // ─ Routing ─
-  // Tenant detail at /t/:id
-  const detailMatch = /^\/t\/([a-z0-9-]+)$/.exec(path);
+  // Tenant detail at /t/:id; audit log at /audit
+  const detailMatch = /^\/t\/([a-zA-Z0-9-]+)$/.exec(path);
 
   return (
     <Layout user={user} currentPath={path}>
@@ -51,6 +52,8 @@ export default function App() {
         <TenantDetail tenantId={detailMatch[1]} />
       ) : path === '/' ? (
         <TenantList />
+      ) : path === '/audit' ? (
+        <AuditLog />
       ) : (
         <NotFound />
       )}

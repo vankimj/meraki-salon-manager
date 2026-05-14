@@ -125,6 +125,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Platform-admin audit log ─────────────────────────
+    //   Append-only forensic trail of all platform-admin actions.
+    //   Body shape: { action, actor, actorUid, ip, userAgent, payload,
+    //   at }. Write only via admin SDK (Cloud Functions); never from
+    //   the client. Bootstrap admin can read (powers the audit-log
+    //   view in admin.plumenexus.com).
+    match /platformAuditLog/{id} {
+      allow read:  if isBootstrapAdmin();
+      allow write: if false;
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document (plan, owner, name) — super-admin only

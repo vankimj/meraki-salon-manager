@@ -5858,6 +5858,80 @@ async function isPlatformAdmin(authEmail) {
   }
 }
 
+// ── Platform-admin security: audit + rate-limit + notify ─────────────
+// Per the Tier-1 hardening plan, all sensitive admin actions:
+//   1. Write an entry to platformAuditLog/{auto-id}
+//   2. Get rate-limited per actor-email (in-memory; resets when the
+//      function instance recycles — best-effort but tight enough since
+//      hot instances stay warm for ~5 min between calls)
+//   3. Email every other platform admin so a rogue or compromised
+//      admin can be caught by the rest of the team (detection layer)
+
+const _adminActionTimestamps = new Map(); // key: "email:action" → number[]
+function checkAdminActionRate(email, action, max, windowMs) {
+  const key = `${String(email || '').toLowerCase()}:${action}`;
+  const now = Date.now();
+  const recent = (_adminActionTimestamps.get(key) || []).filter(t => now - t < windowMs);
+  if (recent.length >= max) {
+    _adminActionTimestamps.set(key, recent);
+    return { allowed: false, retryAfterMs: windowMs - (now - recent[0]) };
+  }
+  recent.push(now);
+  _adminActionTimestamps.set(key, recent);
+  return { allowed: true };
+}
+
+async function logAdminAction(db, request, action, payload) {
+  const now = new Date().toISOString();
+  await db.collection('platformAuditLog').add({
+    action,                                      // e.g. 'tenant.delete.hard'
+    actor:     request.auth?.token?.email || 'unknown',
+    actorUid:  request.auth?.uid || null,
+    ip:        request.rawRequest?.ip || '',
+    userAgent: request.rawRequest?.headers?.['user-agent'] || '',
+    payload:   payload || {},
+    at:        now,
+  });
+}
+
+async function listAllPlatformAdminEmails(db) {
+  const set = new Set();
+  for (const e of BOOTSTRAP_ADMINS) set.add(String(e).toLowerCase());
+  try {
+    const snap = await db.doc('platform/admins').get();
+    if (snap.exists) {
+      for (const e of (snap.data()?.emails || [])) {
+        if (typeof e === 'string') set.add(e.toLowerCase().trim());
+      }
+    }
+  } catch (e) { /* best-effort */ }
+  return Array.from(set);
+}
+
+async function notifyPlatformAdmins(db, { subject, html, exceptEmail }) {
+  const recipients = (await listAllPlatformAdminEmails(db))
+    .filter(e => !exceptEmail || e !== String(exceptEmail).toLowerCase());
+  if (!recipients.length) return { sent: 0 };
+  const apiKey = resendKey.value();
+  if (!apiKey) {
+    console.warn('[notifyPlatformAdmins] no RESEND_API_KEY; would have notified:', recipients);
+    return { sent: 0, reason: 'no-key' };
+  }
+  try {
+    const resend = new Resend(apiKey);
+    await resend.emails.send({
+      from: 'Plume Nexus Security <noreply@plumenexus.com>',
+      to:   recipients,
+      subject,
+      html,
+    });
+    return { sent: recipients.length };
+  } catch (e) {
+    console.error('[notifyPlatformAdmins] send failed:', e.message);
+    return { sent: 0, error: e.message };
+  }
+}
+
 exports.getTenantMetadata = onCall(
   { cors: true, timeoutSeconds: 30 },
   async (request) => {
@@ -6965,14 +7039,36 @@ exports.deleteTenant = onCall(
       throw new HttpsError('invalid-argument', 'Invalid tenantId.');
     }
 
+    // Per-admin rate limit. Hard delete: 1 per 10 min. Soft: 5 per hour.
+    // Caps catastrophic blast radius if a session is hijacked, AND
+    // catches the "I clicked through 5 hard-delete modals in a row" UX
+    // mistake. Resets when the function instance recycles (~5 min idle).
+    const rateLimit = mode === 'hard'
+      ? { max: 1, windowMs: 10 * 60 * 1000 }
+      : { max: 5, windowMs: 60 * 60 * 1000 };
+    const rate = checkAdminActionRate(callerEmail, `tenant.delete.${mode}`, rateLimit.max, rateLimit.windowMs);
+    if (!rate.allowed) {
+      throw new HttpsError('resource-exhausted',
+        `Rate limit: ${rateLimit.max} ${mode}-delete${rateLimit.max > 1 ? 's' : ''} per ${rateLimit.windowMs / 60000} min per admin. Try again in ~${Math.ceil(rate.retryAfterMs / 60000)} min.`);
+    }
+
     const db  = getFirestore();
     const now = new Date().toISOString();
     const tenantRef = db.doc(`tenants/${tenantId}`);
     const tenantSnap = await tenantRef.get();
     if (!tenantSnap.exists) throw new HttpsError('not-found', `tenants/${tenantId} not found.`);
 
+    const tenantNameForLog = tenantSnap.data()?.name || tenantId;
+    const slugForLog       = tenantSnap.data()?.subdomain || tenantId;
+
     if (mode === 'soft') {
       await tenantRef.set({ active: false, deletedAt: now, updatedAt: now }, { merge: true });
+      await logAdminAction(db, request, 'tenant.delete.soft', { tenantId, slug: slugForLog, name: tenantNameForLog });
+      await notifyPlatformAdmins(db, {
+        subject: `[Plume Nexus Security] 🟡 Soft-delete: ${tenantNameForLog} (${slugForLog})`,
+        html: `<p><strong>${callerEmail}</strong> soft-deleted tenant <code>${tenantId}</code> (<code>${slugForLog}.plumenexus.com</code>) at <code>${now}</code>.</p><p>Tenant is now <code>active: false</code>. Reversible by setting <code>active: true</code> in the platform admin.</p>`,
+        exceptEmail: callerEmail,
+      });
       return { mode: 'soft', tenantId, deletedAt: now };
     }
 
@@ -7028,6 +7124,25 @@ exports.deleteTenant = onCall(
     }
 
     await update({ status: 'succeeded', completedAt: new Date().toISOString(), currentStep: null });
+
+    // Audit log + email notification (last-step, after everything else
+    // succeeded — so failed deletes don't trigger false-positive alerts).
+    await logAdminAction(db, request, 'tenant.delete.hard', {
+      tenantId, slug: primarySlug, name: tenantNameForLog, droppedSlugs: [primarySlug, ...aliases], jobId,
+    });
+    await notifyPlatformAdmins(db, {
+      subject: `[Plume Nexus Security] 🔴 HARD delete: ${tenantNameForLog} (${primarySlug})`,
+      html: `<p><strong>${callerEmail}</strong> HARD-deleted tenant <code>${tenantId}</code> (<code>${primarySlug}.plumenexus.com</code>) at <code>${now}</code>.</p>
+        <p><strong>What happened:</strong></p>
+        <ul>
+          <li>Entire <code>tenants/${tenantId}/*</code> subtree recursively deleted</li>
+          <li>${[primarySlug, ...aliases].length} slug(s) reserved for 12 months: ${[primarySlug, ...aliases].map(s => `<code>${s}</code>`).join(', ')}</li>
+          <li>Auth domain removed from Firebase Auth allowlist</li>
+        </ul>
+        <p><strong>Recovery:</strong> PITR + BigQuery mirror retain copies. Recovery is manual.</p>
+        <p>Provisioning job for audit trail: <code>${jobId}</code></p>`,
+      exceptEmail: callerEmail,
+    });
 
     return { mode: 'hard', tenantId, droppedSlugs: [primarySlug, ...aliases], jobId };
   }
