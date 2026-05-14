@@ -33,23 +33,46 @@ const PLANS = [
   { id: 'salonPro', name: 'Salon Pro', tagline: '$149/mo · 30-day free trial',          blurb: 'Unlimited staff. Founder-direct support + dedicated onboarding.' },
 ];
 
-// Comparison rows — labels on the left, ✓ / — per plan column. Reveal
-// below the cards so the salon owner can see what they're getting before
-// committing to a tier.
+// Comparison rows. `section: true` makes the row a header. Power Packs
+// bundle into tiers as the main value-escalation axis:
+//   Solo:     core + all Packs as add-ons
+//   Studio:   core+ + Comms Pack included; Marketing/AI/Operations still add-on
+//   Salon Pro: everything in Studio + Marketing + AI + Operations included
+//   Brand Pack stays a-la-carte at every tier (highly specialized).
+//
+// Security features (2FA, backups, encryption, audit log) are standard
+// on every plan — surfaced as a footnote under the table, not a row,
+// so the differentiators stay differentiating.
 const COMPARE = [
-  { label: 'Price',                              solo: 'Free (Founders\') · $49 after', studio: '$79/mo',           salonPro: '$149/mo' },
-  { label: 'Staff members',                      solo: '1',                              studio: 'Up to 8',          salonPro: 'Unlimited' },
-  { label: 'Scheduling + online booking',        solo: true,                             studio: true,               salonPro: true },
-  { label: 'POS, gift cards, promo codes',       solo: true,                             studio: true,               salonPro: true },
-  { label: 'AI-powered reports',                 solo: true,                             studio: true,               salonPro: true },
-  { label: 'Email + branded booking page',       solo: true,                             studio: true,               salonPro: true },
-  { label: 'Multi-tech credit splits',           solo: false,                            studio: true,               salonPro: true },
-  { label: 'Smart walk-in management',           solo: false,                            studio: true,               salonPro: true },
-  { label: 'Custom domain for booking',          solo: false,                            studio: true,               salonPro: true },
-  { label: 'Multi-location',                     solo: false,                            studio: false,              salonPro: 'Coming Q3' },
-  { label: '2FA for admins',                     solo: false,                            studio: false,              salonPro: true },
-  { label: 'Dedicated onboarding',               solo: false,                            studio: false,              salonPro: true },
-  { label: 'Support',                            solo: 'Email · 5-day SLA',              studio: 'Priority email + chat', salonPro: 'Founder-direct' },
+  { section: 'Capacity' },
+  { label: 'Staff members',                                       solo: '1',                          studio: 'Up to 8',                    salonPro: 'Unlimited' },
+  { label: 'Locations',                                           solo: '1',                          studio: '1',                          salonPro: 'Unlimited' },
+
+  { section: 'Core platform' },
+  { label: 'Scheduling + online booking',                         solo: true,                         studio: true,                         salonPro: true },
+  { label: 'POS, gift cards, promo codes',                        solo: true,                         studio: true,                         salonPro: true },
+  { label: 'AI-powered Reports + tax dashboards',                 solo: true,                         studio: true,                         salonPro: true },
+  { label: 'Email reminders + branded booking page',              solo: true,                         studio: true,                         salonPro: true },
+
+  { section: 'Operations growth' },
+  { label: 'Multi-tech credit splits',                            solo: false,                        studio: true,                         salonPro: true },
+  { label: 'Smart walk-in queue management',                      solo: false,                        studio: true,                         salonPro: true },
+  { label: 'Custom booking domain (book.yoursalon.com)',          solo: false,                        studio: true,                         salonPro: true },
+
+  { section: 'Reach your clients · Power Packs' },
+  { label: 'SMS reminders + 2-way (Comms Pack)',                  solo: '+$19/mo',                    studio: 'Included',                   salonPro: 'Included' },
+  { label: 'Loyalty + auto-rebook + segments (Marketing Pack)',   solo: '+$19/mo',                    studio: '+$19/mo',                    salonPro: 'Included' },
+  { label: 'Voice booking + AI marketing drafts (AI Pack)',       solo: '+$19/mo',                    studio: '+$19/mo',                    salonPro: 'Included' },
+
+  { section: 'Advanced operations' },
+  { label: 'Gusto payroll + 1099-NEC + multi-loc (Operations Pack)', solo: '+$29/mo',                 studio: '+$29/mo',                    salonPro: 'Included' },
+  { label: 'White-label client app + branded kiosk (Brand Pack)', solo: '+$39/mo',                    studio: '+$39/mo',                    salonPro: '+$39/mo' },
+
+  { section: 'Support' },
+  { label: 'Email · 5-day SLA',                                   solo: true,                         studio: false,                        salonPro: false },
+  { label: 'Priority email + chat',                               solo: false,                        studio: true,                         salonPro: false },
+  { label: 'Founder-direct support',                              solo: false,                        studio: false,                        salonPro: true },
+  { label: 'Dedicated onboarding session',                        solo: false,                        studio: false,                        salonPro: true },
 ];
 
 function fmtPhone(input) {
@@ -312,8 +335,11 @@ function PlanComparison({ selectedPlan }) {
     const v = row[key];
     if (v === true)  return <span style={cellCheck}>✓</span>;
     if (v === false) return <span style={cellDash}>—</span>;
+    // 'Included' gets a green check + label for emphasis (it's the bundled-pack carrot)
+    if (v === 'Included') return <span style={cellIncluded}>✓ Included</span>;
     return <span style={cellText}>{v}</span>;
   }
+  let bodyIdx = 0;
   return (
     <div style={tableWrap}>
       <table style={table}>
@@ -326,16 +352,29 @@ function PlanComparison({ selectedPlan }) {
           </tr>
         </thead>
         <tbody>
-          {COMPARE.map((row, i) => (
-            <tr key={row.label} style={i % 2 === 0 ? trEven : trOdd}>
-              <td style={tdLabel}>{row.label}</td>
-              <td style={selectedPlan === 'solo'     ? tdSelected : td}>{cellValue(row, 'solo')}</td>
-              <td style={selectedPlan === 'studio'   ? tdSelected : td}>{cellValue(row, 'studio')}</td>
-              <td style={selectedPlan === 'salonPro' ? tdSelected : td}>{cellValue(row, 'salonPro')}</td>
-            </tr>
-          ))}
+          {COMPARE.map((row, i) => {
+            if (row.section) {
+              return (
+                <tr key={`section-${i}`} style={trSection}>
+                  <td colSpan={4} style={tdSection}>{row.section}</td>
+                </tr>
+              );
+            }
+            const isEven = bodyIdx++ % 2 === 0;
+            return (
+              <tr key={row.label} style={isEven ? trEven : trOdd}>
+                <td style={tdLabel}>{row.label}</td>
+                <td style={selectedPlan === 'solo'     ? tdSelected : td}>{cellValue(row, 'solo')}</td>
+                <td style={selectedPlan === 'studio'   ? tdSelected : td}>{cellValue(row, 'studio')}</td>
+                <td style={selectedPlan === 'salonPro' ? tdSelected : td}>{cellValue(row, 'salonPro')}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      <div style={securityNote}>
+        <strong>Standard on every plan</strong> · 2FA for admins · daily backups + 7-day point-in-time recovery · encryption at rest and in transit · audit logs · tenant data isolation
+      </div>
     </div>
   );
 }
@@ -478,9 +517,13 @@ const tdSelected = { ...td, background: 'rgba(91,59,140,.06)', borderLeft: `1px 
 const tdLabel    = { padding: '8px 14px', textAlign: 'left', fontSize: 12, color: C.muted, fontWeight: 500 };
 const trEven     = { background: '#fff' };
 const trOdd      = { background: '#fbfaff' };
+const trSection  = { background: '#f3effa' };
+const tdSection  = { padding: '8px 14px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: C.plumDeep, letterSpacing: '.14em', textTransform: 'uppercase' };
 const cellCheck  = { color: C.success, fontWeight: 700, fontSize: 13 };
 const cellDash   = { color: C.mutedSoft, fontSize: 13 };
 const cellText   = { color: C.text, fontSize: 11 };
+const cellIncluded = { color: C.success, fontWeight: 700, fontSize: 11 };
+const securityNote = { padding: '10px 14px', fontSize: 11, color: C.muted, background: '#fafafa', borderTop: `1px solid ${C.rule}`, lineHeight: 1.55 };
 
 
 const signedInRow = {
