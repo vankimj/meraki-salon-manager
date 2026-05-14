@@ -6439,11 +6439,30 @@ function platformTwilioClient() {
 // Provisions a TFN + submits Toll-Free Verification for the given
 // tenant. Idempotent: if a TFN was already bought (state stored in
 // data/sms) we skip the purchase and resubmit verification only.
+// Normalize URL flag forms (?privacy=1, ?sms-consent=1, ?book=1) to their
+// clean path equivalents so persisted formData never carries the legacy
+// shape. Defense in depth — the client migrator also cleans on read.
+function normalizeSmsFormUrls(form) {
+  if (!form) return form;
+  const next = { ...form };
+  if (typeof next.privacyPolicyUrl === 'string') {
+    next.privacyPolicyUrl = next.privacyPolicyUrl
+      .replace(/\/\?privacy=1\b/, '/privacy');
+  }
+  if (typeof next.optInProofUrl === 'string') {
+    next.optInProofUrl = next.optInProofUrl
+      .replace(/\/\?sms-consent=1\b/, '/sms-consent')
+      .replace(/\/\?book=1\b/,        '/sms-consent');
+  }
+  return next;
+}
+
 exports.provisionTenantSMS = onCall(
   { cors: true, secrets: [twilioToken], timeoutSeconds: 60 },
   async (request) => {
-    const { tenantId: tid, form, areaCode } = request.data || {};
+    const { tenantId: tid, form: rawForm, areaCode } = request.data || {};
     const tenantId = tid || TENANT_ID;
+    const form = normalizeSmsFormUrls(rawForm);
     const db = getFirestore();
     await requireTenantAdmin(db, tenantId, request);
 

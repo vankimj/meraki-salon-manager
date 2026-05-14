@@ -136,6 +136,16 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
           We provision a verified toll-free number on your behalf. Setup runs through Twilio
           (3-step wizard below). Once approved you can send reminders + marketing campaigns.
         </div>
+        <div style={{
+          fontSize: 12, color: '#5b3b8c', background: '#f5efff',
+          border: '1px solid #d8c8f0', borderRadius: 8,
+          padding: '10px 14px', marginBottom: 12, lineHeight: 1.55,
+        }}>
+          <strong>Optional during onboarding.</strong> Click <em>Save &amp; continue</em> below
+          to skip — you can finish the SMS wizard anytime from <strong>Admin → SMS</strong>.
+          Carrier review takes 2–7 business days once submitted, so most salons start the
+          wizard now and circle back when they need to send reminders.
+        </div>
         <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, overflow: 'hidden' }}>
           <SmsSetup />
         </div>
