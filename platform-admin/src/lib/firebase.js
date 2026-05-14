@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'firebase/auth';
 import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, query, orderBy, limit, where, serverTimestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
@@ -31,6 +31,16 @@ export async function signIn() {
 
 export async function signOutNow() {
   return signOut(auth);
+}
+
+// Force a fresh Google sign-in on the SAME account, used as a destructive-
+// op gate. Pops the Google chooser, requires the user to physically click
+// their account, and refreshes the auth token. Rejects if the user cancels
+// or picks a different account. Throws auth/user-mismatch in that case so
+// callers can surface a clear error.
+export async function reauthGoogle() {
+  if (!auth.currentUser) throw new Error('Not signed in.');
+  return reauthenticateWithPopup(auth.currentUser, googleProvider);
 }
 
 // ── Re-exports for convenience ──────────────────────────

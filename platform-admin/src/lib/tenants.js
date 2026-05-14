@@ -7,6 +7,28 @@ import { auth } from './firebase.js';
 // gated to platform admins; both return only sanitized fields.
 const _listTenants       = httpsCallable(fns, 'listTenants');
 const _getTenantMetadata = httpsCallable(fns, 'getTenantMetadata');
+const _deleteTenant      = httpsCallable(fns, 'deleteTenant');
+
+// Hard-delete a tenant (recursive subtree drop + slug 12-month
+// reservation + Auth domain removal + Twilio TFN release where
+// applicable). Server gate requires confirm = `YES-DELETE-${tid}-
+// IRREVERSIBLE` — we mint that here so the caller only passes tid.
+export async function hardDeleteTenant(tenantId) {
+  const res = await _deleteTenant({
+    tenantId,
+    mode:    'hard',
+    confirm: `YES-DELETE-${tenantId}-IRREVERSIBLE`,
+  });
+  return res.data;
+}
+
+// Soft delete — flip active=false + set deletedAt. Reversible via
+// updateTenantRecord({active:true}). Server still requires bootstrap-
+// admin auth.
+export async function softDeleteTenant(tenantId) {
+  const res = await _deleteTenant({ tenantId, mode: 'soft' });
+  return res.data;
+}
 
 // ── Tenant list / metadata via the chokepoint functions ─────────
 export async function fetchTenants() {

@@ -5912,6 +5912,11 @@ exports.getTenantMetadata = onCall(
       active:           registry.active           !== false,
       createdAt:        registry.createdAt        || null,
       legacyPlan:       registry.legacyPlan       || null,
+      // For opaque tenant IDs (the new self-serve signup model), the URL
+      // slug ≠ tenant doc id. Surface it so destructive flows can
+      // confirm-by-typing the slug instead of the gnarly opaque id.
+      subdomain:        registry.subdomain        || tenantId,
+      aliases:          registry.aliases          || [],
       provisioned:      usersSnap.exists,
       // staffEmails projection is the canonical count post-split
       // (rich users[] now lives in data/usersFull, not read here).

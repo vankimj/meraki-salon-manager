@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs } from '../lib/tenants.js';
+import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant } from '../lib/tenants.js';
+import { reauthGoogle } from '../lib/firebase.js';
 import { C, FONT, shadow, radius } from '../theme.js';
 
 function statusFromActivity(lastIso) {
@@ -170,7 +171,198 @@ export default function TenantDetail({ tenantId }) {
           Platform-admin actions taken on this tenant. Coming Phase 2.
         </Panel>
       </div>
+
+      <DangerZone tenantId={meta.id} slug={meta.subdomain || meta.id} salonName={meta.name} ownerEmail={meta.ownerEmail} />
     </>
+  );
+}
+
+// 4-gate destructive operation:
+//   gate 1: click "Hard delete" → opens modal
+//   gate 2: type the slug verbatim (typo defense + intent confirmation)
+//   gate 3: re-authenticate with Google (forces fresh sign-in popup —
+//           proves a human is at the keyboard and the session wasn't
+//           left open by accident)
+//   gate 4: Cloud Function receives confirm string `YES-DELETE-{tid}-
+//           IRREVERSIBLE` and validates server-side (last-mile defense
+//           in case the modal is bypassed somehow).
+function DangerZone({ tenantId, slug, salonName, ownerEmail }) {
+  const [openModal, setOpenModal] = useState(false);
+  return (
+    <>
+      <div style={{
+        marginTop: 32, padding: 18,
+        background: '#fef2f2', border: `1px solid #fecaca`, borderRadius: radius.md,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: C.danger, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+          Danger zone
+        </div>
+        <div style={{ fontSize: 13, color: '#7f1d1d', lineHeight: 1.55, marginBottom: 14 }}>
+          Hard delete drops every clients / appointments / receipts /
+          settings / messages document for this tenant. Slug is
+          reserved for 12 months to prevent impersonation. PITR + BQ
+          mirror hold recoverable copies but recovery is manual.
+        </div>
+        <button onClick={() => setOpenModal(true)} style={{
+          padding: '9px 16px', fontSize: 13, fontWeight: 700,
+          background: C.danger, color: '#fff', border: 'none',
+          borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+        }}>
+          Hard delete this tenant
+        </button>
+      </div>
+      {openModal && (
+        <HardDeleteModal
+          tenantId={tenantId}
+          slug={slug}
+          salonName={salonName}
+          ownerEmail={ownerEmail}
+          onClose={() => setOpenModal(false)}
+        />
+      )}
+    </>
+  );
+}
+
+function HardDeleteModal({ tenantId, slug, salonName, ownerEmail, onClose }) {
+  const [typed,    setTyped]    = useState('');
+  const [step,     setStep]     = useState('confirm'); // confirm | reauthing | deleting | done | error
+  const [error,    setError]    = useState('');
+  const slugMatches = typed.trim().toLowerCase() === slug.toLowerCase();
+
+  async function execute() {
+    setError('');
+    setStep('reauthing');
+    try {
+      await reauthGoogle();
+    } catch (e) {
+      const code = e?.code || '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setError('Re-authentication cancelled.');
+      } else if (code === 'auth/user-mismatch') {
+        setError('Re-auth picked a different Google account. Pick the same one you signed in with.');
+      } else {
+        setError(`Re-auth failed: ${e?.message || code || 'unknown'}`);
+      }
+      setStep('error');
+      return;
+    }
+    setStep('deleting');
+    try {
+      const res = await hardDeleteTenant(tenantId);
+      console.log('[deleteTenant]', res);
+      setStep('done');
+    } catch (e) {
+      setError(`Server delete failed: ${e?.message || e?.code || 'unknown'}`);
+      setStep('error');
+    }
+  }
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      zIndex: 999, padding: 20,
+    }}>
+      <div style={{
+        background: '#fff', borderRadius: 14, maxWidth: 520, width: '100%',
+        boxShadow: '0 20px 60px rgba(0,0,0,.35)',
+        border: `2px solid ${C.danger}`,
+      }}>
+        <div style={{ padding: '20px 24px 0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 18, fontWeight: 800, color: C.danger }}>⚠ Hard delete tenant</div>
+          {step !== 'deleting' && step !== 'reauthing' && (
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, color: C.muted, cursor: 'pointer', lineHeight: 1 }}>×</button>
+          )}
+        </div>
+
+        <div style={{ padding: '14px 24px' }}>
+          {step === 'done' ? (
+            <>
+              <p style={{ fontSize: 14, color: C.text, lineHeight: 1.6, marginBottom: 14 }}>
+                <strong>{salonName || slug}</strong> has been hard-deleted. All
+                tenant data dropped, slug reserved 12 months, Auth domain
+                removed.
+              </p>
+              <a href="/" style={{
+                display: 'inline-block', padding: '9px 16px', fontSize: 13, fontWeight: 700,
+                background: C.plum, color: '#fff', borderRadius: 8, textDecoration: 'none',
+              }}>← Back to tenant list</a>
+            </>
+          ) : (
+            <>
+              <p style={{ fontSize: 13, color: C.text, lineHeight: 1.6, marginBottom: 14 }}>
+                You're about to permanently delete <strong>{salonName || slug}</strong>
+                {ownerEmail && <> (owner: <code style={{ background: C.bgCode, padding: '1px 5px', borderRadius: 3, fontSize: 12 }}>{ownerEmail}</code>)</>}.
+                <br /><br />
+                To confirm: type the tenant slug below, then re-sign-in with
+                your Google account when the popup appears.
+              </p>
+
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 6 }}>
+                Type <code style={{ background: C.bgCode, padding: '1px 5px', borderRadius: 3, fontSize: 12, textTransform: 'none', letterSpacing: 0 }}>{slug}</code> to confirm
+              </label>
+              <input
+                value={typed}
+                onChange={e => setTyped(e.target.value)}
+                placeholder={slug}
+                autoFocus
+                disabled={step !== 'confirm' && step !== 'error'}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  padding: '10px 12px', fontSize: 14,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  border: `1px solid ${slugMatches ? C.success : C.rule}`,
+                  borderRadius: 8, outline: 'none',
+                  background: '#fff',
+                  marginBottom: 16,
+                }}
+              />
+
+              {step === 'reauthing' && <Status label="Waiting for Google re-auth…" />}
+              {step === 'deleting'  && <Status label="Deleting tenant subtree + reserving slug…" />}
+              {error && <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fef2f2', border: `1px solid ${C.danger}`, borderRadius: 6, fontSize: 12, color: '#7f1d1d' }}>{error}</div>}
+
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
+                <button onClick={onClose} disabled={step === 'reauthing' || step === 'deleting'}
+                  style={{
+                    padding: '9px 14px', fontSize: 13, fontWeight: 600,
+                    background: '#fff', color: C.muted, border: `1px solid ${C.rule}`,
+                    borderRadius: 8, cursor: step === 'reauthing' || step === 'deleting' ? 'default' : 'pointer', fontFamily: 'inherit',
+                  }}>Cancel</button>
+                <button onClick={execute} disabled={!slugMatches || step === 'reauthing' || step === 'deleting'}
+                  style={{
+                    padding: '9px 16px', fontSize: 13, fontWeight: 700,
+                    background: C.danger, color: '#fff', border: 'none',
+                    borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                    opacity: (!slugMatches || step === 'reauthing' || step === 'deleting') ? 0.4 : 1,
+                  }}>
+                  {step === 'reauthing' ? 'Re-authenticating…' : step === 'deleting' ? 'Deleting…' : 'Re-auth + delete'}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Status({ label }) {
+  return (
+    <div style={{
+      padding: '10px 14px', background: '#eff6ff', border: '1px solid #bfdbfe',
+      borderRadius: 8, fontSize: 12, color: '#1e40af', fontWeight: 600,
+      marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8,
+    }}>
+      <span style={{
+        display: 'inline-block', width: 12, height: 12, borderRadius: '50%',
+        border: `2px solid #1e40af`, borderTopColor: 'transparent',
+        animation: 'spin .8s linear infinite',
+      }} />
+      {label}
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
   );
 }
 
