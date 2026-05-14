@@ -6210,6 +6210,14 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
 // onboarding Phase 1, future Admin → Locations). Keeps the API key on
 // the server (never shipped to the browser bundle).
 
+// Uses the Places API (New) — the legacy /maps/api/place/* endpoints
+// can't be enabled on new GCP projects as of 2025-2026. Endpoints:
+//   POST https://places.googleapis.com/v1/places:autocomplete
+//   GET  https://places.googleapis.com/v1/places/{placeId}
+// Auth is via the X-Goog-Api-Key header (not a query string). Response
+// shape is also different — autocomplete returns `suggestions[*].
+// placePrediction.{placeId,text.text}`, details returns
+// `addressComponents` (camelCase types `streetNumber`, `locality`, etc.).
 exports.placesAutocomplete = onCall({ cors: true, timeoutSeconds: 10 }, async (request) => {
   const { input } = request.data || {};
   if (!input || typeof input !== 'string' || input.trim().length < 3) {
@@ -6218,23 +6226,29 @@ exports.placesAutocomplete = onCall({ cors: true, timeoutSeconds: 10 }, async (r
   const apiKey = mapsApiKey.value();
   if (!apiKey) throw new HttpsError('failed-precondition', 'GOOGLE_MAPS_API_KEY not configured');
 
-  const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
-  url.searchParams.set('input', input.trim());
-  url.searchParams.set('types', 'address');
-  url.searchParams.set('components', 'country:us');
-  url.searchParams.set('key', apiKey);
-
   try {
-    const res  = await fetch(url);
+    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        'X-Goog-Api-Key': apiKey,
+      },
+      body: JSON.stringify({
+        input:                input.trim(),
+        includedRegionCodes:  ['us'],
+        includedPrimaryTypes: ['street_address', 'route', 'premise', 'subpremise'],
+      }),
+    });
     const data = await res.json();
-    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
-      throw new HttpsError('internal', `Places API: ${data.status} ${data.error_message || ''}`.trim());
+    if (data.error) {
+      throw new HttpsError('internal', `Places API: ${data.error.status || data.error.code} ${data.error.message || ''}`.trim());
     }
+    const suggestions = data.suggestions || [];
     return {
-      predictions: (data.predictions || []).slice(0, 5).map(p => ({
-        placeId:     p.place_id,
-        description: p.description,
-      })),
+      predictions: suggestions.slice(0, 5).map(s => ({
+        placeId:     s.placePrediction?.placeId || '',
+        description: s.placePrediction?.text?.text || '',
+      })).filter(p => p.placeId && p.description),
     };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
@@ -6248,30 +6262,32 @@ exports.placeDetails = onCall({ cors: true, timeoutSeconds: 10 }, async (request
   const apiKey = mapsApiKey.value();
   if (!apiKey) throw new HttpsError('failed-precondition', 'GOOGLE_MAPS_API_KEY not configured');
 
-  const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
-  url.searchParams.set('place_id', placeId);
-  url.searchParams.set('fields', 'address_components,formatted_address,geometry');
-  url.searchParams.set('key', apiKey);
-
   try {
-    const res  = await fetch(url);
+    const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+      headers: {
+        'X-Goog-Api-Key':    apiKey,
+        'X-Goog-FieldMask':  'addressComponents,formattedAddress,location',
+      },
+    });
     const data = await res.json();
-    if (data.status !== 'OK') {
-      throw new HttpsError('internal', `Places Details: ${data.status} ${data.error_message || ''}`.trim());
+    if (data.error) {
+      throw new HttpsError('internal', `Places Details: ${data.error.status || data.error.code} ${data.error.message || ''}`.trim());
     }
-    const comps = data.result?.address_components || [];
-    const find = (t) => comps.find(c => c.types.includes(t));
-    const streetNum = find('street_number')?.long_name || '';
-    const route     = find('route')?.long_name || '';
+    const comps = data.addressComponents || [];
+    // New API uses camelCase types ("streetNumber" not "street_number") in
+    // the `types` array. Components have `longText` + `shortText`.
+    const find = (t) => comps.find(c => Array.isArray(c.types) && c.types.includes(t));
+    const streetNum = find('street_number')?.longText || '';
+    const route     = find('route')?.longText || '';
     return {
       street:    [streetNum, route].filter(Boolean).join(' '),
-      city:      find('locality')?.long_name || find('sublocality')?.long_name || find('postal_town')?.long_name || '',
-      state:     find('administrative_area_level_1')?.short_name || '',
-      zip:       find('postal_code')?.long_name || '',
-      country:   find('country')?.short_name || '',
-      formatted: data.result?.formatted_address || '',
-      lat:       data.result?.geometry?.location?.lat ?? null,
-      lng:       data.result?.geometry?.location?.lng ?? null,
+      city:      find('locality')?.longText || find('sublocality')?.longText || find('postal_town')?.longText || '',
+      state:     find('administrative_area_level_1')?.shortText || '',
+      zip:       find('postal_code')?.longText || '',
+      country:   find('country')?.shortText || '',
+      formatted: data.formattedAddress || '',
+      lat:       data.location?.latitude ?? null,
+      lng:       data.location?.longitude ?? null,
     };
   } catch (e) {
     if (e instanceof HttpsError) throw e;
