@@ -132,8 +132,17 @@ export async function resolveTenant() {
     return;
   }
 
+  // Hard cap on the slug lookup so a hung Firestore call (seen in some
+  // WebKit / restrictive-cookie environments) doesn't trap Boot in
+  // `status: 'loading'` forever — that renders null and looks like a
+  // blank page. After the timeout, fall through to notFound. Worst case
+  // a real tenant briefly sees the not-found page and a reload fixes it,
+  // which is strictly better than a blank screen.
   try {
-    const snap = await getDoc(doc(db, 'slugs', sub));
+    const snap = await Promise.race([
+      getDoc(doc(db, 'slugs', sub)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('slug lookup timeout')), 5000)),
+    ]);
     if (!snap.exists()) {
       TENANT_ID = LEGACY_FALLBACK_TENANT;
       resolveState = { status: 'notFound', reason: 'unknown', slug: sub };
@@ -157,8 +166,8 @@ export async function resolveTenant() {
     resolveState = { status: 'notFound', reason: 'malformed', slug: sub };
   } catch (e) {
     console.warn('[tenant] resolveTenant failed:', e?.code || e?.message);
-    // Network/Firestore error — fall back to the boot guess so the app
-    // still tries to render. Worst case: empty tenant data, user reloads.
-    resolveState = { status: 'ok' };
+    // Network / Firestore error / timeout — show TenantNotFound rather
+    // than a blank page so the user has clear CTAs to recover.
+    resolveState = { status: 'notFound', reason: 'unknown', slug: sub };
   }
 }

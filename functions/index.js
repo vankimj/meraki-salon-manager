@@ -6673,6 +6673,19 @@ exports.releaseTenantSMS = onCall(
 // Slug format mirrors src/lib/reservedSlugs.js — keep in sync.
 const SLUG_FORMAT_RE = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;
 
+// Generate a lowercase opaque tenant id. NOT Firestore's auto-id because
+// that returns base62 (includes uppercase), which conflicts with the
+// existing server-side validators `/^[a-z0-9-]{1,64}$/` used by every
+// tenant-scoped callable (chatWithSalon, getMyTenantRole, etc). 13 chars
+// of base36 = 4.7e20 possibilities; collision risk is microscopic and
+// detected at slug-reservation time anyway.
+function makeLowercaseTenantId() {
+  const crypto = require('crypto');
+  // 't' prefix + 16 hex chars = matches /^[a-z0-9-]{1,64}$/ (no underscore
+  // because existing server validators don't allow it).
+  return 't' + crypto.randomBytes(8).toString('hex');
+}
+
 // Returns a Google OAuth access token for the service account this
 // function runs under. Used for Identity Toolkit Admin API calls
 // (adding tenant subdomains to authorizedDomains, since firebase-admin
@@ -6779,7 +6792,7 @@ exports.provisionTenant = onCall(
             throw new HttpsError('already-exists', `'${slug}' is already taken.`);
           }
         }
-        const tid = db.collection('tenants').doc().id;
+        const tid = makeLowercaseTenantId();
         tx.set(slugRef, {
           tenantId: tid, kind: 'primary', createdAt: now,
         });
