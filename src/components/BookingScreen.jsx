@@ -117,7 +117,7 @@ export default function BookingScreen() {
   const [cartSlot, setCartSlot] = useState(null);
   // Per-date appointment cache for the slot picker.
   const [apptsByDate, setApptsByDate] = useState({});
-  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: true, optInEmail: true });
+  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false });
   const [submitting,      setSubmitting]      = useState(false);
   const [bookingError,    setBookingError]    = useState('');
   const [confirmed,       setConfirmed]       = useState(null);
@@ -384,7 +384,7 @@ export default function BookingScreen() {
     setClient(null);
     setPendingFirstInitial(null);
     resetOtp();
-    setForm({ name: '', phone: '', email: '', notes: '', optInSms: true, optInEmail: true });
+    setForm({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false });
   }
 
   async function handleBook() {
@@ -417,13 +417,21 @@ export default function BookingScreen() {
             extra: {
               picture: gUser?.photoURL || '',
               commPreferences: {
-                appointmentSms:   form.optInSms !== false,
-                appointmentEmail: form.optInEmail !== false,
+                // Transactional (appointment confirmations + reminders) is
+                // always allowed under TCPA for clients we have a booking
+                // relationship with. The toggles control MARKETING only.
+                appointmentSms:   true,
+                appointmentEmail: true,
                 appointmentVoice: false,
-                marketingSms:     form.optInSms !== false,
-                marketingEmail:   form.optInEmail !== false,
+                marketingSms:     form.optInSms   === true,
+                marketingEmail:   form.optInEmail === true,
                 marketingVoice:   false,
               },
+              // Audit trail for TCPA / Twilio TFN verification. We record
+              // the timestamp of explicit marketing opt-in so a reviewer
+              // can confirm the consent moment for any given client.
+              marketingOptInSmsAt:   form.optInSms   === true ? new Date().toISOString() : null,
+              marketingOptInEmailAt: form.optInEmail === true ? new Date().toISOString() : null,
             },
           });
           if (res?.data?.banned) {
@@ -647,7 +655,7 @@ export default function BookingScreen() {
         )}
         {step === 4 && (
           <Step4Info
-            form={form}
+            form={form} webCfg={webCfg}
             gUser={gUser} client={client}
             emailLinkState={emailLinkState}
             onSendEmailLink={sendEmailLink}
@@ -1182,12 +1190,13 @@ function Step3PickSlot({ cart, cartTech, allTechs, cartDate, setCartDate, cartSl
 
 // ── Step 4: Info ───────────────────────────────────────
 function Step4Info({
-  form, gUser, client,
+  form, webCfg, gUser, client,
   emailLinkState, onSendEmailLink,
   otpState, otpError, otpPhonePretty,
   onSendOtp, onVerifyOtp, onResetOtp, onGoogleSignIn,
   onChange, onNext, onBack,
 }) {
+  const salonName = webCfg?.salonName || 'our salon';
   // Required: name + phone (signed-in users skip this step entirely so they bypass the validation)
   const valid = form.name.trim() && form.phone.trim();
 
@@ -1213,22 +1222,36 @@ function Step4Info({
     </div>
   );
 
-  // Communication-preference opt-ins. Defaults to both checked for new
-  // bookers; salon-side, the client profile lets them edit later. We split
-  // SMS + Email so customers can pick "email only" if they hate texts.
+  // SMS / email opt-in for marketing + reminders. Defaults are
+  // UNCHECKED — required by TCPA + Twilio Toll-Free Verification
+  // (carrier reviewers will reject pre-checked consent boxes). The
+  // SMS label uses verbatim consent language that mirrors what the
+  // public /?sms-consent=1 page advertises, so a reviewer landing
+  // there sees the same checkbox text the customer sees.
   const optInCard = (
     <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: '12px 16px', marginBottom: 16, fontSize: 13 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 6 }}>How can we reach you?</div>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', color: '#333' }}>
-        <input type="checkbox" checked={form.optInSms !== false} onChange={e => onChange({ optInSms: e.target.checked })} />
-        <span>Text me reminders + appointment updates</span>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#666', marginBottom: 8 }}>How can we reach you?</div>
+
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', cursor: 'pointer', color: '#333' }}>
+        <input type="checkbox" checked={form.optInSms === true} onChange={e => onChange({ optInSms: e.target.checked })} style={{ marginTop: 3, flexShrink: 0 }} />
+        <span style={{ lineHeight: 1.5 }}>
+          <strong>Yes, send me text reminders and occasional promotions from {salonName}.</strong>{' '}
+          Message frequency varies. Message and data rates may apply.
+          Reply <strong>STOP</strong> to opt out, <strong>HELP</strong> for help.{' '}
+          View our <a href="?privacy=1" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--tm-primary, #2D7A5F)', fontWeight: 600 }}>privacy policy</a>.
+        </span>
       </label>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', cursor: 'pointer', color: '#333' }}>
-        <input type="checkbox" checked={form.optInEmail !== false} onChange={e => onChange({ optInEmail: e.target.checked })} />
-        <span>Email me reminders + appointment updates</span>
+
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '6px 0', cursor: 'pointer', color: '#333' }}>
+        <input type="checkbox" checked={form.optInEmail === true} onChange={e => onChange({ optInEmail: e.target.checked })} style={{ marginTop: 3, flexShrink: 0 }} />
+        <span style={{ lineHeight: 1.5 }}>
+          Email me appointment reminders + occasional offers from {salonName}.
+          Unsubscribe link in every email.
+        </span>
       </label>
-      <div style={{ fontSize: 11, color: '#888', marginTop: 4, lineHeight: 1.5 }}>
-        We'll only send what's relevant. You can change this any time. Reply STOP to a text or click "Unsubscribe" in any email to opt out of marketing.
+
+      <div style={{ fontSize: 11, color: '#888', marginTop: 6, lineHeight: 1.5 }}>
+        Appointment confirmation + day-before reminders are sent automatically (transactional) regardless of these toggles. Toggles above control marketing.
       </div>
     </div>
   );
