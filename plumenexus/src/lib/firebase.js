@@ -1,5 +1,7 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp }   from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
@@ -10,8 +12,33 @@ const firebaseConfig = {
   appId:             '1:721171829996:web:57f1a33d174c966b7fc1c9',
 };
 
-const app = initializeApp(firebaseConfig);
-const fns = getFunctions(app);
+const app  = initializeApp(firebaseConfig);
+const fns  = getFunctions(app);
+export const auth = getAuth(app);
+export const db   = getFirestore(app);
 
-export const callMarketingChat = httpsCallable(fns, 'chatWithMarketing');
-export const callContactInquiry = httpsCallable(fns, 'submitContactInquiry');
+export const callMarketingChat   = httpsCallable(fns, 'chatWithMarketing');
+export const callContactInquiry  = httpsCallable(fns, 'submitContactInquiry');
+export const callProvisionTenant = httpsCallable(fns, 'provisionTenant');
+
+export async function signInWithGoogle() {
+  const provider = new GoogleAuthProvider();
+  return signInWithPopup(auth, provider);
+}
+export function watchAuth(cb)    { return onAuthStateChanged(auth, cb); }
+export function signOutUser()    { return signOut(auth); }
+
+// Slug availability check — slugs/ is public-readable so the signup form
+// can do this without any Cloud Function call. Returns one of:
+//   { available: true }
+//   { available: false, kind: 'reserved' | 'primary' | 'alias' }
+export async function checkSlugAvailability(slug) {
+  const snap = await getDoc(doc(db, 'slugs', slug));
+  if (!snap.exists()) return { available: true };
+  return { available: false, kind: snap.data()?.kind };
+}
+
+// Subscribe to a provisioning job's progress doc. Returns unsubscribe fn.
+export function watchProvisioningJob(jobId, cb) {
+  return onSnapshot(doc(db, 'provisioningJobs', jobId), (s) => cb(s.exists() ? s.data() : null));
+}

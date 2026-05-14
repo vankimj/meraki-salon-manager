@@ -53,8 +53,13 @@ export default function Nav() {
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >{l.label}</a>
           ))}
+          <a href="/signup" style={{
+            marginLeft: 10, padding: '9px 16px', fontSize: 14, fontWeight: 600,
+            color: C.plum, background: '#fff', border: `1px solid ${C.plum}`, borderRadius: 999,
+            textDecoration: 'none',
+          }}>Start free</a>
           <a href="#demo" style={{
-            marginLeft: 10, padding: '9px 18px', fontSize: 14, fontWeight: 600,
+            marginLeft: 6, padding: '9px 18px', fontSize: 14, fontWeight: 600,
             color: '#fff', background: grad.primary, borderRadius: 999,
             textDecoration: 'none', boxShadow: '0 4px 14px rgba(91,59,140,.35)',
           }}>Book a demo</a>
@@ -83,7 +88,12 @@ export default function Nav() {
               color: C.text, textDecoration: 'none', borderBottom: `1px solid ${C.ruleSoft}`,
             }}>{l.label}</a>
           ))}
-          <div style={{ padding: '14px 28px' }}>
+          <div style={{ padding: '14px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a href="/signup" onClick={() => setOpen(false)} style={{
+              display: 'block', textAlign: 'center', padding: '11px 18px', fontSize: 15,
+              fontWeight: 600, color: C.plum, background: '#fff',
+              border: `1px solid ${C.plum}`, borderRadius: 999, textDecoration: 'none',
+            }}>Start free</a>
             <a href="#demo" onClick={() => setOpen(false)} style={{
               display: 'block', textAlign: 'center', padding: '11px 18px', fontSize: 15,
               fontWeight: 600, color: '#fff', background: grad.primary, borderRadius: 999,
