@@ -52,6 +52,78 @@ const SUB  = { fontSize: 12, color: '#888', margin: '0 0 28px' };
 const NOTE = { background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', borderRadius: 8, padding: '10px 14px', fontSize: 12, margin: '20px 0' };
 const BTN  = { display: 'inline-block', background: '#2D7A5F', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontSize: 13, fontWeight: 600, marginTop: 32 };
 
+// SMS consent declaration page — purpose-built for Twilio Toll-Free
+// Verification reviewers. Public route at `/?sms-consent=1`. Shows:
+//   - what messages we send (transactional + opt-in marketing)
+//   - how clients opt in (booking-form checkbox + verbatim consent text)
+//   - how clients opt out (STOP keyword, no charge)
+//   - sample messages we'll actually send
+//   - link to the privacy policy
+// Reviewers landing here see everything they need to approve the TFN.
+export function SmsConsentScreen() {
+  const SALON = useSalonInfo();
+  useEffect(() => { document.title = `SMS Consent · ${SALON.name}`; }, [SALON.name]);
+  const lastUpdated = '2026-05-13';
+  const bookingUrl = `${window.location.origin}/?book=1`;
+  const privacyUrl = `${window.location.origin}/?privacy=1`;
+
+  return (
+    <div style={SHELL}>
+      <div style={CARD}>
+        <h1 style={H1}>SMS Communications & Opt-In</h1>
+        <div style={SUB}>{SALON.name} · Last updated {lastUpdated}</div>
+
+        <p><strong>{SALON.name}</strong> sends text-message reminders, booking confirmations, and (with opt-in) occasional promotional messages to clients who book with us.</p>
+
+        <h2 style={H2}>1. Types of messages we send</h2>
+        <ul>
+          <li><strong>Transactional</strong> — appointment reminders (the day before and the morning of), booking confirmations, last-minute cancellations or schedule changes.</li>
+          <li><strong>Promotional (opt-in only)</strong> — occasional offers, new services, holiday-season specials. Never daily; typically 1–2 times per month.</li>
+        </ul>
+
+        <h2 style={H2}>2. How clients opt in</h2>
+        <p>During online booking at <a href={bookingUrl} style={{ color: '#2D7A5F', fontWeight: 600 }}>{bookingUrl}</a>, a consent checkbox appears on the contact-info step. The checkbox is <strong>unchecked by default</strong>. Verbatim consent language displayed next to the checkbox:</p>
+        <div style={{ background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 18px', margin: '14px 0', fontSize: 13, color: '#333', lineHeight: 1.6 }}>
+          ☐ <strong>Yes, send me text reminders and occasional promotions from {SALON.name}.</strong> Message frequency varies. Message and data rates may apply. Reply STOP to opt out, HELP for help. View our <a href={privacyUrl} style={{ color: '#2D7A5F', fontWeight: 600 }}>privacy policy</a>.
+        </div>
+        <p>The opt-in is stored on the client record with a timestamp at the moment of consent. Without an explicit check, no SMS is sent.</p>
+
+        <h2 style={H2}>3. How clients opt out</h2>
+        <p>Clients can opt out at any time by:</p>
+        <ul>
+          <li>Replying <strong>STOP</strong> to any text we send (no charge, takes effect immediately).</li>
+          <li>Asking front-desk staff to update their profile.</li>
+          <li>Emailing {SALON.email || 'us'}.</li>
+        </ul>
+        <p>Opt-out is recorded with timestamp and verified at every send — once opted out, no further messages reach the recipient.</p>
+
+        <h2 style={H2}>4. Sample messages</h2>
+        <p>Representative messages we'll send to opted-in clients:</p>
+        <div style={{ background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 18px', margin: '8px 0', fontSize: 13, color: '#333', lineHeight: 1.6 }}>
+          <p style={{ margin: 0 }}><em>Reminder:</em> Hi Jane! Just a friendly reminder about your appointment at {SALON.name} tomorrow at 2:00 PM with Yasmin. Reply STOP to opt out.</p>
+        </div>
+        <div style={{ background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 18px', margin: '8px 0', fontSize: 13, color: '#333', lineHeight: 1.6 }}>
+          <p style={{ margin: 0 }}><em>Confirmation:</em> Hi Jane, your gel manicure appointment is confirmed for Saturday at 11:00 AM. Reply STOP to opt out.</p>
+        </div>
+        <div style={{ background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '14px 18px', margin: '8px 0', fontSize: 13, color: '#333', lineHeight: 1.6 }}>
+          <p style={{ margin: 0 }}><em>Promotional (opt-in only):</em> Hi Jane — booking is now open for Mother's Day weekend at {SALON.name}: {bookingUrl}. Reply STOP to opt out.</p>
+        </div>
+
+        <h2 style={H2}>5. Costs & rates</h2>
+        <p>{SALON.name} doesn't charge for SMS. Standard message-and-data rates from your wireless carrier may apply. We comply with the TCPA (Telephone Consumer Protection Act) and CAN-SPAM Act.</p>
+
+        <h2 style={H2}>6. Privacy</h2>
+        <p>SMS opt-in data, phone numbers, and message logs are stored confidentially. We never sell, share, or rent phone numbers to third parties. See our full <a href={privacyUrl} style={{ color: '#2D7A5F', fontWeight: 600 }}>privacy policy</a> for details on how we handle personal information.</p>
+
+        <h2 style={H2}>7. Help & support</h2>
+        <p>For SMS-related questions, reply HELP to any message or email <a href={SALON.email ? `mailto:${SALON.email}` : '#'} style={{ color: '#2D7A5F', fontWeight: 600 }}>{SALON.email || 'us'}</a>.</p>
+
+        <a href="/" style={BTN}>← Back to {SALON.name}</a>
+      </div>
+    </div>
+  );
+}
+
 export function TermsScreen() {
   const SALON = useSalonInfo();
   useEffect(() => { document.title = `Terms of Service · ${SALON.name}`; }, [SALON.name]);

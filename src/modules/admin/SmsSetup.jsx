@@ -18,6 +18,21 @@ function fmtPhone(input) {
 
 const TFN_AREA_CODES = ['833', '844', '855', '866', '877', '888'];
 
+// Older versions of this wizard defaulted the opt-in proof URL to
+// /?book=1 — that page doesn't show the SMS consent text to TFN
+// reviewers and carriers reject it. We now ship a dedicated consent
+// page at /?sms-consent=1. Migrate stored form data at read time so
+// tenants who already submitted see the new URL pre-filled. Idempotent:
+// safe to re-run on already-migrated data.
+function migrateStaleSmsForm(formData) {
+  if (!formData) return formData;
+  const next = { ...formData };
+  if (typeof next.optInProofUrl === 'string' && /\?book=1\b/.test(next.optInProofUrl)) {
+    next.optInProofUrl = next.optInProofUrl.replace(/\?book=1\b/, '?sms-consent=1');
+  }
+  return next;
+}
+
 const STATUS_COPY = {
   draft:           { color: '#6b7280', label: 'Not started', desc: 'Fill out the wizard to provision SMS.' },
   pending_twilio:  { color: '#f59e0b', label: 'Pending Twilio review', desc: 'Twilio is reviewing your submission (1–3 days).' },
@@ -69,7 +84,7 @@ export default function SmsSetup() {
 
   useEffect(() => {
     if (sms?.formData) {
-      setForm(prev => ({ ...prev, ...sms.formData }));
+      setForm(prev => ({ ...prev, ...migrateStaleSmsForm(sms.formData) }));
       return;
     }
     // Default-fill from settings + webfront when the user has never submitted before.
@@ -87,7 +102,7 @@ export default function SmsSetup() {
       contactPhone:     prev.contactPhone     || s.brandPhone   || w.phone || '',
       website:          prev.website          || `https://${(s.subdomain || 'meraki')}.plumenexus.com`,
       privacyPolicyUrl: prev.privacyPolicyUrl || `${window.location.origin}/?privacy=1`,
-      optInProofUrl:    prev.optInProofUrl    || `${window.location.origin}/?book=1`,
+      optInProofUrl:    prev.optInProofUrl    || `${window.location.origin}/?sms-consent=1`,
       useCaseDescription: prev.useCaseDescription || `${s.salonName || w.salonName || 'Our salon'} sends appointment reminders, booking confirmations, and opt-in promotional offers to existing clients. Estimated 50–150 segments/day with marketing blasts ~2× per month at 300–500 recipients.`,
       sampleMessages: prev.sampleMessages?.[0] ? prev.sampleMessages : [
         `Hi {firstName}! Friendly reminder of your appointment at ${s.salonName || 'our salon'} tomorrow at 2:00 PM. Reply STOP to opt out.`,
@@ -258,7 +273,7 @@ export default function SmsSetup() {
                 <textarea value={form.optInDescription} onChange={e => patch('optInDescription', e.target.value)} rows={3} style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
               </Row>
               <Row label="Opt-in screenshot / URL *">
-                <input value={form.optInProofUrl} onChange={e => patch('optInProofUrl', e.target.value)} style={inp} placeholder="https://…/?book=1" />
+                <input value={form.optInProofUrl} onChange={e => patch('optInProofUrl', e.target.value)} style={inp} placeholder="https://…/?sms-consent=1" />
               </Row>
               <Row label="Sample messages * (3 recommended)">
                 {form.sampleMessages.map((m, i) => (
