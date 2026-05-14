@@ -8,7 +8,7 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 // OAuth client was updated to allow plumenexus.com + admin.plumenexus.com.
 const firebaseConfig = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  authDomain:        'plumenexus.com',
+  authDomain:        'meraki-salon-manager.firebaseapp.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',
