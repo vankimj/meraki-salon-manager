@@ -6429,6 +6429,20 @@ exports.markOnboardingPhase = onCall({ cors: true, timeoutSeconds: 30 }, async (
   if (allDone && !cur.completedAt) updates.completedAt = now;
 
   await ref.set(updates, { merge: true });
+
+  // Mirror completion to data/webfront — public-readable. SalonWebfront
+  // checks this flag and redirects to /manage when false, so an
+  // unfinished tenant never shows a half-built public page. Set once;
+  // never un-set (returning to incomplete state is not a flow we want
+  // to encourage operationally).
+  if (allDone && !cur.completedAt) {
+    try {
+      await db.doc(`tenants/${tenantId}/data/webfront`)
+        .set({ onboardingComplete: true, updatedAt: now }, { merge: true });
+    } catch (e) {
+      console.warn('[markOnboardingPhase] webfront flag write failed:', e?.message);
+    }
+  }
   return {
     ok:           true,
     status,
@@ -6869,7 +6883,12 @@ exports.provisionTenant = onCall(
     const now   = new Date().toISOString();
     const jobId = `${slug}-${Date.now()}`; // stable per-attempt id so platform-admin sees retries
     const update = jobUpdater(db, jobId);
-    const url   = `https://${slug}.plumenexus.com`;
+    // Post-signup lands on /manage (the staff app entry) so the
+    // onboarding wizard auto-opens. The bare URL is the public webfront
+    // for clients — owners shouldn't see that until they've completed
+    // setup (webfront.onboardingComplete flag controls when the bare URL
+    // flips from 'redirect to /manage' to 'show public webfront').
+    const url   = `https://${slug}.plumenexus.com/manage`;
 
     await update({
       slug, plan, ownerEmail, salonName, jobId,

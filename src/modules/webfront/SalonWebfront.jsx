@@ -137,6 +137,17 @@ export default function SalonWebfront() {
     Promise.all([
       fetchWebfrontConfig(), fetchServices(), fetchEmployees(), fetchBookingConfig(), fetchGoogleReviews(),
     ]).then(([wf, svcs, emps, bk, gr]) => {
+      // Tenant hasn't finished the onboarding wizard yet → don't show
+      // the public webfront (it'd be half-built, no real content). Send
+      // them straight to /manage where the wizard auto-opens. Pristine
+      // flag is set by markOnboardingPhase once all 8 phases are done
+      // or skipped. Legacy tenants without the flag fall through to the
+      // public webfront — they wouldn't be hitting their bare URL if
+      // they hadn't already set up the webfront content manually.
+      if (wf && wf.onboardingComplete !== true && !wf.tagline && !wf.about) {
+        window.location.replace('/manage');
+        return;
+      }
       const merged = { ...DEFAULT_CFG, ...wf };
       setCfg(merged);
       const active = svcs.filter(s => s.active !== false);
