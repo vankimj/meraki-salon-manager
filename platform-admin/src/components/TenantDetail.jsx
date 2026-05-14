@@ -156,6 +156,9 @@ export default function TenantDetail({ tenantId }) {
         </Card>
       </div>
 
+      {/* URLs panel — every public + staff entry point for this tenant. */}
+      <TenantUrls slug={meta.subdomain || meta.id} aliases={meta.aliases || []} customDomain={meta.customDomain} />
+
       {/* Coming-soon panels — all of these are aggregate data only */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
         <Panel title="Usage + cost (this month)" placeholder>
@@ -363,6 +366,86 @@ function Status({ label }) {
       {label}
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
+  );
+}
+
+function TenantUrls({ slug, aliases, customDomain }) {
+  const base = `https://${slug}.plumenexus.com`;
+  const rows = [
+    { label: 'Public webfront',     path: '/',            note: 'Landing page — services, team, booking CTA' },
+    { label: 'Booking page',        path: '/book',        note: 'Online booking flow' },
+    { label: 'Staff app',           path: '/manage',      note: 'Sign-in required — owner + staff' },
+    { label: 'TipFlow kiosk',       path: '/tipflow',     note: 'iPad checkout / tip kiosk' },
+    { label: 'Walk-in queue',       path: '/queue',       note: 'Front-desk arrival kiosk' },
+    { label: 'Privacy policy',      path: '/privacy',     note: 'Public legal page' },
+    { label: 'Terms of service',    path: '/terms',       note: 'Public legal page' },
+    { label: 'SMS consent',         path: '/sms-consent', note: 'TFN reviewer + opt-in proof page' },
+  ];
+  return (
+    <div style={{
+      marginTop: 8, marginBottom: 24,
+      background: C.bgCard, border: `1px solid ${C.rule}`, borderRadius: radius.md,
+      overflow: 'hidden',
+    }}>
+      <div style={{ padding: '12px 16px', borderBottom: `1px solid ${C.rule}`, background: C.bgCode }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>Tenant URLs</div>
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <tbody>
+          {rows.map((r, i) => (
+            <UrlRow key={r.path} label={r.label} url={`${base}${r.path}`} note={r.note} top={i === 0} />
+          ))}
+          {customDomain && (
+            <UrlRow label="Custom domain" url={`https://${customDomain}`} note="Pro+ vanity domain — same app served via tenant's own hostname" badge="PRO" />
+          )}
+          {aliases.length > 0 && aliases.map(a => (
+            <UrlRow key={a} label="Alias (301 → primary)" url={`https://${a}.plumenexus.com`} note={`Redirects to ${slug}.plumenexus.com — kept active forever per subdomain-change policy`} muted />
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function UrlRow({ label, url, note, top, muted, badge }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }
+  return (
+    <tr style={{ borderTop: top ? 'none' : `1px solid ${C.rule}`, opacity: muted ? 0.7 : 1 }}>
+      <td style={{ padding: '10px 16px', verticalAlign: 'top', width: '24%' }}>
+        <div style={{ fontWeight: 700, color: C.ink, fontSize: 13 }}>
+          {label}
+          {badge && <span style={{ marginLeft: 6, fontSize: 9, padding: '2px 6px', background: '#ede9fe', color: '#6d28d9', borderRadius: 3, fontWeight: 700, letterSpacing: '.04em' }}>{badge}</span>}
+        </div>
+        <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 3, lineHeight: 1.4 }}>{note}</div>
+      </td>
+      <td style={{ padding: '10px 16px', verticalAlign: 'middle' }}>
+        <code style={{
+          background: C.bgCode, padding: '4px 8px', borderRadius: 4,
+          fontSize: 11, color: C.text, fontFamily: 'ui-monospace, Menlo, monospace',
+          wordBreak: 'break-all',
+        }}>{url}</code>
+      </td>
+      <td style={{ padding: '10px 16px', verticalAlign: 'middle', textAlign: 'right', whiteSpace: 'nowrap' }}>
+        <button onClick={copy} style={{
+          padding: '4px 10px', fontSize: 11, fontWeight: 600,
+          background: copied ? C.successSoft : '#fff', color: copied ? C.success : C.muted,
+          border: `1px solid ${copied ? C.success : C.rule}`,
+          borderRadius: 4, cursor: 'pointer', fontFamily: 'inherit', marginRight: 4,
+          transition: 'background .12s, color .12s, border-color .12s',
+        }}>{copied ? '✓ Copied' : 'Copy'}</button>
+        <a href={url} target="_blank" rel="noopener noreferrer" style={{
+          display: 'inline-block', padding: '4px 10px', fontSize: 11, fontWeight: 600,
+          background: '#fff', color: C.plum, border: `1px solid ${C.rule}`,
+          borderRadius: 4, textDecoration: 'none', fontFamily: 'inherit',
+        }}>Open ↗</a>
+      </td>
+    </tr>
   );
 }
 
