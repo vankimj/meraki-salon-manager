@@ -17,6 +17,14 @@ const fns  = getFunctions(app);
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
 
+// Expose the initialized Firebase Auth instance on window so Playwright
+// E2E tests can drive sign-in flows without re-initializing Firebase
+// (which creates a separate isolated app instance). Read-only handle —
+// no functional surface beyond what the user already has via the UI.
+if (typeof window !== 'undefined') {
+  window.__plumeAuth = auth;
+}
+
 export const callMarketingChat   = httpsCallable(fns, 'chatWithMarketing');
 export const callContactInquiry  = httpsCallable(fns, 'submitContactInquiry');
 export const callProvisionTenant = httpsCallable(fns, 'provisionTenant');
