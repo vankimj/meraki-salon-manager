@@ -61,12 +61,16 @@ test.describe('signup page', () => {
     await expect(page.getByText(/Invalid format/i)).toBeVisible({ timeout: 5000 });
   });
 
-  test('plan cards are clickable + selected state visible', async ({ page }) => {
+  test('plan cards + comparison table render', async ({ page }) => {
     await page.goto(`${BASE}/signup`);
-    // Plan cards are disabled until signed in — check they render at least.
-    await expect(page.getByText('Solo', { exact: true })).toBeVisible();
-    await expect(page.getByText('Studio', { exact: true })).toBeVisible();
-    await expect(page.getByText('Salon Pro', { exact: true })).toBeVisible();
+    // Card buttons + comparison-table headers both contain the plan names —
+    // use .first() to assert each name appears at least once.
+    await expect(page.getByText('Solo',      { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Studio',    { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Salon Pro', { exact: true }).first()).toBeVisible();
+    // The comparison table renders a row of features — pick one unique row
+    // label to confirm the table is present.
+    await expect(page.getByText('Multi-tech credit splits')).toBeVisible();
   });
 
   test('Create my salon button is disabled until signed in', async ({ page }) => {

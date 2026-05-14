@@ -25,10 +25,31 @@ import Footer from './Footer.jsx';
 
 const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;
 
+// Canonical pricing — must match plumenexus/src/components/Pricing.jsx so
+// marketing page + signup page never show different numbers.
 const PLANS = [
-  { id: 'solo',     name: 'Solo',     tagline: 'Free forever during Founders\' Year',  blurb: 'Single tech, single location. Booking + clients + receipts.' },
-  { id: 'studio',   name: 'Studio',   tagline: '$39/mo · 30-day free trial',             blurb: 'Multi-tech, multi-employee scheduling, marketing, AI Reports.' },
-  { id: 'salonPro', name: 'Salon Pro', tagline: '$89/mo · 30-day free trial',             blurb: 'Everything in Studio + payroll, multi-location, custom domain.' },
+  { id: 'solo',     name: 'Solo',      tagline: 'Free forever during Founders\' Year', blurb: 'Single tech, single chair. Everything you need to run solo.' },
+  { id: 'studio',   name: 'Studio',    tagline: '$79/mo · 30-day free trial',           blurb: 'Up to 8 staff. Multi-tech splits, walk-in management, custom domain.' },
+  { id: 'salonPro', name: 'Salon Pro', tagline: '$149/mo · 30-day free trial',          blurb: 'Unlimited staff. Founder-direct support + dedicated onboarding.' },
+];
+
+// Comparison rows — labels on the left, ✓ / — per plan column. Reveal
+// below the cards so the salon owner can see what they're getting before
+// committing to a tier.
+const COMPARE = [
+  { label: 'Price',                              solo: 'Free (Founders\') · $49 after', studio: '$79/mo',           salonPro: '$149/mo' },
+  { label: 'Staff members',                      solo: '1',                              studio: 'Up to 8',          salonPro: 'Unlimited' },
+  { label: 'Scheduling + online booking',        solo: true,                             studio: true,               salonPro: true },
+  { label: 'POS, gift cards, promo codes',       solo: true,                             studio: true,               salonPro: true },
+  { label: 'AI-powered reports',                 solo: true,                             studio: true,               salonPro: true },
+  { label: 'Email + branded booking page',       solo: true,                             studio: true,               salonPro: true },
+  { label: 'Multi-tech credit splits',           solo: false,                            studio: true,               salonPro: true },
+  { label: 'Smart walk-in management',           solo: false,                            studio: true,               salonPro: true },
+  { label: 'Custom domain for booking',          solo: false,                            studio: true,               salonPro: true },
+  { label: 'Multi-location',                     solo: false,                            studio: false,              salonPro: 'Coming Q3' },
+  { label: '2FA for admins',                     solo: false,                            studio: false,              salonPro: true },
+  { label: 'Dedicated onboarding',               solo: false,                            studio: false,              salonPro: true },
+  { label: 'Support',                            solo: 'Email · 5-day SLA',              studio: 'Priority email + chat', salonPro: 'Founder-direct' },
 ];
 
 function fmtPhone(input) {
@@ -220,6 +241,7 @@ export default function SignupPage() {
               <PlanCard key={p.id} plan={p} selected={plan === p.id} onClick={() => setPlan(p.id)} />
             ))}
           </div>
+          <PlanComparison selectedPlan={plan} />
         </Section>
 
         {submitErr && <div style={errBox}>{submitErr}</div>}
@@ -279,6 +301,42 @@ function PlanCard({ plan, selected, onClick, disabled }) {
       <div style={{ fontSize: 12, color: C.gold, fontWeight: 600, marginBottom: 8 }}>{plan.tagline}</div>
       <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.45 }}>{plan.blurb}</div>
     </button>
+  );
+}
+
+// Comparison table — renders below the plan cards, highlights the chosen
+// column so the salon owner can audit "what am I actually getting" at a
+// glance before clicking Create.
+function PlanComparison({ selectedPlan }) {
+  function cellValue(row, key) {
+    const v = row[key];
+    if (v === true)  return <span style={cellCheck}>✓</span>;
+    if (v === false) return <span style={cellDash}>—</span>;
+    return <span style={cellText}>{v}</span>;
+  }
+  return (
+    <div style={tableWrap}>
+      <table style={table}>
+        <thead>
+          <tr>
+            <th style={thLabel} />
+            <th style={selectedPlan === 'solo'     ? thSelected : th}>Solo</th>
+            <th style={selectedPlan === 'studio'   ? thSelected : th}>Studio</th>
+            <th style={selectedPlan === 'salonPro' ? thSelected : th}>Salon Pro</th>
+          </tr>
+        </thead>
+        <tbody>
+          {COMPARE.map((row, i) => (
+            <tr key={row.label} style={i % 2 === 0 ? trEven : trOdd}>
+              <td style={tdLabel}>{row.label}</td>
+              <td style={selectedPlan === 'solo'     ? tdSelected : td}>{cellValue(row, 'solo')}</td>
+              <td style={selectedPlan === 'studio'   ? tdSelected : td}>{cellValue(row, 'studio')}</td>
+              <td style={selectedPlan === 'salonPro' ? tdSelected : td}>{cellValue(row, 'salonPro')}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -409,6 +467,21 @@ const statusBad     = { marginTop: 6, fontSize: 12, color: C.danger, fontWeight:
 const statusNeutral = { marginTop: 6, fontSize: 12, color: C.muted };
 
 const planGrid = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 };
+
+const tableWrap = { marginTop: 18, border: `1px solid ${C.rule}`, borderRadius: radius.md, overflow: 'hidden' };
+const table     = { width: '100%', borderCollapse: 'collapse', fontSize: 12 };
+const th        = { padding: '10px 8px', textAlign: 'center', fontSize: 11, fontWeight: 700, color: C.muted, letterSpacing: '.12em', textTransform: 'uppercase', background: '#fafafa', borderBottom: `1px solid ${C.rule}` };
+const thSelected = { ...th, background: '#f5efff', color: C.plumDeep, borderBottom: `2px solid ${C.plum}` };
+const thLabel    = { ...th, textAlign: 'left', paddingLeft: 14 };
+const td         = { padding: '8px 8px', textAlign: 'center', verticalAlign: 'middle', color: C.text };
+const tdSelected = { ...td, background: 'rgba(91,59,140,.06)', borderLeft: `1px solid ${C.plumSoft}`, borderRight: `1px solid ${C.plumSoft}` };
+const tdLabel    = { padding: '8px 14px', textAlign: 'left', fontSize: 12, color: C.muted, fontWeight: 500 };
+const trEven     = { background: '#fff' };
+const trOdd      = { background: '#fbfaff' };
+const cellCheck  = { color: C.success, fontWeight: 700, fontSize: 13 };
+const cellDash   = { color: C.mutedSoft, fontSize: 13 };
+const cellText   = { color: C.text, fontSize: 11 };
+
 
 const signedInRow = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',

@@ -57,10 +57,27 @@ async function hydrateTabTitleFromWebfront() {
   } catch (_) { /* keep platform default */ }
 }
 
+// Legacy hostname → permanent new URL. Has to live OUTSIDE the Firebase
+// Hosting redirect rule because the Cloudflare Worker proxies all
+// *.plumenexus.com tenant traffic to meraki-salon-manager.web.app, so a
+// hosting-level redirect on that target would 301 every tenant. JS-side
+// redirect runs only when the user's actual browser hostname matches.
+function redirectLegacyHostnameIfNeeded() {
+  if (typeof window === 'undefined') return false;
+  if (window.location.hostname !== 'meraki-salon-manager.web.app') return false;
+  const target = 'https://merakinailstudio.plumenexus.com'
+    + window.location.pathname
+    + window.location.search
+    + window.location.hash;
+  window.location.replace(target);
+  return true;
+}
+
 function Boot() {
   const [state, setState] = useState({ status: 'loading' });
 
   useEffect(() => {
+    if (redirectLegacyHostnameIfNeeded()) return; // navigation in flight; never resolve
     resolveTenant().then(() => {
       setState(getTenantResolveState());
       hydrateTabTitleFromWebfront();
