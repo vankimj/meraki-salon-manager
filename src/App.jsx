@@ -106,7 +106,10 @@ function AppShell({ initialView = 'home' }) {
   const [view,      setViewState] = useState(initialView); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
   const [showAdmin, setShowAdmin] = useState(false);
   const [showWizard, setShowWizard]   = useState(false);
-  const [onboarding, setOnboarding]   = useState(null);
+  // `undefined` = subscription hasn't fired yet (loading).
+  // `null`      = subscription fired and the tenant has no onboarding doc.
+  // `object`    = doc exists; check completedAt for done state.
+  const [onboarding, setOnboarding]   = useState(undefined);
   const [dismissedThisSession, setDismissedThisSession] = useState(false);
   // Cross-module deep-link: when set, clicking a client name in Schedule
   // jumps to the Clients module and auto-opens that client's profile.
@@ -146,21 +149,21 @@ function AppShell({ initialView = 'home' }) {
 
   // Subscribe to onboarding state for the banner + auto-open logic.
   useEffect(() => {
-    if (!gUser || !isAdmin) { setOnboarding(null); return; }
+    if (!gUser || !isAdmin) { setOnboarding(undefined); return; }
     return subscribeOnboarding(setOnboarding);
   }, [gUser?.uid, isAdmin]);
 
   // Auto-open the onboarding wizard when:
   //   - the signed-in user is admin
   //   - they haven't dismissed it this session
-  //   - onboarding is not yet complete
+  //   - onboarding is not yet complete (no doc = also not complete)
   // After dismissal the persistent OnboardingBanner takes over until
   // they finish. Existing tenants (Meraki) hit this once on next sign-in
   // and run through audit mode (mostly ✓/skip).
   useEffect(() => {
-    if (!gUser || !isAdmin)        return;
-    if (dismissedThisSession)      return;
-    if (onboarding === null)       { /* not yet loaded — wait */ return; }
+    if (!gUser || !isAdmin)             return;
+    if (dismissedThisSession)           return;
+    if (onboarding === undefined)       return; // subscription still loading
     if (isOnboardingComplete(onboarding)) return;
     setShowWizard(true);
   }, [gUser?.uid, isAdmin, onboarding, dismissedThisSession]);
@@ -186,10 +189,11 @@ function AppShell({ initialView = 'home' }) {
       <Splash />
       <Toast />
 
-      {/* Persistent onboarding banner — hidden when complete or not started.
-          Sits above all view chrome so it's visible regardless of which
-          view the user is on. */}
-      {gUser && isAdmin && !isOnboardingComplete(onboarding) && onboarding && !isTipFlow && (
+      {/* Persistent onboarding banner — hidden when complete or while the
+          subscription is still loading. Shows for both "doc-exists but
+          incomplete" and "no doc yet" so dismissing the wizard leaves a
+          clear way back in. Hidden in TipFlow kiosk view. */}
+      {gUser && isAdmin && onboarding !== undefined && !isOnboardingComplete(onboarding) && !isTipFlow && (
         <OnboardingBanner onboarding={onboarding} onOpen={() => { setShowWizard(true); setDismissedThisSession(false); }} />
       )}
 
@@ -243,7 +247,10 @@ function AppShell({ initialView = 'home' }) {
       ))}
 
       {/* Admin settings overlay */}
-      {showAdmin && <Admin onClose={() => setShowAdmin(false)} />}
+      {showAdmin && <Admin
+        onClose={() => setShowAdmin(false)}
+        onOpenWizard={() => { setShowAdmin(false); setShowWizard(true); setDismissedThisSession(false); }}
+      />}
 
       {showWizard && (
         <OnboardingWizard onDismiss={() => {

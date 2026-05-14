@@ -4,10 +4,9 @@ import { PHASES, completedCount, isOnboardingComplete } from '../lib/onboarding'
 // tenant finishes onboarding. Click to re-open the wizard. Soft-block
 // pattern — the rest of the app is fully usable while this is visible.
 export default function OnboardingBanner({ onboarding, onOpen }) {
-  if (!onboarding)              return null;  // never started — wizard auto-opens
   if (isOnboardingComplete(onboarding)) return null;
 
-  const done  = completedCount(onboarding);
+  const done  = completedCount(onboarding); // 0 when onboarding is null
   const total = PHASES.length;
   const pct   = Math.round((done / total) * 100);
 

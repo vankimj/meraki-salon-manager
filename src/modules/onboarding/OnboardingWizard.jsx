@@ -10,6 +10,11 @@ import {
 } from '../../lib/onboarding';
 import Phase0Welcome  from './Phase0Welcome';
 import Phase1Profile  from './Phase1Profile';
+import Phase2Import   from './Phase2Import';
+import Phase3Money    from './Phase3Money';
+import Phase4Branding from './Phase4Branding';
+import Phase5Team     from './Phase5Team';
+import Phase6Reach    from './Phase6Reach';
 import Phase7Launch   from './Phase7Launch';
 import { logActivity, logError } from '../../lib/logger';
 
@@ -18,8 +23,20 @@ import { logActivity, logError } from '../../lib/logger';
 // Function. Re-entry resumes at the next pending phase. Audit mode for
 // existing tenants comes via Phase 7's status grid: ✓ done · ⚠ pending.
 export default function OnboardingWizard({ onDismiss }) {
-  const { showToast } = useApp();
-  const [onboarding, setOnboarding] = useState(null);
+  const { showToast, pauseLogoutTimer, resumeLogoutTimer } = useApp();
+
+  // Pause the auto-logout timer while the wizard is open. Owners often
+  // pause to dig up an EIN, paste a CSV, or walk away mid-flow — the
+  // default 5-min idle logout will eat their work otherwise. We resume
+  // when the wizard unmounts (close button or completion).
+  useEffect(() => {
+    pauseLogoutTimer?.();
+    return () => { resumeLogoutTimer?.(); };
+  }, [pauseLogoutTimer, resumeLogoutTimer]);
+  // `undefined` = subscription hasn't fired yet (loading).
+  // `null`      = subscription fired and the tenant has no onboarding doc.
+  // `object`    = doc exists.
+  const [onboarding, setOnboarding] = useState(undefined);
   const [currentKey, setCurrentKey] = useState('welcome');
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
@@ -28,12 +45,12 @@ export default function OnboardingWizard({ onDismiss }) {
 
   // When state first loads, jump to the next pending phase. Manual
   // navigation (Back / phase strip clicks) is preserved after first
-  // mount via `currentKey`.
+  // mount via `currentKey`. `null` (no doc) means start at 'welcome'.
   const [bootstrapped, setBootstrapped] = useState(false);
   useEffect(() => {
     if (bootstrapped) return;
-    if (onboarding === null) return;
-    const next = nextPendingPhase(onboarding) || 'launch';
+    if (onboarding === undefined) return; // still loading
+    const next = nextPendingPhase(onboarding) || 'welcome';
     setCurrentKey(next);
     setBootstrapped(true);
   }, [onboarding, bootstrapped]);
@@ -71,7 +88,7 @@ export default function OnboardingWizard({ onDismiss }) {
     setCurrentKey(key);
   }
 
-  if (onboarding === null && !bootstrapped) {
+  if (onboarding === undefined && !bootstrapped) {
     return (
       <Overlay>
         <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>Loading…</div>
@@ -88,6 +105,16 @@ export default function OnboardingWizard({ onDismiss }) {
     phaseNode = <Phase0Welcome onboarding={onboarding} onAdvance={advance} saving={saving} />;
   } else if (currentKey === 'profile') {
     phaseNode = <Phase1Profile onboarding={onboarding} onAdvance={advance} saving={saving} />;
+  } else if (currentKey === 'import') {
+    phaseNode = <Phase2Import  onboarding={onboarding} onAdvance={advance} saving={saving} />;
+  } else if (currentKey === 'money') {
+    phaseNode = <Phase3Money    onboarding={onboarding} onAdvance={advance} saving={saving} />;
+  } else if (currentKey === 'branding') {
+    phaseNode = <Phase4Branding onboarding={onboarding} onAdvance={advance} saving={saving} />;
+  } else if (currentKey === 'team') {
+    phaseNode = <Phase5Team     onboarding={onboarding} onAdvance={advance} saving={saving} />;
+  } else if (currentKey === 'reach') {
+    phaseNode = <Phase6Reach    onboarding={onboarding} onAdvance={advance} saving={saving} />;
   } else if (currentKey === 'launch') {
     phaseNode = <Phase7Launch onboarding={onboarding} onAdvance={advance} saving={saving} onJump={jumpTo} />;
   } else {

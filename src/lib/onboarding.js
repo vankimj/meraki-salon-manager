@@ -45,7 +45,17 @@ export async function fetchOnboarding() {
 }
 
 export function subscribeOnboarding(cb) {
-  return onSnapshot(onboardingDoc(), s => cb(s.exists() ? s.data() : null));
+  return onSnapshot(
+    onboardingDoc(),
+    s => cb(s.exists() ? s.data() : null),
+    err => {
+      // Permission-denied (rules not yet deployed, signed-out, etc.) —
+      // treat as "no doc" so the auto-open + banner logic can proceed
+      // rather than hanging in the undefined-loading state.
+      console.warn('[onboarding] subscribe error:', err?.code || err?.message);
+      cb(null);
+    }
+  );
 }
 
 // Wraps the markOnboardingPhase Cloud Function. `payload.skip = true`

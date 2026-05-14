@@ -39,7 +39,14 @@ export async function getLocations() {
 }
 
 export function subscribeLocations(cb) {
-  return onSnapshot(locationsDoc(), s => cb(normalize(s.exists() ? s.data() : null)));
+  return onSnapshot(
+    locationsDoc(),
+    s => cb(normalize(s.exists() ? s.data() : null)),
+    err => {
+      console.warn('[locations] subscribe error:', err?.code || err?.message);
+      cb(normalize(null));
+    }
+  );
 }
 
 export async function saveLocations(state) {

@@ -21,9 +21,10 @@ import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ,
 import FeedbackModal from '../../components/FeedbackModal';
 import NotificationsBell from '../../components/NotificationsBell';
 import SmsSetup from './SmsSetup';
+import { subscribeOnboarding, completedCount, isOnboardingComplete, phaseStatus, PHASES as ONBOARDING_PHASES } from '../../lib/onboarding';
 import CsvImportSection from '../../components/CsvImportSection';
 
-export default function Admin({ onClose }) {
+export default function Admin({ onClose, onOpenWizard }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
@@ -73,6 +74,7 @@ export default function Admin({ onClose }) {
     { id: 'settings', label: 'Settings' },
     { id: 'webfront', label: 'Webfront' },
     { id: 'sms',      label: 'SMS'      },
+    { id: 'onboarding', label: 'Onboarding' },
     { id: 'feedback', label: 'Feedback' },
     // Trash exposes tombstone records (including deleted client names,
     // deletion attribution). Admin-only — scheduler/readonly shouldn't
@@ -240,6 +242,10 @@ export default function Admin({ onClose }) {
 
         {tab === 'sms' && (
           <SmsSetup />
+        )}
+
+        {tab === 'onboarding' && (
+          <OnboardingTab onOpenWizard={onOpenWizard} />
         )}
 
         {tab === 'feedback' && (
@@ -1003,6 +1009,65 @@ function PendingRow({ req, employees, onGrant }) {
       </Btn>
       <Btn color="#ef4444" onClick={() => onGrant('denied')} disabled={saving}>Deny</Btn>
     </UserRow>
+  );
+}
+
+// ── Onboarding tab ─────────────────────────────────────
+// Re-entry point into the wizard. Shows current per-phase status
+// (audit grid) and a button that closes Admin + reopens the wizard.
+// Useful after `completedAt` is stamped — the auto-open + banner are
+// hidden but the owner may want to revisit a phase.
+function OnboardingTab({ onOpenWizard }) {
+  const [onboarding, setOnboarding] = useState(undefined);
+  useEffect(() => {
+    let mounted = true;
+    const unsub = subscribeOnboarding(o => { if (mounted) setOnboarding(o); });
+    return () => { mounted = false; unsub?.(); };
+  }, []);
+  const completed = completedCount(onboarding);
+  const done      = isOnboardingComplete(onboarding);
+
+  return (
+    <div style={{ padding: 24, maxWidth: 720 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>🎯 Onboarding</h2>
+        <span style={{ fontSize: 12, color: done ? '#10b981' : '#92400e', fontWeight: 700 }}>
+          {done ? '✓ Complete' : `${completed}/${ONBOARDING_PHASES.length} complete`}
+        </span>
+      </div>
+
+      <div style={{ fontSize: 13, color: '#666', lineHeight: 1.55, marginBottom: 18 }}>
+        {done
+          ? 'Your salon is launched. You can still revisit any phase below to tweak settings — re-opening the wizard never resets data.'
+          : 'You haven\'t finished the onboarding wizard. Continue where you left off, or jump to a specific phase.'}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 18 }}>
+        {ONBOARDING_PHASES.map((p, i) => {
+          const s = phaseStatus(onboarding, p.key);
+          const icon  = s === 'done' ? '✓' : s === 'skipped' ? '○' : '⚠';
+          const color = s === 'done' ? '#10b981' : s === 'skipped' ? '#9ca3af' : '#f59e0b';
+          const bg    = s === 'done' ? '#ecfdf5' : s === 'skipped' ? '#f8f9fa' : '#fffbeb';
+          const label = s === 'done' ? 'Complete' : s === 'skipped' ? 'Skipped' : 'Pending';
+          return (
+            <div key={p.key} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '8px 12px', borderRadius: 8,
+              border: `1px solid ${color}33`, background: bg,
+            }}>
+              <span style={{ width: 24, fontSize: 11, color: '#888', textAlign: 'right' }}>{i + 1}.</span>
+              <span style={{ width: 20, textAlign: 'center', fontSize: 14, color, fontWeight: 700 }}>{icon}</span>
+              <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{p.label}</span>
+              <span style={{ fontSize: 11, color, fontWeight: 600 }}>{label}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <Btn color="#5b3b8c" onClick={onOpenWizard}>
+        {done ? '🎯 Re-open wizard' : '🎯 Continue setup'}
+      </Btn>
+    </div>
   );
 }
 
