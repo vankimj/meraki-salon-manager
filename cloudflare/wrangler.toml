@@ -1,10 +1,10 @@
-name            = "tipflow-subdomain-router"
+name            = "tenant-router"
 main            = "worker.js"
-compatibility_date = "2024-09-23"
+compatibility_date = "2026-05-14"
 
-# Routes — apply to every subdomain of tipflow.app
-# The root tipflow.app is served directly by Firebase Hosting (custom domain).
+# Routes — every subdomain of plumenexus.com flows through this Worker, EXCEPT
+# subdomains with their own specific DNS record (admin., demo., www.) which
+# have proxy=OFF and bypass Cloudflare entirely.
 routes = [
-  { pattern = "*.tipflow.app/*", zone_name = "tipflow.app" },
-  { pattern = "*.tipflow.app",   zone_name = "tipflow.app" },
+  { pattern = "*.plumenexus.com/*", zone_name = "plumenexus.com" },
 ]
