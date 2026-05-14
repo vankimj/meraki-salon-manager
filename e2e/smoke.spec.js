@@ -17,15 +17,21 @@ test.describe('Public surfaces', () => {
   test('terms page (?terms) renders standalone', async ({ page }) => {
     await page.goto('/?terms=1');
     // Stand-alone routes should NOT mount the full AppShell. They render
-    // their own minimal page.
-    const body = await page.locator('body').innerText();
-    expect(body.toLowerCase()).toMatch(/terms/);
+    // their own minimal page. App.jsx is dynamically imported after
+    // resolveTenant() so the body briefly innerText='' — poll instead of
+    // a one-shot read.
+    await expect.poll(
+      async () => (await page.locator('body').innerText()).toLowerCase(),
+      { timeout: 10000 },
+    ).toMatch(/terms/);
   });
 
   test('privacy page (?privacy) renders standalone', async ({ page }) => {
     await page.goto('/?privacy=1');
-    const body = await page.locator('body').innerText();
-    expect(body.toLowerCase()).toMatch(/privacy/);
+    await expect.poll(
+      async () => (await page.locator('body').innerText()).toLowerCase(),
+      { timeout: 10000 },
+    ).toMatch(/privacy/);
   });
 
   test('booking page (?book) loads without auth', async ({ page }) => {

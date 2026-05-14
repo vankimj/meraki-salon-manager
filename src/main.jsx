@@ -1,7 +1,6 @@
-import { StrictMode, Component, useEffect, useState } from 'react'
+import { StrictMode, Component, useEffect, useState, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
-import App from './App.jsx'
 import TenantNotFound from './components/TenantNotFound.jsx'
 import { resolveTenant, getTenantResolveState } from './lib/tenant'
 
@@ -22,9 +21,18 @@ class ErrorBoundary extends Component {
   }
 }
 
-// Boot wrapper: awaits resolveTenant() before mounting <App />. On notFound
-// renders the TenantNotFound page instead. resolveTenant runs once at boot;
-// the result is captured into state and the appropriate tree mounts.
+// App.jsx + all its transitive imports (notably src/lib/firestore.js) evaluate
+// when first imported. firestore.js captures TENANT_ID into module-level
+// DocumentReference constants at that moment. If we statically import App
+// here, those refs get the boot-guess TENANT_ID (the URL subdomain) — which
+// is wrong for SaaS tenants whose opaque tenantId differs from their slug
+// (e.g. acme.plumenexus.com → tabc123def456...). Writes would then target
+// `tenants/acme/...` instead of `tenants/tabc123.../...`, hitting permission
+// denied because the rules check membership against the wrong tenant.
+//
+// Fix: dynamic import after resolveTenant() has set the real TENANT_ID.
+const App = lazy(() => import('./App.jsx'));
+
 function Boot() {
   const [state, setState] = useState({ status: 'loading' });
 
@@ -32,16 +40,15 @@ function Boot() {
     resolveTenant().then(() => setState(getTenantResolveState()));
   }, []);
 
-  if (state.status === 'loading') {
-    // Brief flash — usually <100ms once the Firestore cache is warm.
-    // Intentionally chrome-less; the splash inside <App/> takes over once
-    // tenant is resolved.
-    return null;
-  }
+  if (state.status === 'loading') return null;
   if (state.status === 'notFound') {
     return <TenantNotFound slug={state.slug} reason={state.reason} />;
   }
-  return <App />;
+  return (
+    <Suspense fallback={null}>
+      <App />
+    </Suspense>
+  );
 }
 
 createRoot(document.getElementById('root')).render(
