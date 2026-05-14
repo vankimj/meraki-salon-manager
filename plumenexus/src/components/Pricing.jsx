@@ -3,10 +3,13 @@ import { C, FONT, FOUNDERS_YEAR_END_LONG, grad, shadow, radius } from '../theme.
 import Section from './Section.jsx';
 
 // ── Base tiers ─────────────────────────────────────────────────────
+// `price` = monthly. `annual` = effective monthly when billed yearly
+// (14% off, matches GG's annual discount structure so prospects
+// comparing the two pricing pages see the same shape).
 const TIERS = [
   {
     name: 'Solo',
-    price: 49,
+    price: 49, annual: 42,
     blurb: 'Perfect for the single-chair stylist.',
     foundersFree: true,
     features: [
@@ -15,18 +18,20 @@ const TIERS = [
       'POS, gift cards, promo codes',
       'Email + booking page',
       'AI-powered reports',
+      'Full data export, every plan',
       'Email support · 5-business-day SLA',
     ],
     cta: 'Claim Founders\' Year',
   },
   {
     name: 'Studio',
-    price: 79,
+    price: 79, annual: 68,
     featured: true,
-    blurb: 'For growing salons with a full team.',
+    blurb: 'For growing salons with a full team. Includes the Comms Pack.',
     features: [
       'Up to 8 staff members',
       'Everything in Solo, plus:',
+      'SMS reminders + 2-way (Comms Pack — included)',
       'Multi-tech credit splits',
       'Smart walk-in management',
       'Custom domain for booking',
@@ -36,14 +41,15 @@ const TIERS = [
   },
   {
     name: 'Salon Pro',
-    price: 149,
-    blurb: 'Unlimited staff. Multi-location ready.',
+    price: 149, annual: 128,
+    blurb: 'Unlimited staff + 4 Power Packs bundled. Best value at scale.',
     features: [
-      'Unlimited staff members',
+      'Unlimited staff + multi-location',
       'Everything in Studio, plus:',
-      'Multi-location (coming Q3)',
+      'Marketing Pack (loyalty + auto-rebook) — included',
+      'AI Pack (voice + drafted copy) — included',
+      'Operations Pack (Gusto payroll + 1099) — included',
       'Founder-direct support',
-      '2FA for admins',
       'Dedicated onboarding',
     ],
     cta: 'Talk to founder',
@@ -95,6 +101,7 @@ const ATOMS = [
 
 export default function Pricing() {
   const [showAtoms, setShowAtoms] = useState(false);
+  const [billing, setBilling]     = useState('annual');
 
   return (
     <Section
@@ -104,6 +111,36 @@ export default function Pricing() {
       subtitle={`Sign up before ${FOUNDERS_YEAR_END_LONG} and Solo is free for life. Pair any plan with the Power Packs you actually want — no forced bundles, no add-on tax.`}
       alt
     >
+      {/* ── Billing toggle (Monthly / Annual) ── */}
+      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 24 }}>
+        <div style={{
+          display: 'inline-flex',
+          gap: 0,
+          padding: 4,
+          background: '#fff',
+          border: `1px solid ${C.rule}`,
+          borderRadius: 999,
+        }}>
+          {['monthly', 'annual'].map(b => (
+            <button key={b} type="button" onClick={() => setBilling(b)}
+              style={{
+                padding: '8px 18px', fontSize: 13, fontWeight: 600,
+                background: billing === b ? grad.primary : 'transparent',
+                color:      billing === b ? '#fff' : C.muted,
+                border: 'none', borderRadius: 999, cursor: 'pointer',
+                fontFamily: FONT.body,
+              }}>
+              {b === 'monthly' ? 'Monthly' : 'Annual'}
+              {b === 'annual' && (
+                <span style={{ fontSize: 10, marginLeft: 6, color: billing === 'annual' ? 'rgba(255,255,255,.85)' : C.success }}>
+                  save 14%
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* ── Base tiers ── */}
       <div style={{
         display: 'grid',
@@ -111,7 +148,7 @@ export default function Pricing() {
         gap: 20,
         maxWidth: 1080, margin: '0 auto',
       }}>
-        {TIERS.map(t => <Tier key={t.name} {...t} />)}
+        {TIERS.map(t => <Tier key={t.name} {...t} billing={billing} />)}
       </div>
 
       {/* ── Power Packs ── */}
@@ -186,7 +223,7 @@ export default function Pricing() {
         marginTop: 36, textAlign: 'center',
         fontSize: 13, color: C.muted,
       }}>
-        Annual billing saves 20%. Need help deciding? <a href="#contact" style={{ color: C.plum, fontWeight: 600 }}>Talk to the founder.</a>
+        Need help deciding? <a href="#contact" style={{ color: C.plum, fontWeight: 600 }}>Talk to the founder.</a>
       </div>
 
       <div style={{
@@ -208,7 +245,13 @@ export default function Pricing() {
 }
 
 // ── Components ─────────────────────────────────────────────────────
-function Tier({ name, price, blurb, features, cta, featured, foundersFree }) {
+function Tier({ name, price, annual, blurb, features, cta, featured, foundersFree, billing = 'annual' }) {
+  // `price` is monthly sticker; `annual` is effective monthly when billed
+  // yearly. Display the active billing's number; show the other crossed
+  // out as a value hint.
+  const shown    = billing === 'annual' ? annual : price;
+  const struck   = billing === 'annual' ? price  : annual;
+  const suffix   = billing === 'annual' ? '/mo · billed annually' : '/mo';
   return (
     <div style={{
       position: 'relative',
@@ -266,14 +309,21 @@ function Tier({ name, price, blurb, features, cta, featured, foundersFree }) {
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 26 }}>
-          <span style={{ fontSize: 18, color: featured ? 'rgba(255,255,255,.7)' : C.mutedSoft, fontWeight: 600 }}>$</span>
-          <span style={{
-            fontFamily: FONT.display, fontSize: 48, fontWeight: 700,
-            color: featured ? '#fff' : C.ink,
-            lineHeight: 1,
-          }}>{price}</span>
-          <span style={{ fontSize: 14, color: featured ? 'rgba(255,255,255,.7)' : C.mutedSoft, fontWeight: 500 }}>/mo</span>
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+            <span style={{ fontSize: 18, color: featured ? 'rgba(255,255,255,.7)' : C.mutedSoft, fontWeight: 600 }}>$</span>
+            <span style={{
+              fontFamily: FONT.display, fontSize: 48, fontWeight: 700,
+              color: featured ? '#fff' : C.ink,
+              lineHeight: 1,
+            }}>{shown}</span>
+            <span style={{ fontSize: 14, color: featured ? 'rgba(255,255,255,.7)' : C.mutedSoft, fontWeight: 500 }}>{suffix}</span>
+          </div>
+          {billing === 'annual' && (
+            <div style={{ fontSize: 11, color: featured ? 'rgba(255,255,255,.6)' : C.mutedSoft, marginTop: 4 }}>
+              <span style={{ textDecoration: 'line-through' }}>${struck}/mo</span> billed monthly
+            </div>
+          )}
         </div>
       )}
 

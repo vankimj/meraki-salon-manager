@@ -27,11 +27,25 @@ const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;
 
 // Canonical pricing — must match plumenexus/src/components/Pricing.jsx so
 // marketing page + signup page never show different numbers.
+// Annual = 14% discount off monthly (matches GG's annual-vs-monthly delta
+// so prospects comparing pricing pages see comparable structures). Math:
+//   $49 mo → $42 annual ($504/yr); $79 mo → $68; $149 mo → $128.
 const PLANS = [
-  { id: 'solo',     name: 'Solo',      tagline: 'Free forever during Founders\' Year', blurb: 'Single tech, single chair. Everything you need to run solo.' },
-  { id: 'studio',   name: 'Studio',    tagline: '$79/mo · 30-day free trial',           blurb: 'Up to 8 staff. Multi-tech splits, walk-in management, custom domain.' },
-  { id: 'salonPro', name: 'Salon Pro', tagline: '$149/mo · 30-day free trial',          blurb: 'Unlimited staff. Founder-direct support + dedicated onboarding.' },
+  { id: 'solo',     name: 'Solo',      monthly: 49,  annual: 42,
+    foundersFree: true,
+    blurb: 'Single tech, single chair. Everything you need to run solo.' },
+  { id: 'studio',   name: 'Studio',    monthly: 79,  annual: 68,
+    blurb: 'Up to 8 staff. Multi-tech splits, walk-in management, custom domain.' },
+  { id: 'salonPro', name: 'Salon Pro', monthly: 149, annual: 128,
+    blurb: 'Unlimited staff. Founder-direct support + dedicated onboarding.' },
 ];
+
+function priceTagline(plan, billing) {
+  if (plan.foundersFree) return 'Free forever during Founders\' Year';
+  const price = billing === 'annual' ? plan.annual : plan.monthly;
+  const suffix = billing === 'annual' ? '/mo · billed annually' : '/mo · 30-day free trial';
+  return `$${price}${suffix}`;
+}
 
 // Comparison rows. `section: true` makes the row a header. Power Packs
 // bundle into tiers as the main value-escalation axis:
@@ -108,6 +122,9 @@ export default function SignupPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [phone, setPhone]             = useState('');
   const [plan, setPlan]               = useState('solo');
+  // Annual default — better UX nudge + matches GG default. Persisted on
+  // the tenant doc so Stripe wiring can pick the right price.
+  const [billing, setBilling]         = useState('annual');
 
   // Slug availability state — debounced live check
   const [slugCheck, setSlugCheck] = useState({ state: 'idle' });
@@ -169,6 +186,7 @@ export default function SignupPage() {
         ownerEmail: user?.email || '',
         ownerPhone: phone.replace(/\D/g, '') ? `+1${phone.replace(/\D/g, '')}` : '',
         plan,
+        billing,
       });
       const data = res?.data || res;
       setJobId(data?.jobId);
@@ -262,9 +280,10 @@ export default function SignupPage() {
         </Section>
 
         <Section title="5 · Plan">
+          <BillingToggle billing={billing} onChange={setBilling} />
           <div style={planGrid}>
             {PLANS.map(p => (
-              <PlanCard key={p.id} plan={p} selected={plan === p.id} onClick={() => setPlan(p.id)} />
+              <PlanCard key={p.id} plan={p} billing={billing} selected={plan === p.id} onClick={() => setPlan(p.id)} />
             ))}
           </div>
           <PlanComparison selectedPlan={plan} />
@@ -309,7 +328,7 @@ function SlugStatus({ state }) {
   return null;
 }
 
-function PlanCard({ plan, selected, onClick, disabled }) {
+function PlanCard({ plan, billing, selected, onClick, disabled }) {
   return (
     <button type="button" onClick={onClick} disabled={disabled}
       style={{
@@ -324,9 +343,28 @@ function PlanCard({ plan, selected, onClick, disabled }) {
         transition: 'border-color .15s, background .15s',
       }}>
       <div style={{ fontFamily: FONT.display, fontWeight: 700, color: C.plumDeep, fontSize: 16, letterSpacing: '.04em', marginBottom: 4 }}>{plan.name}</div>
-      <div style={{ fontSize: 12, color: C.gold, fontWeight: 600, marginBottom: 8 }}>{plan.tagline}</div>
+      <div style={{ fontSize: 12, color: C.gold, fontWeight: 600, marginBottom: 8 }}>{priceTagline(plan, billing)}</div>
       <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.45 }}>{plan.blurb}</div>
     </button>
+  );
+}
+
+function BillingToggle({ billing, onChange }) {
+  return (
+    <div style={billingWrap}>
+      <button
+        type="button"
+        onClick={() => onChange('monthly')}
+        style={billing === 'monthly' ? billingPillActive : billingPill}>
+        Monthly
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange('annual')}
+        style={billing === 'annual' ? billingPillActive : billingPill}>
+        Annual <span style={{ color: C.success, fontSize: 10, marginLeft: 4 }}>save 14%</span>
+      </button>
+    </div>
   );
 }
 
@@ -517,6 +555,34 @@ const statusBad     = { marginTop: 6, fontSize: 12, color: C.danger, fontWeight:
 const statusNeutral = { marginTop: 6, fontSize: 12, color: C.muted };
 
 const planGrid = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 };
+
+const billingWrap = {
+  display: 'inline-flex',
+  gap: 0,
+  padding: 4,
+  background: C.bgSoft,
+  border: `1px solid ${C.rule}`,
+  borderRadius: 999,
+  marginBottom: 16,
+};
+const billingPill = {
+  padding: '7px 16px',
+  fontSize: 12,
+  fontWeight: 600,
+  background: 'transparent',
+  color: C.muted,
+  border: 'none',
+  borderRadius: 999,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+const billingPillActive = {
+  ...billingPill,
+  background: '#fff',
+  color: C.plumDeep,
+  boxShadow: '0 1px 4px rgba(15,25,35,.08)',
+};
+
 
 const tableWrap = { marginTop: 18, border: `1px solid ${C.rule}`, borderRadius: radius.md, overflow: 'hidden' };
 const table     = { width: '100%', borderCollapse: 'collapse', fontSize: 12 };

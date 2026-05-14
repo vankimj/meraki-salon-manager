@@ -6764,6 +6764,7 @@ exports.provisionTenant = onCall(
     const ownerEmail = String(request.data?.ownerEmail || request.auth.token?.email || '').trim().toLowerCase().slice(0, 200);
     const ownerPhone = String(request.data?.ownerPhone || '').trim().slice(0, 32);
     const plan       = ['solo', 'studio', 'salonPro'].includes(request.data?.plan) ? request.data.plan : 'solo';
+    const billing    = request.data?.billing === 'annual' ? 'annual' : 'monthly';
 
     if (!SLUG_FORMAT_RE.test(slug))                       throw new HttpsError('invalid-argument', 'Invalid slug format.');
     if (!salonName)                                       throw new HttpsError('invalid-argument', 'salonName required.');
@@ -6819,6 +6820,7 @@ exports.provisionTenant = onCall(
           ownerEmail:           ownerEmail,
           ownerPhone:           ownerPhone,
           plan:                 plan,
+          billing:              billing,
           packs:                [],
           atomicAddOns:         [],
           active:               true,
