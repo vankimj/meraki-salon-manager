@@ -5,26 +5,52 @@ import { TENANT_ID } from '../../lib/tenant';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../lib/firebase';
 
+// Tenant-neutral defaults — values are blanks/generic placeholders so a new
+// tenant's empty webfront doesn't bleed Meraki content. Salon owners fill
+// these in via Admin → Webfront. Anything Meraki-specific (street address,
+// Instagram handle, hours) is intentionally empty so the corresponding
+// section either hides or shows a "not set yet" state.
 const DEFAULT_CFG = {
-  tagline:   'A Columbus-based salon specializing in Manicure, Pedicure, Dip, Gel-X, Gel Manicure & Nail Art.',
-  about:     'We are a Columbus-based salon specializing in Manicure, Pedicure, Dip powder, Gel-X, Gel manicure & Nail Art. We are committed to maintaining high hygiene standards and exceeding customer expectations in everything we do.',
-  policy:    'Appointments canceled with less than 24 hours notice and/or no-shows are subject to a cancellation fee of 50% of all scheduled service(s).',
+  salonName: '',
+  tagline:   '',
+  about:     '',
+  policy:    '',
   phone:     '',
-  address:   '5029 Olentangy River Rd\nColumbus, OH 43214',
-  mapsUrl:   'https://maps.google.com/?q=5029+Olentangy+River+Rd+Columbus+OH+43214',
+  address:   '',
+  city:      '',
+  mapsUrl:   '',
   googleReviewUrl: '',
-  instagram: 'meraki_cbus',
+  instagram: '',
   facebook:  '',
   tiktok:    '',
   hours: {
-    mon: '10:00 AM – 7:00 PM', tue: '10:00 AM – 7:00 PM', wed: '10:00 AM – 7:00 PM',
-    thu: '10:00 AM – 7:00 PM', fri: '10:00 AM – 7:00 PM', sat: '10:00 AM – 6:00 PM',
-    sun: '11:00 AM – 4:00 PM',
+    mon: '', tue: '', wed: '', thu: '', fri: '', sat: '', sun: '',
   },
   showBookingCta: true, showServices: true, showTeam: true, showReviews: true,
   hiddenEmployeeIds: [], testimonials: [],
   layout: 'classic', themeId: 'meraki', autoTheme: false,
 };
+
+// Salon-name splits for the hero's script + small-caps lockup ("Meraki"
+// big script over "NAIL STUDIO" caps). Falls back to "Your" / "Salon"
+// when no name set so the page doesn't render an empty string.
+function splitSalonName(name) {
+  const n = String(name || '').trim();
+  if (!n) return ['Your', 'Salon'];
+  const words = n.split(/\s+/);
+  if (words.length === 1) return [words[0], ''];
+  return [words[0], words.slice(1).join(' ')];
+}
+
+// Pull "City, State" out of cfg.city if explicit, else parse from address
+// (line 2 typically reads "City, STATE 12345"). Returns empty string when
+// nothing parseable — caller hides the location badge.
+function getCityLine(cfg) {
+  if (cfg?.city) return String(cfg.city);
+  const addr = String(cfg?.address || '');
+  const m = addr.match(/\n([^\n]+,\s*[A-Za-z]{2})\b/);
+  return m ? m[1] : '';
+}
 
 const DAY_LABELS = [
   ['mon','Monday'],['tue','Tuesday'],['wed','Wednesday'],
@@ -146,6 +172,12 @@ export default function SalonWebfront() {
   const visTeam  = employees.filter(e => !hidden.has(e.id));
   const showBook = cfg.showBookingCta && bookCfg?.enabled;
   const bookUrl  = `${window.location.origin}/book`;
+  // Per-tenant display values — never hardcode Meraki strings below.
+  // primaryName = the first word (script lockup); restName = remainder
+  // (small-caps lockup). cityLine = explicit cfg.city or parsed from address.
+  const salonName       = cfg.salonName || 'Your Salon';
+  const [primaryName, restName] = splitSalonName(salonName);
+  const cityLine        = getCityLine(cfg);
 
   function scrollTo(id) {
     setMenuOpen(false);
@@ -200,7 +232,7 @@ export default function SalonWebfront() {
           <div style={{ width:34, height:34, borderRadius:9, background:`linear-gradient(135deg,${tm.primary},${tm.accent})`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
             <svg viewBox="0 0 60 60" fill="none" width={19} height={19}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
           </div>
-          <span style={{ fontFamily:'Cinzel,serif', fontSize:14, fontWeight:700, color: isClassic ? '#fff' : tm.dark, letterSpacing:'.06em' }}>Meraki Nail Studio</span>
+          <span style={{ fontFamily:'Cinzel,serif', fontSize:14, fontWeight:700, color: isClassic ? '#fff' : tm.dark, letterSpacing:'.06em' }}>{salonName}</span>
         </button>
 
         <div style={{ display:'flex', alignItems:'center', gap:28 }} className="wf-nav-desktop">
@@ -257,12 +289,14 @@ export default function SalonWebfront() {
           <div style={{ position:'absolute', top:'15%', right:'-5%', width:'45vw', maxWidth:500, aspectRatio:'1', borderRadius:'50%', background:`${tm.primary}0a`, border:`1px solid ${tm.primary}15`, pointerEvents:'none' }} />
           <div style={{ position:'absolute', bottom:'10%', left:'-8%', width:'35vw', maxWidth:400, aspectRatio:'1', borderRadius:'50%', background:`${tm.accent}08`, border:`1px solid ${tm.accent}12`, pointerEvents:'none' }} />
           <div style={{ textAlign:'center', position:'relative', zIndex:1, maxWidth:700 }}>
-            <div style={{ display:'inline-flex', alignItems:'center', gap:6, background:`${tm.primary}22`, border:`1px solid ${tm.primary}44`, borderRadius:20, padding:'5px 14px', marginBottom:28 }}>
-              <span style={{ width:6, height:6, borderRadius:'50%', background:tm.primary, flexShrink:0, boxShadow:`0 0 6px ${tm.primary}` }} />
-              <span style={{ fontSize:11, fontWeight:600, color:tm.accent, letterSpacing:'.1em', textTransform:'uppercase' }}>Columbus, Ohio</span>
-            </div>
-            <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(64px,14vw,108px)', color:'#fff', lineHeight:1.0, marginBottom:6 }}>Meraki</div>
-            <div style={{ fontFamily:'Cinzel,serif', fontSize:'clamp(13px,2.5vw,18px)', color:'rgba(255,255,255,.5)', letterSpacing:'.32em', textTransform:'uppercase', marginBottom:36 }}>Nail Studio</div>
+            {cityLine && (
+              <div style={{ display:'inline-flex', alignItems:'center', gap:6, background:`${tm.primary}22`, border:`1px solid ${tm.primary}44`, borderRadius:20, padding:'5px 14px', marginBottom:28 }}>
+                <span style={{ width:6, height:6, borderRadius:'50%', background:tm.primary, flexShrink:0, boxShadow:`0 0 6px ${tm.primary}` }} />
+                <span style={{ fontSize:11, fontWeight:600, color:tm.accent, letterSpacing:'.1em', textTransform:'uppercase' }}>{cityLine}</span>
+              </div>
+            )}
+            <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(64px,14vw,108px)', color:'#fff', lineHeight:1.0, marginBottom:6 }}>{primaryName}</div>
+            {restName && <div style={{ fontFamily:'Cinzel,serif', fontSize:'clamp(13px,2.5vw,18px)', color:'rgba(255,255,255,.5)', letterSpacing:'.32em', textTransform:'uppercase', marginBottom:36 }}>{restName}</div>}
             <p style={{ fontSize:'clamp(15px,2vw,17px)', color:'rgba(255,255,255,.65)', lineHeight:1.75, marginBottom:48, maxWidth:540, marginLeft:'auto', marginRight:'auto' }}>{cfg.tagline}</p>
             <div style={{ display:'flex', gap:14, justifyContent:'center', flexWrap:'wrap' }}>
               {showBook && (
@@ -292,14 +326,16 @@ export default function SalonWebfront() {
             {/* Brand circle */}
             <div style={{ width:'clamp(100px,16vw,140px)', height:'clamp(100px,16vw,140px)', borderRadius:'50%', background:`linear-gradient(145deg,${tm.primary}20,${tm.accent}14)`, border:`2px solid ${tm.primary}30`, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:32 }}>
               <div style={{ textAlign:'center' }}>
-                <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(24px,5vw,36px)', color:tm.primary, lineHeight:1 }}>Meraki</div>
-                <div style={{ fontFamily:'Cinzel,serif', fontSize:8, color:tm.accent, letterSpacing:'.18em', textTransform:'uppercase', marginTop:2 }}>Nail Studio</div>
+                <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(24px,5vw,36px)', color:tm.primary, lineHeight:1 }}>{primaryName}</div>
+                {restName && <div style={{ fontFamily:'Cinzel,serif', fontSize:8, color:tm.accent, letterSpacing:'.18em', textTransform:'uppercase', marginTop:2 }}>{restName}</div>}
               </div>
             </div>
-            <div style={{ display:'inline-flex', alignItems:'center', gap:6, background:`${tm.primary}14`, border:`1px solid ${tm.primary}30`, borderRadius:20, padding:'5px 14px', marginBottom:22 }}>
-              <span style={{ width:5, height:5, borderRadius:'50%', background:tm.primary, flexShrink:0 }} />
-              <span style={{ fontSize:11, fontWeight:600, color:tm.primary, letterSpacing:'.1em', textTransform:'uppercase' }}>Columbus, Ohio</span>
-            </div>
+            {cityLine && (
+              <div style={{ display:'inline-flex', alignItems:'center', gap:6, background:`${tm.primary}14`, border:`1px solid ${tm.primary}30`, borderRadius:20, padding:'5px 14px', marginBottom:22 }}>
+                <span style={{ width:5, height:5, borderRadius:'50%', background:tm.primary, flexShrink:0 }} />
+                <span style={{ fontSize:11, fontWeight:600, color:tm.primary, letterSpacing:'.1em', textTransform:'uppercase' }}>{cityLine}</span>
+              </div>
+            )}
             <h1 style={{ fontSize:'clamp(36px,7vw,64px)', fontWeight:800, color:tm.dark, lineHeight:1.1, marginBottom:8, letterSpacing:'-.02em' }}>
               Where nails become <span style={{ color:tm.primary, fontStyle:'italic', fontFamily:"'Great Vibes',cursive", fontSize:'1.3em', fontWeight:400 }}>art.</span>
             </h1>
@@ -322,8 +358,8 @@ export default function SalonWebfront() {
       {isMinimal && (
         <section ref={heroRef} style={{ minHeight:'60dvh', display:'flex', alignItems:'center', justifyContent:'center', background:'#fff', padding:'120px clamp(20px,6vw,80px) 80px' }}>
           <div style={{ textAlign:'center', maxWidth:600 }}>
-            <div style={{ fontFamily:'Cinzel,serif', fontSize:'clamp(10px,1.8vw,13px)', color:tm.primary, letterSpacing:'.3em', textTransform:'uppercase', marginBottom:20 }}>Meraki Nail Studio · Columbus, Ohio</div>
-            <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(56px,12vw,96px)', color:tm.dark, lineHeight:1.0, marginBottom:4 }}>Meraki</div>
+            <div style={{ fontFamily:'Cinzel,serif', fontSize:'clamp(10px,1.8vw,13px)', color:tm.primary, letterSpacing:'.3em', textTransform:'uppercase', marginBottom:20 }}>{salonName}{cityLine && ` · ${cityLine}`}</div>
+            <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(56px,12vw,96px)', color:tm.dark, lineHeight:1.0, marginBottom:4 }}>{primaryName}</div>
             <div style={{ width:48, height:2, background:`linear-gradient(90deg,${tm.primary},${tm.accent})`, margin:'0 auto 32px', borderRadius:1 }} />
             <p style={{ fontSize:'clamp(15px,2vw,18px)', color:'#666', lineHeight:1.8, marginBottom:44 }}>{cfg.tagline}</p>
             <div style={{ display:'flex', gap:12, justifyContent:'center', flexWrap:'wrap' }}>
@@ -350,8 +386,8 @@ export default function SalonWebfront() {
                 <div style={{ position:'absolute', inset:0, borderRadius:'50%', background:`linear-gradient(145deg,${tm.primary}18,${tm.accent}10)`, border:`1px solid ${tm.primary}22` }} />
                 <div style={{ position:'absolute', inset:'12%', borderRadius:'50%', background:`linear-gradient(145deg,${tm.primary}28,${tm.accent}18)`, display:'flex', alignItems:'center', justifyContent:'center' }}>
                   <div style={{ textAlign:'center' }}>
-                    <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(36px,8vw,52px)', color:tm.primary, lineHeight:1 }}>Meraki</div>
-                    <div style={{ fontFamily:'Cinzel,serif', fontSize:'clamp(8px,1.5vw,10px)', color:tm.accent, letterSpacing:'.2em', textTransform:'uppercase', marginTop:4 }}>Nail Studio</div>
+                    <div style={{ fontFamily:"'Great Vibes',cursive", fontSize:'clamp(36px,8vw,52px)', color:tm.primary, lineHeight:1 }}>{primaryName}</div>
+                    {restName && <div style={{ fontFamily:'Cinzel,serif', fontSize:'clamp(8px,1.5vw,10px)', color:tm.accent, letterSpacing:'.2em', textTransform:'uppercase', marginTop:4 }}>{restName}</div>}
                   </div>
                 </div>
               </div>
@@ -506,9 +542,9 @@ export default function SalonWebfront() {
           <div style={{ width:24, height:24, borderRadius:6, background:`linear-gradient(135deg,${tm.primary},${tm.accent})`, display:'flex', alignItems:'center', justifyContent:'center' }}>
             <svg viewBox="0 0 60 60" fill="none" width={13} height={13}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
           </div>
-          <span style={{ fontFamily:'Cinzel,serif', fontSize:11, color:'rgba(255,255,255,.5)', letterSpacing:'.08em' }}>Meraki Nail Studio</span>
+          <span style={{ fontFamily:'Cinzel,serif', fontSize:11, color:'rgba(255,255,255,.5)', letterSpacing:'.08em' }}>{salonName}</span>
         </div>
-        <div style={{ fontSize:11 }}>© {new Date().getFullYear()} Meraki Nail Studio · Columbus, OH</div>
+        <div style={{ fontSize:11 }}>© {new Date().getFullYear()} {salonName}{cityLine && ` · ${cityLine}`}</div>
         <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
           <a href="/terms"   style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Terms</a>
           <a href="/privacy" style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Privacy</a>
@@ -516,7 +552,7 @@ export default function SalonWebfront() {
         </div>
       </footer>
 
-      <SalonChatbot tm={tm} />
+      <SalonChatbot tm={tm} salonName={salonName} />
 
       <style>{`
         @media (max-width: 660px) {
@@ -733,7 +769,7 @@ function ContactBlock({ icon, label, children, dark, tm }) {
 // ── AI Chat Widget ────────────────────────────────────
 const chatFn = httpsCallable(functions, 'chatWithSalon');
 
-export function SalonChatbot({ tm }) {
+export function SalonChatbot({ tm, salonName = 'Our' }) {
   const primary = tm?.primary || '#2D7A5F';
   const [open,     setOpen]     = useState(false);
   const [messages, setMessages] = useState([
@@ -780,7 +816,7 @@ export function SalonChatbot({ tm }) {
             <div style={{ display:'flex', alignItems:'center', gap:10 }}>
               <div style={{ width:32, height:32, borderRadius:'50%', background:'rgba(255,255,255,.2)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:16 }}>💅</div>
               <div>
-                <div style={{ color:'#fff', fontSize:13, fontWeight:700, lineHeight:1.2 }}>Meraki Assistant</div>
+                <div style={{ color:'#fff', fontSize:13, fontWeight:700, lineHeight:1.2 }}>{salonName} Assistant</div>
                 <div style={{ color:'rgba(255,255,255,.75)', fontSize:10, marginTop:1 }}>Powered by AI · typically instant</div>
               </div>
             </div>
