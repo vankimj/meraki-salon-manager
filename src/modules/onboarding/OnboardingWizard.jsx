@@ -40,17 +40,24 @@ export default function OnboardingWizard({ onDismiss }) {
   const [currentKey, setCurrentKey] = useState('welcome');
   const [saving,     setSaving]     = useState(false);
   const [error,      setError]      = useState('');
+  // Captured once at first bootstrap so we can tell "re-entry to a fully
+  // completed wizard" apart from "user just finished onboarding on this
+  // pass". Drives whether advance() auto-closes on the final phase.
+  const [wasCompleteOnEntry, setWasCompleteOnEntry] = useState(false);
 
   useEffect(() => subscribeOnboarding(setOnboarding), []);
 
-  // When state first loads, jump to the next pending phase. Manual
-  // navigation (Back / phase strip clicks) is preserved after first
-  // mount via `currentKey`. `null` (no doc) means start at 'welcome'.
+  // When state first loads, jump to the next pending phase. Re-entries
+  // to a complete wizard start at 'welcome' so the user can step through
+  // every section to revise. Manual navigation (Back / phase strip
+  // clicks) is preserved after first mount via `currentKey`.
   const [bootstrapped, setBootstrapped] = useState(false);
   useEffect(() => {
     if (bootstrapped) return;
     if (onboarding === undefined) return; // still loading
-    const next = nextPendingPhase(onboarding) || 'welcome';
+    const complete = isOnboardingComplete(onboarding);
+    setWasCompleteOnEntry(complete);
+    const next = complete ? 'welcome' : (nextPendingPhase(onboarding) || 'welcome');
     setCurrentKey(next);
     setBootstrapped(true);
   }, [onboarding, bootstrapped]);
@@ -64,14 +71,24 @@ export default function OnboardingWizard({ onDismiss }) {
     try {
       const res = await markOnboardingPhase(currentKey, payload);
       logActivity('onboarding_phase_saved', `${currentKey}: ${payload.skip ? 'skipped' : 'done'}`);
-      if (res.completedAt) {
+      const nextIdx = idx + 1;
+      const atLastPhase = nextIdx >= PHASES.length;
+      // First-time completion: server reports completedAt for the very
+      // first time. Celebrate + close.
+      if (res.completedAt && !wasCompleteOnEntry) {
         showToast('Onboarding complete 🎉', 5000);
         onDismiss?.();
         return;
       }
-      const nextIdx = idx + 1;
-      if (nextIdx < PHASES.length) setCurrentKey(PHASES[nextIdx].key);
-      else onDismiss?.();
+      // Re-entry to an already-complete wizard: walk phase by phase, only
+      // close when the user reaches (and saves) the final phase. Lets the
+      // owner revise every section without being kicked out on Phase 0.
+      if (atLastPhase) {
+        if (wasCompleteOnEntry) showToast('Changes saved', 2500);
+        onDismiss?.();
+        return;
+      }
+      setCurrentKey(PHASES[nextIdx].key);
     } catch (e) {
       setError(e?.message || String(e));
       logError('onboarding_phase_save', e, { phase: currentKey });
