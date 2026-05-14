@@ -5,7 +5,12 @@ import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  // authDomain is what users briefly see in the OAuth popup URL bar.
+  // Pointing at our own brand domain keeps the flash on-brand rather
+  // than showing 'meraki-salon-manager.firebaseapp.com'. Works because
+  // Firebase Hosting auto-serves the /__/auth/* reserved namespace on
+  // any custom hosting domain + plumenexus.com is in authorizedDomains.
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',

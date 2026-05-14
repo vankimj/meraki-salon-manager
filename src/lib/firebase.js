@@ -9,7 +9,11 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  // On-brand authDomain: users see plumenexus.com in the OAuth popup
+  // URL bar, not meraki-salon-manager.firebaseapp.com. Firebase Hosting
+  // auto-serves /__/auth/* on any custom hosting domain, and
+  // plumenexus.com is already in authorizedDomains.
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',
