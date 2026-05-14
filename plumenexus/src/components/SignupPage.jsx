@@ -199,14 +199,18 @@ export default function SignupPage() {
   async function sendOtp() {
     const e164 = toE164(phone);
     if (!e164) { setOtpError('Enter a 10-digit US phone number.'); setOtpState('error'); return; }
-    if (!user) { setOtpError('Sign in first.'); setOtpState('error'); return; }
+    // Use auth.currentUser (live binding) rather than the `user` state
+    // captured at handler-creation time. Closure over state can be stale
+    // if the auth state changes between mount and click.
+    const cur = auth.currentUser;
+    if (!cur) { setOtpError('Sign in first.'); setOtpState('error'); return; }
     setOtpError('');
     setOtpState('sending');
     try {
       if (!recaptcha.current) {
         recaptcha.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
       }
-      otpConfirmation.current = await linkWithPhoneNumber(user, e164, recaptcha.current);
+      otpConfirmation.current = await linkWithPhoneNumber(cur, e164, recaptcha.current);
       setOtpState('awaiting-code');
     } catch (e) {
       console.error('[OTP send]', e.code, e.message);
@@ -238,8 +242,9 @@ export default function SignupPage() {
     try {
       await otpConfirmation.current.confirm(code);
       // Force-refresh ID token so subsequent provisionTenant call sees
-      // phone_number in the auth claims.
-      await user.getIdToken(true);
+      // phone_number in the auth claims. Use auth.currentUser, not stale
+      // `user` closure ref.
+      await auth.currentUser?.getIdToken(true);
       setOtpState('verified');
     } catch (e) {
       console.error('[OTP verify]', e.code, e.message);
@@ -383,10 +388,11 @@ export default function SignupPage() {
       </main>
 
       {/* Invisible reCAPTCHA target — must be present in the DOM when
-          linkWithPhoneNumber fires the verifier. Visibility: invisible
-          challenge appears only when Firebase Auth flags suspicious
-          traffic; legit users never see it. */}
-      <div id="recaptcha-container" />
+          linkWithPhoneNumber fires the verifier. display:none matches
+          BookingScreen's known-working pattern; the invisible-size
+          challenge still attaches and renders its iframe inside even
+          though the container is hidden. */}
+      <div id="recaptcha-container" style={{ display: 'none' }} />
 
       <Footer />
     </div>
