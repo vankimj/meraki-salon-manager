@@ -29,7 +29,6 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
   const termsUrl   = `${origin}/terms`;
   const [privacyOk, setPrivacyOk] = useState(Boolean(stored.privacyOk));
   const [termsOk,   setTermsOk]   = useState(Boolean(stored.termsOk));
-  const [legalAck,  setLegalAck]  = useState(Boolean(stored.legalAck));
   const stripeConnected = Boolean(settings?.stripeAccountId);
 
   const [err, setErr] = useState('');
@@ -49,7 +48,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       onAdvance({
         phaseData: {
           ccFeePct, ccFeeFlat, noCardTips, removalPrice,
-          privacyOk, termsOk, legalAck,
+          privacyOk, termsOk,
         },
       });
     } catch (e) {
@@ -105,12 +104,6 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
           label={<>Terms of Service is live at <Link href={termsUrl}>{termsUrl}</Link></>}
           desc="Same — footer-linked from every public surface."
         />
-        <CheckRow
-          checked={legalAck}
-          onChange={setLegalAck}
-          label="I understand these are templates and not a substitute for legal review."
-          desc="Before launch, have an attorney review the cancellation, refund, and CCPA sections."
-        />
       </Section>
 
       <Section title="Stripe Connect">
@@ -139,11 +132,16 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
         <div style={{ marginTop: 12, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>{err}</div>
       )}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', marginTop: 18 }}>
+        {!(privacyOk && termsOk) && (
+          <div style={{ fontSize: 11, color: '#888', marginRight: 'auto' }}>
+            Confirm the privacy and terms boxes above to continue.
+          </div>
+        )}
         <button onClick={() => save({ skip: true })} disabled={saving} style={btnSecondary}>
           Skip for now
         </button>
-        <button onClick={() => save()} disabled={saving} style={btnPrimary}>
+        <button onClick={() => save()} disabled={saving || !(privacyOk && termsOk)} style={btnPrimary(saving || !(privacyOk && termsOk))}>
           {saving ? 'Saving…' : 'Save & continue →'}
         </button>
       </div>
@@ -204,5 +202,5 @@ function Link({ href, children }) {
 }
 
 const inp = { boxSizing: 'border-box', padding: '7px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff' };
-const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
+const btnPrimary = (disabled) => ({ padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: disabled ? '#cfc2e3' : '#5b3b8c', color: '#fff', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' });
 const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };

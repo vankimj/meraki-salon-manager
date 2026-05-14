@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { createClient, saveClient, createAppointment, createReceipt, fetchClients, previewGgImportWipe, wipeAllGgImports, fetchExistingGgTransactionIds, fetchExistingApptKeys, apptDedupKey, countAllAppointments, wipeAllAppointments, countAllReceipts, wipeAllReceipts } from '../lib/firestore';
+import { createClient, saveClient, createAppointment, createReceipt, fetchClients, fetchExistingGgTransactionIds, fetchExistingApptKeys, apptDedupKey } from '../lib/firestore';
 import { logActivity } from '../lib/logger';
 import {
   parseCsv, detectType,
@@ -29,8 +29,7 @@ const MAX_INLINE_SKIPPED = 50;
 // in-memory staged Payment Details; user restarts from step 1. Step 1 is
 // idempotent (dedup by name) so re-running it is safe.
 export default function CsvImportSection() {
-  const { gUser, showToast } = useApp();
-  const isSuperAdmin = gUser?.email === 'jvankim@gmail.com';
+  const { showToast } = useApp();
 
   // Step 1: Contacts
   const clientsFileRef = useRef(null);
@@ -365,16 +364,6 @@ export default function CsvImportSection() {
           <strong>How to export from GlossGenius:</strong> Open <strong>Insights → Reports</strong>, download <strong>Clients</strong>, <strong>Payment Details</strong>, and <strong>Checkout Line Items</strong> (choose your date range for the last two).
         </div>
 
-        {isSuperAdmin && (
-          <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px dashed #e0e0e0' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#7f1d1d', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-              Founder · destructive operations
-            </div>
-            <ResetGgImportsBtn />
-            <WipeAllAppointmentsBtn />
-            <WipeAllReceiptsBtn />
-          </div>
-        )}
       </div>
     </div>
   );
@@ -467,218 +456,6 @@ const primaryBtn = (disabled) => ({
   color: '#fff', fontFamily: 'inherit',
 });
 
-// ── Destructive (founder-only) ──────────────────────────────────
-function ResetGgImportsBtn() {
-  const { showToast } = useApp();
-  const [busy,    setBusy]    = useState(false);
-  const [counts,  setCounts]  = useState(null);
-  const [status,  setStatus]  = useState('');
-
-  async function preview() {
-    setBusy(true); setStatus('Counting…');
-    try {
-      const c = await previewGgImportWipe();
-      setCounts(c);
-      setStatus('');
-    } catch (e) {
-      console.error('[Wipe preview]', e);
-      setStatus('Error: ' + e.message);
-    } finally { setBusy(false); }
-  }
-
-  async function wipe() {
-    if (!counts) return;
-    if (!window.confirm(
-      `DELETE every GG-imported record?\n\n` +
-      `• ${counts.clients.toLocaleString()} clients\n` +
-      `• ${counts.appointments.toLocaleString()} appointments\n` +
-      `• ${counts.receipts.toLocaleString()} receipts\n\n` +
-      `Total: ${counts.total.toLocaleString()} documents will be permanently deleted. ` +
-      `Local (non-GG) data is untouched. This is irreversible — you'll need to re-import from GG.`
-    )) return;
-    if (!window.confirm('Last chance. Continue?')) return;
-    setBusy(true);
-    try {
-      const r = await wipeAllGgImports(msg => setStatus(msg));
-      logActivity('gg_wipe_all', `clients=${r.deletedClients}, appts=${r.deletedAppointments}, receipts=${r.deletedReceipts}`);
-      setStatus(`✓ Deleted ${r.total.toLocaleString()} documents — clients ${r.deletedClients}, appts ${r.deletedAppointments}, receipts ${r.deletedReceipts}`);
-      showToast(`Wiped ${r.total.toLocaleString()} GG records — re-import to start fresh`, 4500);
-      setCounts({ clients: 0, appointments: 0, receipts: 0, total: 0 });
-    } catch (e) {
-      console.error('[Wipe]', e);
-      setStatus('Error: ' + e.message);
-      showToast('Wipe failed: ' + e.message, 4000);
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div style={{ marginBottom: 14, padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, color: '#7f1d1d', lineHeight: 1.55 }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ Reset all GG imports</div>
-      <div style={{ marginBottom: 10 }}>
-        Deletes every <code>_importedFrom: glossgenius</code> record across <strong>clients</strong>, <strong>appointments</strong>, and <strong>receipts</strong>. Use this if a previous import double-counted and you want a clean slate before re-running the wizard. Local data (in-app appointments, demo data, manually-entered clients) is untouched.
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={preview} disabled={busy}
-          style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: busy ? '#f0f0f0' : '#fff', color: '#333', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-          {busy && !counts ? 'Counting…' : 'Preview deletion counts'}
-        </button>
-        {counts && counts.total > 0 && (
-          <button onClick={wipe} disabled={busy}
-            style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px solid #ef4444', background: busy ? '#fee2e2' : '#ef4444', color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
-            {busy ? 'Deleting…' : `Delete ${counts.total.toLocaleString()} GG records`}
-          </button>
-        )}
-      </div>
-      {counts && (
-        <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 6, fontSize: 11, color: '#7f1d1d' }}>
-          <strong>Will delete:</strong> {counts.clients.toLocaleString()} clients · {counts.appointments.toLocaleString()} appointments · {counts.receipts.toLocaleString()} receipts <strong>(total {counts.total.toLocaleString()})</strong>
-        </div>
-      )}
-      {status && <div style={{ marginTop: 8, fontSize: 11, color: '#666', fontStyle: 'italic' }}>{status}</div>}
-    </div>
-  );
-}
-
-function WipeAllAppointmentsBtn() {
-  const { showToast } = useApp();
-  const [busy,    setBusy]    = useState(false);
-  const [count,   setCount]   = useState(null);
-  const [status,  setStatus]  = useState('');
-
-  async function preview() {
-    setBusy(true); setStatus('Counting…');
-    try {
-      const n = await countAllAppointments();
-      setCount(n);
-      setStatus('');
-    } catch (e) {
-      console.error('[Wipe appts preview]', e);
-      setStatus('Error: ' + e.message);
-    } finally { setBusy(false); }
-  }
-
-  async function wipe() {
-    if (count == null) return;
-    if (!window.confirm(
-      `DELETE every appointment in the calendar?\n\n` +
-      `${count.toLocaleString()} appointments will be permanently deleted — including demo data, ` +
-      `online bookings, and any in-app entries. Receipts (sales history) are NOT affected.\n\n` +
-      `This is irreversible. Use this only when you're about to re-import the GG Appointments CSV ` +
-      `and want a clean calendar.`
-    )) return;
-    if (!window.confirm(`Last chance — delete ${count.toLocaleString()} appointments?`)) return;
-    if (!window.confirm('Final confirmation. Continue?')) return;
-    setBusy(true);
-    try {
-      const r = await wipeAllAppointments(msg => setStatus(msg));
-      logActivity('wipe_all_appointments', `deleted=${r.deleted}`);
-      setStatus(`✓ Deleted ${r.deleted.toLocaleString()} appointments.`);
-      showToast(`Wiped ${r.deleted.toLocaleString()} appointments — calendar is now empty`, 4500);
-      setCount(0);
-    } catch (e) {
-      console.error('[Wipe appts]', e);
-      setStatus('Error: ' + e.message);
-      showToast('Wipe failed: ' + e.message, 4000);
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div style={{ marginBottom: 14, padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, color: '#7f1d1d', lineHeight: 1.55 }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ Wipe entire calendar</div>
-      <div style={{ marginBottom: 10 }}>
-        Deletes <strong>every appointment</strong> regardless of source — demo data, online bookings, in-app entries, and any prior GG-imported appointments. Receipts (sales history) stay intact.
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={preview} disabled={busy}
-          style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: busy ? '#f0f0f0' : '#fff', color: '#333', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-          {busy && count == null ? 'Counting…' : 'Preview count'}
-        </button>
-        {count != null && count > 0 && (
-          <button onClick={wipe} disabled={busy}
-            style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px solid #ef4444', background: busy ? '#fee2e2' : '#ef4444', color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
-            {busy ? 'Deleting…' : `Delete ${count.toLocaleString()} appointments`}
-          </button>
-        )}
-      </div>
-      {count != null && (
-        <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 6, fontSize: 11, color: '#7f1d1d' }}>
-          <strong>Will delete:</strong> {count.toLocaleString()} appointment{count !== 1 ? 's' : ''}
-        </div>
-      )}
-      {status && <div style={{ marginTop: 8, fontSize: 11, color: '#666', fontStyle: 'italic' }}>{status}</div>}
-    </div>
-  );
-}
-
-function WipeAllReceiptsBtn() {
-  const { showToast } = useApp();
-  const [busy,    setBusy]    = useState(false);
-  const [count,   setCount]   = useState(null);
-  const [status,  setStatus]  = useState('');
-
-  async function preview() {
-    setBusy(true); setStatus('Counting…');
-    try {
-      const n = await countAllReceipts();
-      setCount(n);
-      setStatus('');
-    } catch (e) {
-      console.error('[Wipe rcpts preview]', e);
-      setStatus('Error: ' + e.message);
-    } finally { setBusy(false); }
-  }
-
-  async function wipe() {
-    if (count == null) return;
-    if (!window.confirm(
-      `DELETE every transaction (receipt) in the database?\n\n` +
-      `${count.toLocaleString()} receipts will be permanently deleted — including in-app checkouts, ` +
-      `GG-imported sales, and demo data. Appointments, clients, and gift cards are NOT affected.\n\n` +
-      `This is irreversible.`
-    )) return;
-    if (!window.confirm(`Last chance — delete ${count.toLocaleString()} transactions?`)) return;
-    if (!window.confirm('Final confirmation. Continue?')) return;
-    setBusy(true);
-    try {
-      const r = await wipeAllReceipts(msg => setStatus(msg));
-      logActivity('wipe_all_receipts', `deleted=${r.deleted}`);
-      setStatus(`✓ Deleted ${r.deleted.toLocaleString()} receipts.`);
-      showToast(`Wiped ${r.deleted.toLocaleString()} transactions — sales history is now empty`, 4500);
-      setCount(0);
-    } catch (e) {
-      console.error('[Wipe rcpts]', e);
-      setStatus('Error: ' + e.message);
-      showToast('Wipe failed: ' + e.message, 4000);
-    } finally { setBusy(false); }
-  }
-
-  return (
-    <div style={{ marginBottom: 14, padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, fontSize: 12, color: '#7f1d1d', lineHeight: 1.55 }}>
-      <div style={{ fontWeight: 700, marginBottom: 4 }}>⚠ Wipe all transactions</div>
-      <div style={{ marginBottom: 10 }}>
-        Deletes <strong>every receipt</strong> regardless of source — in-app checkouts, GG-imported sales, demo data, and any prior partial imports. Appointments and clients stay intact.
-      </div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button onClick={preview} disabled={busy}
-          style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: busy ? '#f0f0f0' : '#fff', color: '#333', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-          {busy && count == null ? 'Counting…' : 'Preview count'}
-        </button>
-        {count != null && count > 0 && (
-          <button onClick={wipe} disabled={busy}
-            style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px solid #ef4444', background: busy ? '#fee2e2' : '#ef4444', color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
-            {busy ? 'Deleting…' : `Delete ${count.toLocaleString()} transactions`}
-          </button>
-        )}
-      </div>
-      {count != null && (
-        <div style={{ marginTop: 8, padding: 8, background: '#fff', borderRadius: 6, fontSize: 11, color: '#7f1d1d' }}>
-          <strong>Will delete:</strong> {count.toLocaleString()} receipt{count !== 1 ? 's' : ''}
-        </div>
-      )}
-      {status && <div style={{ marginTop: 8, fontSize: 11, color: '#666', fontStyle: 'italic' }}>{status}</div>}
-    </div>
-  );
-}
 
 // ── Skipped-rows table + preview helpers ──────────────────────
 function SkippedPanel({ skipped, onClose }) {
