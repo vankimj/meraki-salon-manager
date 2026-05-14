@@ -186,7 +186,6 @@ export default function SignupPage() {
             onChange={e => setSalonName(e.target.value.slice(0, 80))}
             placeholder="e.g. Glow Beauty Bar"
             style={input}
-            disabled={!user}
           />
         </Section>
 
@@ -198,7 +197,6 @@ export default function SignupPage() {
               onChange={e => { setSlugTouched(true); setSlug(e.target.value.toLowerCase().slice(0, 30)); }}
               placeholder="your-salon"
               style={slugInput}
-              disabled={!user}
             />
             <span style={slugSuffix}>.plumenexus.com</span>
           </div>
@@ -213,14 +211,13 @@ export default function SignupPage() {
             style={input}
             type="tel"
             inputMode="tel"
-            disabled={!user}
           />
         </Section>
 
         <Section title="5 · Plan">
           <div style={planGrid}>
             {PLANS.map(p => (
-              <PlanCard key={p.id} plan={p} selected={plan === p.id} onClick={() => setPlan(p.id)} disabled={!user} />
+              <PlanCard key={p.id} plan={p} selected={plan === p.id} onClick={() => setPlan(p.id)} />
             ))}
           </div>
         </Section>
