@@ -162,14 +162,19 @@ service cloud.firestore {
         allow read:  if isTenantAdmin(tenantId);
         allow write: if false;
       }
-      // Multi-location config. Read: tenant admin (wizard + Admin →
-      // Locations). Write: server-only — the wizard writes this via
-      // markOnboardingPhase or a future setTenantLocations callable
-      // so the schema stays consistent (defaultLocationId always
-      // resolves, IDs unique, etc.).
+      // Multi-location config. Read + write: tenant admin. Basic
+      // shape enforcement via security rules — `list` is an array,
+      // `defaultLocationId` is a string. Per-location field shape isn't
+      // enforced at the rules layer (admin SDK Cloud Functions could
+      // add it later if abuse appears).
       match /data/locations {
         allow read:  if isTenantAdmin(tenantId);
-        allow write: if false;
+        allow write: if isTenantAdmin(tenantId)
+          && request.resource.data.keys().hasAny(['list', 'defaultLocationId'])
+          && (
+            !request.resource.data.keys().hasAll(['list']) ||
+            request.resource.data.list is list
+          );
       }
 
       // Handbook signatures — each user reads/writes their own; admin reads all
