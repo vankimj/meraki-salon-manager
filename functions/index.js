@@ -6770,6 +6770,18 @@ exports.provisionTenant = onCall(
     if (!salonName)                                       throw new HttpsError('invalid-argument', 'salonName required.');
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerEmail))   throw new HttpsError('invalid-argument', 'Invalid email.');
 
+    // Phone gate — the caller MUST have a phone number linked to their
+    // Firebase Auth user. Source of truth is the Admin SDK userRecord
+    // (not the client-submitted ownerPhone field, which can be spoofed).
+    // The SignupPage runs linkWithPhoneNumber via the Firebase Phone
+    // provider + invisible reCAPTCHA before allowing submit.
+    const adminAuth = require('firebase-admin/auth').getAuth();
+    const userRecord = await adminAuth.getUser(request.auth.uid);
+    const verifiedPhone = userRecord.phoneNumber || '';
+    if (!verifiedPhone) {
+      throw new HttpsError('failed-precondition', 'Verify your phone number before creating a salon.');
+    }
+
     const db    = getFirestore();
     const now   = new Date().toISOString();
     const jobId = `${slug}-${Date.now()}`; // stable per-attempt id so platform-admin sees retries
@@ -6792,8 +6804,11 @@ exports.provisionTenant = onCall(
     let tenantId;
     try {
       tenantId = await db.runTransaction(async (tx) => {
-        const slugRef = db.doc(`slugs/${slug}`);
-        const slugSnap = await tx.get(slugRef);
+        // ── READS FIRST (Firestore tx requires all reads before writes) ──
+        const slugRef  = db.doc(`slugs/${slug}`);
+        const phoneRef = db.doc(`phoneClaims/${verifiedPhone}`);
+        const [slugSnap, phoneSnap] = await Promise.all([tx.get(slugRef), tx.get(phoneRef)]);
+
         if (slugSnap.exists) {
           const sd = slugSnap.data() || {};
           if (sd.kind === 'reserved') {
@@ -6810,15 +6825,29 @@ exports.provisionTenant = onCall(
             throw new HttpsError('already-exists', `'${slug}' is already taken.`);
           }
         }
+
+        // Per-phone uniqueness: prevent farming Solo tenants by re-using
+        // the same verified phone. Same owner (matching ownerEmail) on
+        // the existing claim is allowed — they're retrying the same flow.
+        if (phoneSnap.exists) {
+          const pd = phoneSnap.data() || {};
+          if (pd.ownerEmail !== ownerEmail) {
+            throw new HttpsError('already-exists', 'This phone is already used by another salon owner.');
+          }
+        }
+
         const tid = makeLowercaseTenantId();
         tx.set(slugRef, {
           tenantId: tid, kind: 'primary', createdAt: now,
+        });
+        tx.set(phoneRef, {
+          tenantId: tid, slug, ownerEmail, claimedAt: now,
         });
         tx.set(db.doc(`tenants/${tid}`), {
           name:                 salonName,
           ownerName:            ownerName,
           ownerEmail:           ownerEmail,
-          ownerPhone:           ownerPhone,
+          ownerPhone:           verifiedPhone,
           plan:                 plan,
           billing:              billing,
           packs:                [],
@@ -6846,11 +6875,11 @@ exports.provisionTenant = onCall(
       const batch = db.batch();
       const ownerLower = ownerEmail.toLowerCase();
       batch.set(db.doc(`tenants/${tenantId}/data/settings`), {
-        timeoutMin: 5, salonName, ownerEmail, ownerPhone,
+        timeoutMin: 5, salonName, ownerEmail, ownerPhone: verifiedPhone,
         createdAt: now, updatedAt: now,
       });
       batch.set(db.doc(`tenants/${tenantId}/data/webfront`), {
-        salonName, tagline: '', phone: ownerPhone,
+        salonName, tagline: '', phone: verifiedPhone,
         createdAt: now, updatedAt: now,
       });
       batch.set(db.doc(`tenants/${tenantId}/data/slides`), { slides: [], def: 0, cur: 0 });

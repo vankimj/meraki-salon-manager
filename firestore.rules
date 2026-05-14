@@ -113,6 +113,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── Per-phone tenant uniqueness ──────────────────────
+    //   Doc id = the E.164 phone number (e.g. +15551234567).
+    //   provisionTenant writes a claim atomically with slug reservation
+    //   to prevent one verified phone from spinning up multiple Solo
+    //   tenants (anti-abuse). Body: { tenantId, slug, ownerEmail, claimedAt }.
+    //   Server-only — clients can't read or write. The Cloud Function
+    //   provides the "is this phone taken?" check at provision time;
+    //   exposing the collection to clients would leak phone numbers.
+    match /phoneClaims/{phone} {
+      allow read, write: if false;
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document (plan, owner, name) — super-admin only

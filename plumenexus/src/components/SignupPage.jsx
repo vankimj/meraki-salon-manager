@@ -10,16 +10,17 @@
 // usable but submit is disabled. The signed-in user's email becomes the
 // tenant's ownerEmail; their UID is captured server-side as provisionedBy.
 //
-// Anti-abuse layer one (v1): Google account (verified email) + IP rate
-// limit on the Cloud Function (3/hr) + reserved-slug list at the
-// orchestrator's transaction layer. Phone OTP via Firebase Auth's phone
-// provider + reCAPTCHA + per-phone duplicate check are Sprint 3b adds.
+// Anti-abuse: Google account (verified email) + REQUIRED Phone OTP
+// (linked to the Google account via linkWithPhoneNumber) + invisible
+// reCAPTCHA + per-phone duplicate check on the server + 3-per-hour IP
+// rate limit + reserved-slug Firestore enforcement.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   auth, signInWithGoogle, signOutUser, watchAuth,
   checkSlugAvailability, callProvisionTenant, watchProvisioningJob,
 } from '../lib/firebase';
+import { RecaptchaVerifier, linkWithPhoneNumber, PhoneAuthProvider, linkWithCredential } from 'firebase/auth';
 import { C, FONT, shadow, radius } from '../theme';
 import Footer from './Footer.jsx';
 
@@ -97,6 +98,12 @@ function fmtPhone(input) {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
 
+function toE164(input) {
+  const digits = String(input || '').replace(/\D/g, '');
+  if (digits.length !== 10) return null;
+  return `+1${digits}`;
+}
+
 function deriveSlug(salonName) {
   return String(salonName || '')
     .toLowerCase()
@@ -122,6 +129,20 @@ export default function SignupPage() {
   const [slugTouched, setSlugTouched] = useState(false);
   const [phone, setPhone]             = useState('');
   const [plan, setPlan]               = useState('solo');
+
+  // Phone OTP state. Auto-marked verified if the signed-in user already
+  // has a phone linked from a prior session — no re-verification needed.
+  const [otpState, setOtpState]       = useState('idle'); // idle | sending | awaiting-code | verifying | verified | error
+  const [otpCode, setOtpCode]         = useState('');
+  const [otpError, setOtpError]       = useState('');
+  const recaptcha                     = useRef(null);
+  const otpConfirmation               = useRef(null);
+  useEffect(() => {
+    if (user?.phoneNumber) {
+      setPhone(fmtPhone(user.phoneNumber.replace(/^\+1/, '')));
+      setOtpState('verified');
+    }
+  }, [user?.phoneNumber]);
   // Annual default — better UX nudge + matches GG default. Persisted on
   // the tenant doc so Stripe wiring can pick the right price.
   const [billing, setBilling]         = useState('annual');
@@ -171,8 +192,63 @@ export default function SignupPage() {
     salonName.trim().length >= 2 &&
     SLUG_RE.test(slug) &&
     slugCheck.state === 'available' &&
-    PLANS.some(p => p.id === plan)
-  ), [user, salonName, slug, slugCheck, plan]);
+    PLANS.some(p => p.id === plan) &&
+    otpState === 'verified'
+  ), [user, salonName, slug, slugCheck, plan, otpState]);
+
+  async function sendOtp() {
+    const e164 = toE164(phone);
+    if (!e164) { setOtpError('Enter a 10-digit US phone number.'); setOtpState('error'); return; }
+    if (!user) { setOtpError('Sign in first.'); setOtpState('error'); return; }
+    setOtpError('');
+    setOtpState('sending');
+    try {
+      if (!recaptcha.current) {
+        recaptcha.current = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'invisible' });
+      }
+      otpConfirmation.current = await linkWithPhoneNumber(user, e164, recaptcha.current);
+      setOtpState('awaiting-code');
+    } catch (e) {
+      console.error('[OTP send]', e.code, e.message);
+      try { recaptcha.current?.clear(); } catch (_) {}
+      recaptcha.current = null;
+      if (e.code === 'auth/credential-already-in-use' || e.code === 'auth/account-exists-with-different-credential') {
+        setOtpError('This phone number is linked to another account. Use a different number or sign in with that account.');
+      } else if (e.code === 'auth/invalid-phone-number') {
+        setOtpError('That number doesn\'t look right. Check the digits.');
+      } else if (e.code === 'auth/too-many-requests') {
+        setOtpError('Too many attempts. Try again in a few minutes.');
+      } else if (e.code === 'auth/provider-already-linked') {
+        setOtpError('Phone already verified on this account.');
+        setOtpState('verified');
+        return;
+      } else {
+        setOtpError(`Couldn't send code: ${e.message || 'try again'}`);
+      }
+      setOtpState('error');
+    }
+  }
+
+  async function verifyOtp() {
+    const code = otpCode.replace(/\D/g, '');
+    if (code.length !== 6) { setOtpError('Enter the 6-digit code.'); return; }
+    if (!otpConfirmation.current) return;
+    setOtpError('');
+    setOtpState('verifying');
+    try {
+      await otpConfirmation.current.confirm(code);
+      // Force-refresh ID token so subsequent provisionTenant call sees
+      // phone_number in the auth claims.
+      await user.getIdToken(true);
+      setOtpState('verified');
+    } catch (e) {
+      console.error('[OTP verify]', e.code, e.message);
+      if (e.code === 'auth/invalid-verification-code') setOtpError('Wrong code. Try again.');
+      else if (e.code === 'auth/code-expired')          setOtpError('Code expired. Tap "Send code" again.');
+      else                                              setOtpError(`Couldn't verify: ${e.message || 'try again'}`);
+      setOtpState('awaiting-code');
+    }
+  }
 
   async function handleSubmit() {
     if (!formValid || step !== 'form') return;
@@ -253,14 +329,17 @@ export default function SignupPage() {
             />
           </Section>
 
-          <Section title="3 · Phone (optional)" hint="For account recovery + critical service alerts. Not shown to clients.">
-            <input
-              value={phone}
-              onChange={e => setPhone(fmtPhone(e.target.value))}
-              placeholder="(555) 123-4567"
-              style={input}
-              type="tel"
-              inputMode="tel"
+          <Section title="3 · Phone verification *" hint="Required to prevent abuse. Standard SMS rates apply. Not shown to clients.">
+            <PhoneVerify
+              phone={phone}
+              setPhone={setPhone}
+              otpState={otpState}
+              otpCode={otpCode}
+              setOtpCode={setOtpCode}
+              otpError={otpError}
+              onSend={sendOtp}
+              onVerify={verifyOtp}
+              disabled={!user}
             />
           </Section>
         </div>
@@ -303,7 +382,82 @@ export default function SignupPage() {
         </p>
       </main>
 
+      {/* Invisible reCAPTCHA target — must be present in the DOM when
+          linkWithPhoneNumber fires the verifier. Visibility: invisible
+          challenge appears only when Firebase Auth flags suspicious
+          traffic; legit users never see it. */}
+      <div id="recaptcha-container" />
+
       <Footer />
+    </div>
+  );
+}
+
+function PhoneVerify({ phone, setPhone, otpState, otpCode, setOtpCode, otpError, onSend, onVerify, disabled }) {
+  const verified = otpState === 'verified';
+  const awaiting = otpState === 'awaiting-code' || otpState === 'verifying';
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+        <input
+          value={phone}
+          onChange={e => setPhone(fmtPhone(e.target.value))}
+          placeholder="(555) 123-4567"
+          style={{ ...input, flex: 1, opacity: verified ? 0.7 : 1 }}
+          type="tel"
+          inputMode="tel"
+          disabled={verified || awaiting}
+        />
+        {!verified && (
+          <button
+            type="button"
+            onClick={onSend}
+            disabled={disabled || phone.replace(/\D/g, '').length !== 10 || otpState === 'sending'}
+            style={{
+              padding: '0 18px', fontSize: 13, fontWeight: 700, borderRadius: 8,
+              border: `1px solid ${C.plum}`,
+              background: '#fff', color: C.plum, cursor: 'pointer', fontFamily: 'inherit',
+              opacity: (disabled || phone.replace(/\D/g, '').length !== 10) ? 0.4 : 1,
+            }}>
+            {otpState === 'sending' ? 'Sending…' : awaiting ? 'Resend' : 'Send code'}
+          </button>
+        )}
+        {verified && (
+          <span style={{
+            padding: '10px 14px', fontSize: 13, fontWeight: 700, borderRadius: 8,
+            background: '#ecfdf5', color: C.success, border: `1px solid #a7f3d0`,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+          }}>✓ Verified</span>
+        )}
+      </div>
+
+      {awaiting && (
+        <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'stretch' }}>
+          <input
+            value={otpCode}
+            onChange={e => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="6-digit code"
+            style={{ ...input, flex: 1, fontFamily: 'monospace', letterSpacing: '.3em' }}
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={onVerify}
+            disabled={otpCode.length !== 6 || otpState === 'verifying'}
+            style={{
+              padding: '0 18px', fontSize: 13, fontWeight: 700, borderRadius: 8,
+              background: C.plum, color: '#fff', border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+              opacity: otpCode.length !== 6 ? 0.4 : 1,
+            }}>
+            {otpState === 'verifying' ? 'Verifying…' : 'Verify'}
+          </button>
+        </div>
+      )}
+
+      {otpError && <div style={{ marginTop: 8, fontSize: 12, color: C.danger, fontWeight: 600 }}>{otpError}</div>}
     </div>
   );
 }
