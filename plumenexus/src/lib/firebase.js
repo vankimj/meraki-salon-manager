@@ -5,12 +5,13 @@ import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  // authDomain is what users briefly see in the OAuth popup URL bar.
-  // Pointing at our own brand domain keeps the flash on-brand rather
-  // than showing 'meraki-salon-manager.firebaseapp.com'. Works because
-  // Firebase Hosting auto-serves the /__/auth/* reserved namespace on
-  // any custom hosting domain + plumenexus.com is in authorizedDomains.
-  authDomain:        'plumenexus.com',
+  // authDomain — temporary revert to firebaseapp.com pending manual
+  // Google Cloud Console step to add https://plumenexus.com/__/auth/handler
+  // to the OAuth 2.0 Web client's authorized redirect URIs. Until then,
+  // Google rejects with redirect_uri_mismatch when authDomain is
+  // plumenexus.com. Reverting to keep signin working. Re-apply the
+  // brand domain after the Console change.
+  authDomain:        'meraki-salon-manager.firebaseapp.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',

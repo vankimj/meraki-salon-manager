@@ -9,11 +9,10 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  // On-brand authDomain: users see plumenexus.com in the OAuth popup
-  // URL bar, not meraki-salon-manager.firebaseapp.com. Firebase Hosting
-  // auto-serves /__/auth/* on any custom hosting domain, and
-  // plumenexus.com is already in authorizedDomains.
-  authDomain:        'plumenexus.com',
+  // Temporary revert (see plumenexus/src/lib/firebase.js for full note).
+  // Pending Google Cloud Console: add https://plumenexus.com/__/auth/handler
+  // to OAuth 2.0 Web client's authorized redirect URIs.
+  authDomain:        'meraki-salon-manager.firebaseapp.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',
