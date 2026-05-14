@@ -1595,7 +1595,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
     finally { setSaving(false); }
   }
 
-  const webUrl = `${window.location.origin}/?web`;
+  const webUrl = window.location.origin;
   const inp = { fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' };
   const TA  = { ...inp, resize: 'vertical', minHeight: 80 };
 

@@ -696,7 +696,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   const [ctaText,     setCtaText]     = useState(prefill?.ctaText || 'Book Your Appointment');
   // Default to the tenant's actual public booking URL when no override is
   // configured in settings. /book is the path App.jsx routes to
-  // BookingScreen; /web routes to the salon webfront landing.
+  // BookingScreen; the bare domain serves the salon webfront landing.
   const defaultBookingUrl = (typeof window !== 'undefined' ? window.location.origin : '') + '/book';
   const [ctaUrl,      setCtaUrl]      = useState(prefill?.ctaUrl || settings?.bookingUrl || defaultBookingUrl);
   const [showPreview, setShowPreview] = useState(false);

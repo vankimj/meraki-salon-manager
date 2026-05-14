@@ -184,7 +184,7 @@ export function TermsScreen() {
           ⚖ This is a template. {SALON.name} should have legal counsel review before launch.
         </div>
 
-        <a href="/?web" style={BTN}>← Back to {SALON.name}</a>
+        <a href="/" style={BTN}>← Back to {SALON.name}</a>
       </div>
     </div>
   );
@@ -269,7 +269,7 @@ export function PrivacyScreen() {
           ⚖ This is a template. {SALON.name} should have legal counsel review before launch — especially for the CCPA/GDPR sections if any clients reside outside Ohio.
         </div>
 
-        <a href="/?web" style={BTN}>← Back to {SALON.name}</a>
+        <a href="/" style={BTN}>← Back to {SALON.name}</a>
       </div>
     </div>
   );

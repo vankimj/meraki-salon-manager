@@ -322,24 +322,26 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const path   = (window.location.pathname || '/').toLowerCase();
     const checkinId = params.get('checkin');
-    // All public routes accept BOTH the clean path form (/book, /privacy, ...)
-    // and the legacy query-flag form (?book=1, ?privacy=1, ...). Path is the
-    // canonical form going forward; query-flag stays for backward compat with
+    // Public routes accept the clean path form (/book, /privacy, ...) and the
+    // legacy query-flag form (?book=1, ?privacy=1, ...) for back-compat with
     // already-sent emails / SMS / business cards / bookmarks.
+    // The bare domain (/) IS the customer-facing salon webfront; the staff
+    // management app lives at /manage.
     const isBooking     = params.has('book')        || path === '/book';
     const isQueue       = params.has('queue')       || path === '/queue';
     const isTipFlow     = params.has('tipflow')     || path === '/tipflow';
-    const isWeb         = params.has('web')         || path === '/web';
+    const isManageApp   = path === '/manage';
     const isSignup      = params.has('signup')      || path === '/signup';
     const isTerms       = params.has('terms')       || path === '/terms';
     const isPrivacy     = params.has('privacy')     || path === '/privacy';
     const isSmsConsent  = params.has('sms-consent') || path === '/sms-consent';
-    // rsvp / unsub / manage carry tokens in the query string — they stay
-    // query-only (no clean path equivalent).
+    // rsvp / unsub / manage(=token) carry tokens in the query string — they
+    // stay query-only (no clean path equivalent). `?manage=<token>` is the
+    // appointment-management magic link, distinct from the `/manage` path.
     const isRsvp     = params.has('rsvp');
     const isUnsub    = params.has('unsub');
-    const isManage   = params.has('manage');
-    if      (isManage)  content = <ManageAppointmentScreen />;
+    const isManageToken = params.has('manage');
+    if      (isManageToken) content = <ManageAppointmentScreen />;
     else if (isUnsub)   content = <UnsubscribeScreen />;
     else if (isTerms)      content = <TermsScreen />;
     else if (isPrivacy)    content = <PrivacyScreen />;
@@ -348,9 +350,8 @@ export default function App() {
     else if (checkinId) content = <CheckInScreen apptId={checkinId} />;
     else if (isBooking) content = <BookingScreen />;
     else if (isQueue)   content = <QueueKiosk />;
-    else if (isWeb)     content = <SalonWebfront />;
     else if (isSignup)  content = <OnboardingScreen />;
-    else content = (
+    else if (isManageApp || isTipFlow) content = (
       <AppProvider>
         <ThemeProvider>
           <div style={{ width: '100vw', height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eef0f3', overflow: 'hidden' }}>
@@ -359,6 +360,7 @@ export default function App() {
         </ThemeProvider>
       </AppProvider>
     );
+    else content = <SalonWebfront />;
   }
 
   return <><EnvBanner />{content}<VersionBadge /></>;

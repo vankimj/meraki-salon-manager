@@ -1523,7 +1523,7 @@ function SuccessScreen({ appts, techs, webCfg }) {
             { icon: '📍', text: addressOneLine, href: mapsUrl, external: true },
             phone
               ? { icon: '📞', text: phone, href: telHref }
-              : { icon: '💬', text: 'Have a question? Chat with us', href: '/?web#chat' },
+              : { icon: '💬', text: 'Have a question? Chat with us', href: '/#chat' },
           ].map(({ icon, text, href, external }, i, arr) => {
             const inner = (
               <>
@@ -1543,7 +1543,7 @@ function SuccessScreen({ appts, techs, webCfg }) {
           })}
         </div>
 
-        <a href="/?web" style={{ display: 'block', textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#fff', textDecoration: 'none', background: 'var(--tm-accent, #3D95CE)', borderRadius: 14, padding: '15px', boxShadow: '0 2px 8px rgba(61,149,206,.35)' }}>
+        <a href="/" style={{ display: 'block', textAlign: 'center', fontSize: 15, fontWeight: 700, color: '#fff', textDecoration: 'none', background: 'var(--tm-accent, #3D95CE)', borderRadius: 14, padding: '15px', boxShadow: '0 2px 8px rgba(61,149,206,.35)' }}>
           ← Back to {webCfg?.salonName || 'site'}
         </a>
       </div>
