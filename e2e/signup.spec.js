@@ -35,7 +35,7 @@ test.describe('signup page', () => {
 
   test('renders all five form sections', async ({ page }) => {
     await page.goto(`${BASE}/signup`);
-    for (const label of ['1 · Sign in', '2 · Salon name', '3 · Your salon URL', '4 · Phone', '5 · Plan']) {
+    for (const label of ['1 · Sign in', '2 · Salon name', '3 · Phone', '4 · Your salon URL', '5 · Plan']) {
       await expect(page.getByText(label)).toBeVisible();
     }
   });

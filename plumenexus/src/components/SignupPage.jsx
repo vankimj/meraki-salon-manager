@@ -53,6 +53,7 @@ const COMPARE = [
   { label: 'POS, gift cards, promo codes',                        solo: true,                         studio: true,                         salonPro: true },
   { label: 'AI-powered Reports + tax dashboards',                 solo: true,                         studio: true,                         salonPro: true },
   { label: 'Email reminders + branded booking page',              solo: true,                         studio: true,                         salonPro: true },
+  { label: 'Full data export (clients, appointments, receipts)',  solo: true,                         studio: true,                         salonPro: true },
 
   { section: 'Operations growth' },
   { label: 'Multi-tech credit splits',                            solo: false,                        studio: true,                         salonPro: true },
@@ -224,16 +225,29 @@ export default function SignupPage() {
           )}
         </Section>
 
-        <Section title="2 · Salon name">
-          <input
-            value={salonName}
-            onChange={e => setSalonName(e.target.value.slice(0, 80))}
-            placeholder="e.g. Glow Beauty Bar"
-            style={input}
-          />
-        </Section>
+        <div style={formGrid}>
+          <Section title="2 · Salon name">
+            <input
+              value={salonName}
+              onChange={e => setSalonName(e.target.value.slice(0, 80))}
+              placeholder="e.g. Glow Beauty Bar"
+              style={input}
+            />
+          </Section>
 
-        <Section title="3 · Your salon URL" hint="Lowercase letters / numbers / hyphens. 3–30 chars.">
+          <Section title="3 · Phone (optional)" hint="For account recovery + critical service alerts. Not shown to clients.">
+            <input
+              value={phone}
+              onChange={e => setPhone(fmtPhone(e.target.value))}
+              placeholder="(555) 123-4567"
+              style={input}
+              type="tel"
+              inputMode="tel"
+            />
+          </Section>
+        </div>
+
+        <Section title="4 · Your salon URL" hint="Lowercase letters / numbers / hyphens. 3–30 chars.">
           <div style={slugRow}>
             <span style={slugProtocol}>https://</span>
             <input
@@ -245,17 +259,6 @@ export default function SignupPage() {
             <span style={slugSuffix}>.plumenexus.com</span>
           </div>
           <SlugStatus state={slugCheck} />
-        </Section>
-
-        <Section title="4 · Phone (optional)" hint="For account recovery + critical service alerts. Not shown to clients.">
-          <input
-            value={phone}
-            onChange={e => setPhone(fmtPhone(e.target.value))}
-            placeholder="(555) 123-4567"
-            style={input}
-            type="tel"
-            inputMode="tel"
-          />
         </Section>
 
         <Section title="5 · Plan">
@@ -474,7 +477,7 @@ const brandWord = { fontFamily: FONT.display, fontWeight: 700, fontSize: 18, let
 const brandTag  = { fontSize: 10, color: C.muted, letterSpacing: '.16em', textTransform: 'uppercase' };
 
 const main = {
-  maxWidth: 560, width: '100%', margin: '0 auto', padding: '48px 32px 64px', flex: 1,
+  maxWidth: 920, width: '100%', margin: '0 auto', padding: '48px 32px 64px', flex: 1,
 };
 const h1 = {
   fontFamily: FONT.display, fontWeight: 700, fontSize: 32, color: C.plumDeep,
@@ -482,6 +485,14 @@ const h1 = {
 };
 const lead = { fontSize: 15, lineHeight: 1.55, color: C.muted, marginBottom: 32 };
 const section = { marginBottom: 22 };
+// Two-column grid for short input pairs (e.g. salon name + phone). Stacks
+// on narrow viewports where the grid would feel cramped.
+const formGrid = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
+  gap: '0 24px',
+  marginBottom: 0,
+};
 const sectionTitle = {
   fontSize: 11, fontWeight: 700, color: C.plumDeep, letterSpacing: '.16em',
   textTransform: 'uppercase', marginBottom: 10,
