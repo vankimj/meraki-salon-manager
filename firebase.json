@@ -8,6 +8,18 @@
       "rewrites": [{ "source": "**", "destination": "/index.html" }],
       "headers": [
         {
+          "source": "**/*.@(js|css|svg|woff|woff2|png|ico|map|jpg|jpeg|webp|gif)",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
+        },
+        {
+          "source": "**/!(*.@(js|css|svg|woff|woff2|png|ico|map|jpg|jpeg|webp|gif))",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+        },
+        {
+          "source": "/",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+        },
+        {
           "source": "**",
           "headers": [
             { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" }
@@ -26,7 +38,11 @@
           "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
         },
         {
-          "source": "/index.html",
+          "source": "**/!(*.@(js|css|svg|woff|woff2|png|ico|map|jpg|jpeg|webp|gif))",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+        },
+        {
+          "source": "/",
           "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
         },
         {
@@ -58,7 +74,11 @@
           "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
         },
         {
-          "source": "/index.html",
+          "source": "**/!(*.@(js|css|svg|woff|woff2|png|ico|map|jpg|jpeg|webp|gif))",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+        },
+        {
+          "source": "/",
           "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
         },
         {
