@@ -23,7 +23,9 @@ const WELCOME_STYLES = [
 
 export default function Phase4Branding({ onboarding, onAdvance, saving }) {
   const { settings, updateSettings, showToast } = useApp();
-  const stored = onboarding?.phases?.branding?.phaseData || {};
+  // markOnboardingPhase stores phaseData flat in the phase entry —
+  // values live at phases.branding.{field}, not nested under phaseData.
+  const stored = onboarding?.phases?.branding || {};
 
   const [brandName,        setBrandName]        = useState(stored.brandName        ?? settings?.brandName        ?? '');
   const [brandTagline,     setBrandTagline]     = useState(stored.brandTagline     ?? settings?.brandTagline     ?? '');

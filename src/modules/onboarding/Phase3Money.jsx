@@ -14,7 +14,8 @@ import { logActivity, logError } from '../../lib/logger';
 // next time the audit-mode user reopens the wizard.
 export default function Phase3Money({ onboarding, onAdvance, saving }) {
   const { settings, updateSettings, showToast } = useApp();
-  const stored = onboarding?.phases?.money?.phaseData || {};
+  // phaseData lives flat in the phase entry (see markOnboardingPhase).
+  const stored = onboarding?.phases?.money || {};
 
   // Money
   const [ccFeePct,     setCcFeePct]     = useState(stored.ccFeePct     ?? settings?.ccFeePct     ?? 2.9);

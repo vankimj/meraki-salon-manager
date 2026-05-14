@@ -32,7 +32,7 @@ export default function Phase2Import({ onboarding, onAdvance, saving }) {
 
 // ─── MIGRATE PATH ──────────────────────────────────────────────────
 function MigratePath({ onboarding, onAdvance, saving }) {
-  const [source, setSource] = useState(onboarding?.phases?.import?.phaseData?.source || 'glossgenius');
+  const [source, setSource] = useState(onboarding?.phases?.import?.source || 'glossgenius');
   const picked = SOURCES.find(s => s.id === source);
 
   function complete() {
@@ -128,7 +128,7 @@ function SourceCard({ src, selected, onClick }) {
 // ─── FRESH PATH ────────────────────────────────────────────────────
 function FreshPath({ onboarding, onAdvance, saving }) {
   const { showToast } = useApp();
-  const stored = onboarding?.phases?.import?.phaseData || {};
+  const stored = onboarding?.phases?.import || {};
   const [templateId, setTemplateId] = useState(stored.templateId || 'nail-salon');
   const [seedSample, setSeedSample] = useState(Boolean(stored.seedSample));
   const [importing,  setImporting]  = useState(false);

@@ -97,7 +97,10 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
   const { settings, updateSettings, showToast } = useApp();
   const [webCfg, setWebCfg] = useState(null);
 
-  const stored = onboarding?.phases?.profile?.phaseData || {};
+  // markOnboardingPhase spreads payload.phaseData flat into the phase
+  // entry (alongside `status` + `updatedAt`), so saved values live at
+  // phases.profile.{field}, not phases.profile.phaseData.{field}.
+  const stored = onboarding?.phases?.profile || {};
 
   const [legalName,   setLegalName]   = useState(stored.legalName   || settings?.brandLegalName || settings?.salonName || '');
   const [ein,         setEin]         = useState(stored.ein         || settings?.ein || '');

@@ -70,7 +70,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
   // canonical booking URL we want tenants to share.
   const slug = settings?.subdomain
     || currentSubdomain()
-    || onboarding?.phases?.profile?.phaseData?.subdomain
+    || onboarding?.phases?.profile?.subdomain
     || 'your-salon';
   const bookingUrl = `https://${slug}.plumenexus.com/book`;
 
