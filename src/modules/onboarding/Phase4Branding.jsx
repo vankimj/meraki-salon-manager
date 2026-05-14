@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../../context/AppContext';
 import { saveWebfrontConfig, fetchWebfrontConfig } from '../../lib/firestore';
 import { logActivity, logError } from '../../lib/logger';
+import WelcomeStylePreview from './WelcomeStylePreview';
 
 // Phase 4 (UI step 5 of 8) — Look & feel.
 //
@@ -108,6 +109,14 @@ export default function Phase4Branding({ onboarding, onAdvance, saving }) {
           </select>
         </Row>
         <Hint>"Centered" is the safe default. Photo backdrop variants need a real photo URL set later.</Hint>
+        <WelcomeStylePreview
+          style={welcomeStyle}
+          brandName={brandName}
+          brandTagline={brandTagline}
+          brandTaglineTop={brandTaglineTop}
+          brandColor={brandColor}
+          brandLogoUrl={brandLogoUrl}
+        />
       </Section>
 
       {err && (
