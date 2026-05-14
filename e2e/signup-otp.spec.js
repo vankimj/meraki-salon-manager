@@ -81,5 +81,13 @@ test.describe('signup OTP flow (Firebase test phone)', () => {
     await expect(page.getByText('✓ Verified')).toBeVisible({ timeout: 10000 });
 
     expect(errors, `Unexpected errors:\n${errors.join('\n')}`).toEqual([]);
+
+    // Cleanup — delete the just-linked anonymous user so the test phone
+    // (+15005550006) is released. Without this, the next run hits
+    // 'auth/account-exists-with-different-credential' because the phone
+    // is permanently linked to the previous run's anon user.
+    await page.evaluate(async () => {
+      try { await window.__plumeAuth?.currentUser?.delete(); } catch (_) { /* best-effort */ }
+    });
   });
 });
