@@ -24,8 +24,8 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
 
   // Compliance
   const origin     = typeof window !== 'undefined' ? window.location.origin : '';
-  const privacyUrl = `${origin}/?privacy=1`;
-  const termsUrl   = `${origin}/?terms=1`;
+  const privacyUrl = `${origin}/privacy`;
+  const termsUrl   = `${origin}/terms`;
   const [privacyOk, setPrivacyOk] = useState(Boolean(stored.privacyOk));
   const [termsOk,   setTermsOk]   = useState(Boolean(stored.termsOk));
   const [legalAck,  setLegalAck]  = useState(Boolean(stored.legalAck));

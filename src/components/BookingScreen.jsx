@@ -145,7 +145,7 @@ export default function BookingScreen() {
       signInWithEmailLink(auth, stored, window.location.href)
         .then(() => {
           localStorage.removeItem('meraki_booking_email');
-          window.history.replaceState({}, '', '/?book=1');
+          window.history.replaceState({}, '', '/book');
         })
         .catch(e => console.error('[EmailLink]', e.message));
     } else {
@@ -157,7 +157,7 @@ export default function BookingScreen() {
     setEmailLinkState('sending');
     try {
       await sendSignInLinkToEmail(auth, email.trim(), {
-        url: `${window.location.origin}/?book=1`,
+        url: `${window.location.origin}/book`,
         handleCodeInApp: true,
       });
       localStorage.setItem('meraki_booking_email', email.trim());
@@ -1238,7 +1238,7 @@ function Step4Info({
           <strong>Yes, send me text reminders and occasional promotions from {salonName}.</strong>{' '}
           Message frequency varies. Message and data rates may apply.
           Reply <strong>STOP</strong> to opt out, <strong>HELP</strong> for help.{' '}
-          View our <a href="?privacy=1" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--tm-primary, #2D7A5F)', fontWeight: 600 }}>privacy policy</a>.
+          View our <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--tm-primary, #2D7A5F)', fontWeight: 600 }}>privacy policy</a>.
         </span>
       </label>
 
@@ -1654,7 +1654,7 @@ function CrossDevicePrompt({ onDone }) {
     try {
       await signInWithEmailLink(auth, email.trim(), window.location.href);
       localStorage.removeItem('meraki_booking_email');
-      window.history.replaceState({}, '', '/?book=1');
+      window.history.replaceState({}, '', '/book');
       onDone();
     } catch (e) {
       setError('That email didn\'t match. Please try again.');

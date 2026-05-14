@@ -145,7 +145,7 @@ export default function SalonWebfront() {
   const hidden   = new Set(cfg.hiddenEmployeeIds || []);
   const visTeam  = employees.filter(e => !hidden.has(e.id));
   const showBook = cfg.showBookingCta && bookCfg?.enabled;
-  const bookUrl  = `${window.location.origin}/?book=1`;
+  const bookUrl  = `${window.location.origin}/book`;
 
   function scrollTo(id) {
     setMenuOpen(false);
@@ -510,8 +510,8 @@ export default function SalonWebfront() {
         </div>
         <div style={{ fontSize:11 }}>© {new Date().getFullYear()} Meraki Nail Studio · Columbus, OH</div>
         <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
-          <a href="/?terms=1"   style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Terms</a>
-          <a href="/?privacy=1" style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Privacy</a>
+          <a href="/terms"   style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Terms</a>
+          <a href="/privacy" style={{ color:'rgba(255,255,255,.5)', textDecoration:'none' }}>Privacy</a>
           <a href={`${window.location.origin}/`} style={{ color:'rgba(255,255,255,.2)', textDecoration:'none' }}>Staff Login</a>
         </div>
       </footer>

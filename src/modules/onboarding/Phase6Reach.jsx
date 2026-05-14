@@ -5,6 +5,7 @@ import {
   subscribeTenantSms,
 } from '../../lib/firestore';
 import { logActivity, logError } from '../../lib/logger';
+import { currentSubdomain } from '../../lib/tenant';
 import SmsSetup from '../admin/SmsSetup';
 
 // Phase 6 (UI step 7 of 8) — Reach your clients.
@@ -62,15 +63,16 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
     });
   }
 
-  // Build the public booking URL from tenant settings. For Meraki this
-  // resolves to the salon's plumenexus subdomain or the meraki webapp
-  // fallback so the tenant has something to copy/paste.
-  const subdomain = settings?.subdomain
+  // Auto-derive the public booking URL. Priority: explicit subdomain from
+  // Phase 1, then live hostname (currentSubdomain), then onboarding payload
+  // fallback. Always emits the *.plumenexus.com form even when accessed
+  // from the legacy meraki-salon-manager.web.app URL, since that's the
+  // canonical booking URL we want tenants to share.
+  const slug = settings?.subdomain
+    || currentSubdomain()
     || onboarding?.phases?.profile?.phaseData?.subdomain
-    || 'meraki';
-  const bookingUrl = subdomain === 'meraki'
-    ? 'https://meraki-salon-manager.web.app/?book=1'
-    : `https://${subdomain}.plumenexus.com/?book=1`;
+    || 'your-salon';
+  const bookingUrl = `https://${slug}.plumenexus.com/book`;
 
   const smsStatusLabel = !sms || sms.status === 'released' || sms.status === 'draft'
     ? '⚪ Not set up yet'

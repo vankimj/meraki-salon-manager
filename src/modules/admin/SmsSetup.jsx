@@ -7,6 +7,7 @@ import {
   fetchWebfrontConfig,
 } from '../../lib/firestore';
 import { logActivity, logError } from '../../lib/logger';
+import { currentSubdomain } from '../../lib/tenant';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 
 // Field-level validators. Each returns null if valid, or a string error.
@@ -54,17 +55,23 @@ function fmtPhone(input) {
 
 const TFN_AREA_CODES = ['833', '844', '855', '866', '877', '888'];
 
-// Older versions of this wizard defaulted the opt-in proof URL to
-// /?book=1 — that page doesn't show the SMS consent text to TFN
-// reviewers and carriers reject it. We now ship a dedicated consent
-// page at /?sms-consent=1. Migrate stored form data at read time so
-// tenants who already submitted see the new URL pre-filled. Idempotent:
-// safe to re-run on already-migrated data.
+// Older versions defaulted opt-in proof URL to /?book=1 (which doesn't
+// show SMS consent text — carriers reject). We now ship a dedicated
+// /sms-consent page. Also migrating legacy ?privacy=1 → /privacy and
+// ?book=1 → /book (the URL-flag form has no technical reason to exist;
+// clean paths read better and Firebase Hosting's catch-all rewrite
+// makes them work). Idempotent: safe to re-run.
 function migrateStaleSmsForm(formData) {
   if (!formData) return formData;
   const next = { ...formData };
-  if (typeof next.optInProofUrl === 'string' && /\?book=1\b/.test(next.optInProofUrl)) {
-    next.optInProofUrl = next.optInProofUrl.replace(/\?book=1\b/, '?sms-consent=1');
+  if (typeof next.optInProofUrl === 'string') {
+    next.optInProofUrl = next.optInProofUrl
+      .replace(/\/\?book=1\b/, '/sms-consent')      // old default
+      .replace(/\/\?sms-consent=1\b/, '/sms-consent');
+  }
+  if (typeof next.privacyPolicyUrl === 'string') {
+    next.privacyPolicyUrl = next.privacyPolicyUrl
+      .replace(/\/\?privacy=1\b/, '/privacy');
   }
   return next;
 }
@@ -139,9 +146,9 @@ export default function SmsSetup() {
       zip:              prev.zip              || s.brandZip     || '',
       contactEmail:     prev.contactEmail     || s.brandEmail   || s.ownerEmail || '',
       contactPhone:     prev.contactPhone     || s.brandPhone   || w.phone || '',
-      website:          prev.website          || `https://${(s.subdomain || 'meraki')}.plumenexus.com`,
-      privacyPolicyUrl: prev.privacyPolicyUrl || `${window.location.origin}/?privacy=1`,
-      optInProofUrl:    prev.optInProofUrl    || `${window.location.origin}/?sms-consent=1`,
+      website:          prev.website          || `https://${(s.subdomain || currentSubdomain())}.plumenexus.com`,
+      privacyPolicyUrl: prev.privacyPolicyUrl || `${window.location.origin}/privacy`,
+      optInProofUrl:    prev.optInProofUrl    || `${window.location.origin}/sms-consent`,
       useCaseDescription: prev.useCaseDescription || `${s.salonName || w.salonName || 'Our salon'} sends appointment reminders, booking confirmations, and opt-in promotional offers to existing clients. Estimated 50–150 segments/day with marketing blasts ~2× per month at 300–500 recipients.`,
       sampleMessages: prev.sampleMessages?.[0] ? prev.sampleMessages : [
         `Hi {firstName}! Friendly reminder of your appointment at ${s.salonName || 'our salon'} tomorrow at 2:00 PM. Reply STOP to opt out.`,
@@ -314,7 +321,7 @@ export default function SmsSetup() {
                   <input value={form.website} onChange={e => patch('website', e.target.value)} onBlur={() => onBlur('website')} style={inpStyle(fieldErr('website'))} placeholder="https://…" type="url" />
                 </Row>
                 <Row label="Privacy policy URL *" err={fieldErr('privacyPolicyUrl')}>
-                  <input value={form.privacyPolicyUrl} onChange={e => patch('privacyPolicyUrl', e.target.value)} onBlur={() => onBlur('privacyPolicyUrl')} style={inpStyle(fieldErr('privacyPolicyUrl'))} placeholder="https://…/?privacy=1" type="url" />
+                  <input value={form.privacyPolicyUrl} onChange={e => patch('privacyPolicyUrl', e.target.value)} onBlur={() => onBlur('privacyPolicyUrl')} style={inpStyle(fieldErr('privacyPolicyUrl'))} placeholder="https://…/privacy" type="url" />
                 </Row>
                 <NavRow>
                   <span />
@@ -349,7 +356,7 @@ export default function SmsSetup() {
                 <textarea value={form.optInDescription} onChange={e => patch('optInDescription', e.target.value)} rows={3} style={{ ...inp, resize: 'vertical', fontFamily: 'inherit' }} />
               </Row>
               <Row label="Opt-in screenshot / URL *">
-                <input value={form.optInProofUrl} onChange={e => patch('optInProofUrl', e.target.value)} style={inp} placeholder="https://…/?sms-consent=1" />
+                <input value={form.optInProofUrl} onChange={e => patch('optInProofUrl', e.target.value)} style={inp} placeholder="https://…/sms-consent" />
               </Row>
               <Row label="Sample messages * (3 recommended)">
                 {form.sampleMessages.map((m, i) => (

@@ -519,8 +519,8 @@ function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl, un
       <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand?.footerLine || 'Plume Nexus')}</p>
       <p style="font-size:10px;color:#ccc;margin:4px 0 0;">
         You're receiving this as a valued client.${unsubLink ? ` <a href="${esc(unsubLink)}" style="color:#888;text-decoration:underline;">Unsubscribe</a>` : ' Reply to this email to unsubscribe.'}
-        &nbsp;·&nbsp; <a href="${esc(publicAppUrl.value() || '')}/?terms=1" style="color:#888;text-decoration:underline;">Terms</a>
-        &nbsp;·&nbsp; <a href="${esc(publicAppUrl.value() || '')}/?privacy=1" style="color:#888;text-decoration:underline;">Privacy</a>
+        &nbsp;·&nbsp; <a href="${esc(publicAppUrl.value() || '')}/terms" style="color:#888;text-decoration:underline;">Terms</a>
+        &nbsp;·&nbsp; <a href="${esc(publicAppUrl.value() || '')}/privacy" style="color:#888;text-decoration:underline;">Privacy</a>
       </p>
     </div>
   </div>
@@ -2693,7 +2693,7 @@ exports.chatWithSalon = onCall(
 
     const bookingUrl = settings.bookingUrl
       || cfg.bookingUrl
-      || (tenantId === 'meraki' ? 'https://meraki-salon-manager.web.app/?book' : `https://${tenantId}.plumenexus.com/?book`);
+      || `https://${tenantId}.plumenexus.com/book`;
     const phone      = cfg.phone || '';
     const address    = cfg.address || '';
     const instagram  = cfg.instagram ? `@${cfg.instagram}` : '';
@@ -3485,7 +3485,7 @@ exports.draftConflictMessages = onCall(
     if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
 
     const salonName  = salonNameRaw  || 'your salon';
-    const bookingUrl = bookingUrlRaw || (tenantId === 'meraki' ? 'https://meraki-salon-manager.web.app/?book' : `https://${tenantId}.plumenexus.com/?book`);
+    const bookingUrl = bookingUrlRaw || `https://${tenantId}.plumenexus.com/book`;
 
     if (!technicianName || !Array.isArray(affected) || affected.length === 0) {
       throw new HttpsError('invalid-argument', 'technicianName and affected[] required');
@@ -5466,9 +5466,7 @@ async function processGiftCardEmail(tenantId, docRef, data) {
   const recipientName = (data.recipientName || '').trim() || 'there';
   const code = data.code || '';
   const amount = Number(data.balance) || Number(data.originalAmount) || 0;
-  const bookingUrl = (publicAppUrl.value() && tenantId === 'meraki')
-    ? `${publicAppUrl.value()}/?book=1`
-    : `https://${tenantId}.plumenexus.com/?book=1`;
+  const bookingUrl = `https://${tenantId}.plumenexus.com/book`;
 
   const html = `<!DOCTYPE html>
 <html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">

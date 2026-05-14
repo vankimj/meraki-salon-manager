@@ -559,7 +559,7 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
   const [saving,     setSaving]     = useState(false);
   const [copied,     setCopied]     = useState(false);
   const [geoLocating,setGeoLocating]= useState(false);
-  const bookingUrl = `${window.location.origin}/?book=1`;
+  const bookingUrl = `${window.location.origin}/book`;
 
   if (!bookingCfg) return null;
 

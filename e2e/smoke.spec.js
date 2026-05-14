@@ -14,7 +14,39 @@ test.describe('Public surfaces', () => {
     await expect.poll(async () => (await page.locator('body').innerText()).length, { timeout: 10000 }).toBeGreaterThan(0);
   });
 
-  test('terms page (?terms) renders standalone', async ({ page }) => {
+  test('terms via clean path (/terms) renders', async ({ page }) => {
+    await page.goto('/terms');
+    await expect.poll(
+      async () => (await page.locator('body').innerText()).toLowerCase(),
+      { timeout: 10000 },
+    ).toMatch(/terms/);
+  });
+
+  test('privacy via clean path (/privacy) renders', async ({ page }) => {
+    await page.goto('/privacy');
+    await expect.poll(
+      async () => (await page.locator('body').innerText()).toLowerCase(),
+      { timeout: 10000 },
+    ).toMatch(/privacy/);
+  });
+
+  test('book via clean path (/book) loads without auth', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto('/book');
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    expect(errors).toEqual([]);
+  });
+
+  test('sms-consent via clean path (/sms-consent) renders', async ({ page }) => {
+    await page.goto('/sms-consent');
+    await expect.poll(
+      async () => (await page.locator('body').innerText()).toLowerCase(),
+      { timeout: 10000 },
+    ).toMatch(/sms|opt|consent/i);
+  });
+
+  test('terms via legacy query (?terms=1) still renders for back-compat', async ({ page }) => {
     await page.goto('/?terms=1');
     // Stand-alone routes should NOT mount the full AppShell. They render
     // their own minimal page. App.jsx is dynamically imported after

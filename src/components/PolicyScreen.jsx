@@ -64,8 +64,8 @@ export function SmsConsentScreen() {
   const SALON = useSalonInfo();
   useEffect(() => { document.title = `SMS Consent · ${SALON.name}`; }, [SALON.name]);
   const lastUpdated = '2026-05-13';
-  const bookingUrl = `${window.location.origin}/?book=1`;
-  const privacyUrl = `${window.location.origin}/?privacy=1`;
+  const bookingUrl = `${window.location.origin}/book`;
+  const privacyUrl = `${window.location.origin}/privacy`;
 
   return (
     <div style={SHELL}>

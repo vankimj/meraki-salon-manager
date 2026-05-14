@@ -322,21 +322,23 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const path   = (window.location.pathname || '/').toLowerCase();
     const checkinId = params.get('checkin');
-    const isBooking  = params.has('book');
-    // Queue + TipFlow routes — accept either `?queue` / `?tipflow` query
-    // params OR clean paths `/queue` / `/tipflow`. The path forms read
-    // better as kiosk-iPad bookmarks; the query forms keep working for
-    // any existing internal links.
-    const isQueue    = params.has('queue')   || path === '/queue';
-    const isTipFlow  = params.has('tipflow') || path === '/tipflow';
-    const isWeb      = params.has('web') || window.location.search === '?web';
-    const isSignup   = params.has('signup');
+    // All public routes accept BOTH the clean path form (/book, /privacy, ...)
+    // and the legacy query-flag form (?book=1, ?privacy=1, ...). Path is the
+    // canonical form going forward; query-flag stays for backward compat with
+    // already-sent emails / SMS / business cards / bookmarks.
+    const isBooking     = params.has('book')        || path === '/book';
+    const isQueue       = params.has('queue')       || path === '/queue';
+    const isTipFlow     = params.has('tipflow')     || path === '/tipflow';
+    const isWeb         = params.has('web')         || path === '/web';
+    const isSignup      = params.has('signup')      || path === '/signup';
+    const isTerms       = params.has('terms')       || path === '/terms';
+    const isPrivacy     = params.has('privacy')     || path === '/privacy';
+    const isSmsConsent  = params.has('sms-consent') || path === '/sms-consent';
+    // rsvp / unsub / manage carry tokens in the query string — they stay
+    // query-only (no clean path equivalent).
     const isRsvp     = params.has('rsvp');
     const isUnsub    = params.has('unsub');
     const isManage   = params.has('manage');
-    const isTerms       = params.has('terms');
-    const isPrivacy     = params.has('privacy');
-    const isSmsConsent  = params.has('sms-consent');
     if      (isManage)  content = <ManageAppointmentScreen />;
     else if (isUnsub)   content = <UnsubscribeScreen />;
     else if (isTerms)      content = <TermsScreen />;
