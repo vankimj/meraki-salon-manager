@@ -10,7 +10,7 @@ const firebaseConfig = {
   // to the Web OAuth client's Authorized Origins + redirect URIs in
   // Google Cloud Console (manual step — no API). Firebase Hosting
   // auto-serves the /__/auth/* namespace on any custom hosting domain.
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',

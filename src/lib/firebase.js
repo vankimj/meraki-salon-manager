@@ -11,7 +11,7 @@ const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
   // OAuth popup flashes plumenexus.com — see plumenexus/src/lib/firebase.js.
   // Cloud Console OAuth client was updated to allow plumenexus.com.
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',
