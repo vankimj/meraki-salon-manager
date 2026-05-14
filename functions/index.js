@@ -6651,6 +6651,322 @@ exports.releaseTenantSMS = onCall(
   }
 );
 
+// ── Tenant Provisioning Orchestrator ─────────────────────────────────────
+//
+// Self-serve SaaS signup engine. Runs synchronously (<10s for typical case)
+// but writes per-step state to provisioningJobs/{jobId} so platform-admin
+// can render progress + replay on failure.
+//
+// Auth model: caller MUST be authenticated (Google sign-in completed on
+// plumenexus.com signup page). The signed-in user's UID/email becomes the
+// tenant's owner.
+//
+// Idempotency: each step is individually safe to re-run. Calling
+// provisionTenant a second time with the same slug after a partial failure
+// resumes from the failed step. The slug-reservation transaction is the
+// gate — it fails iff the slug is genuinely taken by another tenant.
+//
+// Reserved-slug list lives in src/lib/reservedSlugs.js. The seed-slugs.cjs
+// script mirrors it into the slugs/ collection so Firestore is the single
+// source of truth at provision time.
+
+// Slug format mirrors src/lib/reservedSlugs.js — keep in sync.
+const SLUG_FORMAT_RE = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;
+
+// Returns a Google OAuth access token for the service account this
+// function runs under. Used for Identity Toolkit Admin API calls
+// (adding tenant subdomains to authorizedDomains, since firebase-admin
+// SDK doesn't expose that endpoint).
+async function getAdminAccessToken() {
+  const { GoogleAuth } = require('google-auth-library');
+  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/cloud-platform'] });
+  const client = await auth.getClient();
+  const tk = await client.getAccessToken();
+  return typeof tk === 'string' ? tk : tk?.token;
+}
+
+async function addAuthorizedDomain(projectId, domain) {
+  const token = await getAdminAccessToken();
+  const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  // Read current list, add the new domain only if missing, PATCH back.
+  // No wildcards permitted by Identity Platform — each tenant subdomain
+  // gets its own entry. ~1000 entries supported; well above any realistic
+  // SaaS tenant count for years.
+  const getRes = await fetch(`https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config`, { headers });
+  const cfg = await getRes.json();
+  const list = Array.isArray(cfg.authorizedDomains) ? cfg.authorizedDomains : [];
+  if (list.includes(domain)) return { added: false, total: list.length };
+  const next = [...list, domain];
+  const patchRes = await fetch(
+    `https://identitytoolkit.googleapis.com/admin/v2/projects/${projectId}/config?updateMask=authorizedDomains`,
+    { method: 'PATCH', headers, body: JSON.stringify({ authorizedDomains: next }) },
+  );
+  if (!patchRes.ok) {
+    const errText = await patchRes.text();
+    throw new Error(`Identity Toolkit PATCH failed: ${patchRes.status} ${errText}`);
+  }
+  return { added: true, total: next.length };
+}
+
+// Job-state writer — each step writes BEFORE attempting work, so a crash
+// mid-step leaves a trail of where we stopped. The platform-admin UI polls
+// this doc to render live status.
+function jobUpdater(db, jobId) {
+  const ref = db.doc(`provisioningJobs/${jobId}`);
+  return async function update(patch) {
+    await ref.set({ ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+  };
+}
+
+exports.provisionTenant = onCall(
+  { cors: true, timeoutSeconds: 120 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in to create a salon.');
+
+    const ip = request.rawRequest?.ip || '';
+    if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 3)) {
+      throw new HttpsError('resource-exhausted', 'Too many signups. Try again later.');
+    }
+
+    const slug       = String(request.data?.slug || '').trim().toLowerCase();
+    const salonName  = String(request.data?.salonName || '').trim().slice(0, 80);
+    const ownerName  = String(request.data?.ownerName || request.auth.token?.name || '').trim().slice(0, 80);
+    const ownerEmail = String(request.data?.ownerEmail || request.auth.token?.email || '').trim().toLowerCase().slice(0, 200);
+    const ownerPhone = String(request.data?.ownerPhone || '').trim().slice(0, 32);
+    const plan       = ['solo', 'studio', 'salonPro'].includes(request.data?.plan) ? request.data.plan : 'solo';
+
+    if (!SLUG_FORMAT_RE.test(slug))                       throw new HttpsError('invalid-argument', 'Invalid slug format.');
+    if (!salonName)                                       throw new HttpsError('invalid-argument', 'salonName required.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(ownerEmail))   throw new HttpsError('invalid-argument', 'Invalid email.');
+
+    const db    = getFirestore();
+    const now   = new Date().toISOString();
+    const jobId = `${slug}-${Date.now()}`; // stable per-attempt id so platform-admin sees retries
+    const update = jobUpdater(db, jobId);
+    const url   = `https://${slug}.plumenexus.com`;
+
+    await update({
+      slug, plan, ownerEmail, salonName, jobId,
+      status:    'running',
+      currentStep: 'reserve_slug',
+      startedAt: now,
+      steps:     {},
+      callerUid: request.auth.uid,
+    });
+
+    // Step 1: atomically reserve slug + create tenant root doc. Refuses
+    // if slug is already a primary OR reserved. Generates an opaque
+    // tenantId (Firestore auto-id) so the tenant survives subdomain
+    // rename without rewriting paths.
+    let tenantId;
+    try {
+      tenantId = await db.runTransaction(async (tx) => {
+        const slugRef = db.doc(`slugs/${slug}`);
+        const slugSnap = await tx.get(slugRef);
+        if (slugSnap.exists) {
+          const sd = slugSnap.data() || {};
+          if (sd.kind === 'reserved') {
+            throw new HttpsError('failed-precondition', `'${slug}' is reserved.`);
+          }
+          if (sd.kind === 'primary' || sd.kind === 'alias') {
+            // Same caller retrying? Check tenant ownership before erroring.
+            if (sd.tenantId) {
+              const tSnap = await tx.get(db.doc(`tenants/${sd.tenantId}`));
+              if (tSnap.exists && tSnap.data()?.ownerEmail === ownerEmail) {
+                return sd.tenantId; // resume — same owner, same slug
+              }
+            }
+            throw new HttpsError('already-exists', `'${slug}' is already taken.`);
+          }
+        }
+        const tid = db.collection('tenants').doc().id;
+        tx.set(slugRef, {
+          tenantId: tid, kind: 'primary', createdAt: now,
+        });
+        tx.set(db.doc(`tenants/${tid}`), {
+          name:                 salonName,
+          ownerName:            ownerName,
+          ownerEmail:           ownerEmail,
+          ownerPhone:           ownerPhone,
+          plan:                 plan,
+          packs:                [],
+          atomicAddOns:         [],
+          active:               true,
+          foundersMember:       true,    // pre-2027-06-30 cutoff per pricing memo
+          subdomain:            slug,
+          aliases:              [],
+          subdomainChangedAt:   null,
+          subdomainChangeCount: 0,
+          createdAt:            now,
+          updatedAt:            now,
+          provisionedBy:        request.auth.uid,
+        });
+        return tid;
+      });
+    } catch (e) {
+      await update({ status: 'failed', failedStep: 'reserve_slug', error: e.message });
+      throw e;
+    }
+    await update({ tenantId, 'steps.reserve_slug': { ok: true, at: new Date().toISOString() }, currentStep: 'seed_data' });
+
+    // Step 2: seed data/* docs. Always overwrite — idempotent on retry.
+    try {
+      const batch = db.batch();
+      const ownerLower = ownerEmail.toLowerCase();
+      batch.set(db.doc(`tenants/${tenantId}/data/settings`), {
+        timeoutMin: 5, salonName, ownerEmail, ownerPhone,
+        createdAt: now, updatedAt: now,
+      });
+      batch.set(db.doc(`tenants/${tenantId}/data/webfront`), {
+        salonName, tagline: '', phone: ownerPhone,
+        createdAt: now, updatedAt: now,
+      });
+      batch.set(db.doc(`tenants/${tenantId}/data/slides`), { slides: [], def: 0, cur: 0 });
+      batch.set(db.doc(`tenants/${tenantId}/data/users`), {
+        staffEmails: [ownerLower],
+        adminEmails: [ownerLower],
+        byEmail:     { [ownerLower]: { role: 'admin' } },
+      });
+      batch.set(db.doc(`tenants/${tenantId}/data/usersFull`), {
+        users: [{ email: ownerEmail, role: 'admin', uid: request.auth.uid, addedAt: now }],
+      });
+      await batch.commit();
+    } catch (e) {
+      await update({ status: 'failed', failedStep: 'seed_data', error: e.message });
+      throw new HttpsError('internal', `seed_data: ${e.message}`);
+    }
+    await update({ 'steps.seed_data': { ok: true, at: new Date().toISOString() }, currentStep: 'auth_domain' });
+
+    // Step 3: add the tenant subdomain to Firebase Auth authorizedDomains.
+    // Without this, Google sign-in returns auth/unauthorized-domain when
+    // the owner first visits {slug}.plumenexus.com. Identity Platform
+    // doesn't support wildcards here.
+    try {
+      const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'meraki-salon-manager';
+      const res = await addAuthorizedDomain(projectId, `${slug}.plumenexus.com`);
+      await update({ 'steps.auth_domain': { ok: true, added: res.added, totalDomains: res.total, at: new Date().toISOString() }, currentStep: 'welcome_email' });
+    } catch (e) {
+      console.warn('[provisionTenant] auth_domain step failed:', e.message);
+      // Non-fatal — owner can be added manually via platform-admin if it
+      // ever fails. The tenant doc + slug are already live.
+      await update({ 'steps.auth_domain': { ok: false, error: e.message, at: new Date().toISOString() }, currentStep: 'welcome_email' });
+    }
+
+    // Step 4: welcome email. Best-effort — duplicate sends on retry are
+    // tolerable; provisioning failure here doesn't roll back the tenant.
+    try {
+      const apiKey = resendKey.value();
+      if (apiKey) {
+        const resend = new Resend(apiKey);
+        await resend.emails.send({
+          from:    'Plume Nexus <noreply@plumenexus.com>',
+          to:      ownerEmail,
+          subject: `Welcome to Plume Nexus — ${salonName} is ready`,
+          html:    buildWelcomeHtml(salonName, ownerEmail, slug, url),
+        });
+        await update({ 'steps.welcome_email': { ok: true, at: new Date().toISOString() } });
+      } else {
+        await update({ 'steps.welcome_email': { ok: false, skipped: 'no RESEND_API_KEY', at: new Date().toISOString() } });
+      }
+    } catch (e) {
+      console.warn('[provisionTenant] welcome_email failed:', e.message);
+      await update({ 'steps.welcome_email': { ok: false, error: e.message, at: new Date().toISOString() } });
+    }
+
+    await update({ status: 'succeeded', completedAt: new Date().toISOString(), currentStep: null });
+
+    return { jobId, tenantId, slug, url };
+  }
+);
+
+// Soft delete vs hard delete. Soft = flip `active=false` + set deletedAt;
+// app refuses to serve. Hard = drop every tenant doc + subcollection +
+// release the slug. Hard mode requires an explicit confirmation string to
+// prevent accidental loss.
+exports.deleteTenant = onCall(
+  { cors: true, timeoutSeconds: 540 }, // hard mode can take a while
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in.');
+    const callerEmail = String(request.auth.token?.email || '').toLowerCase();
+    if (!BOOTSTRAP_ADMINS.map(e => e.toLowerCase()).includes(callerEmail)) {
+      throw new HttpsError('permission-denied', 'Bootstrap admin only.');
+    }
+
+    const tenantId = String(request.data?.tenantId || '').trim();
+    const mode     = request.data?.mode === 'hard' ? 'hard' : 'soft';
+    const confirm  = String(request.data?.confirm || '');
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId.');
+    }
+
+    const db  = getFirestore();
+    const now = new Date().toISOString();
+    const tenantRef = db.doc(`tenants/${tenantId}`);
+    const tenantSnap = await tenantRef.get();
+    if (!tenantSnap.exists) throw new HttpsError('not-found', `tenants/${tenantId} not found.`);
+
+    if (mode === 'soft') {
+      await tenantRef.set({ active: false, deletedAt: now, updatedAt: now }, { merge: true });
+      return { mode: 'soft', tenantId, deletedAt: now };
+    }
+
+    // Hard delete — gated by the confirmation string. Cannot be undone
+    // (PITR and BQ mirror retain a copy if you really need to recover —
+    // see [[customer-data-defense]]).
+    if (confirm !== `YES-DELETE-${tenantId}-IRREVERSIBLE`) {
+      throw new HttpsError('failed-precondition',
+        `Hard delete requires confirm = 'YES-DELETE-${tenantId}-IRREVERSIBLE'.`);
+    }
+
+    const tenantData = tenantSnap.data() || {};
+    const primarySlug = tenantData.subdomain || tenantId;
+    const aliases     = Array.isArray(tenantData.aliases) ? tenantData.aliases : [];
+
+    // 1. Mark provisioning job
+    const jobId = `${tenantId}-delete-${Date.now()}`;
+    const update = jobUpdater(db, jobId);
+    await update({
+      kind: 'delete', tenantId, status: 'running',
+      currentStep: 'drop_subtree', startedAt: now,
+    });
+
+    // 2. Recursively drop tenants/{tenantId}/* (admin SDK has a built-in)
+    try {
+      await db.recursiveDelete(tenantRef);
+      await update({ 'steps.drop_subtree': { ok: true, at: new Date().toISOString() }, currentStep: 'release_slugs' });
+    } catch (e) {
+      await update({ status: 'failed', failedStep: 'drop_subtree', error: e.message });
+      throw new HttpsError('internal', `drop_subtree: ${e.message}`);
+    }
+
+    // 3. Reserve the released slugs for 12 months so an attacker can't
+    // re-claim and impersonate. Per [[multi-tenant-routing]] +
+    // SUBDOMAIN-CHANGE-DESIGN.md.
+    try {
+      const reservedUntil = new Date(Date.now() + 365 * 86400000).toISOString();
+      const batch = db.batch();
+      for (const s of [primarySlug, ...aliases]) {
+        batch.set(db.doc(`slugs/${s}`), {
+          kind: 'reserved',
+          reservedReason: 'released_after_delete',
+          formerTenantId: tenantId,
+          releasedAt: now,
+          reservedUntil,
+        });
+      }
+      await batch.commit();
+      await update({ 'steps.release_slugs': { ok: true, slugs: [primarySlug, ...aliases].length, at: new Date().toISOString() } });
+    } catch (e) {
+      console.warn('[deleteTenant] release_slugs failed:', e.message);
+      await update({ 'steps.release_slugs': { ok: false, error: e.message, at: new Date().toISOString() } });
+    }
+
+    await update({ status: 'succeeded', completedAt: new Date().toISOString(), currentStep: null });
+
+    return { mode: 'hard', tenantId, droppedSlugs: [primarySlug, ...aliases], jobId };
+  }
+);
+
 exports.purgeOldTombstones = onSchedule(
   { schedule: 'every day 03:00', timeZone: 'America/New_York', timeoutSeconds: 540 },
   async () => {

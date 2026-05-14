@@ -95,6 +95,24 @@ service cloud.firestore {
       allow write: if isBootstrapAdmin();
     }
 
+    // ── Provisioning job state ───────────────────────────
+    //   provisionTenant + deleteTenant write per-step progress here so
+    //   the signup UI can poll and platform-admin can audit. Body shape:
+    //     { jobId, slug, tenantId, plan, callerUid, ownerEmail, salonName,
+    //       status:  'running' | 'succeeded' | 'failed',
+    //       currentStep, failedStep?, error?,
+    //       steps: { stepName: { ok, at, ... } },
+    //       startedAt, completedAt?, updatedAt }
+    //   Read: signed-in caller who started the job (callerUid match) OR
+    //   bootstrap admin (platform-admin observability). Writes only from
+    //   Cloud Functions via admin SDK.
+    match /provisioningJobs/{jobId} {
+      allow read:  if isBootstrapAdmin() ||
+                   (isAuthenticated() && request.auth.uid ==
+                      resource.data.get('callerUid', ''));
+      allow write: if false;
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document (plan, owner, name) — super-admin only
