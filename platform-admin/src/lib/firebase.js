@@ -4,11 +4,11 @@ import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, query, 
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Same Firebase project as the salon app + marketing site. Different hosting site.
-// authDomain temporarily reverted (see plumenexus/src/lib/firebase.js note);
-// pending Cloud Console manual step to allow plumenexus.com as OAuth redirect.
+// authDomain = plumenexus.com so OAuth popup shows brand domain. Cloud Console
+// OAuth client was updated to allow plumenexus.com + admin.plumenexus.com.
 const firebaseConfig = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',

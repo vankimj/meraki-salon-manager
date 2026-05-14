@@ -5,13 +5,12 @@ import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  // authDomain — temporary revert to firebaseapp.com pending manual
-  // Google Cloud Console step to add https://plumenexus.com/__/auth/handler
-  // to the OAuth 2.0 Web client's authorized redirect URIs. Until then,
-  // Google rejects with redirect_uri_mismatch when authDomain is
-  // plumenexus.com. Reverting to keep signin working. Re-apply the
-  // brand domain after the Console change.
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  // OAuth popup URL flashes plumenexus.com instead of the default
+  // firebaseapp.com. plumenexus.com + admin.plumenexus.com are added
+  // to the Web OAuth client's Authorized Origins + redirect URIs in
+  // Google Cloud Console (manual step — no API). Firebase Hosting
+  // auto-serves the /__/auth/* namespace on any custom hosting domain.
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',

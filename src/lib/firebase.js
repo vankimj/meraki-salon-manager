@@ -9,10 +9,9 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  // Temporary revert (see plumenexus/src/lib/firebase.js for full note).
-  // Pending Google Cloud Console: add https://plumenexus.com/__/auth/handler
-  // to OAuth 2.0 Web client's authorized redirect URIs.
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
+  // OAuth popup flashes plumenexus.com — see plumenexus/src/lib/firebase.js.
+  // Cloud Console OAuth client was updated to allow plumenexus.com.
+  authDomain:        'plumenexus.com',
   projectId:         'meraki-salon-manager',
   storageBucket:     'meraki-salon-manager.firebasestorage.app',
   messagingSenderId: '721171829996',
