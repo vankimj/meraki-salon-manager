@@ -6203,6 +6203,83 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
 // older than 30 days. By that point the doc is past PITR window (7 days)
 // but still recoverable from the BigQuery mirror (forever) — the BQ row is
 // ─────────────────────────────────────────────────────────────────────
+// Google Places address autocomplete
+// ─────────────────────────────────────────────────────────────────────
+// Server-side proxy for Google Places Autocomplete + Place Details.
+// Reusable by any form that wants address typeahead (SMS Setup wizard,
+// onboarding Phase 1, future Admin → Locations). Keeps the API key on
+// the server (never shipped to the browser bundle).
+
+exports.placesAutocomplete = onCall({ cors: true, timeoutSeconds: 10 }, async (request) => {
+  const { input } = request.data || {};
+  if (!input || typeof input !== 'string' || input.trim().length < 3) {
+    return { predictions: [] };
+  }
+  const apiKey = mapsApiKey.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'GOOGLE_MAPS_API_KEY not configured');
+
+  const url = new URL('https://maps.googleapis.com/maps/api/place/autocomplete/json');
+  url.searchParams.set('input', input.trim());
+  url.searchParams.set('types', 'address');
+  url.searchParams.set('components', 'country:us');
+  url.searchParams.set('key', apiKey);
+
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.status !== 'OK' && data.status !== 'ZERO_RESULTS') {
+      throw new HttpsError('internal', `Places API: ${data.status} ${data.error_message || ''}`.trim());
+    }
+    return {
+      predictions: (data.predictions || []).slice(0, 5).map(p => ({
+        placeId:     p.place_id,
+        description: p.description,
+      })),
+    };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('internal', `Places fetch failed: ${e?.message || e}`);
+  }
+});
+
+exports.placeDetails = onCall({ cors: true, timeoutSeconds: 10 }, async (request) => {
+  const { placeId } = request.data || {};
+  if (!placeId) throw new HttpsError('invalid-argument', 'placeId required');
+  const apiKey = mapsApiKey.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'GOOGLE_MAPS_API_KEY not configured');
+
+  const url = new URL('https://maps.googleapis.com/maps/api/place/details/json');
+  url.searchParams.set('place_id', placeId);
+  url.searchParams.set('fields', 'address_components,formatted_address,geometry');
+  url.searchParams.set('key', apiKey);
+
+  try {
+    const res  = await fetch(url);
+    const data = await res.json();
+    if (data.status !== 'OK') {
+      throw new HttpsError('internal', `Places Details: ${data.status} ${data.error_message || ''}`.trim());
+    }
+    const comps = data.result?.address_components || [];
+    const find = (t) => comps.find(c => c.types.includes(t));
+    const streetNum = find('street_number')?.long_name || '';
+    const route     = find('route')?.long_name || '';
+    return {
+      street:    [streetNum, route].filter(Boolean).join(' '),
+      city:      find('locality')?.long_name || find('sublocality')?.long_name || find('postal_town')?.long_name || '',
+      state:     find('administrative_area_level_1')?.short_name || '',
+      zip:       find('postal_code')?.long_name || '',
+      country:   find('country')?.short_name || '',
+      formatted: data.result?.formatted_address || '',
+      lat:       data.result?.geometry?.location?.lat ?? null,
+      lng:       data.result?.geometry?.location?.lng ?? null,
+    };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('internal', `Place details fetch failed: ${e?.message || e}`);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
 // Onboarding wizard
 // ─────────────────────────────────────────────────────────────────────
 // Tenants land in the 7-phase wizard on first sign-in. Each phase's

@@ -7,6 +7,42 @@ import {
   fetchWebfrontConfig,
 } from '../../lib/firestore';
 import { logActivity, logError } from '../../lib/logger';
+import AddressAutocomplete from '../../components/AddressAutocomplete';
+
+// Field-level validators. Each returns null if valid, or a string error.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const ZIP_RE   = /^\d{5}(-\d{4})?$/;
+const URL_RE   = /^https?:\/\/[^\s]+\.[^\s]+/i;
+
+function validateField(field, value, form) {
+  const v = String(value || '').trim();
+  switch (field) {
+    case 'businessName':     return v ? null : 'Business name required';
+    case 'address':          return v ? null : 'Street address required';
+    case 'city':             return v ? null : 'City required';
+    case 'state':            return /^[A-Z]{2}$/.test(v) ? null : '2-letter state code (e.g. OH)';
+    case 'zip':              return ZIP_RE.test(v) ? null : '5-digit ZIP (or ZIP+4)';
+    case 'contactEmail':     return EMAIL_RE.test(v) ? null : 'Valid email required';
+    case 'contactPhone':     return v.replace(/\D/g, '').length === 10 ? null : '10-digit US phone required';
+    case 'website':          return !v || URL_RE.test(v) ? null : 'Must start with http:// or https://';
+    case 'privacyPolicyUrl': return URL_RE.test(v) ? null : 'Privacy policy URL required';
+    default: return null;
+  }
+}
+
+function validateStep1(form) {
+  const required = ['businessName', 'address', 'city', 'state', 'zip', 'contactEmail', 'contactPhone', 'privacyPolicyUrl'];
+  const errors = {};
+  for (const f of required) {
+    const err = validateField(f, form[f], form);
+    if (err) errors[f] = err;
+  }
+  if (form.website) {
+    const e = validateField('website', form.website, form);
+    if (e) errors.website = e;
+  }
+  return errors;
+}
 
 // Local US-style phone formatter for the contact phone field.
 function fmtPhone(input) {
@@ -51,6 +87,9 @@ export default function SmsSetup() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError]   = useState('');
   const [releaseBusy, setReleaseBusy] = useState(false);
+  // Per-field "touched" tracker — errors only show after the user has
+  // blurred the field (avoids screaming at them while they're typing).
+  const [touched, setTouched] = useState({});
 
   const [form, setForm] = useState({
     businessName:         '',
@@ -216,46 +255,83 @@ export default function SmsSetup() {
             ))}
           </div>
 
-          {step === 1 && (
-            <Step title="1 of 3 · Business profile">
-              <Row label="Legal business name *">
-                <input value={form.businessName} onChange={e => patch('businessName', e.target.value)} style={inp} placeholder="Meraki Nail Studio LLC" />
-              </Row>
-              <Row label="EIN (optional for sole proprietor)">
-                <input value={form.ein} onChange={e => patch('ein', e.target.value)} style={inp} placeholder="XX-XXXXXXX" />
-              </Row>
-              <Row label="Street address *">
-                <input value={form.address} onChange={e => patch('address', e.target.value)} style={inp} placeholder="5029 Olentangy River Rd" />
-              </Row>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 100px', gap: 8 }}>
-                <input value={form.city}  onChange={e => patch('city', e.target.value)}  style={inp} placeholder="City *" />
-                <input value={form.state} onChange={e => patch('state', e.target.value)} style={inp} placeholder="State *" maxLength={2} />
-                <input value={form.zip}   onChange={e => patch('zip', e.target.value)}   style={inp} placeholder="ZIP *" />
-              </div>
-              <Row label="Contact name">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <input value={form.contactFirstName} onChange={e => patch('contactFirstName', e.target.value)} style={inp} placeholder="First name" />
-                  <input value={form.contactLastName}  onChange={e => patch('contactLastName', e.target.value)}  style={inp} placeholder="Last name" />
+          {step === 1 && (() => {
+            const step1Errors = validateStep1(form);
+            const isStep1Valid = Object.keys(step1Errors).length === 0;
+            const fieldErr = (field) => touched[field] ? step1Errors[field] : null;
+            const onBlur = (field) => setTouched(t => ({ ...t, [field]: true }));
+            const applyPlace = (place) => {
+              if (place.street) patch('address', place.street);
+              if (place.city)   patch('city',    place.city);
+              if (place.state)  patch('state',   place.state);
+              if (place.zip)    patch('zip',     place.zip);
+            };
+            return (
+              <Step title="1 of 3 · Business profile">
+                <Row label="Legal business name *" err={fieldErr('businessName')}>
+                  <input value={form.businessName} onChange={e => patch('businessName', e.target.value)} onBlur={() => onBlur('businessName')} style={inpStyle(fieldErr('businessName'))} placeholder="Meraki Nail Studio LLC" />
+                </Row>
+                <Row label="EIN (optional for sole proprietor)">
+                  <input value={form.ein} onChange={e => patch('ein', e.target.value)} style={inp} placeholder="XX-XXXXXXX" />
+                </Row>
+                <Row label="Street address *" err={fieldErr('address')} hint="Type to search — Google fills city / state / ZIP.">
+                  <AddressAutocomplete
+                    value={form.address}
+                    onChange={v => patch('address', v)}
+                    onPlaceSelected={applyPlace}
+                    onBlur={() => onBlur('address')}
+                    style={inpStyle(fieldErr('address'))}
+                    placeholder="5029 Olentangy River Rd"
+                  />
+                </Row>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 100px', gap: 8 }}>
+                  <div>
+                    <input value={form.city}  onChange={e => patch('city',  e.target.value)} onBlur={() => onBlur('city')}  style={inpStyle(fieldErr('city'))}  placeholder="City *" />
+                    {fieldErr('city')  && <Err msg={fieldErr('city')} />}
+                  </div>
+                  <div>
+                    <input value={form.state} onChange={e => patch('state', e.target.value.toUpperCase())} onBlur={() => onBlur('state')} style={inpStyle(fieldErr('state'))} placeholder="State *" maxLength={2} />
+                    {fieldErr('state') && <Err msg={fieldErr('state')} />}
+                  </div>
+                  <div>
+                    <input value={form.zip}   onChange={e => patch('zip',   e.target.value)} onBlur={() => onBlur('zip')}   style={inpStyle(fieldErr('zip'))}   placeholder="ZIP *" />
+                    {fieldErr('zip')   && <Err msg={fieldErr('zip')} />}
+                  </div>
                 </div>
-              </Row>
-              <Row label="Contact email *">
-                <input value={form.contactEmail} onChange={e => patch('contactEmail', e.target.value)} style={inp} placeholder="owner@example.com" />
-              </Row>
-              <Row label="Contact phone *">
-                <input value={form.contactPhone} onChange={e => patch('contactPhone', fmtPhone(e.target.value))} style={inp} placeholder="(614) 555-0100" />
-              </Row>
-              <Row label="Business website">
-                <input value={form.website} onChange={e => patch('website', e.target.value)} style={inp} placeholder="https://…" />
-              </Row>
-              <Row label="Privacy policy URL *">
-                <input value={form.privacyPolicyUrl} onChange={e => patch('privacyPolicyUrl', e.target.value)} style={inp} placeholder="https://…/?privacy=1" />
-              </Row>
-              <NavRow>
-                <span />
-                <button onClick={() => setStep(2)} style={btnPrimary}>Next: Use case →</button>
-              </NavRow>
-            </Step>
-          )}
+                <Row label="Contact name">
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <input value={form.contactFirstName} onChange={e => patch('contactFirstName', e.target.value)} style={inp} placeholder="First name" />
+                    <input value={form.contactLastName}  onChange={e => patch('contactLastName', e.target.value)}  style={inp} placeholder="Last name" />
+                  </div>
+                </Row>
+                <Row label="Contact email *" err={fieldErr('contactEmail')}>
+                  <input value={form.contactEmail} onChange={e => patch('contactEmail', e.target.value)} onBlur={() => onBlur('contactEmail')} style={inpStyle(fieldErr('contactEmail'))} placeholder="owner@example.com" type="email" />
+                </Row>
+                <Row label="Contact phone *" err={fieldErr('contactPhone')}>
+                  <input value={form.contactPhone} onChange={e => patch('contactPhone', fmtPhone(e.target.value))} onBlur={() => onBlur('contactPhone')} style={inpStyle(fieldErr('contactPhone'))} placeholder="(614) 555-0100" type="tel" inputMode="tel" />
+                </Row>
+                <Row label="Business website" err={fieldErr('website')}>
+                  <input value={form.website} onChange={e => patch('website', e.target.value)} onBlur={() => onBlur('website')} style={inpStyle(fieldErr('website'))} placeholder="https://…" type="url" />
+                </Row>
+                <Row label="Privacy policy URL *" err={fieldErr('privacyPolicyUrl')}>
+                  <input value={form.privacyPolicyUrl} onChange={e => patch('privacyPolicyUrl', e.target.value)} onBlur={() => onBlur('privacyPolicyUrl')} style={inpStyle(fieldErr('privacyPolicyUrl'))} placeholder="https://…/?privacy=1" type="url" />
+                </Row>
+                <NavRow>
+                  <span />
+                  <button onClick={() => {
+                    // Force-show errors on all required fields when user tries to advance.
+                    setTouched(t => ({ ...t,
+                      businessName: true, address: true, city: true, state: true, zip: true,
+                      contactEmail: true, contactPhone: true, privacyPolicyUrl: true, website: true,
+                    }));
+                    if (isStep1Valid) setStep(2);
+                  }} style={{ ...btnPrimary, opacity: isStep1Valid ? 1 : 0.5 }}>
+                    Next: Use case →
+                  </button>
+                </NavRow>
+              </Step>
+            );
+          })()}
 
           {step === 2 && (
             <Step title="2 of 3 · Use case + sample messages">
@@ -345,13 +421,34 @@ function Step({ title, children }) {
   );
 }
 
-function Row({ label, children }) {
+function Row({ label, children, err, hint }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: err ? '#b91c1c' : '#555', marginBottom: 5 }}>{label}</div>
       {children}
+      {err  && <Err msg={err} />}
+      {!err && hint && <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{hint}</div>}
     </div>
   );
+}
+
+function Err({ msg }) {
+  return <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>{msg}</div>;
+}
+
+// Render the standard input style, optionally with a red border when
+// the field has a visible error.
+function inpStyle(err) {
+  return {
+    width: '100%', boxSizing: 'border-box',
+    padding: '9px 11px',
+    fontSize: 13,
+    border: `1px solid ${err ? '#fca5a5' : '#d8d8d8'}`,
+    borderRadius: 8,
+    fontFamily: 'inherit',
+    outline: 'none',
+    background: err ? '#fef2f2' : '#fff',
+  };
 }
 
 function NavRow({ children }) {
