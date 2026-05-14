@@ -74,6 +74,27 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Public slug → tenant indirection ─────────────────
+    //   Doc id = subdomain slug (lowercase). Doc body shape:
+    //     { tenantId: string,
+    //       kind:     'primary' | 'alias' | 'reserved',
+    //       primarySlug?: string,    // when kind=='alias'
+    //       createdAt: ISO date,
+    //       reservedReason?: string  // when kind=='reserved'
+    //     }
+    //   Anyone (incl. unauthenticated visitors) can READ. Reading just
+    //   tells you `<slug>.plumenexus.com` exists / is taken / redirects —
+    //   no sensitive tenant data leaks because all of that lives in
+    //   tenants/{tenantId} (locked to bootstrap admin) or tenants/.../data
+    //   (locked to staff).
+    //   WRITES only from bootstrap admin (manual platform-admin actions)
+    //   or Cloud Functions via admin SDK (which bypasses rules). The
+    //   `provisionTenant` orchestrator is the canonical creator.
+    match /slugs/{slug} {
+      allow read:  if true;
+      allow write: if isBootstrapAdmin();
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document (plan, owner, name) — super-admin only

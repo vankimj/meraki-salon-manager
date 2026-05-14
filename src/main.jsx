@@ -1,7 +1,9 @@
-import { StrictMode, Component } from 'react'
+import { StrictMode, Component, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
+import TenantNotFound from './components/TenantNotFound.jsx'
+import { resolveTenant, getTenantResolveState } from './lib/tenant'
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
@@ -20,10 +22,32 @@ class ErrorBoundary extends Component {
   }
 }
 
+// Boot wrapper: awaits resolveTenant() before mounting <App />. On notFound
+// renders the TenantNotFound page instead. resolveTenant runs once at boot;
+// the result is captured into state and the appropriate tree mounts.
+function Boot() {
+  const [state, setState] = useState({ status: 'loading' });
+
+  useEffect(() => {
+    resolveTenant().then(() => setState(getTenantResolveState()));
+  }, []);
+
+  if (state.status === 'loading') {
+    // Brief flash — usually <100ms once the Firestore cache is warm.
+    // Intentionally chrome-less; the splash inside <App/> takes over once
+    // tenant is resolved.
+    return null;
+  }
+  if (state.status === 'notFound') {
+    return <TenantNotFound slug={state.slug} reason={state.reason} />;
+  }
+  return <App />;
+}
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <Boot />
     </ErrorBoundary>
   </StrictMode>,
 )
