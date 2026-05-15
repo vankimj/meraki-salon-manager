@@ -335,6 +335,15 @@ export default function SignupPage() {
           </Section>
 
           <Section title="3 · Phone verification *" hint="Required to prevent abuse. Standard SMS rates apply. Not shown to clients.">
+            <p style={{ fontSize: 12, color: '#555', lineHeight: 1.5, margin: '0 0 12px', padding: '10px 12px', background: '#f8f8f8', border: '1px solid #e6e6e6', borderRadius: 8 }}>
+              By verifying your phone, you agree to receive account-related text
+              messages from Plume Nexus (verification codes, billing alerts,
+              account notices). Msg &amp; data rates may apply. Reply STOP to
+              opt out, HELP for help. See{' '}
+              <a href="/sms-consent" target="_blank" rel="noopener noreferrer" style={{ color: '#6b3a8e', fontWeight: 500 }}>
+                plumenexus.com/sms-consent
+              </a>.
+            </p>
             <PhoneVerify
               phone={phone}
               setPhone={setPhone}

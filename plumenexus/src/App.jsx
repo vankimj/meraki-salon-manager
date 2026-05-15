@@ -20,8 +20,9 @@ import PrivacyPage from './components/PrivacyPage.jsx';
 import TrustPage from './components/TrustPage.jsx';
 import NotFoundPage from './components/NotFoundPage.jsx';
 import SignupPage from './components/SignupPage.jsx';
+import SmsConsentPage from './components/SmsConsentPage.jsx';
 
-const KNOWN_PATHS = new Set(['/', '/terms', '/privacy', '/trust', '/book', '/signup']);
+const KNOWN_PATHS = new Set(['/', '/terms', '/privacy', '/trust', '/book', '/signup', '/sms-consent']);
 const norm = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
 
 export default function App() {
@@ -69,7 +70,8 @@ export default function App() {
   if (path === '/terms')   return <TermsPage />;
   if (path === '/privacy') return <PrivacyPage />;
   if (path === '/trust')   return <TrustPage />;
-  if (path === '/signup')  return <SignupPage />;
+  if (path === '/signup')      return <SignupPage />;
+  if (path === '/sms-consent') return <SmsConsentPage />;
   if (!KNOWN_PATHS.has(path)) return <NotFoundPage />;
 
   return (

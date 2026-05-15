@@ -45,6 +45,7 @@ export default function Footer() {
         <FooterCol title="Legal" links={[
           ['Terms of Service', '/terms'],
           ['Privacy Policy', '/privacy'],
+          ['SMS Terms', '/sms-consent'],
         ]} />
       </div>
 
