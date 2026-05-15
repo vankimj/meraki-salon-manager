@@ -138,8 +138,16 @@ service cloud.firestore {
 
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
-      // Root tenant registry document (plan, owner, name) — super-admin only
-      allow read, write: if isBootstrapAdmin();
+      // Root tenant registry document. Holds plan, billing, owner contact,
+      // subdomain, aliases, sandboxMode + other tenant-wide flags.
+      // - Tenant admins of THIS tenant can read it (their own salon's
+      //   metadata; banner UI + plan-gate reads depend on this).
+      // - Writes still restricted to platform admins / Cloud Functions —
+      //   we don't want tenant admins flipping their own sandboxMode or
+      //   plan field from the client. setTenantSandboxMode (callable)
+      //   is the gated path for that.
+      allow read:  if isBootstrapAdmin() || isTenantAdmin(tenantId);
+      allow write: if isBootstrapAdmin();
 
       // Config documents live in a data/ sub-collection (4-segment paths = valid Firestore docs)
       match /data/slides {

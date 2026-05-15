@@ -5,9 +5,19 @@ import { auth } from './firebase.js';
 // must NOT read tenant data directly via the client SDK. Two cloud functions
 // are the single chokepoint: listTenants + getTenantMetadata. Both server-side
 // gated to platform admins; both return only sanitized fields.
-const _listTenants       = httpsCallable(fns, 'listTenants');
-const _getTenantMetadata = httpsCallable(fns, 'getTenantMetadata');
-const _deleteTenant      = httpsCallable(fns, 'deleteTenant');
+const _listTenants          = httpsCallable(fns, 'listTenants');
+const _getTenantMetadata    = httpsCallable(fns, 'getTenantMetadata');
+const _deleteTenant         = httpsCallable(fns, 'deleteTenant');
+const _setTenantSandboxMode = httpsCallable(fns, 'setTenantSandboxMode');
+
+// Flip a tenant's sandboxMode flag. When true, SMS provisioning + sending
+// are fully mocked (no Twilio calls, no real charges). New tenants default
+// to sandboxMode=true; platform admin flips to false to put the tenant on
+// real Twilio. Audit-logged + rate-limited server-side.
+export async function setTenantSandboxMode(tenantId, sandbox) {
+  const res = await _setTenantSandboxMode({ tenantId, sandbox: Boolean(sandbox) });
+  return res.data;
+}
 
 // Hard-delete a tenant (recursive subtree drop + slug 12-month
 // reservation + Auth domain removal + Twilio TFN release where

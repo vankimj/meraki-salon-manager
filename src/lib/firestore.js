@@ -2377,6 +2377,19 @@ export function subscribeTenantSms(cb) {
   return onSnapshot(tenantDoc('sms'), s => cb(s.exists() ? s.data() : null));
 }
 
+// Live subscription on the tenant registry doc (tenants/{TENANT_ID}).
+// Surfaces sandboxMode + other tenant-level flags to the salon app.
+// Sandbox-by-default: a tenant whose doc lacks an explicit
+// sandboxMode=false is treated as sandbox (matches Cloud Function
+// isSandboxTenant convention).
+export function subscribeTenantRegistry(cb) {
+  return onSnapshot(doc(db, 'tenants', TENANT_ID), s => {
+    if (!s.exists()) { cb({ sandboxMode: true }); return; }
+    const d = s.data() || {};
+    cb({ ...d, sandboxMode: d.sandboxMode !== false });
+  });
+}
+
 export async function fetchTenantSms() {
   const s = await getDoc(tenantDoc('sms'));
   return s.exists() ? s.data() : null;

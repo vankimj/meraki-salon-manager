@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import {
   fetchBookingConfig, saveBookingConfig,
-  subscribeTenantSms,
+  subscribeTenantSms, subscribeTenantRegistry,
 } from '../../lib/firestore';
 import { logActivity, logError } from '../../lib/logger';
 import { currentSubdomain } from '../../lib/tenant';
@@ -28,6 +28,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
   const [bookingCfg, setBookingCfg] = useState(null);
   const [savingBooking, setSavingBooking] = useState(false);
   const [sms, setSms]   = useState(null);
+  const [tenantInfo, setTenantInfo] = useState(null);
   const [err, setErr]   = useState('');
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
   }, []);
 
   useEffect(() => subscribeTenantSms(setSms), []);
+  useEffect(() => subscribeTenantRegistry(setTenantInfo), []);
 
   async function saveBooking(patch) {
     if (!bookingCfg) return;
@@ -136,16 +138,30 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
           We provision a verified toll-free number on your behalf. Setup runs through Twilio
           (3-step wizard below). Once approved you can send reminders + marketing campaigns.
         </div>
-        <div style={{
-          fontSize: 12, color: '#5b3b8c', background: '#f5efff',
-          border: '1px solid #d8c8f0', borderRadius: 8,
-          padding: '10px 14px', marginBottom: 12, lineHeight: 1.55,
-        }}>
-          <strong>Optional during onboarding.</strong> Click <em>Save &amp; continue</em> below
-          to skip — you can finish the SMS wizard anytime from <strong>Admin → SMS</strong>.
-          Carrier review takes 2–7 business days once submitted, so most salons start the
-          wizard now and circle back when they need to send reminders.
-        </div>
+        {tenantInfo?.sandboxMode ? (
+          <div style={{
+            fontSize: 12, color: '#92400e', background: '#fef3c7',
+            border: '1px solid #fcd34d', borderRadius: 8,
+            padding: '10px 14px', marginBottom: 12, lineHeight: 1.55,
+          }}>
+            🧪 <strong>Sandbox mode.</strong> This tenant is in sandbox — submitting the
+            wizard will instantly stamp <em>Approved</em> without buying a real toll-free
+            number, hitting Twilio, or charging anyone. Useful for walking through the
+            onboarding flow end-to-end. A platform admin can flip this tenant to
+            production when you&rsquo;re ready to send real SMS.
+          </div>
+        ) : (
+          <div style={{
+            fontSize: 12, color: '#5b3b8c', background: '#f5efff',
+            border: '1px solid #d8c8f0', borderRadius: 8,
+            padding: '10px 14px', marginBottom: 12, lineHeight: 1.55,
+          }}>
+            <strong>Optional during onboarding.</strong> Click <em>Save &amp; continue</em> below
+            to skip — you can finish the SMS wizard anytime from <strong>Admin → SMS</strong>.
+            Carrier review takes 2–7 business days once submitted, so most salons start the
+            wizard now and circle back when they need to send reminders.
+          </div>
+        )}
         <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, overflow: 'hidden' }}>
           <SmsSetup />
         </div>

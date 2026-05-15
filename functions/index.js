@@ -4001,6 +4001,47 @@ function buildWelcomeHtml(salonName, ownerEmail, tenantId, url) {
 //   - honors cancelRequested at every flush boundary and at exit
 //   - derives counters from the attempts array (cannot diverge)
 async function processSMSCampaign(tenantId, docRef, data) {
+  const recipients = Array.isArray(data.recipients) ? data.recipients : [];
+  if (recipients.length === 0) {
+    await docRef.update({ status: 'failed', error: 'no_recipients' });
+    return;
+  }
+
+  // Sandbox short-circuit. Mark every recipient as 'sent' with a sandbox
+  // marker, write a single summary entry to sandboxSmsLog (not one per
+  // recipient — that'd dwarf the rest of the doc), and skip Twilio
+  // entirely. No money spent, no real delivery.
+  if (await isSandboxTenant(getFirestore(), tenantId)) {
+    const now = new Date().toISOString();
+    const attempts = recipients.map(r => ({
+      name:         r.name || '(unknown)',
+      phone:        r.phone || '',
+      status:       'sent',
+      twilioStatus: 'sandbox',
+      twilioSid:    'SANDBOX',
+      promoCode:    null,
+      at:           now,
+    }));
+    await getFirestore().collection(`tenants/${tenantId}/sandboxSmsLog`).add({
+      kind:       'campaign',
+      campaignId: docRef.id,
+      body:       data.smsBody || '',
+      recipients: recipients.length,
+      at:         now,
+    });
+    await docRef.update({
+      status:         'sent',
+      sandbox:        true,
+      sentCount:      recipients.length,
+      failCount:      0,
+      attemptedCount: recipients.length,
+      attempts,
+      startedAt:      now,
+      lastUpdateAt:   now,
+    });
+    return;
+  }
+
   const sid       = twilioSid.value();
   const token     = twilioToken.value();
   const apiKeySid = twilioApiKeySid.value();
@@ -4008,12 +4049,6 @@ async function processSMSCampaign(tenantId, docRef, data) {
   const from      = await tenantSmsFrom(getFirestore(), tenantId);
   if (!sid || !token || !from) {
     await docRef.update({ status: 'failed', error: 'twilio_not_configured' });
-    return;
-  }
-
-  const recipients = Array.isArray(data.recipients) ? data.recipients : [];
-  if (recipients.length === 0) {
-    await docRef.update({ status: 'failed', error: 'no_recipients' });
     return;
   }
 
@@ -5995,6 +6030,10 @@ exports.getTenantMetadata = onCall(
       // hasn't connected one. Populated post-signup via the custom-domain
       // wizard (not yet built — Sprint D).
       customDomain:     registry.customDomain     || null,
+      // Sandbox flag: when true, SMS provisioning + sending are mocked
+      // (no Twilio, no charges). Defaults to true for new self-serve
+      // signups so test traffic can't trigger real $2/mo TFN purchases.
+      sandboxMode:      registry.sandboxMode !== false,
       provisioned:      usersSnap.exists,
       // staffEmails projection is the canonical count post-split
       // (rich users[] now lives in data/usersFull, not read here).
@@ -6533,6 +6572,30 @@ function platformTwilioClient() {
     : twilioSDK(sid, token);
 }
 
+// Returns true when the tenant doc has sandboxMode=true. Used by every
+// SMS send path that should NOT dispatch real Twilio messages for test
+// tenants. New tenants default to sandboxMode=true (set in
+// provisionTenant); platform admin flips to false via setTenantSandboxMode
+// when a tenant goes live.
+async function isSandboxTenant(db, tenantId) {
+  try {
+    const snap = await db.doc(`tenants/${tenantId}`).get();
+    // Sandbox-by-default: any tenant whose doc doesn't EXPLICITLY say
+    // sandboxMode=false is treated as sandbox. Covers (a) new self-serve
+    // signups (provisionTenant writes sandboxMode=true), (b) legacy
+    // tenants pre-dating this field (no flag → treated as sandbox until
+    // platform admin flips to false). For real-Twilio go-live, an admin
+    // must affirmatively set sandboxMode=false via setTenantSandboxMode.
+    return !snap.exists || snap.data()?.sandboxMode !== false;
+  } catch (e) {
+    console.error(`[isSandboxTenant] read failed for ${tenantId}:`, e?.message);
+    // Same fail-safe bias: recoverable miss (real tenant waits for the
+    // outage) preferred over irrecoverable miss (real money spent on a
+    // test tenant).
+    return true;
+  }
+}
+
 // Provisions a TFN + submits Toll-Free Verification for the given
 // tenant. Idempotent: if a TFN was already bought (state stored in
 // data/sms) we skip the purchase and resubmit verification only.
@@ -6574,6 +6637,31 @@ exports.provisionTenantSMS = onCall(
     if (existing.status === 'pending_twilio' || existing.status === 'pending_carrier') {
       // Already in flight — return current state so the wizard shows the status card.
       return { status: existing.status, tfnNumber: existing.tfnNumber, alreadySubmitted: true };
+    }
+
+    // Sandbox short-circuit: skip every Twilio call, stamp an instant
+    // approved status with a Twilio-magic TFN. No money spent, wizard
+    // completes immediately so the tenant can validate the rest of the
+    // flow. setTenantSandboxMode flips the flag from platform admin.
+    if (await isSandboxTenant(db, tenantId)) {
+      const now = new Date().toISOString();
+      const sandboxTfn = '+15005550006'; // Twilio magic test number — recognizably fake
+      await smsRef.set({
+        status:           'approved',
+        formData:         form,
+        tfnNumber:        sandboxTfn,
+        tfnSid:           'PNSANDBOX' + tenantId,
+        verificationSid:  null,
+        sandbox:          true,
+        submittedAt:      now,
+        approvedAt:       now,
+        createdBy:        existing.createdBy || (request.auth?.uid || null),
+        createdAt:        existing.createdAt || now,
+        lastError:        null,
+        rejectionReason:  null,
+        updatedAt:        now,
+      }, { merge: true });
+      return { status: 'approved', tfnNumber: sandboxTfn, sandbox: true };
     }
 
     const client = platformTwilioClient();
@@ -6960,6 +7048,12 @@ exports.provisionTenant = onCall(
           aliases:              [],
           subdomainChangedAt:   null,
           subdomainChangeCount: 0,
+          // Sandbox mode: SMS provisioning + sending are fully mocked
+          // (no Twilio calls, no real money). Platform admin flips this
+          // to false via setTenantSandboxMode to put the tenant on real
+          // Twilio. Default true so test signups can't accidentally
+          // trigger $2/mo TFN purchases.
+          sandboxMode:          true,
           createdAt:            now,
           updatedAt:            now,
           provisionedBy:        request.auth.uid,
@@ -7168,6 +7262,55 @@ exports.deleteTenant = onCall(
     });
 
     return { mode: 'hard', tenantId, droppedSlugs: [primarySlug, ...aliases], jobId };
+  }
+);
+
+// Platform admin toggle for a tenant's sandboxMode flag. When sandboxMode
+// is true, SMS provisioning (provisionTenantSMS) skips all Twilio calls
+// and writes a canned approved status; sendSms logs to sandboxSmsLog
+// instead of dispatching real SMS. New tenants default to sandboxMode=true
+// so test signups can't accidentally trigger real $2/mo TFN purchases —
+// platform admin flips to false when a tenant goes live.
+exports.setTenantSandboxMode = onCall(
+  { cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in.');
+    const callerEmail = String(request.auth.token?.email || '').toLowerCase();
+    if (!await isPlatformAdmin(callerEmail)) {
+      throw new HttpsError('permission-denied', 'Platform admin only.');
+    }
+
+    const tenantId = String(request.data?.tenantId || '').trim();
+    const sandbox  = Boolean(request.data?.sandbox);
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId.');
+    }
+
+    // Per-admin rate limit: 20 toggles per hour. Less destructive than
+    // tenant-delete, but flipping to false enables real Twilio spend so
+    // we cap it. Resets when the function instance recycles.
+    const rate = checkAdminActionRate(callerEmail, 'tenant.sandbox.set', 20, 60 * 60 * 1000);
+    if (!rate.allowed) {
+      throw new HttpsError('resource-exhausted',
+        `Rate limit: 20 sandbox toggles per hour. Retry in ~${Math.ceil(rate.retryAfterMs / 60000)} min.`);
+    }
+
+    const db = getFirestore();
+    const tenantRef = db.doc(`tenants/${tenantId}`);
+    const tSnap = await tenantRef.get();
+    if (!tSnap.exists) throw new HttpsError('not-found', `tenants/${tenantId} not found.`);
+
+    const prev = Boolean(tSnap.data()?.sandboxMode);
+    if (prev === sandbox) return { tenantId, sandboxMode: sandbox, noop: true };
+
+    const now = new Date().toISOString();
+    await tenantRef.update({ sandboxMode: sandbox, sandboxModeChangedAt: now, sandboxModeChangedBy: callerEmail, updatedAt: now });
+
+    await logAdminAction(db, request, 'tenant.sandbox.set', {
+      tenantId, from: prev, to: sandbox, slug: tSnap.data()?.subdomain || null,
+    });
+
+    return { tenantId, sandboxMode: sandbox };
   }
 );
 

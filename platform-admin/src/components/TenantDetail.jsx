@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant } from '../lib/tenants.js';
+import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant, setTenantSandboxMode } from '../lib/tenants.js';
 import { reauthGoogle } from '../lib/firebase.js';
 import { C, FONT, shadow, radius } from '../theme.js';
 
@@ -54,6 +54,22 @@ export default function TenantDetail({ tenantId }) {
     } finally { setBusy(false); }
   }
 
+  async function handleToggleSandbox() {
+    if (!meta) return;
+    const newSandbox = !meta.sandboxMode;
+    const msg = newSandbox
+      ? `Put ${meta.name || meta.id} into SANDBOX mode?\n\nSMS provisioning + sends will be mocked (no Twilio calls, no real charges, no real delivery). Existing real Twilio data on the tenant is left in place.`
+      : `Put ${meta.name || meta.id} into PRODUCTION mode?\n\nReal Twilio calls will be made for SMS — TFN purchase is $2/mo, each delivery costs ~$0.008. Make sure this tenant has finished Toll-Free Verification, OR is OK with a fresh provisioning run that may need carrier review (2–7 days).`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      await setTenantSandboxMode(meta.id, newSandbox);
+      await load();
+    } catch (e) {
+      alert('Toggle failed: ' + (e?.message || String(e)));
+    } finally { setBusy(false); }
+  }
+
   if (loading) return <Empty>Loading tenant…</Empty>;
   if (error)   return <Empty error>{error} · <a href="/" style={{ color: C.plum }}>Back to tenants</a></Empty>;
   if (!meta)   return <Empty>Tenant not found.</Empty>;
@@ -76,6 +92,11 @@ export default function TenantDetail({ tenantId }) {
             {meta.ownerEmail && <span>👤 {meta.ownerEmail}</span>}
             {meta.createdAt && <span>📅 Created {meta.createdAt.slice(0, 10)}</span>}
             <StatusBadge status={status} lastActivityIso={meta.lastActivityIso} />
+            {meta.sandboxMode && (
+              <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', background: '#fef3c7', color: '#92400e', borderRadius: 10, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                🧪 Sandbox
+              </span>
+            )}
           </div>
         </div>
         {/* No "View as tenant" button — per principle #10, support requires
@@ -153,6 +174,26 @@ export default function TenantDetail({ tenantId }) {
             {meta.lastActivityIso ? <RelativeTime iso={meta.lastActivityIso} /> : <span style={{ color: C.mutedSoft }}>never</span>}
           </div>
           <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 4 }}>Most recent appt update / receipt / message</div>
+        </Card>
+
+        <Card title="SMS mode">
+          <div style={{ fontSize: 18, fontWeight: 700, color: meta.sandboxMode ? '#92400e' : C.success }}>
+            {meta.sandboxMode ? '🧪 Sandbox' : '✓ Production'}
+          </div>
+          <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 4, lineHeight: 1.4 }}>
+            {meta.sandboxMode
+              ? 'Wizard auto-approves, no real Twilio calls or charges.'
+              : 'Real Twilio: TFN purchase $2/mo, ~$0.008/SMS.'}
+          </div>
+          <button onClick={handleToggleSandbox} disabled={busy} style={{
+            marginTop: 8, padding: '5px 11px', fontSize: 11, fontWeight: 600,
+            background: 'transparent',
+            color: meta.sandboxMode ? C.success : '#92400e',
+            border: `1px solid ${meta.sandboxMode ? C.success : '#92400e'}40`,
+            borderRadius: 6, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>
+            {meta.sandboxMode ? 'Switch to Production →' : '← Back to Sandbox'}
+          </button>
         </Card>
       </div>
 
