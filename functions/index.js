@@ -6,6 +6,8 @@ const { getFirestore }     = require('firebase-admin/firestore');
 const { defineString, defineSecret } = require('firebase-functions/params');
 const { Resend }           = require('resend');
 const Anthropic            = require('@anthropic-ai/sdk');
+const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+const crypto               = require('crypto');
 
 initializeApp();
 
@@ -15,6 +17,20 @@ const TENANT_ID   = 'meraki';
 const BOOTSTRAP_ADMINS = ['jvankim@gmail.com'];
 
 const resendKey       = defineString('RESEND_API_KEY',      { default: '' });
+// ── Email provider config (Resend during migration → SES post-cutover) ──
+// EMAIL_PROVIDER routes every sendEmail() call to either Resend or SES.
+// Default 'resend' so behavior is unchanged until the cutover. Flip via
+//   firebase functions:config:set email_provider=ses
+// then redeploy. Per-tenant override planned but not yet implemented.
+const emailProvider   = defineString('EMAIL_PROVIDER', { default: 'resend' });
+const awsSesRegion    = defineString('AWS_SES_REGION', { default: 'us-east-1' });
+// SES Configuration Set name. Optional but recommended: gates event
+// destinations (bounces/complaints → SNS topic). When unset, SES still
+// sends but won't fire events into our sesEventWebhook → no suppression
+// updates. Set after the SNS topic + config set are created in Phase 4.
+const awsSesConfigSet = defineString('AWS_SES_CONFIG_SET', { default: '' });
+const awsAccessKey    = defineSecret('AWS_ACCESS_KEY_ID');
+const awsSecretKey    = defineSecret('AWS_SECRET_ACCESS_KEY');
 // RESEND_FROM env var was the global single-tenant sender. Removed in favor of
 // per-tenant tenantFromAddress() — see helper definition below. Setting still
 // honored as the per-tenant override via the `fromAddress` field on the tenant
@@ -231,6 +247,170 @@ async function tenantBranding(db, tenantId) {
   }
   _brandCache.set(tenantId, brand);
   return brand;
+}
+
+// ── Email-sending abstraction (Resend ⇄ SES provider-agnostic) ───────────────
+// Every email send across the codebase routes through sendEmail(). Two
+// reasons for the abstraction:
+//   1. Provider swap: EMAIL_PROVIDER flag lets us migrate Resend → SES one
+//      flip + deploy. No call-site edits at cutover.
+//   2. Suppression precheck: every recipient is checked against the
+//      platform suppression list (populated by sesEventWebhook from
+//      SES bounce/complaint SNS notifications) before we spend an API
+//      call. Cheap insurance against deliverability damage.
+//
+// Returns Resend-style { data, error } shape so existing error-handling
+// code (~20 call sites) doesn't need to change pattern.
+//   success → { data: { id: '<providerId>' }, error: null }
+//   failure → { data: null, error: { message: '...', suppressed?: true } }
+
+// Cached SES client (lazy init — only constructed when first SES send
+// happens, so Functions that never send email don't pay the cold-start
+// cost of the AWS SDK init). Same instance reused across calls in the
+// same warm container.
+let _sesClientCache = null;
+function getSesClient() {
+  if (_sesClientCache) return _sesClientCache;
+  _sesClientCache = new SESv2Client({
+    region: awsSesRegion.value() || 'us-east-1',
+    credentials: {
+      accessKeyId:     awsAccessKey.value(),
+      secretAccessKey: awsSecretKey.value(),
+    },
+  });
+  return _sesClientCache;
+}
+
+// Normalize an email address for suppression-list lookups. Strips
+// surrounding angle brackets (extracting from `Name <addr@dom>` form),
+// trims, lowercases. Plus-addressing is preserved (foo+bar@gmail !=
+// foo@gmail) since Gmail does treat them as the same mailbox but other
+// providers don't, and AWS reports the exact address bounce — keep
+// fidelity with what SES saw.
+function normalizeEmailAddr(addr) {
+  if (!addr) return '';
+  const match = String(addr).match(/<([^>]+)>/);
+  const email = match ? match[1] : String(addr);
+  return email.trim().toLowerCase();
+}
+
+// Suppression key — sha256 of normalized address, truncated to 32 chars.
+// Hashing avoids storing raw email PII as a doc id, and bypasses
+// Firestore's restrictions on certain characters (`/`, `__`, etc.) that
+// can appear in user-controlled addresses. Collisions at 32 hex chars
+// are vanishingly unlikely (~10^38 space).
+function suppressionKey(email) {
+  const norm = normalizeEmailAddr(email);
+  return crypto.createHash('sha256').update(norm).digest('hex').slice(0, 32);
+}
+
+async function isEmailSuppressed(db, email) {
+  const norm = normalizeEmailAddr(email);
+  if (!norm) return false;
+  try {
+    const snap = await db.doc(`platform/suppression/byHash/${suppressionKey(norm)}`).get();
+    return snap.exists;
+  } catch (e) {
+    console.warn(`[isEmailSuppressed] read failed for ${norm}:`, e?.message);
+    // Fail-open: don't block legitimate sends on a Firestore outage.
+    // SES's account-level suppression list (which we also enable) is
+    // the second layer of defense if our DB-side check misses.
+    return false;
+  }
+}
+
+async function markEmailSuppressed(db, email, reason, tenantId, at) {
+  const norm = normalizeEmailAddr(email);
+  if (!norm) return;
+  await db.doc(`platform/suppression/byHash/${suppressionKey(norm)}`).set({
+    emailNorm: norm,
+    reason:    reason || 'unspecified',
+    tenantId:  tenantId || null,
+    at:        at || new Date().toISOString(),
+  }, { merge: true });
+}
+
+// Main entry point — every email-sending site in the codebase calls
+// sendEmail(). Provider routing + suppression precheck + tenant
+// attribution all happen here.
+//
+// Params:
+//   from      — RFC 5322 mailbox, e.g. "Salon Name <noreply@send.plumenexus.com>"
+//   to        — single recipient address (multi-recipient sends use
+//               separate sendEmail calls — simpler error attribution)
+//   subject   — string
+//   html      — string
+//   replyTo   — optional, single address
+//   tags      — optional, [{ name, value }] tags forwarded to provider
+//   tenantId  — optional, attaches a "tenant" tag for SES → SNS
+//               attribution (so bounce events know which tenant's
+//               campaign caused them)
+async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId }) {
+  if (!from || !to || !subject || !html) {
+    return { data: null, error: { message: 'missing_required_field' } };
+  }
+  const db = getFirestore();
+  if (await isEmailSuppressed(db, to)) {
+    console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)}`);
+    return { data: null, error: { message: 'address_suppressed', suppressed: true } };
+  }
+  const provider = (emailProvider.value() || 'resend').toLowerCase();
+  try {
+    const id = provider === 'ses'
+      ? await sendViaSES   ({ from, to, subject, html, replyTo, tags, tenantId })
+      : await sendViaResend({ from, to, subject, html, replyTo, tags });
+    return { data: { id }, error: null };
+  } catch (e) {
+    console.error(`[sendEmail] provider=${provider} to=${to} failed:`, e?.message);
+    return { data: null, error: { message: e?.message || 'send_failed', name: e?.name || 'SendError' } };
+  }
+}
+
+async function sendViaResend({ from, to, subject, html, replyTo, tags }) {
+  const apiKey = resendKey.value();
+  if (!apiKey) throw new Error('resend_not_configured');
+  const resend = new Resend(apiKey);
+  const res = await resend.emails.send({
+    from, to, subject, html,
+    reply_to: replyTo || undefined,
+    tags:     Array.isArray(tags) ? tags : undefined,
+  });
+  // Resend returns { data, error } — surface error as throw so caller
+  // gets a uniform shape from sendEmail.
+  if (res.error) throw new Error(res.error.message || JSON.stringify(res.error));
+  return res.data?.id || null;
+}
+
+async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId }) {
+  const sid = awsAccessKey.value();
+  const tok = awsSecretKey.value();
+  if (!sid || !tok) throw new Error('ses_not_configured');
+  const ses = getSesClient();
+  // SES email tags: lower-case alphanumeric + `_-`. Tenant id is already
+  // lower-case alphanumeric. Other tag values get sanitized.
+  const cleanTagValue = v => String(v || '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 256);
+  const sesTags = [
+    ...(tenantId ? [{ Name: 'tenant', Value: cleanTagValue(tenantId) }] : []),
+    ...(Array.isArray(tags) ? tags.map(t => ({
+      Name:  cleanTagValue(t.name || ''),
+      Value: cleanTagValue(t.value || ''),
+    })).filter(t => t.Name) : []),
+  ];
+  const cmd = new SendEmailCommand({
+    FromEmailAddress: from,
+    Destination:      { ToAddresses: [to] },
+    Content: {
+      Simple: {
+        Subject: { Data: subject, Charset: 'UTF-8' },
+        Body:    { Html: { Data: html, Charset: 'UTF-8' } },
+      },
+    },
+    ReplyToAddresses:     replyTo ? [replyTo] : undefined,
+    EmailTags:            sesTags.length ? sesTags : undefined,
+    ConfigurationSetName: awsSesConfigSet.value() || undefined,
+  });
+  const res = await ses.send(cmd);
+  return res?.MessageId || null;
 }
 
 // ── Multi-tenant iteration helper ─────────────────────────────────────────────
@@ -7588,3 +7768,106 @@ exports.runIntegrityScan = onSchedule(
     });
   }
 );
+
+
+// ── SES bounce / complaint webhook (via SNS) ──────────────────────────────
+// SES Configuration Set → Event destination → SNS topic → HTTPS subscription
+// pointed at this Cloud Function. Two message types arrive:
+//
+//   1. SubscriptionConfirmation — sent ONCE when the SNS topic is first
+//      subscribed to this endpoint. Body contains a SubscribeURL we must
+//      GET to confirm. Without this, the subscription stays "pending" and
+//      no events flow.
+//
+//   2. Notification — the actual bounce/complaint/delivery events. Body
+//      is the SES event JSON nested under .Message (as a string). Each
+//      bounced/complained recipient is added to platform/suppression/
+//      with the original tenantId (from EmailTags) preserved for
+//      attribution.
+//
+// Signature verification (SNS includes Signature + SigningCertURL): NOT
+// implemented in this first pass. Threat model is "an attacker who knows
+// our public webhook URL can spam fake bounce events → causes us to
+// suppress legitimate addresses." Mitigation: webhook URL is unguessable
+// (uses Cloud Functions's default hash-suffixed URL), and we'll add full
+// SNS signature verification before scale or before exposing this URL
+// in docs / repo. Documented gap; revisit at Phase 5 cutover.
+exports.sesEventWebhook = onRequest({ cors: false, timeoutSeconds: 30 }, async (req, res) => {
+  try {
+    const headerType = req.headers['x-amz-sns-message-type'];
+    const body = req.body || {};
+    const type = headerType || body.Type;
+
+    if (type === 'SubscriptionConfirmation') {
+      const subUrl = body.SubscribeURL;
+      if (!subUrl) { res.status(400).send('missing SubscribeURL'); return; }
+      // Confirm by hitting the SubscribeURL. AWS retries the
+      // confirmation message if we don't, but only a few times — make
+      // sure this side succeeds.
+      const confirmRes = await fetch(subUrl).catch(e => ({ status: 0, _err: e?.message }));
+      if (confirmRes._err) {
+        console.error('[sesEventWebhook] subscription confirm fetch failed:', confirmRes._err);
+        res.status(500).send('confirm fetch failed');
+        return;
+      }
+      console.log(`[sesEventWebhook] SNS subscription confirmed (status=${confirmRes.status})`);
+      res.status(200).send('subscribed');
+      return;
+    }
+
+    if (type !== 'Notification') {
+      // UnsubscribeConfirmation or unknown — ack and ignore.
+      res.status(200).send('ignored');
+      return;
+    }
+
+    const inner = typeof body.Message === 'string' ? JSON.parse(body.Message) : (body.Message || {});
+    // Two SES event shapes we care about — bounces and complaints.
+    // Deliveries + opens are noisy and not actionable for suppression;
+    // they'd be useful for analytics but skipped for now.
+    const eventType = inner.notificationType || inner.eventType || '';
+    let recipients = [];
+    let reason     = String(eventType || 'unknown').toLowerCase();
+
+    if (/^Bounce$/i.test(eventType)) {
+      recipients = (inner.bounce?.bouncedRecipients || []).map(r => r.emailAddress).filter(Boolean);
+      reason = `bounce:${inner.bounce?.bounceType || ''}/${inner.bounce?.bounceSubType || ''}`.toLowerCase();
+    } else if (/^Complaint$/i.test(eventType)) {
+      recipients = (inner.complaint?.complainedRecipients || []).map(r => r.emailAddress).filter(Boolean);
+      reason = `complaint:${inner.complaint?.complaintFeedbackType || 'unspecified'}`.toLowerCase();
+    } else {
+      res.status(200).send('event type ignored');
+      return;
+    }
+
+    // Tenant attribution. EmailTags arrive as either an object (rare —
+    // pre-pinpoint SES) or as `[{name, value}, ...]` in some shapes;
+    // SES sends them as `tags: { tenant: ['<tid>'] }` in the standard
+    // notification payload. Try both shapes.
+    let tenantId = null;
+    const rawTags = inner.mail?.tags || {};
+    if (rawTags && typeof rawTags === 'object') {
+      const t = rawTags.tenant;
+      if (Array.isArray(t) && t.length) tenantId = String(t[0]);
+      else if (typeof t === 'string')   tenantId = t;
+    }
+
+    const db = getFirestore();
+    const now = new Date().toISOString();
+    let processed = 0;
+    for (const addr of recipients) {
+      try {
+        await markEmailSuppressed(db, addr, reason, tenantId, now);
+        processed++;
+      } catch (e) {
+        console.error(`[sesEventWebhook] suppression write failed for ${addr}:`, e?.message);
+      }
+    }
+    console.log(`[sesEventWebhook] processed eventType=${eventType} reason=${reason} suppressed=${processed} tenant=${tenantId || 'n/a'}`);
+    res.status(200).send('ok');
+  } catch (e) {
+    console.error('[sesEventWebhook] handler crashed:', e?.message, e?.stack);
+    // 200 so AWS doesn't retry-storm us on our own bug. Surfaces in logs.
+    res.status(200).send('error');
+  }
+});
