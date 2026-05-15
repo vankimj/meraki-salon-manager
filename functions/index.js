@@ -369,8 +369,8 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId }) {
 async function sendViaResend({ from, to, subject, html, replyTo, tags }) {
   const apiKey = resendKey.value();
   if (!apiKey) throw new Error('resend_not_configured');
-  const resend = new Resend(apiKey);
-  const res = await resend.emails.send({
+  const resendClient = new Resend(apiKey);
+  const res = await resendClient.emails.send({
     from, to, subject, html,
     reply_to: replyTo || undefined,
     tags:     Array.isArray(tags) ? tags : undefined,
@@ -650,8 +650,7 @@ exports.sendReceiptEmail = onDocumentCreated(
 </html>`;
 
     try {
-      const resend = new Resend(apiKey);
-      const { error } = await resend.emails.send({
+      const { error } = await sendEmail({
         from:    await tenantFromAddress(getFirestore(), tenantId),
         to:      clientEmail,
         subject: `Your receipt — ${fmtDate(date)}`,
@@ -743,8 +742,6 @@ async function processEmailCampaign(tenantId, docRef, data) {
     attemptedCount: 0,
     attempts: [],
   });
-
-  const resend = new Resend(apiKey);
   const fromAddr = await tenantFromAddress(getFirestore(), tenantId);
   const brand    = await tenantBranding(getFirestore(), tenantId);
   const subject = data.subject || '';
@@ -824,7 +821,7 @@ async function processEmailCampaign(tenantId, docRef, data) {
         .replace(/\n/g, '<br>');
 
       try {
-        const result = await resend.emails.send({
+        const result = await sendEmail({
           from:    fromAddr,
           to:      email,
           subject: personalizedSubject,
@@ -1377,8 +1374,6 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 
   const apiKey = resendKey.value();
   if (!apiKey) throw new HttpsError('unavailable', 'Resend not configured');
-  const resend = new Resend(apiKey);
-
   const firstName = (emp.name || 'there').split(' ')[0];
   const brand = await tenantBranding(db, tenantId);
   const html = buildAutoEmail(
@@ -1390,7 +1385,7 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
     signInUrl,
     brand
   );
-  await resend.emails.send({
+  await sendEmail({
     from:    await tenantFromAddress(db, tenantId),
     to:      email,
     subject: `You're invited to ${salonName}'s team on Plume Nexus`,
@@ -1658,8 +1653,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
 
     try {
       const fromAddr = await tenantFromAddress(db0, tenantId);
-      const resend = new Resend(apiKey);
-      const { error } = await resend.emails.send({
+      const { error } = await sendEmail({
         from:    fromAddr,
         to:      clientEmail,
         subject: `How was your visit? We'd love your feedback 💅`,
@@ -1677,7 +1671,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
         const techEmail = empSnap.empty ? null : (empSnap.docs[0].data().email || '').trim();
         if (techEmail) {
           const tFirstName = (empSnap.docs[0].data().name || data.techName).split(' ')[0];
-          await resend.emails.send({
+          await sendEmail({
             from:    fromAddr,
             to:      techEmail,
             subject: `Review request sent to ${clientName}`,
@@ -1732,8 +1726,6 @@ exports.sendAccessRequestNotification = onDocumentCreated(
     const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
     if (!adminEmails.length) return;
     const admins = adminEmails.map(email => ({ email }));
-
-    const resend = new Resend(apiKey);
     const name   = req.name || req.email;
     const brand  = await tenantBranding(db, tenantId);
 
@@ -1766,7 +1758,7 @@ exports.sendAccessRequestNotification = onDocumentCreated(
 
     const fromAddr = await tenantFromAddress(db, tenantId);
     await Promise.all(admins.map(admin =>
-      resend.emails.send({
+      sendEmail({
         from:    fromAddr,
         to:      admin.email,
         subject: `Access request — ${name}`,
@@ -1843,8 +1835,6 @@ exports.sendApptNotification = onDocumentCreated(
         await ref.update({ error: 'resend_not_configured' });
         return;
       }
-
-      const resend   = new Resend(apiKey);
       const brand    = await tenantBranding(db, tenantId);
       const isHandbookReminder = data.changeType === 'handbook_reminder';
       const subject  = isHandbookReminder
@@ -1853,7 +1843,7 @@ exports.sendApptNotification = onDocumentCreated(
       const html     = isHandbookReminder
         ? buildHandbookReminderHtml(data, empSnap.docs[0].data().name, brand)
         : buildHtml(data, brand);
-      const { error } = await resend.emails.send({
+      const { error } = await sendEmail({
         from:    await tenantFromAddress(db, tenantId),
         to:      email,
         subject,
@@ -2073,7 +2063,7 @@ function buildMeetingReminderHtml(meeting, participantName, timeLabel, brand) {
 async function sendMeetingReminderBatch(resend, fromAddr, brand, meeting, participants, timeLabel, ref, flag) {
   const withEmail = (participants || []).filter(p => p.email);
   await Promise.all(withEmail.map(p =>
-    resend.emails.send({
+    sendEmail({
       from:    fromAddr,
       to:      p.email,
       subject: `Starting in ${timeLabel}: ${meeting.title}`,
@@ -2089,7 +2079,6 @@ exports.sendMeetingReminders = onSchedule(
   async () => {
     const apiKey = resendKey.value();
     if (!apiKey) { console.warn('[MeetingReminders] RESEND_API_KEY not set — skipping'); return; }
-    const resend = new Resend(apiKey);
     const today  = new Date().toISOString().slice(0, 10);
     const now    = Date.now();
 
@@ -2134,7 +2123,6 @@ exports.sendDailyReminders = onSchedule(
       console.warn('[Reminders] RESEND_API_KEY not set — skipping');
       return;
     }
-    const resend   = new Resend(apiKey);
     const tomorrow = tomorrowStr();
 
     await forEachActiveTenant('Reminders', async (tenantId, tData) => {
@@ -2172,7 +2160,7 @@ exports.sendDailyReminders = onSchedule(
         }
 
         try {
-          const { error } = await resend.emails.send({
+          const { error } = await sendEmail({
             from:    fromAddr,
             to:      email,
             subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
@@ -2205,8 +2193,6 @@ exports.sendTechAppointmentReminders = onSchedule(
   },
   async () => {
     const apiKey = resendKey.value();
-    const resend = apiKey ? new Resend(apiKey) : null;
-
     const twSid       = twilioSid.value();
     const twToken     = twilioToken.value();
     const twApiKeySid = twilioApiKeySid.value();
@@ -2341,7 +2327,7 @@ exports.sendTechAppointmentReminders = onSchedule(
                </table>`,
               null, null, brand
             );
-            const { error } = await resend.emails.send({
+            const { error } = await sendEmail({
               from: fromAddr,
               to: emp.email.trim(),
               subject,
@@ -2421,7 +2407,6 @@ exports.sendBookingConfirmation = onDocumentCreated(
     // appt.* fields here come from the public booking form (anyone can submit
     // an appointment doc). Every interpolation below MUST be HTML-escaped so
     // an attacker can't inject markup into mail sent from the verified domain.
-    const resend    = new Resend(apiKey);
     const brand     = await tenantBranding(db, tenantId);
     const firstName = (appt.clientName || 'there').split(' ')[0];
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
@@ -2476,7 +2461,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
         } catch { /* fall through — assume opted-in */ }
       }
       if (emailOk) {
-        await resend.emails.send({
+        await sendEmail({
           from:    await tenantFromAddress(db, tenantId),
           to:      appt.clientEmail,
           subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
@@ -2521,7 +2506,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
 </body>
 </html>`;
         await Promise.all(admins.map(a =>
-          resend.emails.send({
+          sendEmail({
             from:    adminFrom,
             to:      a.email,
             subject: `New online booking — ${appt.clientName} on ${fmtDate(appt.date)}`,
@@ -2635,8 +2620,6 @@ exports.sendChatNotification = onDocumentCreated(
     const adminEmails = usersSnap.exists ? (usersSnap.data().adminEmails || []) : [];
     const admins      = adminEmails.map(email => ({ email }));
     if (!admins.length) return;
-
-    const resend    = new Resend(apiKey);
     const brand     = await tenantBranding(db, tenantId);
     const firstName = (data.clientName || 'A client').split(' ')[0];
     const preview   = (data.preview || '').slice(0, 120);
@@ -2661,7 +2644,7 @@ exports.sendChatNotification = onDocumentCreated(
 
     const fromAddr = await tenantFromAddress(db, tenantId);
     await Promise.all(admins.map(a =>
-      resend.emails.send({
+      sendEmail({
         from:    fromAddr,
         to:      a.email,
         subject: `New message from ${data.clientName || 'a client'}`,
@@ -2726,11 +2709,9 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
         }
       }
     }
-
-    const resend = new Resend(apiKey);
     const fromAddr = await tenantFromAddress(db, tenantId);
     await Promise.all(recipients.map(r =>
-      resend.emails.send({
+      sendEmail({
         from:    fromAddr,
         to:      r.email,
         subject: `New ${data.rating || 5}-star Google review — ${data.clientName || 'client'}`,
@@ -3843,8 +3824,6 @@ exports.autoBirthdayCampaign = onSchedule(
   async () => {
     const apiKey = resendKey.value();
     if (!apiKey) return;
-    const resend = new Resend(apiKey);
-
     const now  = new Date();
     const mm   = String(now.getMonth() + 1).padStart(2, '0');
     const dd   = String(now.getDate()).padStart(2, '0');
@@ -3888,7 +3867,7 @@ exports.autoBirthdayCampaign = onSchedule(
         const html = buildAutoEmail("Happy Birthday! 🎂", firstName, body, "Book Your Birthday Visit", bookingUrl, brand);
 
         try {
-          const { error } = await resend.emails.send({
+          const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
             subject: `Happy Birthday, ${firstName}! 🎂 A gift from ${tenantShort}`,
@@ -3915,8 +3894,6 @@ exports.autoLapsedCampaign = onSchedule(
   async () => {
     const apiKey = resendKey.value();
     if (!apiKey) return;
-    const resend = new Resend(apiKey);
-
     // skipPaused: re-engagement CTA points at booking — pointless during a
     // closure window.
     await forEachActiveTenant('LapsedAuto', async (tenantId, tData) => {
@@ -3966,7 +3943,7 @@ exports.autoLapsedCampaign = onSchedule(
         const html = buildAutoEmail("We miss you! 💅", firstName, body, "Book Your Next Visit", bookingUrl, brand);
 
         try {
-          const { error } = await resend.emails.send({
+          const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
             subject: `We miss you, ${firstName}! Come see us 💅`,
@@ -4120,8 +4097,7 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   // owner doesn't recognize their own salon as a sender yet).
   const apiKey = resendKey.value();
   if (apiKey) {
-    const resend = new Resend(apiKey);
-    await resend.emails.send({
+    await sendEmail({
       from: 'Plume Nexus <noreply@plumenexus.com>',
       to:   ownerEmail,
       subject: `Welcome to Plume Nexus — ${salonName} is ready`,
@@ -4856,8 +4832,6 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
   if (!isSafeCtaUrl(url, ['checkout.stripe.com', 'billing.stripe.com', 'buy.stripe.com'])) {
     throw new HttpsError('failed-precondition', 'No valid Stripe payment link on this membership — generate one first');
   }
-
-  const resend  = new Resend(apiKey);
   const firstName = (client.name || 'there').split(' ')[0];
   const brand = await tenantBranding(db, tenantId);
   const html = buildAutoEmail(
@@ -4869,7 +4843,7 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
     url,
     brand
   );
-  await resend.emails.send({
+  await sendEmail({
     from:    await tenantFromAddress(db, tenantId),
     to:      client.email.trim(),
     subject: `Complete your ${plan.name} membership`,
@@ -5234,8 +5208,6 @@ exports.sendMeetingInvites = onCall(async (request) => {
   const meeting = { id: snap.id, ...snap.data() };
   const participants = Array.isArray(meeting.participants) ? meeting.participants : [];
   if (participants.length === 0) throw new HttpsError('failed-precondition', 'Meeting has no participants');
-
-  const resend = new Resend(apiKey);
   const ics = buildIcsForMeeting(meeting);
   const icsB64 = Buffer.from(ics, 'utf8').toString('base64');
   const sentAt = new Date().toISOString();
@@ -5249,7 +5221,7 @@ exports.sendMeetingInvites = onCall(async (request) => {
     if (!email) { updated.push(p); skipped++; continue; }
     const token = p.inviteToken || (require('crypto').randomUUID());
     try {
-      await resend.emails.send({
+      await sendEmail({
         from:    fromAddr,
         to:      email,
         subject: `You're invited: ${meeting.title || 'meeting'} · ${fmtDate(meeting.date)}`,
@@ -5659,19 +5631,19 @@ ${esc(brand.addressLine || '')}
 </p>
 </div></body></html>`;
 
-  const resend = new Resend(apiKey);
   const fromAddr = await tenantFromAddress(db, tenantId);
   let resendId = null, resendError = null;
   try {
-    const result = await resend.emails.send({
+    const result = await sendEmail({
       from: fromAddr,
       to: email,
       subject,
       html,
       replyTo: fromAddr, // future: per-staff inbox; for now just the salon's address
+      tenantId,
     });
     if (result?.error) {
-      resendError = `${result.error.name || 'RESEND_ERROR'}: ${result.error.message || JSON.stringify(result.error)}`;
+      resendError = `${result.error.name || 'SEND_ERROR'}: ${result.error.message || JSON.stringify(result.error)}`;
       console.error('[sendDirectEmail]', resendError);
       throw new HttpsError('internal', resendError);
     }
@@ -5710,11 +5682,6 @@ ${esc(brand.addressLine || '')}
 // Skipped silently when there's no recipientEmail (e.g. walk-in gift
 // where buyer takes the printed card).
 async function processGiftCardEmail(tenantId, docRef, data) {
-  const apiKey = resendKey.value();
-  if (!apiKey) {
-    await docRef.update({ emailStatus: 'failed', emailErrorCode: 'RESEND_NOT_CONFIGURED', emailErrorReason: 'Resend API key missing' });
-    return;
-  }
   const recipientEmail = (data.recipientEmail || '').trim();
   if (!recipientEmail) {
     await docRef.update({ emailStatus: 'skipped', emailErrorReason: 'No recipient email on file' });
@@ -5723,7 +5690,6 @@ async function processGiftCardEmail(tenantId, docRef, data) {
 
   await docRef.update({ emailStatus: 'sending', emailStartedAt: new Date().toISOString() });
 
-  const resend = new Resend(apiKey);
   const brand  = await tenantBranding(getFirestore(), tenantId);
   const recipientName = (data.recipientName || '').trim() || 'there';
   const code = data.code || '';
@@ -5756,14 +5722,15 @@ async function processGiftCardEmail(tenantId, docRef, data) {
 
   let resendId = null, errorCode = null, errorReason = null;
   try {
-    const result = await resend.emails.send({
+    const result = await sendEmail({
       from: await tenantFromAddress(getFirestore(), tenantId),
       to:   recipientEmail,
       subject: `🎁 You've received a $${amount.toFixed(2)} gift card`,
       html,
+      tenantId,
     });
     if (result?.error) {
-      errorCode   = result.error.name || result.error.statusCode || 'RESEND_ERROR';
+      errorCode   = result.error.name || result.error.statusCode || 'SEND_ERROR';
       errorReason = result.error.message || JSON.stringify(result.error);
     } else {
       resendId = result?.data?.id || null;
@@ -6047,13 +6014,10 @@ exports.submitContactInquiry = onCall(
     };
     const ref = await db.collection('plumenexus_inquiries').add(inquiry);
 
-    // Email founder via Resend if configured
-    const apiKey = resendKey.value();
-    if (apiKey) {
-      try {
-        const resend = new Resend(apiKey);
-        const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const html = `
+    // Email founder
+    try {
+      const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const html = `
 <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a1f2e;">
   <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#5b3b8c;text-transform:uppercase;margin-bottom:6px;">PLUME NEXUS · NEW INQUIRY</div>
   <h2 style="margin:0 0 18px;font-size:20px;color:#0f1923;">${esc(cleanName)} · ${esc(cleanSalon || 'No salon name given')}</h2>
@@ -6069,22 +6033,20 @@ exports.submitContactInquiry = onCall(
 </div>
         `.trim();
 
-        await resend.emails.send({
-          // Platform-level inquiry, not tenant-bound — always send from
-          // the Plume Nexus identity to my admin inbox.
-          from:     'Plume Nexus <noreply@plumenexus.com>',
-          to:       'jvankim@gmail.com',
-          replyTo:  cleanEmail,
-          subject:  `[Plume Nexus] ${cleanName} — ${cleanSalon || 'inquiry'}`,
-          html,
-        });
-        await ref.update({ emailedFounderAt: new Date().toISOString() });
-      } catch (e) {
-        console.error('[plumenexus.contact] Resend email failed', e);
-        await ref.update({ emailError: e?.message || String(e) });
-      }
-    } else {
-      console.warn('[plumenexus.contact] RESEND_API_KEY missing — inquiry recorded but no email sent');
+      const { error } = await sendEmail({
+        // Platform-level inquiry, not tenant-bound — always send from
+        // the Plume Nexus identity to my admin inbox.
+        from:     'Plume Nexus <noreply@plumenexus.com>',
+        to:       'jvankim@gmail.com',
+        replyTo:  cleanEmail,
+        subject:  `[Plume Nexus] ${cleanName} — ${cleanSalon || 'inquiry'}`,
+        html,
+      });
+      if (error) throw new Error(error.message);
+      await ref.update({ emailedFounderAt: new Date().toISOString() });
+    } catch (e) {
+      console.error('[plumenexus.contact] email failed', e);
+      await ref.update({ emailError: e?.message || String(e) });
     }
 
     return { ok: true, id: ref.id };
@@ -6180,14 +6142,21 @@ async function notifyPlatformAdmins(db, { subject, html, exceptEmail }) {
     return { sent: 0, reason: 'no-key' };
   }
   try {
-    const resend = new Resend(apiKey);
-    await resend.emails.send({
-      from: 'Plume Nexus Security <noreply@plumenexus.com>',
-      to:   recipients,
-      subject,
-      html,
-    });
-    return { sent: recipients.length };
+    // notifyPlatformAdmins fans out to multiple admins; sendEmail
+    // accepts a single `to`. Loop is simpler than refactoring the
+    // abstraction for multi-recipient (which would also obscure
+    // per-recipient suppression).
+    let sent = 0;
+    for (const to of recipients) {
+      const { error } = await sendEmail({
+        from: 'Plume Nexus Security <noreply@plumenexus.com>',
+        to,
+        subject,
+        html,
+      });
+      if (!error) sent++;
+    }
+    return { sent };
   } catch (e) {
     console.error('[notifyPlatformAdmins] send failed:', e.message);
     return { sent: 0, error: e.message };
@@ -7033,28 +7002,25 @@ exports.twilioStatusWebhook = onRequest({ cors: false, timeoutSeconds: 30 }, asy
 
     // Best-effort email notify (don't fail the webhook if email is broken).
     try {
-      const apiKey = resendKey.value();
-      if (apiKey) {
-        const tenSnap = await db.doc(`tenants/${tenantId}`).get();
-        const ownerEmail = tenSnap.exists ? trimOrNull(tenSnap.data().ownerEmail) : null;
-        if (ownerEmail) {
-          const resend = new Resend(apiKey);
-          const subject = mapped === 'approved' ? 'Your SMS is live ✅' :
-                          mapped === 'rejected' ? 'SMS verification needs changes' :
-                          mapped === 'pending_carrier' ? 'SMS verification — now in carrier review' : null;
-          if (subject) {
-            const body = mapped === 'approved'
-              ? `<p>Your Toll-Free number has been verified by carriers. SMS is now ready to send from Admin → Marketing.</p>`
-              : mapped === 'rejected'
-                ? `<p>The carriers flagged a change needed for verification:</p><blockquote style="border-left:3px solid #f59e0b;padding-left:12px;color:#666">${esc(rejectionReason || 'No reason provided.')}</blockquote><p>Open Admin → SMS Setup to edit and resubmit.</p>`
-                : `<p>Twilio approved your submission. It's now in front of the carriers (typically 2–7 business days).</p>`;
-            await resend.emails.send({
-              from:    await tenantFromAddress(db, tenantId),
-              to:      ownerEmail,
-              subject,
-              html:    `<div style="font-family:Inter,sans-serif;color:#222;padding:24px 0">${body}</div>`,
-            });
-          }
+      const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+      const ownerEmail = tenSnap.exists ? trimOrNull(tenSnap.data().ownerEmail) : null;
+      if (ownerEmail) {
+        const subject = mapped === 'approved' ? 'Your SMS is live ✅' :
+                        mapped === 'rejected' ? 'SMS verification needs changes' :
+                        mapped === 'pending_carrier' ? 'SMS verification — now in carrier review' : null;
+        if (subject) {
+          const body = mapped === 'approved'
+            ? `<p>Your Toll-Free number has been verified by carriers. SMS is now ready to send from Admin → Marketing.</p>`
+            : mapped === 'rejected'
+              ? `<p>The carriers flagged a change needed for verification:</p><blockquote style="border-left:3px solid #f59e0b;padding-left:12px;color:#666">${esc(rejectionReason || 'No reason provided.')}</blockquote><p>Open Admin → SMS Setup to edit and resubmit.</p>`
+              : `<p>Twilio approved your submission. It's now in front of the carriers (typically 2–7 business days).</p>`;
+          await sendEmail({
+            from:    await tenantFromAddress(db, tenantId),
+            to:      ownerEmail,
+            subject,
+            html:    `<div style="font-family:Inter,sans-serif;color:#222;padding:24px 0">${body}</div>`,
+            tenantId,
+          });
         }
       }
     } catch (_) { /* best effort */ }
@@ -7364,18 +7330,17 @@ exports.provisionTenant = onCall(
     // Step 4: welcome email. Best-effort — duplicate sends on retry are
     // tolerable; provisioning failure here doesn't roll back the tenant.
     try {
-      const apiKey = resendKey.value();
-      if (apiKey) {
-        const resend = new Resend(apiKey);
-        await resend.emails.send({
-          from:    'Plume Nexus <noreply@plumenexus.com>',
-          to:      ownerEmail,
-          subject: `Welcome to Plume Nexus — ${salonName} is ready`,
-          html:    buildWelcomeHtml(salonName, ownerEmail, slug, url),
-        });
-        await update({ 'steps.welcome_email': { ok: true, at: new Date().toISOString() } });
+      const { error } = await sendEmail({
+        from:     'Plume Nexus <noreply@plumenexus.com>',
+        to:       ownerEmail,
+        subject:  `Welcome to Plume Nexus — ${salonName} is ready`,
+        html:     buildWelcomeHtml(salonName, ownerEmail, slug, url),
+        tenantId,
+      });
+      if (error) {
+        await update({ 'steps.welcome_email': { ok: false, error: error.message, at: new Date().toISOString() } });
       } else {
-        await update({ 'steps.welcome_email': { ok: false, skipped: 'no RESEND_API_KEY', at: new Date().toISOString() } });
+        await update({ 'steps.welcome_email': { ok: true, at: new Date().toISOString() } });
       }
     } catch (e) {
       console.warn('[provisionTenant] welcome_email failed:', e.message);
