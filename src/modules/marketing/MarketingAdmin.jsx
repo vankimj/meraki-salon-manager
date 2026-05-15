@@ -3,7 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { fetchClients, fetchAppointmentsByRange, subscribeToCampaigns, createCampaign, deleteCampaign, cancelCampaign,
          fetchEmployees, fetchServices, fetchPromoCodes,
          fetchCampaignTemplates, saveCampaignTemplate, deleteCampaignTemplate,
-         fetchReviewReceived } from '../../lib/firestore';
+         fetchReviewReceived,
+         subscribeTenantRegistry, subscribeSandboxSmsLog, purgeSandboxSmsLog } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 import GoogleReviewsPanel from '../../components/GoogleReviewsPanel';
 
@@ -263,6 +264,7 @@ export default function MarketingAdmin() {
     { id: 'campaigns',  label: 'Campaigns' },
     { id: 'automations', label: 'Automations' },
     { id: 'reviews',    label: 'Google Reviews' },
+    { id: 'testmode',   label: '🧪 SMS Test Mode' },
   ];
 
   return (
@@ -286,6 +288,8 @@ export default function MarketingAdmin() {
         <GoogleReviewsPanel />
       ) : tab === 'automations' ? (
         <AutomationsPanel settings={settings} updateSettings={updateSettings} isAdmin={isAdmin} showToast={showToast} />
+      ) : tab === 'testmode' ? (
+        <SmsTestModePanel settings={settings} updateSettings={updateSettings} isAdmin={isAdmin} showToast={showToast} />
       ) : (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 20 }}>
@@ -333,6 +337,171 @@ export default function MarketingAdmin() {
 }
 
 // ── Automations panel ──────────────────────────────────
+// SMS Test Mode — owner-controlled sandbox for previewing campaigns +
+// other outbound SMS without dispatching real messages or spending
+// money. Toggle writes settings.smsTestMode; the Cloud Functions side
+// (isSandboxTenant) ORs it with the platform-admin sandboxMode flag,
+// so either one being true routes every send to sandboxSmsLog.
+// Panel also surfaces the live inbox so the owner can inspect each
+// fake send (body, recipient, kind).
+function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
+  const [tenantInfo, setTenantInfo] = useState(null);
+  const [log, setLog]               = useState(null);
+  const [busy, setBusy]             = useState(false);
+
+  useEffect(() => subscribeTenantRegistry(setTenantInfo), []);
+  useEffect(() => subscribeSandboxSmsLog(setLog, 200), []);
+
+  const platformSandbox = Boolean(tenantInfo?.sandboxMode);
+  const ownerTestMode   = Boolean(settings?.smsTestMode);
+  const effective       = platformSandbox || ownerTestMode;
+
+  async function toggleTestMode() {
+    if (!isAdmin) { showToast('Admin only'); return; }
+    setBusy(true);
+    try {
+      await updateSettings({ ...settings, smsTestMode: !ownerTestMode });
+      logActivity(ownerTestMode ? 'sms_test_mode_off' : 'sms_test_mode_on', '');
+      showToast(ownerTestMode ? 'Test mode OFF — sends use real Twilio' : 'Test mode ON — sends route to inbox');
+    } catch (e) { showToast('Failed: ' + e.message, 3000); }
+    finally { setBusy(false); }
+  }
+
+  async function handlePurge() {
+    if (!log?.length) return;
+    if (!confirm(`Purge all ${log.length} sandbox inbox entries? This can't be undone.`)) return;
+    setBusy(true);
+    try {
+      const n = await purgeSandboxSmsLog();
+      showToast(`Purged ${n} entries`);
+    } catch (e) { showToast('Purge failed: ' + e.message, 3000); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div>
+      {/* Status banner */}
+      <div style={{
+        padding: '14px 16px', marginBottom: 18,
+        background: effective ? '#fef3c7' : '#f0fdf4',
+        border: `1px solid ${effective ? '#fcd34d' : '#bbf7d0'}`,
+        borderRadius: 10,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: effective ? '#92400e' : '#166534', marginBottom: 4 }}>
+          {effective ? '🧪 SMS Test Mode is ON' : '✓ SMS is in Production'}
+        </div>
+        <div style={{ fontSize: 12, color: '#555', lineHeight: 1.55 }}>
+          {effective
+            ? 'All outbound SMS — campaigns, booking confirms, tech reminders, direct messages — route to the inbox below instead of Twilio. No charges, no real delivery.'
+            : 'SMS sends use real Twilio. TFN purchase $2/mo, ~$0.008 per SMS segment. Flip the toggle below to preview campaigns without spending.'}
+        </div>
+        {platformSandbox && (
+          <div style={{ fontSize: 11, color: '#92400e', marginTop: 6, fontStyle: 'italic' }}>
+            ⓘ This tenant is in platform-level sandbox (set by Plume Nexus). Test mode is forced ON regardless of the toggle below — contact your account rep to switch to production.
+          </div>
+        )}
+      </div>
+
+      {/* Owner toggle */}
+      <div style={{
+        padding: 16, marginBottom: 18,
+        background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10,
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>
+              Owner-controlled test mode
+            </div>
+            <div style={{ fontSize: 12, color: '#666', lineHeight: 1.55 }}>
+              Preview the next campaign before it goes out. Send to your real client list — every message lands in the inbox below with the personalization filled in, so you can verify the wording, the promo code, the merge tags. Flip OFF to resume real Twilio delivery.
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: isAdmin && !platformSandbox ? 'pointer' : 'default', whiteSpace: 'nowrap' }}>
+            <input
+              type="checkbox"
+              checked={ownerTestMode}
+              onChange={toggleTestMode}
+              disabled={!isAdmin || busy || platformSandbox}
+              style={{ accentColor: '#92400e', transform: 'scale(1.2)' }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: ownerTestMode ? '#92400e' : '#888' }}>
+              {ownerTestMode ? 'ON' : 'OFF'}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Inbox */}
+      <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>
+          Sandbox inbox {log?.length ? `(${log.length})` : ''}
+        </h3>
+        {log?.length > 0 && (
+          <button onClick={handlePurge} disabled={busy || !isAdmin} style={{
+            padding: '6px 12px', fontSize: 11, fontWeight: 600,
+            background: 'transparent', color: '#7f1d1d',
+            border: '1px solid #fca5a5', borderRadius: 6,
+            cursor: busy || !isAdmin ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>
+            Purge all
+          </button>
+        )}
+      </div>
+
+      {log === null ? (
+        <div style={{ padding: 24, textAlign: 'center', color: '#bbb', fontSize: 13 }}>Loading…</div>
+      ) : log.length === 0 ? (
+        <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13, background: '#fafafa', borderRadius: 10, border: '1px dashed #d0d0d0' }}>
+          {effective
+            ? 'No fake sends yet. Run a campaign or trigger a booking to see messages here.'
+            : 'No entries — test mode has never been on for this tenant.'}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {log.map(row => (
+            <SandboxLogRow key={row.id} row={row} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SandboxLogRow({ row }) {
+  const kindBadge = {
+    campaign:       { label: 'Campaign',        color: '#1d4ed8', bg: '#eff6ff' },
+    direct:         { label: 'Direct message',  color: '#0e7490', bg: '#ecfeff' },
+    tech_reminder:  { label: 'Tech reminder',   color: '#a16207', bg: '#fefce8' },
+    pause_forward:  { label: 'Pause forward',   color: '#7c3aed', bg: '#f5f3ff' },
+    booking_confirm:{ label: 'Booking confirm', color: '#15803d', bg: '#f0fdf4' },
+    otp:            { label: 'OTP',             color: '#be123c', bg: '#fff1f2' },
+  }[row.kind] || { label: row.kind || 'sms', color: '#525252', bg: '#f5f5f5' };
+  const when = row.at ? new Date(row.at).toLocaleString() : '—';
+  return (
+    <div style={{ padding: 12, background: '#fff', border: '1px solid #e8e8e8', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', background: kindBadge.bg, color: kindBadge.color, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            {kindBadge.label}
+          </span>
+          {row.recipientName && (
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{row.recipientName}</span>
+          )}
+          {row.to && (
+            <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{row.to}</span>
+          )}
+        </div>
+        <span style={{ fontSize: 11, color: '#888' }}>{when}</span>
+      </div>
+      <div style={{ fontSize: 12, color: '#333', lineHeight: 1.5, whiteSpace: 'pre-wrap', background: '#fafafa', padding: '8px 10px', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+        {row.body || '(no body)'}
+      </div>
+      {row.campaignName && (
+        <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Campaign: {row.campaignName}</div>
+      )}
+    </div>
+  );
+}
+
 // Birthday + lapsed-client emails. Settings live on the same tenant settings
 // doc the rest of the app uses, so flipping a toggle here updates the
 // Cloud-Function-driven schedule immediately on next save.

@@ -491,6 +491,16 @@ service cloud.firestore {
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
+      // Sandbox SMS log — every fake outbound SMS gets a row here when
+      // the tenant is in sandbox mode. Inspectable by tenant admins via
+      // the Marketing → SMS Test Mode panel. Server-only writes (the
+      // Cloud Functions that handle each send path). Admins can delete
+      // (purge the log) but not create or update — append-only.
+      match /sandboxSmsLog/{logId} {
+        allow read, delete: if isTenantAdmin(tenantId);
+        allow write:        if false;
+      }
+
       // Campaign templates: admin only
       match /campaignTemplates/{tplId} {
         allow read, write: if isTenantAdmin(tenantId);

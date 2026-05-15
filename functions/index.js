@@ -2174,15 +2174,26 @@ exports.sendTechAppointmentReminders = onSchedule(
           }
         }
 
-        if (wantsSms && smsClient && emp.phone) {
+        if (wantsSms && emp.phone) {
           try {
             const phone = normalizePhone(emp.phone);
             if (phone) {
               const body = `${tenantShort}: ${clientLabel} at ${startLabel} (in ${minutesAway} min) — ${services.slice(0, 80)}`;
-              const fromNumber = await tenantSmsFrom(db, tenantId);
-              if (!fromNumber) { console.warn(`[techReminders] no SMS from-number for tenant ${tenantId}, skipping`); continue; }
-              await smsClient.messages.create({ from: fromNumber, to: phone, body });
-              smsSent++;
+              if (await isSandboxTenant(db, tenantId)) {
+                await writeSandboxSmsLog(db, tenantId, {
+                  kind:          'tech_reminder',
+                  recipientName: emp.name || '',
+                  to:            phone,
+                  body,
+                  appointmentId: appt.id,
+                });
+                smsSent++;
+              } else if (smsClient) {
+                const fromNumber = await tenantSmsFrom(db, tenantId);
+                if (!fromNumber) { console.warn(`[techReminders] no SMS from-number for tenant ${tenantId}, skipping`); continue; }
+                await smsClient.messages.create({ from: fromNumber, to: phone, body });
+                smsSent++;
+              }
             }
           } catch (e) {
             console.error(`[TechReminders] SMS failed for ${emp.name} (tenant=${tenantId}):`, e.message);
@@ -4008,27 +4019,39 @@ async function processSMSCampaign(tenantId, docRef, data) {
   }
 
   // Sandbox short-circuit. Mark every recipient as 'sent' with a sandbox
-  // marker, write a single summary entry to sandboxSmsLog (not one per
-  // recipient — that'd dwarf the rest of the doc), and skip Twilio
-  // entirely. No money spent, no real delivery.
+  // marker AND write a per-recipient row to sandboxSmsLog so the owner
+  // can inspect each personalized message in the Marketing → SMS Test
+  // Mode panel. Skip Twilio entirely. No money spent, no real delivery.
   if (await isSandboxTenant(getFirestore(), tenantId)) {
+    const db = getFirestore();
     const now = new Date().toISOString();
-    const attempts = recipients.map(r => ({
-      name:         r.name || '(unknown)',
-      phone:        r.phone || '',
-      status:       'sent',
-      twilioStatus: 'sandbox',
-      twilioSid:    'SANDBOX',
-      promoCode:    null,
-      at:           now,
-    }));
-    await getFirestore().collection(`tenants/${tenantId}/sandboxSmsLog`).add({
-      kind:       'campaign',
-      campaignId: docRef.id,
-      body:       data.smsBody || '',
-      recipients: recipients.length,
-      at:         now,
-    });
+    const attempts = [];
+    for (const r of recipients) {
+      const phone = normalizePhone(r.phone) || r.phone || '';
+      const body = substitutePlaceholders(data.smsBody || '', {
+        firstName: r.name?.split(' ')[0] || 'there',
+        lastName:  r.name?.split(' ').slice(1).join(' ') || '',
+        promoCode: 'TEST123', // sandbox placeholder; real path would mint a real code
+      });
+      attempts.push({
+        name:         r.name || '(unknown)',
+        phone,
+        status:       'sent',
+        twilioStatus: 'sandbox',
+        twilioSid:    'SANDBOX',
+        promoCode:    'TEST123',
+        at:           now,
+      });
+      await writeSandboxSmsLog(db, tenantId, {
+        kind:          'campaign',
+        campaignId:    docRef.id,
+        campaignName:  data.name || '',
+        recipientName: r.name || '',
+        to:            phone,
+        body,
+        at:            now,
+      });
+    }
     await docRef.update({
       status:         'sent',
       sandbox:        true,
@@ -5253,19 +5276,30 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, as
           // to Mode A so the customer at least gets the closure notice.
           let forwarded = false;
           try {
-            const twSid       = twilioSid.value();
-            const twToken     = twilioToken.value();
-            const twApiKeySid = twilioApiKeySid.value();
-            const twFrom      = await tenantSmsFrom(db0, tenantId);
-            const fwdTo       = normalizePhone(pauseCfg.forwardPhone);
-            if (twSid && twToken && twFrom && fwdTo) {
-              const tw = require('twilio')(twApiKeySid || twSid, twToken,
-                twApiKeySid ? { accountSid: twSid } : undefined);
+            const fwdTo = normalizePhone(pauseCfg.forwardPhone);
+            if (!fwdTo) {
+              console.warn('[twilioInboundSms] pause-forward bad phone, falling back to auto-reply');
+            } else if (await isSandboxTenant(db0, tenantId)) {
               const fwdBody = `[Plume Nexus · while paused] From ${From}: ${Body.slice(0, 1400)}`;
-              await tw.messages.create({ from: twFrom, to: fwdTo, body: fwdBody });
+              await writeSandboxSmsLog(db0, tenantId, {
+                kind: 'pause_forward', to: fwdTo, body: fwdBody,
+                inboundFrom: From, inboundSid: Sid,
+              });
               forwarded = true;
             } else {
-              console.warn('[twilioInboundSms] pause-forward unavailable: missing Twilio creds or bad phone, falling back to auto-reply');
+              const twSid       = twilioSid.value();
+              const twToken     = twilioToken.value();
+              const twApiKeySid = twilioApiKeySid.value();
+              const twFrom      = await tenantSmsFrom(db0, tenantId);
+              if (twSid && twToken && twFrom) {
+                const tw = require('twilio')(twApiKeySid || twSid, twToken,
+                  twApiKeySid ? { accountSid: twSid } : undefined);
+                const fwdBody = `[Plume Nexus · while paused] From ${From}: ${Body.slice(0, 1400)}`;
+                await tw.messages.create({ from: twFrom, to: fwdTo, body: fwdBody });
+                forwarded = true;
+              } else {
+                console.warn('[twilioInboundSms] pause-forward unavailable: missing Twilio creds, falling back to auto-reply');
+              }
             }
           } catch (e) {
             console.error('[twilioInboundSms] pause-forward failed, falling back to auto-reply:', e.message);
@@ -5346,36 +5380,49 @@ exports.sendDirectSms = onCall({ cors: true, secrets: [twilioToken] }, async (re
   await requireTenantStaff(getFirestore(), tenantId, request);
   if (!clientId || !body) throw new HttpsError('invalid-argument', 'Missing clientId or body');
 
-  const sid       = twilioSid.value();
-  const token     = twilioToken.value();
-  const apiKeySid = twilioApiKeySid.value();
   const db = getFirestore();
-  const from      = await tenantSmsFrom(db, tenantId);
-  if (!sid || !token || !from) throw new HttpsError('failed-precondition', 'Twilio not configured');
-
   const cDoc = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
   if (!cDoc.exists) throw new HttpsError('not-found', 'Client not found');
   const client = { id: cDoc.id, ...cDoc.data() };
   const phone = normalizePhone(client.phone);
   if (!phone) throw new HttpsError('failed-precondition', `Cannot normalize client phone "${client.phone}"`);
 
-  const twilioSDK = require('twilio');
-  const tw = apiKeySid
-    ? twilioSDK(apiKeySid, token, { accountSid: sid })
-    : twilioSDK(sid, token);
-
   let twilioStatus = null, twilioError = null, msgSid = null;
-  try {
-    const msg = await tw.messages.create({ body, from, to: phone });
-    twilioStatus = msg?.status || null;
-    msgSid = msg?.sid || null;
-    if (twilioStatus === 'failed' || twilioStatus === 'undelivered') {
-      twilioError = `${msg.errorCode || 'TWILIO_ERROR'}: ${msg.errorMessage || twilioStatus}`;
+  if (await isSandboxTenant(db, tenantId)) {
+    // Sandbox path: log instead of dispatching. The chat thread still
+    // gets the staff message appended below so the UI looks identical.
+    await writeSandboxSmsLog(db, tenantId, {
+      kind:          'direct',
+      clientId,
+      recipientName: client.name || '',
+      to:            phone,
+      body,
+      staffEmail:    request.auth.token?.email || null,
+    });
+    twilioStatus = 'sandbox';
+    msgSid       = 'SANDBOX';
+  } else {
+    const sid       = twilioSid.value();
+    const token     = twilioToken.value();
+    const apiKeySid = twilioApiKeySid.value();
+    const from      = await tenantSmsFrom(db, tenantId);
+    if (!sid || !token || !from) throw new HttpsError('failed-precondition', 'Twilio not configured');
+    const twilioSDK = require('twilio');
+    const tw = apiKeySid
+      ? twilioSDK(apiKeySid, token, { accountSid: sid })
+      : twilioSDK(sid, token);
+    try {
+      const msg = await tw.messages.create({ body, from, to: phone });
+      twilioStatus = msg?.status || null;
+      msgSid = msg?.sid || null;
+      if (twilioStatus === 'failed' || twilioStatus === 'undelivered') {
+        twilioError = `${msg.errorCode || 'TWILIO_ERROR'}: ${msg.errorMessage || twilioStatus}`;
+      }
+    } catch (e) {
+      twilioError = `${e?.code || 'UNKNOWN'}: ${e?.message || 'send threw'}`;
+      console.error('[sendDirectSms] threw:', twilioError);
+      throw new HttpsError('internal', twilioError);
     }
-  } catch (e) {
-    twilioError = `${e?.code || 'UNKNOWN'}: ${e?.message || 'send threw'}`;
-    console.error('[sendDirectSms] threw:', twilioError);
-    throw new HttpsError('internal', twilioError);
   }
 
   const message = {
@@ -6579,20 +6626,45 @@ function platformTwilioClient() {
 // when a tenant goes live.
 async function isSandboxTenant(db, tenantId) {
   try {
-    const snap = await db.doc(`tenants/${tenantId}`).get();
-    // Sandbox-by-default: any tenant whose doc doesn't EXPLICITLY say
-    // sandboxMode=false is treated as sandbox. Covers (a) new self-serve
-    // signups (provisionTenant writes sandboxMode=true), (b) legacy
-    // tenants pre-dating this field (no flag → treated as sandbox until
-    // platform admin flips to false). For real-Twilio go-live, an admin
-    // must affirmatively set sandboxMode=false via setTenantSandboxMode.
-    return !snap.exists || snap.data()?.sandboxMode !== false;
+    // Two flags, OR'd together:
+    //   tenants/{id}.sandboxMode         — platform-admin flag (default true,
+    //                                       set false only after a tenant
+    //                                       is paid-customer-ready)
+    //   tenants/{id}/data/settings.smsTestMode — tenant-owner flag (let the
+    //                                       salon owner preview campaigns
+    //                                       before sending real SMS)
+    // Sandbox-by-default for both — only an explicit `false` puts the
+    // path on real Twilio.
+    const [tSnap, sSnap] = await Promise.all([
+      db.doc(`tenants/${tenantId}`).get(),
+      db.doc(`tenants/${tenantId}/data/settings`).get(),
+    ]);
+    const platformSandbox = !tSnap.exists || tSnap.data()?.sandboxMode !== false;
+    const ownerTestMode   = sSnap.exists && sSnap.data()?.smsTestMode === true;
+    return platformSandbox || ownerTestMode;
   } catch (e) {
     console.error(`[isSandboxTenant] read failed for ${tenantId}:`, e?.message);
-    // Same fail-safe bias: recoverable miss (real tenant waits for the
-    // outage) preferred over irrecoverable miss (real money spent on a
-    // test tenant).
+    // Fail-safe: recoverable miss (real tenant waits for the outage)
+    // preferred over irrecoverable miss (real money spent on a test
+    // tenant).
     return true;
+  }
+}
+
+// Write a per-message sandbox log row. Used by every SMS send path
+// when isSandboxTenant returns true. The Marketing → SMS Test Mode
+// panel in the salon app subscribes to this collection so the owner
+// can inspect every message that WOULD have been sent.
+async function writeSandboxSmsLog(db, tenantId, entry) {
+  try {
+    await db.collection(`tenants/${tenantId}/sandboxSmsLog`).add({
+      ...entry,
+      sandbox: true,
+      at: entry.at || new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error(`[writeSandboxSmsLog] failed for ${tenantId}:`, e?.message);
+    // Non-fatal — the sandbox log is for inspection, not a critical path.
   }
 }
 

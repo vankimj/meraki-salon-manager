@@ -2390,6 +2390,33 @@ export function subscribeTenantRegistry(cb) {
   });
 }
 
+// Live subscription on the sandbox SMS inbox. Returns the most recent
+// entries (capped) in reverse-chronological order. Used by the
+// Marketing → SMS Test Mode panel.
+export function subscribeSandboxSmsLog(cb, max = 100) {
+  const ref = query(
+    collection(db, 'tenants', TENANT_ID, 'sandboxSmsLog'),
+    orderBy('at', 'desc'),
+    limit(max),
+  );
+  return onSnapshot(ref, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
+}
+
+// Purge every sandboxSmsLog row for this tenant. Owner-triggered from
+// the SMS Test Mode panel when the inbox is too cluttered.
+export async function purgeSandboxSmsLog() {
+  const snap = await getDocs(collection(db, 'tenants', TENANT_ID, 'sandboxSmsLog'));
+  if (snap.empty) return 0;
+  // Firestore batches max 500 ops. Chunk if there's a lot.
+  const refs = snap.docs.map(d => d.ref);
+  for (let i = 0; i < refs.length; i += 400) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + 400).forEach(r => batch.delete(r));
+    await batch.commit();
+  }
+  return refs.length;
+}
+
 export async function fetchTenantSms() {
   const s = await getDoc(tenantDoc('sms'));
   return s.exists() ? s.data() : null;
