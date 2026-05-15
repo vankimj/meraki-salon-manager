@@ -501,6 +501,19 @@ service cloud.firestore {
         allow write:        if false;
       }
 
+      // Per-tenant email suppression list. Populated by sesEventWebhook
+      // when SES reports a bounce or complaint for one of this tenant's
+      // sends. Mirrors SES Tenants' per-tenant suppression scope: a
+      // bounce on Salon A's send only blocks Salon A's future sends to
+      // that address, not Salon B's. Tenant admins can read (for the
+      // Marketing tab's suppression-list view) and delete (to manually
+      // un-suppress after the recipient confirms their address is
+      // working). Writes are server-only.
+      match /suppression/{hash} {
+        allow read, delete: if isTenantAdmin(tenantId);
+        allow write:        if false;
+      }
+
       // Campaign templates: admin only
       match /campaignTemplates/{tplId} {
         allow read, write: if isTenantAdmin(tenantId);

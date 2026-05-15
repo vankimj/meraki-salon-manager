@@ -6,7 +6,11 @@ const { getFirestore }     = require('firebase-admin/firestore');
 const { defineString, defineSecret } = require('firebase-functions/params');
 const { Resend }           = require('resend');
 const Anthropic            = require('@anthropic-ai/sdk');
-const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+const {
+  SESv2Client, SendEmailCommand,
+  CreateTenantCommand, DeleteTenantCommand,
+  CreateTenantResourceAssociationCommand,
+} = require('@aws-sdk/client-sesv2');
 const crypto               = require('crypto');
 
 initializeApp();
@@ -29,6 +33,17 @@ const awsSesRegion    = defineString('AWS_SES_REGION', { default: 'us-east-1' })
 // sends but won't fire events into our sesEventWebhook → no suppression
 // updates. Set after the SNS topic + config set are created in Phase 4.
 const awsSesConfigSet = defineString('AWS_SES_CONFIG_SET', { default: '' });
+// ARN of the shared sending identity (send.plumenexus.com) — used to
+// associate the identity with each per-tenant SES Tenant resource at
+// provisioning time. Format:
+//   arn:aws:ses:us-east-1:<accountId>:identity/send.plumenexus.com
+// Filled in once the IAM user + identity exist in AWS, via .env or
+// `firebase functions:config:set`. Without it, SES Tenant resource
+// association is skipped — tenant exists but inherits account-level
+// identity permissions, which is fine but means associating individual
+// custom identities (for Pro tenants on their own domain) requires
+// manual setup later.
+const awsSesSharedIdentityArn = defineString('AWS_SES_SHARED_IDENTITY_ARN', { default: '' });
 const awsAccessKey    = defineSecret('AWS_ACCESS_KEY_ID');
 const awsSecretKey    = defineSecret('AWS_SECRET_ACCESS_KEY');
 // RESEND_FROM env var was the global single-tenant sender. Removed in favor of
@@ -304,30 +319,118 @@ function suppressionKey(email) {
   return crypto.createHash('sha256').update(norm).digest('hex').slice(0, 32);
 }
 
-async function isEmailSuppressed(db, email) {
+// Per-tenant suppression: checks `tenants/{tid}/suppression/{hash}`
+// first (most specific), then `platform/suppression/byHash/{hash}` as
+// the account-level fallback. This mirrors how SES Tenants scopes
+// suppression — bounces from a tenant's sends only block that tenant.
+// Sends WITHOUT a tenantId fall back to account-level only.
+async function isEmailSuppressed(db, email, tenantId) {
   const norm = normalizeEmailAddr(email);
   if (!norm) return false;
+  const hash = suppressionKey(norm);
   try {
-    const snap = await db.doc(`platform/suppression/byHash/${suppressionKey(norm)}`).get();
-    return snap.exists;
+    if (tenantId) {
+      const tSnap = await db.doc(`tenants/${tenantId}/suppression/${hash}`).get();
+      if (tSnap.exists) return true;
+    }
+    const acctSnap = await db.doc(`platform/suppression/byHash/${hash}`).get();
+    return acctSnap.exists;
   } catch (e) {
     console.warn(`[isEmailSuppressed] read failed for ${norm}:`, e?.message);
     // Fail-open: don't block legitimate sends on a Firestore outage.
-    // SES's account-level suppression list (which we also enable) is
-    // the second layer of defense if our DB-side check misses.
+    // SES's own per-tenant suppression list is the second layer of
+    // defense if our DB-side check misses.
     return false;
   }
 }
 
+// Writes to BOTH per-tenant (if tenantId known) AND account-level. The
+// account-level fallback ensures that if a future SES event arrives
+// without tenant context, we still block the address. Idempotent —
+// repeated writes just merge fields.
 async function markEmailSuppressed(db, email, reason, tenantId, at) {
   const norm = normalizeEmailAddr(email);
   if (!norm) return;
-  await db.doc(`platform/suppression/byHash/${suppressionKey(norm)}`).set({
+  const hash = suppressionKey(norm);
+  const doc = {
     emailNorm: norm,
     reason:    reason || 'unspecified',
     tenantId:  tenantId || null,
     at:        at || new Date().toISOString(),
-  }, { merge: true });
+  };
+  if (tenantId) {
+    await db.doc(`tenants/${tenantId}/suppression/${hash}`).set(doc, { merge: true });
+  }
+  await db.doc(`platform/suppression/byHash/${hash}`).set(doc, { merge: true });
+}
+
+// ── SES Tenant lifecycle helpers ─────────────────────────────────────
+// All gated by EMAIL_PROVIDER === 'ses'. Until cutover, these no-op so
+// provisionTenant / deleteTenant don't depend on AWS being configured.
+// All best-effort: failures log + continue, since SES Tenant absence
+// just means the send falls back to account-level scope (still works).
+
+// Create an SES Tenant for a Plume Nexus tenant. Idempotent — if the
+// tenant already exists (returned as AlreadyExistsException),
+// treat as success. The tenant name must match the Plume Nexus
+// tenantId 1:1 so every sendEmail() can pass TenantName=tenantId.
+async function ensureSesTenant(tenantId) {
+  if ((emailProvider.value() || 'resend') !== 'ses') return false;
+  if (!tenantId) return false;
+  try {
+    const ses = getSesClient();
+    await ses.send(new CreateTenantCommand({ TenantName: tenantId }));
+    return true;
+  } catch (e) {
+    if (e?.name === 'AlreadyExistsException' || /already exists/i.test(e?.message || '')) {
+      return true;
+    }
+    console.error(`[ensureSesTenant] failed for ${tenantId}:`, e?.message);
+    return false;
+  }
+}
+
+// Associates the shared sending identity (send.plumenexus.com) with the
+// SES Tenant so the tenant can use it as a sending source. Without the
+// association, SendEmailCommand with TenantName=X will fail because
+// the identity is not assigned to tenant X. Idempotent.
+async function associateSesIdentityToTenant(tenantId, identityArn) {
+  if ((emailProvider.value() || 'resend') !== 'ses') return false;
+  const arn = identityArn || awsSesSharedIdentityArn.value();
+  if (!tenantId || !arn) return false;
+  try {
+    const ses = getSesClient();
+    await ses.send(new CreateTenantResourceAssociationCommand({
+      TenantName:  tenantId,
+      ResourceArn: arn,
+    }));
+    return true;
+  } catch (e) {
+    if (e?.name === 'AlreadyExistsException' || /already exists|associated/i.test(e?.message || '')) {
+      return true;
+    }
+    console.error(`[associateSesIdentityToTenant] failed for ${tenantId}/${arn}:`, e?.message);
+    return false;
+  }
+}
+
+// Delete the SES Tenant resource. Called by deleteTenant. AWS deletes
+// the tenant's resource associations + suppression entries as a
+// cascade. Idempotent — NotFoundException is treated as success.
+async function deleteSesTenant(tenantId) {
+  if ((emailProvider.value() || 'resend') !== 'ses') return false;
+  if (!tenantId) return false;
+  try {
+    const ses = getSesClient();
+    await ses.send(new DeleteTenantCommand({ TenantName: tenantId }));
+    return true;
+  } catch (e) {
+    if (e?.name === 'NotFoundException' || /not found|does not exist/i.test(e?.message || '')) {
+      return true;
+    }
+    console.error(`[deleteSesTenant] failed for ${tenantId}:`, e?.message);
+    return false;
+  }
 }
 
 // Main entry point — every email-sending site in the codebase calls
@@ -350,8 +453,10 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId }) {
     return { data: null, error: { message: 'missing_required_field' } };
   }
   const db = getFirestore();
-  if (await isEmailSuppressed(db, to)) {
-    console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)}`);
+  // Per-tenant suppression check first (most specific), then account-
+  // level fallback. See isEmailSuppressed for the lookup order.
+  if (await isEmailSuppressed(db, to, tenantId)) {
+    console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)} tenant=${tenantId || 'n/a'}`);
     return { data: null, error: { message: 'address_suppressed', suppressed: true } };
   }
   const provider = (emailProvider.value() || 'resend').toLowerCase();
@@ -408,6 +513,12 @@ async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId }) 
     ReplyToAddresses:     replyTo ? [replyTo] : undefined,
     EmailTags:            sesTags.length ? sesTags : undefined,
     ConfigurationSetName: awsSesConfigSet.value() || undefined,
+    // SES Tenants scoping. With TenantName set, AWS applies per-tenant
+    // reputation tracking, suppression lookups, and statistics for
+    // this send. Account-level sends (no TenantName) still work for
+    // non-tenant-bound flows like platform inquiries / security
+    // alerts that aren't owned by any one salon.
+    TenantName:           tenantId || undefined,
   });
   const res = await ses.send(cmd);
   return res?.MessageId || null;
@@ -7284,6 +7395,33 @@ exports.provisionTenant = onCall(
     }
     await update({ tenantId, 'steps.reserve_slug': { ok: true, at: new Date().toISOString() }, currentStep: 'seed_data' });
 
+    // Step 1.5: SES Tenant resource. Best-effort, only runs when
+    // EMAIL_PROVIDER=ses (until cutover this is a no-op). The tenant
+    // RESOURCE on AWS's side is what unlocks per-tenant reputation,
+    // suppression, and statistics for this tenant's sends. Idempotent
+    // — repeated provisioning retries are safe.
+    try {
+      const sesTenantCreated = await ensureSesTenant(tenantId);
+      let sesAssociated = false;
+      if (sesTenantCreated) {
+        sesAssociated = await associateSesIdentityToTenant(tenantId);
+      }
+      await update({
+        'steps.ses_tenant': {
+          ok:         sesTenantCreated && sesAssociated,
+          created:    sesTenantCreated,
+          associated: sesAssociated,
+          at:         new Date().toISOString(),
+        },
+      });
+    } catch (e) {
+      // Non-fatal — sends will still work at account-level. Future
+      // sends can heal-up via a backfill script that calls
+      // ensureSesTenant for every tenant doc.
+      console.warn(`[provisionTenant] SES tenant setup failed for ${tenantId}:`, e?.message);
+      await update({ 'steps.ses_tenant': { ok: false, error: e?.message, at: new Date().toISOString() } });
+    }
+
     // Step 2: seed data/* docs. Always overwrite — idempotent on retry.
     try {
       const batch = db.batch();
@@ -7433,6 +7571,19 @@ exports.deleteTenant = onCall(
     } catch (e) {
       await update({ status: 'failed', failedStep: 'drop_subtree', error: e.message });
       throw new HttpsError('internal', `drop_subtree: ${e.message}`);
+    }
+
+    // 2.5. Drop the AWS SES Tenant resource (best-effort, only when
+    // EMAIL_PROVIDER=ses). AWS cascades the tenant's resource
+    // associations + per-tenant suppression entries. Non-fatal:
+    // an orphaned SES tenant doesn't break anything, it just sits
+    // there until a manual cleanup script. Idempotent.
+    try {
+      const sesDeleted = await deleteSesTenant(tenantId);
+      await update({ 'steps.ses_tenant': { ok: sesDeleted, at: new Date().toISOString() } });
+    } catch (e) {
+      console.warn('[deleteTenant] ses_tenant cleanup failed:', e.message);
+      await update({ 'steps.ses_tenant': { ok: false, error: e.message, at: new Date().toISOString() } });
     }
 
     // 3. Reserve the released slugs for 12 months so an attacker can't
