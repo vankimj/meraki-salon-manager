@@ -1275,8 +1275,11 @@ exports.getMyTenantRole = onCall({ cors: true }, async (request) => {
   // Return ONLY the slim slice the client needs for self-lookup. Names,
   // pictures, addedAt timestamps, etc. stay server-side.
   return {
-    role:     me.role || null,
-    techName: me.techName || null,
+    role:           me.role || null,
+    techName:       me.techName || null,
+    // 'edit' (default) | 'view' — drives the UI's read-only schedule for a
+    // view-only tech. The rules enforce the actual write restriction.
+    scheduleAccess: me.scheduleAccess || 'edit',
   };
 });
 

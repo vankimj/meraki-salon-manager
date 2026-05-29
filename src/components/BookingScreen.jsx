@@ -445,7 +445,6 @@ export default function BookingScreen() {
 
       const removalDur = 15;
       const removalPrice = Number(cfg?.removalPrice ?? 15);
-      const totalDur = cartTotalDuration(cart, removalDur);
       const dayAppts = apptsByDate[cartDate] || [];
       const eligible = techsForServices(techs, cart.map(c => c.service));
 
@@ -457,7 +456,9 @@ export default function BookingScreen() {
       const startingRrIdx = rrIdx;
       if (cartTech === null) {
         techRequestType = 'auto';
-        const free = eligible.filter(t => isTechFreeAt(t, cartSlot, totalDur, dayAppts));
+        // Each candidate's free-window uses their own per-service durations —
+        // a slower tech needs a longer gap to be considered available.
+        const free = eligible.filter(t => isTechFreeAt(t, cartSlot, cartTotalDuration(cart, removalDur, t), dayAppts));
         let weekAppts = [];
         if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
           const wk = startOfWeek(cartDate);
@@ -475,15 +476,18 @@ export default function BookingScreen() {
           method, freeTechs: free,
           dayAppts, weekAppts, turnRoster, roundRobinIndex: rrIdx,
         });
-        assignedTech = result.tech || firstFreeTech(eligible, cartSlot, totalDur, dayAppts);
+        assignedTech = result.tech || firstFreeTech(eligible, cartSlot, cartTotalDuration(cart, removalDur), dayAppts);
         rrIdx = result.nextRoundRobinIndex;
       }
+
+      // Final length honors the assigned tech's per-service duration overrides.
+      const totalDur = cartTotalDuration(cart, removalDur, assignedTech);
 
       // Build the merged services[] array with optional removal lines.
       const services = [];
       cart.forEach(item => {
         const { service: svc, option: opt } = item;
-        const resolved = resolveServicePricing(svc, opt);
+        const resolved = resolveServicePricing(svc, opt, assignedTech);
         services.push({
           id: svc.id,
           name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name,
@@ -1028,7 +1032,7 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 // ── Step 2: Assign a stylist to each cart item ─────────
 function Step2PickTech({ cart, allTechs, cartTech, setCartTech, onProceed, onBack }) {
   const eligible = techsForServices(allTechs, cart.map(c => c.service));
-  const totalDur = cartTotalDuration(cart);
+  const totalDur = cartTotalDuration(cart, 15, cartTech || undefined);
   const picked = cartTech !== undefined;
   const cartLabel = cart.length === 1 ? '1 service' : `${cart.length} services`;
 
@@ -1107,7 +1111,7 @@ function TechCard({ tech, selected, onSelect }) {
 
 // ── Step 3: Pick a date + start time for the whole cart ─
 function Step3PickSlot({ cart, cartTech, allTechs, cartDate, setCartDate, cartSlot, setCartSlot, apptsByDate, ensureApptsForDate, removalDur, onProceed, onBack }) {
-  const totalDur = cartTotalDuration(cart, removalDur);
+  const totalDur = cartTotalDuration(cart, removalDur, cartTech || undefined);
   const eligible = techsForServices(allTechs, cart.map(c => c.service));
   const allSlots = getSlots(totalDur);
   const dayAppts = cartDate ? apptsByDate[cartDate] : null;
@@ -1117,7 +1121,9 @@ function Step3PickSlot({ cart, cartTech, allTechs, cartDate, setCartDate, cartSl
   function isAvailable(slotMins) {
     if (!dayAppts) return false;
     if (cartTech) return isTechFreeAt(cartTech, slotMins, totalDur, dayAppts);
-    return eligible.some(t => isTechFreeAt(t, slotMins, totalDur, dayAppts));
+    // No preference: a slot is offered if any eligible tech is free for the
+    // span that tech would actually take (their own per-service durations).
+    return eligible.some(t => isTechFreeAt(t, slotMins, cartTotalDuration(cart, removalDur, t), dayAppts));
   }
   const hasAny = dayAppts && allSlots.some(s => isAvailable(s));
   const techLabel = cartTech ? cartTech.name : 'No preference';
@@ -1341,12 +1347,14 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
     const base = resolveServicePricing(item.service, item.option).price || 0;
     return sum + base + (item.removal && item.service.canRequireRemoval ? Number(removalPrice) || 0 : 0);
   }, 0);
-  const totalDur = cartTotalDuration(cart, removalDur);
-
-  // Resolve "no preference" to whichever tech is actually free for the full window
+  // Resolve "no preference" to whichever tech is actually free for the full
+  // window — checked against each candidate's own per-service durations.
   const eligible = techsForServices(allTechs, cart.map(c => c.service));
   const dayAppts = apptsByDate[cartDate] || [];
-  const assignedTech = cartTech !== null ? cartTech : firstFreeTech(eligible, cartSlot, totalDur, dayAppts);
+  const assignedTech = cartTech !== null
+    ? cartTech
+    : (eligible.find(t => isTechFreeAt(t, cartSlot, cartTotalDuration(cart, removalDur, t), dayAppts)) || null);
+  const totalDur = cartTotalDuration(cart, removalDur, assignedTech);
   const endSlot = (cartSlot ?? 0) + totalDur;
 
   return (

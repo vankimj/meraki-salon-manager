@@ -40,14 +40,37 @@ export function blankService() {
   return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, description: '', image: '', active: true, taxable: true, sortOrder: 99, options: [], defaultRebookWeeks: 0 };
 }
 
-// Resolve effective price + duration for a service given an optional selected option.
-// Options can override (price, duration) or just adjust (priceAdd, durationAdd) the base.
-export function resolveServicePricing(svc, opt) {
+// Per-tech duration override: a slower (e.g. newer) tech can need more time
+// for the same service. `tech.serviceDurations[svcId]` (minutes) replaces the
+// service's base duration when set to a positive number; unset = base.
+export function techServiceDuration(svc, tech) {
+  const v = tech?.serviceDurations?.[svc?.id];
+  return (typeof v === 'number' && v > 0) ? v : (svc?.duration ?? 0);
+}
+
+// Resolve effective price + duration for a service given an optional selected
+// option and an optional performing tech. Options can override (price,
+// duration) or just adjust (priceAdd, durationAdd) the base; the per-tech
+// override sets the base duration before options apply.
+export function resolveServicePricing(svc, opt, tech) {
   // Legacy services stored `price` instead of `basePrice` — fall through
   // so booking + checkout don't display $0 / NaN on un-migrated docs.
   const svcBase = svc?.basePrice ?? svc?.price ?? 0;
-  if (!opt) return { price: svcBase, duration: svc?.duration ?? 0 };
+  const durBase = techServiceDuration(svc, tech);
+  if (!opt) return { price: svcBase, duration: durBase };
   const price    = opt.price    != null ? Number(opt.price)    : svcBase + Number(opt.priceAdd    || 0);
-  const duration = opt.duration != null ? Number(opt.duration) : (svc.duration  ?? 0) + Number(opt.durationAdd || 0);
+  const duration = opt.duration != null ? Number(opt.duration) : durBase + Number(opt.durationAdd || 0);
   return { price, duration };
+}
+
+// Re-resolve the duration of each already-chosen service for the performing
+// tech. Booking flows that build a service list from base durations (voice
+// command, walk-in seating) call this once the tech is known so a slower
+// tech's per-service override applies. Services whose name isn't found in
+// `allServices` are passed through unchanged.
+export function resolveBookedDurations(chosen, allServices, tech) {
+  return (chosen || []).map(sv => {
+    const svc = (allServices || []).find(s => s.name === sv.name);
+    return svc ? { ...sv, duration: resolveServicePricing(svc, null, tech).duration } : sv;
+  });
 }

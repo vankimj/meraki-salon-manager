@@ -92,6 +92,29 @@ describe('cartTotalDuration', () => {
     const cart = [{ service: SVC_MANI, option: opt, removal: false }];
     expect(cartTotalDuration(cart)).toBe(75);
   });
+  it('applies a per-tech duration override when a tech is passed', () => {
+    const slowTech = { id: 't', serviceDurations: { mani: 45 } }; // 30 → 45
+    const cart = [{ service: SVC_MANI, option: null, removal: false }];
+    expect(cartTotalDuration(cart, 15, slowTech)).toBe(45);
+  });
+  it('ignores overrides for services not in the cart', () => {
+    const tech = { id: 't', serviceDurations: { pedi: 80 } };
+    const cart = [{ service: SVC_MANI, option: null, removal: false }];
+    expect(cartTotalDuration(cart, 15, tech)).toBe(30); // mani unaffected
+  });
+  it('adds removal on top of a per-tech overridden service', () => {
+    const slowTech = { id: 't', serviceDurations: { mani: 45 } };
+    const cart = [{ service: SVC_MANI, option: null, removal: true }];
+    expect(cartTotalDuration(cart, 15, slowTech)).toBe(60); // 45 + 15 removal
+  });
+  it('sums per-tech overrides across a multi-service cart', () => {
+    const slowTech = { id: 't', serviceDurations: { mani: 45, pedi: 75 } };
+    const cart = [
+      { service: SVC_MANI, option: null, removal: false },
+      { service: SVC_PEDI, option: null, removal: false },
+    ];
+    expect(cartTotalDuration(cart, 15, slowTech)).toBe(120); // 45 + 75
+  });
 });
 
 // ── isTechFreeAt ───────────────────────────────────────

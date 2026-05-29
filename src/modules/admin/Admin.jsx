@@ -218,6 +218,19 @@ export default function Admin({ onClose, onOpenWizard }) {
                         {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
                       </select>
                     )}
+                    {/* Per-tech schedule permission. Edit (default) lets the
+                        tech add/move/edit their own appointments; View only
+                        restricts them to reading their day. Enforced in the
+                        Firestore rules, not just here. */}
+                    {u.role === 'tech' && (
+                      <select value={u.scheduleAccess || 'edit'}
+                        title="Whether this tech can edit their own schedule, or only view it"
+                        onChange={e => grantAccess(u.email, u.role, u.techName, e.target.value)}
+                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit' }}>
+                        <option value="edit">Can edit schedule</option>
+                        <option value="view">Schedule: view only</option>
+                      </select>
+                    )}
                   </div>
                 </UserRow>
               )) : <Empty>No users yet</Empty>}

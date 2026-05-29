@@ -24,6 +24,7 @@ function blankEmployee() {
     paymentPref: 'cash', paymentNotes: '',
     workDays: {},
     serviceIds: [],
+    serviceDurations: {},
   };
 }
 
@@ -466,6 +467,8 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
               services={services}
               selectedIds={emp.serviceIds || []}
               onChange={ids => onChange({ serviceIds: ids })}
+              durations={emp.serviceDurations || {}}
+              onDurationsChange={map => onChange({ serviceDurations: map })}
             />
           )}
 
@@ -587,7 +590,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
   );
 }
 
-function ServicesPicker({ services, selectedIds, onChange }) {
+function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDurationsChange }) {
   const isAll = !selectedIds || selectedIds.length === 0;
   const grouped = {};
   services.forEach(s => {
@@ -604,10 +607,21 @@ function ServicesPicker({ services, selectedIds, onChange }) {
   function selectAll() { onChange(services.map(s => s.id)); }
   function clearAll()  { onChange([]); }
 
+  // Per-tech override minutes. Empty/0/invalid clears the override (falls
+  // back to the service's base duration). Only stores explicit overrides.
+  function setDuration(id, raw) {
+    const next = { ...durations };
+    const n = Math.round(Number(raw));
+    if (raw === '' || !Number.isFinite(n) || n <= 0) delete next[id];
+    else next[id] = n;
+    onDurationsChange?.(next);
+  }
+
   return (
     <>
       <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
-        Pick which services this tech can perform. {isAll && <strong style={{ color: '#16a34a' }}>Empty = can do every service.</strong>}
+        Pick which services this tech can perform, and optionally set how long <em>this tech</em> takes per service.
+        Leave the minutes blank to use the service's standard time. {isAll && <strong style={{ color: '#16a34a' }}>No services checked = can do every service.</strong>}
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <button onClick={selectAll} style={{ ...btnBase, fontSize: 11, padding: '5px 10px' }}>Select all</button>
@@ -621,14 +635,31 @@ function ServicesPicker({ services, selectedIds, onChange }) {
       ) : Object.entries(grouped).map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#555', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>{cat}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 6 }}>
             {items.map(s => {
               const checked = selectedIds.includes(s.id);
+              const canDo   = isAll || checked;
+              const override = durations[s.id];
               return (
-                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 9px', borderRadius: 8, border: `1px solid ${checked ? '#3D95CE' : '#e0e0e0'}`, background: checked ? '#EBF4FB' : '#fafafa', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} style={{ flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: checked ? '#1a5f8a' : '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
-                </label>
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 8, border: `1px solid ${checked ? '#3D95CE' : '#e0e0e0'}`, background: checked ? '#EBF4FB' : '#fafafa' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', flex: 1, minWidth: 0 }}>
+                    <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: checked ? '#1a5f8a' : '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                  </label>
+                  {canDo && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                      <input
+                        type="number" min={1} inputMode="numeric"
+                        value={override ?? ''}
+                        onChange={e => setDuration(s.id, e.target.value)}
+                        placeholder={String(s.duration ?? '')}
+                        title={`Standard: ${s.duration ?? '?'} min`}
+                        style={{ width: 46, fontFamily: 'inherit', border: `1px solid ${override ? '#3D95CE' : '#d8d8d8'}`, borderRadius: 6, padding: '3px 5px', fontSize: 11, textAlign: 'right', color: '#333', background: '#fff', outline: 'none' }}
+                      />
+                      <span style={{ fontSize: 10, color: '#aaa' }}>min</span>
+                    </span>
+                  )}
+                </div>
               );
             })}
           </div>

@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db, callFn } from './firebase';
 import { TENANT_ID } from './tenant';
+import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
 
 // ── Tenant root helpers ────────────────────────────────
 // Document refs need even-segment paths; 'data' is the sub-collection that provides the 4th segment.
@@ -291,6 +292,7 @@ export async function ensureStaffEmailsBackfill(users) {
       byEmail:     deleteField(),         // purge legacy byEmail leak
       staffEmails: buildStaffEmails(users),
       adminEmails: buildAdminEmails(users),
+      scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
     }, { merge: true });
     batch.set(USERS_FULL_REF, { users }, { merge: true });
     await batch.commit();
@@ -307,21 +309,10 @@ export const saveSlides   = (slides, def, cur) => setDoc(SLIDES_REF, { slides, d
 // changes (grant/revoke admin, demote to readonly, deny) take effect
 // immediately at the rules layer without app code having to maintain a
 // parallel field.
-const STAFF_ROLES = ['admin', 'readonly', 'tech', 'scheduler'];
-function emailsByRole(users, predicate) {
-  return Array.from(new Set(
-    (users || [])
-      .filter(u => u && u.email && predicate(u))
-      .map(u => String(u.email).trim().toLowerCase())
-      .filter(Boolean),
-  ));
-}
-export function buildStaffEmails(users) {
-  return emailsByRole(users, u => STAFF_ROLES.includes(u.role));
-}
-export function buildAdminEmails(users) {
-  return emailsByRole(users, u => u.role === 'admin');
-}
+// Pure projection builders live in userProjections.js (no Firebase import)
+// so the security-critical role→allow-list mapping stays unit-testable.
+// Re-exported here to preserve the existing firestore.js public surface.
+export { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails };
 // (Removed) The `byEmail` projection map was a security regression —
 // staff-readable so any tech could enumerate every coworker's
 // (email, role) tuple from the JS console. Self-lookup now goes
@@ -346,6 +337,7 @@ export const saveUsers = async (users) => {
     byEmail:     deleteField(),         // purge legacy byEmail map (was leaking coworker roles)
     staffEmails: buildStaffEmails(users),
     adminEmails: buildAdminEmails(users),
+    scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
   }, { merge: true });
   batch.set(USERS_FULL_REF, { users }, { merge: true });
   await batch.commit();

@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { createAppointment, saveAppointment, fetchClient } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 import { TENANT_ID } from '../../lib/tenant';
+import { resolveBookedDurations } from '../../utils/serviceHelpers';
 
 // Web Speech API wrapper. Returns null if unsupported (Firefox, etc.).
 function getSpeechRecognition() {
@@ -22,7 +23,7 @@ const NEGATIVE = /^(no|nope|cancel|stop|don't|wait|nevermind|never mind)\b/i;
 // disambiguation, typed fallback, and voice-confirm. Hides itself if Web
 // Speech API is unsupported (mic UI), but typed input still works in any
 // browser.
-export default function VoiceAssistant({ clients = [], services = [], techs = [] }) {
+export default function VoiceAssistant({ clients = [], services = [], techs = [], employees = [] }) {
   const { isAdmin, isScheduler, isTech, gUser, showToast } = useApp();
   const [open, setOpen] = useState(false);
   const [listening, setListening] = useState(false);
@@ -161,7 +162,12 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
             console.warn('[voice] could not check ban status:', e?.message);
           }
         }
-        const dur = (payload.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (Number(payload.duration) || 60);
+        // Re-resolve each service's duration for the chosen tech — the voice
+        // model only knows base durations, so a slower tech's longer block is
+        // applied here at execute time.
+        const bookTechRec = (employees || []).find(e => e.name === payload.techName) || null;
+        const resolvedServices = resolveBookedDurations(payload.services, services, bookTechRec);
+        const dur = resolvedServices.reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (Number(payload.duration) || 60);
         const apptData = {
           clientId:        payload.clientId || '',
           clientName:      payload.clientName || '',
@@ -169,7 +175,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           date:            payload.date,
           startTime:       payload.startTime,
           duration:        dur,
-          services:        payload.services || [],
+          services:        resolvedServices,
           status:          'scheduled',
           source:          'voice_command',
           notes:           payload.notes || '',

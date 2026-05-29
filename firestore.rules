@@ -49,6 +49,22 @@ service cloud.firestore {
             .data.get('staffEmails', [])
       );
     }
+    // A tech explicitly set to view-only schedule access (Admin → Users).
+    // Maintained by saveUsers as the `scheduleViewOnlyEmails` projection on
+    // data/users. Admins/owners are never in this list.
+    function isScheduleViewOnly(tenantId) {
+      return isAuthenticated() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in
+          get(/databases/$(database)/documents/tenants/$(tenantId)/data/users)
+            .data.get('scheduleViewOnlyEmails', []);
+    }
+    // Staff who may write appointments: any tenant staff EXCEPT a view-only
+    // tech. Admins/owners always qualify (isTenantAdmin short-circuits via
+    // isTenantStaff and admins are never in the view-only list).
+    function canEditSchedule(tenantId) {
+      return isTenantStaff(tenantId) && !isScheduleViewOnly(tenantId);
+    }
     // Public field length caps for unauthenticated submissions.
     function isShortString(v, maxLen) {
       return v is string && v.size() <= maxLen;
@@ -291,7 +307,13 @@ service cloud.firestore {
       // also stays so the booking confirmation link works without auth.
       match /appointments/{apptId} {
         allow read:           if isTenantStaff(tenantId);
-        allow create:         if (
+        // Create is open to the public online-booking path (length-capped so
+        // it can't be abused as an XSS/oversized sink) and to edit-capable
+        // staff. A view-only tech is staff, so they fall through the public
+        // branch's `!isTenantStaff` guard and are denied — they can't add
+        // appointments from the app either.
+        allow create:         if canEditSchedule(tenantId) || (
+          !isTenantStaff(tenantId) &&
           (!('clientName'  in request.resource.data) || isShortString(request.resource.data.clientName, 80)) &&
           (!('clientPhone' in request.resource.data) || isShortString(request.resource.data.clientPhone, 32)) &&
           (!('clientEmail' in request.resource.data) || request.resource.data.clientEmail == null ||
@@ -299,13 +321,16 @@ service cloud.firestore {
           (!('notes'       in request.resource.data) || request.resource.data.notes == null ||
               isShortString(request.resource.data.notes, 500))
         );
-        allow delete:         if isTenantStaff(tenantId);
+        allow delete:         if canEditSchedule(tenantId);
         // Public update is single-shot only: a check-in can fire at most
         // once per appointment. Without this, a public caller (knowing
         // the apptId) can flap `checkedInAt` null↔value repeatedly to
         // re-trigger the `notifyOnCheckIn` Firestore trigger and email-
         // bomb the assigned tech via the salon's verified Resend domain.
-        allow update:         if isTenantStaff(tenantId) || (
+        // Staff writes require schedule-edit permission (view-only techs
+        // are blocked); the public check-in branch stays open for the
+        // booking-confirmation link.
+        allow update:         if canEditSchedule(tenantId) || (
           request.resource.data.diff(resource.data).affectedKeys().hasOnly(['checkedInAt'])
           && resource.data.get('checkedInAt', null) == null
           && request.resource.data.checkedInAt is string

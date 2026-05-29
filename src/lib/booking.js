@@ -31,9 +31,10 @@ export function techsForServices(techs, services) {
 }
 
 // Sums service durations + per-item removal time for a multi-service cart.
-export function cartTotalDuration(cart, removalDur = 15) {
+// Pass `tech` to honor that tech's per-service duration overrides.
+export function cartTotalDuration(cart, removalDur = 15, tech) {
   return cart.reduce((s, item) => {
-    const d = resolveServicePricing(item.service, item.option).duration || 60;
+    const d = resolveServicePricing(item.service, item.option, tech).duration || 60;
     return s + d + (item.removal ? removalDur : 0);
   }, 0);
 }

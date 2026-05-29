@@ -10,6 +10,7 @@ import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
 import { notifyAffectedTechs } from '../../lib/notifications';
 import { TENANT_ID } from '../../lib/tenant';
 import { resizeImg } from '../../utils/helpers';
+import { resolveServicePricing } from '../../utils/serviceHelpers';
 import VoiceAssistant from '../voice/VoiceAssistant';
 import NotesEditor from '../../components/NotesEditor';
 import CoachMark from '../../components/CoachMark';
@@ -221,7 +222,10 @@ function blankAppt(date, techName, startMins, clientName = '', serviceName = '')
 
 // ── Main ──────────────────────────────────────────────
 export default function ScheduleAdmin({ onOpenClient } = {}) {
-  const { settings, updateSettings, isTech, isAdmin, isScheduler, myTechName, gUser, showToast, addApptToTicket } = useApp();
+  const { settings, updateSettings, isTech, isAdmin, isScheduler, myTechName, canEditOwnSchedule, gUser, showToast, addApptToTicket } = useApp();
+  // A tech the admin set to view-only: can read their day but not add, move,
+  // edit, delete, or check out appointments. Enforced server-side too.
+  const scheduleReadOnly = isTech && !canEditOwnSchedule;
 
   const [date,         setDate]        = useState(todayStr());
 
@@ -648,6 +652,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   }
 
 function openNew(techName, slotMins) {
+    if (scheduleReadOnly) { showToast('View-only access — ask an admin to make changes.'); return; }
     setModal({ appt: blankAppt(date, techName, slotMins), original: null, mode: 'edit' });
   }
 
@@ -1080,6 +1085,7 @@ function openNew(techName, slotMins) {
               onSlotClick={openNew}
               onApptClick={openView}
               onApptReschedule={(apptId, newTech, newMins) => {
+                if (scheduleReadOnly) return;
                 const original = appts.find(a => a.id === apptId);
                 if (!original) return;
                 // startTime is stored as 24h "HH:mm" — minsToStr returns
@@ -1103,6 +1109,7 @@ function openNew(techName, slotMins) {
           clients={clients}
           services={services}
           techs={techs}
+          employees={employees}
           onChange={patch => setModal(m => ({ ...m, appt: { ...m.appt, ...patch } }))}
           onSwitchEdit={() => setModal(m => ({ ...m, mode: 'edit' }))}
           onSave={() => handleSave(modal.appt, modal.original)}
@@ -1114,6 +1121,7 @@ function openNew(techName, slotMins) {
           onOpenClient={(id) => { setModal(null); onOpenClient?.(id); }}
           onClientCreated={(c) => setClients(prev => [...prev, c].sort((a, b) => (a.name || '').localeCompare(b.name || '')))}
           isAdmin={isAdmin}
+          viewOnly={scheduleReadOnly}
           onReload={load}
         />
       )}
@@ -1162,7 +1170,7 @@ function openNew(techName, slotMins) {
         />
       )}
 
-      <VoiceAssistant clients={clients} services={services} techs={techs} />
+      <VoiceAssistant clients={clients} services={services} techs={techs} employees={employees} />
 
       {/* First-visit tip. Salon owners often miss the click-to-create +
           drag-to-reschedule + tech-focus interactions on first encounter
@@ -1925,7 +1933,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
 }
 
 // ── Appointment modal ─────────────────────────────────
-function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
+function ApptModal({ appt, mode, clients, services, techs, employees = [], onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const { gUser, settings } = useApp();
   const [saving,    setSaving]    = useState(false);
@@ -2101,9 +2109,29 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
     onChange({ clientId, clientName: c ? c.name : '' });
   }
 
+  // The performing tech can have a per-service duration override (e.g. a
+  // newer tech who needs more time). Resolve against the assigned tech so
+  // the block length matches who's actually doing the service.
+  const apptTech = employees.find(e => e.id === appt.techId || e.name === appt.techName) || null;
+
   function pickService(i, name) {
     const svc = services.find(s => s.name === name);
-    patchService(i, { name, duration: svc?.duration || 60, price: svc?.basePrice || '' });
+    const duration = svc ? (resolveServicePricing(svc, null, apptTech).duration || 60) : 60;
+    patchService(i, { name, duration, price: svc?.basePrice || '' });
+  }
+
+  // Re-resolve every service's duration for the newly-assigned tech so their
+  // per-service times take effect. Items carrying an explicit option override
+  // (e.g. created via online booking) keep their resolved duration.
+  function pickTechName(name) {
+    const newTech = employees.find(e => e.name === name) || null;
+    const next = (appt.services || []).map(sv => {
+      if (sv.optionId) return sv;
+      const svc = services.find(s => s.name === sv.name);
+      if (!svc) return sv;
+      return { ...sv, duration: resolveServicePricing(svc, null, newTech).duration || sv.duration || 60 };
+    });
+    onChange({ techName: name, services: next });
   }
 
   // Save-time validation, consolidated into a single inline panel above
@@ -2460,7 +2488,7 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
               {isView ? (
                 <ViewVal>{appt.techName || '—'}</ViewVal>
               ) : (
-                <select value={appt.techName} onChange={e => onChange({ techName: e.target.value })} style={inp}>
+                <select value={appt.techName} onChange={e => pickTechName(e.target.value)} style={inp}>
                   <option value="">Pick tech…</option>
                   {techs.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
@@ -2774,7 +2802,7 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
               {!viewOnly && (
                 <button onClick={onSwitchEdit} style={{ flex: 1, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE', whiteSpace: 'nowrap' }}>Edit</button>
               )}
-              {appt.id && appt.status !== 'done' && appt.status !== 'cancelled' && (
+              {!viewOnly && appt.id && appt.status !== 'done' && appt.status !== 'cancelled' && (
                 <>
                   <button onClick={() => onAddToTicket(appt)}
                     style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: '#fff', color: '#2D7A5F', border: '1.5px solid #2D7A5F', borderRadius: 8, padding: '8px 10px', whiteSpace: 'nowrap' }}>
@@ -2786,7 +2814,7 @@ function ApptModal({ appt, mode, clients, services, techs, onChange, onSwitchEdi
                   </button>
                 </>
               )}
-              {appt.id && appt.status === 'done' && !appt.refund && (
+              {!viewOnly && appt.id && appt.status === 'done' && !appt.refund && (
                 <button onClick={() => onRefund(appt)}
                   style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px' }}>
                   Refund

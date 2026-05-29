@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatPrice, formatDuration, groupByCategory, validateService, blankService } from './serviceHelpers';
+import { formatPrice, formatDuration, groupByCategory, validateService, blankService, resolveServicePricing, techServiceDuration, resolveBookedDurations } from './serviceHelpers';
 
 describe('formatPrice', () => {
   it('shows + for priceFrom=true',  () => expect(formatPrice(70, true)).toBe('$70+'));
@@ -67,5 +67,81 @@ describe('blankService', () => {
     expect(s.active).toBe(true);
     expect(typeof s.basePrice).toBe('number');
     expect(typeof s.duration).toBe('number');
+  });
+});
+
+describe('techServiceDuration', () => {
+  const svc = { id: 'gel', duration: 60 };
+  it('falls back to service duration when no tech', () => expect(techServiceDuration(svc, null)).toBe(60));
+  it('falls back when tech has no overrides', () => expect(techServiceDuration(svc, { name: 'A' })).toBe(60));
+  it('falls back when tech has no override for this service', () =>
+    expect(techServiceDuration(svc, { serviceDurations: { other: 90 } })).toBe(60));
+  it('uses the tech override when set', () =>
+    expect(techServiceDuration(svc, { serviceDurations: { gel: 75 } })).toBe(75));
+  it('ignores a zero or negative override', () => {
+    expect(techServiceDuration(svc, { serviceDurations: { gel: 0 } })).toBe(60);
+    expect(techServiceDuration(svc, { serviceDurations: { gel: -10 } })).toBe(60);
+  });
+  it('returns 0 when neither service nor tech has a duration', () =>
+    expect(techServiceDuration({ id: 'x' }, null)).toBe(0));
+});
+
+describe('resolveServicePricing with per-tech duration', () => {
+  const svc = { id: 'gel', basePrice: 70, duration: 60 };
+  const slowTech = { serviceDurations: { gel: 75 } };
+
+  it('uses base duration when no tech', () =>
+    expect(resolveServicePricing(svc, null).duration).toBe(60));
+  it('applies the tech override as the base duration', () =>
+    expect(resolveServicePricing(svc, null, slowTech).duration).toBe(75));
+  it('keeps price unaffected by the duration override', () =>
+    expect(resolveServicePricing(svc, null, slowTech).price).toBe(70));
+  it('adds durationAdd on top of the tech override', () => {
+    const opt = { id: 'len', durationAdd: 15 };
+    expect(resolveServicePricing(svc, opt, slowTech).duration).toBe(90); // 75 + 15
+  });
+  it('an absolute option duration still wins over the tech override', () => {
+    const opt = { id: 'fixed', duration: 100 };
+    expect(resolveServicePricing(svc, opt, slowTech).duration).toBe(100);
+  });
+});
+
+describe('resolveBookedDurations', () => {
+  const allServices = [
+    { id: 'gel',  name: 'Gel Manicure', basePrice: 70, duration: 60 },
+    { id: 'pedi', name: 'Spa Pedicure', basePrice: 55, duration: 45 },
+  ];
+  const slowTech = { name: 'Ana', serviceDurations: { gel: 75 } };
+
+  it('applies the per-tech override to a matched service', () => {
+    const out = resolveBookedDurations([{ name: 'Gel Manicure', duration: 60, price: 70 }], allServices, slowTech);
+    expect(out[0].duration).toBe(75);
+  });
+  it('keeps base duration for services the tech has no override for', () => {
+    const out = resolveBookedDurations([{ name: 'Spa Pedicure', duration: 45, price: 55 }], allServices, slowTech);
+    expect(out[0].duration).toBe(45);
+  });
+  it('uses base duration when no tech is supplied', () => {
+    const out = resolveBookedDurations([{ name: 'Gel Manicure', duration: 60 }], allServices, null);
+    expect(out[0].duration).toBe(60);
+  });
+  it('passes through a service whose name is not in the catalog', () => {
+    const custom = { name: 'Custom thing', duration: 30, price: 20 };
+    expect(resolveBookedDurations([custom], allServices, slowTech)).toEqual([custom]);
+  });
+  it('preserves other fields (price, name) while updating duration', () => {
+    const out = resolveBookedDurations([{ name: 'Gel Manicure', duration: 60, price: 70 }], allServices, slowTech);
+    expect(out[0]).toEqual({ name: 'Gel Manicure', duration: 75, price: 70 });
+  });
+  it('resolves each item in a multi-service list independently', () => {
+    const out = resolveBookedDurations(
+      [{ name: 'Gel Manicure', duration: 60 }, { name: 'Spa Pedicure', duration: 45 }],
+      allServices, slowTech,
+    );
+    expect(out.map(s => s.duration)).toEqual([75, 45]);
+  });
+  it('handles empty/missing input', () => {
+    expect(resolveBookedDurations([], allServices, slowTech)).toEqual([]);
+    expect(resolveBookedDurations(undefined, allServices, slowTech)).toEqual([]);
   });
 });

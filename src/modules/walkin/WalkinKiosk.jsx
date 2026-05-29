@@ -7,6 +7,7 @@ import {
   fetchEmployees, fetchServices, fetchClient, fetchClients, createClient,
 } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
+import { resolveServicePricing } from '../../utils/serviceHelpers';
 
 function todayStr() {
   const d = new Date();
@@ -185,12 +186,11 @@ export default function WalkinKiosk() {
       );
       await saveTurnRoster(today, updated).catch(() => {});
 
-      // 2) Create the appointment for "now"
-      const dur = (() => {
-        const svc = services.find(s => s.name === entry.serviceName);
-        return Number(svc?.duration) || 60;
-      })();
+      // 2) Create the appointment for "now". Resolve the per-tech duration so a
+      // slower tech gets the longer block they configured for this service.
       const svc = services.find(s => s.name === entry.serviceName);
+      const seatedTechRec = employees.find(e => e.name === techName) || null;
+      const dur = svc ? (resolveServicePricing(svc, null, seatedTechRec).duration || 60) : 60;
       const newApptId = await createAppointment({
         clientId:   entry.clientId || '',
         clientName: entry.clientName || 'Walk-in',
@@ -198,7 +198,7 @@ export default function WalkinKiosk() {
         date:       today,
         startTime:  nowHHMM(),
         duration:   dur,
-        services:   svc ? [{ name: svc.name, duration: svc.duration || dur, price: svc.basePrice ?? '' }] : (entry.serviceName ? [{ name: entry.serviceName, duration: dur, price: '' }] : []),
+        services:   svc ? [{ name: svc.name, duration: dur, price: svc.basePrice ?? '' }] : (entry.serviceName ? [{ name: entry.serviceName, duration: dur, price: '' }] : []),
         status:     'in-progress',
         source:     'walkin_kiosk',
         techRequestType: 'auto',

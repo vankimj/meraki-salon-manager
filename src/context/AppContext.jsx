@@ -264,6 +264,7 @@ export function AppProvider({ children }) {
         if (me && me.role) {
           const stub = { email: user.email, role: me.role };
           if (me.techName) stub.techName = me.techName;
+          if (me.scheduleAccess) stub.scheduleAccess = me.scheduleAccess;
           currentUsers = [stub];
           setMyRecord(stub);
         }
@@ -372,11 +373,14 @@ export function AppProvider({ children }) {
   // who's also a working tech can keep their tech identity, which the
   // HomeScreen "My tech view" toggle keys off of. Pass `techName: null`
   // explicitly to clear it.
-  const grantAccess = useCallback(async (email, role, techName) => {
+  const grantAccess = useCallback(async (email, role, techName, scheduleAccess) => {
     const prev    = users.find(u => u.email === email)?.role;
     const updated = users.map(u => u.email === email ? {
       ...u, role,
       techName: techName !== undefined ? techName : (u.techName || null),
+      // 'edit' (default) | 'view'. Only meaningful for the 'tech' role; the
+      // rules' scheduleViewOnlyEmails projection ignores it for other roles.
+      scheduleAccess: scheduleAccess !== undefined ? scheduleAccess : (u.scheduleAccess || 'edit'),
       grantedAt: new Date().toISOString(),
     } : u);
     setUsers(updated);
@@ -604,6 +608,15 @@ export function AppProvider({ children }) {
   const myTechName  = viewAs?.role === 'tech' ? (viewAs.techName || null) : (viewAs ? null : (_rec?.techName || null));
   const isPortalUser = !!portalClientId;
 
+  // Per-tech schedule permission. Admins/schedulers always edit; only a
+  // 'tech' explicitly set to view-only is restricted. The Firestore rules
+  // enforce this server-side (scheduleViewOnlyEmails) — this flag just drives
+  // the UI. viewAs impersonation carries its own scheduleAccess for preview.
+  const effScheduleAccess = viewAs?.role === 'tech'
+    ? (viewAs.scheduleAccess || 'edit')
+    : (_rec?.scheduleAccess || 'edit');
+  const canEditOwnSchedule = !(isTech && effScheduleAccess === 'view');
+
   // Canary tier + feature flags — see src/lib/featureFlags.js for the
   // resolution chain. Stored on data/settings (already loaded above),
   // so this is essentially free — no extra read. Tier defaults to
@@ -620,7 +633,7 @@ export function AppProvider({ children }) {
       slides, def, cur, setCur,
       users, settings,
       gUser, syncState, toast, toastAction, loaded, isOnline,
-      isAdmin, isReadOnly, isTech, isScheduler, myTechName, realIsAdmin, viewAs, setViewAs,
+      isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
       isPortalUser, portalClientId,
       showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
       addSlide, updateSlide, deleteSlide, setDefault,
