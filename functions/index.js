@@ -6833,6 +6833,11 @@ function trimOrNull(v) { const s = String(v || '').trim(); return s || null; }
 // helper so multi-tenant routing stays consistent. Cache is process-
 // local (Cloud Functions cold-starts cycle the cache automatically).
 const _tenantSmsFromCache = new Map();
+// TFN ↔ tenant registry helpers (TFN→tenantId routing for inbound SMS).
+// Extracted to ./lib/tfnRegistry so the register/unregister/lookup lifecycle
+// is unit-testable against a fake Firestore; `db` is injected into each call.
+const { registerTfnForTenant, unregisterTfn, findTenantByTfn } = require('./lib/tfnRegistry');
+
 async function tenantSmsFrom(db, tenantId) {
   if (_tenantSmsFromCache.has(tenantId)) {
     const cached = _tenantSmsFromCache.get(tenantId);
@@ -7025,6 +7030,14 @@ exports.provisionTenantSMS = onCall(
       }, { merge: true });
     }
 
+    // Map TFN→tenant the moment the number is owned, not only when the status
+    // webhook later flips to approved. Carriers don't deliver inbound before
+    // approval, so mapping early is harmless — but it removes the single point
+    // of failure where a missed or misconfigured status callback would leave
+    // the number unmapped and silently route this tenant's inbound replies
+    // into Meraki's chat threads (the TENANT_ID fallback in twilioInboundSms).
+    await registerTfnForTenant(db, tfnNumber, tenantId, false);
+
     // 2. Submit Toll-Free Verification via Twilio Messaging Compliance.
     //    Two API surfaces work here:
     //      a) client.messaging.v1.tollfreeVerifications.create({...}) — newest path
@@ -7113,6 +7126,18 @@ exports.twilioStatusWebhook = onRequest({ cors: false, timeoutSeconds: 30 }, asy
     if (mapped === 'approved')  patch.approvedAt        = now;
     if (mapped === 'rejected') { patch.rejectionReason  = rejectionReason || 'Carrier did not provide a reason.'; patch.rejectedAt = now; }
     await docRef.set(patch, { merge: true });
+
+    // Belt-and-suspenders TFN→tenant registration on approval. provisionTenantSMS
+    // now maps the number at buy time, so this is normally a redundant idempotent
+    // write — it still covers any number provisioned before buy-time mapping
+    // existed. We intentionally do NOT unregister on rejection: the number stays
+    // tenant-owned and is resubmitted after edits, and carriers deliver no inbound
+    // while unapproved. Only releaseTenantSMS (a true release) unmaps a number.
+    if (mapped === 'approved') {
+      const tenSnap = await docRef.get();
+      const tfnPhone = tenSnap.exists ? tenSnap.data()?.tfnNumber : null;
+      if (tfnPhone) await registerTfnForTenant(db, tfnPhone, tenantId, false);
+    }
 
     // Best-effort email notify (don't fail the webhook if email is broken).
     try {
