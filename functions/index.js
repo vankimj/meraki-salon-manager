@@ -124,18 +124,19 @@ function unsubUrl(tenantId, clientId) {
 // (APPT_MANAGE_SECRET) so its blast radius is contained: a leak of the
 // unsub key doesn't enable mass-cancel, and rotating one doesn't invalidate
 // the other's outstanding tokens.
-function apptManageToken(tenantId, apptId) {
-  const crypto = require('crypto');
-  return crypto.createHmac('sha256', apptManageSecret.value())
-    .update(`appt:${tenantId}:${apptId}`)
-    .digest('hex')
-    .slice(0, 16);
+// Token + URL builders delegate to ./lib/apptManage so the HMAC + expiry
+// logic is unit-testable with a stub secret. `exp` pins the appointment's
+// natural expiry (24h after start) into the HMAC so a leaked SMS can't be
+// replayed once the appt has passed.
+const { apptExpUnix, buildApptManageToken, verifyApptManageToken } = require('./lib/apptManage');
+function apptManageToken(tenantId, apptId, exp) {
+  return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
-function apptManageUrl(tenantId, apptId) {
-  if (!apptId) return null;
-  const t = apptManageToken(tenantId, apptId);
+function apptManageUrl(tenantId, apptId, exp) {
+  if (!apptId || !exp) return null;
+  const t = apptManageToken(tenantId, apptId, exp);
   const base = (publicAppUrl.value() || '').replace(/\/+$/, '');
-  return `${base}/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&t=${t}`;
+  return `${base}/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&exp=${exp}&t=${t}`;
 }
 
 // ── Server-side authorization helpers (mirror firestore.rules) ──
@@ -1773,7 +1774,7 @@ exports.getApptManageLink = onCall({ cors: true, secrets: [apptManageSecret] }, 
   await requireTenantStaff(db, tenantId, request);
   const exists = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
   if (!exists.exists) throw new HttpsError('not-found', 'Appointment not found');
-  const url = apptManageUrl(tenantId, apptId);
+  const url = apptManageUrl(tenantId, apptId, apptExpUnix({ id: apptId, ...exists.data() }));
   return { url };
 });
 
@@ -1794,16 +1795,12 @@ exports.getApptManageLink = onCall({ cors: true, secrets: [apptManageSecret] }, 
 // (defaults to 24 hours). Frontend reads the policy via 'get' to show
 // the right UX.
 exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, async (request) => {
-  const { tid, apptId, token, action, payload = {} } = request.data || {};
-  if (!tid || !apptId || !token || !action) {
+  const { tid, apptId, token, exp, action, payload = {} } = request.data || {};
+  if (!tid || !apptId || !token || !action || exp == null) {
     throw new HttpsError('invalid-argument', 'Missing parameters');
   }
-  const expected = apptManageToken(tid, apptId);
-  const crypto = require('crypto');
-  const a = Buffer.from(expected);
-  const b = Buffer.from(String(token));
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-    throw new HttpsError('permission-denied', 'Invalid token');
+  if (!verifyApptManageToken(apptManageSecret.value(), tid, apptId, exp, token)) {
+    throw new HttpsError('permission-denied', 'Invalid or expired link');
   }
 
   const db = getFirestore();
@@ -2337,7 +2334,7 @@ function buildReminderHtml(appt, client, tenantId, brand) {
   const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
-  const manageLink = apptManageUrl(tenantId, appt.id);
+  const manageLink = apptManageUrl(tenantId, appt.id, apptExpUnix(appt));
   return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -2539,13 +2536,17 @@ exports.sendDailyReminders = onSchedule(
         }
 
         if (wantsSms) {
-          // Short body for SMS. "Reply C to confirm" wires into the
-          // inbound webhook keyword handler — sets confirmed=true on
-          // the most recent scheduled appt for this phone.
-          const techShort = appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '';
-          const smsBody =
-            `Hi ${firstName}! Reminder: your appointment at ${brand.salonName} is tomorrow at `
-            + `${fmtTime(appt.startTime)}${techShort}. Reply C to confirm.`;
+          // Lead with salonName so clients recognize the sender on the shared
+          // platform TFN (multiple tenants share one number; the body is the
+          // only signal of identity). Embed the tokenized manage URL — clients
+          // tap it to confirm/reschedule/cancel in the browser. Replaces the
+          // legacy "Reply C to confirm" reply-handler path, which can't
+          // disambiguate tenant on a shared inbound number.
+          const techShort  = appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '';
+          const manageLink = apptManageUrl(tenantId, appt.id, apptExpUnix(appt));
+          const smsBody    = manageLink
+            ? `${brand.salonName}: Hi ${firstName}! Your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}. Confirm/reschedule: ${manageLink}`
+            : `${brand.salonName}: Hi ${firstName}! Reminder: your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}.`;
           const r = await sendSms({
             to: phone,
             body: smsBody,
@@ -2813,7 +2814,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
     const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
-    const manageLink = apptManageUrl(tenantId, event.params?.apptId || snap.id);
+    const manageLink = apptManageUrl(tenantId, event.params?.apptId || snap.id, apptExpUnix(appt));
     const locationLine = brand.addressLine
       ? `${brand.salonName}, ${brand.addressLine}`
       : brand.salonName;
@@ -2886,7 +2887,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     })());
     if (clientPhone) {
       const apptIdForSms = event.params?.apptId || snap.id;
-      const manageShort  = apptManageUrl(tenantId, apptIdForSms);
+      const manageShort  = apptManageUrl(tenantId, apptIdForSms, apptExpUnix(appt));
       const dateShort    = fmtDate(appt.date).replace(/,.*/, '');
       const timeShort    = fmtTime(appt.startTime);
       const techShort    = appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '';
@@ -4120,7 +4121,7 @@ exports.draftConflictMessages = onCall(
     // without calling the salon. Drops into both SMS and email drafts.
     const manageLinks = {};
     affected.forEach(a => {
-      const link = apptManageUrl(tenantId, a.id);
+      const link = apptManageUrl(tenantId, a.id, apptExpUnix(a));
       if (link) manageLinks[a.id] = link;
     });
 

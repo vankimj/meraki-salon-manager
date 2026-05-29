@@ -23,6 +23,7 @@ export default function ManageAppointmentScreen() {
   const apptId = params.get('manage');
   const tid    = params.get('tid');
   const token  = params.get('t');
+  const exp    = params.get('exp');
 
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
@@ -31,17 +32,17 @@ export default function ManageAppointmentScreen() {
   const [doneState, setDoneState] = useState(null);  // { type, ... }
 
   useEffect(() => {
-    if (!apptId || !tid || !token) {
+    if (!apptId || !tid || !token || !exp) {
       setError('Invalid link.');
       setLoading(false);
       return;
     }
     const fn = httpsCallable(functions, 'manageAppointment');
-    fn({ tid, apptId, token, action: 'get' })
+    fn({ tid, apptId, token, exp, action: 'get' })
       .then(res => setData(res?.data || null))
       .catch(e => setError(e?.message || 'Could not load appointment'))
       .finally(() => setLoading(false));
-  }, [apptId, tid, token]);
+  }, [apptId, tid, token, exp]);
 
   if (loading) return <Frame><Loading /></Frame>;
   if (error)   return <Frame><ErrorBlock msg={error} /></Frame>;
@@ -61,7 +62,7 @@ export default function ManageAppointmentScreen() {
           policy={policy}
           onConfirm={async () => {
             try {
-              await httpsCallable(functions, 'manageAppointment')({ tid, apptId, token, action: 'cancel' });
+              await httpsCallable(functions, 'manageAppointment')({ tid, apptId, token, exp, action: 'cancel' });
               setDoneState({ type: 'cancelled', appt });
               setView('done');
             } catch (e) {
@@ -84,6 +85,7 @@ export default function ManageAppointmentScreen() {
           tid={tid}
           apptId={apptId}
           token={token}
+          exp={exp}
           onConfirmed={(newDate, newStartTime) => {
             setDoneState({ type: 'rescheduled', appt: { ...appt, date: newDate, startTime: newStartTime } });
             setView('done');
@@ -216,7 +218,7 @@ function CancelView({ appt, salon, policy, onConfirm, onBack }) {
   );
 }
 
-function RescheduleView({ appt, salon, policy, tid, apptId, token, onConfirmed, onBack }) {
+function RescheduleView({ appt, salon, policy, tid, apptId, token, exp, onConfirmed, onBack }) {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
   const [availability, setAvail] = useState([]); // [{ date, dow, slots:[{startTime}] }]
@@ -225,18 +227,18 @@ function RescheduleView({ appt, salon, policy, tid, apptId, token, onConfirmed, 
 
   useEffect(() => {
     setLoading(true);
-    httpsCallable(functions, 'manageAppointment')({ tid, apptId, token, action: 'availableSlots' })
+    httpsCallable(functions, 'manageAppointment')({ tid, apptId, token, exp, action: 'availableSlots' })
       .then(res => setAvail(res?.data?.availability || []))
       .catch(e => setError(e?.message || 'Could not load times'))
       .finally(() => setLoading(false));
-  }, [tid, apptId, token]);
+  }, [tid, apptId, token, exp]);
 
   async function confirm() {
     if (!pick) return;
     setSubmitting(true);
     setError('');
     try {
-      await httpsCallable(functions, 'manageAppointment')({ tid, apptId, token, action: 'reschedule', payload: { date: pick.date, startTime: pick.startTime } });
+      await httpsCallable(functions, 'manageAppointment')({ tid, apptId, token, exp, action: 'reschedule', payload: { date: pick.date, startTime: pick.startTime } });
       onConfirmed(pick.date, pick.startTime);
     } catch (e) {
       setError(e?.message || 'Could not reschedule');
