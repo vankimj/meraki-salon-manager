@@ -18,7 +18,12 @@
     {"collectionGroup": "reviews",          "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
     {"collectionGroup": "meetings",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
     {"collectionGroup": "products",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
-    {"collectionGroup": "campaigns",        "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]}
+    {"collectionGroup": "campaigns",        "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+
+    {
+      "//": "subscribeQueue / fetchTodayQueue — walk-in waitlist filtered by date and ordered by addedAt. Required for the Schedule's queue panel + ModuleShell badge. Missing this caused the first crash on the test tenant subdomain (which had never had a waitlist doc to seed the auto-index).",
+      "collectionGroup": "waitlist",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "date", "order": "ASCENDING"}, {"fieldPath": "addedAt", "order": "ASCENDING"}]
+    }
   ],
   "fieldOverrides": []
 }

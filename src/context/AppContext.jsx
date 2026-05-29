@@ -145,6 +145,12 @@ export function AppProvider({ children }) {
   const logoutTimer    = useRef(null);
   const inactivityTimer= useRef(null);
   const toastTimer     = useRef(null);
+  // Paused flag for the auto-logout timer. Long-running flows (onboarding
+  // wizard, demo seed) flip this true so background effects can't silently
+  // restart the timer while the flow is in progress. Ref (not state) so
+  // changes don't trigger re-renders, and the check inside startLogoutTimer
+  // is synchronous against the latest value.
+  const logoutPausedRef = useRef(false);
 
   // ── Toast ──────────────────────────────────────────────
   const showToast = useCallback((msg, dur = 2200, action = null) => {
@@ -167,6 +173,7 @@ export function AppProvider({ children }) {
 
   // ── Auto-logout ────────────────────────────────────────
   const startLogoutTimer = useCallback((user, timeoutMin) => {
+    if (logoutPausedRef.current) return;
     clearTimeout(logoutTimer.current);
     logoutTimer.current = setTimeout(() => {
       if (user) { fbSignOut(auth); showToast(`Auto-logged out after ${timeoutMin} min inactivity`); }
@@ -178,13 +185,21 @@ export function AppProvider({ children }) {
   }, [gUser, settings.timeoutMin, startLogoutTimer]);
 
   // Pause/resume the auto-logout timer entirely. Used by long-running
-  // admin operations (demo seed, big imports) so a 10-15-minute job
-  // doesn't get killed by the default 5-minute inactivity timeout.
-  // The standard reset-on-interaction path is also a no-op while
-  // paused (resetLogoutTimer is a no-op when there's no live timer to
-  // reset, which is the state pauseLogoutTimer leaves us in).
-  const pauseLogoutTimer  = useCallback(() => { clearTimeout(logoutTimer.current); logoutTimer.current = null; }, []);
-  const resumeLogoutTimer = useCallback(() => { if (gUser) startLogoutTimer(gUser, settings.timeoutMin); }, [gUser, settings.timeoutMin, startLogoutTimer]);
+  // admin operations (demo seed, big imports, onboarding wizard) so a
+  // 10-15-minute flow doesn't get killed by the default 5-minute inactivity
+  // timeout. The pause flag lives in a ref that startLogoutTimer checks on
+  // every call — this is the only thing keeping background effects (like
+  // the settings.timeoutMin load resolving after wizard mount) from racing
+  // ahead and restarting the timer behind the wizard's back.
+  const pauseLogoutTimer  = useCallback(() => {
+    logoutPausedRef.current = true;
+    clearTimeout(logoutTimer.current);
+    logoutTimer.current = null;
+  }, []);
+  const resumeLogoutTimer = useCallback(() => {
+    logoutPausedRef.current = false;
+    if (gUser) startLogoutTimer(gUser, settings.timeoutMin);
+  }, [gUser, settings.timeoutMin, startLogoutTimer]);
 
   // ── Firestore load ─────────────────────────────────────
   useEffect(() => {

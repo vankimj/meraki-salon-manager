@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { createService } from '../../lib/firestore';
 import { SERVICE_TEMPLATES } from '../../data/serviceTemplates';
@@ -33,12 +33,20 @@ export default function Phase2Import({ onboarding, onAdvance, saving }) {
 // ─── MIGRATE PATH ──────────────────────────────────────────────────
 function MigratePath({ onboarding, onAdvance, saving }) {
   const [source, setSource] = useState(onboarding?.phases?.import?.source || 'glossgenius');
+  // Tracks whether the embedded CsvImportSection has a long-running import
+  // in flight. We gate the bottom "Skip / Done importing" buttons on this
+  // so the owner can't advance the wizard mid-import and lose visibility
+  // into the progress + cancel controls.
+  const [importBusy, setImportBusy] = useState(false);
+  const onBusyChange = useCallback((b) => setImportBusy(b), []);
   const picked = SOURCES.find(s => s.id === source);
 
   function complete() {
+    if (importBusy) return;
     onAdvance({ phaseData: { source } });
   }
   function skip() {
+    if (importBusy) return;
     onAdvance({ skip: true, phaseData: { source } });
   }
 
@@ -76,7 +84,7 @@ function MigratePath({ onboarding, onAdvance, saving }) {
               writes directly to Firestore with its own dedup + diff +
               progress UI. We embed it inline so onboarding owns the
               presentation but reuses the battle-tested logic. */}
-          <CsvImportSection />
+          <CsvImportSection onBusyChange={onBusyChange} />
         </Section>
       )}
 
@@ -95,9 +103,18 @@ function MigratePath({ onboarding, onAdvance, saving }) {
         </Section>
       )}
 
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
-        <button onClick={skip} disabled={saving} style={btnSecondary}>Skip for now</button>
-        <button onClick={complete} disabled={saving} style={btnPrimary}>
+      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, alignItems: 'center' }}>
+        {importBusy && (
+          <span style={{ fontSize: 11, color: '#5b3b8c', fontStyle: 'italic', marginRight: 6 }}>
+            Finish or cancel the import to continue
+          </span>
+        )}
+        <button onClick={skip} disabled={saving || importBusy}
+          style={{ ...btnSecondary, opacity: (saving || importBusy) ? 0.45 : 1, cursor: (saving || importBusy) ? 'not-allowed' : 'pointer' }}>
+          Skip for now
+        </button>
+        <button onClick={complete} disabled={saving || importBusy}
+          style={{ ...btnPrimary, opacity: (saving || importBusy) ? 0.45 : 1, cursor: (saving || importBusy) ? 'not-allowed' : 'pointer' }}>
           {saving ? 'Saving…' : 'Done importing — continue →'}
         </button>
       </div>

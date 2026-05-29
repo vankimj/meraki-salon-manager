@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { createClient, saveClient, createAppointment, createReceipt, fetchClients, fetchExistingGgTransactionIds, fetchExistingApptKeys, apptDedupKey } from '../lib/firestore';
+import { createClient, saveClient, createClientsBatch, saveClientsBatch, createAppointment, createReceipt, createReceiptsBatch, fetchClients, fetchExistingGgTransactionIds, fetchExistingApptKeys, apptDedupKey } from '../lib/firestore';
 import { logActivity } from '../lib/logger';
 import {
   parseCsv, detectType,
@@ -28,7 +28,7 @@ const MAX_INLINE_SKIPPED = 50;
 // Each step is gated on the previous. Closing the tab mid-flow loses the
 // in-memory staged Payment Details; user restarts from step 1. Step 1 is
 // idempotent (dedup by name) so re-running it is safe.
-export default function CsvImportSection() {
+export default function CsvImportSection({ onBusyChange }) {
   const { showToast } = useApp();
 
   // Step 1: Contacts
@@ -48,7 +48,25 @@ export default function CsvImportSection() {
   // Common
   const [running,  setRunning]  = useState(null); // 'clients' | 'receipts' | null
   const [progress, setProgress] = useState('');
+  const [progressNum, setProgressNum] = useState(null); // { current, total, label } for the progress bar
   const [skipped,  setSkipped]  = useState(null);
+  // Cancel flag — checked inside the import loop on every iteration. Ref
+  // (not state) so the loop sees the latest value synchronously and we
+  // don't trigger re-renders while toggling it.
+  const cancelRef = useRef(false);
+
+  // Surface busy state to the parent so it can disable its own "continue"
+  // buttons while an import is in flight (avoids the user advancing the
+  // wizard mid-import and losing progress visibility).
+  useEffect(() => {
+    onBusyChange?.(running !== null);
+  }, [running, onBusyChange]);
+
+  const requestCancel = useCallback(() => {
+    if (!running) return;
+    cancelRef.current = true;
+    showToast('Cancelling — finishing current record…', 3000);
+  }, [running, showToast]);
 
   async function readAndParse(f) {
     const text = await f.text();
@@ -84,37 +102,77 @@ export default function CsvImportSection() {
 
     setRunning('clients');
     setSkipped(null);
+    cancelRef.current = false;
+    setProgressNum({ current: 0, total: clientsFile.mapped.length, label: 'contacts' });
     let count = 0;
     let updated = 0;
+    let cancelled = false;
     const skippedRows = [];
     try {
       setProgress('Loading dedup index…');
       const existingDocs = await fetchClients().catch(() => []);
       const byKey = {};
       existingDocs.forEach(d => { if (d.name) byKey[clientKey(d.name)] = d; });
+
+      // Partition into new (create) vs duplicate-with-banned-update (save) vs
+      // pure duplicate (skip). All Firestore writes happen in writeBatch
+      // chunks below, not per-row.
+      const toCreate = [];
+      const toUpdate = []; // { id, data }
       for (const c of clientsFile.mapped) {
         const key = clientKey(c.name);
         const ex = key ? byKey[key] : null;
         if (ex) {
           if (c.banned && !ex.banned) {
-            await saveClient(ex.id, { banned: true }).catch(() => {});
-            updated++;
+            toUpdate.push({ id: ex.id, data: { banned: true } });
+            skippedRows.push({
+              name: c.name, email: c.email || '', phone: c.phone || '',
+              reason: 'Existed → banned flag applied',
+            });
+          } else {
+            skippedRows.push({
+              name: c.name, email: c.email || '', phone: c.phone || '',
+              reason: 'Client name already in DB',
+            });
           }
-          skippedRows.push({
-            name: c.name, email: c.email || '', phone: c.phone || '',
-            reason: c.banned && !ex.banned ? 'Existed → banned flag applied' : 'Client name already in DB',
-          });
-          continue;
+        } else {
+          toCreate.push(c);
+          if (key) byKey[key] = c;
         }
-        await createClient(c).catch(() => {});
-        if (key) byKey[key] = c;
-        count++;
-        if ((count + skippedRows.length) % 20 === 0) setProgress(`Contacts: ${count} imported, ${updated} banned-updated, ${skippedRows.length} skipped / ${clientsFile.mapped.length}`);
       }
-      logActivity('gg_import', `clients: ${count} new, ${updated} updated, ${skippedRows.length} skipped from ${clientsFile.fileName}`);
+
+      // Phase A: bulk-create new clients. writeBatch in 450-doc chunks.
+      const CHUNK_SIZE = 450;
+      for (let i = 0; i < toCreate.length; i += CHUNK_SIZE) {
+        if (cancelRef.current) { cancelled = true; break; }
+        const chunk = toCreate.slice(i, i + CHUNK_SIZE);
+        await createClientsBatch(chunk);
+        count += chunk.length;
+        const done = count + updated + skippedRows.length;
+        setProgress(`Contacts: ${count.toLocaleString()} imported, ${updated.toLocaleString()} banned-updated, ${skippedRows.length.toLocaleString()} skipped / ${clientsFile.mapped.length.toLocaleString()}`);
+        setProgressNum({ current: done, total: clientsFile.mapped.length, label: 'contacts' });
+      }
+      // Phase B: bulk-update banned-flag on existing duplicates (if not cancelled).
+      if (!cancelled && toUpdate.length > 0) {
+        for (let i = 0; i < toUpdate.length; i += CHUNK_SIZE) {
+          if (cancelRef.current) { cancelled = true; break; }
+          const chunk = toUpdate.slice(i, i + CHUNK_SIZE);
+          await saveClientsBatch(chunk);
+          updated += chunk.length;
+          const done = count + updated + skippedRows.length;
+          setProgress(`Contacts: ${count.toLocaleString()} imported, ${updated.toLocaleString()} banned-updated, ${skippedRows.length.toLocaleString()} skipped / ${clientsFile.mapped.length.toLocaleString()}`);
+          setProgressNum({ current: done, total: clientsFile.mapped.length, label: 'contacts' });
+        }
+      }
+      logActivity('gg_import', `clients: ${count} new, ${updated} updated, ${skippedRows.length} skipped${cancelled ? ' [CANCELLED]' : ''} from ${clientsFile.fileName}`);
       setProgress('');
-      setClientsResult({ imported: count, updated, skipped: skippedRows.length });
-      showToast(`✓ Step 1: ${count} contacts imported · ${skippedRows.length} duplicates skipped`, 3500);
+      if (cancelled) {
+        setProgress(`Cancelled at ${count + skippedRows.length}/${clientsFile.mapped.length}. Already-imported records stay; you can re-run safely (dedup will skip them).`);
+        showToast(`Cancelled · ${count} imported before stop`, 3500);
+      } else {
+        setClientsResult({ imported: count, updated, skipped: skippedRows.length });
+        showToast(`✓ Step 1: ${count} contacts imported · ${skippedRows.length} duplicates skipped`, 3500);
+      }
       if (skippedRows.length > 0) setSkipped({ type: 'clients', rows: skippedRows, fileName: clientsFile.fileName });
     } catch (e) {
       console.error('[CSV] clients import failed:', e);
@@ -122,6 +180,8 @@ export default function CsvImportSection() {
       setProgress(`Error after ${count + skippedRows.length} records: ${e.message}`);
     } finally {
       setRunning(null);
+      setProgressNum(null);
+      cancelRef.current = false;
     }
   }
 
@@ -183,7 +243,9 @@ export default function CsvImportSection() {
 
     setRunning('receipts');
     setSkipped(null);
+    cancelRef.current = false;
     let count = 0;
+    let cancelled = false;
     const skippedRows = [];
     try {
       setProgress('Loading client lookup + dedup index…');
@@ -194,6 +256,11 @@ export default function CsvImportSection() {
       const lookup = {};
       fresh.forEach(c => { if (c.name) lookup[clientKey(c.name)] = c.id; });
       const finalReceipts = buildReceiptsFromGg(paymentsFile.records, lineItemsFile.records, lookup);
+      setProgressNum({ current: 0, total: finalReceipts.length, label: 'receipts' });
+
+      // Partition into new (to import) vs duplicate (to skip). Cheap in-memory
+      // pass — actual Firestore writes happen in writeBatch chunks below.
+      const toImport = [];
       for (const r of finalReceipts) {
         if (r._glossgeniusTransactionId && existingTxIds.has(r._glossgeniusTransactionId)) {
           skippedRows.push({
@@ -201,18 +268,36 @@ export default function CsvImportSection() {
             method: r.payment?.method || '', services: (r.services || []).map(s => s.name).join(' + '),
             chargeId: r._glossgeniusChargeId, reason: 'Payment Transaction ID already in DB',
           });
-          continue;
+        } else {
+          toImport.push(r);
         }
-        await createReceipt(r).catch(() => {});
-        if (r._glossgeniusTransactionId) existingTxIds.add(r._glossgeniusTransactionId);
-        count++;
-        if ((count + skippedRows.length) % 20 === 0) setProgress(`Receipts: ${count} imported, ${skippedRows.length} skipped (already in DB) / ${finalReceipts.length}`);
       }
-      logActivity('gg_import', `joined sales: ${count} new, ${skippedRows.length} skipped`);
+
+      // writeBatch in 450-doc chunks. One network RTT per chunk vs one per
+      // record gives ~100-200× speedup on 8k+ receipt imports. Cancel check
+      // is between chunks — granularity is 450 rather than 1, but commit
+      // duration is sub-second so responsiveness stays acceptable.
+      const CHUNK_SIZE = 450;
+      for (let i = 0; i < toImport.length; i += CHUNK_SIZE) {
+        if (cancelRef.current) { cancelled = true; break; }
+        const chunk = toImport.slice(i, i + CHUNK_SIZE);
+        await createReceiptsBatch(chunk);
+        chunk.forEach(r => { if (r._glossgeniusTransactionId) existingTxIds.add(r._glossgeniusTransactionId); });
+        count += chunk.length;
+        const done = count + skippedRows.length;
+        setProgress(`Receipts: ${count.toLocaleString()} imported, ${skippedRows.length.toLocaleString()} skipped (already in DB) / ${finalReceipts.length.toLocaleString()}`);
+        setProgressNum({ current: done, total: finalReceipts.length, label: 'receipts' });
+      }
+      logActivity('gg_import', `joined sales: ${count} new, ${skippedRows.length} skipped${cancelled ? ' [CANCELLED]' : ''}`);
       setProgress('');
       const linkedCount = finalReceipts.filter(r => r.clientId).length;
-      setReceiptsResult({ imported: count, skipped: skippedRows.length, linked: linkedCount, total: finalReceipts.length });
-      showToast(`✓ Step 3: ${count} receipts imported · ${skippedRows.length} duplicates skipped`, 3500);
+      if (cancelled) {
+        setProgress(`Cancelled at ${count + skippedRows.length}/${finalReceipts.length}. Already-imported receipts stay; you can re-run safely (dedup will skip them).`);
+        showToast(`Cancelled · ${count} receipts imported before stop`, 3500);
+      } else {
+        setReceiptsResult({ imported: count, skipped: skippedRows.length, linked: linkedCount, total: finalReceipts.length });
+        showToast(`✓ Step 3: ${count} receipts imported · ${skippedRows.length} duplicates skipped`, 3500);
+      }
       if (skippedRows.length > 0) setSkipped({ type: 'receipt', rows: skippedRows, fileName: lineItemsFile.fileName });
     } catch (e) {
       console.error('[CSV] receipts import failed:', e);
@@ -220,6 +305,8 @@ export default function CsvImportSection() {
       setProgress(`Error after ${count + skippedRows.length} records: ${e.message}`);
     } finally {
       setRunning(null);
+      setProgressNum(null);
+      cancelRef.current = false;
     }
   }
 
@@ -354,6 +441,16 @@ export default function CsvImportSection() {
           )}
         </Step>
 
+        {progressNum && (
+          <ProgressBar
+            current={progressNum.current}
+            total={progressNum.total}
+            label={progressNum.label}
+            onCancel={requestCancel}
+            cancelling={cancelRef.current}
+          />
+        )}
+
         {progress && (
           <div style={{ fontSize: 12, color: '#666', fontStyle: 'italic', marginTop: 10 }}>{progress}</div>
         )}
@@ -393,6 +490,38 @@ function Step({ num, title, description, state, locked, children }) {
 
 function Locked({ children }) {
   return <div style={{ fontSize: 11, color: '#999', padding: '8px 0', fontStyle: 'italic' }}>🔒 {children}</div>;
+}
+
+function ProgressBar({ current, total, label, onCancel, cancelling }) {
+  const pct = total > 0 ? Math.min(100, Math.round((current / total) * 100)) : 0;
+  return (
+    <div style={{ marginTop: 12, padding: '10px 12px', background: '#f5efff', border: '1px solid #d8c9f0', borderRadius: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
+        <span style={{ color: '#5b3b8c', fontWeight: 700 }}>
+          {current.toLocaleString()} / {total.toLocaleString()} {label} · {pct}%
+        </span>
+        <button
+          onClick={onCancel}
+          disabled={cancelling}
+          style={{
+            fontSize: 11, padding: '4px 10px', borderRadius: 6,
+            border: `1px solid ${cancelling ? '#ccc' : '#d97706'}`,
+            background: '#fff', color: cancelling ? '#999' : '#d97706',
+            cursor: cancelling ? 'wait' : 'pointer', fontFamily: 'inherit', fontWeight: 600,
+          }}
+        >
+          {cancelling ? 'Cancelling…' : 'Cancel'}
+        </button>
+      </div>
+      <div style={{ height: 8, background: '#fff', borderRadius: 4, overflow: 'hidden', border: '1px solid #e0d4f5' }}>
+        <div style={{
+          width: `${pct}%`, height: '100%',
+          background: 'linear-gradient(90deg, #5b3b8c, #7e57c2)',
+          transition: 'width 200ms ease-out',
+        }} />
+      </div>
+    </div>
+  );
 }
 
 function Result({ children }) {

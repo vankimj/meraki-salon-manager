@@ -15,7 +15,12 @@ import VoiceAssistant from '../voice/VoiceAssistant';
 import NotesEditor from '../../components/NotesEditor';
 import CoachMark from '../../components/CoachMark';
 
-const FALLBACK_TECHS = ['Yasmin D', 'Audriana L', 'Samantha T', 'Tess D', 'Elizabeth L', 'Yan W', 'Jen T', 'Marisela I', 'Ana P', 'Jenesis B'];
+// No baked-in tech roster. Multi-tenant SaaS — tech columns come from the
+// tenant's employees collection. While employees load, columns are empty
+// (the "no employees yet" empty state in the grid prompts the owner to
+// add their first one). Previously this defaulted to Meraki's 10 names,
+// which leaked Meraki-specific data into every brand-new tenant's view.
+const FALLBACK_TECHS = [];
 
 const SLOT_H = 56; // px per 30-min slot
 
@@ -257,7 +262,14 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   // toolbar stays uncluttered for non-tech-savvy salon owners.
   const [showToolbarMenu,  setShowToolbarMenu]  = useState(false);
   const [timeOff,          setTimeOff]          = useState([]);
-  const [visibleTechNames, setVisibleTechNames] = useState(null);
+  // Hydrate immediately from localStorage (or fall back to all known techs)
+  // so the filter pills render on first paint. Previously this was `null`
+  // until `fetchEmployees` returned at least one employee — which meant
+  // brand-new tenants (no employees seeded yet) had the filter pills
+  // permanently hidden even though tech columns were showing via the
+  // FALLBACK_TECHS list. The `fetchEmployees` effect still overwrites this
+  // once real employee data is available.
+  const [visibleTechNames, setVisibleTechNames] = useState(() => loadOverlay(FALLBACK_TECHS));
   // Single-tech focus mode. Click a column header in the day grid to zoom
   // into just that tech's schedule (full column width, overlap clusters
   // become much more readable). Click the header again to back out.
@@ -914,8 +926,9 @@ function openNew(techName, slotMins) {
         />
       )}
 
-      {/* Tech overlay filter pills — day view only */}
-      {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && (() => {
+      {/* Tech overlay filter pills — day view only, hidden when there are
+          no techs (the empty state below carries the call-to-action). */}
+      {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && techs.length > 0 && (() => {
         // Quick-filter helpers. "Working today" = the tech's per-day shift
         // (empWorkDays) is not explicitly off AND no all-day time-off block
         // covers today. "Working now" tightens that to: current clock time
@@ -1052,7 +1065,9 @@ function openNew(techName, slotMins) {
       )}
 
       {/* Grid */}
-      {viewMode === 'week'
+      {techs.length === 0 && !loading && !weekLoading ? (
+        <NoTechsEmptyState />
+      ) : viewMode === 'week'
         ? weekLoading
           ? <div style={{ textAlign: 'center', color: '#bbb', padding: 40, fontSize: 13 }}>Loading…</div>
           : <WeekGrid
@@ -3261,6 +3276,27 @@ function NavBtn({ onClick, children }) {
     <button onClick={onClick} style={{ width: 30, height: 30, borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', fontFamily: 'inherit' }}>
       {children}
     </button>
+  );
+}
+
+function NoTechsEmptyState() {
+  return (
+    <div style={{
+      textAlign: 'center', padding: '60px 24px',
+      background: '#fff', border: '1px dashed #d8d8d8', borderRadius: 12,
+      marginTop: 20,
+    }}>
+      <div style={{ fontSize: 56, marginBottom: 12, opacity: 0.7 }}>👥</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
+        No employees yet
+      </div>
+      <div style={{ fontSize: 13, color: '#666', maxWidth: 380, margin: '0 auto 18px', lineHeight: 1.55 }}>
+        Add your first employee to start booking appointments. Each employee shows up as a column in the day grid.
+      </div>
+      <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic' }}>
+        Open <strong>Employees</strong> from the sidebar to add one.
+      </div>
+    </div>
   );
 }
 

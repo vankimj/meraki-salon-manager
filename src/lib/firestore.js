@@ -354,6 +354,29 @@ export async function fetchLogs(n = 100) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
+// ── Billing artefacts (Stripe-driven) ───────────────────
+// Disputes and refunds are written by the stripeWebhook Cloud Function
+// after Stripe signature verification. Clients have read-only access
+// gated to tenant admins via firestore.rules. UI sorts client-side; the
+// `where + orderBy` combo triggers a composite-index requirement that
+// isn't worth the operational overhead for a list this small.
+const DISPUTES_COL = tenantCol('disputes');
+const REFUNDS_COL  = tenantCol('refunds');
+
+export async function fetchDisputes() {
+  const snap = await getDocs(DISPUTES_COL);
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+export async function fetchRefunds() {
+  const snap = await getDocs(REFUNDS_COL);
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.refundedAt || '').localeCompare(a.refundedAt || ''));
+}
+
 // ── Services ───────────────────────────────────────────
 export async function fetchServices() {
   const snap = await getDocs(query(SERVICES_COL, orderBy('sortOrder')));
