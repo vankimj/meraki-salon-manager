@@ -53,16 +53,16 @@ export default function Nav() {
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
             >{l.label}</a>
           ))}
+          <a href="#pricing" style={{
+            marginLeft: 10, padding: '9px 16px', fontSize: 13, fontWeight: 500,
+            color: C.muted, background: 'transparent', border: 'none', borderRadius: 999,
+            textDecoration: 'none', letterSpacing: '0.04em',
+          }}>See pricing</a>
           <a href="/signup" style={{
-            marginLeft: 10, padding: '9px 16px', fontSize: 14, fontWeight: 600,
-            color: C.plum, background: '#fff', border: `1px solid ${C.plum}`, borderRadius: 999,
-            textDecoration: 'none',
-          }}>Start free</a>
-          <a href="#demo" style={{
-            marginLeft: 6, padding: '9px 18px', fontSize: 14, fontWeight: 600,
-            color: '#fff', background: grad.primary, borderRadius: 999,
-            textDecoration: 'none', boxShadow: '0 4px 14px rgba(91,59,140,.35)',
-          }}>Book a demo</a>
+            marginLeft: 4, padding: '9px 20px', fontSize: 13, fontWeight: 600,
+            color: '#fff', background: C.ink, borderRadius: 999,
+            textDecoration: 'none', letterSpacing: '0.04em',
+          }}>Begin →</a>
         </div>
 
         <button onClick={() => setOpen(o => !o)}
@@ -89,16 +89,15 @@ export default function Nav() {
             }}>{l.label}</a>
           ))}
           <div style={{ padding: '14px 28px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <a href="#pricing" onClick={() => setOpen(false)} style={{
+              display: 'block', textAlign: 'center', padding: '11px 18px', fontSize: 15,
+              fontWeight: 500, color: C.muted, textDecoration: 'none', letterSpacing: '0.04em',
+            }}>See pricing</a>
             <a href="/signup" onClick={() => setOpen(false)} style={{
               display: 'block', textAlign: 'center', padding: '11px 18px', fontSize: 15,
-              fontWeight: 600, color: C.plum, background: '#fff',
-              border: `1px solid ${C.plum}`, borderRadius: 999, textDecoration: 'none',
-            }}>Start free</a>
-            <a href="#demo" onClick={() => setOpen(false)} style={{
-              display: 'block', textAlign: 'center', padding: '11px 18px', fontSize: 15,
-              fontWeight: 600, color: '#fff', background: grad.primary, borderRadius: 999,
-              textDecoration: 'none',
-            }}>Book a demo</a>
+              fontWeight: 600, color: '#fff', background: C.ink, borderRadius: 999,
+              textDecoration: 'none', letterSpacing: '0.04em',
+            }}>Begin →</a>
           </div>
         </div>
       )}

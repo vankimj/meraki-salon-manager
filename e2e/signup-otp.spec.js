@@ -52,6 +52,13 @@ test.describe('signup OTP flow (Firebase test phone)', () => {
         await new Promise(r => setTimeout(r, 100));
       }
       if (!window.__plumeAuth) return { error: '__plumeAuth never appeared' };
+      // Bypass reCAPTCHA for E2E. Test phone numbers (configured in
+      // Identity Toolkit) only skip SMS sending — they do NOT skip the
+      // reCAPTCHA Enterprise check. Without this flag, Playwright's
+      // headless Chrome trips a visible image challenge and the OTP send
+      // hangs forever. Setting `appVerificationDisabledForTesting = true`
+      // is the documented Firebase pattern for E2E phone auth.
+      window.__plumeAuth.settings.appVerificationDisabledForTesting = true;
       const { signInAnonymously } = await import('https://www.gstatic.com/firebasejs/12.12.1/firebase-auth.js');
       try {
         await signInAnonymously(window.__plumeAuth);

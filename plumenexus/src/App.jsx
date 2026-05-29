@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import Nav from './components/Nav.jsx';
 import Hero from './components/Hero.jsx';
+import StudioStrip from './components/StudioStrip.jsx';
+import NumbersStatement from './components/NumbersStatement.jsx';
 import LogoStrip from './components/LogoStrip.jsx';
 import Features from './components/Features.jsx';
 import Showcase from './components/Showcase.jsx';
+import Reveal from './components/Reveal.jsx';
 import AISection from './components/AISection.jsx';
 import Compare from './components/Compare.jsx';
 import Pricing from './components/Pricing.jsx';
@@ -80,17 +83,19 @@ export default function App() {
       <Nav />
       <main id="main">
         <Hero />
-        <LogoStrip />
+        <Reveal><StudioStrip /></Reveal>
+        <NumbersStatement />
+        <Reveal><LogoStrip /></Reveal>
         <Features />
-        <Showcase />
-        <AISection />
-        <Compare />
-        <Pricing />
-        <DemoBooking />
-        <Testimonials />
-        <Testimonial />
-        <FAQ />
-        <Contact />
+        <Reveal><Showcase /></Reveal>
+        <Reveal><AISection /></Reveal>
+        <Reveal><Compare /></Reveal>
+        <Reveal><Pricing /></Reveal>
+        <Reveal><DemoBooking /></Reveal>
+        <Reveal><Testimonials /></Reveal>
+        <Reveal><Testimonial /></Reveal>
+        <Reveal><FAQ /></Reveal>
+        <Reveal><Contact /></Reveal>
       </main>
       <Footer />
       <ChatWidget />

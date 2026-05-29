@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { C, FONT, grad, shadow } from '../theme.js';
+import { C, FONT, EASE, DUR } from '../theme.js';
 
 // Slim sticky bar that fades in once the user has scrolled past the Hero.
 // Hides itself near the very bottom of the page so it doesn't sit on top of
@@ -48,36 +48,33 @@ export default function StickyCTA() {
       <div style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 14,
-        padding: '10px 14px 10px 18px',
-        background: '#0f1923',
-        color: '#fff',
+        gap: 18,
+        padding: '12px 16px 12px 22px',
+        background: C.ink,
+        color: C.bg,
         borderRadius: 999,
-        boxShadow: '0 16px 40px rgba(15,25,35,.32), 0 4px 12px rgba(15,25,35,.18)',
-        border: '1px solid rgba(255,255,255,.08)',
+        boxShadow: '0 18px 48px rgba(26,20,16,.32), 0 4px 12px rgba(26,20,16,.18)',
+        border: `1px solid ${C.goldDeep}66`,
       }}>
         <div style={{
-          width: 30, height: 30, borderRadius: '50%',
-          background: grad.primary,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 14, flexShrink: 0,
-        }}>✨</div>
-        <div style={{
-          fontSize: 13, fontWeight: 500, lineHeight: 1.3,
-          fontFamily: FONT.body,
+          fontSize: 13, fontWeight: 400, lineHeight: 1.4,
+          fontFamily: FONT.display,
+          fontStyle: 'italic',
+          letterSpacing: '0.01em',
         }} className="pn-sticky-copy">
-          See Plume Nexus on real data.
-          <span style={{ color: 'rgba(255,255,255,.55)', marginLeft: 6 }}>20 min · with the founder</span>
+          A 20-minute walkthrough,
+          <span style={{ color: C.gold, marginLeft: 6 }}>with the founder.</span>
         </div>
         <a href="#demo" style={{
-          padding: '8px 18px', fontSize: 13, fontWeight: 600,
-          color: '#0f1923', background: '#fff', borderRadius: 999,
+          padding: '8px 18px', fontSize: 12, fontWeight: 600,
+          color: C.ink, background: C.bg, borderRadius: 999,
           textDecoration: 'none', whiteSpace: 'nowrap',
-          transition: 'transform .12s',
+          letterSpacing: '0.04em',
+          transition: `transform ${DUR.fast} ${EASE}`,
         }}
           onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
           onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-        >Book →</a>
+        >Begin →</a>
         <button
           onClick={() => setDismiss(true)}
           aria-label="Dismiss demo prompt"

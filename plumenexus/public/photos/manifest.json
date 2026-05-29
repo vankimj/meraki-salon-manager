@@ -1,0 +1,71 @@
+{
+  "generated": "2026-05-16T18:30:48.046Z",
+  "photos": [
+    {
+      "src": "IMG_2450.JPG",
+      "name": "hero-craft",
+      "slot": "hero",
+      "caption": "The craft, in production daily",
+      "src1x": "/photos/hero-craft.jpg",
+      "src2x": "/photos/hero-craft@2x.jpg",
+      "avif": "/photos/hero-craft.avif",
+      "webp": "/photos/hero-craft.webp",
+      "aspect": "21 / 9"
+    },
+    {
+      "src": "IMG_6215.JPG",
+      "name": "studio-primary",
+      "slot": "studioWide",
+      "caption": "Sculpted gold-line manicure",
+      "src1x": "/photos/studio-primary.jpg",
+      "src2x": "/photos/studio-primary@2x.jpg",
+      "avif": "/photos/studio-primary.avif",
+      "webp": "/photos/studio-primary.webp",
+      "aspect": "4 / 3"
+    },
+    {
+      "src": "IMG_6213.JPG",
+      "name": "detail-light",
+      "slot": "detail",
+      "caption": "Light + linen",
+      "src1x": "/photos/detail-light.jpg",
+      "src2x": "/photos/detail-light@2x.jpg",
+      "avif": "/photos/detail-light.avif",
+      "webp": "/photos/detail-light.webp",
+      "aspect": "4 / 5"
+    },
+    {
+      "src": "IMG_6216.JPG",
+      "name": "detail-natural",
+      "slot": "detail",
+      "caption": "French — refined",
+      "src1x": "/photos/detail-natural.jpg",
+      "src2x": "/photos/detail-natural@2x.jpg",
+      "avif": "/photos/detail-natural.avif",
+      "webp": "/photos/detail-natural.webp",
+      "aspect": "4 / 5"
+    },
+    {
+      "src": "IMG_6212.JPG",
+      "name": "accent-red",
+      "slot": "square",
+      "caption": "Cherry · seasonal capsule",
+      "src1x": "/photos/accent-red.jpg",
+      "src2x": "/photos/accent-red@2x.jpg",
+      "avif": "/photos/accent-red.avif",
+      "webp": "/photos/accent-red.webp",
+      "aspect": "1 / 1"
+    },
+    {
+      "src": "IMG_7686.JPG",
+      "name": "showcase-heart",
+      "slot": "showcase",
+      "caption": "Editorial · St. Valentine campaign",
+      "src1x": "/photos/showcase-heart.jpg",
+      "src2x": "/photos/showcase-heart@2x.jpg",
+      "avif": "/photos/showcase-heart.avif",
+      "webp": "/photos/showcase-heart.webp",
+      "aspect": "3 / 4"
+    }
+  ]
+}

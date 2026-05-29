@@ -1,17 +1,47 @@
-import { C, FONT, grad, shadow, radius } from '../theme.js';
+import { C, FONT, grad, shadow, radius, EASE, DUR } from '../theme.js';
+
+// Editorial watermark — the Camellia stamped huge and quiet behind the
+// hero. 5% opacity, offset right so it reads as wallpaper / publisher
+// colophon rather than a logo. Hidden on narrow screens (would crop).
+function CamelliaWatermark() {
+  return (
+    <div aria-hidden="true" style={{
+      position: 'absolute',
+      top: '-8%', right: '-14%',
+      width: 'min(820px, 70vw)',
+      height: 'min(820px, 70vw)',
+      pointerEvents: 'none',
+      opacity: 0.055,
+      filter: 'blur(0.3px)',
+    }}>
+      <svg viewBox="0 0 64 64" width="100%" height="100%">
+        <g fill={C.plumDeep}>
+          <ellipse cx="32" cy="18" rx="7.5" ry="11.7"/>
+          <g transform="rotate(72 32 32)"><ellipse cx="32" cy="18" rx="7.5" ry="11.7"/></g>
+          <g transform="rotate(144 32 32)"><ellipse cx="32" cy="18" rx="7.5" ry="11.7"/></g>
+          <g transform="rotate(216 32 32)"><ellipse cx="32" cy="18" rx="7.5" ry="11.7"/></g>
+          <g transform="rotate(288 32 32)"><ellipse cx="32" cy="18" rx="7.5" ry="11.7"/></g>
+        </g>
+        <circle cx="32" cy="32" r="5.9" fill={C.bg}/>
+        <circle cx="32" cy="32" r="2.7" fill={C.gold}/>
+      </svg>
+    </div>
+  );
+}
 
 export default function Hero() {
   return (
     <section id="top" style={{
       position: 'relative',
-      paddingTop: 132,
-      paddingBottom: 72,
+      paddingTop: 152,
+      paddingBottom: 88,
       overflow: 'hidden',
-      background: `radial-gradient(1200px 600px at 80% -10%, rgba(109,76,184,.12), transparent 60%),
-                   radial-gradient(900px 500px at 0% 30%, rgba(61,149,206,.10), transparent 60%),
-                   #fff`,
+      background: `radial-gradient(1400px 700px at 78% -8%, rgba(193,154,74,.10), transparent 62%),
+                   radial-gradient(900px 500px at 0% 30%, rgba(91,59,140,.06), transparent 60%),
+                   ${C.bg}`,
     }}>
-      <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 28px' }}>
+      <CamelliaWatermark />
+      <div style={{ position: 'relative', maxWidth: 1240, margin: '0 auto', padding: '0 28px' }}>
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'minmax(0, 1.05fr) minmax(0, 1fr)',
@@ -31,7 +61,7 @@ export default function Hero() {
               marginBottom: 22,
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.success, boxShadow: '0 0 10px rgba(45,122,95,.7)' }} />
-              In production · 10-tech salon · Live in Columbus, OH
+              Pre-production · Tested in a 10-tech salon · Columbus, OH
             </div>
 
             <h1 style={{
@@ -57,28 +87,38 @@ export default function Hero() {
               the way you actually run it.
             </p>
 
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 28 }}>
-              <a href="#demo" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '14px 26px', fontSize: 15, fontWeight: 600,
-                color: '#fff', background: grad.primary,
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, alignItems: 'center', marginBottom: 28 }}>
+              <a href="/signup" style={{
+                display: 'inline-flex', alignItems: 'center', gap: 10,
+                padding: '15px 30px', fontSize: 14, fontWeight: 600,
+                color: '#fff', background: C.ink,
                 borderRadius: 999, textDecoration: 'none',
-                boxShadow: shadow.brand,
-                transition: 'transform .15s',
+                letterSpacing: '0.04em',
+                boxShadow: '0 10px 30px rgba(26,20,16,.22)',
+                transition: `transform ${DUR.base} ${EASE}, box-shadow ${DUR.base} ${EASE}`,
               }}
-                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-1px)'}
-                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                onMouseEnter={e => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 18px 48px rgba(26,20,16,.32)';
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = '0 10px 30px rgba(26,20,16,.22)';
+                }}
               >
-                Book a 20-min demo →
+                Begin →
               </a>
-              <a href="#features" style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '14px 24px', fontSize: 15, fontWeight: 600,
-                color: C.ink, background: '#fff',
-                border: `1px solid ${C.rule}`, borderRadius: 999,
-                textDecoration: 'none',
-              }}>
-                Tour the platform
+              <a href="#pricing" style={{
+                fontSize: 13, fontWeight: 500,
+                color: C.muted, textDecoration: 'none',
+                letterSpacing: '0.04em', textTransform: 'uppercase',
+                borderBottom: `1px solid ${C.gold}`, paddingBottom: 2,
+                transition: `color ${DUR.fast} ${EASE}`,
+              }}
+                onMouseEnter={e => e.currentTarget.style.color = C.ink}
+                onMouseLeave={e => e.currentTarget.style.color = C.muted}
+              >
+                See pricing
               </a>
             </div>
 

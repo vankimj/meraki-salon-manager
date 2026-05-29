@@ -1,132 +1,257 @@
-import { C, FONT, shadow, radius } from '../theme.js';
-import Section from './Section.jsx';
+import { C, FONT } from '../theme.js';
+import Reveal from './Reveal.jsx';
 
-const FEATURES = [
+// Five hero pillars rendered as alternating editorial spreads instead of
+// a 12-card icon grid. The 7 other modules remain available via the
+// comparison table further down the page (#compare). Less is more —
+// magazines do not bullet-list their feature articles.
+const PILLARS = [
   {
-    icon: '📅',
-    title: 'Smart Scheduling',
-    body: 'Drag-to-reschedule, recurring bookings, smart walk-in management, time-off blocks, store-hours guard. Every front-desk move you actually make — handled in one click.',
-    accent: C.plum,
+    eyebrow:  'I',
+    title:    'Scheduling',
+    accent:   'made human.',
+    body:     'Drag-to-reschedule, recurring bookings, smart walk-in management, time-off blocks. The front-desk move you actually make — one click, the right outcome.',
+    foot:     'Recurring · Walk-in queue · Time-off · Drag reschedule',
   },
   {
-    icon: '👥',
-    title: 'Client CRM',
-    body: 'Profiles, full visit history, photos, social handles, notes, allergies, marketing preferences. Birthdays, lapsed-client alerts, and referral tracking — automatic.',
-    accent: C.blue,
+    eyebrow:  'II',
+    title:    'POS',
+    accent:   'without the patchwork.',
+    body:     'Multi-tech credit splits at checkout. Tips per service, not per ticket. Gift cards, promo codes, store credit, refunds with photos. Built in. No add-on.',
+    foot:     'Multi-tech splits · Per-service tips · Gift · Refunds',
   },
   {
-    icon: '💳',
-    title: 'POS & Checkout',
-    body: 'Multi-tech credit splits, tips per service, gift cards, promo codes, store credit, refunds with photos. Tap-to-Pay coming on iOS.',
-    accent: C.teal,
+    eyebrow:  'III',
+    title:    'Communications',
+    accent:   'in one inbox.',
+    body:     'Two-way SMS and email threaded by client. Per-client channel preferences. Inbound replies route themselves. No more lost texts; no more "did I tell her already?"',
+    foot:     'Two-way SMS · Email · Threading · Preferences',
   },
   {
-    icon: '💬',
-    title: 'Communications Hub',
-    body: 'Two-way SMS + email in one threaded inbox. Per-client channel preferences. Inbound messages route to the right thread automatically — no more lost texts.',
-    accent: C.gold,
+    eyebrow:  'IV',
+    title:    'Reports',
+    accent:   'you can talk to.',
+    body:     'Revenue, leaderboards, IRS-ready tax exports, cancellation analysis — every number a salon owner needs. Plus a chatbot that answers any question about your data in plain English.',
+    foot:     'AI chat · IRS exports · Leaderboards · Cancellation',
   },
   {
-    icon: '📣',
-    title: 'Marketing Engine',
-    body: 'Email + SMS campaigns with audience segmentation, AI-drafted copy, personalized promo codes, scheduled sends, real-time delivery analytics, and CAN-SPAM-compliant unsubscribe.',
-    accent: C.plum,
-  },
-  {
-    icon: '🎁',
-    title: 'Gift Cards & Loyalty',
-    body: 'Digital gift cards with auto-emailed delivery, points-per-dollar loyalty, tier perks, birthday bonuses. No extra fees — built into the platform.',
-    accent: C.blue,
-  },
-  {
-    icon: '📊',
-    title: 'AI-Powered Reports',
-    body: 'Revenue, leaderboards, IRS-ready tax exports, cancellation analysis, and a chatbot that answers any question about your salon data in plain English.',
-    accent: C.teal,
-  },
-  {
-    icon: '🎙️',
-    title: 'Voice Commands',
-    body: '"Book Emma Klein with Riley tomorrow at 2pm for a gel mani." Hands-free booking, rescheduling, and check-ins — straight from the front desk.',
-    accent: C.plumDeep,
-  },
-  {
-    icon: '👤',
-    title: 'Employee & Payroll',
-    body: 'Profiles, photos, social links, compensation models, performance reviews, 1099-NEC PDF export, Gusto sync. Per-tech earnings dashboards your team will love.',
-    accent: C.gold,
-  },
-  {
-    icon: '🌐',
-    title: 'Online Booking',
-    body: 'Public booking page, embeddable widget, magic-link self-service reschedule, geo check-in, post-visit Google review prompts. Your front desk works while you sleep.',
-    accent: C.blue,
-  },
-  {
-    icon: '🛍️',
-    title: 'TipFlow Kiosk',
-    body: 'A dedicated front-desk iPad mode for tip selection, queue display, and walk-in turn rotation. Custom branding per location.',
-    accent: C.teal,
-  },
-  {
-    icon: '🔐',
-    title: 'Roles & Permissions',
-    body: 'Admin, scheduler, tech, and read-only roles. View-as impersonation. PIN-locked HR & Reports. Verbose activity log on every action.',
-    accent: C.plum,
+    eyebrow:  'V',
+    title:    'Payroll & 1099',
+    accent:   'handled.',
+    body:     'Per-tech earnings dashboards, compensation models that actually fit booth-rent vs commission vs hybrid, 1099-NEC PDF export at year-end, and a one-click Gusto sync when payday hits.',
+    foot:     'Commission · Booth-rent · 1099-NEC · Gusto sync',
   },
 ];
 
 export default function Features() {
   return (
-    <Section
-      id="features"
-      eyebrow="Everything in one place"
-      title="The whole salon, on one platform."
-      subtitle="Twelve modules, one login, one bill. Built to replace the patchwork of scheduling apps, marketing tools, and spreadsheets you've cobbled together."
-    >
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-        gap: 18,
-      }}>
-        {FEATURES.map(f => <FeatureCard key={f.title} {...f} />)}
+    <section id="features" style={{
+      background: C.bg,
+      padding: '120px 28px 100px',
+    }}>
+      <div style={{ maxWidth: 1180, margin: '0 auto' }}>
+
+        <Reveal>
+          <header style={{ marginBottom: 88, maxWidth: 740 }}>
+            <div style={{
+              fontSize: 11, fontWeight: 600, color: C.goldDeep,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              marginBottom: 16,
+            }}>
+              III · The platform
+            </div>
+            <h2 style={{
+              fontFamily: FONT.display,
+              fontSize: 'clamp(32px, 4.4vw, 56px)',
+              lineHeight: 1.08,
+              letterSpacing: '-0.015em',
+              margin: 0, color: C.ink, fontWeight: 400,
+            }}>
+              Five pillars.
+              <span style={{ fontStyle: 'italic', fontWeight: 400, color: C.muted }}> One login. One bill.</span>
+            </h2>
+            <p style={{
+              marginTop: 22, maxWidth: 540,
+              fontSize: 17, lineHeight: 1.65, color: C.muted,
+            }}>
+              The whole salon, on one platform. Built to replace the
+              patchwork of scheduling apps, marketing tools, and
+              spreadsheets you have cobbled together.
+            </p>
+          </header>
+        </Reveal>
+
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {PILLARS.map((p, i) => (
+            <Pillar key={p.eyebrow} pillar={p} reversed={i % 2 === 1} last={i === PILLARS.length - 1} />
+          ))}
+        </div>
+
+        <Reveal delay={120}>
+          <div style={{
+            marginTop: 56,
+            paddingTop: 32,
+            borderTop: `1px solid ${C.rule}`,
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'baseline',
+            gap: 24,
+            flexWrap: 'wrap',
+          }}>
+            <p style={{
+              fontSize: 13,
+              color: C.muted,
+              fontStyle: 'italic',
+              margin: 0,
+              letterSpacing: '0.01em',
+            }}>
+              Plus seven more modules — gift cards, loyalty, voice commands,
+              employee profiles, kiosk mode, online booking, roles &amp; permissions.
+            </p>
+            <a href="#compare" style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: C.ink,
+              textDecoration: 'none',
+              borderBottom: `1px solid ${C.gold}`,
+              paddingBottom: 2,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              whiteSpace: 'nowrap',
+            }}>
+              Full comparison →
+            </a>
+          </div>
+        </Reveal>
       </div>
-    </Section>
+    </section>
   );
 }
 
-function FeatureCard({ icon, title, body, accent }) {
+function Pillar({ pillar, reversed, last }) {
+  return (
+    <Reveal>
+      <article style={{
+        display: 'grid',
+        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+        gap: 56,
+        alignItems: 'center',
+        padding: '64px 0',
+        borderBottom: last ? 'none' : `1px solid ${C.rule}`,
+      }} className="pn-pillar">
+        <div style={{ order: reversed ? 2 : 1 }} className="pn-pillar-text">
+          <div style={{
+            fontFamily: FONT.display,
+            fontSize: 14,
+            fontStyle: 'italic',
+            color: C.gold,
+            letterSpacing: '0.04em',
+            marginBottom: 12,
+          }}>
+            {pillar.eyebrow}
+          </div>
+          <h3 style={{
+            fontFamily: FONT.display,
+            fontSize: 'clamp(32px, 4.2vw, 56px)',
+            lineHeight: 1.05,
+            letterSpacing: '-0.015em',
+            margin: 0, color: C.ink, fontWeight: 400,
+          }}>
+            {pillar.title}{' '}
+            <span style={{ fontStyle: 'italic', color: C.muted, fontWeight: 300 }}>
+              {pillar.accent}
+            </span>
+          </h3>
+          <p style={{
+            marginTop: 20,
+            fontSize: 17, lineHeight: 1.65, color: C.text,
+            maxWidth: 460,
+          }}>
+            {pillar.body}
+          </p>
+          <p style={{
+            marginTop: 18,
+            fontSize: 11, letterSpacing: '0.16em', textTransform: 'uppercase',
+            color: C.mutedSoft, fontWeight: 500,
+          }}>
+            {pillar.foot}
+          </p>
+        </div>
+
+        <div style={{ order: reversed ? 1 : 2 }} className="pn-pillar-art">
+          <PillarPlate pillar={pillar} />
+        </div>
+      </article>
+
+      <style>{`
+        @media (max-width: 880px) {
+          .pn-pillar { grid-template-columns: 1fr !important; gap: 32px !important; padding: 48px 0 !important; }
+          .pn-pillar-text { order: 1 !important; }
+          .pn-pillar-art  { order: 2 !important; }
+        }
+      `}</style>
+    </Reveal>
+  );
+}
+
+// Restrained type-driven placeholder until real device-frame product
+// screenshots land. Each pillar gets a quiet cream card with its big
+// Roman numeral in Fraunces and a hairline border — magazine pagination
+// vibe rather than an icon. Replaces these one-by-one with photo or
+// product-UI shots later.
+function PillarPlate({ pillar }) {
   return (
     <div style={{
-      padding: 24,
-      background: '#fff',
+      aspectRatio: '4 / 5',
+      background: `linear-gradient(140deg, ${C.bgCream}, ${C.bgSoft})`,
       border: `1px solid ${C.rule}`,
-      borderRadius: radius.md,
-      transition: 'transform .2s, box-shadow .2s, border-color .2s',
-      cursor: 'default',
-    }}
-      onMouseEnter={e => {
-        e.currentTarget.style.transform = 'translateY(-2px)';
-        e.currentTarget.style.boxShadow = shadow.md;
-        e.currentTarget.style.borderColor = accent + '40';
-      }}
-      onMouseLeave={e => {
-        e.currentTarget.style.transform = 'translateY(0)';
-        e.currentTarget.style.boxShadow = 'none';
-        e.currentTarget.style.borderColor = C.rule;
-      }}
-    >
+      borderRadius: 4,
+      position: 'relative',
+      overflow: 'hidden',
+      boxShadow: '0 24px 60px rgba(15,15,15,.05), 0 2px 8px rgba(15,15,15,.04)',
+    }}>
+      {/* Hairline cross-rules — classic magazine plate */}
+      <div aria-hidden="true" style={{
+        position: 'absolute', inset: '8% 6%',
+        border: `1px solid ${C.rule}`,
+        borderRadius: 2,
+      }} />
       <div style={{
-        width: 44, height: 44, borderRadius: 12,
-        background: `${accent}14`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 22, marginBottom: 16,
-      }}>{icon}</div>
-      <h3 style={{
-        fontFamily: FONT.body, fontSize: 17, fontWeight: 700,
-        margin: '0 0 8px', color: C.ink, letterSpacing: '-.005em',
-      }}>{title}</h3>
-      <p style={{ fontSize: 14, lineHeight: 1.55, color: C.muted, margin: 0 }}>{body}</p>
+        position: 'absolute', inset: 0,
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center',
+        padding: '14% 12%',
+        textAlign: 'center',
+      }}>
+        <div style={{
+          fontFamily: FONT.display,
+          fontSize: 11, letterSpacing: '0.32em',
+          textTransform: 'uppercase',
+          color: C.muted,
+          marginBottom: 14,
+        }}>
+          Plate {pillar.eyebrow}
+        </div>
+        <div style={{
+          fontFamily: FONT.display,
+          fontSize: 'clamp(80px, 12vw, 160px)',
+          lineHeight: 1,
+          color: C.gold,
+          fontWeight: 300,
+          letterSpacing: '-0.04em',
+          fontStyle: 'italic',
+        }}>
+          {pillar.eyebrow}
+        </div>
+        <div style={{
+          marginTop: 18,
+          fontSize: 12, letterSpacing: '0.22em',
+          textTransform: 'uppercase',
+          color: C.muted,
+        }}>
+          {pillar.title}
+        </div>
+      </div>
     </div>
   );
 }
