@@ -231,6 +231,21 @@ service cloud.firestore {
         allow read:  if isTenantAdmin(tenantId);
         allow write: if false;
       }
+      // Billing artefacts written by the Stripe webhook. Read: tenant
+      // admin (Plan & Billing UI lists open disputes + refund history).
+      // Write: server-only — the stripeWebhook handler writes via admin
+      // SDK after verifying the Stripe signature. Clients are denied
+      // write so a compromised admin can't fabricate a "won" dispute
+      // outcome or a fake refund record. Membership-nested refunds use
+      // their own rule below.
+      match /disputes/{disputeId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      match /refunds/{refundId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
       // SMS / TFN provisioning state. Read: tenant admin (status UI).
       // Write: server-only — the provisionTenantSMS / twilioStatusWebhook
       // Cloud Functions update this via admin SDK. Holds the form data
@@ -356,6 +371,13 @@ service cloud.firestore {
       match /memberships/{membershipId} {
         allow read:  if isTenantStaff(tenantId);
         allow write: if isTenantAdmin(tenantId);
+        // Per-membership refund history (written by stripeWebhook on
+        // charge.refunded for membership subscriptions). Read: tenant
+        // admin. Write: server-only.
+        match /refunds/{refundId} {
+          allow read:  if isTenantAdmin(tenantId);
+          allow write: if false;
+        }
       }
 
       // Logs: any authenticated user can create, only admin can read

@@ -13,11 +13,11 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchReviewReceived, fetchReviewRequests,
          saveReviewReceived } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
-import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK } from '../../lib/modules';
+import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedFullDemo, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
-import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ, fetchIntegrityReport } from '../../lib/firestore';
+import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ, fetchIntegrityReport, fetchDisputes } from '../../lib/firestore';
 import FeedbackModal from '../../components/FeedbackModal';
 import NotificationsBell from '../../components/NotificationsBell';
 import SmsSetup from './SmsSetup';
@@ -545,6 +545,7 @@ export default function Admin({ onClose, onOpenWizard }) {
             <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
             <UpgradeSection settings={settings} gUser={gUser} />
+            <DisputesSection />
             <BackupRestoreSection />
             <Section title="📦 Data Imports">
               <div style={{ padding: '12px 14px' }}>
@@ -2439,59 +2440,257 @@ function NotesPreferenceSection({ settings, updateSettings }) {
   );
 }
 
-// ── Plan & Billing ────────────────────────────────────────────────────────────
-function UpgradeSection({ settings, gUser }) {
-  const [loading, setLoading] = useState(false);
-  const [error,   setError]   = useState('');
-  const plan = settings.plan || 'starter';
+// ── Chargeback / dispute list ─────────────────────────────────────────────
+// Surfaces open disputes urgently (red, deadline countdown, Stripe Dashboard
+// link) and shows closed disputes as history. Tenants get the same Stripe
+// email when a dispute opens, but the email is easy to miss — this section
+// is a persistent reminder until the dispute closes. Section renders nothing
+// when there are zero disputes (no clutter for the common case).
+function DisputesSection() {
+  const [disputes, setDisputes] = useState(null);   // null = loading, [] = empty
+  const [error,    setError]    = useState('');
 
-  async function handleUpgrade() {
-    setLoading(true); setError('');
+  useEffect(() => {
+    let cancelled = false;
+    fetchDisputes()
+      .then(rows => { if (!cancelled) setDisputes(rows); })
+      .catch(e   => { if (!cancelled) { setError(e.message); setDisputes([]); } });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (disputes === null) return null;     // first fetch in flight; UpgradeSection covers the empty state
+  if (disputes.length === 0) return null; // nothing to show — keep the UI clean
+
+  const isOpen = d => d.status === 'needs_response' || d.status === 'warning_needs_response' || d.status === 'under_review' || d.status === 'warning_under_review';
+  const open    = disputes.filter(isOpen);
+  const closed  = disputes.filter(d => !isOpen(d));
+
+  return (
+    <Section title={`⚠ Chargebacks${open.length ? ` (${open.length} open)` : ''}`} defaultOpen={open.length > 0}>
+      <div style={{ padding: '14px 16px' }}>
+        {error && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 10 }}>{error}</div>}
+        {open.length > 0 && (
+          <div style={{ marginBottom: closed.length ? 18 : 0 }}>
+            <div style={{ fontSize: 11, color: '#991b1b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>Action required</div>
+            {open.map(d => <DisputeRow key={d.id} d={d} variant="open" />)}
+          </div>
+        )}
+        {closed.length > 0 && (
+          <div>
+            <div style={{ fontSize: 11, color: '#666', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>History</div>
+            {closed.map(d => <DisputeRow key={d.id} d={d} variant="closed" />)}
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function DisputeRow({ d, variant }) {
+  const amount  = (d.amount / 100).toFixed(2);
+  const dueDate = d.evidenceDueBy ? new Date(d.evidenceDueBy) : null;
+  const daysLeft = dueDate ? Math.ceil((dueDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24)) : null;
+  const urgent   = variant === 'open' && daysLeft != null && daysLeft <= 3;
+  const wonOrLost = d.status === 'won' ? 'won' : d.status === 'lost' ? 'lost' : null;
+
+  const border = variant === 'open'
+    ? (urgent ? '2px solid #ef4444' : '1px solid #fed7aa')
+    : '1px solid #e5e7eb';
+  const bg = variant === 'open'
+    ? (urgent ? '#fef2f2' : '#fff7ed')
+    : (wonOrLost === 'won' ? '#f0fdf4' : wonOrLost === 'lost' ? '#fef2f2' : '#fafafa');
+  const statusColor = wonOrLost === 'won' ? '#15803d' : wonOrLost === 'lost' ? '#991b1b' : (urgent ? '#991b1b' : '#9a3412');
+
+  const stripeUrl = `https://dashboard.stripe.com/disputes/${d.disputeId}`;
+
+  return (
+    <div style={{ border, background: bg, borderRadius: 10, padding: '12px 14px', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>${amount} {(d.currency || 'usd').toUpperCase()}</span>
+          <span style={{ fontSize: 11, color: statusColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+            {wonOrLost === 'won' && '✓ Won'}
+            {wonOrLost === 'lost' && '✗ Lost'}
+            {!wonOrLost && variant === 'open' && (urgent ? `${daysLeft} day${daysLeft === 1 ? '' : 's'} left` : 'open')}
+            {!wonOrLost && variant === 'closed' && (d.status || 'closed')}
+          </span>
+          {d.isMembership && (
+            <span style={{ fontSize: 10, background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.5 }}>MEMBER</span>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: '#666', marginTop: 4, lineHeight: 1.5 }}>
+          <strong>Reason:</strong> {d.reason || 'not provided'}
+          {d.isMembership && d.clientName && <> · <strong>Client:</strong> {d.clientName}</>}
+        </div>
+        {variant === 'open' && dueDate && (
+          <div style={{ fontSize: 11, color: statusColor, marginTop: 4, fontWeight: 600 }}>
+            Evidence due {dueDate.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}
+          </div>
+        )}
+        {variant === 'closed' && d.updatedAt && (
+          <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+            Closed {new Date(d.updatedAt).toLocaleDateString('en-US', { dateStyle: 'medium' })}
+          </div>
+        )}
+      </div>
+      <a href={stripeUrl} target="_blank" rel="noreferrer"
+        style={{
+          flexShrink: 0,
+          background: variant === 'open' ? '#ef4444' : '#fff',
+          color: variant === 'open' ? '#fff' : '#666',
+          border: variant === 'open' ? 'none' : '1px solid #e5e7eb',
+          borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600,
+          textDecoration: 'none', whiteSpace: 'nowrap',
+        }}>
+        {variant === 'open' ? 'Submit evidence →' : 'View in Stripe →'}
+      </a>
+    </div>
+  );
+}
+
+// ── Plan & Billing ────────────────────────────────────────────────────────────
+const PLAN_TIERS = [
+  {
+    id:      'starter',
+    label:   'Starter',
+    price:   'Free',
+    color:   '#888',
+    features:['Schedule & appointments', 'Clients & profiles', 'Services menu', 'Employees', 'Walk-in kiosk'],
+  },
+  {
+    id:      'studio',
+    label:   'Studio',
+    price:   '$29/mo',
+    color:   '#3D9E8A',
+    features:['Everything in Starter', 'Reports & analytics', 'Earnings dashboard', 'Gift cards & promos', 'Retail inventory', 'Attendance tracking'],
+  },
+  {
+    id:      'pro',
+    label:   'Pro',
+    price:   '$49/mo',
+    color:   '#2563eb',
+    features:['Everything in Studio', 'SMS + email comms', 'Marketing campaigns', 'HR & payroll (Gusto)', 'Membership subscriptions', 'AI chatbot on webfront'],
+  },
+];
+
+function UpgradeSection({ settings, gUser }) {
+  const [loading, setLoading] = useState('');   // plan id currently loading
+  const [error,   setError]   = useState('');
+  // The stored plan (what they're nominally on or trialling) — distinct
+  // from the effectivePlan (which downgrades to starter when trial
+  // expires without payment).
+  const storedPlan    = settings.plan || 'starter';
+  const visiblePlan   = effectivePlan(settings);
+  const inTrial       = isInTrial(settings);
+  const trialDays     = trialDaysRemaining(settings);
+
+  async function handleCheckout(planId) {
+    setLoading(planId); setError('');
     try {
       const { httpsCallable } = await import('firebase/functions');
       const { functions }     = await import('../../lib/firebase');
       const fn  = httpsCallable(functions, 'createCheckoutSession');
-      const res = await fn({ plan: 'pro', successUrl: window.location.href + '?stripe=success', cancelUrl: window.location.href });
+      const res = await fn({ plan: planId });
       if (res.data?.url) window.location.href = res.data.url;
     } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    finally { setLoading(''); }
   }
 
-  const PLAN_LABELS = { starter: 'Starter (Free)', pro: 'Pro', enterprise: 'Enterprise' };
-  const PLAN_COLORS = { starter: '#888', pro: '#2563eb', enterprise: '#7c3aed' };
+  async function handleManageBilling() {
+    setLoading('portal'); setError('');
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions }     = await import('../../lib/firebase');
+      const fn  = httpsCallable(functions, 'createTenantBillingPortal');
+      const res = await fn({});
+      if (res.data?.url) window.location.href = res.data.url;
+    } catch (e) { setError(e.message); }
+    finally { setLoading(''); }
+  }
+
+  const currentTier = PLAN_TIERS.find(t => t.id === visiblePlan) || PLAN_TIERS[0];
+  const hasPaidSubscription = !!settings.stripeSubscriptionId;
 
   return (
     <Section title="💳 Plan &amp; Billing">
       <div style={{ padding: '14px 16px' }}>
+        {/* Current plan + trial banner */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div>
             <div style={{ fontSize: 13, color: '#333' }}>Current plan</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: PLAN_COLORS[plan] || '#888', marginTop: 2 }}>{PLAN_LABELS[plan] || plan}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: currentTier.color, marginTop: 2 }}>{currentTier.label}</div>
           </div>
-          {plan === 'starter' && (
-            <button onClick={handleUpgrade} disabled={loading}
-              style={{ background: loading ? '#ccc' : '#2563eb', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {loading ? 'Loading…' : 'Upgrade to Pro'}
+          {hasPaidSubscription && (
+            <button onClick={handleManageBilling} disabled={loading === 'portal'}
+              style={{ background: '#fff', color: '#3D95CE', border: '1px solid #d4e5f3', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: loading === 'portal' ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+              {loading === 'portal' ? 'Loading…' : 'Manage billing →'}
             </button>
           )}
-          {plan !== 'starter' && (
-            <a href="https://billing.stripe.com/p/login/test" target="_blank" rel="noreferrer"
-              style={{ fontSize: 12, color: '#3D95CE' }}>Manage subscription →</a>
-          )}
         </div>
-        {plan === 'starter' && (
-          <div style={{ fontSize: 12, color: '#888', lineHeight: 1.6 }}>
-            Pro includes: unlimited staff, marketing campaigns, AI chatbot, full HR &amp; payroll tools — $49/mo.
+
+        {inTrial && (
+          <div style={{ background: '#fff8e1', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#92400e' }}>
+            <strong>{trialDays} {trialDays === 1 ? 'day' : 'days'} left</strong> in your Pro trial. Pick a plan below to continue uninterrupted — no charge until the trial ends.
           </div>
         )}
-        {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>{error}</div>}
+
+        {settings.cancelAtPeriodEnd && settings.currentPeriodEnd && (
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#991b1b' }}>
+            <strong>Your subscription is set to cancel on {new Date(settings.currentPeriodEnd).toLocaleDateString()}.</strong> Click <em>Manage billing</em> above to keep it active.
+          </div>
+        )}
+
+        {settings.subscriptionStatus === 'past_due' && (
+          <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#9a3412' }}>
+            <strong>Payment past due.</strong> Update your card via <em>Manage billing</em> to avoid losing access.
+          </div>
+        )}
+
+        {/* 3-tier picker */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {PLAN_TIERS.map(tier => {
+            const isCurrent = tier.id === storedPlan && !inTrial && (tier.id === 'starter' || hasPaidSubscription);
+            const isLoading = loading === tier.id;
+            const canSelect = tier.id !== 'starter' && !isCurrent;
+            return (
+              <div key={tier.id}
+                style={{
+                  border: isCurrent ? `2px solid ${tier.color}` : '1px solid #e5e7eb',
+                  borderRadius: 12, padding: 12, background: isCurrent ? '#fafdff' : '#fff',
+                  display: 'flex', flexDirection: 'column', gap: 8, position: 'relative',
+                }}>
+                {isCurrent && (
+                  <div style={{ position: 'absolute', top: -10, right: 12, background: tier.color, color: '#fff', fontSize: 9, fontWeight: 700, padding: '3px 8px', borderRadius: 8, letterSpacing: 0.5 }}>
+                    CURRENT
+                  </div>
+                )}
+                <div style={{ fontSize: 14, fontWeight: 700, color: tier.color }}>{tier.label}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>{tier.price}</div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0', fontSize: 11, color: '#555', lineHeight: 1.7, flex: 1 }}>
+                  {tier.features.map(f => <li key={f}>✓ {f}</li>)}
+                </ul>
+                {canSelect && (
+                  <button onClick={() => handleCheckout(tier.id)} disabled={isLoading}
+                    style={{ background: isLoading ? '#ccc' : tier.color, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: isLoading ? 'wait' : 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
+                    {isLoading ? 'Loading…' : `Choose ${tier.label}`}
+                  </button>
+                )}
+                {!canSelect && tier.id === 'starter' && !isCurrent && (
+                  <div style={{ fontSize: 10, color: '#aaa', textAlign: 'center', padding: '8px 0' }}>Cancel via Manage billing</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 10 }}>{error}</div>}
       </div>
     </Section>
   );
 }
 
 // ── Tenant management (super-admin only) ─────────────────────────────────────
-const PLANS = ['starter', 'pro', 'enterprise'];
+const PLANS = ['starter', 'studio', 'pro', 'enterprise'];
 
 // ── Integrity badge ──────────────────────────────────────────────────────
 // Reads tenants/{id}/data/integrityReport (written nightly by the

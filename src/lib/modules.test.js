@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { effectivePlan, isModuleAvailableForPlan, getVisibleModules, MODULES, PLAN_RANK } from './modules';
+import { effectivePlan, isModuleAvailableForPlan, getVisibleModules, MODULES, PLAN_RANK, isInTrial, trialDaysRemaining } from './modules';
 
 describe('effectivePlan', () => {
   it('falls back to pro when no plan is set (grandfathered tenants)', () => {
@@ -9,8 +9,32 @@ describe('effectivePlan', () => {
   });
   it('returns the explicit plan when set', () => {
     expect(effectivePlan({ plan: 'starter' })).toBe('starter');
+    expect(effectivePlan({ plan: 'studio' })).toBe('studio');
     expect(effectivePlan({ plan: 'pro' })).toBe('pro');
     expect(effectivePlan({ plan: 'enterprise' })).toBe('enterprise');
+  });
+  it('downgrades to starter when trial has expired', () => {
+    const pastDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    expect(effectivePlan({ plan: 'pro', trialEndsAt: pastDate })).toBe('starter');
+    expect(effectivePlan({ plan: 'studio', trialEndsAt: pastDate })).toBe('starter');
+  });
+  it('honors plan while trial is still active', () => {
+    const futureDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    expect(effectivePlan({ plan: 'pro', trialEndsAt: futureDate })).toBe('pro');
+  });
+});
+
+describe('isInTrial / trialDaysRemaining', () => {
+  it('isInTrial returns false when no trialEndsAt set', () => {
+    expect(isInTrial({ plan: 'pro' })).toBe(false);
+  });
+  it('isInTrial returns true while trial is in the future', () => {
+    const futureDate = new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString();
+    expect(isInTrial({ trialEndsAt: futureDate })).toBe(true);
+  });
+  it('trialDaysRemaining returns rounded-up days left', () => {
+    const futureDate = new Date(Date.now() + 13.4 * 24 * 60 * 60 * 1000).toISOString();
+    expect(trialDaysRemaining({ trialEndsAt: futureDate })).toBe(14);
   });
 });
 
@@ -22,18 +46,31 @@ describe('isModuleAvailableForPlan', () => {
     expect(isModuleAvailableForPlan('marketing','starter')).toBe(false);
     expect(isModuleAvailableForPlan('hr',       'starter')).toBe(false);
   });
-  it('pro plan unlocks all pro-tier modules in addition to starter', () => {
-    expect(isModuleAvailableForPlan('schedule', 'pro')).toBe(true);
-    expect(isModuleAvailableForPlan('reports',  'pro')).toBe(true);
-    expect(isModuleAvailableForPlan('marketing','pro')).toBe(true);
-    expect(isModuleAvailableForPlan('hr',       'pro')).toBe(true);
+  it('studio plan unlocks reports/earnings/inventory but not communications/marketing/hr', () => {
+    expect(isModuleAvailableForPlan('schedule',  'studio')).toBe(true);
+    expect(isModuleAvailableForPlan('reports',   'studio')).toBe(true);
+    expect(isModuleAvailableForPlan('earnings',  'studio')).toBe(true);
+    expect(isModuleAvailableForPlan('giftcards', 'studio')).toBe(true);
+    expect(isModuleAvailableForPlan('products',  'studio')).toBe(true);
+    expect(isModuleAvailableForPlan('chat',      'studio')).toBe(false);
+    expect(isModuleAvailableForPlan('marketing', 'studio')).toBe(false);
+    expect(isModuleAvailableForPlan('hr',        'studio')).toBe(false);
+    expect(isModuleAvailableForPlan('memberships','studio')).toBe(false);
+  });
+  it('pro plan unlocks everything', () => {
+    expect(isModuleAvailableForPlan('schedule',   'pro')).toBe(true);
+    expect(isModuleAvailableForPlan('reports',    'pro')).toBe(true);
+    expect(isModuleAvailableForPlan('chat',       'pro')).toBe(true);
+    expect(isModuleAvailableForPlan('marketing',  'pro')).toBe(true);
+    expect(isModuleAvailableForPlan('hr',         'pro')).toBe(true);
+    expect(isModuleAvailableForPlan('memberships','pro')).toBe(true);
   });
   it('returns false for unknown module ids', () => {
     expect(isModuleAvailableForPlan('not-a-real-module', 'pro')).toBe(false);
   });
   it('accepts a module object directly (not just its id)', () => {
     const reports = MODULES.find(m => m.id === 'reports');
-    expect(isModuleAvailableForPlan(reports, 'pro')).toBe(true);
+    expect(isModuleAvailableForPlan(reports, 'studio')).toBe(true);
     expect(isModuleAvailableForPlan(reports, 'starter')).toBe(false);
   });
 });
@@ -48,6 +85,16 @@ describe('getVisibleModules', () => {
     expect(ids).toContain('clients');
     expect(ids).not.toContain('reports');
     expect(ids).not.toContain('marketing');
+  });
+
+  it('admin on studio sees starter + studio modules but not pro modules', () => {
+    const ids = getVisibleModules({ plan: 'studio' }, adminCtx).map(m => m.id);
+    expect(ids).toContain('schedule');
+    expect(ids).toContain('reports');
+    expect(ids).toContain('giftcards');
+    expect(ids).not.toContain('chat');
+    expect(ids).not.toContain('marketing');
+    expect(ids).not.toContain('hr');
   });
 
   it('admin on pro sees all modules (none hidden)', () => {
@@ -99,8 +146,9 @@ describe('getVisibleModules', () => {
 });
 
 describe('PLAN_RANK', () => {
-  it('preserves the starter < pro < enterprise ordering', () => {
-    expect(PLAN_RANK.starter).toBeLessThan(PLAN_RANK.pro);
+  it('preserves the starter < studio < pro < enterprise ordering', () => {
+    expect(PLAN_RANK.starter).toBeLessThan(PLAN_RANK.studio);
+    expect(PLAN_RANK.studio).toBeLessThan(PLAN_RANK.pro);
     expect(PLAN_RANK.pro).toBeLessThan(PLAN_RANK.enterprise);
   });
 });

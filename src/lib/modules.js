@@ -16,37 +16,65 @@
 // adminOnly is independent of plan: even a non-admin with a Pro plan
 // won't see HR.
 
-export const PLAN_RANK = { starter: 0, pro: 1, enterprise: 2 };
+export const PLAN_RANK = { starter: 0, studio: 1, pro: 2, enterprise: 3 };
 
 // Default module catalog. Edit `plan` to move a feature between tiers.
 // `description` shows in the tile-visibility settings panel.
 export const MODULES = [
-  // ── Starter (core salon operations) ─────────────────────
+  // ── Starter (core salon operations, free) ───────────────
   { id: 'schedule',    label: 'Schedule',         desc: 'Appointments & calendar',           plan: 'starter', adminOnly: false },
   { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'starter', adminOnly: false },
   { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'starter', adminOnly: false },
   { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'starter', adminOnly: true  },
   { id: 'walkin',      label: 'Walk-in Kiosk',    desc: 'Live turn rotation + waitlist',     plan: 'starter', adminOnly: false },
 
-  // ── Pro (growth + management) ───────────────────────────
-  { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'pro',    adminOnly: false },
+  // ── Studio (run your salon better — analytics, inventory, payments) ─
+  { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false },
+  { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'studio',  adminOnly: false },
+  { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'studio',  adminOnly: true  },
+  { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'studio',  adminOnly: true  },
+  { id: 'meetings',    label: 'Meetings',         desc: 'Internal team meetings',            plan: 'studio',  adminOnly: true  },
+  { id: 'products',    label: 'Products',         desc: 'Retail inventory & stock',          plan: 'studio',  adminOnly: true  },
+
+  // ── Pro (grow your business — outbound comms, payroll, recurring revenue) ─
   { id: 'chat',        label: 'Communications',   desc: 'SMS, email & in-app messages',      plan: 'pro',     adminOnly: false },
-  { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'pro',     adminOnly: false },
   { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'pro',     adminOnly: true  },
   { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'pro',     adminOnly: true  },
-  { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'pro',     adminOnly: true  },
-  { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'pro',     adminOnly: true  },
   { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'pro',     adminOnly: true  },
-  { id: 'meetings',    label: 'Meetings',         desc: 'Internal team meetings',            plan: 'pro',     adminOnly: true  },
-  { id: 'products',    label: 'Products',         desc: 'Retail inventory & stock',          plan: 'pro',     adminOnly: true  },
 ];
 
 // Tenants without an explicit plan field are treated as pro — preserves
 // behavior for the bootstrap admin / Meraki tenant which predates billing.
 // New SaaS signups go through createTenantOnboarding and get an explicit
 // plan stamped at creation, so this default only catches grandfathered docs.
+//
+// Trial handling: a tenant on the 14-day Pro trial has plan='pro' +
+// trialEndsAt set. When the trial expires WITHOUT a subscription, we
+// downgrade UI gating to 'starter' here. The webhook clears trialEndsAt
+// once a paid subscription becomes active, so a real paid tenant is
+// never affected by the trial check.
 export function effectivePlan(settings) {
-  return settings?.plan || 'pro';
+  const plan = settings?.plan || 'pro';
+  const trialEndsAt = settings?.trialEndsAt;
+  if (trialEndsAt && (plan === 'pro' || plan === 'studio')) {
+    if (new Date(trialEndsAt).getTime() < Date.now()) return 'starter';
+  }
+  return plan;
+}
+
+// True iff the tenant is currently inside an unexpired trial window.
+// Used by the Billing UI to render a countdown banner.
+export function isInTrial(settings) {
+  const trialEndsAt = settings?.trialEndsAt;
+  if (!trialEndsAt) return false;
+  return new Date(trialEndsAt).getTime() > Date.now();
+}
+
+// Days remaining in the trial (rounded up). Returns 0 if not in trial.
+export function trialDaysRemaining(settings) {
+  if (!isInTrial(settings)) return 0;
+  const ms = new Date(settings.trialEndsAt).getTime() - Date.now();
+  return Math.max(0, Math.ceil(ms / (24 * 60 * 60 * 1000)));
 }
 
 export function isModuleAvailableForPlan(moduleOrId, plan) {

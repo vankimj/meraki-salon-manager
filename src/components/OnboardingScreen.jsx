@@ -8,15 +8,22 @@ const PLANS = [
   {
     id: 'starter',
     label: 'Starter',
-    price: 'Free for 30 days',
-    features: ['Up to 5 staff', 'Scheduling & clients', 'TipFlow kiosk', 'Email receipts'],
+    price: 'Free',
+    features: ['Scheduling & clients', 'TipFlow kiosk', 'Email receipts', 'Online booking page'],
     color: '#2D7A5F',
+  },
+  {
+    id: 'studio',
+    label: 'Studio',
+    price: '$29 / month',
+    features: ['Everything in Starter', 'Reports & analytics', 'Earnings dashboard', 'Gift cards', 'Retail inventory'],
+    color: '#3D9E8A',
   },
   {
     id: 'pro',
     label: 'Pro',
     price: '$49 / month',
-    features: ['Unlimited staff', 'Everything in Starter', 'Marketing campaigns', 'HR & payroll tools', 'AI chatbot on webfront'],
+    features: ['Everything in Studio', 'SMS + email campaigns', 'HR & payroll (Gusto)', 'Memberships', 'AI chatbot on webfront'],
     color: '#3D95CE',
     recommended: true,
   },
@@ -124,7 +131,7 @@ export default function OnboardingScreen() {
             <>
               <button onClick={() => setStep(1)} style={backBtnStyle}>← Back</button>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Choose your plan</div>
-              <div style={{ fontSize: 13, color: '#888', marginBottom: 24 }}>You can switch plans any time.</div>
+              <div style={{ fontSize: 13, color: '#888', marginBottom: 24 }}>Every signup includes a 14-day Pro trial — no credit card required. Switch plans any time.</div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
                 {PLANS.map(p => (

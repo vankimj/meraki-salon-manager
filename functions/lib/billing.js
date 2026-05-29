@@ -1,0 +1,516 @@
+// Pure, testable billing helpers extracted from functions/index.js so
+// they can be unit-tested without spinning up firebase-functions runtime.
+// The orchestrator handleChargeRefunded takes its Firestore + Stripe +
+// sendEmail dependencies as parameters so tests can inject fakes.
+
+const HTML_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => HTML_ESCAPES[c]);
+}
+
+// Build a refund record from a Stripe Charge object. The Charge carries
+// `refunds.data[]` ordered newest-first; we key the Firestore doc by the
+// latest refund's id so retried webhooks are idempotent (Stripe re-delivers
+// events on 5xx — same refund event = same doc, no duplicates).
+function buildRefundRecord(charge) {
+  const latest = charge.refunds?.data?.[0] || null;
+  return {
+    refundId:        latest?.id || null,
+    chargeId:        charge.id,
+    invoiceId:       charge.invoice || null,
+    paymentIntentId: charge.payment_intent || null,
+    customerId:      charge.customer || null,
+    amount:          charge.amount,
+    amountRefunded:  charge.amount_refunded,
+    currency:        charge.currency,
+    reason:          latest?.reason || null,
+    isFullRefund:    charge.amount_refunded === charge.amount,
+    refundedAt:      new Date().toISOString(),
+  };
+}
+
+function buildTenantRefundEmailHtml({ salonName, amountDollars, currency, isFullRefund, reason }) {
+  const refundLabel = isFullRefund ? 'Full refund' : 'Partial refund';
+  const reasonLine  = reason ? `<p style="color:#666;font-size:13px;margin:0 0 16px"><strong>Reason:</strong> ${esc(reason)}</p>` : '';
+  return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;padding:32px 16px">
+<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
+  <div style="background:#0f1923;padding:32px;text-align:center">
+    <div style="font-size:28px;color:#fff;font-weight:300;letter-spacing:2px">Plume Nexus</div>
+  </div>
+  <div style="padding:32px">
+    <h2 style="color:#1a1a1a;margin:0 0 8px">Refund processed</h2>
+    <p style="color:#555;margin:0 0 20px">Hi ${esc(salonName)} team — we've issued a ${refundLabel.toLowerCase()} to your card on file.</p>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:24px">
+      <div style="font-size:11px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${refundLabel}</div>
+      <div style="font-size:24px;color:#1a1a1a;font-weight:700">$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</div>
+    </div>
+    ${reasonLine}
+    <p style="color:#666;font-size:13px;margin:0 0 12px">It can take 5–10 business days for the refund to appear on your statement, depending on your bank.</p>
+    <p style="color:#666;font-size:13px;margin:0">Your subscription remains active. Questions? Just reply to this email.</p>
+  </div>
+  <div style="padding:16px 32px;border-top:1px solid #f0f0f0;font-size:11px;color:#aaa;text-align:center">
+    Plume Nexus · <a href="https://plumenexus.com" style="color:#aaa">plumenexus.com</a>
+  </div>
+</div></body></html>`;
+}
+
+function buildMemberRefundEmailHtml({ clientName, planName, amountDollars, currency, isFullRefund, salonName }) {
+  const refundLabel = isFullRefund ? 'Full refund' : 'Partial refund';
+  return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;padding:32px 16px">
+<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
+  <div style="padding:32px">
+    <h2 style="color:#1a1a1a;margin:0 0 8px">Your refund has been processed</h2>
+    <p style="color:#555;margin:0 0 20px">Hi ${esc(clientName || 'there')} — ${esc(salonName)} has issued a ${refundLabel.toLowerCase()} for your <strong>${esc(planName)}</strong>.</p>
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:24px">
+      <div style="font-size:11px;color:#16a34a;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">${refundLabel}</div>
+      <div style="font-size:24px;color:#1a1a1a;font-weight:700">$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</div>
+    </div>
+    <p style="color:#666;font-size:13px;margin:0">It can take 5–10 business days for the refund to appear on your statement, depending on your bank. Reply with any questions.</p>
+  </div>
+  <div style="padding:16px 32px;border-top:1px solid #f0f0f0;font-size:11px;color:#aaa;text-align:center">
+    ${esc(salonName)} via Plume Nexus
+  </div>
+</div></body></html>`;
+}
+
+// Process a charge.refunded event. Routes by subscription metadata:
+//   type === 'membership' → record under the membership doc, email the client.
+//   otherwise (SaaS)      → record under tenant billing, email the owner.
+// Dependencies are injected so unit tests can pass fakes:
+//   db        — Firestore instance (getFirestore() in production)
+//   stripe    — initialised Stripe client
+//   sendEmail — async ({from,to,subject,html,tenantId}) => {data,error}
+async function handleChargeRefunded(charge, db, stripe, sendEmail) {
+  if (!charge.invoice) {
+    console.log(`[refund] charge ${charge.id} has no invoice — skipping (one-time charge)`);
+    return { skipped: 'no_invoice' };
+  }
+
+  const refund = buildRefundRecord(charge);
+  if (!refund.refundId) {
+    console.warn(`[refund] charge ${charge.id} has no refund in refunds.data — Stripe payload anomaly`);
+    return { skipped: 'no_refund_data' };
+  }
+
+  const invoice = await stripe.invoices.retrieve(charge.invoice);
+  if (!invoice.subscription) {
+    console.log(`[refund] invoice ${invoice.id} has no subscription — skipping`);
+    return { skipped: 'no_subscription' };
+  }
+  const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+  const meta = subscription.metadata || {};
+  const isMembership = meta.type === 'membership';
+  const tid = meta.tenantId;
+  if (!tid) {
+    console.warn(`[refund] subscription ${subscription.id} missing metadata.tenantId — can't route refund`);
+    return { skipped: 'no_tenant_id' };
+  }
+
+  const amountDollars = (refund.amountRefunded / 100).toFixed(2);
+
+  if (isMembership) {
+    const memId = meta.membershipId;
+    if (!memId) {
+      console.warn(`[refund] membership subscription ${subscription.id} missing metadata.membershipId`);
+      return { skipped: 'no_membership_id' };
+    }
+    await db.doc(`tenants/${tid}/memberships/${memId}/refunds/${refund.refundId}`).set(refund);
+
+    const [tenSnap, memSnap] = await Promise.all([
+      db.doc(`tenants/${tid}`).get(),
+      db.doc(`tenants/${tid}/memberships/${memId}`).get(),
+    ]);
+    const ten = tenSnap.data() || {};
+    const mem = memSnap.data() || {};
+    if (mem.clientId) {
+      const clientSnap = await db.doc(`tenants/${tid}/clients/${mem.clientId}`).get();
+      const client = clientSnap.data() || {};
+      if (client.email) {
+        const { error } = await sendEmail({
+          from: `${ten.name || 'Your salon'} <noreply@plumenexus.com>`,
+          to:   client.email,
+          subject: `Your refund has been processed`,
+          html:  buildMemberRefundEmailHtml({
+            clientName:    client.name || client.firstName || '',
+            planName:      mem.planName || 'Membership',
+            amountDollars,
+            currency:      refund.currency,
+            isFullRefund:  refund.isFullRefund,
+            salonName:     ten.name || 'Your salon',
+          }),
+          tenantId: tid,
+        });
+        if (error) console.error(`[refund email member] ${client.email}:`, error.message);
+      }
+    }
+    return { routed: 'membership', tenantId: tid, membershipId: memId, refundId: refund.refundId };
+  }
+
+  await db.doc(`tenants/${tid}/refunds/${refund.refundId}`).set(refund);
+  const tenSnap = await db.doc(`tenants/${tid}`).get();
+  const ten = tenSnap.data() || {};
+  if (ten.ownerEmail) {
+    const { error } = await sendEmail({
+      from: 'Plume Nexus <noreply@plumenexus.com>',
+      to:   ten.ownerEmail,
+      subject: `Refund processed for ${ten.name || 'your subscription'}`,
+      html:  buildTenantRefundEmailHtml({
+        salonName:     ten.name || 'Your salon',
+        amountDollars,
+        currency:      refund.currency,
+        isFullRefund:  refund.isFullRefund,
+        reason:        refund.reason,
+      }),
+      tenantId: tid,
+    });
+    if (error) console.error(`[refund email tenant] ${ten.ownerEmail}:`, error.message);
+  }
+  return { routed: 'saas', tenantId: tid, refundId: refund.refundId };
+}
+
+// ── Dispute (chargeback) handling ─────────────────────────────────────────
+// Stripe disputes are time-sensitive: typically 7-21 days to submit evidence
+// before Stripe sides with the cardholder by default. Missing the window =
+// automatic loss + funds permanently withdrawn. Both the platform owner
+// (who responds via Stripe Dashboard) and the tenant owner (who has the
+// context — receipts, photos, conversation logs) need to know immediately.
+
+// Build a dispute record. Pure for testability. Idempotent: re-running with
+// the same dispute object produces the same record (apart from updatedAt).
+// Routing metadata (isMembership / membershipId / clientId / clientName) is
+// passed in by the orchestrator rather than derived from the dispute itself
+// (since Stripe dispute payloads don't carry our subscription metadata).
+function buildDisputeRecord(dispute, routing = {}) {
+  return {
+    disputeId:      dispute.id,
+    chargeId:       dispute.charge || null,
+    amount:         dispute.amount,
+    currency:       dispute.currency,
+    reason:         dispute.reason || null,
+    status:         dispute.status || null,
+    evidenceDueBy:  dispute.evidence_details?.due_by
+      ? new Date(dispute.evidence_details.due_by * 1000).toISOString()
+      : null,
+    isChargeRefundable: !!dispute.is_charge_refundable,
+    isMembership:   !!routing.isMembership,
+    membershipId:   routing.membershipId || null,
+    clientId:       routing.clientId || null,
+    clientName:     routing.clientName || null,
+    createdAt:      dispute.created ? new Date(dispute.created * 1000).toISOString() : new Date().toISOString(),
+    updatedAt:      new Date().toISOString(),
+  };
+}
+
+// Best-effort Stripe Dashboard URL. Works for both test and live mode
+// because Stripe figures out the routing based on which mode you're
+// signed into. Member of public Stripe URL contract.
+function disputeDashboardUrl(disputeId) {
+  return `https://dashboard.stripe.com/disputes/${esc(disputeId)}`;
+}
+
+// Format the due-by date in a human-readable way. Returns null if no date.
+function formatDueBy(isoDate) {
+  if (!isoDate) return null;
+  const d = new Date(isoDate);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
+}
+
+function buildPlatformDisputeAlertHtml({ tenantName, tenantOwnerEmail, amountDollars, currency, reason, dueByLabel, disputeId, isMembership, clientName }) {
+  const who = isMembership
+    ? `${esc(clientName || 'A salon client')} (client of ${esc(tenantName)})`
+    : `${esc(tenantName)} (${esc(tenantOwnerEmail || 'no owner email')})`;
+  const deadlineBox = dueByLabel
+    ? `<div style="background:#fef2f2;border:2px solid #ef4444;border-radius:12px;padding:16px 20px;margin-bottom:24px">
+         <div style="font-size:11px;color:#991b1b;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px">Evidence due</div>
+         <div style="font-size:18px;color:#991b1b;font-weight:700">${esc(dueByLabel)}</div>
+         <div style="font-size:12px;color:#7f1d1d;margin-top:6px">After this deadline, Stripe sides with the cardholder by default.</div>
+       </div>`
+    : '';
+  return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;padding:32px 16px">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
+  <div style="background:#991b1b;padding:24px 32px">
+    <div style="font-size:13px;color:#fecaca;font-weight:700;text-transform:uppercase;letter-spacing:2px">⚠ Action required</div>
+    <div style="font-size:22px;color:#fff;font-weight:700;margin-top:4px">Chargeback dispute opened</div>
+  </div>
+  <div style="padding:28px 32px">
+    <p style="color:#333;margin:0 0 16px;font-size:14px"><strong>${who}</strong> has had a charge disputed by the cardholder.</p>
+    ${deadlineBox}
+    <table style="width:100%;font-size:13px;color:#555;border-collapse:collapse;margin-bottom:20px">
+      <tr><td style="padding:6px 0;color:#999;width:120px">Amount</td><td>$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</td></tr>
+      <tr><td style="padding:6px 0;color:#999">Reason</td><td>${esc(reason || 'not provided')}</td></tr>
+      <tr><td style="padding:6px 0;color:#999">Type</td><td>${isMembership ? 'Membership (salon client)' : 'SaaS subscription (tenant)'}</td></tr>
+      <tr><td style="padding:6px 0;color:#999">Dispute ID</td><td style="font-family:monospace;font-size:12px">${esc(disputeId)}</td></tr>
+    </table>
+    <a href="${disputeDashboardUrl(disputeId)}" style="display:block;background:#ef4444;color:#fff;text-align:center;padding:14px;border-radius:10px;font-weight:700;font-size:15px;text-decoration:none;margin-bottom:16px">Submit evidence in Stripe Dashboard →</a>
+    <p style="color:#666;font-size:12px;margin:0;line-height:1.6">Next steps: gather receipts / appointment records / conversation logs from the affected ${isMembership ? 'salon' : 'tenant'} and upload them through the link above. Stripe will email you confirmation.</p>
+  </div>
+</div></body></html>`;
+}
+
+function buildTenantDisputeAlertHtml({ salonName, amountDollars, currency, reason, dueByLabel, isMembership, clientName, disputeId }) {
+  const who = isMembership
+    ? `Your client <strong>${esc(clientName || 'a member')}</strong> has filed a chargeback`
+    : `Your salon's subscription payment has been disputed`;
+  const deadlineLine = dueByLabel
+    ? `<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:10px;padding:12px 16px;margin-bottom:20px;font-size:13px;color:#9a3412"><strong>Time-sensitive:</strong> evidence is due by <strong>${esc(dueByLabel)}</strong>. After that deadline, Stripe sides with the cardholder by default.</div>`
+    : '';
+  const action = isMembership
+    ? `Reply to this email with: appointment records, signed receipts, photos of completed services, and any text/email conversations with this client. Our team will compile and submit the response to Stripe on your behalf.`
+    : `If you didn't authorize this dispute or want it withdrawn, contact our team by replying to this email within 24 hours.`;
+  return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;padding:32px 16px">
+<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
+  <div style="background:#0f1923;padding:28px 32px">
+    <div style="font-size:11px;color:#fed7aa;font-weight:700;text-transform:uppercase;letter-spacing:2px">Action required</div>
+    <div style="font-size:20px;color:#fff;font-weight:700;margin-top:4px">Chargeback dispute opened</div>
+  </div>
+  <div style="padding:28px 32px">
+    <p style="color:#333;margin:0 0 16px;font-size:14px">${who} for <strong>$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</strong>.</p>
+    ${deadlineLine}
+    <table style="width:100%;font-size:13px;color:#555;border-collapse:collapse;margin-bottom:20px">
+      <tr><td style="padding:6px 0;color:#999;width:120px">Reason given</td><td>${esc(reason || 'not provided')}</td></tr>
+      <tr><td style="padding:6px 0;color:#999">Dispute ID</td><td style="font-family:monospace;font-size:12px">${esc(disputeId)}</td></tr>
+    </table>
+    <p style="color:#555;font-size:13px;line-height:1.7;margin:0 0 12px">${action}</p>
+  </div>
+  <div style="padding:14px 32px;border-top:1px solid #f0f0f0;font-size:11px;color:#aaa;text-align:center">
+    ${esc(salonName)} via Plume Nexus
+  </div>
+</div></body></html>`;
+}
+
+function buildDisputeClosedEmailHtml({ tenantName, outcome, amountDollars, currency, isMembership, clientName, disputeId, audience }) {
+  // audience: 'platform' | 'tenant'
+  const won = outcome === 'won';
+  const color = won ? '#15803d' : '#991b1b';
+  const bg    = won ? '#f0fdf4' : '#fef2f2';
+  const headline = won ? 'Dispute resolved in your favor' : 'Dispute lost';
+  const summary = won
+    ? `Stripe sided with you. The $${esc(amountDollars)} stays in your account.`
+    : `Stripe sided with the cardholder. The $${esc(amountDollars)} has been withdrawn from the account.`;
+  const who = isMembership ? `client ${esc(clientName || '')}` : `tenant ${esc(tenantName)}`;
+  return `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f5f7fa;margin:0;padding:32px 16px">
+<div style="max-width:520px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.08)">
+  <div style="padding:28px 32px">
+    <h2 style="color:${color};margin:0 0 8px;font-size:20px">${won ? '✓' : '✗'} ${headline}</h2>
+    <p style="color:#555;margin:0 0 16px;font-size:13px">The chargeback dispute on ${who} for <strong>$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</strong> has closed.</p>
+    <div style="background:${bg};border:1px solid ${color};border-radius:10px;padding:14px 18px;margin-bottom:16px;font-size:13px;color:${color}">${summary}</div>
+    ${audience === 'platform' ? `<p style="color:#666;font-size:12px;margin:0">Dispute ID: <code style="font-family:monospace">${esc(disputeId)}</code></p>` : ''}
+  </div>
+</div></body></html>`;
+}
+
+// Process a charge.dispute.created event. URGENT — Stripe gives a fixed
+// (typically 7-21 day) window to submit evidence. Records under
+// `tenants/{tid}/billing/disputes/{disputeId}` (SaaS) or
+// `tenants/{tid}/memberships/{memId}/disputes/{disputeId}` (member) and
+// emails BOTH the platform owner (who responds in Stripe Dashboard) AND
+// the tenant owner (who has the context to provide).
+async function handleChargeDisputeCreated(dispute, db, stripe, sendEmail, platformOwnerEmail) {
+  // Disputes always target a Charge (no path where they don't). But the
+  // charge might be a one-time payment (no invoice → no subscription →
+  // no tenant). In that case we can still alert the platform owner.
+  if (!dispute.charge) {
+    console.warn(`[dispute] dispute ${dispute.id} has no charge — anomaly, skipping`);
+    return { skipped: 'no_charge' };
+  }
+  const charge = await stripe.charges.retrieve(dispute.charge);
+  const amountDollars = (dispute.amount / 100).toFixed(2);
+
+  // Find the tenant via subscription metadata. If no subscription (one-time
+  // charge), still alert the platform — chargeback on any charge matters.
+  let tid = null;
+  let memId = null;
+  let isMembership = false;
+  let clientId = null;
+  let invoice = null;
+  if (charge.invoice) {
+    invoice = await stripe.invoices.retrieve(charge.invoice);
+    if (invoice.subscription) {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const meta = subscription.metadata || {};
+      tid          = meta.tenantId || null;
+      memId        = meta.membershipId || null;
+      isMembership = meta.type === 'membership';
+      clientId     = meta.clientId || null;
+    }
+  }
+
+  let tenantName = '';
+  let tenantOwnerEmail = '';
+  let clientName = '';
+  if (tid) {
+    const tenSnap = await db.doc(`tenants/${tid}`).get();
+    const ten = tenSnap.data() || {};
+    tenantName       = ten.name || '';
+    tenantOwnerEmail = ten.ownerEmail || '';
+
+    // Resolve clientName for membership disputes (used both in emails and
+    // in the dispute record so the in-app UI can render it).
+    if (isMembership && memId) {
+      const memSnap = await db.doc(`tenants/${tid}/memberships/${memId}`).get();
+      const mem = memSnap.data() || {};
+      if (mem.clientId) {
+        clientId = mem.clientId;
+        const clientSnap = await db.doc(`tenants/${tid}/clients/${mem.clientId}`).get();
+        const client = clientSnap.data() || {};
+        clientName = client.name || client.firstName || '';
+      }
+    }
+  }
+
+  // All disputes live in one flat location: tenants/{tid}/billing/disputes/{id}.
+  // Membership disputes carry isMembership=true + membershipId/clientId so the
+  // UI can filter or render context.
+  const rec = buildDisputeRecord(dispute, { isMembership, membershipId: memId, clientId, clientName });
+  const dueByLabel = formatDueBy(rec.evidenceDueBy);
+  if (tid) {
+    await db.doc(`tenants/${tid}/disputes/${rec.disputeId}`).set(rec);
+  }
+
+  // ALWAYS email the platform owner — they're the only one who can submit
+  // evidence in Stripe Dashboard. Even if tenant lookup failed (one-time
+  // charge, missing metadata), platform needs to know.
+  if (platformOwnerEmail) {
+    const { error } = await sendEmail({
+      from: 'Plume Nexus Alerts <noreply@plumenexus.com>',
+      to:   platformOwnerEmail,
+      subject: `⚠ Chargeback dispute opened — ${dueByLabel ? `due ${dueByLabel}` : 'action required'}`,
+      html: buildPlatformDisputeAlertHtml({
+        tenantName, tenantOwnerEmail, amountDollars,
+        currency: rec.currency, reason: rec.reason, dueByLabel,
+        disputeId: rec.disputeId, isMembership, clientName,
+      }),
+      tenantId: tid || undefined,
+    });
+    if (error) console.error(`[dispute email platform] ${platformOwnerEmail}:`, error.message);
+  } else {
+    console.warn('[dispute] PLATFORM_OWNER_EMAIL not configured — skipping platform alert');
+  }
+
+  // Email the tenant owner so they can provide context.
+  if (tenantOwnerEmail) {
+    const { error } = await sendEmail({
+      from: 'Plume Nexus <noreply@plumenexus.com>',
+      to:   tenantOwnerEmail,
+      subject: `Action needed: chargeback dispute on your salon`,
+      html: buildTenantDisputeAlertHtml({
+        salonName: tenantName || 'Your salon',
+        amountDollars, currency: rec.currency, reason: rec.reason, dueByLabel,
+        isMembership, clientName, disputeId: rec.disputeId,
+      }),
+      tenantId: tid,
+    });
+    if (error) console.error(`[dispute email tenant] ${tenantOwnerEmail}:`, error.message);
+  }
+
+  return {
+    routed: tid ? (isMembership ? 'membership' : 'saas') : 'platform_only',
+    tenantId: tid,
+    membershipId: memId,
+    disputeId: rec.disputeId,
+  };
+}
+
+// Process a charge.dispute.closed event (final outcome: won / lost /
+// warning_closed). Updates the stored record and emails the outcome to
+// both platform owner and tenant owner.
+async function handleChargeDisputeClosed(dispute, db, stripe, sendEmail, platformOwnerEmail) {
+  if (!dispute.charge) return { skipped: 'no_charge' };
+  const charge = await stripe.charges.retrieve(dispute.charge);
+  const outcome = dispute.status; // 'won' | 'lost' | 'warning_closed'
+  const amountDollars = (dispute.amount / 100).toFixed(2);
+
+  let tid = null;
+  let memId = null;
+  let isMembership = false;
+  let clientId = null;
+  if (charge.invoice) {
+    const invoice = await stripe.invoices.retrieve(charge.invoice);
+    if (invoice.subscription) {
+      const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+      const meta = subscription.metadata || {};
+      tid          = meta.tenantId || null;
+      memId        = meta.membershipId || null;
+      isMembership = meta.type === 'membership';
+      clientId     = meta.clientId || null;
+    }
+  }
+
+  let tenantName = '';
+  let tenantOwnerEmail = '';
+  let clientName = '';
+  if (tid) {
+    const tenSnap = await db.doc(`tenants/${tid}`).get();
+    const ten = tenSnap.data() || {};
+    tenantName       = ten.name || '';
+    tenantOwnerEmail = ten.ownerEmail || '';
+
+    if (isMembership && memId) {
+      const memSnap = await db.doc(`tenants/${tid}/memberships/${memId}`).get();
+      const mem = memSnap.data() || {};
+      if (mem.clientId) {
+        clientId = mem.clientId;
+        const clientSnap = await db.doc(`tenants/${tid}/clients/${mem.clientId}`).get();
+        const client = clientSnap.data() || {};
+        clientName = client.name || client.firstName || '';
+      }
+    }
+  }
+
+  const rec = buildDisputeRecord(dispute, { isMembership, membershipId: memId, clientId, clientName });
+  if (tid) {
+    await db.doc(`tenants/${tid}/disputes/${rec.disputeId}`).set(rec, { merge: true });
+  }
+
+  const subjectPrefix = outcome === 'won' ? '✓ Dispute won' : outcome === 'lost' ? '✗ Dispute lost' : 'Dispute closed';
+  if (platformOwnerEmail) {
+    const { error } = await sendEmail({
+      from: 'Plume Nexus Alerts <noreply@plumenexus.com>',
+      to:   platformOwnerEmail,
+      subject: `${subjectPrefix} — ${tenantName || rec.disputeId}`,
+      html: buildDisputeClosedEmailHtml({
+        tenantName, outcome, amountDollars, currency: rec.currency,
+        isMembership, clientName, disputeId: rec.disputeId, audience: 'platform',
+      }),
+      tenantId: tid || undefined,
+    });
+    if (error) console.error(`[dispute closed email platform] ${platformOwnerEmail}:`, error.message);
+  }
+  if (tenantOwnerEmail) {
+    const { error } = await sendEmail({
+      from: 'Plume Nexus <noreply@plumenexus.com>',
+      to:   tenantOwnerEmail,
+      subject: `${subjectPrefix}`,
+      html: buildDisputeClosedEmailHtml({
+        tenantName: tenantName || 'Your salon', outcome, amountDollars,
+        currency: rec.currency, isMembership, clientName,
+        disputeId: rec.disputeId, audience: 'tenant',
+      }),
+      tenantId: tid,
+    });
+    if (error) console.error(`[dispute closed email tenant] ${tenantOwnerEmail}:`, error.message);
+  }
+
+  return {
+    routed: tid ? (isMembership ? 'membership' : 'saas') : 'platform_only',
+    tenantId: tid,
+    membershipId: memId,
+    disputeId: rec.disputeId,
+    outcome,
+  };
+}
+
+module.exports = {
+  buildRefundRecord,
+  buildTenantRefundEmailHtml,
+  buildMemberRefundEmailHtml,
+  handleChargeRefunded,
+  buildDisputeRecord,
+  buildPlatformDisputeAlertHtml,
+  buildTenantDisputeAlertHtml,
+  buildDisputeClosedEmailHtml,
+  handleChargeDisputeCreated,
+  handleChargeDisputeClosed,
+  formatDueBy,
+};

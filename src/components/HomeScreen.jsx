@@ -92,7 +92,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   function navigate(viewId) {
     const mod = MODULES.find(m => m.id === viewId);
     if (mod && !isModuleAvailableForPlan(mod, plan)) {
-      showToast(`Upgrade to ${mod.plan === 'pro' ? 'Pro' : 'Enterprise'} to unlock ${mod.label}.`);
+      const tierLabel = mod.plan.charAt(0).toUpperCase() + mod.plan.slice(1);
+      showToast(`Upgrade to ${tierLabel} to unlock ${mod.label}.`);
       return;
     }
     requirePin(viewId, () => onNavigate(viewId));

@@ -27,7 +27,7 @@ const resendKey       = defineString('RESEND_API_KEY',      { default: '' });
 //   firebase functions:config:set email_provider=ses
 // then redeploy. Per-tenant override planned but not yet implemented.
 const emailProvider   = defineString('EMAIL_PROVIDER', { default: 'resend' });
-const awsSesRegion    = defineString('AWS_SES_REGION', { default: 'us-east-1' });
+const awsSesRegion    = defineString('AWS_SES_REGION', { default: 'us-west-2' });
 // SES Configuration Set name. Optional but recommended: gates event
 // destinations (bounces/complaints → SNS topic). When unset, SES still
 // sends but won't fire events into our sesEventWebhook → no suppression
@@ -44,8 +44,14 @@ const awsSesConfigSet = defineString('AWS_SES_CONFIG_SET', { default: '' });
 // custom identities (for Pro tenants on their own domain) requires
 // manual setup later.
 const awsSesSharedIdentityArn = defineString('AWS_SES_SHARED_IDENTITY_ARN', { default: '' });
-const awsAccessKey    = defineSecret('AWS_ACCESS_KEY_ID');
-const awsSecretKey    = defineSecret('AWS_SECRET_ACCESS_KEY');
+// AWS keys are defineString (read from .env) rather than defineSecret so
+// every function that calls sendEmail() doesn't have to declare them in
+// its `secrets:[]` option. Trade-off: keys live in plaintext .env (already
+// gitignored). When real customer billing PII goes through SES, rotate
+// these back to defineSecret and add `secrets:[awsAccessKey, awsSecretKey]`
+// to each sendEmail entry-point. See email-strategy memory.
+const awsAccessKey    = defineString('AWS_ACCESS_KEY_ID',     { default: '' });
+const awsSecretKey    = defineString('AWS_SECRET_ACCESS_KEY', { default: '' });
 // RESEND_FROM env var was the global single-tenant sender. Removed in favor of
 // per-tenant tenantFromAddress() — see helper definition below. Setting still
 // honored as the per-tenant override via the `fromAddress` field on the tenant
@@ -81,9 +87,14 @@ const twilioSid       = defineString('TWILIO_ACCOUNT_SID', { default: '' });
 const twilioToken     = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
 const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
-const stripePriceId   = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
+const stripePriceId        = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
+const stripeStudioPriceId  = defineString('STRIPE_STUDIO_PRICE_ID',  { default: '' });
 const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
 const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
+// Where chargeback / dispute alert emails go. Disputes are time-sensitive
+// (~7-21 day evidence window) so this MUST be a real, monitored inbox.
+// Defaults to the bootstrap admin documented in CLAUDE.md.
+const platformOwnerEmail   = defineString('PLATFORM_OWNER_EMAIL',    { default: '' });
 const gustoClientId     = defineString('GUSTO_CLIENT_ID',     { default: '' });
 const gustoClientSecret = defineString('GUSTO_CLIENT_SECRET', { default: '' });
 const gustoRedirectUri  = defineString('GUSTO_REDIRECT_URI',  { default: '' });
@@ -205,7 +216,10 @@ async function callerRole(db, tenantId, request) {
 const _fromAddrCache = new Map();
 async function tenantFromAddress(db, tenantId) {
   if (_fromAddrCache.has(tenantId)) return _fromAddrCache.get(tenantId);
-  let addr = 'Plume Nexus <noreply@plumenexus.com>';
+  // Subdomain sender (send.plumenexus.com) — that's the verified SES
+  // identity in us-west-2. Apex (noreply@plumenexus.com) is NOT verified
+  // for SES sending; using it would fail at the SES API call.
+  let addr = 'Plume Nexus <noreply@send.plumenexus.com>';
   try {
     const tDoc = await db.doc(`tenants/${tenantId}`).get();
     const tData = tDoc.exists ? tDoc.data() : {};
@@ -214,7 +228,7 @@ async function tenantFromAddress(db, tenantId) {
     } else {
       const rawName = String(tData?.name || 'Plume Nexus').trim();
       const displayName = rawName.replace(/[<>",;@]/g, '').slice(0, 50) || 'Plume Nexus';
-      addr = `${displayName} <noreply@plumenexus.com>`;
+      addr = `${displayName} <noreply@send.plumenexus.com>`;
     }
   } catch (e) {
     console.warn(`[tenantFromAddress] tenant=${tenantId} lookup failed:`, e?.message);
@@ -287,7 +301,7 @@ let _sesClientCache = null;
 function getSesClient() {
   if (_sesClientCache) return _sesClientCache;
   _sesClientCache = new SESv2Client({
-    region: awsSesRegion.value() || 'us-east-1',
+    region: awsSesRegion.value() || 'us-west-2',
     credentials: {
       accessKeyId:     awsAccessKey.value(),
       secretAccessKey: awsSecretKey.value(),
@@ -362,6 +376,66 @@ async function markEmailSuppressed(db, email, reason, tenantId, at) {
     await db.doc(`tenants/${tenantId}/suppression/${hash}`).set(doc, { merge: true });
   }
   await db.doc(`platform/suppression/byHash/${hash}`).set(doc, { merge: true });
+}
+
+// ── Per-tenant outbound send quota ───────────────────────────────────
+// Protects the shared sending domain's reputation: one tenant's bad
+// marketing blast can't tank deliverability for every other tenant.
+// Stored as a per-tenant Firestore doc with daily reset on date roll.
+//
+// Caps (per tenant per 24h):
+//   marketing      — 2,000 sends. Pro-tier campaign sender; should cover
+//                    a single salon's customer list. Tenants legitimately
+//                    needing more can be granted a per-tenant override.
+//   transactional  — 10,000 sends. Catches runaway loops / abuse only;
+//                    real salons send well under this from appointments.
+//
+// Atomic via Firestore transaction so concurrent campaign starts can't
+// race past the cap. Cache miss is non-blocking — we fail-open on the
+// rare Firestore transaction error so a single Firestore hiccup can't
+// silently drop a legit campaign.
+// Per-tenant daily caps. Email vs SMS scaled by typical salon volume:
+//   marketing      — bulk email campaigns (newsletter blasts)
+//   transactional  — appointment/receipt/auth emails (very high cap, runaway-loop guard only)
+//   smsMarketing   — SMS blast campaigns (TCPA + Twilio TFN cost-sensitive)
+//   smsTransactional — appointment SMS (booking + reminder + day-of confirmation)
+const SEND_QUOTA_CAPS = {
+  marketing:        2000,
+  transactional:    10000,
+  smsMarketing:     1000,
+  smsTransactional: 500,
+};
+
+async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1) {
+  if (!tenantId) return { ok: true, current: 0, cap: Infinity };
+  const cap = SEND_QUOTA_CAPS[channel] || SEND_QUOTA_CAPS.transactional;
+  const today = new Date().toISOString().slice(0, 10);
+  const ref = db.doc(`tenants/${tenantId}/data/sendStats`);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const data = snap.exists ? snap.data() : {};
+      const isToday = data.date === today;
+      const currentDay = isToday ? (Number(data[channel]) || 0) : 0;
+      if (currentDay + count > cap) {
+        return { ok: false, current: currentDay, cap, channel };
+      }
+      // On date roll, reset BOTH channels (not just the one being incremented).
+      const updates = isToday
+        ? { [channel]: currentDay + count, updatedAt: new Date().toISOString() }
+        : {
+            date: today,
+            marketing:     channel === 'marketing'     ? count : 0,
+            transactional: channel === 'transactional' ? count : 0,
+            updatedAt:     new Date().toISOString(),
+          };
+      tx.set(ref, updates, { merge: true });
+      return { ok: true, current: currentDay + count, cap, channel };
+    });
+  } catch (e) {
+    console.warn(`[checkAndIncrementSendQuota] tenant=${tenantId} channel=${channel} tx failed:`, e?.message);
+    return { ok: true, current: 0, cap, error: e?.message };
+  }
 }
 
 // ── SES Tenant lifecycle helpers ─────────────────────────────────────
@@ -448,7 +522,7 @@ async function deleteSesTenant(tenantId) {
 //   tenantId  — optional, attaches a "tenant" tag for SES → SNS
 //               attribution (so bounce events know which tenant's
 //               campaign caused them)
-async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId }) {
+async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl }) {
   if (!from || !to || !subject || !html) {
     return { data: null, error: { message: 'missing_required_field' } };
   }
@@ -462,8 +536,8 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId }) {
   const provider = (emailProvider.value() || 'resend').toLowerCase();
   try {
     const id = provider === 'ses'
-      ? await sendViaSES   ({ from, to, subject, html, replyTo, tags, tenantId })
-      : await sendViaResend({ from, to, subject, html, replyTo, tags });
+      ? await sendViaSES   ({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl })
+      : await sendViaResend({ from, to, subject, html, replyTo, tags, unsubscribeUrl });
     return { data: { id }, error: null };
   } catch (e) {
     console.error(`[sendEmail] provider=${provider} to=${to} failed:`, e?.message);
@@ -471,14 +545,22 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId }) {
   }
 }
 
-async function sendViaResend({ from, to, subject, html, replyTo, tags }) {
+async function sendViaResend({ from, to, subject, html, replyTo, tags, unsubscribeUrl }) {
   const apiKey = resendKey.value();
   if (!apiKey) throw new Error('resend_not_configured');
   const resendClient = new Resend(apiKey);
+  // Resend custom headers via `headers` object. Includes List-Unsubscribe
+  // pair when caller provides an unsubscribeUrl (marketing sends only —
+  // CAN-SPAM + Gmail/Apple Mail one-click compliance).
+  const customHeaders = unsubscribeUrl ? {
+    'List-Unsubscribe':      `<${unsubscribeUrl}>`,
+    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+  } : undefined;
   const res = await resendClient.emails.send({
     from, to, subject, html,
     reply_to: replyTo || undefined,
     tags:     Array.isArray(tags) ? tags : undefined,
+    headers:  customHeaders,
   });
   // Resend returns { data, error } — surface error as throw so caller
   // gets a uniform shape from sendEmail.
@@ -486,7 +568,7 @@ async function sendViaResend({ from, to, subject, html, replyTo, tags }) {
   return res.data?.id || null;
 }
 
-async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId }) {
+async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl }) {
   const sid = awsAccessKey.value();
   const tok = awsSecretKey.value();
   if (!sid || !tok) throw new Error('ses_not_configured');
@@ -501,6 +583,15 @@ async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId }) 
       Value: cleanTagValue(t.value || ''),
     })).filter(t => t.Name) : []),
   ];
+  // List-Unsubscribe headers for marketing sends. CAN-SPAM + Gmail/Apple
+  // Mail one-click compliance. SES v2 supports custom Headers on Simple
+  // content (no need to switch to SendRawEmail). Only sent when caller
+  // provides unsubscribeUrl — transactional sends omit these so the
+  // recipient's mail client doesn't show an unsubscribe affordance.
+  const customHeaders = unsubscribeUrl ? [
+    { Name: 'List-Unsubscribe',      Value: `<${unsubscribeUrl}>` },
+    { Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' },
+  ] : undefined;
   const cmd = new SendEmailCommand({
     FromEmailAddress: from,
     Destination:      { ToAddresses: [to] },
@@ -508,6 +599,7 @@ async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId }) 
       Simple: {
         Subject: { Data: subject, Charset: 'UTF-8' },
         Body:    { Html: { Data: html, Charset: 'UTF-8' } },
+        Headers: customHeaders,
       },
     },
     ReplyToAddresses:     replyTo ? [replyTo] : undefined,
@@ -522,6 +614,133 @@ async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId }) 
   });
   const res = await ses.send(cmd);
   return res?.MessageId || null;
+}
+
+// ── SMS sending abstraction ─────────────────────────────────────────────────
+// Single entry point for all outbound SMS — mirrors sendEmail's shape:
+// per-tenant suppression, per-tenant rate limiting, sandbox-mode safety,
+// opt-in / opt-out enforcement, and auto-attached STOP footer per Twilio
+// TFN policy.
+//
+// Args:
+//   to:        recipient phone (any format; normalized to E.164 here)
+//   body:      SMS body. Auto-truncated to 1400 chars (Twilio segment cap).
+//              "Reply STOP to opt out." appended unless body already
+//              contains "STOP" (case-insensitive) — most transactional
+//              flows want the footer; bypass with appendStopFooter=false
+//              when the orchestrator already added it.
+//   tenantId:  required. Drives sandbox-mode check, suppression scope,
+//              rate-limit bucket, and per-tenant TFN routing.
+//   kind:      'transactional' | 'marketing'
+//                transactional → uses smsTransactional quota bucket. Sends
+//                  if client has not explicitly opted out of appt SMS
+//                  (commPreferences.appointmentSms !== false). Default.
+//                marketing → uses smsMarketing quota bucket. REQUIRES
+//                  explicit smsOptIn=true on the client doc.
+//   clientId:  optional. When provided, looks up the client doc to enforce
+//              opt-in / opt-out. When omitted, sends without that check
+//              (e.g., one-off admin alerts to staff phone numbers).
+//   appendStopFooter: defaults true.
+//
+// Returns:    { ok, sid, twilioStatus, error, sandboxed, suppressed,
+//               optedOut, quotaBlocked, quota }
+async function sendSms({
+  to,
+  body,
+  tenantId,
+  kind = 'transactional',
+  clientId = null,
+  appendStopFooter = true,
+  skipQuota = false,  // campaign senders reserve capacity upfront in bulk
+}) {
+  if (!to || !body) return { ok: false, error: 'missing_to_or_body' };
+  if (!tenantId)    return { ok: false, error: 'missing_tenantId' };
+
+  const db = getFirestore();
+  const phone = normalizePhone(to);
+  if (!phone) return { ok: false, error: 'invalid_phone' };
+
+  // Opt-in / opt-out enforcement (if clientId known).
+  // - For transactional: any explicit opt-out blocks the send.
+  // - For marketing: requires explicit smsOptIn=true (CAN-SPAM-equivalent
+  //   for SMS / Twilio TFN compliance — marketing without opt-in is illegal).
+  if (clientId) {
+    try {
+      const cSnap = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
+      const c = cSnap.exists ? cSnap.data() : null;
+      if (c?.commPreferences?.appointmentSms === false) {
+        return { ok: false, error: 'opted_out', optedOut: true };
+      }
+      if (c?.smsOptIn === false) {
+        return { ok: false, error: 'opted_out', optedOut: true };
+      }
+      if (kind === 'marketing' && !c?.smsOptIn) {
+        return { ok: false, error: 'no_marketing_opt_in', optedOut: true };
+      }
+    } catch (e) {
+      console.warn(`[sendSms] tenant=${tenantId} client=${clientId} opt-in lookup failed:`, e?.message);
+      // Marketing without verified opt-in = legal risk; fail closed.
+      if (kind === 'marketing') return { ok: false, error: 'optin_check_failed' };
+    }
+  }
+
+  // Per-tenant SMS quota (separate buckets per kind so a runaway
+  // transactional loop doesn't consume marketing capacity and vice versa).
+  // Campaign senders pass skipQuota=true after reserving capacity for
+  // the whole campaign upfront (atomic so two concurrent campaigns
+  // can't both squeak past the cap).
+  if (!skipQuota) {
+    const quotaBucket = kind === 'marketing' ? 'smsMarketing' : 'smsTransactional';
+    const quota = await checkAndIncrementSendQuota(db, tenantId, quotaBucket, 1);
+    if (!quota.ok) {
+      return { ok: false, error: 'rate_limited', quotaBlocked: true, quota };
+    }
+  }
+
+  // Auto-append the TCPA / Twilio TFN-required STOP footer unless
+  // explicitly disabled OR body already contains "STOP" (avoids
+  // double-suffix when the caller's template already includes it).
+  let finalBody = String(body).slice(0, 1400);
+  if (appendStopFooter && !/STOP/i.test(finalBody)) {
+    finalBody = `${finalBody}\nReply STOP to opt out.`;
+  }
+
+  // Sandbox path: log instead of dispatching. Surfaces in the Marketing →
+  // SMS Test Mode panel so the salon owner can review without spending
+  // real Twilio money.
+  if (await isSandboxTenant(db, tenantId)) {
+    await writeSandboxSmsLog(db, tenantId, {
+      kind:          `appt_${kind}`,
+      to:            phone,
+      body:          finalBody,
+      clientId,
+    });
+    return { ok: true, sandboxed: true, sid: 'SANDBOX' };
+  }
+
+  // Real Twilio dispatch.
+  const sid       = twilioSid.value();
+  const token     = twilioToken.value();
+  const apiKeySid = twilioApiKeySid.value();
+  const from      = await tenantSmsFrom(db, tenantId);
+  if (!sid || !token || !from) {
+    return { ok: false, error: 'twilio_not_configured' };
+  }
+  const twilioSDK = require('twilio');
+  const tw = apiKeySid
+    ? twilioSDK(apiKeySid, token, { accountSid: sid })
+    : twilioSDK(sid, token);
+  try {
+    const msg = await tw.messages.create({ from, to: phone, body: finalBody });
+    return {
+      ok: true,
+      sid: msg?.sid || null,
+      twilioStatus: msg?.status || null,
+    };
+  } catch (e) {
+    console.error(`[sendSms] tenant=${tenantId} to=${phone} kind=${kind} failed:`, e?.message);
+    return { ok: false, error: e?.message || 'send_failed' };
+  }
 }
 
 // ── Multi-tenant iteration helper ─────────────────────────────────────────────
@@ -845,6 +1064,26 @@ async function processEmailCampaign(tenantId, docRef, data) {
     return;
   }
 
+  // Per-tenant marketing send quota. Reserves capacity for the WHOLE
+  // campaign up front — atomic, so two concurrent campaigns starting
+  // in the same second can't both squeak past the cap and double-send.
+  // If reservation fails, the campaign is marked blocked_rate_limit and
+  // never starts; salon owner gets a clear message instead of partial
+  // sends with mysterious mid-campaign rate errors.
+  const db = getFirestore();
+  const quota = await checkAndIncrementSendQuota(db, tenantId, 'marketing', recipients.length);
+  if (!quota.ok) {
+    const msg = `Daily marketing send cap exceeded (${quota.current}/${quota.cap} used in last 24h, this campaign needs ${recipients.length} more). Try again tomorrow, split into smaller campaigns, or contact support to raise the limit.`;
+    console.warn(`[processEmailCampaign] tenant=${tenantId} blocked: ${msg}`);
+    await docRef.update({
+      status: 'blocked_rate_limit',
+      blockedAt: new Date().toISOString(),
+      error: msg,
+      quota: { used: quota.current, cap: quota.cap, requested: recipients.length },
+    });
+    return;
+  }
+
   await docRef.update({
     status: 'sending',
     startedAt: new Date().toISOString(),
@@ -853,8 +1092,8 @@ async function processEmailCampaign(tenantId, docRef, data) {
     attemptedCount: 0,
     attempts: [],
   });
-  const fromAddr = await tenantFromAddress(getFirestore(), tenantId);
-  const brand    = await tenantBranding(getFirestore(), tenantId);
+  const fromAddr = await tenantFromAddress(db, tenantId);
+  const brand    = await tenantBranding(db, tenantId);
   const subject = data.subject || '';
   const body = data.body || '';
 
@@ -932,11 +1171,17 @@ async function processEmailCampaign(tenantId, docRef, data) {
         .replace(/\n/g, '<br>');
 
       try {
+        const unsubLink = unsubUrl(tenantId, clientId);
         const result = await sendEmail({
           from:    fromAddr,
           to:      email,
           subject: personalizedSubject,
-          html:    buildMarketingHtml(bodyHtml, promoCode, promoLabel, data.ctaText || null, data.ctaUrl || null, unsubUrl(tenantId, clientId), brand),
+          html:    buildMarketingHtml(bodyHtml, promoCode, promoLabel, data.ctaText || null, data.ctaUrl || null, unsubLink, brand),
+          tenantId,
+          // List-Unsubscribe header — CAN-SPAM + Gmail/Apple Mail one-click
+          // compliance. Only on marketing sends; transactional sends omit.
+          unsubscribeUrl: unsubLink,
+          tags: [{ name: 'kind', value: 'marketing' }, { name: 'campaign', value: docRef.id }],
         });
         if (result?.error) {
           // Resend returns { data: null, error: { name, message, ...} }
@@ -2263,34 +2508,76 @@ exports.sendDailyReminders = onSchedule(
       const clientMap = {};
       clientSnaps.forEach(snap => { if (snap.exists) clientMap[snap.id] = snap.data(); });
 
-      let sent = 0, skipped = 0;
+      let sent = 0, smsSent = 0, skipped = 0;
       await Promise.all(toRemind.map(async appt => {
         const client = clientMap[appt.clientId];
         const email  = client?.email?.trim();
-        if (!email) { skipped++; return; }
-        if (client?.commPreferences?.appointmentEmail === false) {
-          skipped++;
-          return;
+        const phone  = client?.phone || '';
+        const wantsEmail = email && client?.commPreferences?.appointmentEmail !== false;
+        const wantsSms   = phone && client?.commPreferences?.appointmentSms !== false && client?.smsOptIn !== false;
+        if (!wantsEmail && !wantsSms) { skipped++; return; }
+
+        const firstName = (client?.name || 'there').split(' ')[0];
+        let emailOk = false;
+        let smsOk   = false;
+
+        if (wantsEmail) {
+          try {
+            const { error } = await sendEmail({
+              from:    fromAddr,
+              to:      email,
+              subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
+              html:    buildReminderHtml(appt, client, tenantId, brand),
+              tenantId,
+            });
+            if (error) throw new Error(error.message || JSON.stringify(error));
+            emailOk = true;
+            sent++;
+          } catch (e) {
+            console.error(`[Reminders] EMAIL failed for ${client?.name} (tenant=${tenantId}):`, e.message);
+          }
         }
 
-        try {
-          const { error } = await sendEmail({
-            from:    fromAddr,
-            to:      email,
-            subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
-            html:    buildReminderHtml(appt, client, tenantId, brand),
+        if (wantsSms) {
+          // Short body for SMS. "Reply C to confirm" wires into the
+          // inbound webhook keyword handler — sets confirmed=true on
+          // the most recent scheduled appt for this phone.
+          const techShort = appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '';
+          const smsBody =
+            `Hi ${firstName}! Reminder: your appointment at ${brand.salonName} is tomorrow at `
+            + `${fmtTime(appt.startTime)}${techShort}. Reply C to confirm.`;
+          const r = await sendSms({
+            to: phone,
+            body: smsBody,
+            tenantId,
+            kind: 'transactional',
+            clientId: appt.clientId,
           });
-          if (error) throw new Error(error.message || JSON.stringify(error));
+          if (r.ok) {
+            smsOk = true;
+            smsSent++;
+          } else if (r.error && !r.optedOut && !r.quotaBlocked) {
+            console.warn(`[Reminders] SMS failed for ${client?.name} (tenant=${tenantId}):`, r.error);
+          }
+        }
 
-          await db.doc(`tenants/${tenantId}/appointments/${appt.id}`)
-            .update({ reminderSent: true, reminderSentAt: new Date().toISOString() });
-          sent++;
-        } catch (e) {
-          console.error(`[Reminders] Failed for ${client?.name} (tenant=${tenantId}):`, e.message);
+        // Mark reminderSent only if at least one channel succeeded so a
+        // total failure doesn't get swept under "already reminded" and
+        // miss tomorrow's retry on the next cron run.
+        if (emailOk || smsOk) {
+          try {
+            await db.doc(`tenants/${tenantId}/appointments/${appt.id}`).update({
+              reminderSent:    true,
+              reminderSentAt:  new Date().toISOString(),
+              reminderChannels: [emailOk && 'email', smsOk && 'sms'].filter(Boolean),
+            });
+          } catch (e) {
+            console.warn('[Reminders] mark-sent write failed:', e?.message);
+          }
         }
       }));
 
-      console.log(`[Reminders] tenant=${tenantId} sent=${sent} skipped=${skipped} (date=${tomorrow})`);
+      console.log(`[Reminders] tenant=${tenantId} email=${sent} sms=${smsSent} skipped=${skipped} (date=${tomorrow})`);
     });
   }
 );
@@ -2580,10 +2867,42 @@ exports.sendBookingConfirmation = onDocumentCreated(
           to:      appt.clientEmail,
           subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
           html:    clientHtml,
+          tenantId,
         }).catch(e => console.error('[Booking] Client email failed:', e.message));
       } else {
         console.log(`[Booking] Skipped client email — opted out of appointment email`);
       }
+    }
+
+    // SMS booking confirmation. Phone may live on the appt itself (legacy
+    // form) or on the linked client doc (post-onboarding). Opt-in / opt-out
+    // is enforced inside sendSms via clientId lookup.
+    const clientPhone = appt.clientPhone || (await (async () => {
+      if (!appt.clientId) return null;
+      try {
+        const cDoc = await db.doc(`tenants/${tenantId}/clients/${appt.clientId}`).get();
+        return cDoc.exists ? (cDoc.data().phone || null) : null;
+      } catch { return null; }
+    })());
+    if (clientPhone) {
+      const apptIdForSms = event.params?.apptId || snap.id;
+      const manageShort  = apptManageUrl(tenantId, apptIdForSms);
+      const dateShort    = fmtDate(appt.date).replace(/,.*/, '');
+      const timeShort    = fmtTime(appt.startTime);
+      const techShort    = appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '';
+      const smsBody =
+        `Hi ${firstName}! Your ${svcName} at ${brand.salonName} is booked for ${dateShort} at ${timeShort}${techShort ? ' ' + techShort : ''}.`
+        + (manageShort ? ` Manage: ${manageShort}` : '');
+      await sendSms({
+        to: clientPhone,
+        body: smsBody,
+        tenantId,
+        kind: 'transactional',
+        clientId: appt.clientId || null,
+      }).then(r => {
+        if (!r.ok && !r.optedOut) console.warn(`[Booking] SMS not sent: ${r.error}`);
+        else if (r.sandboxed)      console.log('[Booking] SMS sandboxed (test mode)');
+      }).catch(e => console.error('[Booking] SMS threw:', e?.message));
     }
 
     // Notify admins — projection only (rich users[] now lives in
@@ -4158,7 +4477,10 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   const rawSalon = String(request.data?.salonName || '').trim().slice(0, 80);
   const rawOwner = String(request.data?.ownerName  || '').trim().slice(0, 80);
   const rawEmail = String(request.data?.ownerEmail || '').trim().slice(0, 200);
-  const plan     = request.data?.plan;
+  // Note: caller may pass a `plan` field (which tile they clicked on the
+  // landing page) but it's ignored — every new tenant starts on the 14-day
+  // Pro trial regardless. Plan only diverges from 'pro' once they convert
+  // via Stripe Checkout or the trial expires.
 
   if (!rawSalon || !rawEmail) throw new HttpsError('invalid-argument', 'salonName and ownerEmail are required');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) throw new HttpsError('invalid-argument', 'Email is invalid.');
@@ -4182,7 +4504,10 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
 
   const now  = new Date().toISOString();
   const url  = `https://${tenantId}.plumenexus.com`;
-  const planVal = ['starter', 'pro', 'enterprise'].includes(plan) ? plan : 'starter';
+  // Every new signup gets a 14-day Pro trial (Pro = full feature set so they
+  // see what they're paying for). When trialEndsAt passes without a paid
+  // Stripe subscription, effectivePlan() downgrades UI gating to Starter.
+  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
   // Create registry doc + provision atomically via writeBatch. The previous
   // Promise.all approach left a window where some docs (e.g. data/users
@@ -4193,9 +4518,10 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   const ownerEmailLower = (ownerEmail || '').toLowerCase();
   const batch = db.batch();
   batch.set(db.doc(`tenants/${tenantId}`),
-    { name: salonName, ownerName: ownerName || '', ownerEmail, plan: planVal, active: true, createdAt: now });
+    { name: salonName, ownerName: ownerName || '', ownerEmail,
+      plan: 'pro', trialEndsAt, active: true, createdAt: now });
   batch.set(db.doc(`tenants/${tenantId}/data/settings`),
-    { timeoutMin: 5, tier: 'free', createdAt: now });
+    { timeoutMin: 5, plan: 'pro', trialEndsAt, tier: 'free', createdAt: now });
   batch.set(db.doc(`tenants/${tenantId}/data/slides`),
     { slides: [], def: 0, cur: 0 });
   // Slim projection — staff readable. Holds membership lists the
@@ -4212,7 +4538,7 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   const apiKey = resendKey.value();
   if (apiKey) {
     await sendEmail({
-      from: 'Plume Nexus <noreply@plumenexus.com>',
+      from: 'Plume Nexus <noreply@send.plumenexus.com>',
       to:   ownerEmail,
       subject: `Welcome to Plume Nexus — ${salonName} is ready`,
       html: buildWelcomeHtml(salonName, ownerEmail, tenantId, url),
@@ -4288,73 +4614,30 @@ async function processSMSCampaign(tenantId, docRef, data) {
     return;
   }
 
-  // Sandbox short-circuit. Mark every recipient as 'sent' with a sandbox
-  // marker AND write a per-recipient row to sandboxSmsLog so the owner
-  // can inspect each personalized message in the Marketing → SMS Test
-  // Mode panel. Skip Twilio entirely. No money spent, no real delivery.
-  if (await isSandboxTenant(getFirestore(), tenantId)) {
-    const db = getFirestore();
-    const now = new Date().toISOString();
-    const attempts = [];
-    for (const r of recipients) {
-      const phone = normalizePhone(r.phone) || r.phone || '';
-      const body = substitutePlaceholders(data.smsBody || '', {
-        firstName: r.name?.split(' ')[0] || 'there',
-        lastName:  r.name?.split(' ').slice(1).join(' ') || '',
-        promoCode: 'TEST123', // sandbox placeholder; real path would mint a real code
-      });
-      attempts.push({
-        name:         r.name || '(unknown)',
-        phone,
-        status:       'sent',
-        twilioStatus: 'sandbox',
-        twilioSid:    'SANDBOX',
-        promoCode:    'TEST123',
-        at:           now,
-      });
-      await writeSandboxSmsLog(db, tenantId, {
-        kind:          'campaign',
-        campaignId:    docRef.id,
-        campaignName:  data.name || '',
-        recipientName: r.name || '',
-        to:            phone,
-        body,
-        at:            now,
-      });
-    }
-    await docRef.update({
-      status:         'sent',
-      sandbox:        true,
-      sentCount:      recipients.length,
-      failCount:      0,
-      attemptedCount: recipients.length,
-      attempts,
-      startedAt:      now,
-      lastUpdateAt:   now,
-    });
-    return;
-  }
-
-  const sid       = twilioSid.value();
-  const token     = twilioToken.value();
-  const apiKeySid = twilioApiKeySid.value();
-  // From-number is the tenant's approved TFN if any, else platform default.
-  const from      = await tenantSmsFrom(getFirestore(), tenantId);
-  if (!sid || !token || !from) {
-    await docRef.update({ status: 'failed', error: 'twilio_not_configured' });
-    return;
-  }
-
-  const twilioSDK = require('twilio');
-  const client = apiKeySid
-    ? twilioSDK(apiKeySid, token, { accountSid: sid })
-    : twilioSDK(sid, token);
-
   if (data.cancelRequested) {
     await docRef.update({
       status: 'cancelled',
       cancelledAt: new Date().toISOString(),
       sentCount: 0, failCount: 0, attemptedCount: 0, attempts: [],
+    });
+    return;
+  }
+
+  const db = getFirestore();
+
+  // Per-tenant SMS marketing quota — atomic upfront reservation so two
+  // concurrent campaigns can't squeak past the cap. Blocked campaigns
+  // never start (vs. partial sends with mysterious mid-loop errors).
+  // sendSms calls below pass skipQuota=true to avoid double-counting.
+  const quota = await checkAndIncrementSendQuota(db, tenantId, 'smsMarketing', recipients.length);
+  if (!quota.ok) {
+    const msg = `Daily SMS marketing cap exceeded (${quota.current}/${quota.cap} used in last 24h, this campaign needs ${recipients.length} more). Try again tomorrow or split into smaller campaigns.`;
+    console.warn(`[processSMSCampaign] tenant=${tenantId} blocked: ${msg}`);
+    await docRef.update({
+      status: 'blocked_rate_limit',
+      blockedAt: new Date().toISOString(),
+      error: msg,
+      quota: { used: quota.current, cap: quota.cap, requested: recipients.length },
     });
     return;
   }
@@ -4430,24 +4713,45 @@ async function processSMSCampaign(tenantId, docRef, data) {
         lastName:  r.name?.split(' ').slice(1).join(' ') || '',
         promoCode: promoCode || '',
       });
-      try {
-        const msg = await client.messages.create({ body, from, to: phone });
-        const tStatus = msg?.status || '';
-        if (tStatus === 'failed' || tStatus === 'undelivered') {
-          const code   = msg?.errorCode != null ? String(msg.errorCode) : `TWILIO_${tStatus.toUpperCase()}`;
-          const reason = msg?.errorMessage || `Twilio reported status: ${tStatus}`;
-          console.error(`[processSMSCampaign] ${r.name} ${phone} delivery-failed (no throw) status=${tStatus} code=${code} reason=${reason}`);
-          attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, twilioStatus: tStatus, twilioSid: msg?.sid || null, promoCode: promoCode || null, at });
-          await maybeAutoOptOut(tenantId, r, code, 'twilio_status');
-        } else {
-          attempts.push({ name: r.name || '(unknown)', phone, status: 'sent', twilioStatus: tStatus || null, twilioSid: msg?.sid || null, promoCode: promoCode || null, at });
-        }
-      } catch (err) {
-        const code = err?.code != null ? String(err.code) : 'UNKNOWN';
-        const reason = err?.message || 'Unknown Twilio error';
-        console.error(`[processSMSCampaign] ${r.name} ${phone} threw code=${code} reason=${reason}`);
-        attempts.push({ name: r.name || '(unknown)', phone, status: 'failed', code, reason, promoCode: promoCode || null, at });
-        await maybeAutoOptOut(tenantId, r, code, 'twilio_throw');
+      // sendSms handles: sandbox-mode short-circuit, suppression/opt-in
+      // checks, STOP-footer append, real Twilio dispatch. skipQuota=true
+      // because we already reserved capacity for the whole campaign at
+      // function start (upfront atomic reservation).
+      const result = await sendSms({
+        to:       phone,
+        body,
+        tenantId,
+        kind:     'marketing',
+        clientId: r.clientId || null,
+        skipQuota: true,
+      });
+      if (result.ok) {
+        attempts.push({
+          name: r.name || '(unknown)', phone,
+          status: 'sent',
+          twilioStatus: result.twilioStatus || (result.sandboxed ? 'sandbox' : null),
+          twilioSid:    result.sid || null,
+          promoCode: promoCode || null,
+          at,
+        });
+      } else if (result.optedOut) {
+        attempts.push({
+          name: r.name || '(unknown)', phone,
+          status: 'failed',
+          code: 'OPT_OUT', reason: result.error,
+          promoCode: promoCode || null,
+          at,
+        });
+      } else {
+        const code = result.error || 'UNKNOWN';
+        console.error(`[processSMSCampaign] ${r.name} ${phone} failed code=${code}`);
+        attempts.push({
+          name: r.name || '(unknown)', phone,
+          status: 'failed', code, reason: code,
+          promoCode: promoCode || null,
+          at,
+        });
+        await maybeAutoOptOut(tenantId, r, code, 'sendSms_error');
       }
     }
 
@@ -4623,10 +4927,38 @@ function substitutePlaceholders(body, vars) {
 }
 
 // ── Stripe Billing ────────────────────────────────────────────────────────────
-exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
+// Maps a plan id to its configured Stripe Price ID. Centralised so checkout +
+// webhook never disagree on which tier a price represents.
+function priceIdForPlan(plan) {
+  if (plan === 'starter') return stripeStarterPriceId.value();
+  if (plan === 'studio')  return stripeStudioPriceId.value();
+  if (plan === 'pro')     return stripePriceId.value();
+  return '';
+}
+
+// Reverse lookup: given a Stripe price id, return our plan name. Used by the
+// subscription.updated webhook to detect a plan-switch initiated from the
+// Customer Portal. Returns null for unknown price ids (treat as "leave
+// existing plan alone"; almost certainly means STRIPE_*_PRICE_ID env is
+// out of sync with what's in Stripe).
+function planForPriceId(priceId) {
+  if (!priceId) return null;
+  if (priceId === stripeStarterPriceId.value()) return 'starter';
+  if (priceId === stripeStudioPriceId.value())  return 'studio';
+  if (priceId === stripePriceId.value())        return 'pro';
+  return null;
+}
+
+const { handleChargeRefunded, handleChargeDisputeCreated, handleChargeDisputeClosed } = require('./lib/billing');
+
+exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { plan, tenantId: tid } = request.data || {};
   const tId = tid || TENANT_ID;
+
+  if (!['starter', 'studio', 'pro'].includes(plan)) {
+    throw new HttpsError('invalid-argument', `Unknown plan "${plan}"`);
+  }
 
   const db = getFirestore();
   // Cross-tenant guard: the caller must be an admin of the tenant they're
@@ -4635,11 +4967,11 @@ exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
   // the webhook's metadata.tenantId routing.
   await requireTenantAdmin(db, tId, request);
 
-  const key = stripeKey.value ? stripeKey.value() : null;
+  const key = stripeKey.value();
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
 
   const stripe   = require('stripe')(key);
-  const priceId  = plan === 'starter' ? stripeStarterPriceId.value() : stripePriceId.value();
+  const priceId  = priceIdForPlan(plan);
   if (!priceId)  throw new HttpsError('invalid-argument', `Price ID for plan "${plan}" not set`);
 
   const tenDoc  = await db.doc(`tenants/${tId}`).get();
@@ -4664,16 +4996,52 @@ exports.createCheckoutSession = onCall({ cors: true }, async (request) => {
     success_url: `${baseUrl}/?stripe=success`,
     cancel_url:  `${baseUrl}/?stripe=cancel`,
     metadata: { tenantId: tId, plan },
+    // Mirror metadata onto the Subscription so lifecycle webhooks
+    // (customer.subscription.updated/deleted) can route back to the
+    // right tenant without a Firestore round-trip.
+    subscription_data: { metadata: { tenantId: tId, plan } },
+  });
+
+  return { url: session.url };
+});
+
+// Mints a Stripe Customer Portal session for a tenant owner/admin to manage
+// their own SaaS subscription — update card, cancel, view invoices, swap
+// plan. Mirror of createMembershipPortal but for tenant-level Stripe
+// customers (the tenant.stripeCustomerId, NOT the client.stripeCustomerId).
+exports.createTenantBillingPortal = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const stripeCustomerId = tenSnap.data().stripeCustomerId;
+  if (!stripeCustomerId) {
+    throw new HttpsError('failed-precondition', 'No Stripe customer yet — start a checkout first');
+  }
+
+  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const session = await stripe.billingPortal.sessions.create({
+    customer:   stripeCustomerId,
+    return_url: baseUrl,
   });
 
   return { url: session.url };
 });
 
 exports.stripeWebhook = onRequest(
-  { secrets: [stripeWebhookSecret] },
+  { secrets: [stripeWebhookSecret, stripeKey] },
   async (req, res) => {
     const sig = req.headers['stripe-signature'];
-    const key = stripeKey.value ? stripeKey.value() : null;
+    const key = stripeKey.value();
     if (!key) { res.status(500).send('Stripe not configured'); return; }
 
     let event;
@@ -4717,18 +5085,39 @@ exports.stripeWebhook = onRequest(
         const tenantId = obj.metadata?.tenantId;
         const plan     = obj.metadata?.plan || 'pro';
         if (tenantId) {
-          await db.doc(`tenants/${tenantId}/data/settings`).set({ plan }, { merge: true });
-          await db.doc(`tenants/${tenantId}`).set({ plan, stripeSubscriptionId: obj.subscription }, { merge: true });
+          // Paid sub is now in place — clear trialEndsAt so effectivePlan()
+          // stops downgrading the tenant when the trial date passes. We use
+          // FieldValue.delete() on the settings doc field so a stale future
+          // value doesn't shadow the real paid status forever. stripeSub-
+          // ScriptionId is mirrored to settings so the Admin Billing UI
+          // (which only loads data/settings) can show the "Manage billing"
+          // button gated by sub presence.
+          const { FieldValue } = require('firebase-admin/firestore');
+          await db.doc(`tenants/${tenantId}/data/settings`).set({
+            plan,
+            stripeSubscriptionId: obj.subscription,
+            trialEndsAt: FieldValue.delete(),
+          }, { merge: true });
+          await db.doc(`tenants/${tenantId}`).set({
+            plan,
+            stripeSubscriptionId: obj.subscription,
+            trialEndsAt: FieldValue.delete(),
+          }, { merge: true });
         }
       }
     }
 
-    // Subscription lifecycle: active / past_due / cancelled / unpaid
+    // Subscription lifecycle: active / past_due / cancelled / unpaid / paused.
+    // Two branches:
+    //   1. Membership (per-tenant subcollection lookup) — status sync only.
+    //   2. SaaS tenant subscription — handles plan-switches via Customer
+    //      Portal (Studio ↔ Pro) by reverse-mapping the new price id to a
+    //      plan name, plus tracks cancel-at-period-end + period end date
+    //      so the Admin UI can show "Cancels on {date}" / past-due banners.
     if (event.type === 'customer.subscription.updated') {
-      // Try membership first (per-tenant subcollection lookup)
-      const tid = obj.metadata?.tenantId || TENANT_ID;
       const membershipId = obj.metadata?.membershipId;
       if (membershipId) {
+        const tid = obj.metadata?.tenantId || TENANT_ID;
         const status = obj.status === 'active' ? 'active'
                      : obj.status === 'past_due' ? 'past_due'
                      : obj.status === 'canceled' ? 'cancelled'
@@ -4741,6 +5130,45 @@ exports.stripeWebhook = onRequest(
           currentPeriodEnd:  obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null,
           updatedAt:         new Date().toISOString(),
         }, { merge: true });
+      } else {
+        // SaaS subscription — find the tenant. Prefer metadata.tenantId
+        // (set on subscription_data in createCheckoutSession); fall back
+        // to looking up by stripeSubscriptionId for grandfathered subs
+        // that pre-date the metadata mirror.
+        let tid = obj.metadata?.tenantId;
+        if (!tid) {
+          const snap = await db.collection('tenants')
+            .where('stripeSubscriptionId', '==', obj.id).limit(1).get();
+          if (!snap.empty) tid = snap.docs[0].id;
+        }
+        if (tid) {
+          const newPriceId = obj.items?.data?.[0]?.price?.id;
+          const newPlan    = planForPriceId(newPriceId);
+          const updates = {
+            subscriptionStatus: obj.status || null,
+            cancelAtPeriodEnd:  !!obj.cancel_at_period_end,
+            currentPeriodEnd:   obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null,
+            updatedAt:          new Date().toISOString(),
+          };
+          // Apply plan change only while the sub is still in good standing.
+          // Stripe statuses we treat as "honor the price tier on the line item":
+          //   - active     normal paid state
+          //   - past_due   grace period; still entitled until .deleted fires
+          //   - trialing   Stripe-managed trial (we don't currently use this
+          //                but harmless to honor if a future flow enables it)
+          // Statuses we explicitly DO NOT downgrade on here:
+          //   - canceled / unpaid / paused — handled by .deleted or left
+          //     alone (paused = manual admin call, out of scope).
+          if (newPlan && ['active', 'past_due', 'trialing'].includes(obj.status)) {
+            updates.plan = newPlan;
+          } else if (!newPlan && newPriceId) {
+            console.warn(`[stripeWebhook] subscription.updated: unknown price id "${newPriceId}" for tenant ${tid} — STRIPE_*_PRICE_ID env may be out of sync with Stripe Dashboard`);
+          }
+          await db.doc(`tenants/${tid}/data/settings`).set(updates, { merge: true });
+          await db.doc(`tenants/${tid}`).set(updates, { merge: true });
+        } else {
+          console.warn(`[stripeWebhook] subscription.updated: no tenant matched for sub ${obj.id}`);
+        }
       }
     }
 
@@ -4760,8 +5188,17 @@ exports.stripeWebhook = onRequest(
           .where('stripeSubscriptionId', '==', obj.id).limit(1).get();
         if (!snap.empty) {
           const t = snap.docs[0].id;
-          await db.doc(`tenants/${t}/data/settings`).set({ plan: 'starter' }, { merge: true });
-          await db.doc(`tenants/${t}`).set({ plan: 'starter' }, { merge: true });
+          const { FieldValue } = require('firebase-admin/firestore');
+          const clear = {
+            plan: 'starter',
+            stripeSubscriptionId: FieldValue.delete(),
+            subscriptionStatus:   FieldValue.delete(),
+            cancelAtPeriodEnd:    FieldValue.delete(),
+            currentPeriodEnd:     FieldValue.delete(),
+            updatedAt: new Date().toISOString(),
+          };
+          await db.doc(`tenants/${t}/data/settings`).set(clear, { merge: true });
+          await db.doc(`tenants/${t}`).set(clear, { merge: true });
         }
       }
     }
@@ -4778,6 +5215,43 @@ exports.stripeWebhook = onRequest(
             updatedAt: new Date().toISOString(),
           }, { merge: true });
         }
+      }
+    }
+
+    // Refund handling. Fires when a refund (full or partial) is issued for a
+    // charge via Stripe Dashboard or API. We record refunds for accounting
+    // and email the affected party. We deliberately do NOT auto-downgrade
+    // plans here — Stripe sends customer.subscription.deleted separately
+    // if the subscription is also cancelled. Refund-without-cancellation
+    // is a real workflow (e.g. goodwill credit) and shouldn't pull access.
+    if (event.type === 'charge.refunded') {
+      try {
+        await handleChargeRefunded(obj, db, require('stripe')(key), sendEmail);
+      } catch (e) {
+        // Don't 500 — Stripe retries failed webhooks aggressively. Log loudly.
+        console.error('[stripeWebhook] charge.refunded handler error:', e?.message, e?.stack);
+      }
+    }
+
+    // Dispute (chargeback) handling. Time-sensitive: typically 7-21 day
+    // evidence window. We alert the platform owner (only one who can submit
+    // evidence in Stripe Dashboard) AND the tenant owner (who has context:
+    // receipts, photos, conversation logs). See functions/lib/billing.js.
+    if (event.type === 'charge.dispute.created') {
+      try {
+        const platform = platformOwnerEmail.value() || 'jvankim@gmail.com';
+        await handleChargeDisputeCreated(obj, db, require('stripe')(key), sendEmail, platform);
+      } catch (e) {
+        console.error('[stripeWebhook] charge.dispute.created handler error:', e?.message, e?.stack);
+      }
+    }
+
+    if (event.type === 'charge.dispute.closed') {
+      try {
+        const platform = platformOwnerEmail.value() || 'jvankim@gmail.com';
+        await handleChargeDisputeClosed(obj, db, require('stripe')(key), sendEmail, platform);
+      } catch (e) {
+        console.error('[stripeWebhook] charge.dispute.closed handler error:', e?.message, e?.stack);
       }
     }
 
@@ -5513,8 +5987,19 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, as
       res.set('Content-Type', 'text/xml').status(200).send('<Response/>');
       return;
     }
-    // Single-tenant for now; for multi-tenant SaaS we'd map To-number → tenantId.
-    const tenantId = TENANT_ID;
+    // Resolve tenant from the `To` TFN via the platform/smsTfnRegistry
+    // lookup (populated when provisionTenantSMS approves a number, and
+    // when the Twilio status webhook flips a real submission to
+    // 'approved'). Falls back to TENANT_ID for legacy single-tenant
+    // Meraki sends in case Meraki's TFN was approved before this
+    // registry pattern existed. A backfill script writes a registry
+    // entry for every currently-approved TFN.
+    const db0BeforeResolve = getFirestore();
+    let tenantId = await findTenantByTfn(db0BeforeResolve, To);
+    if (!tenantId) {
+      tenantId = TENANT_ID;
+      console.warn(`[twilioInboundSms] no tenant for To=${To}, falling back to legacy ${TENANT_ID}`);
+    }
 
     // ── Pause check ──────────────────────────────────────
     // If the salon is currently paused, either auto-reply with the closure
@@ -5595,6 +6080,97 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, as
     }
 
     const client = await findClientByPhone(tenantId, From);
+
+    // ── Keyword handlers (run BEFORE chat-thread append) ──
+    // TCPA + Twilio TFN policy: STOP / UNSUBSCRIBE / CANCEL / END / QUIT
+    // must opt the recipient out immediately. Twilio carrier-blocks the
+    // number on their side automatically; we additionally flip our DB
+    // flag so future cron sends skip the recipient too. START / YES /
+    // UNSTOP re-subscribes. C / CONFIRM / Y / YES confirms the most
+    // recent scheduled appointment (paired with the "Reply C to confirm"
+    // suffix on the reminder SMS).
+    const bodyTrim  = Body.trim();
+    const bodyUpper = bodyTrim.toUpperCase();
+    const STOP_WORDS  = ['STOP', 'STOPALL', 'UNSUBSCRIBE', 'CANCEL', 'END', 'QUIT'];
+    const START_WORDS = ['START', 'UNSTOP'];
+    const CONFIRM_WORDS = ['C', 'CONFIRM', 'Y', 'YES', 'OK'];
+
+    if (STOP_WORDS.includes(bodyUpper)) {
+      if (client) {
+        await db0.doc(`tenants/${tenantId}/clients/${client.id}`).update({
+          'commPreferences.appointmentSms': false,
+          smsOptIn:      false,
+          smsOptOutAt:   new Date().toISOString(),
+          smsOptOutVia: 'inbound_keyword',
+          updatedAt:     new Date().toISOString(),
+        }).catch(e => console.warn('[twilioInboundSms] STOP write failed:', e?.message));
+        console.log(`[twilioInboundSms] STOP from ${client.id} (${From})`);
+      }
+      // Carrier auto-replies with the standard "You have been unsubscribed"
+      // message; we acknowledge with an empty TwiML response.
+      res.set('Content-Type', 'text/xml').status(200).send('<Response/>');
+      return;
+    }
+
+    if (START_WORDS.includes(bodyUpper) && client) {
+      await db0.doc(`tenants/${tenantId}/clients/${client.id}`).update({
+        'commPreferences.appointmentSms': true,
+        smsOptIn:    true,
+        smsOptInAt:  new Date().toISOString(),
+        smsOptInVia: 'inbound_keyword',
+        updatedAt:    new Date().toISOString(),
+      }).catch(e => console.warn('[twilioInboundSms] START write failed:', e?.message));
+      const brand = await tenantBranding(db0, tenantId);
+      const replyText = `You're re-subscribed to ${brand.salonName} appointment reminders. Reply STOP anytime to opt out.`;
+      res.set('Content-Type', 'text/xml').status(200).send(
+        `<Response><Message>${xmlEscape(replyText)}</Message></Response>`
+      );
+      return;
+    }
+
+    if (CONFIRM_WORDS.includes(bodyUpper) && client) {
+      // Find the next scheduled (not-yet-confirmed) appointment for this
+      // client in the next 7 days. Window is wide enough to catch evening
+      // replies to morning reminders but tight enough that "Y" three weeks
+      // later doesn't accidentally confirm a fresh booking.
+      try {
+        const todayStr     = new Date().toISOString().slice(0, 10);
+        const horizonStr   = new Date(Date.now() + 7 * 86400 * 1000).toISOString().slice(0, 10);
+        const apptSnap = await db0.collection(`tenants/${tenantId}/appointments`)
+          .where('clientId', '==', client.id)
+          .where('status',   '==', 'scheduled')
+          .where('date',     '>=', todayStr)
+          .where('date',     '<=', horizonStr)
+          .get();
+        const upcoming = apptSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(a => !a.confirmed)
+          .sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime))[0];
+        if (upcoming) {
+          await db0.doc(`tenants/${tenantId}/appointments/${upcoming.id}`).update({
+            confirmed:    true,
+            confirmedAt:  new Date().toISOString(),
+            confirmedVia: 'sms_keyword',
+            updatedAt:    new Date().toISOString(),
+          });
+          const brand = await tenantBranding(db0, tenantId);
+          const firstName = (client.name || '').split(' ')[0] || 'there';
+          const replyText =
+            `Thanks ${firstName}! You're confirmed for ${fmtDate(upcoming.date)} at `
+            + `${fmtTime(upcoming.startTime)}${upcoming.techName ? ' with ' + upcoming.techName : ''}. `
+            + `See you soon — ${brand.salonName}.`;
+          res.set('Content-Type', 'text/xml').status(200).send(
+            `<Response><Message>${xmlEscape(replyText)}</Message></Response>`
+          );
+          return;
+        }
+        // No upcoming appt to confirm — fall through to normal chat-thread
+        // handling so the staff sees the reply as a regular message.
+      } catch (e) {
+        console.warn('[twilioInboundSms] confirm lookup failed:', e?.message);
+      }
+    }
+
     if (!client) {
       // Unknown sender — log and respond OK. We don't auto-create a client
       // record (could be a wrong number); staff can create manually if needed.
@@ -6150,7 +6726,7 @@ exports.submitContactInquiry = onCall(
       const { error } = await sendEmail({
         // Platform-level inquiry, not tenant-bound — always send from
         // the Plume Nexus identity to my admin inbox.
-        from:     'Plume Nexus <noreply@plumenexus.com>',
+        from:     'Plume Nexus <noreply@send.plumenexus.com>',
         to:       'jvankim@gmail.com',
         replyTo:  cleanEmail,
         subject:  `[Plume Nexus] ${cleanName} — ${cleanSalon || 'inquiry'}`,
@@ -6263,7 +6839,7 @@ async function notifyPlatformAdmins(db, { subject, html, exceptEmail }) {
     let sent = 0;
     for (const to of recipients) {
       const { error } = await sendEmail({
-        from: 'Plume Nexus Security <noreply@plumenexus.com>',
+        from: 'Plume Nexus Security <noreply@send.plumenexus.com>',
         to,
         subject,
         html,
@@ -7001,6 +7577,7 @@ exports.provisionTenantSMS = onCall(
         rejectionReason:  null,
         updatedAt:        now,
       }, { merge: true });
+      await registerTfnForTenant(db, sandboxTfn, tenantId, true);
       return { status: 'approved', tfnNumber: sandboxTfn, sandbox: true };
     }
 
@@ -7206,6 +7783,10 @@ exports.releaseTenantSMS = onCall(
       tfnSid:      null,
       updatedAt:   new Date().toISOString(),
     }, { merge: true });
+    // Clear the TFN ↔ tenant registry entry so inbound SMS to the now-
+    // released number doesn't try to route to a tenant whose number
+    // is gone (it'd land as an orphan log; harmless but noisy).
+    if (sms.tfnNumber) await unregisterTfn(db, sms.tfnNumber);
     return { released: true, hadNumber: true };
   }
 );
@@ -7497,7 +8078,7 @@ exports.provisionTenant = onCall(
     // tolerable; provisioning failure here doesn't roll back the tenant.
     try {
       const { error } = await sendEmail({
-        from:     'Plume Nexus <noreply@plumenexus.com>',
+        from:     'Plume Nexus <noreply@send.plumenexus.com>',
         to:       ownerEmail,
         subject:  `Welcome to Plume Nexus — ${salonName} is ready`,
         html:     buildWelcomeHtml(salonName, ownerEmail, slug, url),
@@ -7939,7 +8520,13 @@ exports.runIntegrityScan = onSchedule(
 exports.sesEventWebhook = onRequest({ cors: false, timeoutSeconds: 30 }, async (req, res) => {
   try {
     const headerType = req.headers['x-amz-sns-message-type'];
-    const body = req.body || {};
+    // SNS POSTs with Content-Type: text/plain — Firebase Functions doesn't
+    // auto-JSON-parse those, so req.body arrives as a string. Coerce it.
+    // Plain-text body shape is JSON regardless of header (SNS spec).
+    let body = req.body || {};
+    if (typeof body === 'string') {
+      try { body = JSON.parse(body); } catch { body = {}; }
+    }
     const type = headerType || body.Type;
 
     if (type === 'SubscriptionConfirmation') {
