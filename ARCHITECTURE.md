@@ -701,13 +701,20 @@ Firestore retains every write at 1-microsecond granularity for **7 days**. Resto
 gcloud firestore databases describe --database='(default)' --project=meraki-salon-manager --format='value(pointInTimeRecoveryEnablement)'
 # Should print: POINT_IN_TIME_RECOVERY_ENABLED
 
-# Restore to a new database — REPLACE timestamp with desired past instant in RFC3339
-gcloud firestore databases restore \
-  --source-database='(default)' \
-  --destination-database=restore-YYYYMMDD \
+# CLONE (NOT `restore` — that's for managed backups) to a new database
+# at any point-in-time within the 7-day window. Snapshot-time MUST be on
+# an exact minute boundary (no seconds component).
+gcloud firestore databases clone \
+  --source-database='projects/meraki-salon-manager/databases/(default)' \
   --snapshot-time='2026-05-12T10:00:00.000Z' \
+  --destination-database=restore-YYYYMMDD \
   --project=meraki-salon-manager
+
+# Async — returns immediately with an Operation. Poll with:
+gcloud firestore operations list --database=restore-YYYYMMDD --project=meraki-salon-manager
 ```
+
+**Timing** — verified by drill (2026-05-30, restoring 1h-ago snapshot of full prod DB ~500MB): **~11 minutes** end-to-end (database create + clone + verify). Counts matched prod exactly.
 
 Then either point the app at the new database (env var) or use `gcloud firestore export` + import to move the data into a recovered version of `(default)`. Coordinate with users — the swap window has visible read inconsistency.
 
