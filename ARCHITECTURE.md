@@ -654,8 +654,9 @@ Five layers protect customer data, each with a different recovery use case. Pick
 | Admin accidentally deleted a single client/appointment/receipt/employee | Soft-delete tombstone (Layer 3) — restore via Admin UI | Seconds |
 | Admin edited the wrong field on a single doc; need previous version | Per-doc BigQuery restore (Layer 5) — ⏳ History button in detail modal | <1 minute |
 | `data/usersFull` went missing entirely (the May 10 incident) | Auto-heal on next admin load (Layer 2) | Automatic, seconds |
-| Bulk collection corruption / wipe | PITR (Layer 4) — full database point-in-time restore | 5-15 minutes manual |
-| Need state from more than 7 days ago | Daily GCS snapshot — *not yet enabled at time of writing* | Hours |
+| Bulk collection corruption / wipe (last 7 days) | PITR (Layer 4) — full database point-in-time restore | 5-15 min |
+| Bulk corruption from 8-30 days ago | Daily Firestore snapshot (Layer 4.5) — `gcloud firestore import` | 10-30 min |
+| Need state older than 30 days for a tracked collection | BigQuery raw changelog (Layer 5) — query, reconstruct, write back | Hours |
 | Want to see what changed when (no restore needed) | BigQuery forensic log — query `firestore_export.*_raw_changelog` | Read-only |
 
 ### Layer 1 — Atomic writes (prevent, not recover)
@@ -712,6 +713,63 @@ Then either point the app at the new database (env var) or use `gcloud firestore
 
 **Cost:** $0.18/GB/month for the PITR overlay. At Meraki's volume (~500MB), pennies per month.
 
+### Layer 4.5 — Daily Firestore snapshots (8-30 day window)
+
+Once per day Firestore writes a full backup of the `(default)` database to managed storage, retained for 30 days. Covers the gap between PITR (7-day window) and BigQuery (only 5 collections), with **referentially-consistent point-in-time of every collection** (settings, gift cards, promo codes, tenant root docs, slugs, suppression — everything PITR covers, but going back 30 days).
+
+**Schedule:**
+```
+projects/meraki-salon-manager/databases/(default)/backupSchedules/95f8ce3d-6d3e-4dc8-8ca2-aa4bee43e8b9
+  recurrence: daily
+  retention: 30 days (2592000s)
+  first run: ~2026-05-30 (24h after creation)
+```
+
+**When to use:**
+- The data was correct 14 days ago but is wrong now, and PITR's 7-day window can't reach back that far
+- You need referential consistency across collections (BQ can't give that — it only has per-collection changelogs)
+- Bulk wipe of a collection NOT in BQ mirror (settings, automationSent, payrollRuns, etc.)
+
+**How to verify the schedule is still firing:**
+```bash
+# Lists all snapshots in the last 30 days. Should grow by 1 per day.
+gcloud firestore backups list --location=us-central1 --project=meraki-salon-manager
+```
+
+**How to restore:**
+```bash
+# 1. List backups to find the one you want
+gcloud firestore backups list --location=us-central1 --project=meraki-salon-manager \
+  --format='table(name,snapshotTime,state)' --sort-by=snapshotTime
+
+# 2. Copy the backup name (last segment after backups/)
+BACKUP=projects/meraki-salon-manager/locations/us-central1/backups/XXXX-XXXX-XXXX
+
+# 3. Restore into a NEW database (NEVER restore over (default) — there is no undo)
+gcloud firestore databases restore \
+  --source-backup=$BACKUP \
+  --destination-database=restore-YYYYMMDD \
+  --project=meraki-salon-manager
+
+# 4. Verify by querying a known record
+gcloud firestore documents describe \
+  "projects/meraki-salon-manager/databases/restore-YYYYMMDD/documents/tenants/tf46226a93a1b546b/data/settings"
+
+# 5. To swap into prod, EXPORT from restore db and IMPORT into (default), then delete restore-YYYYMMDD
+gcloud firestore export gs://meraki-restore-staging --database=restore-YYYYMMDD --project=meraki-salon-manager
+gcloud firestore import gs://meraki-restore-staging/<export-folder> --database='(default)' --project=meraki-salon-manager
+gcloud firestore databases delete restore-YYYYMMDD --project=meraki-salon-manager
+```
+
+**⚠ Critical safety rules:**
+- ALWAYS restore to a new database first. `gcloud firestore databases restore` to `(default)` is irreversible.
+- The restore window is visible to users — Cloud Functions still fire, but reads briefly see inconsistency. Schedule the swap during low-traffic hours.
+- Daily snapshots are managed (you can't browse them in GCS); use `gcloud firestore backups list/describe/restore`.
+
+**Cost:** Backup storage is roughly $0.05/GB/month × 30 days × data size. At Meraki's ~500MB → ~$0.30/month total.
+
+**Untested backup = no backup.** Do a recovery drill at least once before launch — restore the most recent snapshot to a side database and verify document counts match prod ± 1 day of writes.
+
 ### Layer 5 — BigQuery forensic log + per-doc lossless restore
 
 Every change to clients / appointments / receipts / employees / `tenants/{id}/data` is mirrored to BigQuery within ~5 seconds and retained **forever** (until manually deleted from BQ). This is the lossless source for both `recoverUsersFullFromBQ` and per-doc restore in the UI.
@@ -745,7 +803,8 @@ ORDER BY timestamp ASC
 | 2. Auto-heal on load | `data/usersFull` only | $0 | <1s |
 | 3. Soft-delete tombstones | 15 customer-data collections, 30-day window | $0 storage delta | Seconds (admin click) |
 | 4. PITR | Whole database, 7-day window | ~$0.10/mo | 5-15 min manual |
-| 5. BQ mirror | 4 collections + `data` subcoll, forever | ~$0.20/mo | <1 min per doc |
+| 4.5. Daily Firestore snapshots | Whole database, 30-day window | ~$0.30/mo | 10-30 min manual |
+| 5. BQ mirror | 5 collections + `data` subcoll, forever | ~$0.20/mo | <1 min per doc |
 
 ### Recovery escalation order
 
@@ -754,8 +813,10 @@ If you don't know which layer to reach for, follow this:
 1. **Is it ONE specific doc?** → Layer 5 (⏳ History button in the UI)
 2. **Is the doc itself missing entirely?** → Check the tombstone first (Layer 3 — Recently Deleted), then BQ snapshot (Layer 5)
 3. **Did `data/usersFull` go missing?** → Don't do anything; sign in, Layer 2 self-heals
-4. **Is more than a single collection wrong?** → PITR (Layer 4)
-5. **Older than 7 days?** → Daily GCS snapshots (when enabled) or accept the loss
+4. **Is more than a single collection wrong, last 7 days?** → PITR (Layer 4)
+5. **Is more than a single collection wrong, 8-30 days old?** → Daily Firestore snapshot (Layer 4.5)
+6. **Older than 30 days, and the collection is in BQ mirror?** → BigQuery raw changelog (Layer 5 forensic query)
+7. **Older than 30 days, not in BQ mirror?** → Accept the loss. Document for next time.
 
 **Don't reach for PITR for single-doc work** — it restores to a new database. Use the per-doc ⏳ History instead.
 
