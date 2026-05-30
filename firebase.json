@@ -109,6 +109,12 @@
     "fs-bq-appointments": "firebase/firestore-bigquery-export@0.3.1",
     "fs-bq-receipts":     "firebase/firestore-bigquery-export@0.3.1",
     "fs-bq-employees":    "firebase/firestore-bigquery-export@0.3.1",
-    "fs-bq-data":         "firebase/firestore-bigquery-export@0.3.1"
+    "fs-bq-data":         "firebase/firestore-bigquery-export@0.3.1",
+    "fs-bq-services":     "firebase/firestore-bigquery-export@0.3.1",
+    "fs-bq-giftcards":    "firebase/firestore-bigquery-export@0.3.1",
+    "fs-bq-promocodes":   "firebase/firestore-bigquery-export@0.3.1",
+    "fs-bq-payrollruns":  "firebase/firestore-bigquery-export@0.3.1",
+    "fs-bq-refunds":      "firebase/firestore-bigquery-export@0.3.1",
+    "fs-bq-disputes":     "firebase/firestore-bigquery-export@0.3.1"
   }
 }
