@@ -6,6 +6,8 @@
 // anything see no change.
 
 const DEFAULT_REMINDER_HOUR = 9;
+const DEFAULT_BIRTHDAY_HOUR = 10;
+const DEFAULT_LAPSED_HOUR   = 11;
 const DEFAULT_TIMEZONE      = 'America/New_York';
 
 // Returns the hour (0-23) of `date` interpreted in IANA timezone `tz`.
@@ -22,17 +24,30 @@ function currentHourInTimezone(date, tz) {
   return Number.isFinite(h) ? (h % 24) : 0;
 }
 
-// Resolves the reminder-hour the cron should compare against. Accepts
+// Internal helper. Validates a 0–23 hour, returning the default for anything
+// missing, NaN, fractional-out-of-range, or otherwise unusable.
+function _validHour(raw, fallback) {
+  if (raw == null || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  const floored = Math.floor(n);
+  if (floored < 0 || floored > 23) return fallback;
+  return floored;
+}
+
+// Resolves the daily-reminder-hour the cron should compare against. Accepts
 // `settings.reminderHour` (number 0-23) and clamps to that range. Anything
 // missing, NaN, or out of range falls back to 9 AM.
 function resolveReminderHour(settings) {
-  const raw = settings?.reminderHour;
-  if (raw == null || raw === '') return DEFAULT_REMINDER_HOUR;
-  const n = Number(raw);
-  if (!Number.isFinite(n)) return DEFAULT_REMINDER_HOUR;
-  const floored = Math.floor(n);
-  if (floored < 0 || floored > 23) return DEFAULT_REMINDER_HOUR;
-  return floored;
+  return _validHour(settings?.reminderHour, DEFAULT_REMINDER_HOUR);
+}
+
+function resolveBirthdayHour(settings) {
+  return _validHour(settings?.birthdayHour, DEFAULT_BIRTHDAY_HOUR);
+}
+
+function resolveLapsedHour(settings) {
+  return _validHour(settings?.lapsedHour, DEFAULT_LAPSED_HOUR);
 }
 
 function resolveTimezone(settings) {
@@ -126,9 +141,13 @@ function _resetTenantTzCache() { _tenantTzCache.clear(); }
 
 module.exports = {
   DEFAULT_REMINDER_HOUR,
+  DEFAULT_BIRTHDAY_HOUR,
+  DEFAULT_LAPSED_HOUR,
   DEFAULT_TIMEZONE,
   currentHourInTimezone,
   resolveReminderHour,
+  resolveBirthdayHour,
+  resolveLapsedHour,
   resolveTimezone,
   shouldSendRemindersNow,
   shouldFireDayHourNow,

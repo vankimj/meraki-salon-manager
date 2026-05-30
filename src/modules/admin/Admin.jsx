@@ -31,6 +31,8 @@ export default function Admin({ onClose, onOpenWizard }) {
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
   const [ein,            setEin]           = useState(settings.ein || '');
   const [reminderHour,   setReminderHour]  = useState(settings.reminderHour ?? 9);
+  const [birthdayHour,   setBirthdayHour]  = useState(settings.birthdayHour ?? 10);
+  const [lapsedHour,     setLapsedHour]    = useState(settings.lapsedHour   ?? 11);
   const [timezone,       setTimezone]      = useState(settings.timezone || 'America/New_York');
   const [salonName,        setSalonName]        = useState(settings.salonName        || '');
   const [brandName,        setBrandName]        = useState(settings.brandName        || '');
@@ -471,6 +473,34 @@ export default function Admin({ onClose, onOpenWizard }) {
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
                 <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Birthday campaign hour</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Hour to send birthday emails (auto-birthday campaign).</div>
+                </div>
+                <select value={birthdayHour} onChange={e => setBirthdayHour(Number(e.target.value))}
+                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    const hh   = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+                    return <option key={h} value={h}>{hh}:00 {ampm}</option>;
+                  })}
+                </select>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Lapsed-client hour (Mondays)</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Hour to send re-engagement emails (auto-lapsed campaign, Mondays).</div>
+                </div>
+                <select value={lapsedHour} onChange={e => setLapsedHour(Number(e.target.value))}
+                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    const hh   = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+                    return <option key={h} value={h}>{hh}:00 {ampm}</option>;
+                  })}
+                </select>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
                   <div style={{ fontSize: 13, color: '#333' }}>Time zone</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used for reminder timing and date-based comparisons.</div>
                 </div>
@@ -486,7 +516,7 @@ export default function Admin({ onClose, onOpenWizard }) {
                 </select>
               </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, timezone })}>Save</Btn>
+                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
               </div>
             </Section>
             <Section title="💰 Financial">

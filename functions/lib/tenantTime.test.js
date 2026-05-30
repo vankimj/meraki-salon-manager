@@ -58,6 +58,26 @@ describe('resolveReminderHour', () => {
   });
 });
 
+describe('resolveBirthdayHour / resolveLapsedHour', () => {
+  // Sourced from the same _validHour helper but each has its own field name
+  // + default — assert both behaviors here so a future refactor that drops
+  // either field is caught.
+  it('uses settings.birthdayHour when valid; defaults to 10', async () => {
+    const { resolveBirthdayHour } = await import('./tenantTime.js');
+    expect(resolveBirthdayHour({ birthdayHour: 14 })).toBe(14);
+    expect(resolveBirthdayHour({})).toBe(10);
+    expect(resolveBirthdayHour(null)).toBe(10);
+    expect(resolveBirthdayHour({ birthdayHour: 99 })).toBe(10);
+  });
+  it('uses settings.lapsedHour when valid; defaults to 11', async () => {
+    const { resolveLapsedHour } = await import('./tenantTime.js');
+    expect(resolveLapsedHour({ lapsedHour: 18 })).toBe(18);
+    expect(resolveLapsedHour({})).toBe(11);
+    expect(resolveLapsedHour({ lapsedHour: '6' })).toBe(6);
+    expect(resolveLapsedHour({ lapsedHour: 'oops' })).toBe(11);
+  });
+});
+
 describe('resolveTimezone', () => {
   it('returns the configured zone', () => {
     expect(resolveTimezone({ timezone: 'America/Chicago' })).toBe('America/Chicago');

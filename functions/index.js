@@ -133,6 +133,7 @@ const { tenantBaseUrl } = require('./lib/tenantUrl');
 const {
   shouldSendRemindersNow, shouldFireDayHourNow, currentHourInTimezone,
   apptInstantUnix, apptExpUnix, tenantTimezone, resolveTimezone,
+  resolveBirthdayHour, resolveLapsedHour,
 } = require('./lib/tenantTime');
 const { mintShortLink, lookupShortLink } = require('./lib/apptShortLink');
 function apptManageToken(tenantId, apptId, exp) {
@@ -4322,10 +4323,11 @@ exports.autoBirthdayCampaign = onSchedule(
       const settings     = settingsSnap.exists ? settingsSnap.data() : {};
       if (!settings.autoBirthday) return;
 
-      // Fire at 10 AM in the tenant's local time. Compute "today" in their TZ
-      // so the MM-DD match doesn't roll over near UTC midnight.
+      // Fire at the tenant's configured birthday hour (default 10) in their
+      // local time. Compute "today" in the same TZ so the MM-DD match doesn't
+      // roll over near UTC midnight.
       const tz = resolveTimezone(settings);
-      if (currentHourInTimezone(now, tz) !== 10) return;
+      if (currentHourInTimezone(now, tz) !== resolveBirthdayHour(settings)) return;
       const todayIso = now.toLocaleDateString('en-CA', { timeZone: tz });
       const mdKey    = todayIso.slice(5, 10);
       const year     = Number(todayIso.slice(0, 4));
@@ -4394,9 +4396,10 @@ exports.autoLapsedCampaign = onSchedule(
       const settings     = settingsSnap.exists ? settingsSnap.data() : {};
       if (!settings.autoLapsed) return;
 
-      // Fire on Monday at 11 AM in the tenant's local time.
+      // Fire on Monday at the tenant's configured lapsed hour (default 11)
+      // in their local time.
       const tz = resolveTimezone(settings);
-      if (!shouldFireDayHourNow(now, tz, 1 /* Mon */, 11)) return;
+      if (!shouldFireDayHourNow(now, tz, 1 /* Mon */, resolveLapsedHour(settings))) return;
 
       const lapDays   = settings.autoLapsedDays || 60;
       const now       = new Date();
