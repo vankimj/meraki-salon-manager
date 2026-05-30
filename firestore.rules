@@ -217,6 +217,13 @@ service cloud.firestore {
         allow read:  if true;
         allow write: if isTenantAdmin(tenantId);
       }
+      // Local competitor ranking — Google Places snapshot of nearby nail
+      // salons. Read: tenant admin (Marketing → Local Ranking tab). Write:
+      // server-only via nearbyNailSalons Cloud Function (admin SDK).
+      match /data/competitorRankings {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
       // Demo-seed checkpoint for the resumable seed flow. Admin-only —
       // contains nothing sensitive, but only admins can run the seed
       // and seeing this doc makes no sense for staff.

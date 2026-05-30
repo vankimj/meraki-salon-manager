@@ -11,7 +11,7 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchBookingConfig, saveBookingConfig,
          fetchWebfrontConfig, saveWebfrontConfig,
          fetchReviewReceived, fetchReviewRequests,
-         saveReviewReceived } from '../../lib/firestore';
+         saveReviewReceived, findBusinessByAddress } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { formatTime } from '../../utils/helpers';
@@ -23,6 +23,7 @@ import NotificationsBell from '../../components/NotificationsBell';
 import SmsSetup from './SmsSetup';
 import { subscribeOnboarding, completedCount, isOnboardingComplete, phaseStatus, PHASES as ONBOARDING_PHASES } from '../../lib/onboarding';
 import CsvImportSection from '../../components/CsvImportSection';
+import AddressAutocomplete from '../../components/AddressAutocomplete';
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
@@ -1613,6 +1614,9 @@ function WebfrontTab({ cfg, setCfg, employees }) {
   const [draft,        setDraft]        = useState(null);
   const [refreshing,   setRefreshing]   = useState(false);
   const [refreshMsg,   setRefreshMsg]   = useState(null);
+  const [detecting,    setDetecting]    = useState(false);
+  const [detectMsg,    setDetectMsg]    = useState(null);
+  const [candidates,   setCandidates]   = useState(null);
 
   useEffect(() => {
     fetchReviewReceived().then(setReviews).catch(() => setReviews([]));
@@ -1677,6 +1681,32 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       setRefreshMsg('✗ ' + (e.message || 'Refresh failed'));
     }
     setRefreshing(false);
+  }
+
+  async function handleDetectPlaceId() {
+    const address = cfg.address?.trim();
+    setCandidates(null);
+    setDetectMsg(null);
+    if (!address) { setDetectMsg('✗ Enter a salon address above first.'); return; }
+    setDetecting(true);
+    try {
+      const data = await findBusinessByAddress(address);
+      if (!data?.placeId) {
+        setDetectMsg('✗ No nail salon found at that address — paste the Place ID manually.');
+      } else {
+        patch('googlePlaceId', data.placeId);
+        if (data.mapsUrl) patch('mapsUrl', data.mapsUrl);
+        if (data.candidates?.length > 1) {
+          setCandidates(data.candidates);
+          setDetectMsg(`✓ Auto-filled ${data.name}${data.mapsUrl ? ' + Maps URL' : ''}. ${data.candidates.length - 1} other matches below if this is wrong.`);
+        } else {
+          setDetectMsg(`✓ Found: ${data.name}${data.rating ? ` · ${data.rating}★ (${data.userRatingCount} reviews)` : ''}${data.mapsUrl ? ' · Maps URL filled' : ''}`);
+        }
+      }
+    } catch (e) {
+      setDetectMsg('✗ ' + (e.message || 'Detection failed'));
+    }
+    setDetecting(false);
   }
 
   async function save() {
@@ -1783,7 +1813,17 @@ function WebfrontTab({ cfg, setCfg, employees }) {
           ].map(([key, label, ph]) => (
             <div key={key}>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
-              <input value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={inp} />
+              {key === 'address' ? (
+                <AddressAutocomplete
+                  value={cfg.address || ''}
+                  onChange={(v) => patch('address', v)}
+                  onPlaceSelected={(place) => patch('address', place.formatted || place.street || '')}
+                  placeholder={ph}
+                  style={inp}
+                />
+              ) : (
+                <input value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={inp} />
+              )}
             </div>
           ))}
         </div>
@@ -1825,9 +1865,32 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>Google Place ID</div>
-            <input value={cfg.googlePlaceId || ''} onChange={e => patch('googlePlaceId', e.target.value)} placeholder="ChIJ…" style={inp} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+              <input value={cfg.googlePlaceId || ''} onChange={e => patch('googlePlaceId', e.target.value)} placeholder="ChIJ…" style={{ ...inp, flex: 1 }} />
+              <button type="button" onClick={handleDetectPlaceId} disabled={detecting || !cfg.address?.trim()}
+                title={!cfg.address?.trim() ? 'Enter the salon address above first' : 'Find the Place ID from the salon address'}
+                style={{ padding: '0 14px', borderRadius: 8, border: '1px solid #2D7A5F', background: detecting ? '#aaa' : '#fff', color: detecting ? '#fff' : '#2D7A5F', fontSize: 12, fontWeight: 600, cursor: detecting || !cfg.address?.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: !cfg.address?.trim() ? 0.5 : 1 }}>
+                {detecting ? 'Detecting…' : '🔍 Auto-detect from address'}
+              </button>
+            </div>
+            {detectMsg && (
+              <div style={{ fontSize: 12, color: detectMsg.startsWith('✓') ? '#2D7A5F' : '#ef4444', fontWeight: 500, marginTop: 6 }}>{detectMsg}</div>
+            )}
+            {candidates && candidates.length > 1 && (
+              <div style={{ marginTop: 8, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>Other candidates — click to switch</div>
+                {candidates.map(c => (
+                  <button key={c.placeId} type="button"
+                    onClick={() => { patch('googlePlaceId', c.placeId); if (c.mapsUrl) patch('mapsUrl', c.mapsUrl); setDetectMsg(`✓ Switched to ${c.name}${c.mapsUrl ? ' + Maps URL' : ''}`); }}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: cfg.googlePlaceId === c.placeId ? '#f0fdf4' : '#fff', border: 'none', borderBottom: '1px solid #f5f5f5', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: '#888' }}>{c.address}</div>
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
-              Find it at <span style={{ color: '#3D95CE' }}>developers.google.com/maps/documentation/places/web-service/place-id</span>
+              Or paste manually from <span style={{ color: '#3D95CE' }}>developers.google.com/maps/documentation/places/web-service/place-id</span>
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

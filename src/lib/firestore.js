@@ -2662,6 +2662,10 @@ export async function refreshCompetitorRankings({ address, lat, lng, radiusMiles
   const res = await callFn('nearbyNailSalons')({ tenantId: TENANT_ID, address, lat, lng, radiusMiles });
   return res.data;
 }
+export async function findBusinessByAddress(address) {
+  const res = await callFn('findBusinessByAddress')({ tenantId: TENANT_ID, address });
+  return res.data;
+}
 
 // ── Walk-in / arrival queue ────────────────────────────
 const WAITLIST_COL = tenantCol('waitlist');

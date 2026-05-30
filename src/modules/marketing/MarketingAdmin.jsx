@@ -7,6 +7,7 @@ import { fetchClients, fetchAppointmentsByRange, subscribeToCampaigns, createCam
          subscribeTenantRegistry, subscribeSandboxSmsLog, purgeSandboxSmsLog } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 import GoogleReviewsPanel from '../../components/GoogleReviewsPanel';
+import CompetitorRankingPanel from '../../components/CompetitorRankingPanel';
 
 // ── Built-in templates ─────────────────────────────────
 const BUILTIN_TEMPLATES = [
@@ -261,10 +262,11 @@ export default function MarketingAdmin() {
   if (!campaigns) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
 
   const TABS = [
-    { id: 'campaigns',  label: 'Campaigns' },
+    { id: 'campaigns',   label: 'Campaigns' },
     { id: 'automations', label: 'Automations' },
-    { id: 'reviews',    label: 'Google Reviews' },
-    { id: 'testmode',   label: '🧪 SMS Test Mode' },
+    { id: 'reviews',     label: 'Google Reviews' },
+    { id: 'ranking',     label: 'Local Ranking' },
+    { id: 'testmode',    label: '🧪 SMS Test Mode' },
   ];
 
   return (
@@ -286,6 +288,8 @@ export default function MarketingAdmin() {
 
       {tab === 'reviews' ? (
         <GoogleReviewsPanel />
+      ) : tab === 'ranking' ? (
+        <CompetitorRankingPanel />
       ) : tab === 'automations' ? (
         <AutomationsPanel settings={settings} updateSettings={updateSettings} isAdmin={isAdmin} showToast={showToast} />
       ) : tab === 'testmode' ? (
