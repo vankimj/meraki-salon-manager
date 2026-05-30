@@ -1752,9 +1752,9 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 
   const tenSnap = await db.doc(`tenants/${tenantId}`).get();
   const salonName = tenSnap.exists ? (tenSnap.data().name || 'Your salon') : 'Your salon';
-  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
-  // Sign-in URL — for SaaS this would be `https://{tenantId}.plumenexus.com`.
-  const signInUrl = tenantId === 'meraki' ? baseUrl : `https://${tenantId}.plumenexus.com`;
+  // Sign-in URL on the tenant's branded SaaS subdomain (cached lookup of
+  // tenants/{tenantId}.subdomain).
+  const signInUrl = await tenantBaseUrl(db, tenantId);
 
   const apiKey = resendKey.value();
   if (!apiKey) throw new HttpsError('unavailable', 'Resend not configured');
@@ -4353,7 +4353,7 @@ exports.autoBirthdayCampaign = onSchedule(
 
         const firstName  = (client.name || 'there').split(' ')[0];
         const bookingUrl = settings.bookingUrl
-          || (tenantId === 'meraki' ? 'https://meraki-salon-manager.web.app/?book' : `https://${tenantId}.plumenexus.com/?book`);
+          || `${await tenantBaseUrl(db, tenantId)}/?book`;
         const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
           🎉 Happy Birthday! We hope your special day is as fabulous as you are.
           As a little gift from all of us at ${esc(tenantShort)}, we'd love to treat you to something special this month.
@@ -4436,7 +4436,7 @@ exports.autoLapsedCampaign = onSchedule(
 
         const firstName  = (client.name || 'there').split(' ')[0];
         const bookingUrl = settings.bookingUrl
-          || (tenantId === 'meraki' ? 'https://meraki-salon-manager.web.app/?book' : `https://${tenantId}.plumenexus.com/?book`);
+          || `${await tenantBaseUrl(db, tenantId)}/?book`;
         const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
           It's been a while since your last visit, and we genuinely miss you!
           We have exciting new styles and services waiting for you.
