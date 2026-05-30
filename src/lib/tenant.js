@@ -28,7 +28,13 @@ import { doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 
 const SAAS_ROOTS = ['.plumenexus.com', '.plumenexus.app', '.tipflow.app'];
-const LEGACY_FALLBACK_TENANT = 'meraki';
+// Was 'meraki' originally; that tenant was deleted 2026-05-14 and its slug is
+// reserved until 2027-05-14 to prevent reuse (see slugs/meraki). The current
+// Meraki tenant lives at this UUID with subdomain 'merakinailstudio'. This
+// fallback only matters for non-SaaS hosts (.web.app, localhost); .web.app
+// redirects to the SaaS subdomain in src/main.jsx, so real production traffic
+// never lands here.
+const LEGACY_FALLBACK_TENANT = 'tf46226a93a1b546b';
 
 // Format gate for any caller-supplied tenant id (query param / sessionStorage).
 function isValidTenantId(s) {
@@ -53,10 +59,17 @@ function bootGuess() {
   for (const root of SAAS_ROOTS) {
     if (hostname.endsWith(root)) {
       const sub = hostname.slice(0, hostname.length - root.length);
-      if (!sub || sub === 'www' || sub === 'app' || sub === 'api') return LEGACY_FALLBACK_TENANT;
+      if (!sub || sub === 'www' || sub === 'app' || sub === 'api') {
+        console.warn(`[tenant] reserved/blank subdomain on ${hostname} — using LEGACY_FALLBACK_TENANT`);
+        return LEGACY_FALLBACK_TENANT;
+      }
       return sub;
     }
   }
+  // Anything else (e.g. meraki-salon-manager.web.app, custom domain, dev host).
+  // src/main.jsx redirects .web.app to the SaaS subdomain before render, so
+  // this should never be hit in production — log so we notice if it ever is.
+  console.warn(`[tenant] no SaaS root matched for ${hostname} — using LEGACY_FALLBACK_TENANT`);
   return LEGACY_FALLBACK_TENANT;
 }
 

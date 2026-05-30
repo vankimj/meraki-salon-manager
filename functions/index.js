@@ -15,7 +15,12 @@ const crypto               = require('crypto');
 
 initializeApp();
 
-const TENANT_ID   = 'meraki';
+// Was 'meraki' originally; that tenant was deleted 2026-05-14. Meraki's
+// current production data lives under this UUID (subdomain 'merakinailstudio').
+// Used only as a fallback when a callable/trigger doesn't carry tenant context;
+// crons get the real id from forEachActiveTenant and triggers get it from
+// event.params.tenantId, so real production paths never hit this default.
+const TENANT_ID   = 'tf46226a93a1b546b';
 // Bootstrap super-admin — mirrors src/lib/firebase.js. Always passes staff/admin
 // gates regardless of tenant configuration.
 const BOOTSTRAP_ADMINS = ['jvankim@gmail.com'];
