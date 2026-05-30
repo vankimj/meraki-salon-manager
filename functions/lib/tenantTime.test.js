@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_REMINDER_HOUR, DEFAULT_TIMEZONE,
   currentHourInTimezone, resolveReminderHour, resolveTimezone, shouldSendRemindersNow,
+  shouldFireDayHourNow, apptInstantUnix, apptExpUnix,
 } from './tenantTime.js';
 
 describe('currentHourInTimezone', () => {
@@ -86,5 +87,67 @@ describe('shouldSendRemindersNow', () => {
     // 23:00 UTC = 19:00 Eastern (EDT)
     const evening = new Date('2026-06-01T23:00:00Z');
     expect(shouldSendRemindersNow(evening, { timezone: 'America/New_York', reminderHour: 19 })).toBe(true);
+  });
+});
+
+describe('shouldFireDayHourNow', () => {
+  // 2026-06-01 is a Monday. 15:00 UTC = 11:00 Eastern (EDT).
+  const MON_15_UTC = new Date('2026-06-01T15:00:00Z');
+
+  it('fires on the matching weekday + hour in the tenant TZ', () => {
+    expect(shouldFireDayHourNow(MON_15_UTC, 'America/New_York', 1, 11)).toBe(true);
+  });
+  it('skips when the weekday matches but the hour does not', () => {
+    expect(shouldFireDayHourNow(MON_15_UTC, 'America/New_York', 1, 10)).toBe(false);
+  });
+  it('skips when the hour matches but the weekday does not', () => {
+    expect(shouldFireDayHourNow(MON_15_UTC, 'America/New_York', 2, 11)).toBe(false);
+  });
+  it('uses the tenant TZ — same instant is 8 AM Monday Pacific', () => {
+    expect(shouldFireDayHourNow(MON_15_UTC, 'America/Los_Angeles', 1, 8)).toBe(true);
+    expect(shouldFireDayHourNow(MON_15_UTC, 'America/Los_Angeles', 1, 11)).toBe(false);
+  });
+});
+
+describe('apptInstantUnix', () => {
+  it('returns the correct instant for a 9 AM Eastern appt (EDT)', () => {
+    // 2026-06-01 09:00 EDT = 13:00 UTC
+    expect(apptInstantUnix({ date: '2026-06-01', startTime: '09:00' }, 'America/New_York'))
+      .toBe(Math.floor(Date.UTC(2026, 5, 1, 13, 0) / 1000));
+  });
+  it('returns the correct instant for a 9 AM Pacific appt (PDT)', () => {
+    // 09:00 PDT = 16:00 UTC
+    expect(apptInstantUnix({ date: '2026-06-01', startTime: '09:00' }, 'America/Los_Angeles'))
+      .toBe(Math.floor(Date.UTC(2026, 5, 1, 16, 0) / 1000));
+  });
+  it('handles EST (winter, no DST)', () => {
+    // 2026-01-15 09:00 EST = 14:00 UTC
+    expect(apptInstantUnix({ date: '2026-01-15', startTime: '09:00' }, 'America/New_York'))
+      .toBe(Math.floor(Date.UTC(2026, 0, 15, 14, 0) / 1000));
+  });
+  it('returns null for missing date', () => {
+    expect(apptInstantUnix({}, 'America/New_York')).toBe(null);
+    expect(apptInstantUnix(null, 'America/New_York')).toBe(null);
+  });
+  it('treats missing startTime as midnight', () => {
+    // 2026-06-01 midnight Eastern = 04:00 UTC
+    expect(apptInstantUnix({ date: '2026-06-01' }, 'America/New_York'))
+      .toBe(Math.floor(Date.UTC(2026, 5, 1, 4, 0) / 1000));
+  });
+  it('defaults to America/New_York when tz omitted', () => {
+    expect(apptInstantUnix({ date: '2026-06-01', startTime: '09:00' }))
+      .toBe(Math.floor(Date.UTC(2026, 5, 1, 13, 0) / 1000));
+  });
+});
+
+describe('apptExpUnix', () => {
+  it('returns 24h past the real start instant in the tenant tz', () => {
+    const start = apptInstantUnix({ date: '2026-06-01', startTime: '09:00' }, 'America/New_York');
+    expect(apptExpUnix({ date: '2026-06-01', startTime: '09:00' }, 'America/New_York'))
+      .toBe(start + 24 * 3600);
+  });
+  it('returns 0 (immediately expired) for a malformed appt', () => {
+    expect(apptExpUnix({}, 'America/New_York')).toBe(0);
+    expect(apptExpUnix(null, 'America/New_York')).toBe(0);
   });
 });

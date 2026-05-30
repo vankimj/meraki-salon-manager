@@ -8,14 +8,9 @@
 
 const crypto = require('crypto');
 
-// Token expiry: 24 hours after the appointment's start time. Server-local
-// parsing of date+startTime matches the existing manageAppointment policy
-// comparisons; the 24h grace covers late confirmations and absorbs any
-// timezone / DST ambiguity introduced by that local-time interpretation.
-function apptExpUnix(appt) {
-  const startMs = new Date(`${appt?.date || ''}T${(appt?.startTime || '00:00')}:00`).getTime();
-  return Math.floor(startMs / 1000) + 24 * 3600;
-}
+// `apptExpUnix` lives in ./tenantTime.js — it's TZ-aware (needs the tenant's
+// configured timezone to compute the real moment of the appointment) so it
+// belongs with the rest of the tenant-time helpers, not in the HMAC module.
 
 function tokenPayload(tenantId, apptId, exp) {
   return `appt:${tenantId}:${apptId}:${exp}`;
@@ -43,4 +38,4 @@ function verifyApptManageToken(secret, tenantId, apptId, exp, token, nowUnix) {
   return crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { apptExpUnix, buildApptManageToken, verifyApptManageToken };
+module.exports = { buildApptManageToken, verifyApptManageToken };

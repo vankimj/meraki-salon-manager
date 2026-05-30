@@ -1,24 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { apptExpUnix, buildApptManageToken, verifyApptManageToken } from './apptManage.js';
+import { buildApptManageToken, verifyApptManageToken } from './apptManage.js';
 
 const SECRET = 'unit-test-secret-do-not-use-in-prod';
 const TID    = 'meraki';
 const APPT   = 'appt_abc123';
 
-describe('apptExpUnix', () => {
-  it('returns 24h after parsed appt start time', () => {
-    // 2026-06-01T14:00:00 (server-local) → +24h
-    const expected = Math.floor(new Date('2026-06-01T14:00:00').getTime() / 1000) + 24 * 3600;
-    expect(apptExpUnix({ date: '2026-06-01', startTime: '14:00' })).toBe(expected);
-  });
-  it('handles missing startTime by treating it as midnight', () => {
-    const expected = Math.floor(new Date('2026-06-01T00:00:00').getTime() / 1000) + 24 * 3600;
-    expect(apptExpUnix({ date: '2026-06-01' })).toBe(expected);
-  });
-  it('handles null appt without throwing', () => {
-    expect(() => apptExpUnix(null)).not.toThrow();
-  });
-});
+// apptExpUnix moved to ./tenantTime.js (it's TZ-aware now). Its tests live
+// alongside the other tenant-time helpers in tenantTime.test.js.
 
 describe('buildApptManageToken', () => {
   it('is deterministic for the same inputs', () => {

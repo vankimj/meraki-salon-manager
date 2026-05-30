@@ -128,9 +128,12 @@ function unsubUrl(tenantId, clientId) {
 // logic is unit-testable with a stub secret. `exp` pins the appointment's
 // natural expiry (24h after start) into the HMAC so a leaked SMS can't be
 // replayed once the appt has passed.
-const { apptExpUnix, buildApptManageToken, verifyApptManageToken } = require('./lib/apptManage');
+const { buildApptManageToken, verifyApptManageToken } = require('./lib/apptManage');
 const { tenantBaseUrl } = require('./lib/tenantUrl');
-const { shouldSendRemindersNow } = require('./lib/tenantTime');
+const {
+  shouldSendRemindersNow, shouldFireDayHourNow, currentHourInTimezone,
+  apptInstantUnix, apptExpUnix, tenantTimezone, resolveTimezone,
+} = require('./lib/tenantTime');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -1781,7 +1784,8 @@ exports.getApptManageLink = onCall({ cors: true, secrets: [apptManageSecret] }, 
   await requireTenantStaff(db, tenantId, request);
   const exists = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
   if (!exists.exists) throw new HttpsError('not-found', 'Appointment not found');
-  const url = await apptManageUrl(db, tenantId, apptId, apptExpUnix({ id: apptId, ...exists.data() }));
+  const tz  = await tenantTimezone(db, tenantId);
+  const url = await apptManageUrl(db, tenantId, apptId, apptExpUnix({ id: apptId, ...exists.data() }, tz));
   return { url };
 });
 
@@ -1827,10 +1831,17 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
   };
   const fmtTimeIso = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-  // Compare appointment start instant to "now" to enforce policy
+  // Compare appointment start instant to "now" to enforce policy. Uses
+  // the tenant's configured timezone (defaults to America/New_York) so
+  // the comparison reflects the real moment of the appointment — bare
+  // `new Date('${date}T${time}:00')` interprets as server-local (UTC in
+  // Cloud Functions), which silently shifted the cancellation cutoff by
+  // the tz offset and let some cancels through outside policy.
+  const tenantTz = resolveTimezone(settings);
   function hoursUntilAppt() {
-    const apptMs = new Date(`${appt.date}T${(appt.startTime || '00:00')}:00`).getTime();
-    return (apptMs - Date.now()) / 3600000;
+    const apptSec = apptInstantUnix(appt, tenantTz);
+    if (apptSec == null) return Infinity;
+    return (apptSec * 1000 - Date.now()) / 3600000;
   }
 
   if (action === 'get') {
@@ -1928,9 +1939,13 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
     const { date, startTime, techName } = payload;
     if (!date || !startTime) throw new HttpsError('invalid-argument', 'date and startTime required');
     // Tight self-check: don't allow rescheduling INTO the past or onto a
-    // collision with another appt on the same tech.
-    const newApptMs = new Date(`${date}T${startTime}:00`).getTime();
-    if (newApptMs < Date.now()) throw new HttpsError('invalid-argument', 'Cannot reschedule to a past time');
+    // collision with another appt on the same tech. Compare via the tenant
+    // tz, not server-local — the bare new-Date approach was off by the tz
+    // offset and let some reschedules into the actual past slip through.
+    const newApptSec = apptInstantUnix({ date, startTime }, tenantTz);
+    if (newApptSec != null && newApptSec * 1000 < Date.now()) {
+      throw new HttpsError('invalid-argument', 'Cannot reschedule to a past time');
+    }
     const dur = (appt.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (Number(appt.duration) || 60);
     const useTechName = techName || appt.techName;
     const collSnap = await db.collection(`tenants/${tid}/appointments`).where('date', '==', date).get();
@@ -2535,8 +2550,10 @@ exports.sendDailyReminders = onSchedule(
         let emailOk = false;
         let smsOk   = false;
 
-        // Resolve once: tenantBaseUrl is cached so subsequent appts hit memory.
-        const manageLink = await apptManageUrl(db, tenantId, appt.id, apptExpUnix(appt));
+        // Resolve once: tenantBaseUrl and tenantTimezone are both cached so
+        // subsequent appts in this loop hit memory.
+        const tenantTz   = await tenantTimezone(db, tenantId);
+        const manageLink = await apptManageUrl(db, tenantId, appt.id, apptExpUnix(appt, tenantTz));
 
         if (wantsEmail) {
           try {
@@ -2833,7 +2850,8 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
     const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
-    const manageLink = await apptManageUrl(db, tenantId, event.params?.apptId || snap.id, apptExpUnix(appt));
+    const tenantTz   = await tenantTimezone(db, tenantId);
+    const manageLink = await apptManageUrl(db, tenantId, event.params?.apptId || snap.id, apptExpUnix(appt, tenantTz));
     const locationLine = brand.addressLine
       ? `${brand.salonName}, ${brand.addressLine}`
       : brand.salonName;
@@ -2906,7 +2924,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     })());
     if (clientPhone) {
       const apptIdForSms = event.params?.apptId || snap.id;
-      const manageShort  = await apptManageUrl(db, tenantId, apptIdForSms, apptExpUnix(appt));
+      const manageShort  = await apptManageUrl(db, tenantId, apptIdForSms, apptExpUnix(appt, tenantTz));
       const dateShort    = fmtDate(appt.date).replace(/,.*/, '');
       const timeShort    = fmtTime(appt.startTime);
       const techShort    = appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '';
@@ -4139,9 +4157,10 @@ exports.draftConflictMessages = onCall(
     // Per-appt magic-link so each client can self-service reschedule/cancel
     // without calling the salon. Drops into both SMS and email drafts.
     const manageLinks = {};
-    const dbFs = getFirestore();
+    const dbFs   = getFirestore();
+    const tz     = await tenantTimezone(dbFs, tenantId);
     for (const a of affected) {
-      const link = await apptManageUrl(dbFs, tenantId, a.id, apptExpUnix(a));
+      const link = await apptManageUrl(dbFs, tenantId, a.id, apptExpUnix(a, tz));
       if (link) manageLinks[a.id] = link;
     }
 
@@ -4271,18 +4290,17 @@ function buildAutoEmail(headerSub, firstName, bodyHtml, ctaText, ctaUrl, brand) 
   </div></body></html>`;
 }
 
-// Runs daily at 10am Eastern. Sends birthday email to clients whose birthday is today.
-// Deduplicates via automationSent collection (one per client per year).
+// Hourly so each tenant fires birthday emails at 10 AM in *their* timezone,
+// not 10 AM Eastern globally. The per-tenant hour check below short-circuits
+// most invocations; "today" (mdKey) is also computed in the tenant TZ so a
+// late-evening UTC instant doesn't roll over and send to yesterday's
+// birthdays for Pacific tenants.
 exports.autoBirthdayCampaign = onSchedule(
-  { schedule: 'every day 10:00', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
+  { schedule: 'every 1 hours', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
     const apiKey = resendKey.value();
     if (!apiKey) return;
     const now  = new Date();
-    const mm   = String(now.getMonth() + 1).padStart(2, '0');
-    const dd   = String(now.getDate()).padStart(2, '0');
-    const mdKey = `${mm}-${dd}`;
-    const year  = now.getFullYear();
 
     // skipPaused: birthday emails CTA "Book your birthday visit" — sending
     // during a closure window would prompt customers to book against a
@@ -4295,6 +4313,14 @@ exports.autoBirthdayCampaign = onSchedule(
       const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
       const settings     = settingsSnap.exists ? settingsSnap.data() : {};
       if (!settings.autoBirthday) return;
+
+      // Fire at 10 AM in the tenant's local time. Compute "today" in their TZ
+      // so the MM-DD match doesn't roll over near UTC midnight.
+      const tz = resolveTimezone(settings);
+      if (currentHourInTimezone(now, tz) !== 10) return;
+      const todayIso = now.toLocaleDateString('en-CA', { timeZone: tz });
+      const mdKey    = todayIso.slice(5, 10);
+      const year     = Number(todayIso.slice(0, 4));
 
       const clientsSnap = await db.collection(`tenants/${tenantId}/clients`).get();
       const targets = clientsSnap.docs
@@ -4340,14 +4366,16 @@ exports.autoBirthdayCampaign = onSchedule(
   }
 );
 
-// Runs every Monday at 11am Eastern. Sends re-engagement email to clients who
-// haven't visited in N days. Deduplicates: won't re-email the same client until
-// another full lapse window has passed.
+// Hourly so each tenant fires the re-engagement blast on Monday 11 AM in
+// *their* timezone. Per-tenant day+hour check below short-circuits all the
+// non-matching invocations. Deduplicates: won't re-email the same client
+// until another full lapse window has passed.
 exports.autoLapsedCampaign = onSchedule(
-  { schedule: 'every monday 11:00', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
+  { schedule: 'every 1 hours', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
     const apiKey = resendKey.value();
     if (!apiKey) return;
+    const now = new Date();
     // skipPaused: re-engagement CTA points at booking — pointless during a
     // closure window.
     await forEachActiveTenant('LapsedAuto', async (tenantId, tData) => {
@@ -4357,6 +4385,10 @@ exports.autoLapsedCampaign = onSchedule(
       const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
       const settings     = settingsSnap.exists ? settingsSnap.data() : {};
       if (!settings.autoLapsed) return;
+
+      // Fire on Monday at 11 AM in the tenant's local time.
+      const tz = resolveTimezone(settings);
+      if (!shouldFireDayHourNow(now, tz, 1 /* Mon */, 11)) return;
 
       const lapDays   = settings.autoLapsedDays || 60;
       const now       = new Date();
