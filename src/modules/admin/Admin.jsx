@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
 import { buildExportBundle } from '../../lib/exportBundle';
@@ -17,14 +17,14 @@ import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial,
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedFullDemo, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
-import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ, fetchIntegrityReport, fetchDisputes } from '../../lib/firestore';
+import { fetchSeedState, fetchRecentlyDeleted, clearTombstone, restoreDocFromBQ, fetchIntegrityReport, fetchDisputes, uploadPortfolioPhoto } from '../../lib/firestore';
 import FeedbackModal from '../../components/FeedbackModal';
 import NotificationsBell from '../../components/NotificationsBell';
 import SmsSetup from './SmsSetup';
 import { subscribeOnboarding, completedCount, isOnboardingComplete, phaseStatus, PHASES as ONBOARDING_PHASES } from '../../lib/onboarding';
 import CsvImportSection from '../../components/CsvImportSection';
 
-export default function Admin({ onClose, onOpenWizard }) {
+export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
@@ -66,7 +66,7 @@ export default function Admin({ onClose, onOpenWizard }) {
   const [logs,     setLogs]      = useState(null);
   const [feedback, setFeedback]  = useState(null);
   const [notifs,   setNotifs]    = useState(null);
-  const [tab,          setTab]          = useState('settings');
+  const [tab,          setTab]          = useState(initialTab || 'settings');
   const [showFeedback, setShowFeedback] = useState(false);
   const [webfrontCfg,  setWebfrontCfg] = useState(null);
   const [reviewsData,  setReviewsData]  = useState(null);
@@ -88,6 +88,24 @@ export default function Admin({ onClose, onOpenWizard }) {
     { id: 'logs',     label: 'Logs'     },
   ];
 
+  useEffect(() => {
+    if (!scrollTo) return;
+    // Wait for the requested tab's content to mount (effects above can
+    // trigger further loads; the section may not exist on first paint).
+    const start = performance.now();
+    const tryScroll = () => {
+      const el = document.querySelector(`[data-anchor="${scrollTo}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        el.style.transition = 'background-color 1.2s ease';
+        el.style.backgroundColor = '#fef9c3';
+        setTimeout(() => { el.style.backgroundColor = ''; }, 1500);
+        return;
+      }
+      if (performance.now() - start < 2000) requestAnimationFrame(tryScroll);
+    };
+    requestAnimationFrame(tryScroll);
+  }, [scrollTo, tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'settings' && !bookingCfg) fetchBookingConfig().then(setBookingCfg).catch(() => {}); }, [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'webfront' && !webfrontCfg) fetchWebfrontConfig().then(wf => setWebfrontCfg({ tagline: '', about: '', phone: '', address: '', mapsUrl: '', instagram: '', facebook: '', tiktok: '', hours: {}, showBookingCta: true, showServices: true, showTeam: true, hiddenEmployeeIds: [], ...wf })).catch(() => {}); }, [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'logs')     loadLogs(); },     [tab]);
@@ -372,6 +390,7 @@ export default function Admin({ onClose, onOpenWizard }) {
                   <option value="stacked">Boutique &mdash; stacked card</option>
                   <option value="photo">Photo backdrop &mdash; centered</option>
                   <option value="photoSplit">Photo backdrop &mdash; split</option>
+                  <option value="merakiSite">Editorial homepage &mdash; full landing page</option>
                 </select>
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
@@ -1714,13 +1733,53 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         </div>
       </Section>
 
+      {/* Editorial layout copy — only relevant when layout === 'merakiSite'.
+          These strings drive every prose-y block on the editorial homepage.
+          Edit + Save (button at bottom of Webfront tab) writes to webfront
+          doc; component reads live, no redeploy needed. */}
+      {cfg.layout === 'merakiSite' && (
+        <Section title="✨ Editorial Layout Copy">
+          <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#888' }}>
+            Per-section prose for the Editorial homepage. Leave a field blank to fall back to the default. Changes go live on the next page load — no redeploy.
+          </div>
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {[
+              ['heroCopy',       'Hero paragraph',           'A quiet studio for considered nail work — meraki is the Greek soul…', true],
+              ['meaningDef',     '"meraki" definition',      'when you do something soul, creativity, or love…',                    true],
+              ['servicesIntro',  'Services intro',           'A curated set of signature treatments. Considered work, quiet rooms, no rush.', true],
+              ['portfolioIntro', 'Portfolio intro',          'A small sample. The full feed lives on Instagram.',                    true],
+              ['teamIntro',      'Team intro',               'Each of our techs brings their own hand and their own specialty…',     true],
+              ['visitIntro',     'Visit intro',              'Two blocks north of the Olentangy Trail. Parking out front…',          true],
+              ['walkInLine',     'Hero ticker — walk‑ins',   'Walk‑ins every day',                                                   false],
+              ['heroCredit',     'Hero photo credit caption','Nail art by Samantha · @gelxbysammy',                                  false],
+              ['rating',         'Google rating',            '4.8',                                                                  false],
+              ['reviewCount',    'Google review count',      '174 or 240+',                                                          false],
+              ['established',    'Established (year)',       '2019',                                                                 false],
+            ].map(([key, label, ph, multiline]) => (
+              <div key={key}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+                {multiline
+                  ? <textarea value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={TA} />
+                  : <input    value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={inp} />}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Portfolio grid (editorial layout only) */}
+      {cfg.layout === 'merakiSite' && (
+        <PortfolioGridEditor cfg={cfg} patch={patch} />
+      )}
+
       {/* Contact */}
       <Section title="📞 Contact Info">
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
           {[
-            ['phone',    'Phone',                   '(614) 555-0100'],
-            ['address',  'Address',                 '5029 Olentangy River Rd, Columbus, OH 43214'],
-            ['mapsUrl',  'Google Maps URL',         'https://maps.google.com/…'],
+            ['phone',       'Phone',           '(614) 555-0100 or +16145550100'],
+            ['publicEmail', 'Public email',    'hello@merakinailstudio.com'],
+            ['address',     'Address',         '5029 Olentangy River Rd, Columbus, OH 43214'],
+            ['mapsUrl',     'Google Maps URL', 'https://maps.google.com/…'],
           ].map(([key, label, ph]) => (
             <div key={key}>
               <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
@@ -1761,6 +1820,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       </Section>
 
       {/* Google Reviews */}
+      <div data-anchor="google-reviews">
       <Section title="⭐ Google Reviews">
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
@@ -1787,6 +1847,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
           </div>
         </div>
       </Section>
+      </div>
 
       {/* Manual Testimonials */}
       <Section title={`💬 Manual Testimonials (${testimonials.length})`}>
@@ -1875,11 +1936,12 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         {/* Layout picker */}
         <div style={{ padding: '12px 16px 0' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#bbb', letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 10 }}>Layout</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 14 }}>
             {[
-              { id: 'classic',  icon: '🌑', name: 'Classic',  desc: 'Dark hero, bold & dramatic' },
-              { id: 'boutique', icon: '🌸', name: 'Boutique', desc: 'Light & airy, soft tones' },
-              { id: 'minimal',  icon: '◻',  name: 'Minimal',  desc: 'Clean, wide-open, editorial' },
+              { id: 'classic',    icon: '🌑', name: 'Classic',   desc: 'Dark hero, bold & dramatic' },
+              { id: 'boutique',   icon: '🌸', name: 'Boutique',  desc: 'Light & airy, soft tones' },
+              { id: 'minimal',    icon: '◻',  name: 'Minimal',   desc: 'Clean, wide-open, editorial' },
+              { id: 'merakiSite', icon: '✦',  name: 'Editorial', desc: 'Full magazine-style homepage' },
             ].map(l => (
               <button key={l.id} onClick={() => patch('layout', l.id)} style={{
                 border: `2px solid ${(cfg.layout || 'classic') === l.id ? '#3D95CE' : '#e8e8e8'}`,
@@ -1956,6 +2018,351 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// ── Portfolio Grid editor (editorial layout) ───────────
+// Lets the salon owner curate the 16-ish photos that appear in the
+// editorial homepage's "Recent Work" section. Source pool is the 44
+// compressed photos under /public/brand/meraki/portfolio/. Saves to
+// webfront.portfolio = [{src, cls}, …] which the public site reads.
+const PORTFOLIO_TOTAL = 44;
+const PORTFOLIO_TILE_SIZES = [
+  { id: 't-wide', label: 'Wide  · 6×2' },
+  { id: 't-tall', label: 'Tall  · 3×3' },
+  { id: 't-lg',   label: 'Large · 6×3' },
+  { id: 't-md2',  label: 'Med+  · 5×2' },
+  { id: 't-mid',  label: 'Med   · 4×2' },
+  { id: 't-sq',   label: 'Sq    · 3×2' },
+];
+// Magazine-rhythm pattern. Mixing one wide/tall accent every few tiles
+// against squares + mids creates editorial pacing. Used by the "Auto-
+// arrange" button and as the default size for newly-added photos.
+// Tile-rhythm presets. Each defines a cls pattern that cycles through the
+// selected photos. Picking one stamps every tile + sets the default for
+// any photo added afterward. Three distinct "professional" looks.
+const PORTFOLIO_PRESETS = [
+  {
+    id:       'magazine',
+    name:     'Magazine',
+    desc:     'Editorial mix · varied sizes',
+    accent:   '#5b3b8c',
+    pattern: ['t-wide','t-tall','t-sq','t-mid','t-md2','t-sq','t-mid','t-tall',
+              't-sq','t-md2','t-wide','t-sq','t-mid','t-tall','t-sq','t-md2'],
+  },
+  {
+    id:       'aesop',
+    name:     'Boutique',
+    desc:     'Restrained rectangles · breathing',
+    accent:   '#c19a4a',
+    pattern: ['t-mid','t-mid','t-mid','t-mid','t-mid','t-mid','t-mid','t-mid',
+              't-mid','t-mid','t-mid','t-mid','t-mid','t-mid','t-mid','t-mid'],
+  },
+  {
+    id:       'instagram',
+    name:     'Instagram',
+    desc:     'Uniform squares · social-grid feel',
+    accent:   '#3D95CE',
+    pattern: ['t-sq','t-sq','t-sq','t-sq','t-sq','t-sq','t-sq','t-sq',
+              't-sq','t-sq','t-sq','t-sq','t-sq','t-sq','t-sq','t-sq'],
+  },
+];
+function patternForId(id) {
+  return (PORTFOLIO_PRESETS.find(p => p.id === id) || PORTFOLIO_PRESETS[0]).pattern;
+}
+function patternAt(i, presetId) {
+  const p = patternForId(presetId);
+  return p[i % p.length];
+}
+// CSS Grid span values per tile cls — kept in sync with HeroMerakiSite's
+// portfolio renderer. Used for the preview mockups below.
+const PREVIEW_SPANS = {
+  't-wide': { col: 6, row: 2 },
+  't-tall': { col: 3, row: 3 },
+  't-lg':   { col: 6, row: 3 },
+  't-md2':  { col: 5, row: 2 },
+  't-mid':  { col: 4, row: 2 },
+  't-sq':   { col: 3, row: 2 },
+};
+const photoSrc   = (n) => `/brand/meraki/portfolio/hero/photo-${String(n).padStart(2,'0')}.jpg`;
+const photoThumb = (n) => `/brand/meraki/portfolio/grid/photo-${String(n).padStart(2,'0')}.jpg`;
+function srcToNum(src) {
+  const m = String(src || '').match(/photo-(\d{2})\.jpg/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function PortfolioGridEditor({ cfg, patch }) {
+  const selected = Array.isArray(cfg.portfolio) ? cfg.portfolio : [];
+  const uploads  = Array.isArray(cfg.portfolioUploads) ? cfg.portfolioUploads : [];
+  const selectedSrcs = new Set(selected.map(p => p.src));
+  const selectedNums = new Set(selected.map(p => srcToNum(p.src)).filter(Boolean));
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState(null);
+  const fileRef = useRef(null);
+
+  function setPortfolio(next) { patch('portfolio', next); }
+  function setUploads(next)   { patch('portfolioUploads', next); }
+  const activePresetId = cfg.portfolioPattern || 'magazine';
+  function addSrc(src) {
+    if (selectedSrcs.has(src)) return;
+    // Auto-pick a tile size based on the next slot in the ACTIVE pattern —
+    // gives newcomers an instant editorial rhythm without thinking about it.
+    setPortfolio([...selected, { src, cls: patternAt(selected.length, activePresetId) }]);
+  }
+  function applyPreset(presetId) {
+    patch('portfolioPattern', presetId);
+    if (selected.length) {
+      setPortfolio(selected.map((p, i) => ({ ...p, cls: patternAt(i, presetId) })));
+    }
+  }
+  function addPhoto(n) { addSrc(photoSrc(n)); }
+  function removeAt(i) { setPortfolio(selected.filter((_, idx) => idx !== i)); }
+  function setSizeAt(i, cls) { setPortfolio(selected.map((p, idx) => idx === i ? { ...p, cls } : p)); }
+  function moveAt(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= selected.length) return;
+    const next = [...selected];
+    [next[i], next[j]] = [next[j], next[i]];
+    setPortfolio(next);
+  }
+  function resetToDefaults() {
+    if (!window.confirm('Clear your custom portfolio and use the default 16-photo grid?')) return;
+    setPortfolio([]);
+  }
+  function removeUpload(url) {
+    if (!window.confirm('Remove this uploaded photo from your library? (Photo stays in Storage but is no longer available to add.)')) return;
+    setUploads(uploads.filter(u => u !== url));
+    // Also strip it from the active grid if present.
+    if (selectedSrcs.has(url)) setPortfolio(selected.filter(p => p.src !== url));
+  }
+
+  async function onFiles(e) {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setUploading(true);
+    setUploadErr(null);
+    const added = [];
+    for (const f of files) {
+      try {
+        const url = await uploadPortfolioPhoto(f);
+        added.push(url);
+      } catch (err) {
+        console.warn('[upload]', err);
+        setUploadErr(err?.message || 'Upload failed');
+      }
+    }
+    if (added.length) setUploads([...uploads, ...added]);
+    setUploading(false);
+    if (fileRef.current) fileRef.current.value = '';  // allow re-picking same file
+  }
+
+  const inp = { fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 12, background: '#fff', cursor: 'pointer' };
+
+  return (
+    <Section title={`🖼 Portfolio Grid${selected.length ? ` · ${selected.length} photos` : ' · using default 16'}`}>
+      <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#888' }}>
+        Curate which photos appear in the "Recent Work" section of the editorial homepage. Pick a style preset for instant magazine-rhythm, or hand-tune per-tile sizes below.
+      </div>
+
+      {/* Style presets */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+          Tile Style
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          {PORTFOLIO_PRESETS.map(p => (
+            <PortfolioPresetCard
+              key={p.id}
+              preset={p}
+              active={p.id === activePresetId}
+              onApply={() => applyPreset(p.id)}
+            />
+          ))}
+        </div>
+      </div>
+
+      {/* Selected list */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+            Selected ({selected.length})
+          </div>
+          {selected.length > 0 && (
+            <button onClick={resetToDefaults} style={{ ...inp, color: '#a00', borderColor: '#fecaca', background: '#fff' }}>
+              Reset to default
+            </button>
+          )}
+        </div>
+        {selected.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#bbb', padding: '14px 8px', textAlign: 'center', background: '#fafafa', borderRadius: 6 }}>
+            No custom selection — the site shows the built-in 16-photo default. Click any photo below to start curating.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 10 }}>
+            {selected.map((p, i) => {
+              const n = srcToNum(p.src);
+              return (
+                <div key={`${p.src}-${i}`} style={{ border: '1px solid #e8e8e8', borderRadius: 8, padding: 8, background: '#fff', position: 'relative' }}>
+                  <div style={{ position: 'relative', aspectRatio: '1', borderRadius: 4, overflow: 'hidden', background: '#f5f0e7', marginBottom: 6 }}>
+                    <img src={photoThumb(n)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                    <div style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,.6)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>{i + 1}</div>
+                    <button onClick={() => removeAt(i)} title="Remove" style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(220,38,38,.9)', color: '#fff', border: 'none', borderRadius: 12, width: 20, height: 20, fontSize: 12, cursor: 'pointer', fontWeight: 700, lineHeight: 1 }}>✕</button>
+                  </div>
+                  <select value={p.cls} onChange={e => setSizeAt(i, e.target.value)} style={{ ...inp, width: '100%', fontSize: 11, fontFamily: 'ui-monospace, monospace' }}>
+                    {PORTFOLIO_TILE_SIZES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+                  </select>
+                  <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
+                    <button onClick={() => moveAt(i, -1)} disabled={i === 0} style={{ ...inp, flex: 1, opacity: i === 0 ? .35 : 1 }} title="Move up">↑</button>
+                    <button onClick={() => moveAt(i, +1)} disabled={i === selected.length - 1} style={{ ...inp, flex: 1, opacity: i === selected.length - 1 ? .35 : 1 }} title="Move down">↓</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Your uploads */}
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+            Your Uploads ({uploads.length})
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {uploading && <span style={{ fontSize: 11, color: '#888' }}>Uploading…</span>}
+            <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} disabled={uploading} style={{ display: 'none' }} id="portfolio-upload" />
+            <label htmlFor="portfolio-upload" style={{
+              ...inp, padding: '6px 14px', borderColor: '#c19a4a', color: '#c19a4a', background: '#fffbf2',
+              fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? .6 : 1,
+            }}>
+              + Upload photos
+            </label>
+          </div>
+        </div>
+        {uploadErr && <div style={{ fontSize: 11, color: '#a00', marginBottom: 8 }}>⚠ {uploadErr}</div>}
+        {uploads.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#bbb', padding: '14px 8px', textAlign: 'center', background: '#fafafa', borderRadius: 6 }}>
+            No uploads yet — click "Upload photos" to add your own. They'll appear here and become selectable below.
+          </div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 6 }}>
+            {uploads.map(url => {
+              const used = selectedSrcs.has(url);
+              return (
+                <div key={url} style={{ position: 'relative', aspectRatio: '1', border: used ? '2px solid #c19a4a' : '1px solid #e8e8e8', borderRadius: 6, overflow: 'hidden', background: '#f5f0e7' }}>
+                  <button
+                    onClick={() => !used && addSrc(url)}
+                    disabled={used}
+                    title={used ? 'Already in grid' : 'Add to grid'}
+                    style={{ position: 'absolute', inset: 0, padding: 0, border: 'none', background: 'transparent', cursor: used ? 'default' : 'pointer', opacity: used ? .55 : 1 }}>
+                    <img src={url} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  </button>
+                  <button
+                    onClick={() => removeUpload(url)}
+                    title="Delete from library"
+                    style={{ position: 'absolute', top: 4, right: 4, background: 'rgba(220,38,38,.92)', color: '#fff', border: 'none', borderRadius: 12, width: 20, height: 20, fontSize: 12, cursor: 'pointer', fontWeight: 700, lineHeight: 1 }}>✕</button>
+                  {used && (
+                    <div style={{ position: 'absolute', bottom: 4, left: 4, background: '#c19a4a', color: '#fff', fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3 }}>✓ In grid</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Bundled photo pool */}
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+          Bundled Library ({PORTFOLIO_TOTAL} photos)
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 6 }}>
+          {Array.from({ length: PORTFOLIO_TOTAL }, (_, i) => i + 1).map(n => {
+            const used = selectedNums.has(n);
+            return (
+              <button
+                key={n}
+                onClick={() => !used && addPhoto(n)}
+                disabled={used}
+                title={used ? `Photo ${n} (already in grid)` : `Add photo ${n}`}
+                style={{
+                  position: 'relative',
+                  aspectRatio: '1',
+                  border: used ? '2px solid #c19a4a' : '1px solid #e8e8e8',
+                  borderRadius: 6, padding: 0, background: '#f5f0e7',
+                  cursor: used ? 'default' : 'pointer',
+                  overflow: 'hidden',
+                  opacity: used ? .45 : 1,
+                  transition: 'opacity .15s, transform .15s',
+                }}
+                onMouseEnter={e => { if (!used) e.currentTarget.style.transform = 'scale(1.04)'; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+              >
+                <img src={photoThumb(n)} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', bottom: 3, left: 3, background: 'rgba(0,0,0,.55)', color: '#fff', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 3 }}>{n}</div>
+                {used && (
+                  <div style={{ position: 'absolute', top: 4, right: 4, background: '#c19a4a', color: '#fff', fontSize: 10, fontWeight: 700, width: 18, height: 18, borderRadius: 9, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>✓</div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// Mini preview of a portfolio preset — renders the first 6 tiles of the
+// pattern at thumbnail scale so the user can see the rhythm before
+// applying. Uses the exact same span values the public site uses, so
+// what you see here matches what gets rendered there.
+function PortfolioPresetCard({ preset, active, onApply }) {
+  const [hover, setHover] = useState(false);
+  const tiles = preset.pattern.slice(0, 6).map(c => PREVIEW_SPANS[c] || PREVIEW_SPANS['t-sq']);
+  const showAccent = active ? preset.accent : (hover ? preset.accent : '#e8e8e8');
+  return (
+    <button
+      onClick={onApply}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        padding: 10,
+        border: `2px solid ${showAccent}`,
+        borderRadius: 10,
+        background: active ? `${preset.accent}0d` : '#fff',
+        cursor: 'pointer',
+        fontFamily: 'inherit',
+        textAlign: 'left',
+        transition: 'border-color .15s, background .15s, transform .15s',
+        boxShadow: active ? `0 0 0 3px ${preset.accent}22` : 'none',
+        transform: hover && !active ? 'translateY(-1px)' : 'translateY(0)',
+      }}
+    >
+      {/* Pattern preview — 12-col grid in miniature */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(12, 1fr)',
+        gridAutoRows: 12,
+        gap: 2,
+        marginBottom: 10,
+        gridAutoFlow: 'dense',
+      }}>
+        {tiles.map((t, i) => (
+          <div key={i} style={{
+            gridColumn: `span ${t.col}`,
+            gridRow:    `span ${t.row}`,
+            background: active ? preset.accent : '#cbd5e1',
+            borderRadius: 2,
+            opacity: active ? 0.85 : 0.55,
+          }} />
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{preset.name}</div>
+        {active && <span style={{ fontSize: 10, fontWeight: 700, color: preset.accent, background: `${preset.accent}1f`, padding: '2px 6px', borderRadius: 3, letterSpacing: '.04em' }}>ACTIVE</span>}
+      </div>
+      <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{preset.desc}</div>
+    </button>
   );
 }
 

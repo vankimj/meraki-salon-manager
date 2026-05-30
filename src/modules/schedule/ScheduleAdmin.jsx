@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
@@ -4112,6 +4112,12 @@ function HoursModal({ settings, updateSettings, onClose }) {
     setSaving(true);
     try {
       await updateSettings({ ...settings, storeHours: hours, apptHours: { open: apptOpen, close: apptClose } });
+      // Mirror to the publicly-readable webfront doc so the public website
+      // (which can't read staff-only `settings`) shows the same hours. Best-
+      // effort: a webfront write failure shouldn't block the schedule save.
+      try {
+        await patchWebfrontConfig({ hours: storeHoursToWebfrontHours(hours) });
+      } catch (e) { console.warn('[hours mirror → webfront]', e?.message || e); }
       onClose();
     } finally { setSaving(false); }
   }

@@ -5,6 +5,7 @@ import FeedbackModal from './FeedbackModal';
 import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
+import HeroMerakiSite from './HeroMerakiSite';
 import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRight, IconSettings, IconMessage } from './Icons';
 import { MODULES, getVisibleModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
 import { fetchWebfrontConfig, fetchEmployees } from '../lib/firestore';
@@ -30,7 +31,7 @@ function splitBrandName(name) {
   return [words[0], words.slice(1).join(' ')];
 }
 
-const WELCOME_STYLES = ['centered', 'hairlineSplit', 'stacked', 'photo', 'photoSplit'];
+const WELCOME_STYLES = ['centered', 'hairlineSplit', 'stacked', 'photo', 'photoSplit', 'merakiSite'];
 
 export default function HomeScreen({ onNavigate, onAdmin }) {
   const { gUser, isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
@@ -97,6 +98,17 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
       return;
     }
     requirePin(viewId, () => onNavigate(viewId));
+  }
+
+  // Full-takeover homepage variant — pre-login only. Replaces every other
+  // chrome (top bar, tiles, etc) with a single editorial landing page.
+  if (!gUser && welcomeStyle === 'merakiSite') {
+    return (
+      <div style={{ height: '100%', overflowY: 'auto', background: '#fbfaf8' }}>
+        <HeroMerakiSite webCfg={webCfg} onSignIn={() => setShowAuth(true)} />
+        {showAuth && <AuthModal onClose={() => setShowAuth(false)} />}
+      </div>
+    );
   }
 
   return (

@@ -342,6 +342,15 @@ export default function BookingScreen() {
   }, []);
 
   // Cart helpers ─────────────────────────────────────────
+  // Removal-prompt state. Fires when a service with canRequireRemoval=true
+  // gets added, UNLESS:
+  //   • the user has already declined the prompt for that specific service, OR
+  //   • any cart item already has removal:true (one removal covers the visit)
+  // This way, adding Dip after declining Gel-X re-prompts (different
+  // service), but adding Gel Manicure after accepting Gel-X stays quiet.
+  const [removalPrompt, setRemovalPrompt] = useState(null);            // { cartItemId, svcName }
+  const [declinedRemoval, setDeclinedRemoval] = useState(() => new Set()); // service ids the user said "No" to
+
   function addToCart(svc, opt) {
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
     setCart(c => [...c, { id, service: svc, option: opt || null, removal: false }]);
@@ -349,6 +358,11 @@ export default function BookingScreen() {
     // can't do the new service). Reset downstream picks; user re-picks at step 2/3.
     setCartTech(t => (t === undefined ? t : t)); // no-op, kept for symmetry
     setCartSlot(null);
+    // Removal prompt — qualifying service, not yet declined, no removal in cart.
+    const removalAlreadyInCart = cart.some(i => i.removal === true);
+    if (svc.canRequireRemoval && !declinedRemoval.has(svc.id) && !removalAlreadyInCart) {
+      setRemovalPrompt({ cartItemId: id, svcName: svc.name, svcId: svc.id });
+    }
   }
   function removeFromCart(itemId) {
     setCart(c => c.filter(i => i.id !== itemId));
@@ -576,6 +590,26 @@ export default function BookingScreen() {
         />
       )}
 
+      {removalPrompt && (
+        <RemovalSuggestionModal
+          svcName={removalPrompt.svcName}
+          removalPrice={Number(cfg?.removalPrice ?? 15)}
+          editorial={webCfg?.layout === 'merakiSite'}
+          onYes={() => {
+            updateCartItem(removalPrompt.cartItemId, { removal: true });
+            setRemovalPrompt(null);
+          }}
+          onNo={() => {
+            setDeclinedRemoval(prev => {
+              const next = new Set(prev);
+              next.add(removalPrompt.svcId);
+              return next;
+            });
+            setRemovalPrompt(null);
+          }}
+        />
+      )}
+
       {/* Hidden DOM anchor for the invisible reCAPTCHA used by Phone Auth.
           Must exist at the time signInWithPhoneNumber is called. */}
       <div id="recaptcha-container" style={{ display: 'none' }} />
@@ -614,6 +648,7 @@ export default function BookingScreen() {
             onRemove={removeFromCart}
             onProceed={() => setStep(2)}
             onSwitchFlow={() => { setStep(0); setCart([]); setCartTech(undefined); setCartDate(''); setCartSlot(null); }}
+            removalPrice={Number(cfg?.removalPrice ?? 15)}
           />
         )}
         {step === 1 && flow === 'tech-first' && (
@@ -641,6 +676,7 @@ export default function BookingScreen() {
             onRemove={removeFromCart}
             onProceed={() => setStep(3)}
             techFirstNote={pickedTech ? `Booking with ${pickedTech.name}. Showing only the services they offer.` : null}
+            removalPrice={Number(cfg?.removalPrice ?? 15)}
           />
         )}
         {step === 3 && (
@@ -698,11 +734,78 @@ function Header({ step, cfg, flow, webCfg, gUser, client, onSignIn, onSignOut })
   const labels = flow === 'tech-first'
     ? ['Stylist','Services','Schedule','Info','Confirm']
     : ['Cart','Stylists','Schedule','Info','Confirm'];
+
+  // Editorial mode (when this tenant uses the merakiSite homepage) flips
+  // the header to a light cream surface with ink text + brand fonts so it
+  // feels like a continuation of HeroMerakiSite's floating nav.
+  const editorial = webCfg?.layout === 'merakiSite';
+  const FONT_SERIF   = '"Cormorant Garamond", Georgia, serif';
+  const FONT_DISPLAY = '"Cinzel", Georgia, serif';
+  const INK = '#302c29', INK_SOFT = '#5a534d', INK_FAINT = '#8a827a', GOLD = '#c19a4a', RULE = 'rgba(48,44,41,.10)';
+
+  if (editorial) {
+    return (
+      <div style={{ background: '#fbfaf8', position: 'sticky', top: 0, zIndex: 10, borderBottom: `1px solid ${RULE}` }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '14px 16px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+            <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 14, textDecoration: 'none' }}>
+              <img src="/brand/meraki/circle-badge.svg" alt={webCfg?.salonName || 'Meraki'} style={{ width: 52, height: 52 }} />
+              <div>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 500, letterSpacing: '.36em', textTransform: 'uppercase', color: INK_FAINT, marginBottom: 4 }}>
+                  Book an Appointment
+                </div>
+                <div style={{ fontFamily: FONT_SERIF, fontSize: 22, fontWeight: 400, color: INK, lineHeight: 1, letterSpacing: '.005em' }}>
+                  {webCfg?.salonName || 'Meraki Nail Studio'}
+                </div>
+              </div>
+            </a>
+            {gUser ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {gUser.photoURL && <img src={gUser.photoURL} alt="" style={{ width: 32, height: 32, borderRadius: '50%' }} />}
+                <button onClick={onSignOut} style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 500, letterSpacing: '.28em', textTransform: 'uppercase', color: INK_FAINT, background: 'transparent', border: 'none', cursor: 'pointer' }}>
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button onClick={onSignIn} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'rgba(193,154,74,.07)', border: `1.5px solid ${GOLD}`, borderRadius: 30, padding: '9px 20px', cursor: 'pointer', fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 500, letterSpacing: '.28em', textTransform: 'uppercase', color: INK }}>
+                <GoogleIcon />
+                Sign in
+              </button>
+            )}
+          </div>
+
+          {cfg?.note && (
+            <div style={{ fontFamily: FONT_SERIF, fontStyle: 'italic', fontSize: 14, color: INK_SOFT, background: 'rgba(193,154,74,.08)', border: `1px solid ${RULE}`, borderRadius: 4, padding: '8px 14px', marginBottom: 12 }}>
+              {cfg.note}
+            </div>
+          )}
+
+          {step >= 1 && (
+            <>
+              <div style={{ display: 'flex', gap: 4, paddingBottom: 2 }}>
+                {[1,2,3,4,5].map(s => (
+                  <div key={s} style={{ flex: s === step ? 2 : 1, height: 2, borderRadius: 1, background: s <= step ? GOLD : 'rgba(48,44,41,.08)', transition: 'all .25s' }} />
+                ))}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, paddingBottom: 2 }}>
+                {labels.map((label, i) => (
+                  <div key={i} style={{ flex: 1, textAlign: 'center', fontFamily: FONT_DISPLAY, fontSize: 9, fontWeight: 500, color: i + 1 <= step ? INK : INK_FAINT, opacity: i + 1 <= step ? 1 : 0.5, letterSpacing: '.28em', textTransform: 'uppercase' }}>
+                    {label}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Original dark-gradient header (other tenants / layouts).
   return (
     <div style={{ background: 'var(--tm-grad-dark, linear-gradient(135deg,#1e6b50,#2D7A5F 40%,#3D7FBF))', position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 12px rgba(0,0,0,.18)' }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '14px 12px 10px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          {/* Logo */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(255,255,255,.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <svg viewBox="0 0 60 60" fill="none" width={20} height={20}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
@@ -712,7 +815,6 @@ function Header({ step, cfg, flow, webCfg, gUser, client, onSignIn, onSignOut })
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)' }}>Book an Appointment</div>
             </div>
           </div>
-          {/* Auth button */}
           {gUser ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {gUser.photoURL && <img src={gUser.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />}
@@ -734,7 +836,6 @@ function Header({ step, cfg, flow, webCfg, gUser, client, onSignIn, onSignOut })
           </div>
         )}
 
-        {/* Step progress (hidden on the flow chooser) */}
         {step >= 1 && (
           <>
             <div style={{ display: 'flex', gap: 4, paddingBottom: 2 }}>
@@ -847,15 +948,23 @@ function Step1PickStylist({ techs, picked, onPick, onProceed, onSwitchFlow }) {
 }
 
 // ── Step 1: Cart (browse + add) ────────────────────────
-function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, techFirstNote }) {
+function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, techFirstNote, removalPrice = 15 }) {
   const groups = groupByCategory(services);
   // Per-row selected option (local UI state) — picking a variant chip just
   // remembers it so 'Add to cart' adds the right one.
   const [pendingOptions, setPendingOptions] = useState({}); // svc.id → option
+  // Cart total includes the per-item removal charge for services that
+  // canRequireRemoval AND have the customer-confirmed `removal` flag set.
+  // Same formula Step 5 uses; we mirror it here so the sticky bar's price
+  // matches the final confirmation total.
   const cartTotal = cart.reduce((sum, item) => {
     const { price } = resolveServicePricing(item.service, item.option);
-    return sum + (price || 0);
+    const removal  = item.removal && item.service.canRequireRemoval ? Number(removalPrice) || 0 : 0;
+    return sum + (price || 0) + removal;
   }, 0);
+  // How many removals are bundled — surfaced in the chip line so the
+  // customer sees that "yes, Removal was added" without going to Step 5.
+  const removalCount = cart.filter(i => i.removal && i.service.canRequireRemoval).length;
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', paddingBottom: cart.length ? 110 : 16 }}>
       <StepTitle>Choose your services</StepTitle>
@@ -902,7 +1011,10 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
                 {cart.length} {cart.length === 1 ? 'service' : 'services'} · ${cartTotal}
               </div>
               <div style={{ fontSize: 11, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {cart.map(item => item.option?.name || item.service.name).join(' · ')}
+                {cart.map(item => {
+                  const base = item.option?.name || item.service.name;
+                  return item.removal && item.service.canRequireRemoval ? `${base} + Removal` : base;
+                }).join(' · ')}
               </div>
             </div>
             <button onClick={onProceed}
@@ -1617,6 +1729,69 @@ function BookingCalendar({ value, onChange }) {
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+// ── Removal suggestion modal ───────────────────────────
+// Fires once per session when the first qualifying service (gel/dip /
+// canRequireRemoval=true) gets added. Saves customers the embarrassment of
+// arriving with a previous set still on their nails and being short on
+// time. Editorial mode swaps to the cream/gold/ink palette and brand fonts
+// so it matches HeroMerakiSite's design language.
+function RemovalSuggestionModal({ svcName, removalPrice, editorial, onYes, onNo }) {
+  if (editorial) {
+    const INK = '#302c29', INK_SOFT = '#5a534d', INK_FAINT = '#8a827a', GOLD = '#c19a4a';
+    const FONT_SERIF   = '"Cormorant Garamond", Georgia, serif';
+    const FONT_DISPLAY = '"Cinzel", Georgia, serif';
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(48,44,41,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+        <div style={{ background: '#fbfaf8', borderRadius: 4, padding: '40px 36px 32px', width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(48,44,41,.35)', textAlign: 'center', border: `1px solid rgba(193,154,74,.22)` }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 10, fontWeight: 500, letterSpacing: '.36em', textTransform: 'uppercase', color: INK_FAINT, marginBottom: 18 }}>
+            A quick note
+          </div>
+          <div style={{ fontFamily: FONT_SERIF, fontSize: 30, fontWeight: 400, lineHeight: 1.15, color: INK, marginBottom: 18, letterSpacing: '.005em' }}>
+            Wearing a previous gel or dip set?
+          </div>
+          <div style={{ fontFamily: FONT_SERIF, fontStyle: 'italic', fontSize: 17, color: INK_SOFT, lineHeight: 1.55, marginBottom: 28, maxWidth: 360, margin: '0 auto 28px' }}>
+            We'll need a few extra minutes to remove it before starting your <em>{svcName}</em>. Add Removal so we set aside the right amount of time.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button onClick={onYes}
+              style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 500, letterSpacing: '.28em', textTransform: 'uppercase', background: GOLD, color: '#fff', border: `1.5px solid ${GOLD}`, borderRadius: 30, padding: '14px 28px', cursor: 'pointer' }}>
+              Yes, add Removal · ${Number(removalPrice).toFixed(0)}
+            </button>
+            <button onClick={onNo}
+              style={{ fontFamily: FONT_DISPLAY, fontSize: 11, fontWeight: 500, letterSpacing: '.28em', textTransform: 'uppercase', background: 'transparent', color: INK_FAINT, border: 'none', cursor: 'pointer', padding: '10px' }}>
+              No — coming in with bare nails
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Fallback (non-editorial tenants).
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: '28px 24px', width: '100%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,.3)', textAlign: 'center' }}>
+        <div style={{ fontSize: 32, marginBottom: 10 }}>💅</div>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8, color: '#1a1a1a' }}>
+          Wearing a previous set?
+        </div>
+        <div style={{ fontSize: 13, color: '#666', lineHeight: 1.5, marginBottom: 20 }}>
+          We'll need extra time to remove gel or dip before your {svcName}. Add Removal so we book the right amount of time.
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexDirection: 'column' }}>
+          <button onClick={onYes}
+            style={{ background: 'var(--tm-primary, #2D7A5F)', color: '#fff', border: 'none', borderRadius: 10, padding: '11px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Yes, add Removal · ${Number(removalPrice).toFixed(0)}
+          </button>
+          <button onClick={onNo}
+            style={{ background: '#fff', color: '#666', border: '1px solid #e0e0e0', borderRadius: 10, padding: '9px 18px', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            No — fresh nails
+          </button>
+        </div>
       </div>
     </div>
   );

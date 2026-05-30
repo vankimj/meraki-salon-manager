@@ -25,7 +25,8 @@
         {
           "source": "**",
           "headers": [
-            { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" }
+            { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
+            { "key": "X-Robots-Tag",              "value": "noindex, nofollow, noarchive, nosnippet" }
           ]
         }
       ]
@@ -103,6 +104,9 @@
   "firestore": {
     "rules":   "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "storage": {
+    "rules": "storage.rules"
   },
   "extensions": {
     "fs-bq-clients":      "firebase/firestore-bigquery-export@0.3.1",

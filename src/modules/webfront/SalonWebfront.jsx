@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchServices, fetchEmployees, fetchWebfrontConfig, fetchBookingConfig, fetchGoogleReviews } from '../../lib/firestore';
+import { fetchServices, fetchEmployees, fetchWebfrontConfig, fetchBookingConfig, fetchGoogleReviews, subscribeWebfrontConfig } from '../../lib/firestore';
 import { getTheme, detectAutoTheme } from '../../lib/themes';
 import { TENANT_ID } from '../../lib/tenant';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../lib/firebase';
+import HeroMerakiSite from '../../components/HeroMerakiSite';
 
 // Tenant-neutral defaults — values are blanks/generic placeholders so a new
 // tenant's empty webfront doesn't bleed Meraki content. Salon owners fill
@@ -77,10 +78,66 @@ const FALLBACK_SERVICES = [
 ];
 
 export const LAYOUTS = [
-  { id: 'classic',  name: 'Classic',  icon: '🌑', desc: 'Dark hero, bold & dramatic' },
-  { id: 'boutique', name: 'Boutique', icon: '🌸', desc: 'Light & airy, soft tones' },
-  { id: 'minimal',  name: 'Minimal',  icon: '◻',  desc: 'Clean, wide-open, editorial' },
+  { id: 'classic',    name: 'Classic',    icon: '🌑', desc: 'Dark hero, bold & dramatic' },
+  { id: 'boutique',   name: 'Boutique',   icon: '🌸', desc: 'Light & airy, soft tones' },
+  { id: 'minimal',    name: 'Minimal',    icon: '◻',  desc: 'Clean, wide-open, editorial' },
+  { id: 'merakiSite', name: 'Editorial',  icon: '✦',  desc: 'Full editorial homepage with portfolio, reviews, IG' },
 ];
+
+// Adapt a SalonWebfront cfg shape into the prop shape HeroMerakiSite expects.
+// SalonWebfront stores address as one multi-line string + hours as a {mon:'',
+// tue:'', …} dict; HeroMerakiSite wants address1/address2 + hours[][2]. Map
+// here so the editorial layout reads the same cfg without forcing duplicate
+// fields onto every tenant.
+function mapCfgForMerakiSite(cfg, employees) {
+  // Accept either newline-separated ("Street\nCity, ST ZIP") or the more
+  // common comma-separated form ("Street, City, ST ZIP"). For comma form,
+  // split on the FIRST comma so "City, ST ZIP" stays on line 2.
+  const addr = String(cfg.address || '').trim();
+  let address1, address2;
+  if (addr.includes('\n')) {
+    const lines = addr.split('\n').map(s => s.trim()).filter(Boolean);
+    address1 = lines[0] || '';
+    address2 = lines.slice(1).join(', ') || cfg.city || '';
+  } else if (addr.includes(',')) {
+    const i = addr.indexOf(',');
+    address1 = addr.slice(0, i).trim();
+    address2 = addr.slice(i + 1).trim();
+  } else {
+    address1 = addr;
+    address2 = cfg.city || '';
+  }
+  if (!address1) address1 = '5029 Olentangy River Rd';
+  if (!address2) address2 = 'Columbus, OH 43214';
+  const DAY_LABELS_MAP = {
+    mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday',
+    thu: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+  };
+  const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const hoursDict = cfg.hours || {};
+  const hoursArr = DAY_ORDER
+    .filter(k => String(hoursDict[k] || '').trim())
+    .map(k => [DAY_LABELS_MAP[k], String(hoursDict[k]).trim()]);
+
+  return {
+    salonName:        cfg.salonName,
+    phone:            cfg.phone,
+    publicEmail:      cfg.publicEmail || cfg.contactEmail,
+    address1, address2,
+    hours:            hoursArr.length ? hoursArr : undefined,
+    instagramHandle:  cfg.instagram ? (cfg.instagram.startsWith('@') ? cfg.instagram : `@${cfg.instagram}`) : undefined,
+    facebookHandle:   cfg.facebook,
+    reviews:          cfg.reviews || cfg.testimonials,
+    instagramGrid:    cfg.instagramGrid,
+    portfolio:        cfg.portfolio,
+    heroPhoto:        cfg.heroPhoto,
+    heroCredit:       cfg.heroCredit,
+    rating:           cfg.rating,
+    reviewCount:      cfg.reviewCount,
+    established:      cfg.established,
+    employees,
+  };
+}
 
 function groupByCategory(services) {
   const map = {};
@@ -163,6 +220,25 @@ export default function SalonWebfront() {
     }).catch(() => { setCfg(DEFAULT_CFG); setServices(FALLBACK_SERVICES); });
   }, []);
 
+  // Live updates — Admin edits land on the open public page without a
+  // refresh. One-shot fetch above seeds the initial render; this listener
+  // overrides cfg on every subsequent webfront write. Re-applies theme so
+  // brand-color changes take effect live too.
+  useEffect(() => {
+    const unsub = subscribeWebfrontConfig(wf => {
+      setCfg(prev => {
+        const merged = { ...DEFAULT_CFG, ...wf };
+        const theme = merged.autoTheme
+          ? (detectAutoTheme() || getTheme(merged.themeId || 'meraki'))
+          : getTheme(merged.themeId || 'meraki');
+        setTm(theme);
+        applyThemeVars(theme);
+        return merged;
+      });
+    });
+    return () => unsub();
+  }, []);
+
   useEffect(() => {
     function onScroll() { setNavSolid(window.scrollY > 60); }
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -181,6 +257,13 @@ export default function SalonWebfront() {
   const layout   = cfg.layout || 'classic';
   const hidden   = new Set(cfg.hiddenEmployeeIds || []);
   const visTeam  = employees.filter(e => !hidden.has(e.id));
+
+  // Editorial layout — full takeover, ignores SalonWebfront chrome. Reads
+  // tenant cfg for everything; fall-back content + brand SVGs + portfolio
+  // photos all bundled in /public/brand/meraki/. Lives at /, not /manage.
+  if (layout === 'merakiSite') {
+    return <HeroMerakiSite webCfg={mapCfgForMerakiSite(cfg, visTeam)} />;
+  }
   const showBook = cfg.showBookingCta && bookCfg?.enabled;
   const bookUrl  = `${window.location.origin}/book`;
   // Per-tenant display values — never hardcode Meraki strings below.

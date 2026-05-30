@@ -2555,14 +2555,112 @@ export async function fetchWebfrontConfig() {
   return snap.exists() ? snap.data() : {};
 }
 
+// Live-subscribe to webfront config. Used by the public homepage so that
+// edits in Admin (hours, copy, photos) reflect on the public page without
+// a manual refresh. Returns an unsubscribe function.
+export function subscribeWebfrontConfig(cb) {
+  return onSnapshot(WEBFRONT_CONFIG_REF, snap => {
+    cb(snap.exists() ? snap.data() : {});
+  });
+}
+
 export async function saveWebfrontConfig(data) {
   await setDoc(WEBFRONT_CONFIG_REF, { ...data, updatedAt: new Date().toISOString() });
+}
+
+// Merge-only write — patch a subset of webfront fields without wiping
+// the rest. Use when one feature (e.g. Schedule's storeHours → website
+// mirror) needs to update a few fields and shouldn't clobber others.
+export async function patchWebfrontConfig(partial) {
+  await setDoc(WEBFRONT_CONFIG_REF, { ...partial, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// Resize an image File/Blob to a width-capped JPEG Blob (for Storage uploads).
+// Returns a Blob, not a data URL — the resizeImg helper in utils/helpers.js
+// returns a data URL and would force a costly base64 round-trip here.
+async function imageToJpegBlob(file, maxW = 1600, quality = 0.82) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('decode failed: ' + file.name));
+      i.src = url;
+    });
+    let w = img.naturalWidth, h = img.naturalHeight;
+    if (w > maxW) { h = Math.round(h * (maxW / w)); w = maxW; }
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, 0, 0, w, h);
+    return await new Promise(res => c.toBlob(res, 'image/jpeg', quality));
+  } finally { URL.revokeObjectURL(url); }
+}
+
+// Upload a portfolio photo to Storage at tenants/{tid}/portfolio/{file}.
+// Returns the public download URL — caller pushes it into
+// webfront.portfolioUploads + cfg.portfolio. Resizes to 1600w@82% JPEG
+// before upload; a 4MB phone shot lands at ~250KB.
+export async function uploadPortfolioPhoto(file) {
+  const { storage } = await import('./firebase.js');
+  const { ref, uploadBytes, getDownloadURL } = await import('firebase/storage');
+  const blob = await imageToJpegBlob(file, 1600, 0.82);
+  const ts   = Date.now();
+  const rand = Math.random().toString(36).slice(2, 8);
+  const path = `tenants/${TENANT_ID}/portfolio/${ts}-${rand}.jpg`;
+  const r = ref(storage, path);
+  await uploadBytes(r, blob, { contentType: 'image/jpeg' });
+  return await getDownloadURL(r);
+}
+
+// Convert settings.storeHours ({ Mon: { open:'10:00', close:'19:00', closed:false }, … })
+// to the webfront.hours dict shape ({ mon: '10am – 7pm' | 'Closed', … })
+// that the public site reads. Empty open-time is treated as Closed.
+export function storeHoursToWebfrontHours(storeHours) {
+  if (!storeHours || typeof storeHours !== 'object') return {};
+  const DAY_MAP = { Mon:'mon', Tue:'tue', Wed:'wed', Thu:'thu', Fri:'fri', Sat:'sat', Sun:'sun' };
+  function fmt12(hhmm) {
+    if (!hhmm || typeof hhmm !== 'string') return '';
+    const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+    if (!m) return '';
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    if (Number.isNaN(h) || Number.isNaN(min)) return '';
+    const ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12 || 12;
+    return min === 0 ? `${h}${ampm}` : `${h}:${String(min).padStart(2,'0')}${ampm}`;
+  }
+  function rangeFromDay(day) {
+    if (!day || day.closed) return 'Closed';
+    const open  = fmt12(day.open);
+    const close = fmt12(day.close);
+    if (!open) return 'Closed';
+    if (!close) return `Opens ${open}`;
+    return `${open} – ${close}`;
+  }
+  const out = {};
+  for (const [src, dst] of Object.entries(DAY_MAP)) out[dst] = rangeFromDay(storeHours[src]);
+  return out;
 }
 
 // ── Google Reviews cache (populated by Cloud Function) ─
 export async function fetchGoogleReviews() {
   const snap = await getDoc(tenantDoc('googleReviews'));
   return snap.exists() ? snap.data() : null;
+}
+
+// ── Competitor ranking (populated by nearbyNailSalons CF) ─
+export async function fetchCompetitorRankings() {
+  const snap = await getDoc(tenantDoc('competitorRankings'));
+  return snap.exists() ? snap.data() : null;
+}
+export function subscribeCompetitorRankings(callback) {
+  return onSnapshot(tenantDoc('competitorRankings'), s => callback(s.exists() ? s.data() : null));
+}
+export async function refreshCompetitorRankings({ address, lat, lng, radiusMiles }) {
+  const res = await callFn('nearbyNailSalons')({ tenantId: TENANT_ID, address, lat, lng, radiusMiles });
+  return res.data;
 }
 
 // ── Walk-in / arrival queue ────────────────────────────

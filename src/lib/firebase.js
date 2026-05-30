@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getStorage } from 'firebase/storage';
 
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
@@ -59,5 +60,6 @@ export const db = _db;
 export const auth      = getAuth(app);
 export const functions = getFunctions(app);
 export const callFn    = (name) => httpsCallable(functions, name);
+export const storage   = getStorage(app);
 
 export const ALLOWED_EMAILS = ['jvankim@gmail.com'];

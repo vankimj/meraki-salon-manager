@@ -19,6 +19,7 @@ const WELCOME_STYLES = [
   { id: 'stacked',       label: 'Boutique — stacked card'       },
   { id: 'photo',         label: 'Photo backdrop — centered'     },
   { id: 'photoSplit',    label: 'Photo backdrop — split'        },
+  { id: 'merakiSite',    label: 'Editorial homepage — full landing page' },
 ];
 
 export default function Phase4Branding({ onboarding, onAdvance, saving }) {

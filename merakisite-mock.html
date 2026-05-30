@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meraki Nail Studio — Design Mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:ital,wght@0,300;0,400;0,500;1,300;1,400&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#302c29;
+    --ink-soft:#5a534d;
+    --ink-faint:#8a827a;
+    --cream:#faf6ef;
+    --cream-deep:#f3ebdc;
+    --ivory:#fbfaf8;
+    --paper:#ffffff;
+    --gold:#c19a4a;
+    --gold-soft:#d9b977;
+    --gold-tint:rgba(193,154,74,.08);
+    --rule:rgba(48,44,41,.10);
+    --rule-gold:rgba(193,154,74,.32);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--ivory);color:var(--ink);font-family:'Inter',sans-serif;font-weight:300;line-height:1.55;-webkit-font-smoothing:antialiased}
+  img,svg{display:block;max-width:100%}
+  a{color:inherit;text-decoration:none}
+  .cinzel{font-family:'Cinzel',Georgia,serif}
+  .editorial{font-family:'Cormorant Garamond',Georgia,serif}
+  .eyebrow{font-family:'Cinzel',serif;font-size:10px;font-weight:500;letter-spacing:.36em;text-transform:uppercase;color:var(--ink-faint)}
+  .container{max-width:1240px;margin:0 auto;padding:0 32px}
+
+  /* ─── floating nav ───────────────────────────────────────────── */
+  .nav{position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);background:rgba(251,250,248,.78);border-bottom:1px solid var(--rule)}
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;padding:14px 32px}
+  .nav-mark{display:flex;align-items:center;gap:10px}
+  .nav-mark img{width:38px;height:38px}
+  .nav-mark .name{font-family:'Cinzel',serif;font-size:13px;letter-spacing:.32em;color:var(--ink)}
+  .nav-links{display:flex;gap:36px;align-items:center}
+  .nav-links a{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-soft);transition:color .2s ease}
+  .nav-links a:hover{color:var(--ink)}
+  .nav-cta{display:flex;align-items:center;gap:16px}
+  .nav-cta .signin{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-faint);transition:color .2s}
+  .nav-cta .signin:hover{color:var(--ink)}
+  .pill{font-family:'Cinzel',serif;font-size:11px;font-weight:500;letter-spacing:.28em;text-transform:uppercase;color:var(--ink);background:var(--gold-tint);border:1.5px solid var(--gold);border-radius:30px;padding:11px 26px;cursor:pointer;transition:all .22s ease;display:inline-flex;align-items:center;gap:10px}
+  .pill:hover{background:var(--gold);color:#fff;transform:translateY(-1px);box-shadow:0 12px 28px rgba(193,154,74,.32)}
+  .pill .arrow{transition:transform .2s ease}
+  .pill:hover .arrow{transform:translateX(3px)}
+  .pill.solid{background:var(--gold);color:#fff}
+  .pill.solid:hover{background:#a8853c}
+  .pill.white{background:#fff;border-color:#fff;color:var(--ink)}
+  .pill.white:hover{background:var(--gold);border-color:var(--gold);color:#fff}
+  .pill.ghost{background:transparent;border-color:var(--ink);color:var(--ink)}
+  .pill.ghost:hover{background:var(--ink);color:#fff}
+  @media(max-width:880px){.nav-links{display:none}.nav-cta .signin{display:none}}
+
+  /* ─── hero ───────────────────────────────────────────────────── */
+  .hero{position:relative;padding:160px 0 80px;overflow:hidden;background:var(--cream)}
+  .hero::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 70% 50% at 50% 20%,rgba(193,154,74,.12),transparent 60%);pointer-events:none}
+  .hero-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:64px;align-items:center;position:relative}
+  .hero-left{position:relative;z-index:1}
+  .hero-greeting{margin-bottom:32px}
+  .hero-wordmark{margin:24px 0 0;max-width:520px;width:100%}
+  .hero-wordmark img{width:100%;height:auto}
+  .hero-script{margin:30px 0 0;max-width:380px;width:100%;opacity:.85}
+  .hero-script img{width:100%;height:auto}
+  .hero-copy{max-width:460px;margin:42px 0 0;font-family:'Cormorant Garamond',serif;font-size:21px;font-weight:300;font-style:italic;line-height:1.55;color:var(--ink-soft)}
+  .hero-ctas{display:flex;gap:18px;align-items:center;margin-top:38px;flex-wrap:wrap}
+  .hero-secondary{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink);padding:11px 0;border-bottom:1px solid var(--ink);transition:opacity .2s}
+  .hero-secondary:hover{opacity:.6}
+  .hero-photo{position:relative;height:640px;border-radius:6px;overflow:hidden;box-shadow:0 30px 80px rgba(48,44,41,.18),0 6px 18px rgba(48,44,41,.06)}
+  .hero-photo img{width:100%;height:100%;object-fit:cover;display:block}
+  .hero-photo::after{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(48,44,41,0) 60%,rgba(48,44,41,.15));pointer-events:none}
+  .hero-photo-tag{position:absolute;bottom:24px;left:24px;color:#fff;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;opacity:.85}
+  .hero-marquee{margin-top:96px;padding:18px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);display:flex;justify-content:space-between;gap:48px;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint);flex-wrap:wrap}
+  .hero-marquee span{white-space:nowrap}
+  .hero-marquee span strong{color:var(--ink);font-weight:500}
+  @media(max-width:960px){
+    .hero{padding:120px 0 60px}
+    .hero-grid{grid-template-columns:1fr;gap:48px}
+    .hero-photo{height:520px;order:-1}
+    .hero-marquee{gap:24px;font-size:9px}
+  }
+
+  /* ─── meaning / about ────────────────────────────────────────── */
+  .meaning{padding:120px 0;background:var(--ivory);text-align:center}
+  .meaning .word{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;font-size:clamp(54px,7vw,96px);line-height:1;color:var(--ink);margin-bottom:24px}
+  .meaning .pron{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.32em;color:var(--ink-faint);margin-bottom:38px}
+  .meaning .def{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:clamp(22px,2.4vw,30px);font-weight:300;line-height:1.55;color:var(--ink-soft);max-width:680px;margin:0 auto;letter-spacing:.005em}
+  .meaning .signature{margin:48px auto 0;max-width:340px;opacity:.9}
+  .meaning .signature img{width:100%;height:auto}
+
+  /* ─── services ───────────────────────────────────────────────── */
+  .services{padding:120px 0;background:var(--cream)}
+  .section-head{text-align:center;margin-bottom:80px}
+  .section-head .eyebrow{display:block;margin-bottom:18px}
+  .section-head h2{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:clamp(40px,5vw,64px);line-height:1.05;letter-spacing:-.005em;margin-bottom:18px}
+  .section-head .sub{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:19px;color:var(--ink-soft);max-width:560px;margin:0 auto}
+  .svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:48px 56px}
+  .svc{display:flex;flex-direction:column;gap:14px}
+  .svc-name{font-family:'Cormorant Garamond',serif;font-weight:400;font-size:26px;letter-spacing:.002em;color:var(--ink);display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+  .svc-name .price{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.2em;color:var(--gold);white-space:nowrap}
+  .svc-meta{font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint)}
+  .svc-desc{font-family:'Inter',sans-serif;font-weight:300;font-size:14px;color:var(--ink-soft);line-height:1.65}
+  .svc-link{margin-top:auto;font-family:'Cinzel',serif;font-size:10px;letter-spacing:.3em;text-transform:uppercase;color:var(--ink);display:inline-flex;align-items:center;gap:8px;padding-top:14px}
+  .svc-link::after{content:"→";transition:transform .2s ease}
+  .svc:hover .svc-link::after{transform:translateX(3px)}
+  .svc-cta{text-align:center;margin-top:72px}
+  @media(max-width:880px){.svc-grid{grid-template-columns:1fr;gap:40px}}
+
+  /* ─── portfolio ──────────────────────────────────────────────── */
+  .portfolio{padding:120px 0;background:var(--ivory)}
+  .pgrid{display:grid;grid-template-columns:repeat(12,1fr);gap:14px;grid-auto-rows:160px}
+  .ptile{position:relative;overflow:hidden;border-radius:3px;background:var(--cream-deep);cursor:pointer}
+  .ptile img{width:100%;height:100%;object-fit:cover;transition:transform .6s cubic-bezier(.2,.6,.2,1)}
+  .ptile:hover img{transform:scale(1.04)}
+  .ptile.t-wide{grid-column:span 6;grid-row:span 2}
+  .ptile.t-tall{grid-column:span 3;grid-row:span 3}
+  .ptile.t-sq{grid-column:span 3;grid-row:span 2}
+  .ptile.t-mid{grid-column:span 4;grid-row:span 2}
+  .ptile.t-md2{grid-column:span 5;grid-row:span 2}
+  .ptile.t-lg{grid-column:span 6;grid-row:span 3}
+  @media(max-width:960px){
+    .pgrid{grid-template-columns:repeat(6,1fr);grid-auto-rows:120px}
+    .ptile.t-wide,.ptile.t-tall,.ptile.t-sq,.ptile.t-mid,.ptile.t-md2,.ptile.t-lg{grid-column:span 3;grid-row:span 2}
+  }
+
+  /* ─── reviews ────────────────────────────────────────────────── */
+  .reviews{padding:120px 0;background:var(--ink);color:var(--ivory)}
+  .reviews .section-head h2{color:var(--ivory)}
+  .reviews .section-head .eyebrow{color:rgba(255,255,255,.55)}
+  .reviews .section-head .sub{color:rgba(255,255,255,.7)}
+  .rating{display:flex;align-items:center;justify-content:center;gap:18px;margin:0 auto 56px;flex-wrap:wrap}
+  .rating .stars{font-size:24px;letter-spacing:6px;color:var(--gold)}
+  .rating .num{font-family:'Cormorant Garamond',serif;font-size:34px;font-weight:300;color:#fff}
+  .rating .meta{font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:rgba(255,255,255,.65)}
+  .rating .gicon{width:22px;height:22px;display:inline-block;vertical-align:middle}
+  .rev-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:56px;max-width:1140px;margin:0 auto}
+  .rev{display:flex;flex-direction:column;gap:22px}
+  .rev .quote-mark{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:60px;line-height:.6;color:var(--gold);height:24px}
+  .rev .body{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;font-size:21px;line-height:1.6;color:rgba(255,255,255,.88)}
+  .rev .who{display:flex;align-items:center;gap:14px;margin-top:auto;padding-top:24px;border-top:1px solid rgba(255,255,255,.1)}
+  .rev .who .name{font-family:'Cinzel',serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:#fff}
+  .rev .who .stars-sm{color:var(--gold);font-size:11px;letter-spacing:3px}
+  .rev-cta{text-align:center;margin-top:72px}
+  @media(max-width:880px){.rev-grid{grid-template-columns:1fr;gap:48px}}
+
+  /* ─── team ───────────────────────────────────────────────────── */
+  .team{padding:120px 0;background:var(--cream)}
+  .tgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:48px 32px}
+  .tech{text-align:center}
+  .tech-photo{aspect-ratio:1/1.15;border-radius:3px;overflow:hidden;background:var(--cream-deep);margin-bottom:16px;position:relative}
+  .tech-photo .placeholder{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:'Cormorant Garamond',serif;font-size:60px;font-style:italic;color:var(--gold);background:linear-gradient(135deg,#efe6d4,#e6d9bf)}
+  .tech-name{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:400;letter-spacing:.005em;color:var(--ink);margin-bottom:4px}
+  .tech-handle{font-family:'Cinzel',serif;font-size:9.5px;letter-spacing:.28em;text-transform:lowercase;color:var(--gold)}
+  .tech-handle:empty::before{content:"\00a0"}
+  @media(max-width:1080px){.tgrid{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:680px){.tgrid{grid-template-columns:repeat(2,1fr);gap:32px 20px}}
+
+  /* ─── instagram strip ────────────────────────────────────────── */
+  .ig{padding:120px 0;background:var(--ivory)}
+  .ig .row{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:48px 0 64px}
+  .ig .row a{aspect-ratio:1/1;overflow:hidden;border-radius:2px;background:var(--cream-deep);position:relative}
+  .ig .row a img{width:100%;height:100%;object-fit:cover;transition:transform .5s ease}
+  .ig .row a:hover img{transform:scale(1.06)}
+  .ig .row a::after{content:"";position:absolute;inset:0;background:rgba(48,44,41,0);transition:background .3s ease;display:flex;align-items:center;justify-content:center}
+  .ig .row a:hover::after{background:rgba(48,44,41,.2)}
+  .ig-cta{text-align:center}
+  @media(max-width:680px){.ig .row{grid-template-columns:repeat(3,1fr)}}
+
+  /* ─── visit ──────────────────────────────────────────────────── */
+  .visit{padding:120px 0;background:var(--cream-deep)}
+  .visit-grid{display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:start}
+  .visit-info h2{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:clamp(40px,5vw,60px);line-height:1.05;margin-bottom:24px}
+  .visit-info .sub{font-family:'Cormorant Garamond',serif;font-style:italic;font-size:21px;color:var(--ink-soft);margin-bottom:48px;max-width:440px}
+  .visit-block{padding:24px 0;border-top:1px solid var(--rule)}
+  .visit-block:last-child{border-bottom:1px solid var(--rule)}
+  .visit-block h3{font-family:'Cinzel',serif;font-size:10px;font-weight:500;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:12px}
+  .visit-block .value{font-family:'Cormorant Garamond',serif;font-size:22px;font-weight:400;color:var(--ink);line-height:1.5}
+  .visit-block .value a{border-bottom:1px solid var(--rule-gold);padding-bottom:2px}
+  .hours{font-family:'Inter',sans-serif;font-size:14px;color:var(--ink);font-weight:300}
+  .hours .day{display:flex;justify-content:space-between;gap:24px;padding:4px 0}
+  .hours .day span:first-child{color:var(--ink-soft)}
+  .visit-actions{display:flex;gap:14px;flex-wrap:wrap;margin-top:36px}
+  .visit-map{aspect-ratio:1/1.05;border-radius:4px;overflow:hidden;background:linear-gradient(135deg,#e8e0cf,#d6c9ad);position:relative;box-shadow:0 20px 60px rgba(48,44,41,.12)}
+  .visit-map .mapnote{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;flex-direction:column;gap:12px;color:var(--ink-soft);font-family:'Cormorant Garamond',serif;font-style:italic;font-size:18px;padding:24px}
+  .visit-map .mapnote .pin{font-size:48px;color:var(--gold)}
+  @media(max-width:960px){.visit-grid{grid-template-columns:1fr;gap:56px}.visit-map{order:-1;aspect-ratio:16/10}}
+
+  /* ─── footer ─────────────────────────────────────────────────── */
+  footer{background:var(--ivory);padding:80px 0 56px;border-top:1px solid var(--rule)}
+  .foot-grid{display:grid;grid-template-columns:1.2fr 1fr;gap:64px;align-items:end;margin-bottom:64px}
+  .foot-sign{max-width:380px}
+  .foot-sign img{width:100%;height:auto}
+  .foot-quick{display:flex;flex-direction:column;align-items:flex-end;gap:20px}
+  .foot-social{display:flex;gap:24px;font-family:'Cinzel',serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--ink-soft)}
+  .foot-social a:hover{color:var(--ink)}
+  .foot-bottom{display:flex;justify-content:space-between;align-items:center;padding-top:32px;border-top:1px solid var(--rule);font-size:11px;color:var(--ink-faint);letter-spacing:.04em;flex-wrap:wrap;gap:16px}
+  .foot-bottom .powered a{color:var(--ink-soft);border-bottom:1px solid var(--rule-gold)}
+  .staff-signin{font-family:'Cinzel',serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-faint)}
+  .staff-signin:hover{color:var(--gold)}
+  @media(max-width:760px){.foot-grid{grid-template-columns:1fr;gap:40px;align-items:start}.foot-quick{align-items:flex-start}}
+
+  /* ─── shared ─────────────────────────────────────────────────── */
+  ::selection{background:var(--gold);color:#fff}
+  html{scroll-behavior:smooth}
+</style>
+</head>
+<body>
+
+<!-- ─────────────────────────────── NAV ─────────────────────────────── -->
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="#" class="nav-mark" aria-label="Meraki Nail Studio — home">
+      <img src="public/brand/meraki/monogram-outline.svg" alt="">
+      <span class="name">MERAKI</span>
+    </a>
+    <div class="nav-links">
+      <a href="#services">Services</a>
+      <a href="#team">The Team</a>
+      <a href="#portfolio">Portfolio</a>
+      <a href="#visit">Visit</a>
+    </div>
+    <div class="nav-cta">
+      <a href="#" class="signin">Sign in</a>
+      <a class="pill" href="/book">Book now <span class="arrow">→</span></a>
+    </div>
+  </div>
+</nav>
+
+<!-- ─────────────────────────────── HERO ────────────────────────────── -->
+<section class="hero">
+  <div class="container hero-grid">
+    <div class="hero-left">
+      <div class="hero-greeting eyebrow">Columbus · Ohio · Since 2019</div>
+      <div class="hero-wordmark">
+        <img src="public/brand/meraki/wordmark.svg" alt="Meraki Nail Studio">
+      </div>
+      <div class="hero-script">
+        <img src="public/brand/meraki/script-tagline.svg" alt="soul · creativity · love">
+      </div>
+      <p class="hero-copy">
+        A quiet studio for considered nail work — meraki is the Greek soul of doing something with all of yourself. We bring that to every set.
+      </p>
+      <div class="hero-ctas">
+        <a class="pill solid" href="/book">Book an appointment <span class="arrow">→</span></a>
+        <a href="#services" class="hero-secondary">View the menu</a>
+      </div>
+    </div>
+    <div class="hero-photo">
+      <img src="public/brand/meraki/portfolio/hero/photo-02.jpg" alt="Hot pink chrome swirl nail art">
+      <div class="hero-photo-tag">Nail art by Samantha · @gelxbysammy</div>
+    </div>
+  </div>
+  <div class="container">
+    <div class="hero-marquee">
+      <span><strong>10</strong> licensed nail artists</span>
+      <span><strong>4.9★</strong> on Google · 240+ reviews</span>
+      <span>Olentangy River Rd · Columbus</span>
+      <span>Walk-ins · Tues – Sun</span>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── MEANING ─────────────────────────── -->
+<section class="meaning">
+  <div class="container">
+    <div class="eyebrow" style="margin-bottom:32px">The Word</div>
+    <div class="word">meraki</div>
+    <div class="pron">/ meh · rah · kee /</div>
+    <p class="def">
+      <em>n.</em> &nbsp;The soul, creativity, and love put into something. <br>The essence of yourself left in your work.
+    </p>
+    <div class="signature">
+      <img src="public/brand/meraki/script-stacked.svg" alt="soul · creativity · love">
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── SERVICES ────────────────────────── -->
+<section class="services" id="services">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">The Menu</span>
+      <h2>Considered care, from <em class="editorial">first soak</em> to final shine.</h2>
+      <div class="sub">A curated set of signature treatments. Every appointment includes hot towels, a hand or foot massage, and as much quiet as you'd like.</div>
+    </div>
+    <div class="svc-grid">
+
+      <article class="svc">
+        <div class="svc-name">Gel‑X<span class="price">FROM $70</span></div>
+        <div class="svc-meta">60+ min · Soft gel tips</div>
+        <p class="svc-desc">Lightweight soft‑gel extensions in any length or shape, sculpted around the natural nail. Our most requested set for nail art.</p>
+        <a href="#" class="svc-link">Learn more</a>
+      </article>
+
+      <article class="svc">
+        <div class="svc-name">Signature Manicure<span class="price">FROM $32</span></div>
+        <div class="svc-meta">35+ min · Spa ritual</div>
+        <p class="svc-desc">Steam, soak, exfoliation, cuticle care, hydrating hand massage. A weekly ritual that leaves your hands rested.</p>
+        <a href="#" class="svc-link">Learn more</a>
+      </article>
+
+      <article class="svc">
+        <div class="svc-name">Structured Gel<span class="price">FROM $50</span></div>
+        <div class="svc-meta">60+ min · Builder gel</div>
+        <p class="svc-desc">Reinforces the natural nail with a builder‑gel base. For short to medium lengths that want strength without extensions.</p>
+        <a href="#" class="svc-link">Learn more</a>
+      </article>
+
+      <article class="svc">
+        <div class="svc-name">Signature Pedicure<span class="price">FROM $52</span></div>
+        <div class="svc-meta">45+ min · Spa ritual</div>
+        <p class="svc-desc">Steam, callus removal, sugar scrub, mud mask, and hot towels. Our most asked‑for pedicure, year‑round.</p>
+        <a href="#" class="svc-link">Learn more</a>
+      </article>
+
+      <article class="svc">
+        <div class="svc-name">Deluxe Pedicure<span class="price">FROM $65</span></div>
+        <div class="svc-meta">60+ min · Hot stone</div>
+        <p class="svc-desc">A longer ritual with hot stone massage and full lower‑leg treatment. A small luxury after a long week.</p>
+        <a href="#" class="svc-link">Learn more</a>
+      </article>
+
+      <article class="svc">
+        <div class="svc-name">Custom Nail Art<span class="price">FROM $15</span></div>
+        <div class="svc-meta">10+ min · Per nail</div>
+        <p class="svc-desc">Free‑hand chrome, florals, French variations, and custom requests. Bring a reference or trust the artist.</p>
+        <a href="#" class="svc-link">Learn more</a>
+      </article>
+
+    </div>
+    <div class="svc-cta">
+      <a class="pill ghost" href="#">View the full menu <span class="arrow">→</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── PORTFOLIO ───────────────────────── -->
+<section class="portfolio" id="portfolio">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Recent Work</span>
+      <h2>From the studio, lately.</h2>
+      <div class="sub">A small sample. The full feed lives on Instagram.</div>
+    </div>
+    <div class="pgrid">
+      <div class="ptile t-wide"><img src="public/brand/meraki/portfolio/hero/photo-01.jpg" alt=""></div>
+      <div class="ptile t-tall"><img src="public/brand/meraki/portfolio/hero/photo-15.jpg" alt=""></div>
+      <div class="ptile t-sq"><img src="public/brand/meraki/portfolio/hero/photo-30.jpg" alt=""></div>
+      <div class="ptile t-mid"><img src="public/brand/meraki/portfolio/hero/photo-05.jpg" alt=""></div>
+      <div class="ptile t-md2"><img src="public/brand/meraki/portfolio/hero/photo-20.jpg" alt=""></div>
+      <div class="ptile t-sq"><img src="public/brand/meraki/portfolio/hero/photo-38.jpg" alt=""></div>
+      <div class="ptile t-mid"><img src="public/brand/meraki/portfolio/hero/photo-25.jpg" alt=""></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── REVIEWS ─────────────────────────── -->
+<section class="reviews">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">Said about us</span>
+      <h2>What our guests carry home.</h2>
+    </div>
+    <div class="rating">
+      <svg class="gicon" viewBox="0 0 48 48" aria-hidden><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      <span class="num">4.9</span>
+      <span class="stars">★★★★★</span>
+      <span class="meta">240+ Google reviews</span>
+    </div>
+    <div class="rev-grid">
+
+      <article class="rev">
+        <div class="quote-mark">"</div>
+        <div class="body">Every nail tech I've had has been incredible. The studio is calm, clean, and the work is always exactly what I asked for — and somehow better.</div>
+        <div class="who"><span class="name">Marisol&nbsp;G.</span><span class="stars-sm">★★★★★</span></div>
+      </article>
+
+      <article class="rev">
+        <div class="quote-mark">"</div>
+        <div class="body">I've been going to Meraki for two years and won't go anywhere else. Sammy's nail art is on another level — I show her a Pinterest and she makes it better than the photo.</div>
+        <div class="who"><span class="name">Aisha&nbsp;W.</span><span class="stars-sm">★★★★★</span></div>
+      </article>
+
+      <article class="rev">
+        <div class="quote-mark">"</div>
+        <div class="body">The best gel‑x I've gotten in Columbus, full stop. They take their time, they care about your natural nails, and it always lasts the full four weeks.</div>
+        <div class="who"><span class="name">Becca&nbsp;P.</span><span class="stars-sm">★★★★★</span></div>
+      </article>
+
+    </div>
+    <div class="rev-cta">
+      <a class="pill white" href="https://www.google.com/search?q=Meraki+Nail+Studio+Columbus" target="_blank" rel="noopener">Read all on Google <span class="arrow">→</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── TEAM ────────────────────────────── -->
+<section class="team" id="team">
+  <div class="container">
+    <div class="section-head">
+      <span class="eyebrow">The Studio</span>
+      <h2>Ten artists. <em class="editorial">One quiet room.</em></h2>
+      <div class="sub">Each of our techs brings their own hand and their own specialty. Browse the team and book the one whose work you love.</div>
+    </div>
+    <div class="tgrid">
+      <div class="tech"><div class="tech-photo"><div class="placeholder">Y</div></div><div class="tech-name">Yasmin&nbsp;D.</div><div class="tech-handle">&nbsp;</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">A</div></div><div class="tech-name">Audriana&nbsp;L.</div><div class="tech-handle">&nbsp;</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">S</div></div><div class="tech-name">Samantha&nbsp;T.</div><div class="tech-handle">@gelxbysammy</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">T</div></div><div class="tech-name">Tess&nbsp;D.</div><div class="tech-handle">&nbsp;</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">E</div></div><div class="tech-name">Elizabeth&nbsp;L.</div><div class="tech-handle">&nbsp;</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">Y</div></div><div class="tech-name">Yan&nbsp;W.</div><div class="tech-handle">&nbsp;</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">J</div></div><div class="tech-name">Jen&nbsp;T.</div><div class="tech-handle">@kidcozynails</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">M</div></div><div class="tech-name">Marisela&nbsp;I.</div><div class="tech-handle">@licenced2polish</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">A</div></div><div class="tech-name">Ana&nbsp;P.</div><div class="tech-handle">&nbsp;</div></div>
+      <div class="tech"><div class="tech-photo"><div class="placeholder">J</div></div><div class="tech-name">Jenesis&nbsp;B.</div><div class="tech-handle">&nbsp;</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── INSTAGRAM ───────────────────────── -->
+<section class="ig">
+  <div class="container">
+    <div class="section-head" style="margin-bottom:0">
+      <span class="eyebrow">Follow us</span>
+      <h2>@meraki_cbus</h2>
+    </div>
+    <div class="row">
+      <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener"><img src="public/brand/meraki/portfolio/grid/photo-04.jpg" alt=""></a>
+      <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener"><img src="public/brand/meraki/portfolio/grid/photo-12.jpg" alt=""></a>
+      <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener"><img src="public/brand/meraki/portfolio/grid/photo-17.jpg" alt=""></a>
+      <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener"><img src="public/brand/meraki/portfolio/grid/photo-22.jpg" alt=""></a>
+      <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener"><img src="public/brand/meraki/portfolio/grid/photo-28.jpg" alt=""></a>
+      <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener"><img src="public/brand/meraki/portfolio/grid/photo-33.jpg" alt=""></a>
+    </div>
+    <div class="ig-cta">
+      <a class="pill ghost" href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener">Follow @meraki_cbus <span class="arrow">↗</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── VISIT ───────────────────────────── -->
+<section class="visit" id="visit">
+  <div class="container visit-grid">
+    <div class="visit-info">
+      <span class="eyebrow">Plan a Visit</span>
+      <h2 style="margin-top:18px">Come by, <em class="editorial">stay a while.</em></h2>
+      <p class="sub">Two blocks north of the Olentangy Trail. Parking out front and around back.</p>
+      <div class="visit-block">
+        <h3>The Studio</h3>
+        <div class="value">5029 Olentangy River Rd<br>Columbus, OH 43214</div>
+      </div>
+      <div class="visit-block">
+        <h3>Hours</h3>
+        <div class="hours">
+          <div class="day"><span>Monday</span><span>Closed</span></div>
+          <div class="day"><span>Tuesday – Friday</span><span>10am – 8pm</span></div>
+          <div class="day"><span>Saturday</span><span>9am – 7pm</span></div>
+          <div class="day"><span>Sunday</span><span>11am – 5pm</span></div>
+        </div>
+      </div>
+      <div class="visit-block">
+        <h3>Reach Us</h3>
+        <div class="value">
+          <a href="tel:+16140000000">(614) 000‑0000</a><br>
+          <a href="mailto:hello@merakinailstudio.com">hello@merakinailstudio.com</a>
+        </div>
+      </div>
+      <div class="visit-actions">
+        <a class="pill solid" href="/book">Book an appointment <span class="arrow">→</span></a>
+        <a class="pill ghost" href="https://maps.google.com/?q=5029+Olentangy+River+Rd+Columbus+OH" target="_blank" rel="noopener">Get directions <span class="arrow">↗</span></a>
+      </div>
+    </div>
+    <div class="visit-map">
+      <div class="mapnote">
+        <div class="pin">⌖</div>
+        <div>Map placeholder<br><em>(Google Maps embed lands here)</em></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────── FOOTER ──────────────────────────── -->
+<footer>
+  <div class="container">
+    <div class="foot-grid">
+      <div class="foot-sign">
+        <img src="public/brand/meraki/script-love-meraki.svg" alt="Love, Meraki">
+      </div>
+      <div class="foot-quick">
+        <a class="pill ghost" href="/book">Book now <span class="arrow">→</span></a>
+        <div class="foot-social">
+          <a href="https://instagram.com/meraki_cbus" target="_blank" rel="noopener">Instagram</a>
+          <a href="https://facebook.com/merakicolumbus" target="_blank" rel="noopener">Facebook</a>
+          <a href="https://www.google.com/search?q=Meraki+Nail+Studio+Columbus" target="_blank" rel="noopener">Google</a>
+        </div>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <div>© 2026 Meraki Nail Studio. All rights reserved.</div>
+      <div class="powered">Powered by <a href="https://plumenexus.com" target="_blank" rel="noopener">Plume Nexus</a></div>
+      <a href="#" class="staff-signin">Staff sign‑in →</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

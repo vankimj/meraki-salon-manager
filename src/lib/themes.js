@@ -20,6 +20,26 @@ const CORE = [
     muted:     '#aaa',
   },
   {
+    // Pairs with the 'merakiSite' editorial homepage layout. Cream/ivory
+    // background, ink (#302c29) text, gold (#c19a4a) accent — same palette
+    // used in HeroMerakiSite. Makes the booking flow + queue + other
+    // tm-themed surfaces feel like a continuation of the editorial homepage.
+    id: 'merakiEditorial',
+    name: 'Meraki Editorial',
+    icon: '✦',
+    desc: 'Ink + cream + gold (editorial)',
+    primary:   '#c19a4a',
+    accent:    '#302c29',
+    gradStart: '#c19a4a',
+    gradEnd:   '#a8853c',
+    dark:      '#302c29',
+    bg:        '#fbfaf8',
+    cardBg:    '#faf6ef',
+    border:    'rgba(193,154,74,.22)',
+    text:      '#302c29',
+    muted:     '#8a827a',
+  },
+  {
     id: 'blush',
     name: 'Blush Rose',
     icon: '🌸',

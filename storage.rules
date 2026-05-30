@@ -6,5 +6,15 @@ service firebase.storage {
       allow write, delete: if request.auth != null &&
         request.auth.token.email in ['jvankim@gmail.com'];
     }
+    // Tenant-scoped public-facing assets (portfolio photos shown on the
+    // editorial homepage, hero photos, etc). World-readable so the public
+    // website can serve them. Write requires the bootstrap admin email
+    // for now — when staff-tenant roles ship via custom claims we should
+    // switch this to a tenant-owner check.
+    match /tenants/{tid}/portfolio/{file} {
+      allow read: if true;
+      allow write, delete: if request.auth != null &&
+        request.auth.token.email in ['jvankim@gmail.com'];
+    }
   }
 }
