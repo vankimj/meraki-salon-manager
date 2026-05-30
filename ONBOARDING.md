@@ -87,27 +87,28 @@ Setup steps:
 
 **Existing infra to extend:** `stripeWebhook` already handles SaaS-tier transitions for the original `meraki` tenant via `metadata.type !== 'membership'` path. New work: gate signup access (Stripe Checkout in the wizard) and a **plan-tier enforcement helper** so each module can check `settings.plan` to gate Pro features (some `proOnly: true` flags exist already in `HomeScreen` MODULES — extend the gating).
 
-### C. Resend domain verification per tenant
+### C. SES sending identity per tenant
 
-**Status:** TODO automation. Requires per-tenant manual setup right now.
+**Status:** Path 2 SHIPPED. Path 1 deferred until first Pro-tier tenant asks.
 
-Right now, all transactional emails go from `noreply@merakinailstudio.com`. For a new tenant, you'd want emails from `noreply@theirbrand.com` (or at least visually-clean white-label like `salon-name@plumenexus.com`).
+All transactional + marketing emails go through AWS SES via the `sendEmail()` abstraction in `functions/index.js`. Every send is per-tenant attributed (SES Tenants feature) for reputation isolation + per-tenant suppression.
 
-Two paths:
+Two paths for the sender identity:
 
-**Path 1: per-tenant domain (most professional, manual).**
-- Each new salon adds DNS records pointing at Resend
-- Resend verifies, you add the domain to a `tenants/{slug}.resendDomain` field
-- Cloud Functions read that field when sending and use it as `from:` instead of the default
-- Manual ~20 min per tenant first time
+**Path 1: per-tenant verified sending domain (most professional, manual).**
+- Each salon adds DKIM CNAMEs + SPF + DMARC for `send.theirbrand.com` in their DNS provider
+- AWS SES verifies the identity (in `us-west-2`)
+- Set `tenants/{id}/data/branding.fromAddress` to `"Salon Name <noreply@send.theirbrand.com>"`
+- `tenantFromAddress()` reads that field and uses it as `from:`
+- Manual ~20 min per tenant first time + SES identity-verification turnaround
 
-**Path 2: shared domain (zero per-tenant work).**
-- All tenants send from `noreply@plumenexus.com` (or per-tenant subaddress like `meraki-nail-studio@plumenexus.com`)
-- Verify `plumenexus.com` once with Resend
-- Use the salon's display name in the From header: `From: "Meraki Nail Studio" <noreply@plumenexus.com>`
-- Slight deliverability hit (clients see plumenexus.com in the address) but operationally trivial
+**Path 2: shared SES identity (zero per-tenant work, LIVE).**
+- All tenants send from the shared verified identity `send.plumenexus.com`
+- Display name in the From header carries the salon brand: `"Meraki Nail Studio <noreply@send.plumenexus.com>"`
+- `Reply-To:` set to the tenant's contact email so customer replies route to the salon
+- Standard SaaS pattern (Klaviyo, Postmark, Mailchimp all do this)
 
-**Recommendation:** start with Path 2 for v1, offer Path 1 as a Pro-tier upgrade later.
+**Status:** Path 2 is the default at `provisionTenant`. Path 1 is reserved as a Pro-tier perk; self-serve verification flow not built yet.
 
 ### D. Twilio per-tenant SMS
 
@@ -170,7 +171,7 @@ Apply gates via a small `useFeature(name)` hook reading `settings.plan`.
 | First-login wizard renders + accepts input | Browser-only | Log in as an admin in a tenant where `services.length < 3` and `_wizardCompleted` is unset. (Quickest: temporarily delete services in the existing meraki tenant via admin UI, or set `_wizardCompleted: false` in Firestore.) |
 | Service template imports correctly | Needs DB writes from the wizard UI | Run the wizard with the "Nail Salon" template — verify 9 services appear in Services module |
 | Wizard auto-detects empty tenant | Needs a freshly-created tenant + sign-in flow | Use the `?signup` form to create a test tenant under a different email, then sign in as that user |
-| Employee invite email lands in inbox | Resend SMTP path | Add an employee with your real personal email, click 📨 Invite, check inbox + spam |
+| Employee invite email lands in inbox | AWS SES send path | Add an employee with your real personal email, click 📨 Invite, check inbox + spam |
 | Subdomain `merakinailstudio.plumenexus.com` resolves | Wildcard DNS not yet configured (item A) | Set up wildcard DNS first |
 | Stripe Connect subscription billing | Item B not built | After building B, test with Stripe test cards 4242 |
 | Plan-tier enforcement | Not implemented (item F) | After implementing, sign in to a `plan: 'starter'` tenant and verify Pro tiles are gated |
@@ -178,7 +179,7 @@ Apply gates via a small `useFeature(name)` hook reading `settings.plan`.
 ## Recommended next steps (prioritized)
 
 1. **Wildcard DNS** (item A) — single biggest blocker; ~30 min once you decide on the domain
-2. **Path 2 shared-domain email** (item C) — verify `plumenexus.com` with Resend, swap `resendFrom` default
+2. ~~**Path 2 shared-domain email** (item C)~~ — **DONE.** `send.plumenexus.com` verified in SES us-west-2; tenants default to that identity via `branding.fromAddress`.
 3. **Stripe Connect SaaS billing** (item B) — needs design + ~3-5 days build. Until then, signups are technically free
 4. **Plan-tier enforcement** (item F) — ~1 day; trivial pattern, just needs to be applied
 5. **Path 1 per-tenant email** (item C) — only for tenants asking for it; build later as Pro upgrade

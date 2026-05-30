@@ -74,7 +74,7 @@ export default function TermsPage() {
 
       <h2>8. Third-party integrations</h2>
       <p>
-        Stripe (payments), Twilio (SMS), Resend (email), and Gusto (payroll) operate under
+        Stripe (payments), Twilio (SMS), AWS SES (email), and Gusto (payroll) operate under
         their own terms, which apply when you use those features. You are responsible for
         maintaining your own accounts with these providers and for any fees they charge.
       </p>

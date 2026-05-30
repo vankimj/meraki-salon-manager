@@ -67,7 +67,7 @@ export default function PrivacyPage() {
         <li><strong>Google Cloud / Firebase</strong> — hosting and database.</li>
         <li><strong>Stripe</strong> — payment processing.</li>
         <li><strong>Twilio</strong> — SMS messaging.</li>
-        <li><strong>Resend</strong> — email delivery.</li>
+        <li><strong>Amazon Web Services (AWS SES)</strong> — email delivery.</li>
         <li><strong>Anthropic (Claude)</strong> — AI features (zero-retention).</li>
         <li><strong>Gusto</strong> — payroll, only if you enable the integration.</li>
       </ul>

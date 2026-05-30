@@ -166,8 +166,8 @@ the flow becomes identical to 1.8.
    - `amount === amountRefunded` (full refund)
    - `isFullRefund: true`
    - `reason: 'requested_by_customer'` (or whatever you picked)
-5. **Check email** owner gets "Refund processed" email via Resend dashboard
-   (search outbox by recipient)
+5. **Check email** owner gets "Refund processed" email — check Cloud Logs of
+   `sendEmail` or AWS SES Console (us-west-2) → Reputation/Sending stats
 6. **Check UI** plan is unchanged (refund without cancellation = keep access)
 
 ### 2.2 Partial SaaS refund
@@ -348,7 +348,7 @@ Any future expiry, any 3-digit CVC, any 5-digit ZIP.
 | Disputes (all)  | `tenants/{id}/disputes/{disputeId}` (membership ones have `isMembership: true`) |
 | Cancellation    | Same settings doc, `cancelAtPeriodEnd` + `currentPeriodEnd` |
 | Payment status  | Same doc, `subscriptionStatus`                              |
-| Email delivery  | Resend Dashboard → Emails tab → filter by recipient         |
+| Email delivery  | AWS SES Console (us-west-2) → Reputation/Sending stats + Cloud Logs of `sendEmail` calls |
 | Webhook events  | `stripe events list --limit 20` or Stripe Dashboard → Logs  |
 
 ## 7. When something goes wrong
@@ -366,7 +366,7 @@ Plan not flipping after Checkout:
   `stripe subscriptions retrieve sub_xxx`
 
 Refund email not arriving:
-- Resend Dashboard → check if it bounced or was suppressed
+- AWS SES Console / `sesEventWebhook` Cloud Logs → check if it bounced or was suppressed (per-tenant suppression at `tenants/{id}/suppression/{hash}`)
 - Check `tenants/{tid}/emailSuppression/{email}` — global or per-tenant
   suppression silently drops sends
 - Run the relevant Vitest test in `functions/lib/billing.test.js` to confirm

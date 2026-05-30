@@ -62,7 +62,7 @@ The cohort is small, exclusive, and we want each member committed. Be honest abo
 
 ## What happens after submission (the autoresponder)
 
-The form should send an immediate confirmation email. Draft below — replace the placeholders, send via your existing Resend setup or Gmail.
+The form should send an immediate confirmation email. Draft below — replace the placeholders, send via the existing AWS SES setup (or Gmail for one-off manual sends).
 
 ```
 Subject: Got your Founders' Cohort application — here's what's next

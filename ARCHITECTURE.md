@@ -53,7 +53,7 @@ graph LR
 
     subgraph Comms["Comms"]
         Twilio["Twilio<br/>SMS"]
-        Resend["Resend<br/>email"]
+        SES["AWS SES<br/>email"]
         Expo["Expo Push<br/>(APNS + FCM)"]
     end
 
@@ -68,8 +68,10 @@ graph LR
     end
 
     Funcs --> Twilio
-    Funcs --> Resend
+    Funcs --> SES
     Funcs --> Expo
+
+    SES -.->|bounce/complaint<br/>SNS| Funcs
     Funcs --> Stripe
     Funcs --> Gusto
     Funcs --> Anthropic
@@ -82,7 +84,7 @@ graph LR
     classDef firebase fill:#FFA000,stroke:#FF6F00,color:#fff
     classDef external fill:#5b3b8c,stroke:#3d2660,color:#fff
     class Funcs firebase
-    class Twilio,Resend,Expo,Stripe,Gusto,Anthropic,Google external
+    class Twilio,SES,Expo,Stripe,Gusto,Anthropic,Google external
 ```
 
 ### Layer 3 — Edge + distribution
@@ -134,7 +136,7 @@ Grouped by purpose:
 | **Auth + user lookup** | `getMyTenantRole`, `getTenantMetadata` |
 | **Public booking + check-in** | `getPublicAvailability`, `getPublicAppointment`, `findOrCreateClient`, `manageAppointment`, `getApptManageLink` |
 | **POS / Stripe** | `createPaymentIntent`, `createCheckoutSession`, `stripeWebhook`, `createMembershipCheckout`, `createMembershipPortal`, `emailMembershipPaymentLink`, `retryGiftCardEmail` |
-| **Email (Resend)** | `sendApptNotification`, `sendDailyReminders`, `sendTechAppointmentReminders`, `sendReceiptEmail`, `sendReviewRequestEmail`, `sendReviewReceivedNotification`, `sendGiftCardEmail`, `sendChatNotification`, `sendBookingConfirmation`, `sendDirectEmail`, `emailEmployeeInvite`, `sendAccessRequestNotification` |
+| **Email (AWS SES)** | `sendApptNotification`, `sendDailyReminders`, `sendTechAppointmentReminders`, `sendReceiptEmail`, `sendReviewRequestEmail`, `sendReviewReceivedNotification`, `sendGiftCardEmail`, `sendChatNotification`, `sendBookingConfirmation`, `sendDirectEmail`, `emailEmployeeInvite`, `sendAccessRequestNotification`, `sesEventWebhook` |
 | **SMS (Twilio)** | `sendDirectSms`, `sendSMSCampaign`, Twilio inbound webhook (server-side route) |
 | **Marketing** | `sendMarketingCampaign`, `runScheduledCampaigns`, `autoBirthdayCampaign`, `autoLapsedCampaign`, `chatWithMarketing`, `draftConflictMessages` |
 | **AI (Anthropic)** | `chatWithReports`, `chatWithSalon`, `chatWithMarketing` (yes, two callables share AI for marketing context) |
@@ -321,7 +323,7 @@ sequenceDiagram
     participant CF as createTenantOnboarding<br/>Cloud Function
     participant FS as Firestore
     participant FA as Firebase Auth<br/>(magic link)
-    participant R as Resend
+    participant R as AWS SES
     participant App as Web app at<br/>{newSalon}.plumenexus.com
 
     U->>PN: signs up (salon name, email, plan)
@@ -415,7 +417,7 @@ See [`reference_firebase_quirks.md`](memory) for the full list. Summary:
 |---|---|---|---|---|
 | **Stripe** | POS PaymentIntents · subscriptions · webhooks | `createPaymentIntent`, `createMembershipCheckout`, `stripeWebhook` | `STRIPE_SECRET_KEY` (secret), `STRIPE_WEBHOOK_SECRET` (secret), `STRIPE_PRO_PRICE_ID`, `STRIPE_STARTER_PRICE_ID` | Jonathan |
 | **Twilio** | SMS send + inbound webhook | `sendDirectSms`, `sendSMSCampaign`, `twilioInboundSms` | `TWILIO_AUTH_TOKEN` (secret), `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_FROM` | Jonathan |
-| **Resend** | All transactional email | All `send*Email` functions | `RESEND_API_KEY` | Jonathan |
+| **AWS SES** | All transactional + marketing email | All `send*Email` functions (via `sendEmail()` abstraction) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SES_REGION`, `AWS_SES_CONFIG_SET`, `AWS_SES_SHARED_IDENTITY_ARN` | Jonathan |
 | **Gusto** | Payroll OAuth + submit + 1099s | `gustoOAuthCallback`, `gustoSubmitPayroll`, etc. | `GUSTO_CLIENT_ID`, `GUSTO_CLIENT_SECRET`, `GUSTO_REDIRECT_URI` | Jonathan |
 | **Anthropic** | Reports chatbot · voice command parsing | `chatWithReports`, `chatWithSalon`, `chatWithMarketing`, `voiceCommand` | `ANTHROPIC_API_KEY` (secret) | Jonathan |
 | **Google Cloud** | OAuth (web + iOS clients) · Maps API · Firebase | Firebase Console + Cloud Console | `GOOGLE_MAPS_API_KEY`, OAuth client IDs in mobile app source | Jonathan |
@@ -438,7 +440,7 @@ sequenceDiagram
     participant WP as Web (booking page)
     participant CF as Cloud Functions
     participant FS as Firestore
-    participant R as Resend
+    participant R as AWS SES
     participant T as Twilio
 
     C->>WP: opens ?book=1
@@ -467,7 +469,7 @@ sequenceDiagram
     participant M as Mobile app
     participant FS as Firestore
     participant CF as Cloud Functions
-    participant R as Resend
+    participant R as AWS SES
     participant E as Expo Push
     participant D as Tech device
 
@@ -494,7 +496,7 @@ sequenceDiagram
     participant CF as Cloud Functions
     participant Stp as Stripe
     participant FS as Firestore
-    participant R as Resend
+    participant R as AWS SES
     participant G as Gusto
 
     S->>W: opens checkout modal
@@ -553,7 +555,7 @@ sequenceDiagram
     participant CF as Cloud Functions
     participant FS as Firestore
     participant FA as Firebase Auth
-    participant R as Resend
+    participant R as AWS SES
 
     U->>PN: completes signup form (salon name, email, plan)
     PN->>CF: createTenantOnboarding(name, email, slug)
@@ -593,8 +595,10 @@ firebase functions:secrets:set <NAME>
 
 | Name | Used for |
 |---|---|
-| `RESEND_API_KEY` | Resend API auth (worth promoting to defineSecret eventually) |
-| `RESEND_FROM` | Default sender; overridden per-tenant via `data/settings.fromAddress` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | SES SendEmail + SES Tenants IAM creds (worth promoting to defineSecret eventually) |
+| `AWS_SES_REGION` | SES region (currently `us-west-2`) |
+| `AWS_SES_CONFIG_SET` | Configuration Set for bounce/complaint event routing to SNS |
+| `AWS_SES_SHARED_IDENTITY_ARN` | Sending identity ARN (`send.plumenexus.com`) associated to each tenant's SES Tenant |
 | `GOOGLE_MAPS_API_KEY` | Address autocomplete in client/employee forms |
 | `PUBLIC_APP_URL` | Default unsubscribe + manage-appt link base |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`, `TWILIO_FROM` | Twilio config |
@@ -614,7 +618,7 @@ What breaks when each integration is down, and what the user sees:
 | **Cloud Functions** | Callables fail; emails/SMS queue but don't fire | Firestore writes (notifications/{id}) buffer until functions return |
 | **Stripe** | POS card payments fail; cash/check still work | Cash fallback always available |
 | **Twilio** | SMS fails (campaigns + reminders); email reminders still go | Email reminders are primary channel |
-| **Resend** | Email fails (receipts + reminders + notifications) | Notifications doc stays unsent for retry; admin sees `error` field |
+| **AWS SES** | Email fails (receipts + reminders + notifications) | Notifications doc stays unsent for retry; admin sees `error` field. Persistent failures get added to per-tenant suppression list via `sesEventWebhook` |
 | **Gusto** | Payroll submit fails | Admin reverts to running payroll manually in Gusto's own UI |
 | **Anthropic** | Reports chatbot returns "AI unavailable"; voice command falls back to manual entry | Non-AI Reports still work; voice is optional |
 | **Expo Push** | Mobile alerts don't deliver; email notifications still go | Email is primary, push is secondary |

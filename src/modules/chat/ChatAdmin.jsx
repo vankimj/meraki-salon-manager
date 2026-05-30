@@ -298,7 +298,7 @@ function MessageBubble({ msg, isStaff }) {
           {isSms && msg.twilioError && (
             <span style={{ color: '#fca5a5' }}>· error</span>
           )}
-          {isEmail && msg.resendError && (
+          {isEmail && msg.providerError && (
             <span style={{ color: '#fca5a5' }}>· error</span>
           )}
         </div>

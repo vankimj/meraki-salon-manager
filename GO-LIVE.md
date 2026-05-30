@@ -42,7 +42,7 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 
 ## T-7 days — Integrations
 
-- [ ] **Resend** (staff notifications, daily reminders, receipts) — verify API key in Functions config, send test from a Cloud Function.
+- [ ] **AWS SES** (staff notifications, daily reminders, receipts) — verify `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` in `functions/.env`, send test from a Cloud Function. Confirm `sesEventWebhook` is subscribed to the SNS topic for bounce/complaint events.
 - [ ] **Stripe** — secrets configured, test mode → live keys swap, run a $1 charge through checkout to confirm.
 - [ ] **Twilio** SMS — Meraki launches as Pro tier so the platform Twilio path is in play. See "SMS tier policy" + "SMS setup (Pro tier only)" sections below for the full ISV/brand/campaign work. Skip entirely if Meraki launches email-only.
 - [ ] **Gusto** payroll — only needed when you actually run payroll through the app. Defer unless you're running a pay period imminently.
@@ -60,8 +60,8 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 ## T-3 days — Marketing & Compliance
 
 ### Email setup
-- [ ] **Domain verification:** confirm sender domain (e.g. `merakinailstudio.com`) is verified in Resend Console → Domains. All four DNS records green.
-- [ ] **Resend `RESEND_FROM`** in `functions/.env` matches the verified domain (not `vankim.me` or `onboarding@resend.dev`).
+- [ ] **Domain verification:** confirm sender domain (`send.plumenexus.com`) is Verified in AWS SES Console → Identities (us-west-2). DKIM CNAMEs + SPF + DMARC + MAIL FROM records all green in Cloudflare DNS. (Meraki sends from the shared identity by default — no per-tenant DNS needed unless the tenant opts into a vanity sending domain.)
+- [ ] **Per-tenant `branding.fromAddress`** (Firestore: `tenants/{id}/data/branding`) reads `"Meraki Nail Studio <noreply@send.plumenexus.com>"` or whatever the salon prefers — never `vankim.me` or a test sender.
 - [ ] **Send a test email campaign** to yourself via Test subjects audience. Confirm: lands in inbox (not spam), branded card renders, `{firstName}` and subject-line `{firstName}` substitute correctly.
 - [ ] **Click the Unsubscribe link** in the test email → land on green confirmation page. Verify the client profile shows 🔕 with `marketingOptOutVia: email_unsubscribe_link`.
 - [ ] **Re-send to that audience** — opted-out client should be excluded automatically; recipient count drops by one.
@@ -70,7 +70,7 @@ Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by
 
 | Tier | SMS path | Platform cost |
 |---|---|---|
-| **Solo (free)** | **Email + push only.** No SMS. Resend handles reminders + marketing. | $0 |
+| **Solo (free)** | **Email + push only.** No SMS. AWS SES handles reminders + marketing. | $0 |
 | **Pro** | Platform-owned **Toll-Free number per tenant** via Plume Nexus's Twilio account, with TFN Verification submitted per tenant. | **$2/mo fixed per tenant** + ~$0.008/segment usage |
 | **Any tier (BYOT)** | Tenant plugs their own Twilio creds + number into Admin → Settings → SMS. Their account, their verification. | $0 |
 
@@ -167,7 +167,7 @@ Everything below is **Meraki-as-Pro-tier launch**: Meraki uses the platform Twil
 ### Marketing post-launch
 - [ ] **Unsubscribe activity**: every couple days, scan Clients for new `marketingOptOut: true` records — abnormally high opt-out rates signal a bad campaign (subject too clickbait, too-frequent sends, etc.).
 - [ ] **Twilio cost monitor**: Twilio Console → Usage → SMS. Real cost should track ~$0.0079 × segments × recipients. Spikes could indicate retry loops or unintended re-sends.
-- [ ] **Resend deliverability**: Resend Dashboard → Logs. Watch for bounces, complaints, blocks. >2% bounce rate is a red flag — clean stale email addresses.
+- [ ] **SES deliverability**: AWS SES Console (us-west-2) → Reputation metrics. Watch bounce + complaint rates. Bounces >2% or complaints >0.1% are red flags — clean stale email addresses. Per-tenant suppression list (Firestore: `tenants/{id}/suppression/{hash}`) populated automatically via `sesEventWebhook`.
 - [ ] **Campaign delivery rates**: every campaign's activity log should show <5% failed for a healthy domain. Higher → check A2P/TFN status, opt-out clean-up, recipient list quality.
 
 ---

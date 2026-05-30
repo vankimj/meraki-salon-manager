@@ -111,9 +111,9 @@ export default function TrustPage() {
             <Integration name="Twilio"      what="SMS messaging"
               data="Phone numbers, message content for sent/received SMS."
               note="Dedicated phone number per tenant; separate marketing vs transactional numbers." />
-            <Integration name="Resend"      what="Email delivery"
+            <Integration name="AWS SES"     what="Email delivery"
               data="Email addresses, message content for sent/received email, delivery status."
-              note="Verified-domain sending. Inbound email parsing routes replies to the right client thread." />
+              note="Verified-domain sending with per-tenant reputation and suppression via SES Tenants." />
             <Integration name="Anthropic (Claude)"  what="AI features"
               data="Anonymized salon data passed in for the question being asked. Never trained on; never retained."
               note="Zero-retention agreement on our API traffic. Server-side calls only — no API key in your browser." />

@@ -97,7 +97,7 @@ Pattern: cron-driven functions that fan out across every active tenant via the `
 | `autoLapsedCampaign` | Win-back campaigns (Mon 11:00 ET) | `forEachActiveTenant` + `skipPaused` |
 | `runScheduledCampaigns` | Marketing campaign sweep (every 1m) | `forEachActiveTenant` — race-safe per-campaign claim transaction |
 
-**Important:** the cross-tenant iteration is **intentional and necessary** — these functions HAVE to read appointment/client data for ALL tenants to send reminders on each tenant's behalf. The principle #10 enforcement is that **none of this data is ever returned to the platform admin or any UI accessible to the founder**. The functions only push it back out to each tenant's own clients (via Resend / Twilio with the tenant's own from-domain / sending number).
+**Important:** the cross-tenant iteration is **intentional and necessary** — these functions HAVE to read appointment/client data for ALL tenants to send reminders on each tenant's behalf. The principle #10 enforcement is that **none of this data is ever returned to the platform admin or any UI accessible to the founder**. The functions only push it back out to each tenant's own clients (via AWS SES / Twilio with the tenant's own from-address / sending number).
 
 **`forEachActiveTenant` semantics:**
 - Iterates `db.collection('tenants').get()` (no `where`, so legacy tenants without an `active` field are still included)
@@ -106,7 +106,7 @@ Pattern: cron-driven functions that fan out across every active tenant via the `
 - Per-tenant try/catch — a broken tenant logs and continues; the rest of the sweep still runs
 - Logs `[label] tenants=N ran=N skipped=N failed=N` at the end for Cloud Logs visibility
 
-**Branding caveat:** the `from:` address for emails is currently a single shared `RESEND_FROM` env var (`Meraki Nail Studio <noreply@merakinailstudio.com>`). When tenants want their own verified domain, this needs to read from the tenant doc. Not a security issue — just a per-tenant branding follow-up.
+**Branding:** the `from:` address for emails is per-tenant via `tenantFromAddress(db, tenantId)`, which reads `tenants/{id}/data/branding.fromAddress` (BYO override) or falls back to `${tenantName} <noreply@send.plumenexus.com>` on the shared AWS SES identity. Fixed in v4 (2026-05-10).
 
 ### Category C-bis — Single-tenant scheduled (1)
 
@@ -175,7 +175,7 @@ Pattern: cron-driven functions that fan out across every active tenant via the `
 3. ✅ **Done (v5 — 2026-05-10)** — `chatWithSalon`, `chatWithReports`, `voiceCommand`, `draftConflictMessages`, `createPaymentIntent`, and `refreshGoogleReviews` all accept `tenantId` from request data (validated `[a-z0-9-]{1,64}`), fall back to `TENANT_ID` for legacy callers, and gate auth/staff/admin checks against the supplied id. `chatWithSalon` got an IP-rate-limit (60/hr) since it's public + bills Anthropic per call. Frontend salon-app callers (CheckoutModal, ScheduleAdmin, VoiceAssistant, ReportsAdmin, SalonWebfront, Admin) now pass `tenantId: TENANT_ID` from the subdomain-resolved constant in `src/lib/tenant.js`.
 4. **Audit all `webfront` config endpoints** — frontend `fetchWebfrontConfig`/`fetchGoogleReviews` are already multi-tenant via the subdomain-resolved `tenantDoc()` helper (no changes needed). Cloud-function `refreshGoogleReviews` swept up under #3 above.
 5. **Replace TenantsTab in salon app** with deep-link to platform admin (`platform-admin.web.app`).
-6. ✅ **Done (v4 — 2026-05-10)** — `RESEND_FROM` env var removed in favor of `tenantFromAddress(db, tenantId)` helper. Default sender is `${tenantName} <noreply@plumenexus.com>`; per-tenant override via `tenants/{id}.fromAddress` (used by Meraki to keep sending from `noreply@merakinailstudio.com`). The two platform-level emails — onboarding welcome and `submitContactInquiry` admin notification — explicitly hardcode `Plume Nexus <noreply@plumenexus.com>` since they're not tenant-bound. **Open prerequisite for tenant #2:** verify `plumenexus.com` in Resend (DKIM/SPF DNS records) — until then any new tenant without a `fromAddress` override would send-fail.
+6. ✅ **Done (v4 — 2026-05-10; SES cutover 2026-05-17)** — `RESEND_FROM` env var removed in favor of `tenantFromAddress(db, tenantId)` helper. Default sender is `${tenantName} <noreply@send.plumenexus.com>`; per-tenant override via `tenants/{id}/data/branding.fromAddress`. The two platform-level emails — onboarding welcome and `submitContactInquiry` admin notification — explicitly hardcode `Plume Nexus <noreply@send.plumenexus.com>` since they're not tenant-bound. **Prerequisite met:** `send.plumenexus.com` verified in AWS SES us-west-2 on 2026-05-17.
 
 ### Ongoing
 1. **Re-run this audit** before any release that adds new cloud functions.

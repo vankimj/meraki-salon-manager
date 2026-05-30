@@ -2345,7 +2345,7 @@ export async function sendSmsToClient(clientId, body) {
 }
 
 // Outbound email to a client. Same shape as sendSmsToClient but goes via
-// Resend and adds the message to the chats thread with channel='email'.
+// AWS SES and adds the message to the chats thread with channel='email'.
 export async function sendEmailToClient(clientId, subject, body) {
   const fn = callFn('sendDirectEmail');
   const res = await fn({ tenantId: TENANT_ID, clientId, subject, body });

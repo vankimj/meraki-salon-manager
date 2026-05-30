@@ -229,7 +229,7 @@ export function PrivacyScreen() {
         <ul>
           <li><strong>Google Firebase</strong> — secure storage of your client record, appointments, and visit history.</li>
           <li><strong>Stripe</strong> — payment processing.</li>
-          <li><strong>Resend</strong> — sending transactional and marketing emails.</li>
+          <li><strong>Amazon Web Services (AWS SES)</strong> — sending transactional and marketing emails.</li>
           <li><strong>Twilio</strong> — sending transactional and marketing text messages.</li>
           <li><strong>Google Sign-In</strong> — authenticating you when you choose to log in with Google.</li>
         </ul>

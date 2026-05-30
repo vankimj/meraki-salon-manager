@@ -108,7 +108,7 @@ export default function Phase5Team({ onboarding, onAdvance, saving }) {
           succeeded++;
           setSendCount(succeeded);
         } catch (ex) {
-          // Continue on per-tech failure (bad email, transient Resend issue)
+          // Continue on per-tech failure (bad email, transient send error)
           logError('onboarding_team_invite', ex, { empId: t.id, email: t.email });
         }
       }

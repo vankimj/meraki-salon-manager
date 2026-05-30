@@ -762,7 +762,7 @@ function CampaignDiagnostics({ c }) {
       {(stuck || stalled) && (
         <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: 11, color: '#78350f' }}>
           ⚠ {stuck ? `Campaign hasn't started after 30s — Cloud Function may not be picking it up. Check \`firebase functions:log --only ${fnName}\`.`
-                    : `No progress in 30s — function may be slow, throttled by ${isSms ? 'Twilio' : 'Resend'}, or about to hit its timeout.`}
+                    : `No progress in 30s — function may be slow, throttled by ${isSms ? 'Twilio' : 'AWS SES'}, or about to hit its timeout.`}
         </div>
       )}
 

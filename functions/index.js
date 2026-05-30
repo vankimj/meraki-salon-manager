@@ -4,7 +4,6 @@ const { onCall, onRequest, HttpsError }= require('firebase-functions/v2/https');
 const { initializeApp }    = require('firebase-admin/app');
 const { getFirestore }     = require('firebase-admin/firestore');
 const { defineString, defineSecret } = require('firebase-functions/params');
-const { Resend }           = require('resend');
 const Anthropic            = require('@anthropic-ai/sdk');
 const {
   SESv2Client, SendEmailCommand,
@@ -25,13 +24,6 @@ const TENANT_ID   = 'tf46226a93a1b546b';
 // gates regardless of tenant configuration.
 const BOOTSTRAP_ADMINS = ['jvankim@gmail.com'];
 
-const resendKey       = defineString('RESEND_API_KEY',      { default: '' });
-// ── Email provider config (Resend during migration → SES post-cutover) ──
-// EMAIL_PROVIDER routes every sendEmail() call to either Resend or SES.
-// Default 'resend' so behavior is unchanged until the cutover. Flip via
-//   firebase functions:config:set email_provider=ses
-// then redeploy. Per-tenant override planned but not yet implemented.
-const emailProvider   = defineString('EMAIL_PROVIDER', { default: 'resend' });
 const awsSesRegion    = defineString('AWS_SES_REGION', { default: 'us-west-2' });
 // SES Configuration Set name. Optional but recommended: gates event
 // destinations (bounces/complaints → SNS topic). When unset, SES still
@@ -57,10 +49,6 @@ const awsSesSharedIdentityArn = defineString('AWS_SES_SHARED_IDENTITY_ARN', { de
 // to each sendEmail entry-point. See email-strategy memory.
 const awsAccessKey    = defineString('AWS_ACCESS_KEY_ID',     { default: '' });
 const awsSecretKey    = defineString('AWS_SECRET_ACCESS_KEY', { default: '' });
-// RESEND_FROM env var was the global single-tenant sender. Removed in favor of
-// per-tenant tenantFromAddress() — see helper definition below. Setting still
-// honored as the per-tenant override via the `fromAddress` field on the tenant
-// doc.
 const mapsApiKey      = defineString('GOOGLE_MAPS_API_KEY', { default: '' });
 const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://meraki-salon-manager.web.app' });
 // HMAC signing keys for two distinct token types. Split into separate
@@ -226,8 +214,7 @@ async function callerRole(db, tenantId, request) {
 // Returns the RFC 5322 "from" mailbox to use for emails sent on a tenant's
 // behalf. Resolution order:
 //   1. tenant.fromAddress (explicit BYO override — used by tenants who have
-//      verified their own domain in Resend, like Meraki on
-//      merakinailstudio.com)
+//      verified their own SES sending identity)
 //   2. shared platform sender: "{tenant.name} <noreply@plumenexus.com>"
 //
 // Display name is sanitized so RFC 5322 special chars (<, >, ", comma,
@@ -303,19 +290,14 @@ async function tenantBranding(db, tenantId) {
   return brand;
 }
 
-// ── Email-sending abstraction (Resend ⇄ SES provider-agnostic) ───────────────
-// Every email send across the codebase routes through sendEmail(). Two
-// reasons for the abstraction:
-//   1. Provider swap: EMAIL_PROVIDER flag lets us migrate Resend → SES one
-//      flip + deploy. No call-site edits at cutover.
-//   2. Suppression precheck: every recipient is checked against the
-//      platform suppression list (populated by sesEventWebhook from
-//      SES bounce/complaint SNS notifications) before we spend an API
-//      call. Cheap insurance against deliverability damage.
+// ── Email-sending abstraction ───────────────
+// Every email send across the codebase routes through sendEmail() so the
+// platform suppression list (populated by sesEventWebhook from SES
+// bounce/complaint SNS notifications) gets checked before every API call.
+// Cheap insurance against deliverability damage.
 //
-// Returns Resend-style { data, error } shape so existing error-handling
-// code (~20 call sites) doesn't need to change pattern.
-//   success → { data: { id: '<providerId>' }, error: null }
+// Returns { data, error } shape:
+//   success → { data: { id: '<sesMessageId>' }, error: null }
 //   failure → { data: null, error: { message: '...', suppressed?: true } }
 
 // Cached SES client (lazy init — only constructed when first SES send
@@ -464,17 +446,14 @@ async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1) {
 }
 
 // ── SES Tenant lifecycle helpers ─────────────────────────────────────
-// All gated by EMAIL_PROVIDER === 'ses'. Until cutover, these no-op so
-// provisionTenant / deleteTenant don't depend on AWS being configured.
-// All best-effort: failures log + continue, since SES Tenant absence
-// just means the send falls back to account-level scope (still works).
+// Best-effort: failures log + continue, since SES Tenant absence just
+// means the send falls back to account-level scope (still works).
 
 // Create an SES Tenant for a Plume Nexus tenant. Idempotent — if the
 // tenant already exists (returned as AlreadyExistsException),
 // treat as success. The tenant name must match the Plume Nexus
 // tenantId 1:1 so every sendEmail() can pass TenantName=tenantId.
 async function ensureSesTenant(tenantId) {
-  if ((emailProvider.value() || 'resend') !== 'ses') return false;
   if (!tenantId) return false;
   try {
     const ses = getSesClient();
@@ -494,7 +473,6 @@ async function ensureSesTenant(tenantId) {
 // association, SendEmailCommand with TenantName=X will fail because
 // the identity is not assigned to tenant X. Idempotent.
 async function associateSesIdentityToTenant(tenantId, identityArn) {
-  if ((emailProvider.value() || 'resend') !== 'ses') return false;
   const arn = identityArn || awsSesSharedIdentityArn.value();
   if (!tenantId || !arn) return false;
   try {
@@ -517,7 +495,6 @@ async function associateSesIdentityToTenant(tenantId, identityArn) {
 // the tenant's resource associations + suppression entries as a
 // cascade. Idempotent — NotFoundException is treated as success.
 async function deleteSesTenant(tenantId) {
-  if ((emailProvider.value() || 'resend') !== 'ses') return false;
   if (!tenantId) return false;
   try {
     const ses = getSesClient();
@@ -558,39 +535,13 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
     console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)} tenant=${tenantId || 'n/a'}`);
     return { data: null, error: { message: 'address_suppressed', suppressed: true } };
   }
-  const provider = (emailProvider.value() || 'resend').toLowerCase();
   try {
-    const id = provider === 'ses'
-      ? await sendViaSES   ({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl })
-      : await sendViaResend({ from, to, subject, html, replyTo, tags, unsubscribeUrl });
+    const id = await sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl });
     return { data: { id }, error: null };
   } catch (e) {
-    console.error(`[sendEmail] provider=${provider} to=${to} failed:`, e?.message);
+    console.error(`[sendEmail] to=${to} failed:`, e?.message);
     return { data: null, error: { message: e?.message || 'send_failed', name: e?.name || 'SendError' } };
   }
-}
-
-async function sendViaResend({ from, to, subject, html, replyTo, tags, unsubscribeUrl }) {
-  const apiKey = resendKey.value();
-  if (!apiKey) throw new Error('resend_not_configured');
-  const resendClient = new Resend(apiKey);
-  // Resend custom headers via `headers` object. Includes List-Unsubscribe
-  // pair when caller provides an unsubscribeUrl (marketing sends only —
-  // CAN-SPAM + Gmail/Apple Mail one-click compliance).
-  const customHeaders = unsubscribeUrl ? {
-    'List-Unsubscribe':      `<${unsubscribeUrl}>`,
-    'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-  } : undefined;
-  const res = await resendClient.emails.send({
-    from, to, subject, html,
-    reply_to: replyTo || undefined,
-    tags:     Array.isArray(tags) ? tags : undefined,
-    headers:  customHeaders,
-  });
-  // Resend returns { data, error } — surface error as throw so caller
-  // gets a uniform shape from sendEmail.
-  if (res.error) throw new Error(res.error.message || JSON.stringify(res.error));
-  return res.data?.id || null;
 }
 
 async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl }) {
@@ -924,8 +875,8 @@ exports.sendReceiptEmail = onDocumentCreated(
     const data   = snap.data();
     if (!data || data.sent || data.error) return;
 
-    const apiKey = resendKey.value();
-    if (!apiKey) { await snap.ref.update({ error: 'resend_not_configured' }); return; }
+    const apiKey = awsAccessKey.value();
+    if (!apiKey) { await snap.ref.update({ error: 'email_not_configured' }); return; }
 
     const { clientName, clientEmail, techName, date, startTime, services = [], retailProducts = [], payment = {} } = data;
     if (!clientEmail) { await snap.ref.update({ error: 'no_email' }); return; }
@@ -1068,9 +1019,9 @@ function buildMarketingHtml(bodyHtml, promoCode, promoLabel, ctaText, ctaUrl, un
 // across channels. Used by both the immediate trigger and the scheduled
 // runner.
 async function processEmailCampaign(tenantId, docRef, data) {
-  const apiKey = resendKey.value();
+  const apiKey = awsAccessKey.value();
   if (!apiKey) {
-    await docRef.update({ status: 'failed', error: 'resend_not_configured' });
+    await docRef.update({ status: 'failed', error: 'email_not_configured' });
     return;
   }
 
@@ -1209,24 +1160,24 @@ async function processEmailCampaign(tenantId, docRef, data) {
           tags: [{ name: 'kind', value: 'marketing' }, { name: 'campaign', value: docRef.id }],
         });
         if (result?.error) {
-          // Resend returns { data: null, error: { name, message, ...} }
+          // sendEmail returns { data: null, error: { name, message, ...} }
           // rather than throwing for most validation errors. Capture it.
-          const code   = result.error.name || result.error.statusCode || 'RESEND_ERROR';
+          const code   = result.error.name || result.error.statusCode || 'SEND_ERROR';
           const reason = result.error.message || JSON.stringify(result.error);
-          console.error(`[processEmailCampaign] ${email} resend-error code=${code} reason=${reason}`);
+          console.error(`[processEmailCampaign] ${email} send-error code=${code} reason=${reason}`);
           attempts.push({ name: name || '(unknown)', email, status: 'failed', code: String(code), reason, promoCode: promoCode || null, at });
         } else {
-          attempts.push({ name: name || '(unknown)', email, status: 'sent', resendId: result?.data?.id || null, promoCode: promoCode || null, at });
+          attempts.push({ name: name || '(unknown)', email, status: 'sent', providerMessageId: result?.data?.id || null, promoCode: promoCode || null, at });
         }
       } catch (err) {
         const code = err?.name || err?.code || 'UNKNOWN';
-        const reason = err?.message || 'Unknown Resend error';
+        const reason = err?.message || 'Unknown send error';
         console.error(`[processEmailCampaign] ${email} threw code=${code} reason=${reason}`);
         attempts.push({ name: name || '(unknown)', email, status: 'failed', code: String(code), reason, promoCode: promoCode || null, promoMintError, at });
       }
 
-      // Resend rate limit: ~10 req/sec on free tier, more on paid. 50ms
-      // pacing keeps us well under either ceiling.
+      // SES default rate limit: 14 sends/sec (production access). 50ms
+      // pacing keeps us well under the ceiling.
       await new Promise(r => setTimeout(r, 50));
     }
 
@@ -1735,8 +1686,8 @@ exports.getMyClientRecord = onCall({ cors: true }, async (request) => {
 
 // email to a newly-added employee. Owner clicks "Send invite" in
 // EmployeesAdmin and we email a Google sign-in link (tenant subdomain) so
-// the tech can join with one click. Admin gate; uses the owner's verified
-// Resend domain.
+// the tech can join with one click. Admin gate; uses the shared SES
+// sender (or per-tenant override).
 exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
   const { tenantId: tid, employeeId } = request.data || {};
   const tenantId = tid || TENANT_ID;
@@ -1756,8 +1707,8 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
   // tenants/{tenantId}.subdomain).
   const signInUrl = await tenantBaseUrl(db, tenantId);
 
-  const apiKey = resendKey.value();
-  if (!apiKey) throw new HttpsError('unavailable', 'Resend not configured');
+  const apiKey = awsAccessKey.value();
+  if (!apiKey) throw new HttpsError('unavailable', 'Email is not configured');
   const firstName = (emp.name || 'there').split(' ')[0];
   const brand = await tenantBranding(db, tenantId);
   const html = buildAutoEmail(
@@ -1999,8 +1950,8 @@ exports.sendReviewRequestEmail = onDocumentCreated(
     const data = snap.data();
     if (!data || data.sent || data.error) return;
 
-    const apiKey = resendKey.value();
-    if (!apiKey) { await snap.ref.update({ error: 'resend_not_configured' }); return; }
+    const apiKey = awsAccessKey.value();
+    if (!apiKey) { await snap.ref.update({ error: 'email_not_configured' }); return; }
 
     const { clientName, clientEmail, googleReviewUrl } = data;
     if (!clientEmail)              { await snap.ref.update({ error: 'no_email' });      return; }
@@ -2106,7 +2057,7 @@ exports.sendAccessRequestNotification = onDocumentCreated(
     const tenantId = event.params.tenantId;
 
     const req    = snap.data();
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) return;
 
     // Find admin emails — read the projection (data/users.adminEmails[])
@@ -2221,10 +2172,10 @@ exports.sendApptNotification = onDocumentCreated(
         return;
       }
 
-      const apiKey = resendKey.value();
+      const apiKey = awsAccessKey.value();
       if (!apiKey) {
-        console.warn('[Notif] RESEND_API_KEY not set — skipping email for', data.techName);
-        await ref.update({ error: 'resend_not_configured' });
+        console.warn('[Notif] AWS SES not configured — skipping email for', data.techName);
+        await ref.update({ error: 'email_not_configured' });
         return;
       }
       const brand    = await tenantBranding(db, tenantId);
@@ -2451,7 +2402,7 @@ function buildMeetingReminderHtml(meeting, participantName, timeLabel, brand) {
 </html>`;
 }
 
-async function sendMeetingReminderBatch(resend, fromAddr, brand, meeting, participants, timeLabel, ref, flag) {
+async function sendMeetingReminderBatch(fromAddr, brand, meeting, participants, timeLabel, ref, flag) {
   const withEmail = (participants || []).filter(p => p.email);
   await Promise.all(withEmail.map(p =>
     sendEmail({
@@ -2468,8 +2419,8 @@ async function sendMeetingReminderBatch(resend, fromAddr, brand, meeting, partic
 exports.sendMeetingReminders = onSchedule(
   { schedule: 'every 15 minutes', timeZone: 'America/New_York' },
   async () => {
-    const apiKey = resendKey.value();
-    if (!apiKey) { console.warn('[MeetingReminders] RESEND_API_KEY not set — skipping'); return; }
+    const apiKey = awsAccessKey.value();
+    if (!apiKey) { console.warn('[MeetingReminders] AWS SES not configured — skipping'); return; }
     const today  = new Date().toISOString().slice(0, 10);
     const now    = Date.now();
 
@@ -2490,11 +2441,11 @@ exports.sendMeetingReminders = onSchedule(
         const diffMin = (startTimestamp - now) / 60000;
 
         if (diffMin >= 55 && diffMin <= 75 && !reminders.sent60) {
-          await sendMeetingReminderBatch(resend, fromAddr, brand, meeting, participants, '1 hour',     docSnap.ref, 'sent60');
+          await sendMeetingReminderBatch(fromAddr, brand, meeting, participants, '1 hour',     docSnap.ref, 'sent60');
           batchesSent++;
         }
         if (diffMin >= 10 && diffMin <= 25 && !reminders.sent15) {
-          await sendMeetingReminderBatch(resend, fromAddr, brand, meeting, participants, '15 minutes', docSnap.ref, 'sent15');
+          await sendMeetingReminderBatch(fromAddr, brand, meeting, participants, '15 minutes', docSnap.ref, 'sent15');
           batchesSent++;
         }
       }
@@ -2513,9 +2464,9 @@ exports.sendDailyReminders = onSchedule(
   // prevents double-sends if the cron ever fires twice on the same hour.
   { schedule: 'every 1 hours', timeZone: 'America/New_York' },
   async () => {
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) {
-      console.warn('[Reminders] RESEND_API_KEY not set — skipping');
+      console.warn('[Reminders] AWS SES not configured — skipping');
       return;
     }
     const tomorrow = tomorrowStr();
@@ -2644,7 +2595,7 @@ exports.sendTechAppointmentReminders = onSchedule(
     secrets: [twilioToken],
   },
   async () => {
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     const twSid       = twilioSid.value();
     const twToken     = twilioToken.value();
     const twApiKeySid = twilioApiKeySid.value();
@@ -2764,7 +2715,7 @@ exports.sendTechAppointmentReminders = onSchedule(
         const wantsSms   = techChannel === 'sms'   || techChannel.includes('sms')   || techChannel === 'both' || techChannel === 'all';
         const wantsPush  = techChannel === 'push'  || techChannel.includes('push')  || techChannel === 'all';
 
-        if (wantsEmail && resend && emp.email) {
+        if (wantsEmail && emp.email) {
           try {
             const subject = `[${minutesAway}m] ${clientLabel} at ${startLabel} — ${services}`;
             const html = buildAutoEmail(
@@ -2853,7 +2804,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const appt = snap.data();
     if (!appt || appt.source !== 'online_booking') return;
 
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) return;
 
     // appt.* fields here come from the public booking form (anyone can submit
@@ -3097,7 +3048,7 @@ exports.sendChatNotification = onDocumentCreated(
     const tenantId = event.params.tenantId;
 
     const data   = snap.data();
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) return;
 
     // Read adminEmails projection (rich users[] is admin-only at data/usersFull).
@@ -3150,7 +3101,7 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
     const tenantId = event.params.tenantId;
 
     const data   = snap.data();
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) return;
 
     const stars = '★'.repeat(data.rating || 5) + '☆'.repeat(5 - (data.rating || 5));
@@ -4312,7 +4263,7 @@ function buildAutoEmail(headerSub, firstName, bodyHtml, ctaText, ctaUrl, brand) 
 exports.autoBirthdayCampaign = onSchedule(
   { schedule: 'every 1 hours', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) return;
     const now  = new Date();
 
@@ -4388,7 +4339,7 @@ exports.autoBirthdayCampaign = onSchedule(
 exports.autoLapsedCampaign = onSchedule(
   { schedule: 'every 1 hours', timeZone: 'America/New_York', secrets: [unsubscribeSecret] },
   async () => {
-    const apiKey = resendKey.value();
+    const apiKey = awsAccessKey.value();
     if (!apiKey) return;
     const now = new Date();
     // skipPaused: re-engagement CTA points at booking — pointless during a
@@ -4560,7 +4511,7 @@ exports.shortLinkRedirect = onRequest({ cors: false }, async (req, res) => {
 // Creates a new tenant record, provisions Firestore data, and sends a welcome email.
 // Callable without auth so the public signup page can use it. Rate-limited and
 // input-validated so the public surface can't be abused to mint phishing emails
-// from the salon's verified Resend sender or squat arbitrary subdomain slugs.
+// from the salon's verified SES sender or squat arbitrary subdomain slugs.
 exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   const ip = request.rawRequest?.ip || '';
   // 5 signups / IP / hour — same envelope as submitContactInquiry. Provisioning
@@ -4630,7 +4581,7 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
 
   // Send welcome email — always from the platform identity (the new
   // owner doesn't recognize their own salon as a sender yet).
-  const apiKey = resendKey.value();
+  const apiKey = awsAccessKey.value();
   if (apiKey) {
     await sendEmail({
       from: 'Plume Nexus <noreply@send.plumenexus.com>',
@@ -5492,7 +5443,7 @@ exports.createMembershipPortal = onCall({ cors: true, secrets: [stripeKey] }, as
 //
 // SECURITY: this function previously accepted the link URL from the caller,
 // which let any authed user send arbitrary links — including phishing URLs —
-// from the salon's verified Resend domain. We now read the URL exclusively
+// from the salon's verified SES domain. We now read the URL exclusively
 // from the membership doc's `paymentLinkUrl` (stamped by
 // createMembershipCheckout) AND restrict the URL to Stripe-checkout hosts.
 exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
@@ -5500,8 +5451,8 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
   const tenantId = tid || TENANT_ID;
   if (!membershipId) throw new HttpsError('invalid-argument', 'membershipId required');
 
-  const apiKey = resendKey.value();
-  if (!apiKey) throw new HttpsError('unavailable', 'Resend not configured');
+  const apiKey = awsAccessKey.value();
+  if (!apiKey) throw new HttpsError('unavailable', 'Email is not configured');
   const db = getFirestore();
   // Sends from a verified custom domain — admin gate so a tech-role user
   // can't fire branded emails on the salon's behalf.
@@ -5890,8 +5841,8 @@ exports.sendMeetingInvites = onCall(async (request) => {
   const tenantId = tid || TENANT_ID;
   await requireTenantAdmin(getFirestore(), tenantId, request);
   if (!meetingId) throw new HttpsError('invalid-argument', 'meetingId required');
-  const apiKey = resendKey.value();
-  if (!apiKey) throw new HttpsError('failed-precondition', 'Email is not configured (RESEND_API_KEY missing)');
+  const apiKey = awsAccessKey.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'Email is not configured (AWS SES credentials missing)');
 
   const db = getFirestore();
   const meetingRef = db.doc(`tenants/${tenantId}/meetings/${meetingId}`);
@@ -6387,18 +6338,19 @@ exports.sendDirectSms = onCall({ cors: true, secrets: [twilioToken] }, async (re
 });
 
 // Staff-side outbound email. Sends a plain-text-style email to the client
-// via Resend and appends to chats/{clientId} with channel='email' so the
+// via AWS SES and appends to chats/{clientId} with channel='email' so the
 // thread shows it inline with SMS + in-app messages. Inbound email
-// threading (Phase 2B) requires Resend Inbound webhook + MX records on
-// the verified domain — deferred until that infra is set up.
+// threading (Phase 2B) requires an inbound mail pipeline (SES receive
+// rules / Cloudflare Email Routing) + MX records on the verified domain
+// — deferred until that infra is set up.
 exports.sendDirectEmail = onCall({ cors: true }, async (request) => {
   const { tenantId: tid, clientId, subject, body } = request.data || {};
   const tenantId = tid || TENANT_ID;
   await requireTenantStaff(getFirestore(), tenantId, request);
   if (!clientId || !subject || !body) throw new HttpsError('invalid-argument', 'Missing clientId, subject, or body');
 
-  const apiKey = resendKey.value();
-  if (!apiKey) throw new HttpsError('failed-precondition', 'Resend not configured');
+  const apiKey = awsAccessKey.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'Email is not configured');
 
   const db = getFirestore();
   const cDoc = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
@@ -6426,7 +6378,7 @@ ${esc(brand.addressLine || '')}
 </div></body></html>`;
 
   const fromAddr = await tenantFromAddress(db, tenantId);
-  let resendId = null, resendError = null;
+  let providerMessageId = null, providerError = null;
   try {
     const result = await sendEmail({
       from: fromAddr,
@@ -6437,17 +6389,17 @@ ${esc(brand.addressLine || '')}
       tenantId,
     });
     if (result?.error) {
-      resendError = `${result.error.name || 'SEND_ERROR'}: ${result.error.message || JSON.stringify(result.error)}`;
-      console.error('[sendDirectEmail]', resendError);
-      throw new HttpsError('internal', resendError);
+      providerError = `${result.error.name || 'SEND_ERROR'}: ${result.error.message || JSON.stringify(result.error)}`;
+      console.error('[sendDirectEmail]', providerError);
+      throw new HttpsError('internal', providerError);
     }
-    resendId = result?.data?.id || null;
+    providerMessageId = result?.data?.id || null;
   } catch (e) {
-    if (!resendError) {
-      resendError = `${e?.name || 'UNKNOWN'}: ${e?.message || 'send threw'}`;
-      console.error('[sendDirectEmail] threw:', resendError);
+    if (!providerError) {
+      providerError = `${e?.name || 'UNKNOWN'}: ${e?.message || 'send threw'}`;
+      console.error('[sendDirectEmail] threw:', providerError);
     }
-    throw new HttpsError('internal', resendError);
+    throw new HttpsError('internal', providerError);
   }
 
   const message = {
@@ -6458,19 +6410,19 @@ ${esc(brand.addressLine || '')}
     at:         new Date().toISOString(),
     staffEmail: request.auth.token?.email || null,
     senderName,
-    resendId,
-    resendError,
+    providerMessageId,
+    providerError,
     email,
   };
   await appendChatMessage(tenantId, clientId, client, message);
-  return { ok: true, resendId };
+  return { ok: true, providerMessageId };
 });
 
 // SALON_ADDRESS_HTML constant removed — sendDirectEmail now reads brand
 // fields from tenantBranding().
 
 // Gift card email — fires on giftCard doc creation. Marks emailStatus
-// pending → sending → sent (or failed), captures resendId / errorCode
+// pending → sending → sent (or failed), captures providerMessageId / errorCode
 // / errorReason on the doc itself so the GiftCardsAdmin UI can show
 // delivery state in real time and offer a retry button on failures.
 // Skipped silently when there's no recipientEmail (e.g. walk-in gift
@@ -6514,7 +6466,7 @@ async function processGiftCardEmail(tenantId, docRef, data) {
   </div>
 </body></html>`;
 
-  let resendId = null, errorCode = null, errorReason = null;
+  let providerMessageId = null, errorCode = null, errorReason = null;
   try {
     const result = await sendEmail({
       from: await tenantFromAddress(getFirestore(), tenantId),
@@ -6527,7 +6479,7 @@ async function processGiftCardEmail(tenantId, docRef, data) {
       errorCode   = result.error.name || result.error.statusCode || 'SEND_ERROR';
       errorReason = result.error.message || JSON.stringify(result.error);
     } else {
-      resendId = result?.data?.id || null;
+      providerMessageId = result?.data?.id || null;
     }
   } catch (e) {
     errorCode   = e?.name || 'UNKNOWN';
@@ -6544,11 +6496,11 @@ async function processGiftCardEmail(tenantId, docRef, data) {
     });
   } else {
     await docRef.update({
-      emailStatus:    'sent',
-      emailResendId:  resendId,
-      emailSentAt:    new Date().toISOString(),
-      emailErrorCode: null,
-      emailErrorReason: null,
+      emailStatus:           'sent',
+      emailProviderMessageId: providerMessageId,
+      emailSentAt:           new Date().toISOString(),
+      emailErrorCode:        null,
+      emailErrorReason:      null,
     });
   }
 }
@@ -6768,7 +6720,7 @@ exports.chatWithMarketing = onCall(
   }
 );
 
-// Contact-form inquiry from the marketing site. Validates input, sends Resend
+// Contact-form inquiry from the marketing site. Validates input, sends an
 // email to the founder, persists a record in Firestore for the audit trail.
 exports.submitContactInquiry = onCall(
   { cors: true, timeoutSeconds: 20 },
@@ -6930,9 +6882,9 @@ async function notifyPlatformAdmins(db, { subject, html, exceptEmail }) {
   const recipients = (await listAllPlatformAdminEmails(db))
     .filter(e => !exceptEmail || e !== String(exceptEmail).toLowerCase());
   if (!recipients.length) return { sent: 0 };
-  const apiKey = resendKey.value();
+  const apiKey = awsAccessKey.value();
   if (!apiKey) {
-    console.warn('[notifyPlatformAdmins] no RESEND_API_KEY; would have notified:', recipients);
+    console.warn('[notifyPlatformAdmins] no AWS SES credentials; would have notified:', recipients);
     return { sent: 0, reason: 'no-key' };
   }
   try {
