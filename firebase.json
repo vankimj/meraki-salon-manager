@@ -5,7 +5,10 @@
       "target": "meraki",
       "public": "dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
-      "rewrites": [{ "source": "**", "destination": "/index.html" }],
+      "rewrites": [
+        { "source": "/m/**", "function": "shortLinkRedirect" },
+        { "source": "**",    "destination": "/index.html" }
+      ],
       "headers": [
         {
           "source": "**/*.@(js|css|svg|woff|woff2|png|ico|map|jpg|jpeg|webp|gif)",

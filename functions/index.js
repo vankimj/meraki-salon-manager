@@ -134,6 +134,7 @@ const {
   shouldSendRemindersNow, shouldFireDayHourNow, currentHourInTimezone,
   apptInstantUnix, apptExpUnix, tenantTimezone, resolveTimezone,
 } = require('./lib/tenantTime');
+const { mintShortLink, lookupShortLink } = require('./lib/apptShortLink');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -141,12 +142,19 @@ function apptManageToken(tenantId, apptId, exp) {
 // (e.g. merakinailstudio.plumenexus.com for Meraki, glow.plumenexus.com for
 // tenant #2) so reminder SMS/email links land on the tenant's branded host
 // instead of the platform's raw Firebase URL.
+//
+// Returns a short link (`${base}/m/${code}`) — the full query-string form
+// pushes the SMS body past one segment. Mints a Firestore handle each call;
+// on mint failure (or any error from the underlying write) falls back to the
+// long form so reminders never break.
 async function apptManageUrl(db, tenantId, apptId, exp) {
   if (!apptId || !exp) return null;
   const t = apptManageToken(tenantId, apptId, exp);
   const base = ((await tenantBaseUrl(db, tenantId)) || '').replace(/\/+$/, '');
   if (!base) return null;
-  return `${base}/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&exp=${exp}&t=${t}`;
+  const longUrl = `${base}/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&exp=${exp}&t=${t}`;
+  const code = await mintShortLink(db, { tenantId, apptId, exp, token: t });
+  return code ? `${base}/m/${code}` : longUrl;
 }
 
 // ── Server-side authorization helpers (mirror firestore.rules) ──
@@ -4512,6 +4520,32 @@ exports.trackReviewClick = onRequest({ cors: false }, async (req, res) => {
   }
 
   res.redirect(302, redirectTo);
+});
+
+// Resolves a short reminder-link handle (e.g. /m/abc123def456) back to the
+// canonical ?manage=... URL on the same host. The SMS template embeds the
+// short form because the long token+exp+tid+apptId query string pushes the
+// body past one SMS segment. The handle itself is a 12-char random; the
+// real authorization (HMAC token + exp) is what the redirect target verifies
+// when it calls manageAppointment.
+exports.shortLinkRedirect = onRequest({ cors: false }, async (req, res) => {
+  // req.path looks like '/m/<code>' under Hosting rewrites; under direct
+  // function URL it's the bare path. Accept either.
+  const m = String(req.path || req.url || '').match(/\/m\/([A-Za-z0-9_-]+)/);
+  if (!m) { res.status(404).send('Not found'); return; }
+  const code = m[1];
+  // Cheap structural guard before the DB read — handles are ~10-16 base64url.
+  if (!/^[A-Za-z0-9_-]{8,32}$/.test(code)) { res.status(404).send('Not found'); return; }
+  try {
+    const data = await lookupShortLink(getFirestore(), code);
+    if (!data) { res.status(404).send('Link expired or not found'); return; }
+    const { tenantId, apptId, exp, token } = data;
+    const target = `/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&exp=${Number(exp)}&t=${encodeURIComponent(token)}`;
+    res.redirect(302, target);
+  } catch (e) {
+    console.error('[shortLinkRedirect] error', e);
+    res.status(500).send('Server error');
+  }
 });
 
 // ── Tenant onboarding ─────────────────────────────────────────────────────────
