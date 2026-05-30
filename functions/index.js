@@ -129,13 +129,19 @@ function unsubUrl(tenantId, clientId) {
 // natural expiry (24h after start) into the HMAC so a leaked SMS can't be
 // replayed once the appt has passed.
 const { apptExpUnix, buildApptManageToken, verifyApptManageToken } = require('./lib/apptManage');
+const { tenantBaseUrl } = require('./lib/tenantUrl');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
-function apptManageUrl(tenantId, apptId, exp) {
+// Async: looks up the tenant's customer-facing subdomain
+// (e.g. merakinailstudio.plumenexus.com for Meraki, glow.plumenexus.com for
+// tenant #2) so reminder SMS/email links land on the tenant's branded host
+// instead of the platform's raw Firebase URL.
+async function apptManageUrl(db, tenantId, apptId, exp) {
   if (!apptId || !exp) return null;
   const t = apptManageToken(tenantId, apptId, exp);
-  const base = (publicAppUrl.value() || '').replace(/\/+$/, '');
+  const base = ((await tenantBaseUrl(db, tenantId)) || '').replace(/\/+$/, '');
+  if (!base) return null;
   return `${base}/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&exp=${exp}&t=${t}`;
 }
 
@@ -1774,7 +1780,7 @@ exports.getApptManageLink = onCall({ cors: true, secrets: [apptManageSecret] }, 
   await requireTenantStaff(db, tenantId, request);
   const exists = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
   if (!exists.exists) throw new HttpsError('not-found', 'Appointment not found');
-  const url = apptManageUrl(tenantId, apptId, apptExpUnix({ id: apptId, ...exists.data() }));
+  const url = await apptManageUrl(db, tenantId, apptId, apptExpUnix({ id: apptId, ...exists.data() }));
   return { url };
 });
 
@@ -2330,11 +2336,10 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10);
 }
 
-function buildReminderHtml(appt, client, tenantId, brand) {
+function buildReminderHtml(appt, client, tenantId, brand, manageLink) {
   const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
-  const manageLink = apptManageUrl(tenantId, appt.id, apptExpUnix(appt));
   return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -2518,13 +2523,16 @@ exports.sendDailyReminders = onSchedule(
         let emailOk = false;
         let smsOk   = false;
 
+        // Resolve once: tenantBaseUrl is cached so subsequent appts hit memory.
+        const manageLink = await apptManageUrl(db, tenantId, appt.id, apptExpUnix(appt));
+
         if (wantsEmail) {
           try {
             const { error } = await sendEmail({
               from:    fromAddr,
               to:      email,
               subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
-              html:    buildReminderHtml(appt, client, tenantId, brand),
+              html:    buildReminderHtml(appt, client, tenantId, brand, manageLink),
               tenantId,
             });
             if (error) throw new Error(error.message || JSON.stringify(error));
@@ -2543,7 +2551,6 @@ exports.sendDailyReminders = onSchedule(
           // legacy "Reply C to confirm" reply-handler path, which can't
           // disambiguate tenant on a shared inbound number.
           const techShort  = appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '';
-          const manageLink = apptManageUrl(tenantId, appt.id, apptExpUnix(appt));
           const smsBody    = manageLink
             ? `${brand.salonName}: Hi ${firstName}! Your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}. Confirm/reschedule: ${manageLink}`
             : `${brand.salonName}: Hi ${firstName}! Reminder: your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}.`;
@@ -2814,7 +2821,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
     const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
-    const manageLink = apptManageUrl(tenantId, event.params?.apptId || snap.id, apptExpUnix(appt));
+    const manageLink = await apptManageUrl(db, tenantId, event.params?.apptId || snap.id, apptExpUnix(appt));
     const locationLine = brand.addressLine
       ? `${brand.salonName}, ${brand.addressLine}`
       : brand.salonName;
@@ -2887,7 +2894,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
     })());
     if (clientPhone) {
       const apptIdForSms = event.params?.apptId || snap.id;
-      const manageShort  = apptManageUrl(tenantId, apptIdForSms, apptExpUnix(appt));
+      const manageShort  = await apptManageUrl(db, tenantId, apptIdForSms, apptExpUnix(appt));
       const dateShort    = fmtDate(appt.date).replace(/,.*/, '');
       const timeShort    = fmtTime(appt.startTime);
       const techShort    = appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '';
@@ -4120,10 +4127,11 @@ exports.draftConflictMessages = onCall(
     // Per-appt magic-link so each client can self-service reschedule/cancel
     // without calling the salon. Drops into both SMS and email drafts.
     const manageLinks = {};
-    affected.forEach(a => {
-      const link = apptManageUrl(tenantId, a.id, apptExpUnix(a));
+    const dbFs = getFirestore();
+    for (const a of affected) {
+      const link = await apptManageUrl(dbFs, tenantId, a.id, apptExpUnix(a));
       if (link) manageLinks[a.id] = link;
-    });
+    }
 
     // Build a compact appt-context string for the prompt — include the
     // per-appt manage link so the model can reference it inline.
