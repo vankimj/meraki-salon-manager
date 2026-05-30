@@ -30,6 +30,8 @@ export default function Admin({ onClose, onOpenWizard }) {
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
   const [ein,            setEin]           = useState(settings.ein || '');
+  const [reminderHour,   setReminderHour]  = useState(settings.reminderHour ?? 9);
+  const [timezone,       setTimezone]      = useState(settings.timezone || 'America/New_York');
   const [salonName,        setSalonName]        = useState(settings.salonName        || '');
   const [brandName,        setBrandName]        = useState(settings.brandName        || '');
   const [brandTagline,     setBrandTagline]     = useState(settings.brandTagline     || '');
@@ -445,7 +447,7 @@ export default function Admin({ onClose, onOpenWizard }) {
                 <input type="url" value={reviewUrl} onChange={e => setReviewUrl(e.target.value)} placeholder="https://g.page/r/…/review"
                   style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+<div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
                 <div>
                   <div style={{ fontSize: 13, color: '#333' }}>Business EIN</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Employer Identification Number — printed on 1099-NEC forms.</div>
@@ -453,8 +455,38 @@ export default function Admin({ onClose, onOpenWizard }) {
                 <input value={ein} onChange={e => setEin(e.target.value)} placeholder="XX-XXXXXXX"
                   style={{ width: 140, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
               </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Reminder send time</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>What hour to send appointment reminders for tomorrow's appointments.</div>
+                </div>
+                <select value={reminderHour} onChange={e => setReminderHour(Number(e.target.value))}
+                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const ampm = h >= 12 ? 'PM' : 'AM';
+                    const hh   = h === 0 ? 12 : (h > 12 ? h - 12 : h);
+                    return <option key={h} value={h}>{hh}:00 {ampm}</option>;
+                  })}
+                </select>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Time zone</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used for reminder timing and date-based comparisons.</div>
+                </div>
+                <select value={timezone} onChange={e => setTimezone(e.target.value)}
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  <option value="America/New_York">Eastern (New York)</option>
+                  <option value="America/Chicago">Central (Chicago)</option>
+                  <option value="America/Denver">Mountain (Denver)</option>
+                  <option value="America/Phoenix">Mountain — Arizona (no DST)</option>
+                  <option value="America/Los_Angeles">Pacific (Los Angeles)</option>
+                  <option value="America/Anchorage">Alaska</option>
+                  <option value="Pacific/Honolulu">Hawaii</option>
+                </select>
+              </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
-                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null })}>Save</Btn>
+                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, timezone })}>Save</Btn>
               </div>
             </Section>
             <Section title="💰 Financial">

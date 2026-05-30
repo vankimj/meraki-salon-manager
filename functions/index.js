@@ -130,6 +130,7 @@ function unsubUrl(tenantId, clientId) {
 // replayed once the appt has passed.
 const { apptExpUnix, buildApptManageToken, verifyApptManageToken } = require('./lib/apptManage');
 const { tenantBaseUrl } = require('./lib/tenantUrl');
+const { shouldSendRemindersNow } = require('./lib/tenantTime');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -2477,7 +2478,11 @@ exports.sendMeetingReminders = onSchedule(
 );
 
 exports.sendDailyReminders = onSchedule(
-  { schedule: 'every day 09:00', timeZone: 'America/New_York' },
+  // Hourly so each tenant can pick their own reminder hour + timezone in
+  // settings. Most tenants will mismatch and skip in <50ms via the per-tenant
+  // hour check below; the unchanged `reminderSent: false` filter still
+  // prevents double-sends if the cron ever fires twice on the same hour.
+  { schedule: 'every 1 hours', timeZone: 'America/New_York' },
   async () => {
     const apiKey = resendKey.value();
     if (!apiKey) {
@@ -2485,10 +2490,17 @@ exports.sendDailyReminders = onSchedule(
       return;
     }
     const tomorrow = tomorrowStr();
+    const now      = new Date();
 
     await forEachActiveTenant('Reminders', async (tenantId, tData) => {
       const db = getFirestore();
       const tenantName = tData.name || tenantId;
+      // Per-tenant reminder-hour + timezone. Defaults to 9 AM America/New_York
+      // so tenants with no settings see no behavior change after the migration
+      // from the previous fixed 9-AM-Eastern schedule.
+      const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings = sSnap.exists ? sSnap.data() : {};
+      if (!shouldSendRemindersNow(now, settings)) return;
       const fromAddr = await tenantFromAddress(db, tenantId);
       const brand    = await tenantBranding(db, tenantId);
 
