@@ -2,16 +2,21 @@
 // and no tenant context, so we need a fast TFN→tenantId lookup to route the
 // message to the right tenant's chat thread / STOP-handler / etc.
 //
-// Doc shape: `platform/smsTfnRegistry/{e164Phone}` →
+// Doc shape: `smsTfnRegistry/{e164Phone}` →
 //   { tenantId, sandbox?: boolean, registeredAt }
 // One doc per TFN; the phone is the document id (E.164 with leading "+", a
 // legal Firestore id — "/" is the only forbidden character).
+//
+// Top-level collection — Firestore doc paths must have an even number of
+// segments, so `smsTfnRegistry/{phone}` works; the earlier `platform/…/{phone}`
+// path was 3 segments and threw silently at write time (caught by the
+// try/catch around .set()), so no TFN was ever actually registered. Fixed.
 //
 // `db` is injected into every call so this module stays free of firebase-admin
 // initialization and is unit-testable against a fake Firestore.
 
 function tfnRegistryRef(db, phone) {
-  return db.doc(`platform/smsTfnRegistry/${phone}`);
+  return db.doc(`smsTfnRegistry/${phone}`);
 }
 
 async function registerTfnForTenant(db, phone, tenantId, sandbox = false) {

@@ -46,6 +46,19 @@ describe('mintShortLink', () => {
     });
     expect(typeof doc.createdAt).toBe('string');
   });
+  it('sets expiresAt to a Date 24h past the token exp (for the Firestore TTL policy)', async () => {
+    const db = makeDb();
+    await mintShortLink(db, PAYLOAD, () => 'ttlcheck001');
+    const doc = db.store.get(`${COLLECTION}/ttlcheck001`);
+    expect(doc.expiresAt).toBeInstanceOf(Date);
+    // exp = 1900000000 (unix seconds); +24h grace = +86400 seconds
+    expect(doc.expiresAt.getTime()).toBe((1900000000 + 86400) * 1000);
+  });
+  it('writes to a 2-segment doc path (apptShortLinks/{code}) — even-segment required', async () => {
+    const db = makeDb();
+    await mintShortLink(db, PAYLOAD, () => 'pathcheck01');
+    expect(Array.from(db.store.keys())[0]).toBe('apptShortLinks/pathcheck01');
+  });
   it('returns null when any required field is missing', async () => {
     const db = makeDb();
     expect(await mintShortLink(db, { ...PAYLOAD, tenantId: '' })).toBe(null);

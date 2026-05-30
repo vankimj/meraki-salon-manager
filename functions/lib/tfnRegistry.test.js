@@ -29,7 +29,7 @@ describe('tfnRegistry', () => {
   it('builds the platform registry doc path from the E.164 phone', () => {
     let captured;
     tfnRegistryRef({ doc: (p) => (captured = p) }, '+18445551234');
-    expect(captured).toBe('platform/smsTfnRegistry/+18445551234');
+    expect(captured).toBe('smsTfnRegistry/+18445551234');
   });
 
   it('findTenantByTfn returns null when the number is unmapped', async () => {
@@ -40,14 +40,14 @@ describe('tfnRegistry', () => {
     const db = makeDb();
     await registerTfnForTenant(db, '+18445551111', 'glow');
     expect(await findTenantByTfn(db, '+18445551111')).toBe('glow');
-    expect(db.store.get('platform/smsTfnRegistry/+18445551111'))
+    expect(db.store.get('smsTfnRegistry/+18445551111'))
       .toMatchObject({ tenantId: 'glow', sandbox: false });
   });
 
   it('stores the sandbox flag when provided', async () => {
     const db = makeDb();
     await registerTfnForTenant(db, '+15005550006', 'demo', true);
-    expect(db.store.get('platform/smsTfnRegistry/+15005550006'))
+    expect(db.store.get('smsTfnRegistry/+15005550006'))
       .toMatchObject({ tenantId: 'demo', sandbox: true });
   });
 
@@ -64,7 +64,7 @@ describe('tfnRegistry', () => {
     const db = makeDb();
     await registerTfnForTenant(db, '+18445553333', 'cached');
     expect(await findTenantByTfn(db, '+18445553333')).toBe('cached');
-    db.store.delete('platform/smsTfnRegistry/+18445553333'); // underlying doc gone
+    db.store.delete('smsTfnRegistry/+18445553333'); // underlying doc gone
     expect(await findTenantByTfn(db, '+18445553333')).toBe('cached'); // still cached
     _resetTfnCache();
     expect(await findTenantByTfn(db, '+18445553333')).toBe(null);
