@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchReviewReceived, fetchReviewRequests } from '../lib/firestore';
+import { ConfigureReviewsLink } from './CompetitorRankingPanel';
 
 // Reusable Google Reviews dashboard panel.
 // Shows received reviews, requests sent, conversion rate, and a per-tech leaderboard.
@@ -41,6 +42,10 @@ export default function GoogleReviewsPanel() {
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+        <ConfigureReviewsLink />
+      </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 24 }}>
         <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '16px 18px' }}>

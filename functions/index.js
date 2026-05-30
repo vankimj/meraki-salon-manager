@@ -3160,9 +3160,9 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
 );
 
 // ── Fetch + cache Google Reviews ────────────────────────
-// Called from Admin → Webfront tab. Requires GOOGLE_MAPS_API_KEY to be set:
-//   firebase functions:config:set google.maps_api_key="AIza..."
-// (or via Firebase console → Functions → Configuration)
+// Called from Admin → Settings → Google Reviews. Uses Places API (New) v1
+// since the legacy /maps/api/place/details endpoint is disabled on this
+// project. Requires GOOGLE_MAPS_API_KEY in functions env / Firebase config.
 exports.refreshGoogleReviews = onCall(async (request) => {
   // Admin-only: this writes the salon's reviews doc (rendered on the
   // public webfront) and burns Google Maps API quota. Without an admin
@@ -3185,35 +3185,256 @@ exports.refreshGoogleReviews = onCall(async (request) => {
     );
   }
 
-  const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${encodeURIComponent(placeId)}&fields=name,rating,user_ratings_total,reviews&key=${apiKey}`;
-  const res  = await fetch(url);
-  const json = await res.json();
-
-  if (json.status !== 'OK') {
-    throw new HttpsError('internal', `Places API: ${json.status}${json.error_message ? ' — ' + json.error_message : ''}`);
+  const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`, {
+    headers: {
+      'X-Goog-Api-Key':   apiKey,
+      'X-Goog-FieldMask': 'id,displayName,rating,userRatingCount,reviews',
+    },
+  });
+  const data = await res.json();
+  if (data.error) {
+    throw new HttpsError('internal', `Places API: ${data.error.status || data.error.code} ${data.error.message || ''}`.trim());
   }
 
-  const result  = json.result || {};
-  const reviews = (result.reviews || []).map(r => ({
-    name:      r.author_name              || 'Google Reviewer',
-    rating:    r.rating                   || 5,
-    text:      r.text                     || '',
-    date:      r.relative_time_description|| '',
-    photoUrl:  r.profile_photo_url        || null,
-    authorUrl: r.author_url               || null,
+  const reviews = (data.reviews || []).map(r => ({
+    name:      r.authorAttribution?.displayName || 'Google Reviewer',
+    rating:    r.rating || 5,
+    text:      r.text?.text || r.originalText?.text || '',
+    date:      r.relativePublishTimeDescription || '',
+    photoUrl:  r.authorAttribution?.photoUri || null,
+    authorUrl: r.authorAttribution?.uri || null,
   }));
 
   const db = getFirestore();
   await db.doc(`tenants/${tenantId}/data/googleReviews`).set({
     placeId,
     reviews,
-    rating:          result.rating              || null,
-    userRatingCount: result.user_ratings_total  || null,
+    rating:          data.rating          || null,
+    userRatingCount: data.userRatingCount || null,
     refreshedAt:     new Date().toISOString(),
   });
 
-  console.log(`[GoogleReviews] Cached ${reviews.length} reviews · rating ${result.rating} (${result.user_ratings_total} total)`);
-  return { count: reviews.length, rating: result.rating, total: result.user_ratings_total };
+  console.log(`[GoogleReviews] Cached ${reviews.length} reviews · rating ${data.rating} (${data.userRatingCount} total)`);
+  return { count: reviews.length, rating: data.rating, total: data.userRatingCount };
+});
+
+// ── Nearby nail-salon competitor ranking ──────────────
+// Admin-only. Queries Google Places (New) for nail salons within a radius
+// of the tenant's address, computes distance + a weighted score, caches the
+// result at tenants/{tid}/data/competitorRankings. UI lives in the
+// Marketing module → Local Ranking tab.
+exports.nearbyNailSalons = onCall({ cors: true, timeoutSeconds: 60 }, async (request) => {
+  const { tenantId: tid, address, lat, lng, radiusMiles } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  }
+  await requireTenantAdmin(getFirestore(), tenantId, request);
+
+  const apiKey = mapsApiKey.value();
+  if (!apiKey) {
+    throw new HttpsError('failed-precondition', 'GOOGLE_MAPS_API_KEY is not configured');
+  }
+
+  const radius = Math.max(0.5, Math.min(50, Number(radiusMiles) || 5));
+  const radiusMeters = radius * 1609.344;
+
+  console.log(`[CompetitorRanking] request.data=${JSON.stringify(request.data)}`);
+
+  let originLat = Number(lat);
+  let originLng = Number(lng);
+  let originAddress = typeof address === 'string' ? address.trim() : '';
+
+  // Geocode unless caller supplied coordinates that look real. 0,0 is the
+  // null-island default we get when undefined is silently coerced; treat
+  // that as missing rather than as a valid origin.
+  const hasUsableCoords =
+    Number.isFinite(originLat) && Number.isFinite(originLng) &&
+    !(originLat === 0 && originLng === 0);
+
+  if (!hasUsableCoords) {
+    if (!originAddress) {
+      throw new HttpsError('invalid-argument', 'address or lat/lng required');
+    }
+    const geo = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type':     'application/json',
+        'X-Goog-Api-Key':   apiKey,
+        'X-Goog-FieldMask': 'places.location,places.formattedAddress',
+      },
+      body: JSON.stringify({ textQuery: originAddress, maxResultCount: 1 }),
+    });
+    const geoData = await geo.json();
+    if (geoData.error || !geoData.places?.[0]?.location) {
+      throw new HttpsError('not-found', `Could not geocode address: ${originAddress}`);
+    }
+    originLat = geoData.places[0].location.latitude;
+    originLng = geoData.places[0].location.longitude;
+    originAddress = geoData.places[0].formattedAddress || originAddress;
+    console.log(`[CompetitorRanking] geocoded "${originAddress}" → (${originLat},${originLng})`);
+  }
+
+  const toRad = (d) => d * Math.PI / 180;
+  const distMiles = (la1, lo1, la2, lo2) => {
+    const R = 3958.7613;
+    const dLa = toRad(la2 - la1);
+    const dLo = toRad(lo2 - lo1);
+    const a = Math.sin(dLa / 2) ** 2 + Math.cos(toRad(la1)) * Math.cos(toRad(la2)) * Math.sin(dLo / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+  };
+
+  const all = [];
+  let pageToken = '';
+  for (let page = 0; page < 3; page++) {
+    const body = {
+      textQuery:           'nail salon',
+      includedType:        'nail_salon',
+      strictTypeFiltering: true,
+      maxResultCount:      20,
+      locationBias: {
+        circle: {
+          center: { latitude: originLat, longitude: originLng },
+          radius: radiusMeters,
+        },
+      },
+    };
+    if (pageToken) body.pageToken = pageToken;
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type':     'application/json',
+        'X-Goog-Api-Key':   apiKey,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.businessStatus,places.googleMapsUri,nextPageToken',
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) {
+      throw new HttpsError('internal', `Places searchText: ${data.error.status || data.error.code} ${data.error.message || ''}`.trim());
+    }
+    const rawCount = (data.places || []).length;
+    let kept = 0;
+    for (const p of (data.places || [])) {
+      if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') continue;
+      all.push(p);
+      kept++;
+    }
+    console.log(`[CompetitorRanking] page ${page}: api returned ${rawCount}, kept ${kept}, sample=${JSON.stringify((data.places || [])[0] || null).slice(0, 250)}`);
+    if (!data.nextPageToken) break;
+    pageToken = data.nextPageToken;
+    await new Promise(r => setTimeout(r, 2000));
+  }
+  console.log(`[CompetitorRanking] origin=(${originLat},${originLng}) radius=${radius}mi raw_total=${all.length}`);
+
+  const seen = new Set();
+  const results = [];
+  let droppedNoId = 0, droppedNoLatLng = 0, droppedTooFar = 0;
+  for (const p of all) {
+    if (!p.id || seen.has(p.id)) { droppedNoId++; continue; }
+    seen.add(p.id);
+    const pLat = p.location?.latitude;
+    const pLng = p.location?.longitude;
+    if (typeof pLat !== 'number' || typeof pLng !== 'number') { droppedNoLatLng++; continue; }
+    const d = distMiles(originLat, originLng, pLat, pLng);
+    if (d > radius) { droppedTooFar++; continue; }
+    const rating = Number(p.rating) || 0;
+    const count  = Number(p.userRatingCount) || 0;
+    const score  = count > 0 ? rating * Math.log10(count + 1) : 0;
+    results.push({
+      placeId:         p.id,
+      name:            p.displayName?.text || 'Unknown',
+      address:         p.formattedAddress || '',
+      lat:             pLat,
+      lng:             pLng,
+      rating,
+      userRatingCount: count,
+      distanceMiles:   Number(d.toFixed(2)),
+      score:           Number(score.toFixed(3)),
+      mapsUrl:         p.googleMapsUri || '',
+    });
+  }
+
+  results.sort((a, b) => b.score - a.score);
+  console.log(`[CompetitorRanking] filter: dupOrNoId=${droppedNoId} noLatLng=${droppedNoLatLng} tooFar=${droppedTooFar} kept=${results.length}`);
+
+  const docPayload = {
+    fetchedAt:   new Date().toISOString(),
+    address:     originAddress,
+    radiusMiles: radius,
+    origin:      { lat: originLat, lng: originLng },
+    results,
+    resultCount: results.length,
+  };
+  await getFirestore().doc(`tenants/${tenantId}/data/competitorRankings`).set(docPayload);
+  console.log(`[CompetitorRanking] Cached ${results.length} salons within ${radius}mi of ${originAddress}`);
+  return docPayload;
+});
+
+// ── Place-ID auto-detect from address ─────────────────
+// Admin-only. Given the salon's address, finds the most likely
+// matching nail-salon business at that location via Places (New) Text
+// Search and returns its Place ID. Used by Admin → Webfront → Google
+// Reviews so the owner doesn't have to hunt for the Place ID by hand.
+exports.findBusinessByAddress = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const { tenantId: tid, address } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  }
+  await requireTenantAdmin(getFirestore(), tenantId, request);
+
+  if (!address || typeof address !== 'string' || address.trim().length < 5) {
+    throw new HttpsError('invalid-argument', 'address required');
+  }
+  const apiKey = mapsApiKey.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'GOOGLE_MAPS_API_KEY not configured');
+
+  // Single Text Search call where the query is the address itself and
+  // we filter for nail salons. Google ranks the actual salon at that
+  // address first when one exists.
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type':     'application/json',
+      'X-Goog-Api-Key':   apiKey,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.rating,places.userRatingCount,places.googleMapsUri',
+    },
+    body: JSON.stringify({
+      textQuery:    address.trim(),
+      includedType: 'nail_salon',
+      maxResultCount: 5,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    throw new HttpsError('internal', `Places searchText: ${data.error.status || data.error.code} ${data.error.message || ''}`.trim());
+  }
+  // Canonical "open this place's listing" deep link — uses the Place ID
+  // directly so Google Maps always lands on the business page (the
+  // `?cid=...&g_mp=...` form from googleMapsUri can degrade to a bare
+  // address pin in some clients).
+  // https://developers.google.com/maps/documentation/urls/get-started
+  const placeUrl = (pid) => `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(pid)}`;
+
+  const top = (data.places || [])[0];
+  if (!top?.id) {
+    return { placeId: '', name: '', address: '', mapsUrl: '', candidates: [] };
+  }
+  return {
+    placeId:         top.id,
+    name:            top.displayName?.text || '',
+    address:         top.formattedAddress  || '',
+    mapsUrl:         placeUrl(top.id),
+    rating:          top.rating            || null,
+    userRatingCount: top.userRatingCount   || null,
+    candidates: (data.places || []).slice(0, 5).map(p => ({
+      placeId: p.id,
+      name:    p.displayName?.text || '',
+      address: p.formattedAddress  || '',
+      mapsUrl: placeUrl(p.id),
+    })),
+  };
 });
 
 // ── AI Chatbot ────────────────────────────────────────

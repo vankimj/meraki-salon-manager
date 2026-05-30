@@ -105,6 +105,21 @@ function AppShell({ initialView = 'home' }) {
   if (isPortalUser) return <ClientPortal />;
   const [view,      setViewState] = useState(initialView); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
   const [showAdmin, setShowAdmin] = useState(false);
+  const [adminInitial, setAdminInitial] = useState(null); // { tab?, scrollTo? } when deep-linked
+
+  // Cross-module deep-link into Admin: a child fires window.dispatchEvent(
+  // new CustomEvent('open-admin', { detail: { tab, scrollTo } })) and we
+  // open the overlay on the requested tab + scroll a named section into
+  // view. Used by Marketing → Local Ranking to jump to Webfront → Google
+  // Reviews so admins can paste a Place ID without hunting for the gear.
+  useEffect(() => {
+    const handler = (e) => {
+      setAdminInitial(e.detail || {});
+      setShowAdmin(true);
+    };
+    window.addEventListener('open-admin', handler);
+    return () => window.removeEventListener('open-admin', handler);
+  }, []);
   const [showWizard, setShowWizard]   = useState(false);
   // `undefined` = subscription hasn't fired yet (loading).
   // `null`      = subscription fired and the tenant has no onboarding doc.
@@ -248,8 +263,10 @@ function AppShell({ initialView = 'home' }) {
 
       {/* Admin settings overlay */}
       {showAdmin && <Admin
-        onClose={() => setShowAdmin(false)}
-        onOpenWizard={() => { setShowAdmin(false); setShowWizard(true); setDismissedThisSession(false); }}
+        initialTab={adminInitial?.tab}
+        scrollTo={adminInitial?.scrollTo}
+        onClose={() => { setShowAdmin(false); setAdminInitial(null); }}
+        onOpenWizard={() => { setShowAdmin(false); setAdminInitial(null); setShowWizard(true); setDismissedThisSession(false); }}
       />}
 
       {showWizard && (
