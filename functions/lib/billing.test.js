@@ -11,6 +11,10 @@ import {
   handleChargeDisputeCreated,
   handleChargeDisputeClosed,
   formatDueBy,
+  buildPaymentFailedEmailHtml,
+  buildSubscriptionCanceledEmailHtml,
+  handleInvoicePaymentFailedSaas,
+  handleSubscriptionDeletedSaas,
 } from './billing.js';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────
@@ -723,6 +727,248 @@ describe('handleChargeDisputeClosed', () => {
     expect(sendEmail).toHaveBeenCalledTimes(2);
     const subjects = sendEmail.mock.calls.map(c => c[0].subject);
     expect(subjects.every(s => s.includes('Dispute lost') || s.includes('✗'))).toBe(true);
+  });
+});
+
+// ── Payment-failure + cancellation email handlers ────────────────────────
+
+function makeInvoice(overrides = {}) {
+  return {
+    id:                    'in_test_failed_001',
+    subscription:          'sub_test_failed',
+    amount_due:            4900,
+    currency:              'usd',
+    next_payment_attempt:  null,
+    ...overrides,
+  };
+}
+
+function makeSubscription(overrides = {}) {
+  return {
+    id:        'sub_test_failed',
+    customer:  'cus_test_fail',
+    metadata:  { tenantId: 'acme' },
+    ...overrides,
+  };
+}
+
+// Stripe mock that supports subscriptions.retrieve + billingPortal.sessions.create.
+// `portalResult` lets a test simulate Stripe failing to mint a session.
+function makeStripeForBilling({ subscriptionMetadata = { tenantId: 'acme' }, portalResult = 'ok', subscriptionCustomer = 'cus_test_fail' } = {}) {
+  return {
+    subscriptions: {
+      retrieve: vi.fn(async (id) => ({
+        id,
+        customer: subscriptionCustomer,
+        metadata: subscriptionMetadata,
+      })),
+    },
+    billingPortal: {
+      sessions: {
+        create: vi.fn(async () => {
+          if (portalResult === 'throw') throw new Error('portal API down');
+          return { url: 'https://billing.stripe.test/portal/sess_xxx' };
+        }),
+      },
+    },
+  };
+}
+
+// Extend the fake db with a single-collection .where().limit().get() so the
+// fallback path (subscription has no metadata.tenantId) is testable. Only one
+// `where('field','==',value)` is supported and only with `limit(1)`.
+function makeFakeDbWithCollection(seed = {}, collectionData = {}) {
+  const base = makeFakeDb(seed);
+  return {
+    ...base,
+    collection(path) {
+      const docs = collectionData[path] || [];
+      let _field = null, _value = null;
+      const q = {
+        where(field, _op, value) { _field = field; _value = value; return q; },
+        limit() { return q; },
+        async get() {
+          const matched = docs.filter(d => d[_field] === _value);
+          return {
+            empty: matched.length === 0,
+            docs:  matched.map(d => ({ id: d._id, data: () => d })),
+          };
+        },
+      };
+      return q;
+    },
+  };
+}
+
+describe('buildPaymentFailedEmailHtml', () => {
+  it('renders salon name, amount, currency, and portal CTA', () => {
+    const html = buildPaymentFailedEmailHtml({
+      salonName: 'Acme Salon', amountDollars: '49.00', currency: 'usd',
+      portalUrl: 'https://billing.stripe.test/portal/x', nextAttemptLabel: 'Mon, Jun 2',
+    });
+    expect(html).toContain('Acme Salon');
+    expect(html).toContain('$49.00');
+    expect(html).toContain('USD');
+    expect(html).toContain('https://billing.stripe.test/portal/x');
+    expect(html).toContain('Mon, Jun 2');
+  });
+  it('omits the next-attempt sentence when nextAttemptLabel is missing', () => {
+    const html = buildPaymentFailedEmailHtml({
+      salonName: 'Acme', amountDollars: '10.00', currency: 'usd', portalUrl: 'https://x',
+    });
+    expect(html).not.toContain('Stripe will retry automatically');
+  });
+  it('escapes salon name to prevent HTML injection', () => {
+    const html = buildPaymentFailedEmailHtml({
+      salonName: '<script>alert(1)</script>', amountDollars: '0.00', currency: 'usd', portalUrl: 'https://x',
+    });
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
+describe('buildSubscriptionCanceledEmailHtml', () => {
+  it('renders salon name + portal CTA + Starter copy', () => {
+    const html = buildSubscriptionCanceledEmailHtml({
+      salonName: 'Acme Salon', portalUrl: 'https://billing.stripe.test/portal/y',
+    });
+    expect(html).toContain('Acme Salon');
+    expect(html).toContain('Starter');
+    expect(html).toContain('Schedule, Clients, Services, Employees, and Walk-in Kiosk');
+    expect(html).toContain('https://billing.stripe.test/portal/y');
+  });
+});
+
+describe('handleInvoicePaymentFailedSaas', () => {
+  it('skips invoices without a subscription (one-time payments)', async () => {
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice({ subscription: null }), makeFakeDb(), makeStripeForBilling(), vi.fn(),
+    );
+    expect(result).toEqual({ skipped: 'no_subscription' });
+  });
+
+  it('skips membership invoices (handled by inline branch in webhook)', async () => {
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice(), makeFakeDb(),
+      makeStripeForBilling({ subscriptionMetadata: { type: 'membership', tenantId: 'acme' } }),
+      vi.fn(),
+    );
+    expect(result).toEqual({ skipped: 'membership_branch' });
+  });
+
+  it('skips when the tenant cannot be resolved (no metadata, no mirror)', async () => {
+    const db = makeFakeDbWithCollection({}, { 'tenants': [] });
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice(), db,
+      makeStripeForBilling({ subscriptionMetadata: {} }),
+      vi.fn(),
+    );
+    expect(result).toEqual({ skipped: 'no_tenant' });
+  });
+
+  it('skips when the same invoice has already been emailed (Smart Retry idempotency)', async () => {
+    const db = makeFakeDb({
+      'tenants/acme': { name: 'Acme Salon', ownerEmail: 'owner@acme.test' },
+      'tenants/acme/data/settings': { lastFailedInvoiceId: 'in_test_failed_001' },
+    });
+    const sendEmail = vi.fn();
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice(), db, makeStripeForBilling(), sendEmail,
+    );
+    expect(result).toEqual({ skipped: 'duplicate_retry' });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('skips email when the tenant has no ownerEmail on file', async () => {
+    const db = makeFakeDb({ 'tenants/acme': { name: 'Acme', ownerEmail: '' } });
+    const sendEmail = vi.fn();
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice(), db, makeStripeForBilling(), sendEmail,
+    );
+    expect(result).toEqual({ skipped: 'no_owner_email' });
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it('happy path: emails the owner with a portal link and records the invoice id', async () => {
+    const db = makeFakeDb({
+      'tenants/acme': { name: 'Acme Salon', ownerEmail: 'owner@acme.test', subdomain: 'acme-salon' },
+    });
+    const sendEmail = vi.fn().mockResolvedValue({ error: null });
+    const stripe = makeStripeForBilling();
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice(), db, stripe, sendEmail,
+    );
+    expect(result).toEqual({ emailed: 'owner@acme.test' });
+    expect(sendEmail).toHaveBeenCalledTimes(1);
+    const call = sendEmail.mock.calls[0][0];
+    expect(call.to).toBe('owner@acme.test');
+    expect(call.subject).toContain('Acme Salon');
+    expect(call.html).toContain('https://billing.stripe.test/portal/sess_xxx');
+    expect(stripe.billingPortal.sessions.create).toHaveBeenCalledWith({
+      customer:   'cus_test_fail',
+      return_url: 'https://acme-salon.plumenexus.com/manage',
+    });
+    // Tracks the invoice id so the retry idempotency check works next time.
+    const settingsWrite = db._writes.find(w => w.path === 'tenants/acme/data/settings');
+    expect(settingsWrite.value.lastFailedInvoiceId).toBe('in_test_failed_001');
+  });
+
+  it('falls back to subdomain URL if Stripe portal mint fails (still emails)', async () => {
+    const db = makeFakeDb({
+      'tenants/acme': { name: 'Acme Salon', ownerEmail: 'owner@acme.test', subdomain: 'acme' },
+    });
+    const sendEmail = vi.fn().mockResolvedValue({ error: null });
+    const stripe = makeStripeForBilling({ portalResult: 'throw' });
+    const result = await handleInvoicePaymentFailedSaas(
+      makeInvoice(), db, stripe, sendEmail,
+    );
+    expect(result).toEqual({ emailed: 'owner@acme.test' });
+    const call = sendEmail.mock.calls[0][0];
+    expect(call.html).toContain('https://acme.plumenexus.com/manage');
+  });
+});
+
+describe('handleSubscriptionDeletedSaas', () => {
+  it('skips when the tenant cannot be resolved', async () => {
+    const db = makeFakeDbWithCollection({}, { 'tenants': [] });
+    const result = await handleSubscriptionDeletedSaas(
+      makeSubscription({ metadata: {} }), db, makeStripeForBilling(), vi.fn(),
+    );
+    expect(result).toEqual({ skipped: 'no_tenant' });
+  });
+
+  it('happy path: downgrades to starter, clears sub fields, emails the owner', async () => {
+    const db = makeFakeDb({
+      'tenants/acme': { name: 'Acme Salon', ownerEmail: 'owner@acme.test', subdomain: 'acme' },
+    });
+    const sendEmail = vi.fn().mockResolvedValue({ error: null });
+    const result = await handleSubscriptionDeletedSaas(
+      makeSubscription(), db, makeStripeForBilling(), sendEmail,
+    );
+    expect(result).toEqual({ downgraded: true, emailed: 'owner@acme.test' });
+    // Both tenant root + settings get the downgrade
+    const settingsWrite = db._writes.find(w => w.path === 'tenants/acme/data/settings');
+    expect(settingsWrite.value.plan).toBe('starter');
+    const tenantWrite = db._writes.find(w => w.path === 'tenants/acme');
+    expect(tenantWrite.value.plan).toBe('starter');
+    // Email landed on owner with the portal link
+    const call = sendEmail.mock.calls[0][0];
+    expect(call.to).toBe('owner@acme.test');
+    expect(call.subject).toContain('subscription ended');
+  });
+
+  it('downgrades even when ownerEmail is missing (no email, but state still cleared)', async () => {
+    const db = makeFakeDb({
+      'tenants/acme': { name: 'Acme', ownerEmail: '' },
+    });
+    const sendEmail = vi.fn();
+    const result = await handleSubscriptionDeletedSaas(
+      makeSubscription(), db, makeStripeForBilling(), sendEmail,
+    );
+    expect(result).toEqual({ downgraded: true, skipped: 'no_owner_email' });
+    expect(sendEmail).not.toHaveBeenCalled();
+    const tenantWrite = db._writes.find(w => w.path === 'tenants/acme');
+    expect(tenantWrite.value.plan).toBe('starter');
   });
 });
 

@@ -5044,7 +5044,10 @@ function planForPriceId(priceId) {
   return null;
 }
 
-const { handleChargeRefunded, handleChargeDisputeCreated, handleChargeDisputeClosed } = require('./lib/billing');
+const {
+  handleChargeRefunded, handleChargeDisputeCreated, handleChargeDisputeClosed,
+  handleInvoicePaymentFailedSaas, handleSubscriptionDeletedSaas,
+} = require('./lib/billing');
 
 exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
@@ -5278,29 +5281,27 @@ exports.stripeWebhook = onRequest(
           updatedAt:   new Date().toISOString(),
         }, { merge: true });
       } else {
-        // SaaS: fall back to existing tenant search
-        const snap = await db.collection('tenants')
-          .where('stripeSubscriptionId', '==', obj.id).limit(1).get();
-        if (!snap.empty) {
-          const t = snap.docs[0].id;
-          const { FieldValue } = require('firebase-admin/firestore');
-          const clear = {
-            plan: 'starter',
-            stripeSubscriptionId: FieldValue.delete(),
-            subscriptionStatus:   FieldValue.delete(),
-            cancelAtPeriodEnd:    FieldValue.delete(),
-            currentPeriodEnd:     FieldValue.delete(),
-            updatedAt: new Date().toISOString(),
-          };
-          await db.doc(`tenants/${t}/data/settings`).set(clear, { merge: true });
-          await db.doc(`tenants/${t}`).set(clear, { merge: true });
+        // SaaS subscription ended — downgrade to starter + email the owner
+        // with a portal link to re-subscribe. Combined into one handler so
+        // the email isn't silently skipped when the inline downgrade logic
+        // is edited (the audit gap that motivated this change).
+        try {
+          await handleSubscriptionDeletedSaas(obj, db, require('stripe')(key), sendEmail);
+        } catch (e) {
+          console.error('[stripeWebhook] customer.subscription.deleted SaaS handler error:', e?.message, e?.stack);
         }
       }
     }
 
     if (event.type === 'invoice.payment_failed') {
-      const tid = obj.metadata?.tenantId || obj.subscription_details?.metadata?.tenantId;
+      // Two flavors of invoice.payment_failed land here:
+      //   - membership invoices (client paid through their tenant) — flag the
+      //     membership past_due so the tenant UI shows the right status
+      //   - SaaS invoices (tenant paid us) — route to billing.js handler that
+      //     emails the tenant owner with a portal link to update billing
+      const tid   = obj.metadata?.tenantId || obj.subscription_details?.metadata?.tenantId;
       const subId = obj.subscription;
+      let handledAsMembership = false;
       if (subId && tid) {
         const memSnap = await db.collection(`tenants/${tid}/memberships`)
           .where('stripeSubscriptionId', '==', subId).limit(1).get();
@@ -5309,6 +5310,14 @@ exports.stripeWebhook = onRequest(
             status:    'past_due',
             updatedAt: new Date().toISOString(),
           }, { merge: true });
+          handledAsMembership = true;
+        }
+      }
+      if (!handledAsMembership) {
+        try {
+          await handleInvoicePaymentFailedSaas(obj, db, require('stripe')(key), sendEmail);
+        } catch (e) {
+          console.error('[stripeWebhook] invoice.payment_failed SaaS handler error:', e?.message, e?.stack);
         }
       }
     }

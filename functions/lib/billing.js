@@ -501,6 +501,181 @@ async function handleChargeDisputeClosed(dispute, db, stripe, sendEmail, platfor
   };
 }
 
+// ── Payment-failure + cancellation emails (SaaS subscription lifecycle) ─────
+//
+// Closes the "silent downgrade" gap audited 2026-05-30: previously
+// invoice.payment_failed for SaaS was a no-op and customer.subscription.deleted
+// downgraded the tenant to starter without telling them. Now the tenant owner
+// gets one email when their card declines (with a portal link to update
+// billing) and one when the subscription finally cancels (acknowledging the
+// downgrade with a path back).
+
+function buildPaymentFailedEmailHtml({ salonName, amountDollars, currency, portalUrl, nextAttemptLabel }) {
+  const safeSalon = String(salonName || 'your salon');
+  const safePortal = String(portalUrl || 'https://plumenexus.com');
+  const safeNext   = nextAttemptLabel ? `<p style="font-size:13px;color:#666;margin:0 0 16px;">Stripe will retry automatically <strong>${esc(nextAttemptLabel)}</strong>. To avoid any interruption, update your card now.</p>` : '<p style="font-size:13px;color:#666;margin:0 0 16px;">To avoid any interruption to your service, update your card on file as soon as possible.</p>';
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+  <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:14px 20px;">
+    <div style="font-size:13px;font-weight:700;color:#92400e;">⚠ Payment declined</div>
+  </div>
+  <div style="padding:24px;">
+    <p style="font-size:15px;color:#222;margin:0 0 12px;font-weight:600;">Your card was declined for ${esc(safeSalon)}.</p>
+    <p style="font-size:14px;color:#555;line-height:1.65;margin:0 0 8px;">We weren't able to charge <strong>$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</strong> for your Plume Nexus subscription.</p>
+    ${safeNext}
+    <div style="text-align:center;margin:24px 0;">
+      <a href="${esc(safePortal)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:14px;font-weight:700;padding:13px 28px;border-radius:10px;text-decoration:none;">Update billing →</a>
+    </div>
+    <p style="font-size:12px;color:#888;line-height:1.5;margin:8px 0 0;text-align:center;">If you have questions, just reply to this email.</p>
+  </div>
+  <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
+    <p style="font-size:11px;color:#bbb;margin:0;">Plume Nexus — salon management for the rest of us</p>
+  </div>
+</div></body></html>`;
+}
+
+function buildSubscriptionCanceledEmailHtml({ salonName, portalUrl }) {
+  const safeSalon = String(salonName || 'your salon');
+  const safePortal = String(portalUrl || 'https://plumenexus.com');
+  return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+<div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+  <div style="background:linear-gradient(135deg,#5b3b8c,#3D95CE);padding:20px 24px;">
+    <div style="color:#fff;font-size:16px;font-weight:700;">Your Plume Nexus subscription ended</div>
+  </div>
+  <div style="padding:24px;">
+    <p style="font-size:15px;color:#222;margin:0 0 12px;">Your paid subscription for <strong>${esc(safeSalon)}</strong> has been cancelled.</p>
+    <p style="font-size:14px;color:#555;line-height:1.65;margin:0 0 12px;">${esc(safeSalon)} has been moved to the Starter plan. You can continue using <strong>Schedule, Clients, Services, Employees, and Walk-in Kiosk</strong> for free.</p>
+    <p style="font-size:14px;color:#555;line-height:1.65;margin:0 0 16px;">Paid features (Reports, Earnings, Marketing, HR, Memberships, etc.) are paused. Re-subscribe any time to turn them back on — your data is preserved.</p>
+    <div style="text-align:center;margin:24px 0;">
+      <a href="${esc(safePortal)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:14px;font-weight:700;padding:13px 28px;border-radius:10px;text-decoration:none;">Manage billing →</a>
+    </div>
+    <p style="font-size:12px;color:#888;line-height:1.5;margin:8px 0 0;text-align:center;">Thanks for trying Plume Nexus. If something didn't work for you, we'd love to hear why — just reply.</p>
+  </div>
+  <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
+    <p style="font-size:11px;color:#bbb;margin:0;">Plume Nexus — salon management for the rest of us</p>
+  </div>
+</div></body></html>`;
+}
+
+// Mints a Stripe Customer Portal session URL for the email CTA. Wrapped here
+// so handler logic stays linear and the failure mode is just "use the fallback
+// URL." If Stripe is down or the customer arg is missing, we still send the
+// email with a generic billing link rather than skipping the email entirely.
+async function _mintPortalUrl(stripe, customerId, returnUrl) {
+  if (!stripe || !customerId) return returnUrl;
+  try {
+    const session = await stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl,
+    });
+    return session.url || returnUrl;
+  } catch (e) {
+    console.warn('[_mintPortalUrl] failed:', e?.message);
+    return returnUrl;
+  }
+}
+
+// Resolves the tenant doc + ownerEmail + a portal return URL for a SaaS sub.
+// Returns null if no tenant could be matched (e.g. grandfathered sub with no
+// metadata.tenantId, but also no stripeSubscriptionId mirror).
+async function _resolveTenantForSubscription(subscription, db) {
+  let tid = subscription?.metadata?.tenantId || null;
+  if (!tid && subscription?.id) {
+    const snap = await db.collection('tenants')
+      .where('stripeSubscriptionId', '==', subscription.id).limit(1).get();
+    if (!snap.empty) tid = snap.docs[0].id;
+  }
+  if (!tid) return null;
+  const tenSnap = await db.doc(`tenants/${tid}`).get();
+  const ten = tenSnap.exists ? tenSnap.data() : {};
+  return {
+    tenantId:    tid,
+    name:        ten.name || '',
+    ownerEmail:  ten.ownerEmail || '',
+    subdomain:   ten.subdomain || tid,
+    customerId:  subscription?.customer || ten.stripeCustomerId || null,
+  };
+}
+
+// invoice.payment_failed handler for SaaS subscriptions. Idempotent per-
+// invoice: stores the invoice.id on data/settings and skips if Stripe Smart
+// Retries fire the same event a second time. Membership invoices are routed
+// elsewhere (the existing inline branch in stripeWebhook handles them).
+async function handleInvoicePaymentFailedSaas(invoice, db, stripe, sendEmail) {
+  if (!invoice?.subscription) return { skipped: 'no_subscription' };
+  // Pull the subscription so we can read its metadata to distinguish SaaS
+  // from membership. Memberships have metadata.type === 'membership'.
+  const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+  if (subscription?.metadata?.type === 'membership') return { skipped: 'membership_branch' };
+  const tenant = await _resolveTenantForSubscription(subscription, db);
+  if (!tenant) return { skipped: 'no_tenant' };
+  // Idempotency: skip if we already emailed for this exact invoice.
+  const settingsRef = db.doc(`tenants/${tenant.tenantId}/data/settings`);
+  const settingsSnap = await settingsRef.get();
+  const lastEmailed = settingsSnap.exists ? settingsSnap.data().lastFailedInvoiceId : null;
+  if (lastEmailed && lastEmailed === invoice.id) return { skipped: 'duplicate_retry' };
+  if (!tenant.ownerEmail) return { skipped: 'no_owner_email' };
+  const returnUrl = `https://${tenant.subdomain}.plumenexus.com/manage`;
+  const portalUrl = await _mintPortalUrl(stripe, tenant.customerId, returnUrl);
+  const amountDollars = ((invoice.amount_due || 0) / 100).toFixed(2);
+  // Stripe sends `next_payment_attempt` as a unix seconds value when Smart
+  // Retries are enabled. Render in a human form if present.
+  let nextAttemptLabel = '';
+  if (invoice.next_payment_attempt) {
+    const d = new Date(invoice.next_payment_attempt * 1000);
+    nextAttemptLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+  const html = buildPaymentFailedEmailHtml({
+    salonName:        tenant.name,
+    amountDollars,
+    currency:         invoice.currency,
+    portalUrl,
+    nextAttemptLabel,
+  });
+  await sendEmail({
+    from:     'Plume Nexus <noreply@send.plumenexus.com>',
+    to:       tenant.ownerEmail,
+    subject:  `Action required: payment failed for ${tenant.name || 'your salon'}`,
+    html,
+    tenantId: tenant.tenantId,
+  });
+  await settingsRef.set({ lastFailedInvoiceId: invoice.id, lastFailedInvoiceAt: new Date().toISOString() }, { merge: true });
+  return { emailed: tenant.ownerEmail };
+}
+
+// customer.subscription.deleted handler for SaaS subscriptions. Combines the
+// downgrade-to-starter Firestore write and the email so the webhook block
+// becomes a one-liner. Idempotent: subscription.deleted only fires once per
+// subscription lifecycle, but the email itself is unsigned and could be
+// re-delivered — the downgrade write is also idempotent (set merge).
+async function handleSubscriptionDeletedSaas(subscription, db, stripe, sendEmail) {
+  const tenant = await _resolveTenantForSubscription(subscription, db);
+  if (!tenant) return { skipped: 'no_tenant' };
+  const { FieldValue } = require('firebase-admin/firestore');
+  const clear = {
+    plan:                 'starter',
+    stripeSubscriptionId: FieldValue.delete(),
+    subscriptionStatus:   FieldValue.delete(),
+    cancelAtPeriodEnd:    FieldValue.delete(),
+    currentPeriodEnd:     FieldValue.delete(),
+    updatedAt:            new Date().toISOString(),
+  };
+  await db.doc(`tenants/${tenant.tenantId}/data/settings`).set(clear, { merge: true });
+  await db.doc(`tenants/${tenant.tenantId}`).set(clear, { merge: true });
+  if (!tenant.ownerEmail) return { downgraded: true, skipped: 'no_owner_email' };
+  const returnUrl = `https://${tenant.subdomain}.plumenexus.com/manage`;
+  const portalUrl = await _mintPortalUrl(stripe, tenant.customerId, returnUrl);
+  const html = buildSubscriptionCanceledEmailHtml({ salonName: tenant.name, portalUrl });
+  await sendEmail({
+    from:     'Plume Nexus <noreply@send.plumenexus.com>',
+    to:       tenant.ownerEmail,
+    subject:  `Your Plume Nexus subscription ended`,
+    html,
+    tenantId: tenant.tenantId,
+  });
+  return { downgraded: true, emailed: tenant.ownerEmail };
+}
+
 module.exports = {
   buildRefundRecord,
   buildTenantRefundEmailHtml,
@@ -513,4 +688,8 @@ module.exports = {
   handleChargeDisputeCreated,
   handleChargeDisputeClosed,
   formatDueBy,
+  buildPaymentFailedEmailHtml,
+  buildSubscriptionCanceledEmailHtml,
+  handleInvoicePaymentFailedSaas,
+  handleSubscriptionDeletedSaas,
 };
