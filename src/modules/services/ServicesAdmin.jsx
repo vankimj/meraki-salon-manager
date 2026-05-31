@@ -474,6 +474,21 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             </div>
           </span>
         </label>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 14 }}>
+          <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.categoryExclusive} onChange={e => onChange({ categoryExclusive: e.target.checked })} />
+          <span>
+            Exclusive in category
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+              Block adding this service when another exclusive service from <strong>{svc.category || 'the same category'}</strong> is already in the cart. Use for "one set of hands / one set of feet" rules — set this on every Manicure and every Pedicure so customers can only pick one of each per visit. Leave OFF for add-ons (Nail Art, Removal, etc.).
+            </div>
+          </span>
+        </label>
+
+        <Field label="Max in cart per booking" hint="How many copies of this service a customer can add to one booking. Default 1. Set to 2 for Removal so customers can book one removal for hands and one for feet. Higher values only make sense for repeatable add-ons (e.g. extra nail art).">
+          <input type="number" min={1} max={10} value={svc.maxInCart ?? 1}
+            onChange={e => onChange({ maxInCart: Math.max(1, Number(e.target.value) || 1) })}
+            style={{ ...inputStyle, width: 100 }} />
+        </Field>
 
         <Field label="Auto-rebook interval (weeks)" hint="At checkout, prompt the client to book their next visit this many weeks out. 0 = no prompt.">
           <input type="number" min={0} max={26} value={svc.defaultRebookWeeks ?? 0}

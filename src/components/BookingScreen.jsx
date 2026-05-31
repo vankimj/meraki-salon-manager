@@ -34,6 +34,36 @@ const CATEGORY_ICONS = {
 const MONTH_NAMES = ['January','February','March','April','May','June',
                      'July','August','September','October','November','December'];
 
+// Cart rules — fully admin-driven via per-service flags in the Services tile:
+//   • maxInCart      (Number, default 1) — max copies of this service per booking
+//   • categoryExclusive (Boolean)        — block adding while another exclusive
+//                                          service from the same category is in cart
+// Sensible defaults: most services 1×, Removal 2× (set via maxInCart=2),
+// Manicures + Pedicures = categoryExclusive (one set of hands, one of feet).
+
+function maxInCart(svc) {
+  const n = Number(svc?.maxInCart);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
+// Returns null if the service can be added, or a reason code if it can't.
+// Reasons drive different greyed-out labels in the ServiceRow.
+function whyCantAddService(svc, cart) {
+  if (!svc) return 'invalid';
+  const count = cart.filter(i => i.service.id === svc.id).length;
+  if (count >= maxInCart(svc)) return 'duplicate';
+  if (svc.categoryExclusive && svc.category) {
+    const clash = cart.some(i =>
+      i.service.id !== svc.id
+      && i.service.category === svc.category
+      && i.service.categoryExclusive === true
+    );
+    if (clash) return 'category-exclusive';
+  }
+  return null;
+}
+function canAddService(svc, cart) { return whyCantAddService(svc, cart) === null; }
+
 // ── helpers ────────────────────────────────────────────
 function minsToStr(m) {
   const h = Math.floor(m / 60), min = m % 60;
@@ -358,23 +388,27 @@ export default function BookingScreen() {
   const removalSvc = services.find(s => /^removal$/i.test((s.name || '').trim()));
 
   function addToCart(svc, opt) {
-    // Defense-in-depth duplicate guard. The ServiceRow + Add button hides
-    // when the service is already in the cart, but if any other path calls
-    // addToCart (keyboard, deep-link, future code), we still block dupes:
-    // one of each service per booking. Same set of hands/feet either way.
-    if (cart.some(i => i.service.id === svc.id)) return;
+    // Defense-in-depth: the ServiceRow + Add button is greyed out when the
+    // service can't be added, but if any other path calls addToCart
+    // (keyboard, deep-link, future code), enforce the rules here too.
+    if (!canAddService(svc, cart)) return;
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
     setCart(c => [...c, { id, service: svc, option: opt || null, removal: false }]);
-    // Adding a service may invalidate prior tech/slot choices (e.g. picked tech
-    // can't do the new service). Reset downstream picks; user re-picks at step 2/3.
-    setCartTech(t => (t === undefined ? t : t)); // no-op, kept for symmetry
+    setCartTech(t => (t === undefined ? t : t));
     setCartSlot(null);
-    // Removal prompt — qualifying service, not yet declined, no Removal item
-    // already in the cart. (Skip the prompt if the customer is adding Removal
-    // itself, since that doesn't itself need a previous removal.)
-    const removalAlreadyInCart = removalSvc && cart.some(i => i.service.id === removalSvc.id);
+    // Removal prompt — only fires for "base" services (categoryExclusive +
+    // canRequireRemoval). These represent a fresh set going onto hands or
+    // feet, which is exactly when a previous removal would matter. Add-ons
+    // (categoryExclusive=false) don't trigger because they're applied on top
+    // of a base service whose removal already covers them.
     const isAddingRemoval = removalSvc && svc.id === removalSvc.id;
-    if (svc.canRequireRemoval && !isAddingRemoval && !declinedRemoval.has(svc.id) && !removalAlreadyInCart) {
+    const isBaseService   = svc.categoryExclusive === true && svc.canRequireRemoval;
+    // How many base services (counting the new one) need removal vs how many
+    // Removals are already booked? Prompt only if there's a gap.
+    const baseInCart      = cart.filter(i => i.service.categoryExclusive === true && i.service.canRequireRemoval).length
+                          + (isBaseService ? 1 : 0);
+    const removalsInCart  = removalSvc ? cart.filter(i => i.service.id === removalSvc.id).length : 0;
+    if (isBaseService && !isAddingRemoval && !declinedRemoval.has(svc.id) && removalsInCart < baseInCart) {
       setRemovalPrompt({ svcName: svc.name, svcId: svc.id });
     }
   }
@@ -1008,7 +1042,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
                 <ServiceRow key={s.id} svc={s} color={color}
                   selectedOption={pendingOptions[s.id] || null}
                   divider={i < svcs.length - 1}
-                  isInCart={cart.some(item => item.service.id === s.id)}
+                  blockedReason={whyCantAddService(s, cart)}
                   onSelectOption={(opt) => setPendingOptions(p => ({ ...p, [s.id]: opt }))}
                   onAdd={(opt) => {
                     onAdd(s, opt || pendingOptions[s.id] || (s.options?.[0] ?? null));
@@ -1053,7 +1087,13 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
   );
 }
 
-function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd, isInCart }) {
+function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd, blockedReason }) {
+  // Display state for the Add button:
+  //   • null              → enabled "+ Add"
+  //   • 'duplicate'       → "✓ Added" (this exact service is already chosen)
+  //   • 'category-exclusive' → greyed "+ Add" (another exclusive service in the same category is in cart)
+  const isBlocked = !!blockedReason;
+  const isInCart  = blockedReason === 'duplicate';
   const [hover,  setHover]  = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const hasImg = svc.image && !imgErr;
@@ -1138,15 +1178,18 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
         <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
           {hasOptions ? `from $${minOptPrice}` : formatPrice(svc)}
         </span>
-        <button onClick={handleAddClick} disabled={isInCart}
+        <button onClick={handleAddClick} disabled={isBlocked}
+          title={blockedReason === 'category-exclusive' ? `Already chose a service in ${svc.category}` : (blockedReason === 'duplicate' ? 'Already in cart' : undefined)}
           style={{
             fontSize: 12, fontWeight: 700,
-            color: isInCart ? '#888' : '#fff', border: isInCart ? '1px solid #d8d8d8' : 'none',
-            background: isInCart ? '#f4f4f4' : 'var(--tm-primary, #2D7A5F)',
+            color: isBlocked ? '#aaa' : '#fff',
+            border: isBlocked ? '1px solid #e5e5e5' : 'none',
+            background: isBlocked ? '#f4f4f4' : 'var(--tm-primary, #2D7A5F)',
             padding: '7px 16px', borderRadius: 999,
             letterSpacing: '.04em', whiteSpace: 'nowrap',
-            boxShadow: isInCart ? 'none' : '0 2px 6px rgba(0,0,0,.10)',
-            cursor: isInCart ? 'default' : 'pointer', fontFamily: 'inherit',
+            boxShadow: isBlocked ? 'none' : '0 2px 6px rgba(0,0,0,.10)',
+            cursor: isBlocked ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+            opacity: blockedReason === 'category-exclusive' ? 0.55 : 1,
             transition: 'background .15s',
           }}>
           {isInCart ? '✓ Added' : '+ Add'}
