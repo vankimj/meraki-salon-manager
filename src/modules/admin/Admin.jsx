@@ -2089,6 +2089,22 @@ function WebfrontTab({ cfg, setCfg, employees }) {
                   : <input    value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={inp} />}
               </div>
             ))}
+
+            {/* Team photo shape — applies to all tech avatars in the Team section. */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                Team photo shape
+              </div>
+              <select value={cfg.teamPhotoShape || 'rectangle'} onChange={e => patch('teamPhotoShape', e.target.value)} style={inp}>
+                <option value="rectangle">Rectangle (default · subtle 3px corners)</option>
+                <option value="rounded">Rounded rectangle (22px corners)</option>
+                <option value="circle">Circle</option>
+                <option value="asymmetric">Asymmetric blob (organic, each tech unique)</option>
+              </select>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 4, lineHeight: 1.45 }}>
+                Asymmetric gives each tech a hand-tuned organic outline that varies by position — feels editorial, less stamped-out.
+              </div>
+            </div>
           </div>
         </Section>
       )}

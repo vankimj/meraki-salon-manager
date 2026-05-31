@@ -199,7 +199,7 @@ export default function HeroMerakiSite({ webCfg, onSignIn }) {
 
       <Reviews narrow={narrow} reviews={reviews} rating={rating} reviewCount={reviewCount} />
 
-      <Team narrow={narrow} veryNarrow={veryNarrow} team={team} intro={teamIntro} />
+      <Team narrow={narrow} veryNarrow={veryNarrow} team={team} intro={teamIntro} webCfg={webCfg} />
 
       <Instagram narrow={narrow} veryNarrow={veryNarrow} igGrid={igGrid} handle={igHandle} />
 
@@ -655,7 +655,7 @@ function GoogleG() {
 
 /* ─────────────────────── team ───────────────────────────────────── */
 
-function Team({ veryNarrow, team, intro }) {
+function Team({ veryNarrow, team, intro, webCfg }) {
   const cols = veryNarrow ? 2 : team.length > 6 ? 5 : team.length;
   return (
     <section id="team" style={{ padding: '120px 0', background: CREAM }}>
@@ -670,21 +670,50 @@ function Team({ veryNarrow, team, intro }) {
           gridTemplateColumns: `repeat(${cols}, 1fr)`,
           gap: veryNarrow ? '32px 20px' : '48px 32px',
         }}>
-          {team.map((t, i) => <TechCard key={i} {...t} />)}
+          {team.map((t, i) => <TechCard key={i} {...t} shape={webCfg?.teamPhotoShape || 'rectangle'} idx={i} />)}
         </div>
       </Container>
     </section>
   );
 }
 
-function TechCard({ name, handle, photo }) {
+// Asymmetric blob border-radius variants. Each tech in the team grid gets
+// a different one by index so the row feels organic instead of stamped.
+// Values are hand-tuned to feel natural at the team-card aspect ratio.
+const ASYMMETRIC_RADII = [
+  '63% 37% 54% 46% / 55% 48% 52% 45%',
+  '47% 53% 70% 30% / 41% 64% 36% 59%',
+  '30% 70% 70% 30% / 36% 30% 70% 64%',
+  '65% 35% 55% 45% / 35% 60% 40% 65%',
+  '72% 28% 41% 59% / 58% 70% 30% 42%',
+  '40% 60% 65% 35% / 60% 40% 60% 40%',
+  '55% 45% 30% 70% / 48% 35% 65% 52%',
+  '38% 62% 56% 44% / 70% 40% 60% 30%',
+];
+
+function techPhotoFrameStyle(shape, idx, baseAspect = '1 / 1.15') {
+  // Base shared across all shapes.
+  const common = { overflow: 'hidden', background: CREAM_DEEP, marginBottom: 16, position: 'relative' };
+  if (shape === 'circle') {
+    return { ...common, aspectRatio: '1 / 1', borderRadius: '50%' };
+  }
+  if (shape === 'rounded') {
+    return { ...common, aspectRatio: baseAspect, borderRadius: 22 };
+  }
+  if (shape === 'asymmetric') {
+    const radii = ASYMMETRIC_RADII[idx % ASYMMETRIC_RADII.length];
+    return { ...common, aspectRatio: '1 / 1', borderRadius: radii };
+  }
+  // 'rectangle' (default).
+  return { ...common, aspectRatio: baseAspect, borderRadius: 3 };
+}
+
+function TechCard({ name, handle, photo, shape = 'rectangle', idx = 0 }) {
   const letter = (name || '?').trim()[0]?.toUpperCase() || '?';
+  const frameStyle = techPhotoFrameStyle(shape, idx);
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{
-        aspectRatio: '1 / 1.15', borderRadius: 3, overflow: 'hidden',
-        background: CREAM_DEEP, marginBottom: 16, position: 'relative',
-      }}>
+      <div style={frameStyle}>
         {photo ? (
           <img src={photo} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
