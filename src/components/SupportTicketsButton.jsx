@@ -504,6 +504,20 @@ function ChatBubble({ role, text, actions }) {
 }
 
 function ActionChip({ a }) {
+  if (a.requiresConfirmation) {
+    return (
+      <div style={{
+        fontSize: 11, padding: '6px 10px', borderRadius: 8,
+        background: C.warningSoft, color: C.warning,
+        display: 'inline-flex', alignItems: 'center', gap: 6,
+        width: 'fit-content',
+        border: `1px solid ${C.warning}40`,
+      }}>
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.warning }} />
+        <span style={{ fontWeight: 700 }}>⏸ Awaiting your confirmation</span>
+      </div>
+    );
+  }
   const ok = a.ok !== false;
   const color = ok ? C.success : C.danger;
   const bg    = ok ? C.successSoft : C.dangerSoft;

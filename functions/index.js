@@ -10783,6 +10783,78 @@ exports.aiTriageTicket = onDocumentCreated(
 const _aiSessionToolCounts = new Map(); // sessionId → number
 const AI_MAX_TOOL_CALLS_PER_SESSION = 30;
 
+// Two-step confirmation for destructive tools. When the AI calls a
+// destructive tool WITHOUT `confirmed: true`, the server records a
+// pending-confirm token keyed by hash(sessionId + tool + inputs) and
+// returns requiresConfirmation. Only when the AI re-calls with the
+// EXACT same inputs + confirmed:true does the server execute. Tokens
+// expire after 5 min so an old confirmation can't be replayed.
+const _pendingAiConfirms = new Map(); // hashKey → { at, intent }
+const AI_CONFIRM_TTL_MS  = 5 * 60 * 1000;
+
+// Destructive tools require the two-step confirm. Add to this set when
+// adding any new write tool that's not trivially undo-able with a click.
+// Right now only removeService qualifies — Updates are recoverable via
+// the per-doc snapshot history layer of the customer-data defense; Adds
+// are non-destructive; soft-deletes go here.
+const DESTRUCTIVE_TOOLS = new Set(['removeService']);
+
+function aiConfirmKey(sessionId, tool, input) {
+  const normalized = { ...(input || {}) };
+  delete normalized.confirmed;
+  // Stable string ordering so {a, b} and {b, a} hash identically.
+  const sortedJson = JSON.stringify(Object.keys(normalized).sort().reduce((acc, k) => (acc[k] = normalized[k], acc), {}));
+  return crypto.createHash('sha256').update(`${sessionId}|${tool}|${sortedJson}`).digest('hex').slice(0, 32);
+}
+
+function pruneExpiredConfirms() {
+  const cutoff = Date.now() - AI_CONFIRM_TTL_MS;
+  for (const [k, v] of _pendingAiConfirms.entries()) {
+    if (v.at < cutoff) _pendingAiConfirms.delete(k);
+  }
+}
+
+function describeDestructiveIntent(tool, input, context = {}) {
+  switch (tool) {
+    case 'removeService':
+      return `Remove the service "${context.serviceName || input?.serviceId}" from your menu (soft-delete; recoverable from Admin → Trash for 30 days).`;
+    default:
+      return `Perform ${tool} with ${JSON.stringify(input).slice(0, 200)}`;
+  }
+}
+
+// Defense-in-depth guard rails that run before every tool call.
+// Returns null on success, or {ok: false, error} that the dispatcher
+// immediately returns to the AI without touching Firestore.
+function preToolGuardRails(tenantId, toolName, input) {
+  // Invariant: tenantId must be the validated string from the request
+  // closure. Defensive — if this is ever wrong, fail loud.
+  if (typeof tenantId !== 'string' || !/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    return { ok: false, error: 'Invariant violation: invalid tenantId in tool dispatch' };
+  }
+  // Reject any input string that looks like it's trying to address a
+  // Firestore path outside the validated tenant. None of our tool
+  // schemas accept paths, so any "tenants/X/...", "platform/...",
+  // "backups/...", etc. is malicious or hallucinated.
+  for (const [k, v] of Object.entries(input || {})) {
+    if (typeof v !== 'string') continue;
+    const s = v.trim().toLowerCase();
+    if (s.startsWith('tenants/') || s.startsWith('platform/') ||
+        s.startsWith('backups/') || s.startsWith('_oauthnonces/') ||
+        s.startsWith('platformauditlog') || s.startsWith('clientsalonindex') ||
+        s.includes('../')) {
+      return { ok: false, error: `Input "${k}" looks like a Firestore path; tools do not accept paths.` };
+    }
+    // Tenant-id-shaped value in any field that isn't legitimately one
+    // (we never accept tenantId from the AI — closure tenantId is the
+    // only valid one).
+    if (k === 'tenantId') {
+      return { ok: false, error: 'Tools do not accept tenantId; the session is scoped server-side.' };
+    }
+  }
+  return null;
+}
+
 const SALON_ADMIN_TOOLS = [
   {
     name: 'navigate',
@@ -10863,11 +10935,14 @@ const SALON_ADMIN_TOOLS = [
   },
   {
     name: 'removeService',
-    description: 'Delete a service from the menu. Soft-delete; recoverable via Admin → Trash for 30 days. Use cautiously.',
+    description: 'Soft-delete a service from the menu (recoverable from Admin → Trash for 30 days). DESTRUCTIVE — two-step confirm. First call with serviceId only; the server will return requiresConfirmation with an intent string for you to read back to the user. Only AFTER the user explicitly agrees, call again with the same serviceId AND confirmed:true. Never pass confirmed:true on the first call.',
     input_schema: {
       type: 'object',
-      properties: { serviceId: { type: 'string' } },
-      required:   ['serviceId'],
+      properties: {
+        serviceId: { type: 'string' },
+        confirmed: { type: 'boolean', description: 'ONLY true on the second call after explicit user confirmation.' },
+      },
+      required: ['serviceId'],
     },
   },
   {
@@ -10928,6 +11003,51 @@ async function writeAiAuditLog(db, tenantId, payload) {
 }
 
 async function executeTool(db, tenantId, callerEmail, sessionId, toolName, input) {
+  // ── Guard rails: defense-in-depth before any Firestore I/O ──
+  const guard = preToolGuardRails(tenantId, toolName, input);
+  if (guard) return guard;
+
+  // ── Destructive-tool two-step confirm ──
+  if (DESTRUCTIVE_TOOLS.has(toolName)) {
+    pruneExpiredConfirms();
+    const key = aiConfirmKey(sessionId, toolName, input);
+    if (input?.confirmed === true) {
+      const pending = _pendingAiConfirms.get(key);
+      if (!pending) {
+        return {
+          ok: false,
+          error: 'No pending confirmation for this action — call without confirmed:true first to get a confirmation intent, read it to the user verbatim, and only call with confirmed:true after they explicitly agree. Confirmations expire after 5 minutes.',
+        };
+      }
+      _pendingAiConfirms.delete(key);
+      // fall through to real execution; strip confirmed so dispatch
+      // logic works against the original input shape.
+      input = { ...input };
+      delete input.confirmed;
+    } else {
+      // Build a friendly intent string. Look up service name for the
+      // removeService case so the user hears a real name not an id.
+      let context = {};
+      if (toolName === 'removeService') {
+        try {
+          const sid = String(input?.serviceId || '').slice(0, 64);
+          if (sid) {
+            const snap = await db.doc(`tenants/${tenantId}/services/${sid}`).get();
+            if (snap.exists) context.serviceName = snap.data()?.name || sid;
+          }
+        } catch (_) { /* best effort */ }
+      }
+      const intent = describeDestructiveIntent(toolName, input, context);
+      _pendingAiConfirms.set(key, { at: Date.now(), intent });
+      return {
+        ok:    false,
+        requiresConfirmation: true,
+        intent,
+        recovery: 'Soft-deleted services can be restored from Admin → Trash for 30 days.',
+      };
+    }
+  }
+
   const audit = { sessionId, tool: toolName, input, by: callerEmail };
 
   switch (toolName) {
@@ -11145,27 +11265,42 @@ const SALON_ADMIN_SYSTEM_PROMPT = `You are the in-app AI assistant for a salon o
 Your job:
 1. Answer questions about the salon, its data, and how to use the app.
 2. Navigate the owner to the right screen when a complex setting lives elsewhere.
-3. Apply allow-listed changes on their behalf when they ask — confirm intent in natural language but do NOT add a second "are you sure" step before calling the tool. The allowlist + audit log is the safety mechanism.
+3. Apply allow-listed changes on their behalf when they ask. For non-destructive changes, just do it. For DESTRUCTIVE actions (currently: removeService), follow the two-step confirm pattern below.
 
 Tone: warm, brief, professional. Sound like a knowledgeable colleague. Sign nothing — you're in-app, not over email.
 
 Decision guide:
 - Question about app behavior / data → answer directly using read tools if helpful.
 - Setting that's NOT in your tool list (taxes, integrations, payouts, payroll) → call \`navigate\` to send them to the right screen and tell them in 1 sentence what to do there.
-- Setting that IS in your tool list → just do it. Echo the change back in the response so the owner sees what you did.
+- Non-destructive change in your tool list (update hours / settings / services / employees / templates, add service) → just do it. Echo the change back so the owner sees what you did.
+- Destructive change (removeService) → two-step. First call with serviceId only. Server returns requiresConfirmation + intent string. Read the intent verbatim to the user and ask if they want to proceed. Only on explicit yes, call again with confirmed:true. Never preempt the confirm.
 
-When you make a write tool call:
+If a write tool returns ok:false with requiresConfirmation:true:
+- DO NOT call it again with confirmed:true yet.
+- Read the \`intent\` and \`recovery\` fields back to the user verbatim and ask "Proceed?".
+- Wait for the user's next message. If yes → call the tool with confirmed:true. If no/cancel → confirm cancellation, do not call again.
+
+When you make a write tool call (non-destructive):
 - First be SURE you have the values you need. If the owner said "change my hours" without specifics, ASK before calling the tool.
 - After the tool returns, briefly describe what changed (1-2 sentences).
 - If the tool fails, explain the failure simply and suggest a fix.
 
 When a question is purely about another tenant's data, payroll, taxes, or compensation: politely decline and route them to the right surface (HR for payroll, etc.).
 
+HARD LIMITS (your tools cannot reach these — do NOT promise to do them):
+- Anything outside THIS salon. You cannot read or write other tenants, the platform-admin console, audit logs, or platform-wide settings.
+- Backups (Point-in-Time Recovery, the BigQuery mirror, soft-delete tombstones beyond the per-doc Trash, snapshot history).
+- Auth identities — you cannot reset passwords, sign someone in/out, or change Google sign-in mappings.
+- Compensation, banking, SSN, tax forms, payroll, Gusto integration — none of this is reachable from your tools.
+- Stripe charges, refunds, payouts, subscriptions, gift card balances.
+- Deletions of clients, appointments, receipts, chats, or employees — none of this is in your tool list. If asked, decline and offer to navigate them to the right module to do it themselves.
+
 NEVER:
 - Promise behavior you haven't verified.
 - Reveal employee compensation, SSN, banking, payroll, or tax form data — you don't have tools that can read those.
 - Talk about Plume Nexus's internal vendors by name (Twilio, SES, BigQuery, etc.). Just say "SMS", "email", "the platform".
 - Make up service names, prices, or employee data — use \`listServices\` / \`listEmployees\` to verify.
+- Skip the confirm step on a destructive tool. The server enforces this; if you try, you'll just get an error back. Do the two-step.
 
 Output: short, direct, conversational. Don't use long bulleted lists for simple confirmations.`;
 
@@ -11270,6 +11405,9 @@ exports.chatWithSalonAdmin = onCall(
           input: b.input || {},
           ok:    result.ok !== false,
           message: result.result || result.error || null,
+          requiresConfirmation: !!result.requiresConfirmation,
+          intent:   result.intent   || null,
+          recovery: result.recovery || null,
         });
 
         toolResults.push({
