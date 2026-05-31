@@ -6,6 +6,7 @@ import Layout from './components/Layout.jsx';
 import TenantList from './components/TenantList.jsx';
 import TenantDetail from './components/TenantDetail.jsx';
 import AuditLog from './components/AuditLog.jsx';
+import TicketsQueue from './components/TicketsQueue.jsx';
 import { C, FONT } from './theme.js';
 
 const norm = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
@@ -54,6 +55,8 @@ export default function App() {
         <TenantList />
       ) : path === '/audit' ? (
         <AuditLog />
+      ) : path === '/tickets' ? (
+        <TicketsQueue />
       ) : (
         <NotFound />
       )}

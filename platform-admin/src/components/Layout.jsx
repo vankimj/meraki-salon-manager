@@ -29,11 +29,11 @@ export default function Layout({ user, currentPath, children }) {
 
         <nav style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <NavLink href="/"           label="Tenants"  active={currentPath === '/'} />
+          <NavLink href="/tickets"    label="Support"  active={currentPath === '/tickets'} />
           <NavLink href="/audit"      label="Audit log" active={currentPath === '/audit'} />
           {/* Future tabs — disabled placeholders */}
           <NavLink href="#"          label="Onboarding" disabled />
           <NavLink href="#"          label="Financials" disabled />
-          <NavLink href="#"          label="Support"    disabled />
         </nav>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>

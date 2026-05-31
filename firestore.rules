@@ -665,6 +665,20 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
+      // Support tickets: tenant admin reads/creates within their tenant;
+      // platform admin can read/update (for triage + status / reply). All
+      // writes go through Cloud Functions (admin SDK bypasses rules); the
+      // allow-rules here only gate the rare direct-client reads.
+      match /supportTickets/{ticketId} {
+        allow read:  if isTenantAdmin(tenantId) || isPlatformAdmin();
+        allow write: if false;
+
+        match /replies/{replyId} {
+          allow read:  if isTenantAdmin(tenantId) || isPlatformAdmin();
+          allow write: if false;
+        }
+      }
+
       // Tax forms (1099-NEC): admin manages all; tenant staff with the
       // matching email read their own. The tenant-scoped check prevents
       // a tech with a duplicate email at another salon from leaking forms.

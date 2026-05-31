@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, reauthenticateWithPopup } from 'firebase/auth';
-import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, query, orderBy, limit, where, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, query, orderBy, limit, where, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 // Same Firebase project as the salon app + marketing site. Different hosting site.
@@ -46,4 +46,4 @@ export async function reauthGoogle() {
 }
 
 // ── Re-exports for convenience ──────────────────────────
-export { doc, getDoc, getDocs, setDoc, addDoc, collection, query, orderBy, limit, where, serverTimestamp, httpsCallable };
+export { doc, getDoc, getDocs, setDoc, addDoc, collection, query, orderBy, limit, where, serverTimestamp, onSnapshot, httpsCallable };

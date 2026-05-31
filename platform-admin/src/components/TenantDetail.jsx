@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant, setTenantSandboxMode } from '../lib/tenants.js';
 import { fetchTenantDailies, fetchTenantMonthly } from '../lib/cost.js';
+import { listTicketsForTenant } from '../lib/tickets.js';
 import { reauthGoogle } from '../lib/firebase.js';
 import { C, FONT, shadow, radius } from '../theme.js';
 import { CostAreaChart, CostBreakdownCard } from './CostChart.jsx';
@@ -177,17 +178,7 @@ export default function TenantDetail({ tenantId }) {
 
       {/* Card grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, marginBottom: 24 }}>
-        <Card title="Plan">
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, textTransform: 'capitalize' }}>{meta.plan || 'unset'}</div>
-          {meta.legacyPlan && (
-            <div style={{ fontSize: 11, color: C.warning, fontWeight: 600, marginTop: 4 }}>⚠ Legacy: {meta.legacyPlan}</div>
-          )}
-          {meta.packs?.length > 0 && (
-            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {meta.packs.map(p => <span key={p} style={{ fontSize: 9, padding: '2px 6px', background: '#ede9fe', color: '#6d28d9', borderRadius: 3, fontWeight: 700, textTransform: 'uppercase' }}>{p}</span>)}
-            </div>
-          )}
-        </Card>
+        <PlanCard meta={meta} busy={busy} setBusy={setBusy} reload={load} />
 
         <Card title="Status">
           <div style={{ fontSize: 18, fontWeight: 700, color: meta.active === false ? C.danger : C.success }}>
@@ -208,6 +199,8 @@ export default function TenantDetail({ tenantId }) {
             {meta.active === false ? 'Re-activate' : 'Deactivate'}
           </button>
         </Card>
+
+        <CohortCard meta={meta} busy={busy} setBusy={setBusy} reload={load} />
 
         <Card title="Provisioning">
           <div style={{ fontSize: 18, fontWeight: 700, color: meta.provisioned ? C.success : C.warning }}>
@@ -267,6 +260,8 @@ export default function TenantDetail({ tenantId }) {
           aggregator. Wide stacked-area chart on the left, MTD breakdown
           card on the right. Both are pure aggregate; no per-customer signal. */}
       <CostSection tenantId={meta.id} />
+
+      <TenantTicketsPanel tenantId={meta.id} />
 
       {/* Coming-soon panels */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
@@ -555,6 +550,132 @@ function UrlRow({ label, url, note, top, muted, badge }) {
   );
 }
 
+const PLAN_OPTIONS = [
+  { value: 'solo',       label: 'Solo'       },
+  { value: 'studio',     label: 'Studio'     },
+  { value: 'salonPro',   label: 'Salon Pro'  },
+  // Legacy plans kept selectable so a tenant can stay on legacy pricing
+  // until the migration cohort sweep — flagged with the dashed warning chip.
+  { value: 'starter',    label: 'starter (legacy)' },
+  { value: 'pro',        label: 'pro (legacy)'     },
+  { value: 'enterprise', label: 'enterprise (legacy)' },
+];
+
+function PlanCard({ meta, busy, setBusy, reload }) {
+  const [editing, setEditing] = useState(false);
+  const [draft,   setDraft]   = useState(meta.plan || 'solo');
+  const [err,     setErr]     = useState('');
+  async function save() {
+    if (draft === (meta.plan || '')) { setEditing(false); return; }
+    setBusy(true); setErr('');
+    try {
+      await updateTenantRecord(meta.id, { plan: draft });
+      await reload();
+      setEditing(false);
+    } catch (e) { setErr(e?.message || 'Failed to save plan.'); }
+    finally     { setBusy(false); }
+  }
+  return (
+    <Card title="Plan">
+      {editing ? (
+        <>
+          <select
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            disabled={busy}
+            style={{
+              width: '100%', padding: '6px 10px', fontSize: 14,
+              border: `1px solid ${C.plum}`, borderRadius: 6,
+              background: '#fff', fontFamily: 'inherit', outline: 'none',
+            }}
+          >
+            {PLAN_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          {err && <div style={{ fontSize: 11, color: C.danger, marginTop: 6 }}>{err}</div>}
+          <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+            <button onClick={save} disabled={busy} style={btnSavePlum(busy)}>{busy ? 'Saving…' : 'Save'}</button>
+            <button onClick={() => { setEditing(false); setDraft(meta.plan || 'solo'); setErr(''); }} disabled={busy} style={btnGhost()}>Cancel</button>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, textTransform: 'capitalize' }}>
+            {meta.plan || 'unset'}
+          </div>
+          {meta.legacyPlan && (
+            <div style={{ fontSize: 11, color: C.warning, fontWeight: 600, marginTop: 4 }}>⚠ Legacy: {meta.legacyPlan}</div>
+          )}
+          {meta.packs?.length > 0 && (
+            <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {meta.packs.map(p => <span key={p} style={{ fontSize: 9, padding: '2px 6px', background: '#ede9fe', color: '#6d28d9', borderRadius: 3, fontWeight: 700, textTransform: 'uppercase' }}>{p}</span>)}
+            </div>
+          )}
+          <button onClick={() => { setDraft(meta.plan || 'solo'); setEditing(true); }} disabled={busy}
+            style={{
+              marginTop: 8, padding: '5px 11px', fontSize: 11, fontWeight: 600,
+              background: 'transparent', color: C.plum,
+              border: `1px solid ${C.plum}40`, borderRadius: 6,
+              cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+            }}>
+            Change plan
+          </button>
+        </>
+      )}
+    </Card>
+  );
+}
+
+function CohortCard({ meta, busy, setBusy, reload }) {
+  const isFounders = !!meta.foundersMember;
+  async function toggle() {
+    const next = !isFounders;
+    const msg = next
+      ? `Mark ${meta.name || meta.id} as a Founders' Member?\n\nLifetime price lock; eligible only during the Founders' Year window.`
+      : `Remove Founders' Member status from ${meta.name || meta.id}?\n\nNext billing cycle will switch to current public pricing on their plan.`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      await updateTenantRecord(meta.id, { foundersMember: next });
+      await reload();
+    } finally { setBusy(false); }
+  }
+  return (
+    <Card title="Cohort">
+      <div style={{ fontSize: 18, fontWeight: 700, color: isFounders ? C.success : C.mutedSoft }}>
+        {isFounders ? "Founders' Member" : 'Standard'}
+      </div>
+      <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 4, lineHeight: 1.4 }}>
+        {isFounders
+          ? 'Lifetime price lock at signup pricing. Honored across plan changes.'
+          : 'On current public pricing. Eligible to be flipped to Founders during the Founders Year.'}
+      </div>
+      <button onClick={toggle} disabled={busy} style={{
+        marginTop: 8, padding: '5px 11px', fontSize: 11, fontWeight: 600,
+        background: 'transparent',
+        color: isFounders ? C.danger : C.success,
+        border: `1px solid ${(isFounders ? C.danger : C.success)}40`,
+        borderRadius: 6, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+      }}>
+        {isFounders ? "Remove Founders' status" : "Mark as Founders' Member"}
+      </button>
+    </Card>
+  );
+}
+
+function btnSavePlum(busy) {
+  return {
+    padding: '6px 14px', borderRadius: 6, border: 'none',
+    background: busy ? C.muted : C.plum, color: '#fff', fontSize: 13, fontWeight: 600,
+    cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+  };
+}
+function btnGhost() {
+  return {
+    padding: '6px 14px', borderRadius: 6, border: `1px solid ${C.rule}`,
+    background: '#fff', color: C.muted, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+  };
+}
+
 function CostSection({ tenantId }) {
   const [days,    setDays]    = useState(30);
   const [dailies, setDailies] = useState(null);
@@ -614,11 +735,204 @@ function CostSection({ tenantId }) {
           {loading && <div style={{ padding: 32, textAlign: 'center', color: C.mutedSoft, fontSize: 12 }}>Loading…</div>}
           {error   && <div style={{ padding: 16, color: C.danger, fontSize: 12 }}>{error}</div>}
           {!loading && !error && <CostAreaChart data={dailies} height={240} />}
+          {!loading && !error && <CostRatePanel monthly={monthly} dailies={dailies} days={days} />}
         </div>
         <CostBreakdownCard monthly={monthly} />
       </div>
     </div>
   );
+}
+
+// Derived burn-rate stats. MTD figures use elapsed hours of the
+// current UTC month for the hourly rate, and project the month-end
+// total by linear extrapolation. Window figures are based on the
+// chart's current 7/30/90-day range.
+function CostRatePanel({ monthly, dailies, days }) {
+  const stats = computeRateStats(monthly, dailies, days);
+  return (
+    <div style={{
+      marginTop: 16, padding: '12px 14px',
+      background: C.bgCode, border: `1px solid ${C.ruleSoft}`, borderRadius: radius.md,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>
+        Burn rate
+      </div>
+      <div style={{
+        display: 'grid', gap: 12,
+        gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+      }}>
+        <RateStat label="$ / hour" sub="month-to-date" value={fmtUsdRate(stats.mtdPerHour)} />
+        <RateStat label="$ / day"  sub="month-to-date" value={fmtUsdRate(stats.mtdPerDay)} />
+        <RateStat label="Projected" sub={`month end ${stats.monthKey}`} value={fmtUsdRate(stats.projectedMonthly)} />
+        <RateStat label="Window avg" sub={`last ${days}d`} value={`${fmtUsdRate(stats.windowPerDay)}/d`} />
+      </div>
+      {stats.perServicePerDay && (
+        <div style={{ marginTop: 12, borderTop: `1px solid ${C.ruleSoft}`, paddingTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>
+            $/day by service (MTD)
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, color: C.text }}>
+            {stats.perServicePerDay.map(([label, perDay, color]) => (
+              <span key={label} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: color }} />
+                <span style={{ color: C.muted }}>{label}:</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', fontWeight: 600 }}>{fmtUsdRate(perDay)}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RateStat({ label, sub, value }) {
+  return (
+    <div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: C.ink, fontVariantNumeric: 'tabular-nums', marginTop: 2 }}>{value}</div>
+      <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 1 }}>{sub}</div>
+    </div>
+  );
+}
+
+function computeRateStats(monthly, dailies, days) {
+  const now = new Date();
+  // Elapsed hours in the current UTC month (the monthly doc's clock).
+  const startOfMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const hoursElapsed = Math.max(1, (now.getTime() - startOfMonth.getTime()) / 3_600_000);
+  const daysElapsed  = hoursElapsed / 24;
+  const daysInMonth  = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate();
+
+  const mtdTotal = Number(monthly?.totalCostUsd || 0);
+  const mtdPerHour = mtdTotal / hoursElapsed;
+  const mtdPerDay  = mtdTotal / daysElapsed;
+  const projectedMonthly = mtdPerDay * daysInMonth;
+
+  const windowTotal = (dailies || []).reduce((a, d) => a + (d.total || 0), 0);
+  const windowPerDay = windowTotal / Math.max(1, (dailies || []).length || days);
+
+  let perServicePerDay = null;
+  if (monthly && daysElapsed >= 0.5) {
+    perServicePerDay = [
+      ['SMS',   Number(monthly.sms?.costUsd   || 0) / daysElapsed, '#3d95ce'],
+      ['Email', Number(monthly.email?.costUsd || 0) / daysElapsed, '#3d9e8a'],
+      ['AI',    Number(monthly.ai?.costUsd    || 0) / daysElapsed, '#c19a4a'],
+      ['TFN',   Number(monthly.tfn?.costUsd   || 0) / daysElapsed, '#94a3b8'],
+      ['GCP',   Number(monthly.gcp?.costUsd   || 0) / daysElapsed, '#7c3aed'],
+    ];
+  }
+
+  return {
+    monthKey: monthly?.monthKey || `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`,
+    mtdPerHour,
+    mtdPerDay,
+    projectedMonthly,
+    windowPerDay,
+    perServicePerDay,
+  };
+}
+
+function TenantTicketsPanel({ tenantId }) {
+  const [rows, setRows] = useState(null);
+  const [err,  setErr]  = useState('');
+  useEffect(() => {
+    listTicketsForTenant(tenantId, 25)
+      .then(r => setRows(r))
+      .catch(e => { setErr(e?.message || 'Failed to load tickets.'); setRows([]); });
+  }, [tenantId]);
+
+  const counts = (rows || []).reduce((a, t) => ({ ...a, [t.status]: (a[t.status] || 0) + 1 }), {});
+  const open    = counts.open    || 0;
+  const awaiting = counts.pending_owner || 0;
+
+  return (
+    <div style={{
+      background: C.bgCard, border: `1px solid ${C.rule}`, borderRadius: radius.md,
+      overflow: 'hidden', marginTop: 8, marginBottom: 24,
+    }}>
+      <div style={{
+        padding: '12px 16px', background: C.bgCode, borderBottom: `1px solid ${C.rule}`,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            Support tickets
+          </div>
+          {rows && (
+            <div style={{ fontSize: 11, color: C.mutedSoft, marginTop: 2 }}>
+              {rows.length} total · {open} open · {awaiting} awaiting owner
+            </div>
+          )}
+        </div>
+        <a href="/tickets" style={{ fontSize: 12, color: C.plum, fontWeight: 600, textDecoration: 'none' }}>
+          Open in support queue →
+        </a>
+      </div>
+      <div style={{ padding: 16 }}>
+        {err && <div style={{ color: C.danger, fontSize: 12, marginBottom: 8 }}>{err}</div>}
+        {!rows ? (
+          <div style={{ color: C.mutedSoft, fontSize: 12 }}>Loading…</div>
+        ) : rows.length === 0 ? (
+          <div style={{ color: C.mutedSoft, fontSize: 12, fontStyle: 'italic' }}>
+            No tickets yet from this tenant. They can file one via the ? button in their salon app.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {rows.slice(0, 6).map(t => <TicketRow key={t.id} t={t} />)}
+            {rows.length > 6 && (
+              <a href="/tickets" style={{ fontSize: 12, color: C.plum, marginTop: 4, textDecoration: 'none', fontWeight: 600 }}>
+                +{rows.length - 6} more · view all →
+              </a>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TicketRow({ t }) {
+  return (
+    <a href={`/tickets`} style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
+      padding: '8px 10px', background: C.bgCode, borderRadius: 8,
+      textDecoration: 'none', color: 'inherit',
+    }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.subject}</div>
+        <div style={{ fontSize: 11, color: C.mutedSoft, marginTop: 2 }}>
+          {(t.createdBy?.email || 'unknown')} · {t.repliesCount || 0} replies
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+        {t.priority === 'high' && (
+          <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 3, background: C.dangerSoft, color: C.danger, textTransform: 'uppercase', letterSpacing: '.05em' }}>High</span>
+        )}
+        <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 3, background: statusBg(t.status), color: statusColor(t.status), textTransform: 'uppercase', letterSpacing: '.05em' }}>
+          {statusLabel(t.status)}
+        </span>
+      </div>
+    </a>
+  );
+}
+function statusLabel(s) {
+  return ({ open: 'Open', pending_owner: 'Awaiting owner', resolved: 'Resolved', closed: 'Closed' }[s]) || (s || '—');
+}
+function statusBg(s) {
+  return ({ open: C.warningSoft, pending_owner: '#eff6ff', resolved: C.successSoft, closed: C.ruleSoft }[s]) || C.ruleSoft;
+}
+function statusColor(s) {
+  return ({ open: C.warning, pending_owner: '#1e40af', resolved: C.success, closed: C.muted }[s]) || C.muted;
+}
+
+function fmtUsdRate(n) {
+  if (n == null || !isFinite(n)) return '—';
+  if (n === 0)              return '$0';
+  if (Math.abs(n) >= 100)   return `$${n.toFixed(0)}`;
+  if (Math.abs(n) >= 1)     return `$${n.toFixed(2)}`;
+  if (Math.abs(n) >= 0.01)  return `$${n.toFixed(3)}`;
+  return `$${n.toFixed(4)}`;
 }
 
 function Card({ title, children }) {

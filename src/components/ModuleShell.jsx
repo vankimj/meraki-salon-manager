@@ -4,6 +4,7 @@ import FeedbackModal from './FeedbackModal';
 import UserMenu from './UserMenu';
 import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
+import SupportTicketsButton from './SupportTicketsButton';
 import { MODULE_ICONS, IconHome, IconSettings, IconMessage } from './Icons';
 import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } from '../lib/modules';
 
@@ -197,6 +198,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         </div>
       </div>
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
+      <SupportTicketsButton />
 
       {/* Tech-view impersonation banner */}
       {realIsAdmin && viewAs && (

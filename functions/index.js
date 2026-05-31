@@ -10132,3 +10132,392 @@ exports.runUsageAggregatorForDay = onCall({ cors: true, timeoutSeconds: 540 }, a
 
   return { ok: true, dayKey, tenantCount: tenantData.length, totalCostUsd: platform.totalCostUsd };
 });
+
+// ── Support tickets ─────────────────────────────────────────────────────────
+//
+// Salon owners file tickets from the in-app floating help button. Tickets
+// live under `tenants/{tid}/supportTickets/{ticketId}` with replies in a
+// subcollection. On every owner-side write the platform admins get notified:
+//   - email always (low + high)
+//   - SMS additionally on `high` (only to admins who set a phone + smsEnabled)
+//
+// Admin replies email the owner back (redundant in-app + email channel).
+// Per principle #10, platform admins still can't read customer data — only
+// the support thread itself (which the customer wrote to us).
+
+const PLATFORM_ADMIN_DASH_URL = 'https://admin.plumenexus.com';
+
+async function listPlatformAdminContacts(db) {
+  // Returns [{ email, phone, smsEnabled }]. Bootstrap admin always included.
+  const out = new Map();
+  for (const e of BOOTSTRAP_ADMINS) {
+    out.set(e.toLowerCase(), { email: e.toLowerCase(), phone: null, smsEnabled: false });
+  }
+  try {
+    const s = await db.doc('platform/admins').get();
+    if (s.exists) {
+      const d = s.data() || {};
+      const emails = Array.isArray(d.emails) ? d.emails : [];
+      const phones = d.phones || {};
+      const smsEnabled = d.smsEnabled || {};
+      for (const raw of emails) {
+        const email = String(raw || '').toLowerCase().trim();
+        if (!email) continue;
+        const prev = out.get(email) || { email };
+        prev.phone = phones[email] || prev.phone || null;
+        prev.smsEnabled = !!(smsEnabled[email]);
+        out.set(email, prev);
+      }
+      // Allow the bootstrap admin to also have a phone set in the same map.
+      for (const e of BOOTSTRAP_ADMINS) {
+        const k = e.toLowerCase();
+        if (phones[k]) out.get(k).phone = phones[k];
+        if (smsEnabled[k]) out.get(k).smsEnabled = true;
+      }
+    }
+  } catch (e) {
+    console.warn('[listPlatformAdminContacts] read failed:', e?.message);
+  }
+  return Array.from(out.values());
+}
+
+function safeTicketString(v, max = 4000) {
+  return String(v || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').slice(0, max);
+}
+
+function ticketEmailHtml({ tenantName, tenantId, priority, subject, body, authorEmail, authorName, ticketId, isReply }) {
+  const dashLink = `${PLATFORM_ADMIN_DASH_URL}/t/${encodeURIComponent(tenantId)}#tickets`;
+  const prio = priority === 'high' ? '#dc2626' : '#475569';
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6f9;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;color:#1a1f2e">
+    <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;border:1px solid #e3e6ed">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:${prio};margin-bottom:6px">
+        ${isReply ? 'Reply' : 'New ticket'} · ${priority}
+      </div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:14px;color:#0f1923">${esc(subject)}</div>
+      <div style="font-size:12px;color:#5e6776;margin-bottom:18px">
+        From <strong>${esc(authorName || authorEmail)}</strong> at <strong>${esc(tenantName)}</strong>
+      </div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;border-left:3px solid #e3e6ed;padding:4px 0 4px 14px;color:#1a1f2e">${esc(body)}</div>
+      <div style="margin-top:24px;padding-top:18px;border-top:1px solid #eef0f4;font-size:13px">
+        <a href="${dashLink}" style="display:inline-block;padding:9px 16px;background:#5b3b8c;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Open in platform admin →</a>
+      </div>
+      <div style="margin-top:14px;font-size:10px;color:#8b94a3">Ticket ID: ${esc(ticketId)} · Tenant: ${esc(tenantId)}</div>
+    </div>
+  </body></html>`;
+}
+
+function ownerReplyEmailHtml({ tenantName, subject, body, ticketId, salonAppUrl }) {
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6f9;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;color:#1a1f2e">
+    <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;border:1px solid #e3e6ed">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:#5b3b8c;margin-bottom:6px">Reply from Plume Nexus support</div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:14px;color:#0f1923">Re: ${esc(subject)}</div>
+      <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;border-left:3px solid #e3e6ed;padding:4px 0 4px 14px;color:#1a1f2e">${esc(body)}</div>
+      <div style="margin-top:24px;padding-top:18px;border-top:1px solid #eef0f4;font-size:13px">
+        <a href="${salonAppUrl}" style="display:inline-block;padding:9px 16px;background:#5b3b8c;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">View thread in ${esc(tenantName)} →</a>
+      </div>
+      <div style="margin-top:14px;font-size:10px;color:#8b94a3">Ticket ID: ${esc(ticketId)}</div>
+    </div>
+  </body></html>`;
+}
+
+function esc(s) {
+  return String(s || '').replace(/[&<>"']/g, m => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[m]));
+}
+
+async function notifyAdminsOfTicket(db, { tenantId, tenantName, ticketId, priority, subject, body, authorEmail, authorName, isReply, brand }) {
+  const admins = await listPlatformAdminContacts(db);
+  if (admins.length === 0) {
+    console.warn('[notifyAdminsOfTicket] no platform admins configured');
+    return;
+  }
+  const html = ticketEmailHtml({ tenantName, tenantId, priority, subject, body, authorEmail, authorName, ticketId, isReply });
+  const emailSubject = `[Plume Nexus Support · ${priority.toUpperCase()}] ${subject.slice(0, 80)}`;
+  const fromAddr = brand?.fromAddress || 'Plume Nexus Support <support@send.plumenexus.com>';
+  const replyTo  = authorEmail || undefined;
+
+  for (const a of admins) {
+    try {
+      await sendEmail({
+        from: fromAddr, to: a.email,
+        subject: emailSubject, html,
+        replyTo, tags: [{ name: 'kind', value: 'support_ticket' }],
+        // Notifications email the PLATFORM team, not the tenant's customers,
+        // so we omit tenantId on the SES call (no per-tenant SES tenant
+        // suppression scope applies here).
+      });
+    } catch (e) {
+      console.error(`[notifyAdminsOfTicket] email to ${a.email} failed:`, e?.message);
+    }
+
+    if (priority === 'high' && a.phone && a.smsEnabled) {
+      const smsBody = `Plume Nexus support [${priority}] · ${tenantName}: ${subject.slice(0, 80)}\nOpen: ${PLATFORM_ADMIN_DASH_URL}/t/${tenantId}`;
+      try {
+        // Skip the per-tenant quota + opt-in checks (this is an internal
+        // platform alert, not a customer message) by calling Twilio
+        // directly with the platform's own from-number. Use the
+        // bootstrap TWILIO_FROM since per-tenant TFNs would carry the
+        // wrong sender identity.
+        const sid       = twilioSid.value();
+        const tokenV    = twilioToken.value();
+        const apiKeySid = twilioApiKeySid.value();
+        const from      = twilioFrom.value();
+        if (!sid || !tokenV || !from) {
+          console.warn('[notifyAdminsOfTicket] Twilio not configured; skipping SMS');
+          continue;
+        }
+        const twilioSDK = require('twilio');
+        const tw = apiKeySid
+          ? twilioSDK(apiKeySid, tokenV, { accountSid: sid })
+          : twilioSDK(sid, tokenV);
+        await tw.messages.create({ from, to: a.phone, body: smsBody });
+      } catch (e) {
+        console.error(`[notifyAdminsOfTicket] SMS to ${a.email}@${a.phone} failed:`, e?.message);
+      }
+    }
+  }
+}
+
+exports.submitSupportTicket = onCall(
+  { cors: true, timeoutSeconds: 30, secrets: [twilioToken] },
+  async (request) => {
+    const db = getFirestore();
+    const { tenantId: tid, subject, body, priority } = request.data || {};
+    const tenantId = String(tid || '').slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    await requireTenantAdmin(db, tenantId, request);
+
+    const cleanSubject = safeTicketString(subject, 200).trim();
+    const cleanBody    = safeTicketString(body, 8000).trim();
+    if (cleanSubject.length < 3) throw new HttpsError('invalid-argument', 'Subject must be at least 3 characters');
+    if (cleanBody.length < 5)    throw new HttpsError('invalid-argument', 'Message must be at least 5 characters');
+    const cleanPriority = priority === 'high' ? 'high' : 'low';
+
+    const email = await callerEmail(request);
+    const authorName = request.auth?.token?.name || '';
+
+    const brand = await tenantBranding(db, tenantId);
+    const tenantName = brand?.salonName || tenantId;
+
+    const now = new Date().toISOString();
+    const ticketRef = db.collection(`tenants/${tenantId}/supportTickets`).doc();
+    const ticketDoc = {
+      subject:       cleanSubject,
+      initialBody:   cleanBody,
+      priority:      cleanPriority,
+      status:        'open',
+      createdBy:     { email, name: authorName || null },
+      createdAt:     now,
+      updatedAt:     now,
+      lastReplyAt:   now,
+      lastReplyFrom: 'owner',
+      repliesCount:  0,
+      tenantName,
+      salonId:       tenantId,
+    };
+    await ticketRef.set(ticketDoc);
+
+    await notifyAdminsOfTicket(db, {
+      tenantId, tenantName, ticketId: ticketRef.id,
+      priority: cleanPriority, subject: cleanSubject, body: cleanBody,
+      authorEmail: email, authorName, isReply: false, brand,
+    });
+
+    return { ok: true, ticketId: ticketRef.id };
+  }
+);
+
+exports.submitTicketReply = onCall(
+  { cors: true, timeoutSeconds: 30, secrets: [twilioToken] },
+  async (request) => {
+    const db = getFirestore();
+    const { tenantId: tid, ticketId, body } = request.data || {};
+    const tenantId = String(tid || '').slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    if (!ticketId || typeof ticketId !== 'string') {
+      throw new HttpsError('invalid-argument', 'Missing ticketId');
+    }
+    await requireTenantAdmin(db, tenantId, request);
+
+    const cleanBody = safeTicketString(body, 8000).trim();
+    if (cleanBody.length < 1) throw new HttpsError('invalid-argument', 'Reply body required');
+
+    const ticketRef = db.doc(`tenants/${tenantId}/supportTickets/${ticketId}`);
+    const ticketSnap = await ticketRef.get();
+    if (!ticketSnap.exists) throw new HttpsError('not-found', 'Ticket not found');
+
+    const email = await callerEmail(request);
+    const authorName = request.auth?.token?.name || '';
+    const now = new Date().toISOString();
+
+    await ticketRef.collection('replies').add({
+      from: 'owner', authorEmail: email, authorName: authorName || null,
+      body: cleanBody, at: now,
+    });
+    await ticketRef.update({
+      status: 'open',
+      updatedAt: now,
+      lastReplyAt: now,
+      lastReplyFrom: 'owner',
+      repliesCount: (ticketSnap.data().repliesCount || 0) + 1,
+    });
+
+    const t = ticketSnap.data();
+    const brand = await tenantBranding(db, tenantId);
+    await notifyAdminsOfTicket(db, {
+      tenantId, tenantName: t.tenantName || tenantId, ticketId,
+      priority: t.priority || 'low',
+      subject: t.subject, body: cleanBody,
+      authorEmail: email, authorName, isReply: true, brand,
+    });
+
+    return { ok: true };
+  }
+);
+
+exports.submitAdminTicketReply = onCall(
+  { cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    const callEmail = (request.auth?.token?.email || '').toLowerCase();
+    if (!await isPlatformAdmin(callEmail)) {
+      throw new HttpsError('permission-denied', 'Platform admin only');
+    }
+    const db = getFirestore();
+    const { tenantId: tid, ticketId, body, status } = request.data || {};
+    const tenantId = String(tid || '').slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    if (!ticketId) throw new HttpsError('invalid-argument', 'Missing ticketId');
+
+    const cleanBody = safeTicketString(body, 8000).trim();
+    if (cleanBody.length < 1) throw new HttpsError('invalid-argument', 'Reply body required');
+
+    const ticketRef = db.doc(`tenants/${tenantId}/supportTickets/${ticketId}`);
+    const ticketSnap = await ticketRef.get();
+    if (!ticketSnap.exists) throw new HttpsError('not-found', 'Ticket not found');
+
+    const now = new Date().toISOString();
+    await ticketRef.collection('replies').add({
+      from: 'admin', authorEmail: callEmail, authorName: request.auth?.token?.name || null,
+      body: cleanBody, at: now,
+    });
+    const nextStatus = ['open','pending_owner','resolved','closed'].includes(status)
+      ? status : 'pending_owner';
+    await ticketRef.update({
+      status: nextStatus, updatedAt: now,
+      lastReplyAt: now, lastReplyFrom: 'admin',
+      repliesCount: (ticketSnap.data().repliesCount || 0) + 1,
+    });
+
+    // Email the owner back.
+    const t = ticketSnap.data();
+    const ownerEmail = t.createdBy?.email;
+    if (ownerEmail) {
+      try {
+        const brand = await tenantBranding(db, tenantId);
+        const salonAppUrl = `https://${(await db.doc(`tenants/${tenantId}`).get()).data()?.subdomain || tenantId}.plumenexus.com/manage`;
+        await sendEmail({
+          from:    brand?.fromAddress || 'Plume Nexus Support <support@send.plumenexus.com>',
+          to:      ownerEmail,
+          subject: `[Plume Nexus] Reply to your ticket: ${t.subject?.slice(0, 80) || ''}`,
+          html:    ownerReplyEmailHtml({
+            tenantName: t.tenantName || tenantId,
+            subject:    t.subject || '',
+            body:       cleanBody,
+            ticketId,
+            salonAppUrl,
+          }),
+          replyTo: callEmail,
+          tags:    [{ name: 'kind', value: 'support_reply' }],
+          tenantId,
+        });
+      } catch (e) {
+        console.error(`[submitAdminTicketReply] owner email failed:`, e?.message);
+      }
+    }
+
+    return { ok: true };
+  }
+);
+
+exports.updateSupportTicketStatus = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const email = (request.auth?.token?.email || '').toLowerCase();
+  if (!await isPlatformAdmin(email)) throw new HttpsError('permission-denied', 'Platform admin only');
+  const { tenantId: tid, ticketId, status } = request.data || {};
+  const tenantId = String(tid || '').slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  if (!ticketId) throw new HttpsError('invalid-argument', 'Missing ticketId');
+  if (!['open','pending_owner','resolved','closed'].includes(status)) {
+    throw new HttpsError('invalid-argument', 'Invalid status');
+  }
+  await getFirestore().doc(`tenants/${tenantId}/supportTickets/${ticketId}`).update({
+    status, updatedAt: new Date().toISOString(),
+  });
+  return { ok: true };
+});
+
+// Self-service: a platform admin sets / clears their own SMS contact for
+// high-priority alerts. No "set someone else's phone" — only your own.
+exports.setMyPlatformAdminAlertContact = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const email = (request.auth?.token?.email || '').toLowerCase();
+  if (!await isPlatformAdmin(email)) throw new HttpsError('permission-denied', 'Platform admin only');
+  const { phone, smsEnabled } = request.data || {};
+  const db = getFirestore();
+  const ref = db.doc('platform/admins');
+  // Accept E.164 or empty (clear).
+  const cleanPhone = phone ? String(phone).trim() : '';
+  if (cleanPhone && !/^\+[1-9]\d{6,14}$/.test(cleanPhone)) {
+    throw new HttpsError('invalid-argument', 'Phone must be E.164 (e.g. +16145551234) or empty to clear');
+  }
+  const snap = await ref.get();
+  const cur  = snap.exists ? (snap.data() || {}) : {};
+  const phones     = { ...(cur.phones || {}) };
+  const smsEnabledMap = { ...(cur.smsEnabled || {}) };
+  if (cleanPhone) {
+    phones[email] = cleanPhone;
+    smsEnabledMap[email] = !!smsEnabled;
+  } else {
+    delete phones[email];
+    delete smsEnabledMap[email];
+  }
+  await ref.set({ phones, smsEnabled: smsEnabledMap }, { merge: true });
+  return { ok: true, phone: phones[email] || null, smsEnabled: !!smsEnabledMap[email] };
+});
+
+// Platform-admin read for the cross-tenant ticket queue. Returns
+// recent open tickets across ALL tenants (admin SDK bypasses rules).
+exports.listOpenSupportTickets = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
+  const email = (request.auth?.token?.email || '').toLowerCase();
+  if (!await isPlatformAdmin(email)) throw new HttpsError('permission-denied', 'Platform admin only');
+  const db = getFirestore();
+  const limit = Math.min(Number(request.data?.limit) || 100, 200);
+  const statusFilter = request.data?.status || 'open';
+  // Use collection group across all tenants' supportTickets.
+  let q = db.collectionGroup('supportTickets').orderBy('lastReplyAt', 'desc').limit(limit);
+  if (statusFilter !== 'all') {
+    q = db.collectionGroup('supportTickets').where('status', '==', statusFilter).orderBy('lastReplyAt', 'desc').limit(limit);
+  }
+  try {
+    const snap = await q.get();
+    const tickets = snap.docs.map(d => {
+      const data = d.data() || {};
+      // Derive tenantId from the path: tenants/{tid}/supportTickets/{ticketId}
+      const parts = d.ref.path.split('/');
+      return {
+        id: d.id,
+        tenantId: parts[1] || data.salonId || null,
+        ...data,
+      };
+    });
+    return { ok: true, tickets };
+  } catch (e) {
+    console.error('[listOpenSupportTickets] failed:', e?.message);
+    return { ok: false, tickets: [], error: e?.message };
+  }
+});
