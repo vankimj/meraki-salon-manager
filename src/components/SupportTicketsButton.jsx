@@ -109,7 +109,7 @@ function Tab({ active, onClick, children }) {
 function SubmitForm({ onSubmitted }) {
   const [subject,  setSubject]  = useState('');
   const [body,     setBody]     = useState('');
-  const [priority, setPriority] = useState('low');
+  const [priority, setPriority] = useState('high');
   const [sending,  setSending]  = useState(false);
   const [err,      setErr]      = useState('');
   const [done,     setDone]     = useState(false);
