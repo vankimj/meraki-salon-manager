@@ -253,12 +253,27 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
 }
 
 function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, viewOnly = false, onSwitchToEdit, onReload }) {
-  const { showToast } = useApp();
+  const { showToast, users, grantAccess } = useApp();
   const [tab,    setTab]    = useState('profile');
   const [saving, setSaving] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
   const fileRef = useRef(null);
   const isNew   = !emp.id;
+
+  // Find the user record linked to this employee (by techName or by email)
+  // so the Schedule tab can mirror the per-tech "Can edit / View only"
+  // toggle that lives canonically in Admin → Users. Both surfaces edit
+  // the same `scheduleAccess` field on the user record so there's no
+  // drift between them.
+  const linkedUser = users?.find(u =>
+    (u.techName && emp.name && u.techName.toLowerCase() === emp.name.toLowerCase()) ||
+    (u.email && emp.email && u.email.toLowerCase() === emp.email.toLowerCase())
+  ) || null;
+  function setScheduleAccess(next) {
+    if (!linkedUser) return;
+    grantAccess(linkedUser.email, linkedUser.role, linkedUser.techName, next);
+    showToast?.(next === 'view' ? `${emp.name} can now only view their schedule` : `${emp.name} can now edit their schedule`);
+  }
   const TABS    = isAdmin
     ? ['profile', 'contact', 'social', 'schedule', 'services', 'compensation']
     : ['profile', 'contact', 'social', 'schedule', 'services'];
@@ -432,6 +447,53 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
           {/* ── Schedule ── */}
           {tab === 'schedule' && (
             <>
+              {/* Per-tech schedule edit permission — mirror of the toggle
+                  in Admin → Users. Only meaningful for tech-role users;
+                  for everyone else (admin/scheduler/readonly) we show a
+                  soft hint instead. */}
+              {isAdmin && (
+                <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+                    Schedule access (when this tech logs in)
+                  </div>
+                  {!linkedUser ? (
+                    <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+                      No app access yet for this employee. Grant access from <strong>Admin → Users</strong> first; the toggle will appear here once they're a tech-role user.
+                    </div>
+                  ) : linkedUser.role !== 'tech' ? (
+                    <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+                      This employee logs in as <strong>{linkedUser.role}</strong>. Schedule edit permission only applies to tech-role users — admins and schedulers can already edit any schedule.
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      {[['edit', 'Can edit own schedule', '#2D7A5F'], ['view', 'View only', '#888']].map(([v, label, color]) => {
+                        const active = (linkedUser.scheduleAccess || 'edit') === v;
+                        return (
+                          <button key={v} onClick={() => setScheduleAccess(v)}
+                            style={{
+                              flex: 1, minWidth: 160, padding: '8px 12px', borderRadius: 8,
+                              border: `1.5px solid ${active ? color : '#e0e0e0'}`,
+                              background: active ? (v === 'edit' ? '#f0fdf4' : '#f5f5f5') : '#fff',
+                              color: active ? color : '#666',
+                              fontSize: 12, fontWeight: active ? 700 : 500,
+                              cursor: 'pointer', fontFamily: 'inherit',
+                              textAlign: 'left',
+                            }}>
+                            <div>{active ? '✓ ' : ''}{label}</div>
+                            <div style={{ fontSize: 10, fontWeight: 400, color: '#999', marginTop: 2 }}>
+                              {v === 'edit' ? 'Add, move, edit appointments on their own day' : 'Read-only schedule view, no edits'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 10, color: '#bbb', marginTop: 8, lineHeight: 1.5 }}>
+                    Saves immediately. Also editable at <strong>Admin → Users</strong> — both surfaces edit the same field.
+                  </div>
+                </div>
+              )}
+
               <div style={{ fontSize: 11, color: '#888', marginBottom: 14, lineHeight: 1.5 }}>
                 Days marked off are grayed out in the schedule view.
               </div>
