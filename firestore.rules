@@ -152,6 +152,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── Client → salon routing index ─────────────────────
+    //   `clientSalonIndex/{e164Phone}` → { tenantId, clientId, lastOutboundAt }.
+    //   Cross-tenant lookup table populated by sendSms, used by
+    //   twilioInboundSms when the inbound To is the shared Plume Nexus TFN
+    //   (we need to know which salon most recently messaged this client
+    //   to route their reply to the right tenant's chat thread).
+    //   Server-only — exposing it would leak which salon's clients have
+    //   which phone numbers, across tenants.
+    match /clientSalonIndex/{phone} {
+      allow read, write: if false;
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document. Holds plan, billing, owner contact,

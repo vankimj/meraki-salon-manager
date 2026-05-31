@@ -30,6 +30,29 @@ async function registerTfnForTenant(db, phone, tenantId, sandbox = false) {
   }
 }
 
+// Sentinel tenantId used for the shared Plume Nexus TFN — the one number
+// that fans out to many salons. Inbound webhooks see this and switch from
+// "use this tenant" to "look up which tenant by client_phone".
+const SHARED_TFN_SENTINEL = '__shared__';
+
+// Mark a TFN as the shared platform number. Subsequent findTenantByTfn(phone)
+// returns SHARED_TFN_SENTINEL; the inbound webhook handles the lookup.
+// Pass null tenantId so we don't accidentally treat it as belonging to a
+// single tenant.
+async function markTfnAsShared(db, phone) {
+  if (!phone) return;
+  try {
+    await tfnRegistryRef(db, phone).set({
+      tenantId:     SHARED_TFN_SENTINEL,
+      shared:       true,
+      registeredAt: new Date().toISOString(),
+    }, { merge: true });
+  } catch (e) {
+    console.error(`[markTfnAsShared] phone=${phone} write failed:`, e?.message);
+  }
+  _tfnLookupCache.delete(phone);
+}
+
 async function unregisterTfn(db, phone) {
   if (!phone) return;
   try {
@@ -71,5 +94,7 @@ module.exports = {
   registerTfnForTenant,
   unregisterTfn,
   findTenantByTfn,
+  markTfnAsShared,
+  SHARED_TFN_SENTINEL,
   _resetTfnCache,
 };

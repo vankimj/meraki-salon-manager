@@ -680,17 +680,37 @@ async function sendSms({
     }
   }
 
+  // Auto-prepend the salon name. Required for the shared platform TFN
+  // (our A2P use case mandates per-message sender attribution) and
+  // harmless on dedicated TFNs — clients always know who's texting them.
+  // Skipped if the body already starts with the salon's name (avoids
+  // "Sparkle Nails: Sparkle Nails: ..." double-prefix when a caller
+  // already includes it). Best-effort branding lookup; falls through
+  // unprefixed on failure rather than blocking the send.
+  let finalBody = String(body).slice(0, 1400);
+  try {
+    const brand = await tenantBranding(db, tenantId);
+    const name  = String(brand?.salonName || '').trim();
+    if (name) {
+      const lower = finalBody.toLowerCase();
+      const lname = name.toLowerCase();
+      if (!lower.startsWith(lname) && !lower.startsWith(lname + ':')) {
+        finalBody = `${name}: ${finalBody}`;
+      }
+    }
+  } catch (_) { /* prefix is nice-to-have, not load-bearing */ }
+
   // Auto-append the TCPA / Twilio TFN-required STOP footer unless
   // explicitly disabled OR body already contains "STOP" (avoids
   // double-suffix when the caller's template already includes it).
-  let finalBody = String(body).slice(0, 1400);
   if (appendStopFooter && !/STOP/i.test(finalBody)) {
     finalBody = `${finalBody}\nReply STOP to opt out.`;
   }
 
   // Sandbox path: log instead of dispatching. Surfaces in the Marketing →
   // SMS Test Mode panel so the salon owner can review without spending
-  // real Twilio money.
+  // real Twilio money. Still update the client→salon index so inbound
+  // routing has data the moment sandbox flips off in production.
   if (await isSandboxTenant(db, tenantId)) {
     await writeSandboxSmsLog(db, tenantId, {
       kind:          `appt_${kind}`,
@@ -698,6 +718,7 @@ async function sendSms({
       body:          finalBody,
       clientId,
     });
+    setClientLastSalon(db, phone, tenantId, clientId).catch(() => {});
     return { ok: true, sandboxed: true, sid: 'SANDBOX' };
   }
 
@@ -715,6 +736,10 @@ async function sendSms({
     : twilioSDK(sid, token);
   try {
     const msg = await tw.messages.create({ from, to: phone, body: finalBody });
+    // Update the cross-tenant index so inbound replies that arrive on the
+    // shared TFN can be routed back to the right tenant. Fire-and-forget
+    // (best-effort) — index write failure must not break the SMS send.
+    setClientLastSalon(db, phone, tenantId, clientId).catch(() => {});
     return {
       ok: true,
       sid: msg?.sid || null,
@@ -6605,7 +6630,36 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, as
     // entry for every currently-approved TFN.
     const db0BeforeResolve = getFirestore();
     let tenantId = await findTenantByTfn(db0BeforeResolve, To);
-    if (!tenantId) {
+
+    // Shared Plume Nexus TFN: the registry entry points to a sentinel rather
+    // than a tenant, because this number fans out to many salons. Resolve to
+    // the actual tenant by looking up which salon most recently messaged this
+    // client (mirrors how GlossGenius routes its single 800 number).
+    if (tenantId === SHARED_TFN_SENTINEL) {
+      const idx = await lookupClientLastSalon(db0BeforeResolve, From);
+      if (idx?.tenantId) {
+        tenantId = idx.tenantId;
+      } else {
+        // No record of any salon ever messaging this client — we have no safe
+        // tenant to attribute the inbound to. Drop the message into a platform
+        // queue for manual triage and send a generic auto-reply so the sender
+        // isn't ghosted.
+        console.warn(`[twilioInboundSms] shared TFN inbound from=${From} has no client→salon mapping; quarantining`);
+        await db0BeforeResolve.collection('platform/inboundOrphans/queue').add({
+          from: From, to: To, body: Body, twilioSid: Sid,
+          at: new Date().toISOString(),
+        }).catch(() => {});
+        try {
+          const tw = twilioSDK(twilioSid.value(), twilioToken.value());
+          await tw.messages.create({
+            from: To, to: From,
+            body: "Thanks for your message! We couldn't match you to a salon — please reply with your salon's name so we can help.",
+          });
+        } catch (_) { /* best-effort auto-reply */ }
+        res.status(200).set('Content-Type', 'text/xml').send('<Response/>');
+        return;
+      }
+    } else if (!tenantId) {
       tenantId = TENANT_ID;
       console.warn(`[twilioInboundSms] no tenant for To=${To}, falling back to legacy ${TENANT_ID}`);
     }
@@ -8022,7 +8076,8 @@ const _tenantSmsFromCache = new Map();
 // TFN ↔ tenant registry helpers (TFN→tenantId routing for inbound SMS).
 // Extracted to ./lib/tfnRegistry so the register/unregister/lookup lifecycle
 // is unit-testable against a fake Firestore; `db` is injected into each call.
-const { registerTfnForTenant, unregisterTfn, findTenantByTfn } = require('./lib/tfnRegistry');
+const { registerTfnForTenant, unregisterTfn, findTenantByTfn, SHARED_TFN_SENTINEL } = require('./lib/tfnRegistry');
+const { setClientLastSalon, lookupClientLastSalon } = require('./lib/clientSalonIndex');
 
 async function tenantSmsFrom(db, tenantId) {
   if (_tenantSmsFromCache.has(tenantId)) {
