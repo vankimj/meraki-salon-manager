@@ -683,10 +683,13 @@ async function sendSms({
   // Auto-prepend the salon name. Required for the shared platform TFN
   // (our A2P use case mandates per-message sender attribution) and
   // harmless on dedicated TFNs — clients always know who's texting them.
-  // Skipped if the body already starts with the salon's name (avoids
-  // "Sparkle Nails: Sparkle Nails: ..." double-prefix when a caller
-  // already includes it). Best-effort branding lookup; falls through
-  // unprefixed on failure rather than blocking the send.
+  // We require the body to START with the salon name followed by ":" or
+  // " —" / " -" (the canonical prefix shapes) — a bare startsWith(name)
+  // would false-positive on bodies that happen to begin with the salon
+  // name as part of normal copy (e.g., salon is "Meraki" and the
+  // reminder reads "Meraki style appointment coming up…").
+  // Best-effort branding lookup; falls through unprefixed on failure
+  // rather than blocking the send.
   let finalBody = String(body).slice(0, 1400);
   try {
     const brand = await tenantBranding(db, tenantId);
@@ -694,7 +697,11 @@ async function sendSms({
     if (name) {
       const lower = finalBody.toLowerCase();
       const lname = name.toLowerCase();
-      if (!lower.startsWith(lname) && !lower.startsWith(lname + ':')) {
+      const alreadyPrefixed =
+        lower.startsWith(lname + ':') ||
+        lower.startsWith(lname + ' —') ||
+        lower.startsWith(lname + ' -');
+      if (!alreadyPrefixed) {
         finalBody = `${name}: ${finalBody}`;
       }
     }
@@ -1057,7 +1064,9 @@ exports.sendReceiptSms = onDocumentCreated(
 
     // 'auto' = SMS only when there's no email on file (email is the
     // richer receipt). Tenants who want both can set policy='both'.
-    if (policy === 'auto' && d.clientEmail) {
+    // Trim before truthy-check — a whitespace-only clientEmail isn't a
+    // real email and shouldn't suppress the SMS path.
+    if (policy === 'auto' && String(d.clientEmail || '').trim()) {
       await snap.ref.update({ smsError: 'skipped_auto_email_preferred' });
       return;
     }
@@ -1658,7 +1667,7 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
       creditApplied:  Number(d.payment?.creditApplied) || 0,
       giftCard:       d.payment?.giftCard ? { applied: Number(d.payment.giftCard.applied) || 0 } : null,
     },
-    googleReviewUrl:        sData?.googleReviewUrl || null,
+    googleReviewUrl:        safeUrl(sData?.googleReviewUrl) || null,
     reviewRoutingThreshold: threshold,
     existingRatings,
   };
@@ -1734,11 +1743,12 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
     }
   }
 
-  const routeToGoogle = highest >= threshold && !!sData?.googleReviewUrl;
+  const safeGoogleUrl = safeUrl(sData?.googleReviewUrl) || null;
+  const routeToGoogle = highest >= threshold && !!safeGoogleUrl;
   return {
     ok: true,
     routeToGoogle,
-    googleReviewUrl: routeToGoogle ? sData.googleReviewUrl : null,
+    googleReviewUrl: routeToGoogle ? safeGoogleUrl : null,
   };
 });
 

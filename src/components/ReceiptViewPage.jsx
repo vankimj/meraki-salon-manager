@@ -38,18 +38,10 @@ export default function ReceiptViewPage() {
     const prefilledTech = String(params.get('tech') || '').trim();
 
     callFn('getReceiptByToken')({ token })
-      .then(res => {
-        const d = res.data;
-        setData(d);
-        if (prefilledRate >= 1 && prefilledRate <= 5 && prefilledTech) {
-          autoSubmitRating(token, prefilledTech, prefilledRate, source).then(setRatingResult);
-        }
-      })
+      .then(res => setData(res.data))
       .catch(e => setErr(e?.code === 'not-found' ? 'not_found' : 'load_failed'))
       .finally(() => setLoading(false));
   }, [token]);
-
-  const [ratingResult, setRatingResult] = useState(null);
 
   if (loading) {
     return <PageShell><div style={{ textAlign: 'center', padding: 48, color: '#888' }}>Loading…</div></PageShell>;
@@ -67,7 +59,7 @@ export default function ReceiptViewPage() {
   return (
     <PageShell brandColor="#2D7A5F">
       <ReceiptCard data={data} />
-      <RatingSection data={data} token={token} initialResult={ratingResult} />
+      <RatingSection data={data} token={token} />
       <div style={{ textAlign: 'center', padding: '16px 0 32px', color: '#bbb', fontSize: 11 }}>
         Powered by Plume Nexus
       </div>
@@ -181,19 +173,7 @@ function SummaryRow({ label, value, color }) {
   );
 }
 
-async function autoSubmitRating(token, techName, rating, source) {
-  try {
-    const res = await callFn('submitServiceRating')({
-      token, source,
-      ratings: [{ techName, rating }],
-    });
-    return res.data;
-  } catch {
-    return null;
-  }
-}
-
-function RatingSection({ data, token, initialResult }) {
+function RatingSection({ data, token }) {
   // Build the unique tech list from services — one rating widget per tech.
   const techs = useMemo(() => {
     const set = new Set();
@@ -209,10 +189,30 @@ function RatingSection({ data, token, initialResult }) {
   (data.existingRatings || []).forEach(r => { seeded[r.techName] = { rating: r.rating, comment: r.comment || '' }; });
   const [picks, setPicks]       = useState(seeded);
   const [submitting, setSubmit] = useState(false);
-  const [result, setResult]     = useState(initialResult || null);
+  const [result, setResult]     = useState(null);
   const [commentDraft, setCD]   = useState('');
 
-  useEffect(() => { if (initialResult) setResult(initialResult); }, [initialResult]);
+  // Auto-submit from an email-link star tap (e.g., /r/{token}?rate=5&tech=Yasmin&src=email).
+  // Seeds the picked star immediately, then submits in the background. We only
+  // surface the post-rate result UI (Google CTA or thank-you) when the receipt
+  // is single-tech — multi-tech receipts must keep the rating widget visible
+  // so the visitor can rate the remaining techs before we hide the form.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const prefilledRate = Number(params.get('rate'));
+    const prefilledTech = String(params.get('tech') || '').trim();
+    const source        = params.get('src') || 'web';
+    if (!(prefilledRate >= 1 && prefilledRate <= 5) || !prefilledTech) return;
+    if (!techs.includes(prefilledTech)) return;
+    if (seeded[prefilledTech]?.rating) return; // already rated previously
+    setPicks(prev => ({ ...prev, [prefilledTech]: { rating: prefilledRate, comment: '' } }));
+    callFn('submitServiceRating')({
+      token, source,
+      ratings: [{ techName: prefilledTech, rating: prefilledRate }],
+    }).then(res => {
+      if (techs.length === 1) setResult(res.data);
+    }).catch(() => { /* user can still re-submit via the button */ });
+  }, [techs.length]);
 
   const threshold = Number(data.reviewRoutingThreshold) || 4;
   const highest   = Math.max(0, ...Object.values(picks).map(p => Number(p.rating) || 0));
@@ -245,15 +245,22 @@ function RatingSection({ data, token, initialResult }) {
 
   if (techs.length === 0) return null;
 
+  // Reject any URL that isn't http(s) (server-side safeUrl already does this,
+  // but React won't block javascript:/data: URIs in href, so we re-check
+  // before rendering as defense-in-depth).
+  const httpReviewUrl =
+    typeof result?.googleReviewUrl === 'string' && /^https?:\/\//i.test(result.googleReviewUrl)
+      ? result.googleReviewUrl : null;
+
   // Post-submit: route to Google review (high rating) or thank-you (low rating).
   if (result && !result.error) {
-    if (result.routeToGoogle && result.googleReviewUrl) {
+    if (result.routeToGoogle && httpReviewUrl) {
       return (
         <div style={{ background: '#fff', borderRadius: 12, padding: 24, textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,.06)' }}>
           <div style={{ fontSize: 28, marginBottom: 8 }}>⭐</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Thanks {data.clientFirstName || ''}!</div>
           <div style={{ fontSize: 13, color: '#888', marginBottom: 18 }}>Would you share your experience on Google? It takes 30 seconds and means the world to us.</div>
-          <a href={result.googleReviewUrl} target="_blank" rel="noopener noreferrer"
+          <a href={httpReviewUrl} target="_blank" rel="noopener noreferrer"
             style={{ display: 'inline-block', background: '#2D7A5F', color: '#fff', fontSize: 14, fontWeight: 700, padding: '12px 28px', borderRadius: 10, textDecoration: 'none' }}>
             ⭐ Leave a Google Review
           </a>
