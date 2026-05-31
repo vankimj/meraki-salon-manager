@@ -64,6 +64,52 @@ function whyCantAddService(svc, cart) {
 }
 function canAddService(svc, cart) { return whyCantAddService(svc, cart) === null; }
 
+// Lane assignment — splits a cart into mani / pedi lanes so two stylists
+// can each take a back-to-back appointment for one client.
+//
+// Rules:
+//   • categoryExclusive=true services live in their own category's lane
+//   • Other items (Removal, Nail Art, etc.) join the lane of their
+//     parentSvcId if linked; otherwise they fall back to whichever lane
+//     has a base service (mani preferred when both exist).
+function getLane(item, cart) {
+  if (!item?.service) return null;
+  // Base services use their own category.
+  if (item.service.categoryExclusive === true) {
+    return item.service.category || null;
+  }
+  // Linked add-ons follow their parent.
+  if (item.parentSvcId) {
+    const parent = cart.find(i => i.service.id === item.parentSvcId);
+    if (parent?.service?.category) return parent.service.category;
+  }
+  // Orphan add-ons: prefer mani, then pedi, else null.
+  const hasMani = cart.some(i => i.service.categoryExclusive && i.service.category === 'Manicures');
+  if (hasMani) return 'Manicures';
+  const hasPedi = cart.some(i => i.service.categoryExclusive && i.service.category === 'Pedicures');
+  if (hasPedi) return 'Pedicures';
+  return null;
+}
+
+// Returns { Manicures: items[], Pedicures: items[], _orphan: items[] }.
+function cartLanes(cart) {
+  const out = { Manicures: [], Pedicures: [], _orphan: [] };
+  for (const item of cart) {
+    const lane = getLane(item, cart);
+    if (lane === 'Manicures' || lane === 'Pedicures') out[lane].push(item);
+    else out._orphan.push(item);
+  }
+  return out;
+}
+
+// Does this cart need TWO stylists picked (one per lane)? True only when
+// BOTH a Manicures base service AND a Pedicures base service are present.
+function isMultiLane(cart) {
+  const hasMani = cart.some(i => i.service.categoryExclusive && i.service.category === 'Manicures');
+  const hasPedi = cart.some(i => i.service.categoryExclusive && i.service.category === 'Pedicures');
+  return hasMani && hasPedi;
+}
+
 // ── helpers ────────────────────────────────────────────
 function minsToStr(m) {
   const h = Math.floor(m / 60), min = m % 60;
@@ -142,7 +188,14 @@ export default function BookingScreen() {
   const [cart, setCart] = useState([]);
   // Cart-level tech / date / slot (shared by every service in the cart).
   // cartTech: undefined=not picked, null=no preference, {…}=specific tech.
+  // Used for single-lane carts (mani-only OR pedi-only OR add-ons-only).
   const [cartTech, setCartTech] = useState(undefined);
+  // cartTechByLane: only populated when cart has BOTH a manicure and a
+  // pedicure base service. Each lane gets its own pick — mani tech does the
+  // mani services + linked Removal, pedi tech does the pedi services + linked
+  // Removal, back-to-back at the booked start time. Same semantics as
+  // cartTech (undefined/null/{...}) per lane.
+  const [cartTechByLane, setCartTechByLane] = useState({ Manicures: undefined, Pedicures: undefined });
   const [cartDate, setCartDate] = useState('');
   const [cartSlot, setCartSlot] = useState(null);
   // Per-date appointment cache for the slot picker.
@@ -387,13 +440,16 @@ export default function BookingScreen() {
   // booking carries real pricing + duration + options from the catalog.
   const removalSvc = services.find(s => /^removal$/i.test((s.name || '').trim()));
 
-  function addToCart(svc, opt) {
+  function addToCart(svc, opt, extras = {}) {
     // Defense-in-depth: the ServiceRow + Add button is greyed out when the
     // service can't be added, but if any other path calls addToCart
     // (keyboard, deep-link, future code), enforce the rules here too.
     if (!canAddService(svc, cart)) return;
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
-    setCart(c => [...c, { id, service: svc, option: opt || null, removal: false }]);
+    // extras.parentSvcId links a Removal cart item back to the mani/pedi it
+    // was added for, so the booking flow can put each Removal in the right
+    // lane when a customer has BOTH a mani and a pedi with different techs.
+    setCart(c => [...c, { id, service: svc, option: opt || null, removal: false, parentSvcId: extras.parentSvcId || null }]);
     setCartTech(t => (t === undefined ? t : t));
     setCartSlot(null);
     // Removal prompt — only fires for "base" services (categoryExclusive +
@@ -409,7 +465,8 @@ export default function BookingScreen() {
                           + (isBaseService ? 1 : 0);
     const removalsInCart  = removalSvc ? cart.filter(i => i.service.id === removalSvc.id).length : 0;
     if (isBaseService && !isAddingRemoval && !declinedRemoval.has(svc.id) && removalsInCart < baseInCart) {
-      setRemovalPrompt({ svcName: svc.name, svcId: svc.id });
+      // Pass the parent service id along so Yes adds a Removal LINKED to it.
+      setRemovalPrompt({ svcName: svc.name, svcId: svc.id, parentSvcId: svc.id });
     }
   }
   function removeFromCart(itemId) {
@@ -645,8 +702,10 @@ export default function BookingScreen() {
           editorial={webCfg?.layout === 'merakiSite'}
           onYes={() => {
             // Add the Removal service as a separate cart item — uses the
-            // catalog's actual pricing + duration + (default) option.
-            addToCart(removalSvc, removalSvc.options?.[0] || null);
+            // catalog's actual pricing + duration + (default) option. The
+            // parentSvcId links this Removal back to the mani/pedi that
+            // prompted it, so lane-based scheduling can keep them together.
+            addToCart(removalSvc, removalSvc.options?.[0] || null, { parentSvcId: removalPrompt.parentSvcId });
             setRemovalPrompt(null);
           }}
           onNo={() => {
@@ -714,7 +773,15 @@ export default function BookingScreen() {
           <Step2PickTech
             cart={cart} allTechs={techs}
             cartTech={cartTech} setCartTech={setCartTech}
-            onProceed={() => setStep(3)}
+            cartTechByLane={cartTechByLane} setCartTechByLane={setCartTechByLane}
+            onProceed={() => {
+              // Phase 1: multi-lane carts pick two techs but Steps 3-5 still
+              // operate against the single cartTech. Sync cartTech to the
+              // mani lane's choice so the slot picker + confirm screen pick
+              // up the user's selection. Phase 2 will fully split lanes.
+              if (isMultiLane(cart)) setCartTech(cartTechByLane.Manicures);
+              setStep(3);
+            }}
             onBack={() => setStep(1)}
           />
         )}
@@ -1200,20 +1267,49 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 }
 
 // ── Step 2: Assign a stylist to each cart item ─────────
-function Step2PickTech({ cart, allTechs, cartTech, setCartTech, onProceed, onBack }) {
-  const eligible = techsForServices(allTechs, cart.map(c => c.service));
+function Step2PickTech({ cart, allTechs, cartTech, setCartTech, cartTechByLane, setCartTechByLane, onProceed, onBack }) {
+  const multiLane = isMultiLane(cart);
+  const lanes = multiLane ? cartLanes(cart) : null;
+
+  // For single-lane carts: one picker, all services done by one tech.
+  // For multi-lane carts: one picker PER LANE, each lane gets its own tech.
+  const eligibleMani = multiLane ? techsForServices(allTechs, lanes.Manicures.map(c => c.service)) : null;
+  const eligiblePedi = multiLane ? techsForServices(allTechs, lanes.Pedicures.map(c => c.service)) : null;
+  const eligibleAll  = !multiLane ? techsForServices(allTechs, cart.map(c => c.service)) : null;
+
+  const pickedSingle = !multiLane && cartTech !== undefined;
+  const pickedDual   = multiLane && cartTechByLane.Manicures !== undefined && cartTechByLane.Pedicures !== undefined;
+  const picked       = pickedSingle || pickedDual;
+
   const totalDur = cartTotalDuration(cart, 15, cartTech || undefined);
-  const picked = cartTech !== undefined;
   const cartLabel = cart.length === 1 ? '1 service' : `${cart.length} services`;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
-      <StepTitle>Choose your stylist</StepTitle>
+      <StepTitle>{multiLane ? 'Choose your stylists' : 'Choose your stylist'}</StepTitle>
       <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 18, lineHeight: 1.5 }}>
-        One stylist will perform all {cartLabel} ({totalDur} min total) back-to-back. Pick a favorite or let us assign someone available.
+        {multiLane
+          ? `Pick one stylist for your manicure and another for your pedicure. They'll work back-to-back on the same visit (${totalDur} min total).`
+          : `One stylist will perform all ${cartLabel} (${totalDur} min total) back-to-back. Pick a favorite or let us assign someone available.`}
       </div>
 
-      {eligible.length === 0 ? (
+      {multiLane ? (
+        <>
+          <LanePicker
+            laneName="Manicure"
+            laneSubtitle={`${lanes.Manicures.map(i => i.service.name).join(' · ')}`}
+            eligible={eligibleMani}
+            value={cartTechByLane.Manicures}
+            onChange={(v) => setCartTechByLane(p => ({ ...p, Manicures: v }))} />
+          <div style={{ height: 18 }} />
+          <LanePicker
+            laneName="Pedicure"
+            laneSubtitle={`${lanes.Pedicures.map(i => i.service.name).join(' · ')}`}
+            eligible={eligiblePedi}
+            value={cartTechByLane.Pedicures}
+            onChange={(v) => setCartTechByLane(p => ({ ...p, Pedicures: v }))} />
+        </>
+      ) : eligibleAll.length === 0 ? (
         <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 18, textAlign: 'center', marginBottom: 18 }}>
           <div style={{ fontSize: 28, marginBottom: 6 }}>🤝</div>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#7c2d12', marginBottom: 6 }}>No single stylist offers all of these services</div>
@@ -1237,7 +1333,7 @@ function Step2PickTech({ cart, allTechs, cartTech, setCartTech, onProceed, onBac
             </div>
           </button>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 8 }}>
-            {eligible.map(t => (
+            {eligibleAll.map(t => (
               <TechCard key={t.id} tech={t}
                 selected={cartTech?.id === t.id}
                 onSelect={() => setCartTech(t)} />
@@ -1250,11 +1346,52 @@ function Step2PickTech({ cart, allTechs, cartTech, setCartTech, onProceed, onBac
         <button onClick={onBack} style={{ flex: 1, padding: '14px', borderRadius: 12, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
           ← Back
         </button>
-        <button onClick={onProceed} disabled={!picked || eligible.length === 0}
-          style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', background: (picked && eligible.length > 0) ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 15, fontWeight: 700, cursor: (picked && eligible.length > 0) ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+        <button onClick={onProceed} disabled={!picked}
+          style={{ flex: 2, padding: '14px', borderRadius: 12, border: 'none', background: picked ? 'var(--tm-primary, #2D7A5F)' : '#d0d0d0', color: '#fff', fontSize: 15, fontWeight: 700, cursor: picked ? 'pointer' : 'default', fontFamily: 'inherit' }}>
           Continue →
         </button>
       </div>
+    </div>
+  );
+}
+
+function LanePicker({ laneName, laneSubtitle, eligible, value, onChange }) {
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: '16px 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.08em', textTransform: 'uppercase' }}>For your</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginTop: 2 }}>{laneName}</div>
+        </div>
+        <div style={{ fontSize: 11, color: '#888', textAlign: 'right', maxWidth: '60%', lineHeight: 1.4 }}>{laneSubtitle}</div>
+      </div>
+
+      {eligible.length === 0 ? (
+        <div style={{ fontSize: 12, color: '#a3a3a3', textAlign: 'center', padding: '14px 8px', background: '#fafafa', borderRadius: 8 }}>
+          No stylist offers all the {laneName.toLowerCase()} services in your cart.
+        </div>
+      ) : (
+        <>
+          <button onClick={() => onChange(null)} style={{
+            display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+            borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%',
+            marginBottom: 10,
+            border: `1.5px solid ${value === null ? 'var(--tm-primary, #2D7A5F)' : '#e8e8e8'}`,
+            background: value === null ? '#f0f9f5' : '#fff',
+          }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>💅</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>No preference</div>
+              <div style={{ fontSize: 10, color: '#888' }}>We'll pick an available stylist for you</div>
+            </div>
+          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 6 }}>
+            {eligible.map(t => (
+              <TechCard key={t.id} tech={t} selected={value?.id === t.id} onSelect={() => onChange(t)} />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
