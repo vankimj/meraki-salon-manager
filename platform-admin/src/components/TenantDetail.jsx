@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant, setTenantSandboxMode } from '../lib/tenants.js';
+import { fetchTenantDailies, fetchTenantMonthly } from '../lib/cost.js';
 import { reauthGoogle } from '../lib/firebase.js';
 import { C, FONT, shadow, radius } from '../theme.js';
+import { CostAreaChart, CostBreakdownCard } from './CostChart.jsx';
 
 function statusFromActivity(lastIso) {
   if (!lastIso) return 'never';
@@ -261,11 +263,13 @@ export default function TenantDetail({ tenantId }) {
       {/* URLs panel — every public + staff entry point for this tenant. */}
       <TenantUrls slug={meta.subdomain || meta.id} aliases={meta.aliases || []} customDomain={meta.customDomain} />
 
-      {/* Coming-soon panels — all of these are aggregate data only */}
+      {/* Cost & usage section — real per-tenant numbers from the nightly
+          aggregator. Wide stacked-area chart on the left, MTD breakdown
+          card on the right. Both are pure aggregate; no per-customer signal. */}
+      <CostSection tenantId={meta.id} />
+
+      {/* Coming-soon panels */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 16 }}>
-        <Panel title="Usage + cost (this month)" placeholder>
-          AI calls, SMS sends, email sends, storage. Aggregated cost only — no content. Coming Phase 2.
-        </Panel>
         <Panel title="Cap status" placeholder>
           Approaching / at / over each cap. No client names — just utilization %. Coming Phase 2.
         </Panel>
@@ -548,6 +552,72 @@ function UrlRow({ label, url, note, top, muted, badge }) {
         }}>Open ↗</a>
       </td>
     </tr>
+  );
+}
+
+function CostSection({ tenantId }) {
+  const [days,    setDays]    = useState(30);
+  const [dailies, setDailies] = useState(null);
+  const [monthly, setMonthly] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState('');
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true); setError('');
+    Promise.all([
+      fetchTenantDailies(tenantId, days),
+      fetchTenantMonthly(tenantId),
+    ])
+      .then(([d, m]) => { if (alive) { setDailies(d); setMonthly(m); } })
+      .catch(e => { if (alive) setError(e?.message || 'Failed to load cost data.'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [tenantId, days]);
+
+  return (
+    <div style={{
+      marginTop: 8, marginBottom: 24,
+      background: C.bgCard, border: `1px solid ${C.rule}`, borderRadius: radius.md,
+      overflow: 'hidden',
+    }}>
+      <div style={{
+        padding: '12px 16px', borderBottom: `1px solid ${C.rule}`, background: C.bgCode,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+          Cost to run this tenant
+        </div>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {[7, 30, 90].map(d => (
+            <button
+              key={d}
+              onClick={() => setDays(d)}
+              style={{
+                padding: '4px 10px', fontSize: 11, fontWeight: 600,
+                background: days === d ? C.plum : '#fff',
+                color: days === d ? '#fff' : C.muted,
+                border: `1px solid ${days === d ? C.plum : C.rule}`,
+                borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit',
+              }}
+            >
+              {d}d
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{
+        display: 'grid', gap: 16, padding: 16,
+        gridTemplateColumns: 'minmax(0, 2fr) minmax(280px, 1fr)',
+      }}>
+        <div>
+          {loading && <div style={{ padding: 32, textAlign: 'center', color: C.mutedSoft, fontSize: 12 }}>Loading…</div>}
+          {error   && <div style={{ padding: 16, color: C.danger, fontSize: 12 }}>{error}</div>}
+          {!loading && !error && <CostAreaChart data={dailies} height={240} />}
+        </div>
+        <CostBreakdownCard monthly={monthly} />
+      </div>
+    </div>
   );
 }
 

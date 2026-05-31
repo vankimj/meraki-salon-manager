@@ -1,6 +1,8 @@
 import { useEffect, useState, useMemo } from 'react';
 import { fetchTenants } from '../lib/tenants.js';
+import { fetchAllTenantMTD, fmtUsd, monthKeyUTC } from '../lib/cost.js';
 import { C, FONT, shadow, radius } from '../theme.js';
+import { TenantCostBars } from './CostChart.jsx';
 import NewTenantModal from './NewTenantModal.jsx';
 
 export default function TenantList() {
@@ -9,17 +11,40 @@ export default function TenantList() {
   const [planFilter, setPlanFilter] = useState('all');
   const [showNew,    setShowNew]    = useState(false);
   const [error,      setError]      = useState('');
+  const [costRows,   setCostRows]   = useState(null);
+  const [costError,  setCostError]  = useState('');
 
   async function load() {
     setError('');
     try {
-      setTenants(await fetchTenants());
+      const list = await fetchTenants();
+      setTenants(list);
+      // Cost data is best-effort — failure (e.g. before first aggregator
+      // run, before rules deploy) shows the table without cost columns.
+      try {
+        setCostRows(await fetchAllTenantMTD(list));
+        setCostError('');
+      } catch (ce) {
+        setCostError(ce?.message || 'Cost data unavailable.');
+        setCostRows([]);
+      }
     } catch (e) {
       setError(e?.message || 'Failed to load tenants.');
       setTenants([]);
     }
   }
   useEffect(() => { load(); }, []);
+
+  // Look up MTD cost for each row by tenant id (O(1) per render).
+  const costByTenant = useMemo(() => {
+    const m = new Map();
+    (costRows || []).forEach(r => m.set(r.id, r));
+    return m;
+  }, [costRows]);
+
+  const platformMtd = useMemo(() => {
+    return (costRows || []).reduce((a, r) => a + (r.totalCostUsd || 0), 0);
+  }, [costRows]);
 
   const filtered = useMemo(() => {
     if (!tenants) return null;
@@ -76,6 +101,37 @@ export default function TenantList() {
         </div>
       )}
 
+      {/* Cross-tenant cost ranking. Hidden until at least one tenant
+          has rolled-up usage; shows a small empty hint otherwise so the
+          surface doesn't look broken before the first nightly run. */}
+      {costRows && costRows.length > 0 && (
+        <div style={{
+          background: C.bgCard, border: `1px solid ${C.rule}`, borderRadius: radius.lg,
+          padding: 16, marginBottom: 16,
+        }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+                MTD cost by tenant ({monthKeyUTC()})
+              </div>
+              <div style={{ fontSize: 11, color: C.mutedSoft, marginTop: 2 }}>
+                Aggregated: Twilio SMS + SES email + Anthropic AI + TFN rental + GCP allocation
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 11, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.05em' }}>Platform total</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: C.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(platformMtd)}</div>
+            </div>
+          </div>
+          <TenantCostBars rows={costRows.filter(r => r.totalCostUsd > 0)} maxRows={12} />
+          {costError && (
+            <div style={{ marginTop: 8, fontSize: 11, color: C.mutedSoft, fontStyle: 'italic' }}>
+              Note: {costError}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         <input
@@ -120,11 +176,12 @@ export default function TenantList() {
                 <Th>Cohort</Th>
                 <Th>Status</Th>
                 <Th>Created</Th>
+                <Th align="right">MTD cost</Th>
                 <Th align="right" style={{ width: 60 }}></Th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((t, i) => <Row key={t.id} t={t} alt={i % 2 === 1} />)}
+              {filtered.map((t, i) => <Row key={t.id} t={t} alt={i % 2 === 1} cost={costByTenant.get(t.id)} />)}
             </tbody>
           </table>
         )}
@@ -140,7 +197,7 @@ export default function TenantList() {
   );
 }
 
-function Row({ t, alt }) {
+function Row({ t, alt, cost }) {
   return (
     <tr style={{
       borderBottom: `1px solid ${C.ruleSoft}`,
@@ -174,6 +231,13 @@ function Row({ t, alt }) {
         )}
       </Td>
       <Td>{t.createdAt ? t.createdAt.slice(0, 10) : '—'}</Td>
+      <Td align="right">
+        {cost && cost.hasData ? (
+          <span style={{ fontWeight: 600, color: C.ink, fontVariantNumeric: 'tabular-nums' }}>{fmtUsd(cost.totalCostUsd)}</span>
+        ) : (
+          <span style={{ fontSize: 11, color: C.mutedSoft }}>—</span>
+        )}
+      </Td>
       <Td align="right">
         <a href={`/t/${t.id}`} style={{ fontSize: 12, color: C.plum, fontWeight: 600, textDecoration: 'none' }}>View →</a>
       </Td>

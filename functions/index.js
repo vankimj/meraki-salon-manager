@@ -11,6 +11,7 @@ const {
   CreateTenantResourceAssociationCommand,
 } = require('@aws-sdk/client-sesv2');
 const crypto               = require('crypto');
+const usageLog             = require('./lib/usage');
 
 initializeApp();
 
@@ -544,6 +545,14 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
   }
   try {
     const id = await sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl });
+    if (tenantId) {
+      const kindTag = Array.isArray(tags) ? tags.find(t => t && t.name === 'kind') : null;
+      usageLog.logEmailUsage(db, tenantId, {
+        kind:      kindTag?.value || 'transactional',
+        to,
+        messageId: id,
+      }).catch(() => {});
+    }
     return { data: { id }, error: null };
   } catch (e) {
     console.error(`[sendEmail] to=${to} failed:`, e?.message);
@@ -747,6 +756,13 @@ async function sendSms({
     // shared TFN can be routed back to the right tenant. Fire-and-forget
     // (best-effort) — index write failure must not break the SMS send.
     setClientLastSalon(db, phone, tenantId, clientId).catch(() => {});
+    usageLog.logSmsUsage(db, tenantId, {
+      kind:     `appt_${kind}`,
+      to:       phone,
+      body:     finalBody,
+      sid:      msg?.sid || null,
+      segments: msg?.numSegments != null ? Number(msg.numSegments) : undefined,
+    }).catch(() => {});
     return {
       ok: true,
       sid: msg?.sid || null,
@@ -3127,7 +3143,14 @@ exports.sendTechAppointmentReminders = onSchedule(
               } else if (smsClient) {
                 const fromNumber = await tenantSmsFrom(db, tenantId);
                 if (!fromNumber) { console.warn(`[techReminders] no SMS from-number for tenant ${tenantId}, skipping`); continue; }
-                await smsClient.messages.create({ from: fromNumber, to: phone, body });
+                const msg = await smsClient.messages.create({ from: fromNumber, to: phone, body });
+                usageLog.logSmsUsage(db, tenantId, {
+                  kind:     'tech_reminder',
+                  to:       phone,
+                  body,
+                  sid:      msg?.sid || null,
+                  segments: msg?.numSegments != null ? Number(msg.numSegments) : undefined,
+                }).catch(() => {});
                 smsSent++;
               }
             }
@@ -3924,6 +3947,11 @@ ${cfg.policy || 'Appointments canceled with less than 24 hours notice may incur 
       system:     systemPrompt,
       messages:   messages.map(m => ({ role: m.role, content: m.content })),
     });
+    usageLog.logAiUsage(db, tenantId, {
+      endpoint: 'chatWithSalon',
+      model:    response?.model || 'claude-haiku-4-5-20251001',
+      usage:    response?.usage,
+    }).catch(() => {});
 
     return { reply: response.content[0]?.text || '' };
   }
@@ -4290,6 +4318,11 @@ When using tools:
         tools:      TOOLS,
         messages:   convo,
       });
+      usageLog.logAiUsage(db, tenantId, {
+        endpoint: 'chatWithReports',
+        model:    resp?.model || 'claude-haiku-4-5-20251001',
+        usage:    resp?.usage,
+      }).catch(() => {});
 
       const stopReason = resp.stop_reason;
       const blocks = resp.content || [];
@@ -4328,6 +4361,11 @@ When using tools:
           system: systemPrompt + '\n\nDo not call any more tools — answer with what you have.',
           messages: convo,
         });
+        usageLog.logAiUsage(db, tenantId, {
+          endpoint: 'chatWithReports',
+          model:    final?.model || 'claude-haiku-4-5-20251001',
+          usage:    final?.usage,
+        }).catch(() => {});
         const text = (final.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
         return { reply: text };
       }
@@ -4594,6 +4632,11 @@ You MUST call finalizeAction exactly once at the end.`;
         tools:      TOOLS,
         messages:   convo,
       });
+      usageLog.logAiUsage(db, tenantId, {
+        endpoint: 'voiceCommand',
+        model:    resp?.model || 'claude-haiku-4-5-20251001',
+        usage:    resp?.usage,
+      }).catch(() => {});
 
       const blocks = resp.content || [];
       const stopReason = resp.stop_reason;
@@ -4772,6 +4815,11 @@ Output the JSON only.`;
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
     });
+    usageLog.logAiUsage(db, tenantId, {
+      endpoint: 'draftConflictMessages',
+      model:    resp?.model || 'claude-haiku-4-5-20251001',
+      usage:    resp?.usage,
+    }).catch(() => {});
 
     const raw = (resp.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
     // Strip code fences if the model wrapped them
@@ -6719,7 +6767,14 @@ exports.twilioInboundSms = onRequest({ cors: false, secrets: [twilioToken] }, as
                 const tw = require('twilio')(twApiKeySid || twSid, twToken,
                   twApiKeySid ? { accountSid: twSid } : undefined);
                 const fwdBody = `[Plume Nexus · while paused] From ${From}: ${Body.slice(0, 1400)}`;
-                await tw.messages.create({ from: twFrom, to: fwdTo, body: fwdBody });
+                const fwdMsg = await tw.messages.create({ from: twFrom, to: fwdTo, body: fwdBody });
+                usageLog.logSmsUsage(db0, tenantId, {
+                  kind:     'pause_forward',
+                  to:       fwdTo,
+                  body:     fwdBody,
+                  sid:      fwdMsg?.sid || null,
+                  segments: fwdMsg?.numSegments != null ? Number(fwdMsg.numSegments) : undefined,
+                }).catch(() => {});
                 forwarded = true;
               } else {
                 console.warn('[twilioInboundSms] pause-forward unavailable: missing Twilio creds, falling back to auto-reply');
@@ -6932,6 +6987,14 @@ exports.sendDirectSms = onCall({ cors: true, secrets: [twilioToken] }, async (re
       msgSid = msg?.sid || null;
       if (twilioStatus === 'failed' || twilioStatus === 'undelivered') {
         twilioError = `${msg.errorCode || 'TWILIO_ERROR'}: ${msg.errorMessage || twilioStatus}`;
+      } else {
+        usageLog.logSmsUsage(db, tenantId, {
+          kind:     'direct',
+          to:       phone,
+          body,
+          sid:      msgSid,
+          segments: msg?.numSegments != null ? Number(msg.numSegments) : undefined,
+        }).catch(() => {});
       }
     } catch (e) {
       twilioError = `${e?.code || 'UNKNOWN'}: ${e?.message || 'send threw'}`;
@@ -9655,3 +9718,417 @@ exports.scheduledSyncGoogleBusinessReviews = onSchedule(
     console.log(`[scheduledSyncGoogleBusinessReviews] ok=${okCount} err=${errCount}`);
   }
 );
+
+// ── Cost & usage aggregator ─────────────────────────────────────────────────
+//
+// Two crons power the platform-admin cost dashboard:
+//
+// 1) pullGcpCostDaily (02:00 UTC) — queries the BigQuery billing export for
+//    yesterday's total GCP/Firebase cost and writes it to
+//    platform/gcpCost/daily/{YYYY-MM-DD}. No-ops silently when BQ export is
+//    not yet configured (defaults: empty strings), so deploys before the
+//    one-time GCP setup don't fail.
+//
+// 2) aggregateUsageDaily (03:00 UTC) — for each active tenant, sums
+//    yesterday's raw usage{Sms,Email,Ai} events, adds prorated TFN
+//    rental ($2/mo), reads the platform GCP figure, allocates it by
+//    activity share (active user count as proxy), and writes:
+//       tenants/{id}/usageDaily/{YYYY-MM-DD}    full breakdown
+//       tenants/{id}/usageMonthly/{YYYY-MM}     rolling MTD (rebuilt
+//                                               from dailies — idempotent)
+//       platform/usage/daily/{YYYY-MM-DD}       cross-tenant totals
+//       platform/usage/monthly/{YYYY-MM}        platform MTD
+//
+// Monthly rollups are RE-COMPUTED from dailies each run rather than
+// incremented. Costs ~31 reads/tenant/day but stays correct across
+// re-runs and back-fills. See rebuildMonthlyFromDailies.
+//
+// One-time GCP setup required for cost data to flow:
+//   1. GCP Console → Billing → Billing export → Daily cost detail
+//      → choose a BQ dataset (free; metadata-only)
+//   2. firebase functions:secrets:set GCP_BILLING_BQ_PROJECT=<projectId>
+//      (then GCP_BILLING_BQ_DATASET and GCP_BILLING_BQ_TABLE)
+//   3. Grant the functions service account
+//      `roles/bigquery.dataViewer` on the billing dataset.
+
+const gcpBillingProject = defineString('GCP_BILLING_BQ_PROJECT', { default: '' });
+const gcpBillingDataset = defineString('GCP_BILLING_BQ_DATASET', { default: '' });
+const gcpBillingTable   = defineString('GCP_BILLING_BQ_TABLE',   { default: '' });
+
+function yesterdayDayKeyUTC() {
+  return usageLog.dayKeyUTC(new Date(Date.now() - 24 * 60 * 60 * 1000));
+}
+
+function nextMonthKey(monthKey) {
+  const [y, m] = monthKey.split('-').map(Number);
+  // m is 1-12; Date month index is 0-11, so passing m yields the next month.
+  return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 7);
+}
+
+async function sumUsageForDay(db, tenantId, dayKey) {
+  const out = {
+    sms:   { sends: 0, segments: 0, costUsd: 0 },
+    email: { sends: 0, costUsd: 0 },
+    ai:    { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+  };
+  const [smsSnap, emailSnap, aiSnap] = await Promise.all([
+    db.collection(`tenants/${tenantId}/usageSms`).where('dayKey', '==', dayKey).get(),
+    db.collection(`tenants/${tenantId}/usageEmail`).where('dayKey', '==', dayKey).get(),
+    db.collection(`tenants/${tenantId}/usageAi`).where('dayKey', '==', dayKey).get(),
+  ]);
+  smsSnap.forEach(d => {
+    const x = d.data();
+    out.sms.sends    += 1;
+    out.sms.segments += Number(x.segments || 0);
+    out.sms.costUsd  += Number(x.costUsd  || 0);
+  });
+  emailSnap.forEach(d => {
+    out.email.sends   += 1;
+    out.email.costUsd += Number(d.data().costUsd || 0);
+  });
+  aiSnap.forEach(d => {
+    const x = d.data();
+    out.ai.calls        += 1;
+    out.ai.inputTokens  += Number(x.inputTokens  || 0);
+    out.ai.outputTokens += Number(x.outputTokens || 0);
+    out.ai.costUsd      += Number(x.costUsd      || 0);
+  });
+  out.sms.costUsd   = +out.sms.costUsd.toFixed(6);
+  out.email.costUsd = +out.email.costUsd.toFixed(6);
+  out.ai.costUsd    = +out.ai.costUsd.toFixed(6);
+  return out;
+}
+
+async function getTenantUserCount(db, tenantId) {
+  try {
+    const s = await db.doc(`tenants/${tenantId}/data/users`).get();
+    if (!s.exists) return 0;
+    const d = s.data() || {};
+    // data/users shape across the codebase: prefer an explicit `users` array,
+    // fall back to `items` (a few legacy paths). Returning 0 on shape mismatch
+    // is safer than guessing — it just zeros that tenant's GCP share.
+    const arr = Array.isArray(d.users) ? d.users : (Array.isArray(d.items) ? d.items : []);
+    return arr.length;
+  } catch (_) { return 0; }
+}
+
+async function getTenantHasApprovedTfn(db, tenantId) {
+  try {
+    const s = await db.doc(`tenants/${tenantId}/data/sms`).get();
+    if (!s.exists) return false;
+    const d = s.data() || {};
+    return d.status === 'approved' && !!d.tfnNumber;
+  } catch (_) { return false; }
+}
+
+function blankUsageTotals(monthKey) {
+  return {
+    monthKey,
+    sms:   { sends: 0, segments: 0, costUsd: 0 },
+    email: { sends: 0, costUsd: 0 },
+    ai:    { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    tfn:   { count: 0, costUsd: 0 },
+    gcp:   { costUsd: 0 },
+    totalCostUsd: 0,
+    dayCount: 0,
+  };
+}
+
+function addDailyInto(acc, d) {
+  acc.sms.sends     += Number(d.sms?.sends    || 0);
+  acc.sms.segments  += Number(d.sms?.segments || 0);
+  acc.sms.costUsd   += Number(d.sms?.costUsd  || 0);
+  acc.email.sends   += Number(d.email?.sends   || 0);
+  acc.email.costUsd += Number(d.email?.costUsd || 0);
+  acc.ai.calls        += Number(d.ai?.calls        || 0);
+  acc.ai.inputTokens  += Number(d.ai?.inputTokens  || 0);
+  acc.ai.outputTokens += Number(d.ai?.outputTokens || 0);
+  acc.ai.costUsd      += Number(d.ai?.costUsd      || 0);
+  acc.tfn.count   += Number(d.tfn?.count   || 0);
+  acc.tfn.costUsd += Number(d.tfn?.costUsd || 0);
+  // Per-tenant docs use `gcp.costUsd` for their allocation; platform docs
+  // use `gcp.allocatedUsd`. Accept either so the same helper can roll up
+  // both tenant and platform monthly totals.
+  acc.gcp.costUsd += Number(d.gcp?.costUsd || d.gcp?.allocatedUsd || 0);
+  acc.totalCostUsd += Number(d.totalCostUsd || 0);
+}
+
+function roundUsageTotals(t) {
+  t.sms.costUsd   = +t.sms.costUsd.toFixed(6);
+  t.email.costUsd = +t.email.costUsd.toFixed(6);
+  t.ai.costUsd    = +t.ai.costUsd.toFixed(6);
+  t.tfn.costUsd   = +t.tfn.costUsd.toFixed(6);
+  t.gcp.costUsd   = +t.gcp.costUsd.toFixed(6);
+  t.totalCostUsd  = +t.totalCostUsd.toFixed(6);
+  return t;
+}
+
+async function rebuildMonthlyFromDailies(db, tenantId, monthKey) {
+  const start = `${monthKey}-01`;
+  const next  = `${nextMonthKey(monthKey)}-01`;
+  const snap = await db.collection(`tenants/${tenantId}/usageDaily`)
+    .where('dayKey', '>=', start)
+    .where('dayKey', '<',  next)
+    .get();
+  const totals = blankUsageTotals(monthKey);
+  snap.forEach(d => addDailyInto(totals, d.data()));
+  totals.dayCount     = snap.size;
+  totals.aggregatedAt = new Date().toISOString();
+  roundUsageTotals(totals);
+  await db.doc(`tenants/${tenantId}/usageMonthly/${monthKey}`).set(totals);
+}
+
+async function rebuildPlatformMonthlyFromDailies(db, monthKey) {
+  const start = `${monthKey}-01`;
+  const next  = `${nextMonthKey(monthKey)}-01`;
+  const snap = await db.collection('platform/usage/daily')
+    .where('dayKey', '>=', start)
+    .where('dayKey', '<',  next)
+    .get();
+  const totals = blankUsageTotals(monthKey);
+  snap.forEach(d => addDailyInto(totals, d.data()));
+  totals.dayCount     = snap.size;
+  totals.aggregatedAt = new Date().toISOString();
+  roundUsageTotals(totals);
+  await db.doc(`platform/usage/monthly/${monthKey}`).set(totals);
+}
+
+exports.pullGcpCostDaily = onSchedule(
+  { schedule: '0 2 * * *', timeZone: 'Etc/UTC', timeoutSeconds: 540 },
+  async () => {
+    const project = gcpBillingProject.value();
+    const dataset = gcpBillingDataset.value();
+    const table   = gcpBillingTable.value();
+    if (!project || !dataset || !table) {
+      console.log('[pullGcpCostDaily] BQ billing export not configured (set GCP_BILLING_BQ_*); skipping');
+      return;
+    }
+    const db = getFirestore();
+    const { BigQuery } = require('@google-cloud/bigquery');
+    const bq = new BigQuery({ projectId: project });
+    const dayKey = yesterdayDayKeyUTC();
+    // Cloud Billing export schema: rows hold per-line-item `cost` in USD plus
+    // `credits[].amount` (negative — applied free-tier / promo). Sum cost +
+    // credits to land on actual invoiced cost. Backtick the FQN because the
+    // dataset/table identifiers can contain hyphens.
+    const sql = `
+      SELECT
+        IFNULL(SUM(cost), 0) +
+        IFNULL(SUM((SELECT SUM(amount) FROM UNNEST(credits))), 0) AS cost_usd
+      FROM \`${project}.${dataset}.${table}\`
+      WHERE DATE(usage_start_time, 'UTC') = @dayKey
+    `;
+    try {
+      const [rows] = await bq.query({ query: sql, params: { dayKey } });
+      const costUsd = +Number(rows?.[0]?.cost_usd || 0).toFixed(6);
+      await db.doc(`platform/gcpCost/daily/${dayKey}`).set({
+        dayKey,
+        costUsd,
+        source:     'bigquery',
+        ingestedAt: new Date().toISOString(),
+      });
+      console.log(`[pullGcpCostDaily] dayKey=${dayKey} costUsd=${costUsd}`);
+    } catch (e) {
+      console.error('[pullGcpCostDaily] BQ query failed:', e?.message);
+    }
+  }
+);
+
+exports.aggregateUsageDaily = onSchedule(
+  { schedule: '0 3 * * *', timeZone: 'Etc/UTC', timeoutSeconds: 540 },
+  async () => {
+    const db = getFirestore();
+    const dayKey   = yesterdayDayKeyUTC();
+    const monthKey = dayKey.slice(0, 7);
+
+    // 1) GCP cost for the day (zero if not yet ingested — back-fillable
+    //    by re-running this cron after pullGcpCostDaily catches up).
+    let gcpCostUsd = 0;
+    try {
+      const s = await db.doc(`platform/gcpCost/daily/${dayKey}`).get();
+      if (s.exists) gcpCostUsd = Number(s.data().costUsd || 0);
+    } catch (_) { /* zero fallback is fine */ }
+
+    // 2) Enumerate active tenants and gather their usage + proxy.
+    const tenantsSnap = await db.collection('tenants').get();
+    const tenantData = [];
+    for (const tDoc of tenantsSnap.docs) {
+      const tData = tDoc.data() || {};
+      if (tData.active === false) continue;
+      const tenantId = tDoc.id;
+      try {
+        const [usage, userCount, hasTfn] = await Promise.all([
+          sumUsageForDay(db, tenantId, dayKey),
+          getTenantUserCount(db, tenantId),
+          getTenantHasApprovedTfn(db, tenantId),
+        ]);
+        tenantData.push({ tenantId, usage, userCount, hasTfn });
+      } catch (e) {
+        console.error(`[aggregateUsageDaily] tenant=${tenantId} gather failed:`, e?.message);
+      }
+    }
+
+    // 3) Activity share = userCount / sum(userCount). Tenants with zero
+    //    users get zero allocation (typical for newly-provisioned shells).
+    const totalUsers = tenantData.reduce((a, t) => a + t.userCount, 0);
+    const dailyTfn   = +(usageLog.PRICING.tfnMonthlyRental / 30).toFixed(6);
+
+    const platform = blankUsageTotals(monthKey);
+    platform.dayKey = dayKey;
+    delete platform.monthKey;
+    platform.gcp = { costUsd: gcpCostUsd, allocatedUsd: 0 };
+    platform.tenantCount = tenantData.length;
+
+    for (const t of tenantData) {
+      const share    = totalUsers > 0 ? t.userCount / totalUsers : 0;
+      const gcpAlloc = +(gcpCostUsd * share).toFixed(6);
+      const tfnCost  = t.hasTfn ? dailyTfn : 0;
+      const total    = +(t.usage.sms.costUsd + t.usage.email.costUsd +
+                         t.usage.ai.costUsd  + tfnCost + gcpAlloc).toFixed(6);
+
+      const dailyDoc = {
+        dayKey,
+        sms:   t.usage.sms,
+        email: t.usage.email,
+        ai:    t.usage.ai,
+        tfn:   { count: t.hasTfn ? 1 : 0, costUsd: tfnCost },
+        gcp:   { activityShare: +share.toFixed(6), costUsd: gcpAlloc },
+        totalCostUsd: total,
+        aggregatedAt: new Date().toISOString(),
+      };
+
+      try {
+        await db.doc(`tenants/${t.tenantId}/usageDaily/${dayKey}`).set(dailyDoc);
+        await rebuildMonthlyFromDailies(db, t.tenantId, monthKey);
+      } catch (e) {
+        console.error(`[aggregateUsageDaily] tenant=${t.tenantId} write failed:`, e?.message);
+      }
+
+      platform.sms.sends    += t.usage.sms.sends;
+      platform.sms.segments += t.usage.sms.segments;
+      platform.sms.costUsd  += t.usage.sms.costUsd;
+      platform.email.sends   += t.usage.email.sends;
+      platform.email.costUsd += t.usage.email.costUsd;
+      platform.ai.calls        += t.usage.ai.calls;
+      platform.ai.inputTokens  += t.usage.ai.inputTokens;
+      platform.ai.outputTokens += t.usage.ai.outputTokens;
+      platform.ai.costUsd      += t.usage.ai.costUsd;
+      platform.tfn.count   += t.hasTfn ? 1 : 0;
+      platform.tfn.costUsd += tfnCost;
+      platform.gcp.allocatedUsd += gcpAlloc;
+      platform.totalCostUsd     += total;
+    }
+
+    // Round platform totals
+    platform.sms.costUsd   = +platform.sms.costUsd.toFixed(6);
+    platform.email.costUsd = +platform.email.costUsd.toFixed(6);
+    platform.ai.costUsd    = +platform.ai.costUsd.toFixed(6);
+    platform.tfn.costUsd   = +platform.tfn.costUsd.toFixed(6);
+    platform.gcp.allocatedUsd = +platform.gcp.allocatedUsd.toFixed(6);
+    platform.totalCostUsd  = +platform.totalCostUsd.toFixed(6);
+
+    try {
+      await db.doc(`platform/usage/daily/${dayKey}`).set(platform);
+      await rebuildPlatformMonthlyFromDailies(db, monthKey);
+    } catch (e) {
+      console.error('[aggregateUsageDaily] platform write failed:', e?.message);
+    }
+
+    console.log(`[aggregateUsageDaily] dayKey=${dayKey} tenants=${tenantData.length} ` +
+                `totalCost=$${platform.totalCostUsd.toFixed(4)} ` +
+                `(sms=$${platform.sms.costUsd.toFixed(4)} email=$${platform.email.costUsd.toFixed(4)} ` +
+                `ai=$${platform.ai.costUsd.toFixed(4)} tfn=$${platform.tfn.costUsd.toFixed(4)} ` +
+                `gcp=$${platform.gcp.allocatedUsd.toFixed(4)})`);
+  }
+);
+
+// Manual one-shot for back-fills / dashboard testing. Re-runs the
+// aggregator for an arbitrary dayKey (default: yesterday). Platform-admin
+// only. Useful when GCP billing export has caught up but the aggregator
+// already ran with stale data.
+exports.runUsageAggregatorForDay = onCall({ cors: true, timeoutSeconds: 540 }, async (request) => {
+  const email = request.auth?.token?.email || '';
+  if (!email) throw new HttpsError('unauthenticated', 'Sign in required');
+  const db = getFirestore();
+  const isBootstrap = BOOTSTRAP_ADMINS.includes(email);
+  const isPlatform  = isBootstrap || await (async () => {
+    try {
+      const s = await db.doc('platform/admins').get();
+      const emails = (s.exists ? (s.data().emails || []) : []).map(e => String(e).toLowerCase());
+      return emails.includes(email.toLowerCase());
+    } catch (_) { return false; }
+  })();
+  if (!isPlatform) throw new HttpsError('permission-denied', 'Platform admin only');
+
+  const requested = String(request.data?.dayKey || '').slice(0, 10);
+  const dayKey = /^\d{4}-\d{2}-\d{2}$/.test(requested) ? requested : yesterdayDayKeyUTC();
+
+  // Reuse the cron handler by invoking the same logic with the supplied day.
+  // We can't call exports.aggregateUsageDaily.run() directly, so re-implement
+  // the core loop here with the override.
+  const monthKey = dayKey.slice(0, 7);
+  let gcpCostUsd = 0;
+  try {
+    const s = await db.doc(`platform/gcpCost/daily/${dayKey}`).get();
+    if (s.exists) gcpCostUsd = Number(s.data().costUsd || 0);
+  } catch (_) { /* zero */ }
+
+  const tenantsSnap = await db.collection('tenants').get();
+  const tenantData = [];
+  for (const tDoc of tenantsSnap.docs) {
+    const tData = tDoc.data() || {};
+    if (tData.active === false) continue;
+    const tenantId = tDoc.id;
+    const [usage, userCount, hasTfn] = await Promise.all([
+      sumUsageForDay(db, tenantId, dayKey),
+      getTenantUserCount(db, tenantId),
+      getTenantHasApprovedTfn(db, tenantId),
+    ]);
+    tenantData.push({ tenantId, usage, userCount, hasTfn });
+  }
+  const totalUsers = tenantData.reduce((a, t) => a + t.userCount, 0);
+  const dailyTfn   = +(usageLog.PRICING.tfnMonthlyRental / 30).toFixed(6);
+  const platform = blankUsageTotals(monthKey);
+  platform.dayKey = dayKey; delete platform.monthKey;
+  platform.gcp = { costUsd: gcpCostUsd, allocatedUsd: 0 };
+  platform.tenantCount = tenantData.length;
+
+  for (const t of tenantData) {
+    const share    = totalUsers > 0 ? t.userCount / totalUsers : 0;
+    const gcpAlloc = +(gcpCostUsd * share).toFixed(6);
+    const tfnCost  = t.hasTfn ? dailyTfn : 0;
+    const total    = +(t.usage.sms.costUsd + t.usage.email.costUsd +
+                       t.usage.ai.costUsd  + tfnCost + gcpAlloc).toFixed(6);
+    await db.doc(`tenants/${t.tenantId}/usageDaily/${dayKey}`).set({
+      dayKey, sms: t.usage.sms, email: t.usage.email, ai: t.usage.ai,
+      tfn: { count: t.hasTfn ? 1 : 0, costUsd: tfnCost },
+      gcp: { activityShare: +share.toFixed(6), costUsd: gcpAlloc },
+      totalCostUsd: total,
+      aggregatedAt: new Date().toISOString(),
+    });
+    await rebuildMonthlyFromDailies(db, t.tenantId, monthKey);
+    platform.sms.sends += t.usage.sms.sends;
+    platform.sms.segments += t.usage.sms.segments;
+    platform.sms.costUsd += t.usage.sms.costUsd;
+    platform.email.sends += t.usage.email.sends;
+    platform.email.costUsd += t.usage.email.costUsd;
+    platform.ai.calls += t.usage.ai.calls;
+    platform.ai.inputTokens += t.usage.ai.inputTokens;
+    platform.ai.outputTokens += t.usage.ai.outputTokens;
+    platform.ai.costUsd += t.usage.ai.costUsd;
+    platform.tfn.count += t.hasTfn ? 1 : 0;
+    platform.tfn.costUsd += tfnCost;
+    platform.gcp.allocatedUsd += gcpAlloc;
+    platform.totalCostUsd += total;
+  }
+  platform.sms.costUsd = +platform.sms.costUsd.toFixed(6);
+  platform.email.costUsd = +platform.email.costUsd.toFixed(6);
+  platform.ai.costUsd = +platform.ai.costUsd.toFixed(6);
+  platform.tfn.costUsd = +platform.tfn.costUsd.toFixed(6);
+  platform.gcp.allocatedUsd = +platform.gcp.allocatedUsd.toFixed(6);
+  platform.totalCostUsd = +platform.totalCostUsd.toFixed(6);
+  await db.doc(`platform/usage/daily/${dayKey}`).set(platform);
+  await rebuildPlatformMonthlyFromDailies(db, monthKey);
+
+  return { ok: true, dayKey, tenantCount: tenantData.length, totalCostUsd: platform.totalCostUsd };
+});

@@ -586,6 +586,42 @@ service cloud.firestore {
         allow write:        if false;
       }
 
+      // ── Per-tenant cost/usage logs ──────────────────────
+      // Three raw collections (usageSms, usageEmail, usageAi) are written
+      // server-side by lib/usage.js after each paid outbound call. Two
+      // rollup collections (usageDaily, usageMonthly) are written by the
+      // nightly aggregator cron. All five are admin-only because cost
+      // figures are sensitive business intel; rollup docs are also fetched
+      // by the platform-admin UI (which signs in with a platform admin
+      // email, satisfying isBootstrapAdmin / isPlatformAdmin).
+      // Raw event collections hold the masked recipient (last-4 phone /
+      // local-prefix email) which is a weak per-customer signal — tenant
+      // admins only, never the platform admin.
+      match /usageSms/{logId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      match /usageEmail/{logId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      match /usageAi/{logId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      // Rollups hold pure aggregate numbers — no recipient signal at all
+      // — so the platform admin can read them for the cross-tenant cost
+      // dashboard without violating principle #10 (no customer-data
+      // read access by the platform team).
+      match /usageDaily/{dayKey} {
+        allow read:  if isTenantAdmin(tenantId) || isPlatformAdmin();
+        allow write: if false;
+      }
+      match /usageMonthly/{monthKey} {
+        allow read:  if isTenantAdmin(tenantId) || isPlatformAdmin();
+        allow write: if false;
+      }
+
       // Per-tenant email suppression list. Populated by sesEventWebhook
       // when SES reports a bounce or complaint for one of this tenant's
       // sends. Mirrors SES Tenants' per-tenant suppression scope: a
@@ -672,6 +708,22 @@ service cloud.firestore {
       allow create: if isPlatformAdmin() &&
                        request.resource.data.actor == request.auth.token.email;
       allow update, delete: if false;
+    }
+
+    // Platform-wide cost & usage rollups. Written by the nightly
+    // aggregator cron (admin SDK, bypasses rules). Read by the
+    // platform-admin UI to render the cross-tenant cost graph.
+    match /platform/usage/daily/{dayKey} {
+      allow read:  if isPlatformAdmin();
+      allow write: if false;
+    }
+    match /platform/usage/monthly/{monthKey} {
+      allow read:  if isPlatformAdmin();
+      allow write: if false;
+    }
+    match /platform/gcpCost/daily/{dayKey} {
+      allow read:  if isPlatformAdmin();
+      allow write: if false;
     }
 
     // Other future platform/* docs (settings, feature flags, etc.) — admin-only.

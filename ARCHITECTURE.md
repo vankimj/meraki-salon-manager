@@ -839,6 +839,73 @@ If you don't know which layer to reach for, follow this:
 
 ---
 
+## Per-tenant cost dashboard
+
+Two crons + a logging library write per-tenant cost data that the
+platform-admin console (`admin.plumenexus.com`) renders as a stacked-area
+chart per tenant and a horizontal bar chart across tenants.
+
+### Pipeline
+
+```
+Outbound call → lib/usage.js logs raw event → nightly aggregator → admin UI
+
+Twilio messages.create()   → tenants/{id}/usageSms/{auto}   ┐
+SES   SendEmailCommand     → tenants/{id}/usageEmail/{auto} ├─→ 03:00 UTC ─→ tenants/{id}/usageDaily/{YYYY-MM-DD}
+Anthropic messages.create() → tenants/{id}/usageAi/{auto}    ┘                ↓
+                                                              tenants/{id}/usageMonthly/{YYYY-MM}
+BQ billing export → 02:00 UTC pullGcpCostDaily ─→ platform/gcpCost/daily/{day}
+                                                  ↓
+                                                  platform/usage/daily/{day}
+                                                  platform/usage/monthly/{month}
+```
+
+### Cost components
+
+| Component | Source | Pricing (constants in `lib/usage.js`) |
+|---|---|---|
+| **Twilio SMS** | Per segment, logged at send | `$0.0083 / segment` (US TFN) |
+| **TFN rental** | Per active TFN per tenant | `$2.00 / month` → `$0.0667/day` |
+| **AWS SES** | Per email, logged at send | `$0.0001 / send` |
+| **Anthropic AI** | Input + output tokens | `$1/MTok input`, `$5/MTok output` (Haiku 4.5) |
+| **GCP / Firebase** | BQ billing export, allocated by activity share | Daily total ÷ Σ active users × tenant.userCount |
+
+### Files
+
+- [`functions/lib/usage.js`](functions/lib/usage.js) — `logSmsUsage`, `logEmailUsage`, `logAiUsage`, `PRICING`
+- [`functions/index.js`](functions/index.js) (`pullGcpCostDaily`, `aggregateUsageDaily`, `runUsageAggregatorForDay`)
+- [`platform-admin/src/lib/cost.js`](platform-admin/src/lib/cost.js) — read helpers
+- [`platform-admin/src/components/CostChart.jsx`](platform-admin/src/components/CostChart.jsx) — recharts area + bar charts
+
+### One-time GCP setup (for GCP cost line to populate)
+
+1. **Enable BQ billing export.** GCP Console → Billing → Billing export → Daily cost detail → choose a BQ dataset.
+2. **Grant BQ Data Viewer to the Functions SA.** IAM → grant `roles/bigquery.dataViewer` on the billing dataset to `meraki-salon-manager@appspot.gserviceaccount.com`.
+3. **Set env params.** Add to `functions/.env` (these are `defineString` params, not secrets):
+   ```
+   GCP_BILLING_BQ_PROJECT=<projectId>
+   GCP_BILLING_BQ_DATASET=billing_export
+   GCP_BILLING_BQ_TABLE=gcp_billing_export_v1_<billingAcctSuffix>
+   ```
+   Then redeploy: `firebase deploy --only functions:pullGcpCostDaily`
+4. **Manual back-fill (optional).** Call `runUsageAggregatorForDay` from the platform-admin console for each historical day once data is available.
+
+### Security model
+
+- Raw `usageSms/usageEmail/usageAi` docs: tenant admin only (last-4 phone / local-prefix email = weak per-customer signal).
+- Aggregated `usageDaily/usageMonthly`: tenant admin OR platform admin (pure aggregate numbers, no per-customer signal — same standard as `getTenantMetadata`).
+- `platform/usage/*` + `platform/gcpCost/*`: platform admin only.
+- All writes server-side only via admin SDK; clients can't forge usage docs.
+
+### Known limitations
+
+- Stripe processing fees (2.9% + $0.30) are the **salon's** cost, not Plume Nexus's — not included.
+- The marketing-site chatbot (`chatWithMarketing`) has no tenant attribution; its Anthropic cost falls into the GCP/platform overhead pool.
+- GCP allocation uses `userCount` as activity proxy (cheap, single doc/tenant). A tenant with 1 user and very heavy reads will be under-allocated. Revisit if a tenant disputes their share.
+- Pricing constants live in `lib/usage.js` — update there + redeploy when rates change.
+
+---
+
 ## Versioning
 
 This doc is checked into `main`. Update it when:
@@ -849,4 +916,4 @@ This doc is checked into `main`. Update it when:
 - The deploy workflow changes
 - A new failure mode is discovered (with mitigation)
 
-Last updated: 2026-05-12.
+Last updated: 2026-05-31.
