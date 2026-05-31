@@ -1980,6 +1980,20 @@ export async function fetchReceiptsByRange(startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
+// Service ratings written by submitServiceRating callable when clients tap
+// stars on the hosted /r/{token} page. One row per (receipt, tech).
+const SERVICE_RATINGS_COL = tenantCol('serviceRatings');
+
+export async function fetchServiceRatingsByRange(startDate, endDate) {
+  const startISO = `${startDate}T00:00:00.000Z`;
+  const endISO   = `${endDate}T23:59:59.999Z`;
+  const snap = await getDocs(query(SERVICE_RATINGS_COL,
+    where('submittedAt', '>=', startISO),
+    where('submittedAt', '<=', endISO),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+
 // ── Notification center ────────────────────────────────
 const NOTIFS_COL   = tenantCol('notifications');
 
