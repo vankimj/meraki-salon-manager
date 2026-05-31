@@ -119,22 +119,18 @@ function mapCfgForMerakiSite(cfg, employees) {
     .filter(k => String(hoursDict[k] || '').trim())
     .map(k => [DAY_LABELS_MAP[k], String(hoursDict[k]).trim()]);
 
+  // Pass the full cfg through so every editorial field (teamPhotoShape,
+  // heroCopy, meaningDef, intros, etc.) reaches HeroMerakiSite. Then
+  // override the ones that need shape adaptation (address split, hours
+  // dict→array, instagram handle prefix).
   return {
-    salonName:        cfg.salonName,
-    phone:            cfg.phone,
+    ...cfg,
     publicEmail:      cfg.publicEmail || cfg.contactEmail,
     address1, address2,
     hours:            hoursArr.length ? hoursArr : undefined,
     instagramHandle:  cfg.instagram ? (cfg.instagram.startsWith('@') ? cfg.instagram : `@${cfg.instagram}`) : undefined,
     facebookHandle:   cfg.facebook,
     reviews:          cfg.reviews || cfg.testimonials,
-    instagramGrid:    cfg.instagramGrid,
-    portfolio:        cfg.portfolio,
-    heroPhoto:        cfg.heroPhoto,
-    heroCredit:       cfg.heroCredit,
-    rating:           cfg.rating,
-    reviewCount:      cfg.reviewCount,
-    established:      cfg.established,
     employees,
   };
 }
