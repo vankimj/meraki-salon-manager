@@ -565,88 +565,128 @@ export default function BookingScreen() {
       const removalDur = 15;
       const removalPrice = Number(cfg?.removalPrice ?? 15);
       const dayAppts = apptsByDate[cartDate] || [];
-      const eligible = techsForServices(techs, cart.map(c => c.service));
 
-      // Resolve tech: explicit pick or auto-assign via configured method.
-      const method = cfg?.assignmentMethod || DEFAULT_ASSIGNMENT_METHOD;
-      let assignedTech = cartTech;
-      let techRequestType = 'specific';
-      let rrIdx = cfg?.roundRobinIndex || 0;
-      const startingRrIdx = rrIdx;
-      if (cartTech === null) {
-        techRequestType = 'auto';
-        // Each candidate's free-window uses their own per-service durations —
-        // a slower tech needs a longer gap to be considered available.
-        const free = eligible.filter(t => isTechFreeAt(t, cartSlot, cartTotalDuration(cart, removalDur, t), dayAppts));
-        let weekAppts = [];
-        if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
-          const wk = startOfWeek(cartDate);
-          // Public surface — same callable as the date-fetch above.
-          weekAppts = await callFn('getPublicAvailability')({ tenantId: TENANT_ID, dateStart: wk, dateEnd: endOfWeek(wk) })
-            .then(r => r?.data?.appts || []).catch(() => []);
-        }
-        let turnRoster = null;
-        const today = dateStr(todayDate());
-        if (method === 'turnQueue' && cartDate === today) {
-          const r = await fetchTurnRoster(today).catch(() => null);
-          turnRoster = (r && r.roster) || [];
-        }
-        const result = pickTech({
-          method, freeTechs: free,
-          dayAppts, weekAppts, turnRoster, roundRobinIndex: rrIdx,
+      // Builds the merged services[] array (with legacy-flag removal lines
+      // appended). Used per-lane in the multi-lane case and once for the
+      // whole cart in the single-lane case.
+      function buildServicesForItems(items, tech) {
+        const out = [];
+        items.forEach(item => {
+          const { service: svc, option: opt } = item;
+          const resolved = resolveServicePricing(svc, opt, tech);
+          out.push({
+            id: svc.id,
+            name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name,
+            price: resolved.price || 0,
+            duration: resolved.duration || 60,
+            optionId: opt?.id || null,
+            optionName: opt?.name || null,
+            taxable: svc.taxable !== false,
+          });
+          // Legacy in-line removal flag (kept for back-compat). Modern
+          // bookings use the standalone Removal cart item, which already
+          // flows in via the items[] loop above.
+          if (item.removal && svc.canRequireRemoval && removalPrice > 0) {
+            out.push({
+              id: 'removal',
+              name: `Removal (${svc.name})`,
+              price: removalPrice,
+              duration: removalDur,
+              isRemoval: true,
+            });
+          }
         });
-        assignedTech = result.tech || firstFreeTech(eligible, cartSlot, cartTotalDuration(cart, removalDur), dayAppts);
-        rrIdx = result.nextRoundRobinIndex;
+        return out;
       }
 
-      // Final length honors the assigned tech's per-service duration overrides.
-      const totalDur = cartTotalDuration(cart, removalDur, assignedTech);
-
-      // Build the merged services[] array with optional removal lines.
-      const services = [];
-      cart.forEach(item => {
-        const { service: svc, option: opt } = item;
-        const resolved = resolveServicePricing(svc, opt, assignedTech);
-        services.push({
-          id: svc.id,
-          name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name,
-          price: resolved.price || 0,
-          duration: resolved.duration || 60,
-          optionId: opt?.id || null,
-          optionName: opt?.name || null,
-          taxable: svc.taxable !== false,
-        });
-        if (item.removal && svc.canRequireRemoval && removalPrice > 0) {
-          services.push({
-            id: 'removal',
-            name: `Removal (${svc.name})`,
-            price: removalPrice,
-            duration: removalDur,
-            isRemoval: true,
-          });
+      // Resolve a single tech for a set of cart items: explicit pick or
+      // auto-assign via configured assignment method. Returns the resolved
+      // tech (object or null) + updated round-robin index + requestType.
+      const method = cfg?.assignmentMethod || DEFAULT_ASSIGNMENT_METHOD;
+      let rrIdx = cfg?.roundRobinIndex || 0;
+      const startingRrIdx = rrIdx;
+      async function resolveTechForItems(items, pickedTech, startSlot) {
+        let assigned = pickedTech;
+        let requestType = 'specific';
+        if (pickedTech === null) {
+          requestType = 'auto';
+          const elig = techsForServices(techs, items.map(c => c.service));
+          const free = elig.filter(t => isTechFreeAt(t, startSlot, cartTotalDuration(items, removalDur, t), dayAppts));
+          let weekAppts = [];
+          if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
+            const wk = startOfWeek(cartDate);
+            weekAppts = await callFn('getPublicAvailability')({ tenantId: TENANT_ID, dateStart: wk, dateEnd: endOfWeek(wk) })
+              .then(r => r?.data?.appts || []).catch(() => []);
+          }
+          let turnRoster = null;
+          const today = dateStr(todayDate());
+          if (method === 'turnQueue' && cartDate === today) {
+            const r = await fetchTurnRoster(today).catch(() => null);
+            turnRoster = (r && r.roster) || [];
+          }
+          const result = pickTech({ method, freeTechs: free, dayAppts, weekAppts, turnRoster, roundRobinIndex: rrIdx });
+          assigned = result.tech || firstFreeTech(elig, startSlot, cartTotalDuration(items, removalDur), dayAppts);
+          rrIdx = result.nextRoundRobinIndex;
         }
-      });
+        return { tech: assigned, requestType };
+      }
 
-      const h = Math.floor(cartSlot / 60), m = cartSlot % 60;
-      const appt = {
-        date:        cartDate,
-        startTime:   `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
-        duration:    totalDur,
-        techId:      assignedTech?.id   || null,
-        techName:    assignedTech?.name || 'TBD',
-        techRequestType,
-        clientId,
-        clientName:  form.name.trim(),
-        clientPhone: form.phone.trim(),
-        clientEmail: form.email.trim() || gUser?.email || null,
-        services,
-        status:      'scheduled',
-        notes:       form.notes.trim() || null,
-        source:      'online_booking',
-        createdAt:   new Date().toISOString(),
-        updatedAt:   new Date().toISOString(),
-      };
-      await createAppointment(appt);
+      // Build the appointment doc for one lane.
+      function makeApptForLane(items, tech, requestType, startSlot) {
+        const dur = cartTotalDuration(items, removalDur, tech);
+        const h = Math.floor(startSlot / 60), m = startSlot % 60;
+        return {
+          date:        cartDate,
+          startTime:   `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,
+          duration:    dur,
+          techId:      tech?.id   || null,
+          techName:    tech?.name || 'TBD',
+          techRequestType: requestType,
+          clientId,
+          clientName:  form.name.trim(),
+          clientPhone: form.phone.trim(),
+          clientEmail: form.email.trim() || gUser?.email || null,
+          services:    buildServicesForItems(items, tech),
+          status:      'scheduled',
+          notes:       form.notes.trim() || null,
+          source:      'online_booking',
+          createdAt:   new Date().toISOString(),
+          updatedAt:   new Date().toISOString(),
+        };
+      }
+
+      // Multi-lane: split into two appointments back-to-back. The mani
+      // appointment runs first from cartSlot; the pedi appointment starts
+      // immediately after the mani's duration. Linked via a shared
+      // bookingGroupId so reports can recognize them as one client visit.
+      const writtenAppts = [];
+      let primaryTech = null;
+      let primaryAppt = null;
+      if (isMultiLane(cart)) {
+        const lanes = cartLanes(cart);
+        const maniItems = [...lanes.Manicures, ...lanes._orphan]; // orphans default to mani
+        const pediItems = lanes.Pedicures;
+        const { tech: maniTech, requestType: maniReq } = await resolveTechForItems(maniItems, cartTechByLane.Manicures, cartSlot);
+        const maniDur = cartTotalDuration(maniItems, removalDur, maniTech);
+        const pediStart = cartSlot + maniDur;
+        const { tech: pediTech, requestType: pediReq } = await resolveTechForItems(pediItems, cartTechByLane.Pedicures, pediStart);
+        const groupId = `bg_${Date.now()}_${Math.floor(Math.random()*9999)}`;
+        const maniAppt = { ...makeApptForLane(maniItems, maniTech, maniReq, cartSlot), bookingGroupId: groupId, lane: 'Manicures' };
+        const pediAppt = { ...makeApptForLane(pediItems, pediTech, pediReq, pediStart), bookingGroupId: groupId, lane: 'Pedicures' };
+        await createAppointment(maniAppt);
+        await createAppointment(pediAppt);
+        writtenAppts.push(maniAppt, pediAppt);
+        primaryTech = maniTech;
+        primaryAppt = maniAppt;
+      } else {
+        // Single-lane: original flow, one tech, one appointment.
+        const { tech, requestType } = await resolveTechForItems(cart, cartTech, cartSlot);
+        const appt = makeApptForLane(cart, tech, requestType, cartSlot);
+        await createAppointment(appt);
+        writtenAppts.push(appt);
+        primaryTech = tech;
+        primaryAppt = appt;
+      }
 
       // Persist round-robin counter so the next booking continues the cycle.
       if (rrIdx !== startingRrIdx && cfg) {
@@ -654,7 +694,7 @@ export default function BookingScreen() {
         catch (e) { console.warn('[Booking] roundRobin persist failed:', e); }
       }
 
-      setConfirmed({ ...appt, _tech: assignedTech, _cartItems: cart });
+      setConfirmed({ ...primaryAppt, _tech: primaryTech, _cartItems: cart, _allAppts: writtenAppts });
     } catch (e) {
       console.error('[Booking] failed:', e);
       alert('Booking failed. Please try again or call us.');
@@ -831,7 +871,8 @@ export default function BookingScreen() {
         {step === 5 && (
           <Step5Confirm
             cart={cart} allTechs={techs}
-            cartTech={cartTech} cartDate={cartDate} cartSlot={cartSlot}
+            cartTech={cartTech} cartTechByLane={cartTechByLane}
+            cartDate={cartDate} cartSlot={cartSlot}
             apptsByDate={apptsByDate}
             form={form} submitting={submitting} bookingError={bookingError}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
@@ -1648,7 +1689,7 @@ function Step4Info({
 }
 
 // ── Step 5: Confirm (multi-item) ────────────────────────
-function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, editorial, onConfirm, onBack, onEditInfo }) {
+function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, editorial, onConfirm, onBack, onEditInfo }) {
   const removalDur = 15;
   const totalPrice = cart.reduce((sum, item) => {
     const base = resolveServicePricing(item.service, item.option).price || 0;
@@ -1661,7 +1702,33 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
   const assignedTech = cartTech !== null
     ? cartTech
     : (eligible.find(t => isTechFreeAt(t, cartSlot, cartTotalDuration(cart, removalDur, t), dayAppts)) || null);
-  const totalDur = cartTotalDuration(cart, removalDur, assignedTech);
+
+  // Multi-lane breakdown (mani+pedi carts) — assemble per-lane info so the
+  // confirmation card can show two stylists, two time blocks, and which
+  // services land in each lane.
+  const multiLane = isMultiLane(cart);
+  let maniLaneInfo = null, pediLaneInfo = null;
+  if (multiLane) {
+    const lanes = cartLanes(cart);
+    const maniItems = [...lanes.Manicures, ...lanes._orphan];
+    const pediItems = lanes.Pedicures;
+    function resolveLaneTech(items, picked) {
+      if (picked && picked !== null) return picked;
+      const e = techsForServices(allTechs, items.map(c => c.service));
+      return e.find(t => isTechFreeAt(t, cartSlot, cartTotalDuration(items, removalDur, t), dayAppts)) || null;
+    }
+    const maniTech = resolveLaneTech(maniItems, cartTechByLane?.Manicures);
+    const pediTech = resolveLaneTech(pediItems, cartTechByLane?.Pedicures);
+    const maniDur  = cartTotalDuration(maniItems, removalDur, maniTech);
+    const pediDur  = cartTotalDuration(pediItems, removalDur, pediTech);
+    maniLaneInfo = { items: maniItems, tech: maniTech, start: cartSlot, end: cartSlot + maniDur, dur: maniDur };
+    pediLaneInfo = { items: pediItems, tech: pediTech, start: cartSlot + maniDur, end: cartSlot + maniDur + pediDur, dur: pediDur };
+  }
+  // Total duration: in multi-lane, sum the two lanes' actual per-tech
+  // durations; otherwise the cart-wide computation using assignedTech.
+  const totalDur = multiLane
+    ? (maniLaneInfo.dur + pediLaneInfo.dur)
+    : cartTotalDuration(cart, removalDur, assignedTech);
   const endSlot = (cartSlot ?? 0) + totalDur;
 
   return (
@@ -1698,7 +1765,15 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
               </div>
             </div>
             <div style={{ marginTop: 22, fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontSize: 16, color: '#5a534d' }}>
-              with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{assignedTech?.name || 'any available stylist'}</span>
+              {multiLane ? (
+                <>
+                  manicure with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{maniLaneInfo.tech?.name || 'any available stylist'}</span>
+                  <span style={{ margin: '0 8px', color: '#c19a4a' }}>·</span>
+                  pedicure with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{pediLaneInfo.tech?.name || 'any available stylist'}</span>
+                </>
+              ) : (
+                <>with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{assignedTech?.name || 'any available stylist'}</span></>
+              )}
             </div>
           </div>
         ) : (
@@ -1723,23 +1798,47 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
           </>
         )}
 
-        {/* Service breakdown + per-service removal toggles */}
-        <div style={{ borderTop: '1px solid #f0f0f0', padding: '10px 18px', background: '#fafafa' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Services</div>
-          {cart.map((item, idx) => {
-            const resolved = resolveServicePricing(item.service, item.option);
-            const dur = resolved.duration || 60;
-            const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
-            return (
-              <div key={item.id} style={{ marginBottom: idx === cart.length - 1 ? 0 : 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 600 }}>{itemLabel}</span>
-                  <span style={{ fontSize: 12, color: '#888' }}>${resolved.price} · {dur} min</span>
+        {/* Service breakdown — flat list for single-lane, two stacked
+            lane cards (mani + pedi) when both are present so the customer
+            sees who does what at which time. */}
+        {multiLane ? (
+          <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
+            <LaneBreakdownCard
+              eyebrow="Manicure"
+              tech={maniLaneInfo.tech}
+              startMins={maniLaneInfo.start}
+              endMins={maniLaneInfo.end}
+              items={maniLaneInfo.items}
+              editorial={editorial}
+            />
+            <div style={{ height: 1, background: 'rgba(193,154,74,.22)', margin: '0 18px' }} />
+            <LaneBreakdownCard
+              eyebrow="Pedicure"
+              tech={pediLaneInfo.tech}
+              startMins={pediLaneInfo.start}
+              endMins={pediLaneInfo.end}
+              items={pediLaneInfo.items}
+              editorial={editorial}
+            />
+          </div>
+        ) : (
+          <div style={{ borderTop: '1px solid #f0f0f0', padding: '10px 18px', background: '#fafafa' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Services</div>
+            {cart.map((item, idx) => {
+              const resolved = resolveServicePricing(item.service, item.option);
+              const dur = resolved.duration || 60;
+              const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
+              return (
+                <div key={item.id} style={{ marginBottom: idx === cart.length - 1 ? 0 : 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 600 }}>{itemLabel}</span>
+                    <span style={{ fontSize: 12, color: '#888' }}>${resolved.price} · {dur} min</span>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Customer info */}
@@ -1784,6 +1883,58 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
 }
 
 // ── Success ────────────────────────────────────────────
+function LaneBreakdownCard({ eyebrow, tech, startMins, endMins, items, editorial }) {
+  const FONT_DISPLAY = '"Cinzel", Georgia, serif';
+  const FONT_SERIF   = '"Cormorant Garamond", Georgia, serif';
+  const totalDuration = endMins - startMins;
+  return (
+    <div style={{ padding: '14px 18px' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '.16em',
+            textTransform: 'uppercase',
+            color: editorial ? '#8a827a' : '#888',
+            fontFamily: editorial ? FONT_DISPLAY : 'inherit',
+          }}>
+            {eyebrow}
+          </div>
+          <div style={{
+            fontSize: editorial ? 18 : 14,
+            fontWeight: editorial ? 400 : 700,
+            color: editorial ? '#302c29' : '#1a1a1a',
+            marginTop: 2,
+            fontFamily: editorial ? FONT_SERIF : 'inherit',
+          }}>
+            with {tech?.name || 'any available stylist'}
+          </div>
+        </div>
+        <div style={{
+          fontSize: 12, color: editorial ? '#5a534d' : '#888', textAlign: 'right',
+          fontFamily: editorial ? FONT_DISPLAY : 'inherit',
+          letterSpacing: editorial ? '.06em' : 'normal',
+        }}>
+          {minsToStr(startMins)} – {minsToStr(endMins)} · {totalDuration} min
+        </div>
+      </div>
+      {items.map((item, idx) => {
+        const resolved = resolveServicePricing(item.service, item.option);
+        const dur = resolved.duration || 60;
+        const itemLabel = item.option?.name ? `${item.service.name} — ${item.option.name}` : item.service.name;
+        return (
+          <div key={item.id} style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+            marginBottom: idx === items.length - 1 ? 0 : 6, paddingLeft: 6,
+          }}>
+            <span style={{ fontSize: 13, color: '#302c29' }}>{itemLabel}</span>
+            <span style={{ fontSize: 12, color: '#8a827a' }}>${resolved.price} · {dur} min</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SuccessScreen({ appts, techs, webCfg }) {
   const a = Array.isArray(appts) ? appts[0] : appts;
   const tech = a?._tech || techs?.find(t => t.id === a?.techId) || null;
