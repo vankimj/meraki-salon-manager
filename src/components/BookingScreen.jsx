@@ -838,7 +838,7 @@ export default function BookingScreen() {
         )}
         {step === 3 && (
           <Step3PickSlot
-            cart={cart} cartTech={cartTech} allTechs={techs}
+            cart={cart} cartTech={cartTech} cartTechByLane={cartTechByLane} allTechs={techs}
             cartDate={cartDate} setCartDate={setCartDate}
             cartSlot={cartSlot} setCartSlot={setCartSlot}
             apptsByDate={apptsByDate} ensureApptsForDate={ensureApptsForDate}
@@ -1458,30 +1458,68 @@ function TechCard({ tech, selected, onSelect }) {
 }
 
 // ── Step 3: Pick a date + start time for the whole cart ─
-function Step3PickSlot({ cart, cartTech, allTechs, cartDate, setCartDate, cartSlot, setCartSlot, apptsByDate, ensureApptsForDate, removalDur, onProceed, onBack }) {
-  const totalDur = cartTotalDuration(cart, removalDur, cartTech || undefined);
+function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, setCartDate, cartSlot, setCartSlot, apptsByDate, ensureApptsForDate, removalDur, onProceed, onBack }) {
+  const multiLane = isMultiLane(cart);
   const eligible = techsForServices(allTechs, cart.map(c => c.service));
-  const allSlots = getSlots(totalDur);
   const dayAppts = cartDate ? apptsByDate[cartDate] : null;
+
+  // For multi-lane carts, compute per-lane items + eligible techs once so
+  // the availability check (called per slot) doesn't re-derive them.
+  const lanes        = multiLane ? cartLanes(cart) : null;
+  const maniItems    = multiLane ? [...lanes.Manicures, ...lanes._orphan] : null;
+  const pediItems    = multiLane ? lanes.Pedicures : null;
+  const maniEligible = multiLane ? techsForServices(allTechs, maniItems.map(c => c.service)) : null;
+  const pediEligible = multiLane ? techsForServices(allTechs, pediItems.map(c => c.service)) : null;
+
+  // Total duration depends on lane mode. Use a representative tech per lane
+  // (the picked one, or any eligible) for duration calc — the actual booking
+  // re-resolves with the real tech, but display + slot stepping needs a
+  // concrete number now.
+  const totalDur = multiLane
+    ? cartTotalDuration(maniItems, removalDur, cartTechByLane?.Manicures || maniEligible[0])
+      + cartTotalDuration(pediItems, removalDur, cartTechByLane?.Pedicures || pediEligible[0])
+    : cartTotalDuration(cart, removalDur, cartTech || undefined);
+  const allSlots = getSlots(totalDur);
 
   useEffect(() => { if (cartDate) ensureApptsForDate(cartDate); }, [cartDate]); // eslint-disable-line
 
+  // Slot availability — single-lane: any eligible tech free for the whole
+  // span. Multi-lane: mani-tech free in [slot, slot+maniDur] AND pedi-tech
+  // free in [slot+maniDur, slot+maniDur+pediDur]. "No preference" on a lane
+  // means we accept the slot if SOMEONE eligible for that lane is free.
   function isAvailable(slotMins) {
     if (!dayAppts) return false;
+    if (multiLane) {
+      // Mani window starts at the slot.
+      const maniTech = cartTechByLane?.Manicures || null;
+      const checkMani = (t) => isTechFreeAt(t, slotMins, cartTotalDuration(maniItems, removalDur, t), dayAppts);
+      const maniOk = maniTech ? checkMani(maniTech) : maniEligible.some(checkMani);
+      if (!maniOk) return false;
+      // Pedi window starts after mani finishes — use a representative mani
+      // duration to compute the offset. If we have a specific mani tech, use
+      // theirs; otherwise pick a candidate that's actually free (so the pedi
+      // window is realistic against availability).
+      const maniRep = maniTech || maniEligible.find(checkMani) || maniEligible[0];
+      const maniDur = cartTotalDuration(maniItems, removalDur, maniRep);
+      const pediStart = slotMins + maniDur;
+      const pediTech = cartTechByLane?.Pedicures || null;
+      const checkPedi = (t) => isTechFreeAt(t, pediStart, cartTotalDuration(pediItems, removalDur, t), dayAppts);
+      return pediTech ? checkPedi(pediTech) : pediEligible.some(checkPedi);
+    }
     if (cartTech) return isTechFreeAt(cartTech, slotMins, totalDur, dayAppts);
-    // No preference: a slot is offered if any eligible tech is free for the
-    // span that tech would actually take (their own per-service durations).
     return eligible.some(t => isTechFreeAt(t, slotMins, cartTotalDuration(cart, removalDur, t), dayAppts));
   }
   const hasAny = dayAppts && allSlots.some(s => isAvailable(s));
-  const techLabel = cartTech ? cartTech.name : 'No preference';
+  const techLabel = multiLane
+    ? `${cartTechByLane?.Manicures?.name || 'any stylist'} (mani) & ${cartTechByLane?.Pedicures?.name || 'any stylist'} (pedi)`
+    : (cartTech ? cartTech.name : 'No preference');
   const cartLabel = cart.length === 1 ? '1 service' : `${cart.length} services`;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <StepTitle>Pick a date &amp; start time</StepTitle>
       <div style={{ fontSize: 13, color: '#888', marginTop: -10, marginBottom: 18, lineHeight: 1.5 }}>
-        Your {cartLabel} ({totalDur} min total) will be done back-to-back with <strong>{techLabel}</strong>.
+        Your {cartLabel} ({totalDur} min total){multiLane ? ' will be done back-to-back, mani first then pedi' : ' will be done back-to-back'} with <strong>{techLabel}</strong>.
       </div>
 
       <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 16 }}>
