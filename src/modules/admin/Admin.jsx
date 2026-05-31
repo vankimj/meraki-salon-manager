@@ -15,6 +15,7 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          subscribeGoogleBusinessAuth, startGoogleBusinessAuth,
          syncGoogleBusinessReviews, disconnectGoogleBusiness } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
+import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
@@ -701,6 +702,7 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
   const hasCoords = bookingCfg.salonLat && bookingCfg.salonLng;
 
   return (
+    <>
     <Section title="🌐 Online Booking">
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
@@ -792,6 +794,8 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
         </div>
       )}
     </Section>
+    <BookingFlowSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} save={save} saving={saving} />
+    </>
   );
 }
 
@@ -830,6 +834,180 @@ function AutoAssignSection({ method, onChange, saving }) {
           );
         })}
       </div>
+    </div>
+  );
+}
+
+// ── Booking Flow config (Tier 0 templates + Tier 1 toggles) ──────────
+// Reads/writes bookingConfig.flow. Empty doc = use template defaults +
+// system defaults. Template picker stamps preset values; individual
+// toggles override the template per-field.
+function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
+  const flow = bookingCfg.flow || {};
+  const eff  = getEffectiveFlow(flow);
+
+  function patchFlow(patch) {
+    const nextFlow = { ...flow, ...patch };
+    setBookingCfg(c => ({ ...c, flow: nextFlow }));
+    save({ flow: nextFlow });
+  }
+  function applyTemplate(id) {
+    if (!FLOW_TEMPLATES[id]) return;
+    if (id === 'custom') {
+      // Custom = wipe template, keep current explicit overrides as-is.
+      patchFlow({ templateId: 'custom' });
+      return;
+    }
+    // Setting a template wipes individual overrides so the template's
+    // values are used directly. Tenant can re-override after.
+    const nextFlow = { templateId: id };
+    setBookingCfg(c => ({ ...c, flow: nextFlow }));
+    save({ flow: nextFlow });
+  }
+
+  const activeTplId = flow.templateId || 'custom';
+
+  return (
+    <Section title="🧭 Booking Flow">
+      <div style={{ padding: '12px 16px 6px', fontSize: 11, color: '#888', lineHeight: 1.5 }}>
+        Pick a starting template, then fine-tune. Changes apply to the next page load on the public booking page.
+      </div>
+
+      {/* Template picker */}
+      <div style={{ padding: '8px 16px 12px' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+          Industry template
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
+          {Object.entries(FLOW_TEMPLATES).map(([id, t]) => {
+            const active = activeTplId === id;
+            return (
+              <button key={id} onClick={() => applyTemplate(id)} disabled={saving}
+                style={{
+                  textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
+                  padding: '10px 12px', borderRadius: 10,
+                  border: `2px solid ${active ? '#3D95CE' : '#e8e8e8'}`,
+                  background: active ? '#EBF4FB' : '#fff',
+                  boxShadow: active ? '0 0 0 2px rgba(61,149,206,.15)' : 'none',
+                }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 18 }}>{t.icon}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{t.name}</span>
+                  {active && <span style={{ fontSize: 10, fontWeight: 700, color: '#1a5f8a', background: '#d4e9f8', padding: '2px 6px', borderRadius: 3, letterSpacing: '.04em' }}>ACTIVE</span>}
+                </div>
+                <div style={{ fontSize: 11, color: '#666', lineHeight: 1.4 }}>{t.description}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Step shape toggles */}
+      <FlowSubGroup title="Step shape">
+        <FlowRow label="Show 'How would you like to book?' chooser"
+          desc="Step 0 — let customer pick between time-first and tech-first. Off → go straight to the chosen default."
+          value={eff.showFlowChooser}
+          control={<Toggle active={eff.showFlowChooser} onChange={() => patchFlow({ showFlowChooser: !eff.showFlowChooser })} disabled={saving} />} />
+        <FlowRow label="Default flow"
+          desc="Which path opens when the chooser is hidden, or pre-selects if it's shown."
+          control={
+            <select value={eff.defaultFlow} onChange={e => patchFlow({ defaultFlow: e.target.value })}
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid #d8d8d8', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>
+              <option value="time">Time-first (pick services, then stylist)</option>
+              <option value="tech">Tech-first (pick stylist, then services)</option>
+            </select>
+          } />
+        <FlowRow label="Show notes field on the customer info step"
+          desc="A textarea where the client can leave context for the stylist."
+          control={<Toggle active={eff.showNotesField} onChange={() => patchFlow({ showNotesField: !eff.showNotesField })} disabled={saving} />} />
+      </FlowSubGroup>
+
+      {/* Identity */}
+      <FlowSubGroup title="Identity & checkout">
+        <FlowRow label="Require sign-in to book"
+          desc="Customer must be signed in (Google, phone, or magic link) before they can submit. Off → can submit as guest."
+          control={<Toggle active={eff.requireSignIn} onChange={() => patchFlow({ requireSignIn: !eff.requireSignIn })} disabled={saving} />} />
+        <FlowRow label="Allow guest checkout"
+          desc="If sign-in isn't required, this controls whether the customer can leave the auth step blank."
+          control={<Toggle active={eff.allowGuestCheckout} onChange={() => patchFlow({ allowGuestCheckout: !eff.allowGuestCheckout })} disabled={saving || eff.requireSignIn} />} />
+      </FlowSubGroup>
+
+      {/* Multi-lane */}
+      <FlowSubGroup title="Multi-lane (mani + pedi)">
+        <FlowRow label="Schedule shape when cart has both"
+          desc="Back-to-back = one tech does mani then a second does pedi after. Simultaneous = both techs work at once."
+          control={
+            <select value={eff.multiLaneShape} onChange={e => patchFlow({ multiLaneShape: e.target.value })}
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid #d8d8d8', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>
+              <option value="back-to-back">Back-to-back</option>
+              <option value="simultaneous">Simultaneous</option>
+              <option value="ask">Ask the customer</option>
+            </select>
+          } />
+        <FlowRow label="Removal prompt cadence"
+          desc="When to ask 'are you wearing a previous gel/dip set?'. Always = every qualifying service. First-only = once per booking."
+          control={
+            <select value={eff.removalPromptMode} onChange={e => patchFlow({ removalPromptMode: e.target.value })}
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid #d8d8d8', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>
+              <option value="always">Always</option>
+              <option value="first-only">First-only</option>
+              <option value="never">Never</option>
+            </select>
+          } />
+      </FlowSubGroup>
+
+      {/* Time window */}
+      <FlowSubGroup title="Time window">
+        <FlowRow label="Minimum lead time (minutes)"
+          desc="Block slots earlier than this from 'now'. 0 = bookable now."
+          control={
+            <input type="number" min={0} max={1440} value={eff.minLeadTimeMinutes}
+              onChange={e => patchFlow({ minLeadTimeMinutes: Math.max(0, Number(e.target.value) || 0) })}
+              style={{ width: 90, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+          } />
+        <FlowRow label="Booking window (days ahead)"
+          desc="Furthest day visible in the calendar. Typical: 14-60."
+          control={
+            <input type="number" min={1} max={365} value={eff.maxLeadDays}
+              onChange={e => patchFlow({ maxLeadDays: Math.max(1, Number(e.target.value) || 30) })}
+              style={{ width: 90, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+          } />
+      </FlowSubGroup>
+
+      {/* Copy */}
+      <FlowSubGroup title="Confirm button">
+        <FlowRow label="Confirm CTA label"
+          desc="The text on the final 'Confirm booking' button. Branded options: 'Book my chair', 'Reserve treatment'."
+          control={
+            <input type="text" maxLength={40} value={eff.confirmCtaLabel}
+              onChange={e => patchFlow({ confirmCtaLabel: e.target.value })}
+              placeholder={FLOW_DEFAULTS.confirmCtaLabel}
+              style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+          } />
+      </FlowSubGroup>
+    </Section>
+  );
+}
+
+function FlowSubGroup({ title, children }) {
+  return (
+    <div style={{ borderTop: '1px solid #f0f0f0' }}>
+      <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: '.1em', textTransform: 'uppercase' }}>
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function FlowRow({ label, desc, control }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '10px 16px', borderTop: '1px solid #fafafa' }}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: '#333' }}>{label}</div>
+        {desc && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, lineHeight: 1.45 }}>{desc}</div>}
+      </div>
+      <div style={{ flexShrink: 0 }}>{control}</div>
     </div>
   );
 }
