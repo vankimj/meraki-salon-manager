@@ -17,6 +17,9 @@ export default function TenantDetail({ tenantId }) {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
   const [busy,    setBusy]    = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft]     = useState('');
+  const [nameError, setNameError]     = useState('');
 
   async function load() {
     setLoading(true); setError('');
@@ -54,6 +57,33 @@ export default function TenantDetail({ tenantId }) {
     } finally { setBusy(false); }
   }
 
+  function startRenaming() {
+    setNameDraft(meta?.name || '');
+    setNameError('');
+    setEditingName(true);
+  }
+  function cancelRenaming() {
+    setEditingName(false);
+    setNameDraft('');
+    setNameError('');
+  }
+  async function saveRename() {
+    const next = nameDraft.trim();
+    if (next.length < 2) { setNameError('Name must be at least 2 characters.'); return; }
+    if (next.length > 80) { setNameError('Name must be ≤ 80 characters.'); return; }
+    if (next === (meta?.name || '')) { cancelRenaming(); return; }
+    setBusy(true); setNameError('');
+    try {
+      await updateTenantRecord(meta.id, { name: next });
+      await load();
+      setEditingName(false);
+    } catch (e) {
+      setNameError(e?.message || 'Rename failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleToggleSandbox() {
     if (!meta) return;
     const newSandbox = !meta.sandboxMode;
@@ -86,7 +116,38 @@ export default function TenantDetail({ tenantId }) {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, gap: 16 }}>
         <div>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: '0 0 6px', color: C.ink, letterSpacing: '-.005em' }}>{meta.name || meta.id}</h1>
+          {editingName ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <input
+                autoFocus
+                value={nameDraft}
+                onChange={e => setNameDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') saveRename(); if (e.key === 'Escape') cancelRenaming(); }}
+                placeholder="Salon name"
+                style={{ fontSize: 22, fontWeight: 700, color: C.ink, fontFamily: 'inherit', border: `1px solid ${C.plum}`, borderRadius: 6, padding: '4px 10px', outline: 'none', letterSpacing: '-.005em', minWidth: 320 }}
+              />
+              <button onClick={saveRename} disabled={busy}
+                style={{ padding: '6px 14px', borderRadius: 6, border: 'none', background: busy ? C.muted : C.plum, color: '#fff', fontSize: 13, fontWeight: 600, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                {busy ? 'Saving…' : 'Save'}
+              </button>
+              <button onClick={cancelRenaming} disabled={busy}
+                style={{ padding: '6px 14px', borderRadius: 6, border: `1px solid ${C.bgCode}`, background: '#fff', color: C.muted, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, color: C.ink, letterSpacing: '-.005em' }}>{meta.name || meta.id}</h1>
+              <button onClick={startRenaming} title="Rename salon"
+                style={{ padding: '4px 8px', borderRadius: 6, border: `1px solid transparent`, background: 'transparent', color: C.muted, fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}
+                onMouseEnter={e => { e.currentTarget.style.background = C.bgCode; e.currentTarget.style.color = C.plum; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = C.muted; }}
+              >
+                ✎
+              </button>
+            </div>
+          )}
+          {nameError && <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 6 }}>{nameError}</div>}
           <div style={{ fontSize: 13, color: C.muted, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
             <span><code style={{ background: C.bgCode, padding: '2px 6px', borderRadius: 3, fontSize: 11 }}>{meta.id}</code></span>
             {meta.ownerEmail && <span>👤 {meta.ownerEmail}</span>}
