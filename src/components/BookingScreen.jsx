@@ -440,7 +440,30 @@ export default function BookingScreen() {
   // Derive the effective booking-flow config every render. Cheap — just
   // merges defaults ⊕ template ⊕ overrides. Used throughout the flow for
   // gating, copy, and behavior toggles.
-  const flowCfg = getEffectiveFlow(cfg?.flow);
+  const baseFlowCfg = getEffectiveFlow(cfg?.flow);
+  // Tier 7: per-service overrides win when ANY service in the cart sets
+  // them. Multiple cart items: take the strongest signal — require
+  // sign-in if any service requires it, take the MAX of any min-lead-time
+  // values, and surface ALL custom notes (deduped, joined).
+  const svcOverrides = cart.reduce((acc, item) => {
+    const o = item.service?.flowOverrides;
+    if (!o) return acc;
+    if (o.requireSignIn === true) acc.requireSignIn = true;
+    if (typeof o.minLeadTimeMinutes === 'number' && o.minLeadTimeMinutes > (acc.minLeadTimeMinutes || 0)) {
+      acc.minLeadTimeMinutes = o.minLeadTimeMinutes;
+    }
+    if (o.customNote && typeof o.customNote === 'string') acc.customNotes = [...(acc.customNotes || []), o.customNote];
+    return acc;
+  }, {});
+  // Merge: service overrides have FINAL say. minLead winner = max(global, svc).
+  const flowCfg = {
+    ...baseFlowCfg,
+    requireSignIn:      svcOverrides.requireSignIn === true ? true : baseFlowCfg.requireSignIn,
+    minLeadTimeMinutes: Math.max(baseFlowCfg.minLeadTimeMinutes || 0, svcOverrides.minLeadTimeMinutes || 0),
+    // Custom notes from services are surfaced separately, not as a flowCfg
+    // toggle — Step5 + the cart bar can render them.
+    serviceCustomNotes: svcOverrides.customNotes || [],
+  };
 
   // Cart helpers ─────────────────────────────────────────
   // Removal-prompt state. Fires when a service with canRequireRemoval=true
@@ -693,13 +716,16 @@ export default function BookingScreen() {
         const lanes = cartLanes(cart);
         const maniItems = [...lanes.Manicures, ...lanes._orphan]; // orphans default to mani
         const pediItems = lanes.Pedicures;
+        // Tier 1 toggle multiLaneShape: 'back-to-back' (pedi starts after
+        // mani finishes) or 'simultaneous' (both start at the same time).
+        const simultaneous = flowCfg.multiLaneShape === 'simultaneous';
         const { tech: maniTech, requestType: maniReq } = await resolveTechForItems(maniItems, cartTechByLane.Manicures, cartSlot);
         const maniDur = cartTotalDuration(maniItems, removalDur, maniTech);
-        const pediStart = cartSlot + maniDur;
+        const pediStart = simultaneous ? cartSlot : (cartSlot + maniDur);
         const { tech: pediTech, requestType: pediReq } = await resolveTechForItems(pediItems, cartTechByLane.Pedicures, pediStart);
         const groupId = `bg_${Date.now()}_${Math.floor(Math.random()*9999)}`;
-        const maniAppt = { ...makeApptForLane(maniItems, maniTech, maniReq, cartSlot), bookingGroupId: groupId, lane: 'Manicures' };
-        const pediAppt = { ...makeApptForLane(pediItems, pediTech, pediReq, pediStart), bookingGroupId: groupId, lane: 'Pedicures' };
+        const maniAppt = { ...makeApptForLane(maniItems, maniTech, maniReq, cartSlot), bookingGroupId: groupId, lane: 'Manicures', laneShape: flowCfg.multiLaneShape };
+        const pediAppt = { ...makeApptForLane(pediItems, pediTech, pediReq, pediStart), bookingGroupId: groupId, lane: 'Pedicures', laneShape: flowCfg.multiLaneShape };
         await createAppointment(maniAppt);
         await createAppointment(pediAppt);
         writtenAppts.push(maniAppt, pediAppt);
@@ -1504,13 +1530,14 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
   const maniEligible = multiLane ? techsForServices(allTechs, maniItems.map(c => c.service)) : null;
   const pediEligible = multiLane ? techsForServices(allTechs, pediItems.map(c => c.service)) : null;
 
-  // Total duration depends on lane mode. Use a representative tech per lane
-  // (the picked one, or any eligible) for duration calc — the actual booking
-  // re-resolves with the real tech, but display + slot stepping needs a
-  // concrete number now.
+  // Total duration depends on lane mode + shape. Back-to-back: sum of both
+  // lanes. Simultaneous: max of both (they run in parallel).
+  const shape = flowCfg?.multiLaneShape || 'back-to-back';
+  const simultaneous = multiLane && shape === 'simultaneous';
+  const maniDurRep = multiLane ? cartTotalDuration(maniItems, removalDur, cartTechByLane?.Manicures || maniEligible[0]) : 0;
+  const pediDurRep = multiLane ? cartTotalDuration(pediItems, removalDur, cartTechByLane?.Pedicures || pediEligible[0]) : 0;
   const totalDur = multiLane
-    ? cartTotalDuration(maniItems, removalDur, cartTechByLane?.Manicures || maniEligible[0])
-      + cartTotalDuration(pediItems, removalDur, cartTechByLane?.Pedicures || pediEligible[0])
+    ? (simultaneous ? Math.max(maniDurRep, pediDurRep) : (maniDurRep + pediDurRep))
     : cartTotalDuration(cart, removalDur, cartTech || undefined);
   const allSlots = getSlots(totalDur);
 
@@ -1536,16 +1563,19 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
       const checkMani = (t) => isTechFreeAt(t, slotMins, cartTotalDuration(maniItems, removalDur, t), dayAppts);
       const maniOk = maniTech ? checkMani(maniTech) : maniEligible.some(checkMani);
       if (!maniOk) return false;
-      // Pedi window starts after mani finishes — use a representative mani
-      // duration to compute the offset. If we have a specific mani tech, use
-      // theirs; otherwise pick a candidate that's actually free (so the pedi
-      // window is realistic against availability).
+      // Pedi window start depends on shape: same time (simultaneous) or
+      // after mani finishes (back-to-back).
       const maniRep = maniTech || maniEligible.find(checkMani) || maniEligible[0];
       const maniDur = cartTotalDuration(maniItems, removalDur, maniRep);
-      const pediStart = slotMins + maniDur;
+      const pediStart = simultaneous ? slotMins : (slotMins + maniDur);
       const pediTech = cartTechByLane?.Pedicures || null;
       const checkPedi = (t) => isTechFreeAt(t, pediStart, cartTotalDuration(pediItems, removalDur, t), dayAppts);
-      return pediTech ? checkPedi(pediTech) : pediEligible.some(checkPedi);
+      const pediOk = pediTech ? checkPedi(pediTech) : pediEligible.some(checkPedi);
+      if (!pediOk) return false;
+      // For simultaneous: same tech can't be both mani AND pedi at the
+      // overlap. If both lanes ended up with the same person, reject.
+      if (simultaneous && maniTech && pediTech && maniTech.id === pediTech.id) return false;
+      return true;
     }
     if (cartTech) return isTechFreeAt(cartTech, slotMins, totalDur, dayAppts);
     return eligible.some(t => isTechFreeAt(t, slotMins, cartTotalDuration(cart, removalDur, t), dayAppts));
@@ -1790,8 +1820,10 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
 
   // Multi-lane breakdown (mani+pedi carts) — assemble per-lane info so the
   // confirmation card can show two stylists, two time blocks, and which
-  // services land in each lane.
+  // services land in each lane. Shape: back-to-back or simultaneous.
   const multiLane = isMultiLane(cart);
+  const shape = flowCfg?.multiLaneShape || 'back-to-back';
+  const simultaneous = multiLane && shape === 'simultaneous';
   let maniLaneInfo = null, pediLaneInfo = null;
   if (multiLane) {
     const lanes = cartLanes(cart);
@@ -1806,19 +1838,34 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
     const pediTech = resolveLaneTech(pediItems, cartTechByLane?.Pedicures);
     const maniDur  = cartTotalDuration(maniItems, removalDur, maniTech);
     const pediDur  = cartTotalDuration(pediItems, removalDur, pediTech);
+    const pediStart = simultaneous ? cartSlot : (cartSlot + maniDur);
     maniLaneInfo = { items: maniItems, tech: maniTech, start: cartSlot, end: cartSlot + maniDur, dur: maniDur };
-    pediLaneInfo = { items: pediItems, tech: pediTech, start: cartSlot + maniDur, end: cartSlot + maniDur + pediDur, dur: pediDur };
+    pediLaneInfo = { items: pediItems, tech: pediTech, start: pediStart, end: pediStart + pediDur, dur: pediDur };
   }
-  // Total duration: in multi-lane, sum the two lanes' actual per-tech
-  // durations; otherwise the cart-wide computation using assignedTech.
+  // Total duration: multi-lane sums or maxes the two lanes' actual durations
+  // depending on shape; single-lane uses the cart-wide computation.
   const totalDur = multiLane
-    ? (maniLaneInfo.dur + pediLaneInfo.dur)
+    ? (simultaneous ? Math.max(maniLaneInfo.dur, pediLaneInfo.dur) : (maniLaneInfo.dur + pediLaneInfo.dur))
     : cartTotalDuration(cart, removalDur, assignedTech);
   const endSlot = (cartSlot ?? 0) + totalDur;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <StepTitle>Confirm booking</StepTitle>
+
+      {/* Service-level custom notes (Tier 7 per-service flowOverrides). */}
+      {(flowCfg?.serviceCustomNotes || []).length > 0 && (
+        <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 16px', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', letterSpacing: '.05em', textTransform: 'uppercase', marginBottom: 6 }}>
+            Before your visit
+          </div>
+          {flowCfg.serviceCustomNotes.map((note, i) => (
+            <div key={i} style={{ fontSize: 13, color: '#78350f', lineHeight: 1.5, marginBottom: i === flowCfg.serviceCustomNotes.length - 1 ? 0 : 6 }}>
+              • {note}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Combined appointment card */}
       <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,.04)' }}>

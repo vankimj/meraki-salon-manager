@@ -496,6 +496,50 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             style={{ ...inputStyle, width: 100 }} />
         </Field>
 
+        {/* Tier 7: per-service flow overrides. These override the
+            corresponding global Booking Flow settings (Admin → Settings →
+            🧭 Booking Flow) ONLY when this service is in the cart. */}
+        <div style={{ background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+            Booking-flow overrides for this service
+          </div>
+          <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+            When this service is in the cart, these win over the global Booking Flow settings. Leave blank to inherit.
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 12 }}>
+            <input type="checkbox" style={{ marginTop: 3 }}
+              checked={!!svc.flowOverrides?.requireSignIn}
+              onChange={e => onChange({ flowOverrides: { ...(svc.flowOverrides || {}), requireSignIn: e.target.checked || undefined } })} />
+            <span>
+              Require sign-in to book this service
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+                Useful for VIP services, services with a deposit, or anything you want auditable to a specific account.
+              </div>
+            </span>
+          </label>
+
+          <Field label="Minimum lead time (minutes)" hint="When this service is in the cart, customers can't book any slot starting sooner than this. Leave blank to inherit the global value.">
+            <input type="number" min={0} max={1440}
+              value={svc.flowOverrides?.minLeadTimeMinutes ?? ''}
+              onChange={e => {
+                const raw = e.target.value;
+                const n = raw === '' ? undefined : Math.max(0, Number(raw) || 0);
+                onChange({ flowOverrides: { ...(svc.flowOverrides || {}), minLeadTimeMinutes: n } });
+              }}
+              placeholder="(inherit)"
+              style={{ ...inputStyle, width: 140 }} />
+          </Field>
+
+          <Field label="Customer note shown in cart" hint="A short line of text shown to the customer when this service is added — e.g. 'Please come with bare nails.' or 'Patch test required 24h before.'">
+            <input type="text" maxLength={140}
+              value={svc.flowOverrides?.customNote ?? ''}
+              onChange={e => onChange({ flowOverrides: { ...(svc.flowOverrides || {}), customNote: e.target.value || undefined } })}
+              placeholder="(none)"
+              style={{ ...inputStyle, width: '100%' }} />
+          </Field>
+        </div>
+
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE', opacity: saving ? .6 : 1 }}>
