@@ -13,7 +13,8 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchReviewReceived, fetchReviewRequests,
          saveReviewReceived, findBusinessByAddress,
          subscribeGoogleBusinessAuth, startGoogleBusinessAuth,
-         syncGoogleBusinessReviews, disconnectGoogleBusiness } from '../../lib/firestore';
+         syncGoogleBusinessReviews, disconnectGoogleBusiness,
+         subscribeGoogleReviews } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
@@ -1863,11 +1864,14 @@ function WebfrontTab({ cfg, setCfg, employees }) {
   const [gbpConnecting,setGbpConnecting]= useState(false);
   const [gbpSyncing,   setGbpSyncing]   = useState(false);
   const [gbpMsg,       setGbpMsg]       = useState(null);
+  const [gReviews,     setGReviews]     = useState(null);
 
   useEffect(() => {
     const unsub = subscribeGoogleBusinessAuth(setGbpAuth);
     return unsub;
   }, []);
+
+  useEffect(() => subscribeGoogleReviews(setGReviews), []);
 
   useEffect(() => {
     function onMessage(e) {
@@ -2068,6 +2072,32 @@ function WebfrontTab({ cfg, setCfg, employees }) {
           <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#888' }}>
             Per-section prose for the Editorial homepage. Leave a field blank to fall back to the default. Changes go live on the next page load — no redeploy.
           </div>
+
+          {/* Live Google rating block — the homepage's ⭐ rating and review count
+              pull from the googleReviews cache (refreshed below in the Google
+              Reviews section), so there's no manual field here. */}
+          <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em' }}>Live from Google</div>
+            <div style={{ fontSize: 14, color: '#1a1a1a' }}>
+              {gReviews?.rating != null ? (
+                <>
+                  <strong>{Number(gReviews.rating).toFixed(1)}★</strong>
+                  <span style={{ color: '#666' }}> · {gReviews.userRatingCount ?? 0} reviews</span>
+                </>
+              ) : (
+                <span style={{ color: '#aaa' }}>Not yet fetched — set the Place ID below and click Refresh.</span>
+              )}
+            </div>
+            {gReviews?.refreshedAt && (
+              <span style={{ fontSize: 11, color: '#aaa' }}>Refreshed {new Date(gReviews.refreshedAt).toLocaleString()}</span>
+            )}
+            <a href="#google-reviews"
+              onClick={(e) => { e.preventDefault(); document.querySelector('[data-anchor="google-reviews"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+              style={{ marginLeft: 'auto', fontSize: 12, color: '#2D7A5F', fontWeight: 600, textDecoration: 'none' }}>
+              Manage ↓
+            </a>
+          </div>
+
           <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {[
               ['heroCopy',       'Hero paragraph',           'A quiet studio for considered nail work — meraki is the Greek soul…', true],
@@ -2078,8 +2108,6 @@ function WebfrontTab({ cfg, setCfg, employees }) {
               ['visitIntro',     'Visit intro',              'Two blocks north of the Olentangy Trail. Parking out front…',          true],
               ['walkInLine',     'Hero ticker — walk‑ins',   'Walk‑ins every day',                                                   false],
               ['heroCredit',     'Hero photo credit caption','Nail art by Samantha · @gelxbysammy',                                  false],
-              ['rating',         'Google rating',            '4.8',                                                                  false],
-              ['reviewCount',    'Google review count',      '174 or 240+',                                                          false],
               ['established',    'Established (year)',       '2019',                                                                 false],
             ].map(([key, label, ph, multiline]) => (
               <div key={key}>

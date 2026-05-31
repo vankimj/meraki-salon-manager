@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchServices, fetchEmployees } from '../lib/firestore';
+import { fetchServices, fetchEmployees, subscribeGoogleReviews } from '../lib/firestore';
 
 const INK         = '#302c29';
 const INK_SOFT    = '#5a534d';
@@ -118,9 +118,19 @@ export default function HeroMerakiSite({ webCfg, onSignIn }) {
   const address1   = webCfg?.address1        || '5029 Olentangy River Rd';
   const address2   = webCfg?.address2        || 'Columbus, OH 43214';
   const established= webCfg?.established     || '';
-  const reviewCount= webCfg?.reviewCount     || '240+';
-  const rating     = webCfg?.rating          || '4.9';
   const igHandle   = webCfg?.instagramHandle || '@meraki_cbus';
+
+  // Rating + review count are pulled live from the googleReviews cache
+  // (populated by the refreshGoogleReviews Cloud Function). Manual webCfg
+  // overrides remain as a fallback when the Place ID isn't configured yet.
+  const [gReviews, setGReviews] = useState(null);
+  useEffect(() => subscribeGoogleReviews(setGReviews), []);
+  const rating = gReviews?.rating != null
+    ? (Math.round(Number(gReviews.rating) * 10) / 10).toFixed(1)
+    : (webCfg?.rating || '4.9');
+  const reviewCount = gReviews?.userRatingCount != null
+    ? String(gReviews.userRatingCount)
+    : (webCfg?.reviewCount || '240+');
 
   // Editorial copy — every prose-y string the editorial layout displays
   // can be overridden per-tenant via webfront fields. Defaults below are
