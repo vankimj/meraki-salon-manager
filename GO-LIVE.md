@@ -1,6 +1,6 @@
-# Go-Live Checklist — Meraki Salon Manager
+# Go-Live Checklist — Meraki Nail Studio
 
-Switching Meraki Nail Studio off GlossGenius and onto this app. Items grouped by when they need to be done. Check items off as you go.
+Switching Meraki Nail Studio off GlossGenius and onto Plume Nexus Salon Manager. Items grouped by when they need to be done. Check items off as you go.
 
 ---
 
@@ -146,7 +146,7 @@ Everything below is **Meraki-as-Pro-tier launch**: Meraki uses the platform Twil
 
 ## Launch day (T-0)
 
-- [ ] **Cut-over moment**: when do you stop taking new bookings on GG and start on Meraki Salon Manager? Pick a clean break (e.g., end of business Saturday → Sunday morning live).
+- [ ] **Cut-over moment**: when do you stop taking new bookings on GG and start on Plume Nexus Salon Manager? Pick a clean break (e.g., end of business Saturday → Sunday morning live).
 - [ ] **GG**: turn off online booking on GlossGenius so customers can't book on the dead system.
 - [ ] **Public booking link**: replace any GG booking link in your Instagram bio, website, Google profile, Yelp, signage, business cards-in-progress.
 - [ ] **Email blast** to existing clients: "We've moved to a new booking system, book here: [link]." Include a screenshot.

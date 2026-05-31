@@ -112,7 +112,7 @@ Salon and Technician are each a "Party" and together the "Parties."
 
 ## 7. Booking & Client Records
 
-7.1 **Booking System.** The Parties will use the **Meraki Salon Manager** booking system (or its successor SaaS product, Plume Nexus) as the **system of record** for appointments. Technician will keep Technician's availability current in the system.
+7.1 **Booking System.** The Parties will use the **Plume Nexus Salon Manager** booking system as the **system of record** for appointments. Technician will keep Technician's availability current in the system.
 
 7.2 **Client Records.** Client contact information, appointment history, service notes, and payment records entered into the Salon's booking system are **joint records** of the Salon and Technician. Technician may **export Technician's own client list** (clients who have booked with Technician specifically) upon written request, in standard CSV format, at any time and upon termination.
 

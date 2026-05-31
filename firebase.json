@@ -2,7 +2,7 @@
   "functions": [{ "source": "functions", "codebase": "default", "ignore": ["node_modules"] }],
   "hosting": [
     {
-      "target": "meraki",
+      "target": "app",
       "public": "dist",
       "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
       "predeploy": ["node scripts/check-prod-deploy-safety.cjs"],

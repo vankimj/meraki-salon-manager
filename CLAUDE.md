@@ -1,11 +1,14 @@
-# Meraki Salon Manager — Claude Context
+# Plume Nexus Salon Manager — Claude Context
 
 ## What this is
-A full-stack salon management web app for **Meraki Nail Studio** (Columbus, OH), owned by Jonathan (jvankim@gmail.com). It is replacing GlossGenius. Built with React 19 + Vite 8 + Firebase (Firestore + Auth + Hosting). Single-tenant for now; multi-tenant SaaS is the long-term vision.
+**Plume Nexus Salon Manager** is a multi-tenant salon-management SaaS, owned by Jonathan (jvankim@gmail.com). The first production tenant is **Meraki Nail Studio** (Columbus, OH), which is replacing GlossGenius. Built with React 19 + Vite 8 + Firebase (Firestore + Auth + Hosting).
 
-**Live URL:** https://meraki-salon-manager.web.app  
+The underlying Firebase project ID is still `meraki-salon-manager` — Firebase project IDs cannot be renamed without a full project migration. User-visible branding everywhere else is "Plume Nexus Salon Manager". Any remaining references to "meraki" in the codebase refer specifically to the Meraki Nail Studio tenant (its slug, its data path, its brand assets).
+
+**Live URL (platform):** https://meraki-salon-manager.web.app (Firebase-issued; routed via `*.plumenexus.com`)  
+**Live URL (Meraki tenant):** https://merakinailstudio.plumenexus.com  
 **Firebase project:** `meraki-salon-manager`  
-**Tenant ID:** `meraki` (hardcoded in `src/lib/tenant.js`)
+**Meraki tenant slug:** `meraki` (legacy default — actual tenant ID `tf46226a93a1b546b`)
 
 ---
 

@@ -5,7 +5,7 @@
   "targets": {
     "meraki-salon-manager": {
       "hosting": {
-        "meraki": [
+        "app": [
           "meraki-salon-manager"
         ],
         "plumenexus": [

@@ -1,6 +1,6 @@
 # Architecture
 
-Engineering reference for the Plume Nexus / Meraki Salon Manager stack as of 2026-05-10. This is a working document — update it when the architecture meaningfully changes. For per-module file maps and feature lists, see [`CLAUDE.md`](./CLAUDE.md).
+Engineering reference for the Plume Nexus Salon Manager stack as of 2026-05-10. This is a working document — update it when the architecture meaningfully changes. For per-module file maps and feature lists, see [`CLAUDE.md`](./CLAUDE.md).
 
 ---
 
@@ -178,11 +178,11 @@ _oauthNonces/{nonce}                        ← Gusto OAuth state pin (single-us
 
 | Target | Site | Source | URL |
 |---|---|---|---|
-| `meraki` | `meraki-salon-manager` | `dist/` (web app build) | `meraki-salon-manager.web.app` |
+| `app` | `meraki-salon-manager` | `dist/` (web app build) | `meraki-salon-manager.web.app` (routed via `*.plumenexus.com`) |
 | `plumenexus` | `plumenexus` | `plumenexus/dist/` (marketing site) | `plumenexus.com` |
 | `platform-admin` | Hostname TBD | `platform-admin/dist/` (super-admin console) | TBD |
 
-Deploys via `firebase deploy --only hosting:meraki` etc. Staging via Firebase Hosting Channels (`deploy:staging` → `promote:staging`).
+Deploys via `firebase deploy --only hosting:app` etc. Staging via Firebase Hosting Channels (`deploy:staging` → `promote:staging`). The underlying Firebase Hosting site is still named `meraki-salon-manager` (it inherits the project ID and cannot be renamed without a project migration); only the local target alias is `app`.
 
 ---
 

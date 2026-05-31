@@ -19,7 +19,7 @@ The legacy reviews endpoint at `mybusiness.googleapis.com/v4` is auto-enabled wh
 1. Go to **APIs & Services → OAuth consent screen**
 2. **User Type:** External (you'll be the only test user initially, but External is what Google Business Profile requires)
 3. Fill in:
-   - App name: `Meraki Salon Manager`
+   - App name: `Plume Nexus Salon Manager`
    - User support email: `jvankim@gmail.com`
    - App logo: optional
    - App domain: `merakinailstudio.plumenexus.com`
@@ -36,7 +36,7 @@ In Testing mode, up to 100 designated test users can use the app without verific
 
 1. Go to **APIs & Services → Credentials → Create Credentials → OAuth client ID**
 2. Application type: **Web application**
-3. Name: `Meraki Salon Manager — Google Business`
+3. Name: `Plume Nexus Salon Manager — Google Business`
 4. **Authorized redirect URIs** — add:
    ```
    https://us-central1-meraki-salon-manager.cloudfunctions.net/googleBusinessAuthCallback
