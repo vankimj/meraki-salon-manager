@@ -224,6 +224,25 @@ service cloud.firestore {
         allow read:  if isTenantAdmin(tenantId);
         allow write: if false;
       }
+      // Google Business Profile OAuth state. Holds the KMS-encrypted refresh
+      // token + the resolved accountId / locationId path. Admin-readable so
+      // the UI can show connect status; server-only writes — the
+      // googleBusinessAuthCallback / sync functions write via Admin SDK.
+      match /data/googleBusinessAuth {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      // Pending OAuth state tokens (CSRF defense). Server-only.
+      match /data/googleBusinessAuthState {
+        allow read, write: if false;
+      }
+      // Full public review history pulled from Google Business Profile API.
+      // Each doc is one review keyed by Google's review name. Admin-readable
+      // for the Public Reviews panel; server-only writes via the sync CF.
+      match /googleReviewsLog/{reviewId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
       // Demo-seed checkpoint for the resumable seed flow. Admin-only —
       // contains nothing sensitive, but only admins can run the seed
       // and seeing this doc makes no sense for staff.

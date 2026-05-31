@@ -51,6 +51,13 @@ const awsAccessKey    = defineString('AWS_ACCESS_KEY_ID',     { default: '' });
 const awsSecretKey    = defineString('AWS_SECRET_ACCESS_KEY', { default: '' });
 const mapsApiKey      = defineString('GOOGLE_MAPS_API_KEY', { default: '' });
 const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://meraki-salon-manager.web.app' });
+// Google Business Profile OAuth + review-sync config. ClientID is non-
+// sensitive (it's in the auth URL anyway), so defineString is fine.
+// Secret + KMS key are sensitive; both ride defineSecret so deploys fail
+// hard without values and they never echo in plaintext config dumps.
+const googleBusinessClientId = defineString('GOOGLE_OAUTH_CLIENT_ID', { default: '' });
+const googleBusinessKmsKey   = defineString('GOOGLE_BUSINESS_KMS_KEY', { default: '' });
+const googleBusinessSecret   = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
 // HMAC signing keys for two distinct token types. Split into separate
 // secrets (per security audit) so a leak of one only compromises one
 // token surface — and so each can be rotated on its own cadence.
@@ -8880,3 +8887,381 @@ exports.sesEventWebhook = onRequest({ cors: false, timeoutSeconds: 30 }, async (
     res.status(200).send('error');
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// Google Business Profile OAuth + review sync
+// ───────────────────────────────────────────────────────────────────────
+// Pulls every public review (Places API caps at 5; this is how you get
+// the full 174+). Flow:
+//   1. Admin clicks Connect → startGoogleBusinessAuth returns an
+//      OAuth URL with a CSRF state token stashed in Firestore.
+//   2. User completes Google consent → Google redirects to
+//      googleBusinessAuthCallback?code=…&state=… on the function URL.
+//   3. Callback exchanges code → refresh_token, encrypts via KMS,
+//      stores in tenants/{tid}/data/googleBusinessAuth, resolves
+//      the account + location IDs, returns a self-closing HTML page.
+//   4. syncGoogleBusinessReviews (callable + cron) decrypts refresh
+//      token, gets fresh access token, paginates the Reviews v4 API,
+//      writes each review to tenants/{tid}/googleReviewsLog/{rid}.
+// ───────────────────────────────────────────────────────────────────────
+
+const REVIEWS_OAUTH_SCOPE = 'https://www.googleapis.com/auth/business.manage';
+const REVIEWS_AUTH_URL    = 'https://accounts.google.com/o/oauth2/v2/auth';
+const REVIEWS_TOKEN_URL   = 'https://oauth2.googleapis.com/token';
+const REVIEWS_API_BASE    = 'https://mybusiness.googleapis.com/v4';
+const ACCOUNTS_API        = 'https://mybusinessaccountmanagement.googleapis.com/v1/accounts';
+const LOCATIONS_API_BASE  = 'https://mybusinessbusinessinformation.googleapis.com/v1';
+
+function reviewsCallbackUrl() {
+  // Cloud Functions v2 use *.cloudfunctions.net or *.run.app depending
+  // on the region. We pin the cloudfunctions.net form because that's
+  // what gets added to Authorized redirect URIs in the OAuth client.
+  return 'https://us-central1-meraki-salon-manager.cloudfunctions.net/googleBusinessAuthCallback';
+}
+
+// KMS encrypt / decrypt for the refresh token.
+async function kmsEncrypt(plaintext) {
+  const keyName = googleBusinessKmsKey.value();
+  if (!keyName) throw new HttpsError('failed-precondition', 'GOOGLE_BUSINESS_KMS_KEY not configured');
+  const { KeyManagementServiceClient } = require('@google-cloud/kms');
+  const client = new KeyManagementServiceClient();
+  const [result] = await client.encrypt({
+    name:      keyName,
+    plaintext: Buffer.from(plaintext, 'utf8'),
+  });
+  return Buffer.from(result.ciphertext).toString('base64');
+}
+async function kmsDecrypt(ciphertextB64) {
+  const keyName = googleBusinessKmsKey.value();
+  if (!keyName) throw new HttpsError('failed-precondition', 'GOOGLE_BUSINESS_KMS_KEY not configured');
+  const { KeyManagementServiceClient } = require('@google-cloud/kms');
+  const client = new KeyManagementServiceClient();
+  const [result] = await client.decrypt({
+    name:       keyName,
+    ciphertext: Buffer.from(ciphertextB64, 'base64'),
+  });
+  return Buffer.from(result.plaintext).toString('utf8');
+}
+
+// 1) Build the OAuth URL + stash CSRF state.
+exports.startGoogleBusinessAuth = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  }
+  await requireTenantAdmin(getFirestore(), tenantId, request);
+
+  const clientId = googleBusinessClientId.value();
+  if (!clientId) throw new HttpsError('failed-precondition', 'GOOGLE_OAUTH_CLIENT_ID not configured');
+
+  const stateToken = require('crypto').randomBytes(32).toString('hex');
+  const email = await callerEmail(request);
+  await getFirestore().doc(`tenants/${tenantId}/data/googleBusinessAuthState`).set({
+    [stateToken]: {
+      createdAt:  Date.now(),
+      initiator:  email || '',
+      expiresAt:  Date.now() + 10 * 60 * 1000, // 10 min
+    },
+  }, { merge: true });
+
+  // The state we send to Google encodes tenant + nonce so the callback
+  // can verify against the Firestore-stashed token.
+  const stateParam = Buffer.from(JSON.stringify({ t: tenantId, n: stateToken })).toString('base64url');
+  const url = new URL(REVIEWS_AUTH_URL);
+  url.searchParams.set('client_id',     clientId);
+  url.searchParams.set('redirect_uri',  reviewsCallbackUrl());
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope',         REVIEWS_OAUTH_SCOPE);
+  url.searchParams.set('access_type',   'offline');     // returns a refresh_token
+  url.searchParams.set('prompt',        'consent');     // force refresh_token even if previously consented
+  url.searchParams.set('state',         stateParam);
+  return { authUrl: url.toString() };
+});
+
+// 2) Google redirects here with ?code=…&state=…
+exports.googleBusinessAuthCallback = onRequest(
+  { cors: false, timeoutSeconds: 30, secrets: [googleBusinessSecret] },
+  async (req, res) => {
+    const code  = req.query.code;
+    const stateRaw = req.query.state;
+    const errorParam = req.query.error;
+
+    function respondHtml(title, body, color = '#1a1a1a') {
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.status(200).send(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#fafafa;color:${color};display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center;padding:0 20px}.card{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:32px 28px;max-width:420px;box-shadow:0 2px 8px rgba(0,0,0,.04)}h1{margin:0 0 12px;font-size:18px}p{margin:6px 0;font-size:13px;color:#555;line-height:1.5}</style></head><body><div class="card">${body}<script>setTimeout(()=>{if(window.opener){window.opener.postMessage({type:'google-business-auth',ok:${color==='#1a1a1a'}},'*');window.close()}},800)</script></div></body></html>`);
+    }
+
+    if (errorParam) {
+      console.warn('[googleBusinessAuthCallback] user denied or error:', errorParam);
+      return respondHtml('Connection cancelled', `<h1>✗ Connection cancelled</h1><p>${String(errorParam).replace(/[<>]/g, '')}</p>`, '#b91c1c');
+    }
+    if (!code || !stateRaw) {
+      return respondHtml('Missing parameters', '<h1>✗ Missing code or state</h1>', '#b91c1c');
+    }
+
+    let stateObj;
+    try {
+      stateObj = JSON.parse(Buffer.from(String(stateRaw), 'base64url').toString('utf8'));
+    } catch (_) {
+      return respondHtml('Invalid state', '<h1>✗ Invalid state parameter</h1>', '#b91c1c');
+    }
+    const tenantId = String(stateObj.t || '').slice(0, 64);
+    const nonce    = String(stateObj.n || '');
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId) || !/^[a-f0-9]{64}$/.test(nonce)) {
+      return respondHtml('Invalid state', '<h1>✗ Invalid state parameter</h1>', '#b91c1c');
+    }
+
+    const db = getFirestore();
+    const stateRef  = db.doc(`tenants/${tenantId}/data/googleBusinessAuthState`);
+    const stateSnap = await stateRef.get();
+    const stateMap  = stateSnap.exists ? stateSnap.data() : {};
+    const stored    = stateMap[nonce];
+    if (!stored || stored.expiresAt < Date.now()) {
+      return respondHtml('Expired', '<h1>✗ State expired</h1><p>The connect attempt took too long. Try again.</p>', '#b91c1c');
+    }
+    // One-time-use: invalidate the nonce immediately.
+    const { FieldValue: FV1 } = require('firebase-admin/firestore');
+    await stateRef.update({ [nonce]: FV1.delete() }).catch(() => {});
+
+    // Exchange code for tokens.
+    const clientId     = googleBusinessClientId.value();
+    const clientSecret = googleBusinessSecret.value();
+    if (!clientId || !clientSecret) {
+      return respondHtml('Server misconfigured', '<h1>✗ Server misconfigured</h1><p>OAuth client ID/secret missing.</p>', '#b91c1c');
+    }
+
+    let tokens;
+    try {
+      const tokRes = await fetch(REVIEWS_TOKEN_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          code,
+          client_id:     clientId,
+          client_secret: clientSecret,
+          redirect_uri:  reviewsCallbackUrl(),
+          grant_type:    'authorization_code',
+        }),
+      });
+      tokens = await tokRes.json();
+      if (tokens.error || !tokens.refresh_token) {
+        console.error('[googleBusinessAuthCallback] token exchange failed', tokens);
+        return respondHtml('Token exchange failed', `<h1>✗ Token exchange failed</h1><p>${tokens.error_description || tokens.error || 'No refresh token returned'}</p>`, '#b91c1c');
+      }
+    } catch (e) {
+      console.error('[googleBusinessAuthCallback] fetch failed', e);
+      return respondHtml('Network error', '<h1>✗ Could not reach Google</h1>', '#b91c1c');
+    }
+
+    // Resolve account + location.
+    let accountName = '';
+    let locationName = '';
+    let locationTitle = '';
+    try {
+      const accountsRes = await fetch(ACCOUNTS_API, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const accountsData = await accountsRes.json();
+      const firstAcct = (accountsData.accounts || [])[0];
+      if (!firstAcct?.name) {
+        return respondHtml('No Business accounts', '<h1>✗ No Business Profile accounts</h1><p>The Google account you used doesn\'t manage any Business Profiles. Sign in as the owner of the Meraki listing.</p>', '#b91c1c');
+      }
+      accountName = firstAcct.name; // "accounts/12345"
+
+      const locsRes = await fetch(`${LOCATIONS_API_BASE}/${accountName}/locations?readMask=name,title`, {
+        headers: { Authorization: `Bearer ${tokens.access_token}` },
+      });
+      const locsData = await locsRes.json();
+      const firstLoc = (locsData.locations || [])[0];
+      if (!firstLoc?.name) {
+        return respondHtml('No locations', '<h1>✗ No locations found</h1><p>This Business Profile has no managed locations.</p>', '#b91c1c');
+      }
+      locationName  = firstLoc.name;   // "locations/67890"
+      locationTitle = firstLoc.title || '';
+    } catch (e) {
+      console.error('[googleBusinessAuthCallback] account/location lookup failed', e);
+      return respondHtml('Lookup failed', '<h1>✗ Could not resolve Business Profile</h1>', '#b91c1c');
+    }
+
+    // Encrypt + store refresh token.
+    let encryptedToken;
+    try {
+      encryptedToken = await kmsEncrypt(tokens.refresh_token);
+    } catch (e) {
+      console.error('[googleBusinessAuthCallback] KMS encrypt failed', e);
+      return respondHtml('Encryption failed', '<h1>✗ Token encryption failed</h1><p>Cloud KMS is not configured. See setup doc step 4.</p>', '#b91c1c');
+    }
+
+    await db.doc(`tenants/${tenantId}/data/googleBusinessAuth`).set({
+      refreshTokenEnc: encryptedToken,
+      accountName,
+      locationName,
+      locationTitle,
+      connectedAt:     new Date().toISOString(),
+      connectedBy:     stored.initiator || '',
+      lastSyncAt:      null,
+      lastSyncCount:   0,
+      lastSyncError:   null,
+    });
+
+    console.log(`[googleBusinessAuthCallback] tenant=${tenantId} connected ${locationName} (${locationTitle})`);
+    respondHtml('Connected', `<h1>✓ Connected!</h1><p><strong>${locationTitle || locationName}</strong></p><p>You can close this window. Reviews will start syncing automatically.</p>`);
+  }
+);
+
+// 3) Pull all reviews. Fresh access token from refresh token, paginate the
+//    v4 reviews endpoint (50/page), write each to googleReviewsLog/{id}.
+async function fetchFreshAccessToken(refreshToken) {
+  const clientId     = googleBusinessClientId.value();
+  const clientSecret = googleBusinessSecret.value();
+  const res = await fetch(REVIEWS_TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id:     clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type:    'refresh_token',
+    }),
+  });
+  const data = await res.json();
+  if (data.error || !data.access_token) {
+    throw new HttpsError('internal', `Refresh-token exchange failed: ${data.error || 'no token'}`);
+  }
+  return data.access_token;
+}
+
+async function pullAllReviewsForTenant(tenantId) {
+  const db = getFirestore();
+  const authSnap = await db.doc(`tenants/${tenantId}/data/googleBusinessAuth`).get();
+  if (!authSnap.exists) {
+    throw new HttpsError('failed-precondition', 'Google Business not connected for this tenant');
+  }
+  const auth = authSnap.data();
+  if (!auth.refreshTokenEnc || !auth.accountName || !auth.locationName) {
+    throw new HttpsError('failed-precondition', 'googleBusinessAuth doc incomplete');
+  }
+
+  const refreshToken = await kmsDecrypt(auth.refreshTokenEnc);
+  const accessToken  = await fetchFreshAccessToken(refreshToken);
+
+  const reviews = [];
+  let pageToken = '';
+  for (let page = 0; page < 50; page++) { // hard cap: 50 × 50 = 2500 reviews
+    const url = new URL(`${REVIEWS_API_BASE}/${auth.accountName}/${auth.locationName}/reviews`);
+    url.searchParams.set('pageSize', '50');
+    if (pageToken) url.searchParams.set('pageToken', pageToken);
+    const r = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const data = await r.json();
+    if (data.error) {
+      throw new HttpsError('internal', `Business Profile API: ${data.error.status || data.error.code} ${data.error.message || ''}`.trim());
+    }
+    for (const rv of (data.reviews || [])) reviews.push(rv);
+    if (!data.nextPageToken) break;
+    pageToken = data.nextPageToken;
+  }
+
+  // Write all reviews in batches of 400 (Firestore batch limit is 500).
+  const colRef = db.collection(`tenants/${tenantId}/googleReviewsLog`);
+  const STAR = { STAR_RATING_UNSPECIFIED: 0, ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+  let written = 0;
+  for (let i = 0; i < reviews.length; i += 400) {
+    const batch = db.batch();
+    for (const rv of reviews.slice(i, i + 400)) {
+      const reviewId = (rv.reviewId || rv.name?.split('/').pop() || '').replace(/[^A-Za-z0-9_-]/g, '_');
+      if (!reviewId) continue;
+      batch.set(colRef.doc(reviewId), {
+        reviewId,
+        authorName:    rv.reviewer?.displayName  || 'Google Reviewer',
+        authorPhoto:   rv.reviewer?.profilePhotoUrl || null,
+        rating:        STAR[rv.starRating] || 0,
+        text:          rv.comment || '',
+        publishTime:   rv.createTime || null,
+        updateTime:    rv.updateTime || null,
+        replyText:     rv.reviewReply?.comment || null,
+        replyTime:     rv.reviewReply?.updateTime || null,
+        ingestedAt:    new Date().toISOString(),
+      }, { merge: true });
+      written++;
+    }
+    await batch.commit();
+  }
+
+  await db.doc(`tenants/${tenantId}/data/googleBusinessAuth`).update({
+    lastSyncAt:    new Date().toISOString(),
+    lastSyncCount: written,
+    lastSyncError: null,
+  });
+
+  console.log(`[syncGoogleBusinessReviews] tenant=${tenantId} synced ${written} reviews`);
+  return { written, total: reviews.length };
+}
+
+exports.syncGoogleBusinessReviews = onCall(
+  { cors: true, timeoutSeconds: 540, secrets: [googleBusinessSecret] },
+  async (request) => {
+    const { tenantId: tid } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    await requireTenantAdmin(getFirestore(), tenantId, request);
+    try {
+      return await pullAllReviewsForTenant(tenantId);
+    } catch (e) {
+      // Persist the error to the auth doc so the UI can show it without
+      // forcing the admin to read logs.
+      await getFirestore().doc(`tenants/${tenantId}/data/googleBusinessAuth`)
+        .update({ lastSyncError: String(e?.message || e), lastSyncAt: new Date().toISOString() })
+        .catch(() => {});
+      throw e instanceof HttpsError ? e : new HttpsError('internal', e?.message || String(e));
+    }
+  }
+);
+
+// 4) Disconnect — wipes the auth doc. Reviews stay in googleReviewsLog
+//    for historical reference; admin can purge the collection separately
+//    if they really want a clean break.
+exports.disconnectGoogleBusiness = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+    throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  }
+  await requireTenantAdmin(getFirestore(), tenantId, request);
+  await getFirestore().doc(`tenants/${tenantId}/data/googleBusinessAuth`).delete();
+  console.log(`[disconnectGoogleBusiness] tenant=${tenantId} disconnected`);
+  return { ok: true };
+});
+
+// 5) Nightly cron — iterates every tenant that has a googleBusinessAuth
+//    doc and re-syncs. 7am UTC = 3am EDT, low-traffic window. Failures
+//    on one tenant don't block the others.
+exports.scheduledSyncGoogleBusinessReviews = onSchedule(
+  { schedule: '0 7 * * *', timeZone: 'Etc/UTC', timeoutSeconds: 540, secrets: [googleBusinessSecret] },
+  async () => {
+    const db = getFirestore();
+    const snap = await db.collectionGroup('data').where('refreshTokenEnc', '>', '').get();
+    let okCount = 0, errCount = 0;
+    for (const doc of snap.docs) {
+      // doc path: tenants/{tid}/data/googleBusinessAuth
+      if (!doc.ref.path.endsWith('/googleBusinessAuth')) continue;
+      const tenantId = doc.ref.path.split('/')[1];
+      try {
+        await pullAllReviewsForTenant(tenantId);
+        okCount++;
+      } catch (e) {
+        console.error(`[scheduledSyncGoogleBusinessReviews] tenant=${tenantId} failed:`, e?.message);
+        await db.doc(doc.ref.path).update({
+          lastSyncError: String(e?.message || e),
+          lastSyncAt:    new Date().toISOString(),
+        }).catch(() => {});
+        errCount++;
+      }
+    }
+    console.log(`[scheduledSyncGoogleBusinessReviews] ok=${okCount} err=${errCount}`);
+  }
+);

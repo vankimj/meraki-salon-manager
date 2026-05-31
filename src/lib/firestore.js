@@ -2657,6 +2657,28 @@ export async function refreshGoogleReviewsCache(placeId) {
   return res.data;
 }
 
+// ── Google Business Profile OAuth + full review sync ────
+export function subscribeGoogleBusinessAuth(callback) {
+  return onSnapshot(tenantDoc('googleBusinessAuth'), s => callback(s.exists() ? s.data() : null));
+}
+export async function startGoogleBusinessAuth() {
+  const res = await callFn('startGoogleBusinessAuth')({ tenantId: TENANT_ID });
+  return res.data;
+}
+export async function syncGoogleBusinessReviews() {
+  const res = await callFn('syncGoogleBusinessReviews')({ tenantId: TENANT_ID });
+  return res.data;
+}
+export async function disconnectGoogleBusiness() {
+  const res = await callFn('disconnectGoogleBusiness')({ tenantId: TENANT_ID });
+  return res.data;
+}
+export function subscribeGoogleReviewsLog(callback) {
+  return onSnapshot(tenantCol('googleReviewsLog'), snap => {
+    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  });
+}
+
 // ── Competitor ranking (populated by nearbyNailSalons CF) ─
 export async function fetchCompetitorRankings() {
   const snap = await getDoc(tenantDoc('competitorRankings'));

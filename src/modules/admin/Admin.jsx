@@ -11,7 +11,9 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchBookingConfig, saveBookingConfig,
          fetchWebfrontConfig, saveWebfrontConfig,
          fetchReviewReceived, fetchReviewRequests,
-         saveReviewReceived, findBusinessByAddress } from '../../lib/firestore';
+         saveReviewReceived, findBusinessByAddress,
+         subscribeGoogleBusinessAuth, startGoogleBusinessAuth,
+         syncGoogleBusinessReviews, disconnectGoogleBusiness } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { formatTime } from '../../utils/helpers';
@@ -1617,6 +1619,60 @@ function WebfrontTab({ cfg, setCfg, employees }) {
   const [detecting,    setDetecting]    = useState(false);
   const [detectMsg,    setDetectMsg]    = useState(null);
   const [candidates,   setCandidates]   = useState(null);
+  const [gbpAuth,      setGbpAuth]      = useState(null);
+  const [gbpConnecting,setGbpConnecting]= useState(false);
+  const [gbpSyncing,   setGbpSyncing]   = useState(false);
+  const [gbpMsg,       setGbpMsg]       = useState(null);
+
+  useEffect(() => {
+    const unsub = subscribeGoogleBusinessAuth(setGbpAuth);
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    function onMessage(e) {
+      if (e.data?.type === 'google-business-auth') {
+        setGbpConnecting(false);
+        setGbpMsg(e.data.ok ? '✓ Connected — reviews will sync automatically.' : '✗ Connection failed.');
+      }
+    }
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, []);
+
+  async function handleConnectGbp() {
+    setGbpMsg(null);
+    setGbpConnecting(true);
+    try {
+      const { authUrl } = await startGoogleBusinessAuth();
+      const w = window.open(authUrl, 'gbp-auth', 'width=540,height=720');
+      if (!w) { setGbpMsg('✗ Popup blocked. Allow popups and try again.'); setGbpConnecting(false); }
+    } catch (e) {
+      setGbpMsg('✗ ' + (e.message || 'Connect failed'));
+      setGbpConnecting(false);
+    }
+  }
+  async function handleSyncGbp() {
+    setGbpMsg(null);
+    setGbpSyncing(true);
+    try {
+      const result = await syncGoogleBusinessReviews();
+      setGbpMsg(`✓ Synced ${result?.written ?? 0} reviews from Google.`);
+    } catch (e) {
+      setGbpMsg('✗ ' + (e.message || 'Sync failed'));
+    }
+    setGbpSyncing(false);
+  }
+  async function handleDisconnectGbp() {
+    if (!confirm('Disconnect Google Business Profile? Reviews already synced will remain in the database.')) return;
+    setGbpMsg(null);
+    try {
+      await disconnectGoogleBusiness();
+      setGbpMsg('✓ Disconnected.');
+    } catch (e) {
+      setGbpMsg('✗ ' + (e.message || 'Disconnect failed'));
+    }
+  }
 
   useEffect(() => {
     fetchReviewReceived().then(setReviews).catch(() => setReviews([]));
@@ -1907,6 +1963,58 @@ function WebfrontTab({ cfg, setCfg, employees }) {
           </div>
           <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.5 }}>
             Reviews are cached in Firestore and displayed on the public webfront. Refresh periodically to pull the latest from Google.
+          </div>
+
+          {/* Google Business Profile OAuth — pulls ALL reviews, not just 5 */}
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px dashed #e8e8e8' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
+              📈 Full review history via Google Business Profile
+            </div>
+            <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5, marginBottom: 10 }}>
+              The "Refresh from Google" button above uses the public Places API, which caps at <strong>5 reviews</strong>. To pull every review (174+ for Meraki), connect the Business Profile that owns the listing — this lets you OAuth in as the verified salon owner and authorizes us to read the full history. Reviews sync nightly thereafter.
+            </div>
+
+            {!gbpAuth ? (
+              <button onClick={handleConnectGbp} disabled={gbpConnecting}
+                style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: gbpConnecting ? '#aaa' : '#4285f4', color: '#fff', fontSize: 13, fontWeight: 600, cursor: gbpConnecting ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                {gbpConnecting ? 'Opening Google…' : '🔗 Connect Google Business Profile'}
+              </button>
+            ) : (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#14532d' }}>
+                      ✓ Connected · {gbpAuth.locationTitle || gbpAuth.locationName}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#15803d', marginTop: 2 }}>
+                      {gbpAuth.lastSyncAt ? `Last synced ${new Date(gbpAuth.lastSyncAt).toLocaleString()} · ${gbpAuth.lastSyncCount || 0} reviews` : 'Not synced yet — click "Sync now"'}
+                    </div>
+                    {gbpAuth.lastSyncError && (
+                      <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>
+                        Last sync error: {gbpAuth.lastSyncError}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                    <button onClick={handleSyncGbp} disabled={gbpSyncing}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: gbpSyncing ? '#aaa' : '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: gbpSyncing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                      {gbpSyncing ? 'Syncing…' : '↻ Sync now'}
+                    </button>
+                    <button onClick={handleDisconnectGbp}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Disconnect
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {gbpMsg && (
+              <div style={{ fontSize: 12, color: gbpMsg.startsWith('✓') ? '#2D7A5F' : '#b91c1c', fontWeight: 500, marginTop: 8 }}>{gbpMsg}</div>
+            )}
+            <div style={{ fontSize: 10, color: '#bbb', marginTop: 8, lineHeight: 1.5 }}>
+              Requires GCP setup (see <code style={{ fontFamily: 'ui-monospace, Menlo, monospace', background: '#fafafa', padding: '0 4px', borderRadius: 3 }}>docs/GOOGLE_BUSINESS_PROFILE_SETUP.md</code>). Refresh token is encrypted at rest via Cloud KMS.
+            </div>
           </div>
         </div>
       </Section>

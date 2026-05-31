@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
-import { subscribeGoogleReviews, subscribeWebfrontConfig, fetchEmployees, refreshGoogleReviewsCache } from '../lib/firestore';
+import { subscribeGoogleReviews, subscribeWebfrontConfig, fetchEmployees, refreshGoogleReviewsCache,
+         subscribeGoogleBusinessAuth, subscribeGoogleReviewsLog, syncGoogleBusinessReviews } from '../lib/firestore';
 import { logActivity } from '../lib/logger';
 import { ConfigureReviewsLink } from './CompetitorRankingPanel';
 
@@ -22,13 +23,24 @@ export default function PublicReviewsPanel() {
   const [filterTech, setFilter]   = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [err, setErr]             = useState('');
+  const [gbpAuth, setGbpAuth]     = useState(null);
+  const [fullReviews, setFullReviews] = useState(null);
 
   useEffect(() => {
     const unsubR = subscribeGoogleReviews(d => { setData(d); setLoading(false); });
     const unsubW = subscribeWebfrontConfig(setWfCfg);
+    const unsubG = subscribeGoogleBusinessAuth(setGbpAuth);
+    const unsubL = subscribeGoogleReviewsLog(setFullReviews);
     fetchEmployees().then(es => setEmployees(es || [])).catch(() => setEmployees([]));
-    return () => { unsubR(); unsubW(); };
+    return () => { unsubR(); unsubW(); unsubG(); unsubL(); };
   }, []);
+
+  // Use the full Business Profile sync when available, otherwise fall back
+  // to the 5-review Places API cache so unconfigured tenants still see something.
+  const useFullSource = !!(gbpAuth && fullReviews && fullReviews.length > 0);
+  const sourceReviews = useFullSource
+    ? fullReviews
+    : (data?.reviews || []).map((r, i) => ({ ...r, id: `places-${i}` }));
 
   // Build per-tech regex matchers from name + social handles.
   const matchers = useMemo(() => {
@@ -55,7 +67,7 @@ export default function PublicReviewsPanel() {
   }, [employees]);
 
   const enriched = useMemo(() => {
-    const reviews = data?.reviews || [];
+    const reviews = sourceReviews;
     return reviews.map((r, i) => {
       const text = r.text || '';
       const mentioned = [];
@@ -80,7 +92,7 @@ export default function PublicReviewsPanel() {
         ts: r.publishTime ? new Date(r.publishTime).getTime() : null,
       };
     });
-  }, [data, matchers]);
+  }, [sourceReviews, matchers]);
 
   const filtered = useMemo(() => {
     let list = enriched;
@@ -110,16 +122,22 @@ export default function PublicReviewsPanel() {
 
   const handleRefresh = async () => {
     setErr('');
-    const placeId = (webfrontCfg?.googlePlaceId || settings?.googlePlaceId || '').trim();
-    if (!placeId) {
-      setErr('Set the Google Place ID in Admin → Webfront → ⭐ Google Reviews first.');
-      return;
-    }
     setRefreshing(true);
     try {
-      const result = await refreshGoogleReviewsCache(placeId);
-      logActivity('refreshPublicReviews', { count: result?.count });
-      showToast?.(`Refreshed ${result?.count || 0} reviews`);
+      if (gbpAuth) {
+        const result = await syncGoogleBusinessReviews();
+        logActivity('syncGoogleBusinessReviews', { count: result?.written });
+        showToast?.(`Synced ${result?.written || 0} reviews via Business Profile`);
+      } else {
+        const placeId = (webfrontCfg?.googlePlaceId || settings?.googlePlaceId || '').trim();
+        if (!placeId) {
+          setErr('Set the Google Place ID in Admin → Webfront → ⭐ Google Reviews first, or connect Business Profile for the full review history.');
+          return;
+        }
+        const result = await refreshGoogleReviewsCache(placeId);
+        logActivity('refreshPublicReviews', { count: result?.count });
+        showToast?.(`Refreshed ${result?.count || 0} reviews (Places API cap)`);
+      }
     } catch (e) {
       setErr(e?.message || String(e));
     } finally {
@@ -135,8 +153,8 @@ export default function PublicReviewsPanel() {
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
 
   const totalOnGoogle = data?.userRatingCount || 0;
-  const pulled = data?.reviews?.length || 0;
-  const hidden = Math.max(0, totalOnGoogle - pulled);
+  const pulled = useFullSource ? fullReviews.length : (data?.reviews?.length || 0);
+  const hidden = useFullSource ? 0 : Math.max(0, totalOnGoogle - pulled);
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
@@ -145,9 +163,13 @@ export default function PublicReviewsPanel() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>Public Google Reviews</div>
-            {data?.refreshedAt && (
+            {useFullSource ? (
+              <div style={{ fontSize: 11, color: '#15803d', marginTop: 4 }}>
+                ✓ Business Profile · {pulled} reviews · last synced {gbpAuth?.lastSyncAt ? new Date(gbpAuth.lastSyncAt).toLocaleString() : 'never'}
+              </div>
+            ) : data?.refreshedAt && (
               <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
-                Last refreshed {new Date(data.refreshedAt).toLocaleString()} · pulled {pulled} of {totalOnGoogle} reviews
+                Last refreshed {new Date(data.refreshedAt).toLocaleString()} · pulled {pulled} of {totalOnGoogle} reviews (Places API cap)
               </div>
             )}
           </div>
