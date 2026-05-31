@@ -40,6 +40,14 @@ export async function fetchTicket(tenantId, ticketId) {
   return s.exists() ? { id: s.id, tenantId, ...s.data() } : null;
 }
 
+// Subscribe to the ticket doc so the AI-triage fields appear live a
+// few seconds after submission (aiTriageTicket trigger fires async).
+export function subscribeToTicket(tenantId, ticketId, callback) {
+  return onSnapshot(doc(db, 'tenants', tenantId, 'supportTickets', ticketId), snap => {
+    callback(snap.exists() ? { id: snap.id, tenantId, ...snap.data() } : null);
+  });
+}
+
 export function subscribeToReplies(tenantId, ticketId, callback) {
   const q = query(
     collection(db, 'tenants', tenantId, 'supportTickets', ticketId, 'replies'),

@@ -10521,3 +10521,162 @@ exports.listOpenSupportTickets = onCall({ cors: true, timeoutSeconds: 30 }, asyn
     return { ok: false, tickets: [], error: e?.message };
   }
 });
+
+// ── AI ticket triage ────────────────────────────────────────────────────────
+//
+// Fires on every new supportTicket. Reads the ticket + lightweight tenant
+// context, calls Haiku 4.5 with a strict JSON schema, and patches the
+// result back onto the ticket doc so the admin TicketDetail can render an
+// "AI triage" card with one-click "Use as draft" reply.
+//
+// Cost: ~$0.003/ticket (Haiku). Attributed to the requesting tenant via
+// logAiUsage so the cost dashboard tracks it.
+//
+// Fail-soft: any error (parse failure, API outage, missing key) is logged
+// but doesn't break the ticket flow — the admin queue still works, you
+// just don't get a triage card on that ticket.
+
+const TRIAGE_SYSTEM_PROMPT = `You are a triage assistant for a salon-software platform (Plume Nexus). Salon owners file support tickets about appointments, SMS, email, billing, POS, payroll, and other operational issues. For each ticket, produce a triage record that helps the human support engineer answer faster.
+
+Categories (pick ONE that fits best):
+- billing       — Stripe subscriptions, invoices, payment failures, refunds on the Plume Nexus side
+- payments      — the salon's own POS / Stripe Connect / customer charges / receipts
+- sms           — SMS sending, TFN provisioning, deliverability, Twilio errors
+- email         — SES / email deliverability / inbox spam issues
+- booking       — public booking page issues, availability, conflicts
+- schedule      — appointment management, calendar, shift planning
+- clients       — client records, profile data, communication preferences
+- employees     — staff accounts, permissions, payroll (Gusto), tax forms
+- reports       — Reports module, dashboard, ratings, exports
+- migration     — GlossGenius / Vagaro / Square import, data export
+- auth          — sign-in problems, password resets, missing access
+- integrations  — Google Business / Maps / OAuth / third-party tools
+- bug           — unexpected behavior / error message / "broken"
+- feature       — feature request / "can you add..."
+- general       — none of the above
+
+Priority guidance:
+- "high" if the issue blocks day-to-day operations OR involves customer-facing impact OR money (failed charges, bookings going missing, SMS not sending the day of an appointment).
+- "low" otherwise (general questions, feature requests, cosmetic issues).
+
+Suggested reply: 1–4 short sentences, professional but warm. Address the owner by name when available. If you need information from them, ask one specific question. If there's a known fix, suggest it concretely. Sign messages with "— Jonathan, Plume Nexus".
+
+Self-service hint: optional one-liner the owner could try BEFORE the engineer responds (e.g. "have them check Marketing → Test Mode is OFF"). Leave null if no obvious self-service step.
+
+Output STRICT JSON with this schema, no markdown fences, no commentary:
+{
+  "category": "<one of the above>",
+  "summary": "<one-line summary of what they're asking, ≤120 chars>",
+  "suggestedPriority": "<low|high>",
+  "suggestedReply": "<draft reply, plain text, 1-4 sentences>",
+  "selfServiceHint": "<optional 1-line hint OR null>"
+}`;
+
+exports.aiTriageTicket = onDocumentCreated(
+  {
+    document: 'tenants/{tenantId}/supportTickets/{ticketId}',
+    secrets: [anthropicKey],
+    timeoutSeconds: 60,
+  },
+  async (event) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) {
+      console.log('[aiTriageTicket] ANTHROPIC_API_KEY not set; skipping');
+      return;
+    }
+    const ticket = event.data?.data();
+    if (!ticket) return;
+
+    const { tenantId, ticketId } = event.params;
+    const db = getFirestore();
+
+    // Lightweight tenant context — name, plan, founders status. Skip
+    // anything that could leak per-customer data (clients, appts) per
+    // principle #10. The owner wrote to us; they consented to this
+    // content going through AI.
+    let tenant = {};
+    try {
+      const t = await db.doc(`tenants/${tenantId}`).get();
+      tenant = t.exists ? t.data() : {};
+    } catch (_) { /* zero context still triage-able */ }
+
+    const ownerName = ticket.createdBy?.name || ticket.createdBy?.email?.split('@')[0] || 'there';
+    const userPrompt = [
+      `TENANT CONTEXT`,
+      `Salon: ${tenant.name || tenantId}`,
+      `Plan: ${tenant.plan || 'unset'}${tenant.foundersMember ? ' (Founders Member)' : ''}`,
+      tenant.legacyPlan ? `Legacy plan: ${tenant.legacyPlan}` : '',
+      ``,
+      `TICKET`,
+      `From: ${ownerName} <${ticket.createdBy?.email || 'unknown'}>`,
+      `Submitted priority: ${ticket.priority || 'low'}`,
+      `Subject: ${ticket.subject || ''}`,
+      ``,
+      `Message:`,
+      ticket.initialBody || '',
+    ].filter(Boolean).join('\n');
+
+    let response;
+    try {
+      const client = new Anthropic({ apiKey });
+      response = await client.messages.create({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 600,
+        system: [
+          {
+            type: 'text',
+            text: TRIAGE_SYSTEM_PROMPT,
+            // System prompt is identical across every ticket — cache it
+            // so subsequent triages pay the discounted cached-read rate.
+            cache_control: { type: 'ephemeral' },
+          },
+        ],
+        messages: [{ role: 'user', content: userPrompt }],
+      });
+    } catch (e) {
+      console.error(`[aiTriageTicket] tenant=${tenantId} ticket=${ticketId} Anthropic call failed:`, e?.message);
+      return;
+    }
+
+    usageLog.logAiUsage(db, tenantId, {
+      endpoint: 'aiTriageTicket',
+      model:    response?.model || 'claude-haiku-4-5-20251001',
+      usage:    response?.usage,
+    }).catch(() => {});
+
+    const raw = (response.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    // Strip fences if the model wraps anyway.
+    const json = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '');
+    let parsed;
+    try { parsed = JSON.parse(json); }
+    catch (e) {
+      console.error(`[aiTriageTicket] tenant=${tenantId} ticket=${ticketId} JSON parse failed:`, e?.message, 'raw:', raw.slice(0, 300));
+      return;
+    }
+
+    const allowedCategories = new Set([
+      'billing','payments','sms','email','booking','schedule','clients','employees',
+      'reports','migration','auth','integrations','bug','feature','general',
+    ]);
+    const safeCategory = allowedCategories.has(String(parsed.category)) ? parsed.category : 'general';
+    const safePriority = parsed.suggestedPriority === 'high' ? 'high' : 'low';
+    const safeReply    = String(parsed.suggestedReply || '').slice(0, 4000);
+    const safeSummary  = String(parsed.summary || '').slice(0, 240);
+    const safeHint     = parsed.selfServiceHint ? String(parsed.selfServiceHint).slice(0, 400) : null;
+
+    try {
+      await event.data.ref.update({
+        aiSummary:           safeSummary,
+        aiCategory:          safeCategory,
+        aiSuggestedReply:    safeReply,
+        aiSuggestedPriority: safePriority,
+        aiSelfServiceHint:   safeHint,
+        aiTriagedAt:         new Date().toISOString(),
+        aiModel:             response?.model || 'claude-haiku-4-5-20251001',
+      });
+      console.log(`[aiTriageTicket] tenant=${tenantId} ticket=${ticketId} category=${safeCategory} prio=${safePriority}`);
+    } catch (e) {
+      console.error(`[aiTriageTicket] tenant=${tenantId} ticket=${ticketId} write failed:`, e?.message);
+    }
+  }
+);

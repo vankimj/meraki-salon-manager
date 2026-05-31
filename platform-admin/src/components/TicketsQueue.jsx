@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  listOpenSupportTickets, fetchTicket, subscribeToReplies,
+  listOpenSupportTickets, fetchTicket, subscribeToReplies, subscribeToTicket,
   submitAdminReply, updateTicketStatus,
   fetchMyAlertContact, setMyAlertContact,
 } from '../lib/tickets.js';
@@ -207,12 +207,16 @@ function TicketDetail({ tenantId, ticketId, onClose }) {
   const [err,     setErr]     = useState('');
 
   useEffect(() => {
-    fetchTicket(tenantId, ticketId).then(t => {
+    let statusInitialized = false;
+    const unsubTicket = subscribeToTicket(tenantId, ticketId, t => {
       setTicket(t);
-      if (t?.status) setStatus(t.status === 'open' ? 'pending_owner' : t.status);
+      if (!statusInitialized && t?.status) {
+        setStatus(t.status === 'open' ? 'pending_owner' : t.status);
+        statusInitialized = true;
+      }
     });
-    const unsub = subscribeToReplies(tenantId, ticketId, setReplies);
-    return () => unsub?.();
+    const unsubReplies = subscribeToReplies(tenantId, ticketId, setReplies);
+    return () => { unsubTicket?.(); unsubReplies?.(); };
   }, [tenantId, ticketId]);
 
   async function send() {
@@ -229,8 +233,7 @@ function TicketDetail({ tenantId, ticketId, onClose }) {
     try {
       await updateTicketStatus(tenantId, ticketId, newStatus);
       setStatus(newStatus);
-      const fresh = await fetchTicket(tenantId, ticketId);
-      setTicket(fresh);
+      // subscribeToTicket will reflect the update on the next snapshot.
     } catch (e) { setErr(e?.message || 'Status change failed.'); }
   }
 
@@ -277,6 +280,9 @@ function TicketDetail({ tenantId, ticketId, onClose }) {
         </div>
         <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
           {ticket && (
+            <AiTriagePanel ticket={ticket} onUseDraft={() => setBody(ticket.aiSuggestedReply || '')} />
+          )}
+          {ticket && (
             <MessageBubble from="owner" body={ticket.initialBody} at={ticket.createdAt} authorName={ticket.createdBy?.name || ticket.createdBy?.email} />
           )}
           {replies.map(r => (
@@ -313,6 +319,111 @@ function TicketDetail({ tenantId, ticketId, onClose }) {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// AI triage card. Renders only when the aiTriageTicket trigger has
+// written its fields onto the ticket (~3-5s after submission). Shows
+// summary, category, suggested priority, suggested reply, plus an
+// optional "what to try first" self-service hint. The "Use as draft"
+// button just fills the reply textarea — engineer can edit before send.
+function AiTriagePanel({ ticket, onUseDraft }) {
+  const [open, setOpen] = useState(true);
+
+  if (!ticket.aiTriagedAt && !ticket.aiSummary) {
+    // Triage not done yet — show a quiet placeholder so the engineer
+    // knows it's coming. Tickets created before this feature shipped
+    // won't ever populate, which is fine.
+    const isRecent = ticket.createdAt && (Date.now() - new Date(ticket.createdAt).getTime() < 60_000);
+    if (!isRecent) return null;
+    return (
+      <div style={{
+        background: '#eef2ff', border: `1px solid #c7d2fe`, borderRadius: 10,
+        padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#3730a3',
+        display: 'flex', alignItems: 'center', gap: 8,
+      }}>
+        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#6366f1' }} />
+        AI triage running…
+      </div>
+    );
+  }
+
+  if (!ticket.aiTriagedAt) return null;
+
+  const priorityMismatch =
+    ticket.aiSuggestedPriority &&
+    ticket.aiSuggestedPriority !== ticket.priority;
+
+  return (
+    <div style={{
+      background: 'linear-gradient(180deg, #faf5ff 0%, #fff 100%)',
+      border: `1px solid #d8b4fe`,
+      borderRadius: 10, padding: 14, marginBottom: 16,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setOpen(!open)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4,
+            background: '#7c3aed', color: '#fff', textTransform: 'uppercase', letterSpacing: '.06em',
+          }}>AI triage</span>
+          {ticket.aiCategory && (
+            <span style={{ fontSize: 11, color: '#5b3b8c', fontWeight: 600, textTransform: 'capitalize' }}>{ticket.aiCategory}</span>
+          )}
+          {priorityMismatch && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 3,
+              background: C.warningSoft, color: C.warning, textTransform: 'uppercase',
+            }}>
+              suggests {ticket.aiSuggestedPriority}
+            </span>
+          )}
+        </div>
+        <span style={{ fontSize: 16, color: C.mutedSoft }}>{open ? '▾' : '▸'}</span>
+      </div>
+      {open && (
+        <div style={{ marginTop: 10 }}>
+          {ticket.aiSummary && (
+            <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 8, lineHeight: 1.5 }}>
+              {ticket.aiSummary}
+            </div>
+          )}
+          {ticket.aiSelfServiceHint && (
+            <div style={{
+              background: '#fef9c3', border: '1px solid #fde047', borderRadius: 6,
+              padding: '6px 10px', fontSize: 11, color: '#854d0e', lineHeight: 1.5,
+              marginBottom: 10,
+            }}>
+              <strong style={{ textTransform: 'uppercase', letterSpacing: '.04em', fontSize: 9 }}>Try first:</strong>{' '}
+              {ticket.aiSelfServiceHint}
+            </div>
+          )}
+          {ticket.aiSuggestedReply && (
+            <>
+              <div style={{ fontSize: 10, fontWeight: 700, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>
+                Suggested reply
+              </div>
+              <div style={{
+                background: '#fff', border: `1px dashed ${C.rule}`, borderRadius: 8,
+                padding: '8px 12px', fontSize: 12, color: C.text, lineHeight: 1.6,
+                whiteSpace: 'pre-wrap', marginBottom: 8,
+              }}>
+                {ticket.aiSuggestedReply}
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 10, color: C.mutedSoft }}>
+                <button onClick={onUseDraft} style={{
+                  padding: '5px 11px', fontSize: 11, fontWeight: 600,
+                  background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 6,
+                  cursor: 'pointer', fontFamily: 'inherit',
+                }}>Use as draft →</button>
+                <span>Edit before sending.</span>
+                <span style={{ flex: 1 }} />
+                <span>Triaged {relTime(ticket.aiTriagedAt)}</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }
