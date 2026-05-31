@@ -5,6 +5,9 @@ import TenantNotFound from './components/TenantNotFound.jsx'
 import { resolveTenant, getTenantResolveState, TENANT_ID } from './lib/tenant'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from './lib/firebase'
+import { install as installDiagnostics } from './lib/diagnostics'
+
+installDiagnostics();
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }

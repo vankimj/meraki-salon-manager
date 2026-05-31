@@ -10185,6 +10185,42 @@ function safeTicketString(v, max = 4000) {
   return String(v || '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').slice(0, max);
 }
 
+// Clamp client-supplied diagnostics so we never blindly persist arbitrary
+// nested JSON. Defensive against both buggy clients (giant stacks) and
+// malicious crafted payloads. Returns null for invalid shapes.
+function sanitizeDiagnostics(d) {
+  if (!d || typeof d !== 'object') return null;
+  const clipString = (s, max) => safeTicketString(s, max);
+  return {
+    route:     clipString(d.route, 300),
+    title:     clipString(d.title, 200),
+    userAgent: clipString(d.userAgent, 400),
+    viewport:  clipString(d.viewport, 30),
+    capturedAt: clipString(d.capturedAt, 50),
+    nav: Array.isArray(d.nav) ? d.nav.slice(-20).map(n => ({
+      view:   clipString(n?.view, 64),
+      reason: clipString(n?.reason, 32),
+      at:     clipString(n?.at, 50),
+    })) : [],
+    errors: Array.isArray(d.errors) ? d.errors.slice(-50).map(e => ({
+      kind:    clipString(e?.kind, 32),
+      message: clipString(e?.message, 500),
+      source:  clipString(e?.source, 300),
+      lineno:  Number.isFinite(Number(e?.lineno)) ? Number(e.lineno) : null,
+      colno:   Number.isFinite(Number(e?.colno))  ? Number(e.colno)  : null,
+      stack:   clipString(e?.stack, 2000),
+      at:      clipString(e?.at, 50),
+    })) : [],
+    recentLogs: Array.isArray(d.recentLogs) ? d.recentLogs.slice(-20).map(l => ({
+      id:     clipString(l?.id, 64),
+      action: clipString(l?.action, 100),
+      detail: typeof l?.detail === 'string' ? clipString(l.detail, 400) : null,
+      by:     clipString(l?.by, 100),
+      at:     clipString(l?.at, 50),
+    })) : [],
+  };
+}
+
 function ticketEmailHtml({ tenantName, tenantId, priority, subject, body, authorEmail, authorName, ticketId, isReply }) {
   const dashLink = `${PLATFORM_ADMIN_DASH_URL}/t/${encodeURIComponent(tenantId)}#tickets`;
   const prio = priority === 'high' ? '#dc2626' : '#475569';
@@ -10283,7 +10319,7 @@ exports.submitSupportTicket = onCall(
   { cors: true, timeoutSeconds: 30, secrets: [twilioToken] },
   async (request) => {
     const db = getFirestore();
-    const { tenantId: tid, subject, body, priority } = request.data || {};
+    const { tenantId: tid, subject, body, priority, diagnostics } = request.data || {};
     const tenantId = String(tid || '').slice(0, 64);
     if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
       throw new HttpsError('invalid-argument', 'Invalid tenantId');
@@ -10302,6 +10338,10 @@ exports.submitSupportTicket = onCall(
     const brand = await tenantBranding(db, tenantId);
     const tenantName = brand?.salonName || tenantId;
 
+    // Defensive bound on diagnostics size — a malicious or buggy
+    // client could otherwise wedge huge JSON onto every ticket.
+    const safeDiagnostics = sanitizeDiagnostics(diagnostics);
+
     const now = new Date().toISOString();
     const ticketRef = db.collection(`tenants/${tenantId}/supportTickets`).doc();
     const ticketDoc = {
@@ -10317,6 +10357,7 @@ exports.submitSupportTicket = onCall(
       repliesCount:  0,
       tenantName,
       salonId:       tenantId,
+      diagnostics:   safeDiagnostics,
     };
     await ticketRef.set(ticketDoc);
 
@@ -10536,6 +10577,36 @@ exports.listOpenSupportTickets = onCall({ cors: true, timeoutSeconds: 30 }, asyn
 // but doesn't break the ticket flow — the admin queue still works, you
 // just don't get a triage card on that ticket.
 
+function formatDiagnosticsForPrompt(d) {
+  if (!d || (Object.keys(d).length === 0)) return '';
+  const out = ['', 'BROWSER + ACTIVITY DIAGNOSTICS (auto-attached at submit time)'];
+  if (d.route) out.push(`Current route: ${d.route}`);
+  if (d.title) out.push(`Page title: ${d.title}`);
+  if (d.userAgent) out.push(`User agent: ${d.userAgent}`);
+  if (d.viewport) out.push(`Viewport: ${d.viewport}`);
+  if (Array.isArray(d.nav) && d.nav.length) {
+    out.push('', 'Recent navigation (oldest → newest):');
+    for (const n of d.nav) out.push(`  ${n.at} · ${n.view} (${n.reason})`);
+  }
+  if (Array.isArray(d.errors) && d.errors.length) {
+    out.push('', 'Browser errors (most recent first):');
+    for (const e of d.errors.slice().reverse().slice(0, 10)) {
+      const where = e.source ? ` at ${e.source}:${e.lineno || '?'}:${e.colno || '?'}` : '';
+      out.push(`  [${e.kind}] ${e.message}${where}`);
+      if (e.stack) out.push(`    stack: ${String(e.stack).split('\n').slice(0, 3).join(' | ')}`);
+    }
+  }
+  if (Array.isArray(d.recentLogs) && d.recentLogs.length) {
+    out.push('', 'Recent activity log (most recent first):');
+    for (const l of d.recentLogs.slice(0, 15)) {
+      const detail = l.detail ? ` · ${l.detail}` : '';
+      const by = l.by ? ` (${l.by})` : '';
+      out.push(`  ${l.at} · ${l.action}${detail}${by}`);
+    }
+  }
+  return out.join('\n');
+}
+
 const TRIAGE_SYSTEM_PROMPT = `You are a triage assistant for a salon-software platform (Plume Nexus). Salon owners file support tickets about appointments, SMS, email, billing, POS, payroll, and other operational issues. For each ticket, produce a triage record that helps the human support engineer answer faster.
 
 Categories (pick ONE that fits best):
@@ -10601,6 +10672,9 @@ exports.aiTriageTicket = onDocumentCreated(
     } catch (_) { /* zero context still triage-able */ }
 
     const ownerName = ticket.createdBy?.name || ticket.createdBy?.email?.split('@')[0] || 'there';
+    const diag = ticket.diagnostics || {};
+    const diagBlock = formatDiagnosticsForPrompt(diag);
+
     const userPrompt = [
       `TENANT CONTEXT`,
       `Salon: ${tenant.name || tenantId}`,
@@ -10614,6 +10688,7 @@ exports.aiTriageTicket = onDocumentCreated(
       ``,
       `Message:`,
       ticket.initialBody || '',
+      diagBlock,
     ].filter(Boolean).join('\n');
 
     let response;
@@ -10680,3 +10755,557 @@ exports.aiTriageTicket = onDocumentCreated(
     }
   }
 );
+
+// ── AI assistant (chatWithSalonAdmin) ────────────────────────────────────────
+//
+// In-app assistant for the salon owner. Answers how-to questions, navigates
+// the UI on their behalf (client-side, via window.__plumeNavigate), and
+// applies a tight allowlist of mutations:
+//
+//   updateBusinessHours       — settings.hours.{day} writes
+//   updateSettings            — handful of allow-listed keys on data/settings
+//   addService / updateService / removeService
+//   updateEmployee            — name/email/phone/notes/role only (no comp)
+//   updateMarketingTemplate   — campaignTemplates docs
+//
+// Every write tool also drops an audit record into tenants/{tid}/aiActions
+// so a future incident review can replay everything the AI did.
+//
+// Safety layers (no per-action confirm UI by design):
+//   1. Tool input schemas reject malformed shapes BEFORE write.
+//   2. Allow-listed key sets — Claude can't smuggle in a field name we
+//      didn't expect (e.g. setting employee.ssn or settings.adminEmails).
+//   3. Per-session rate cap (30 tool calls) prevents runaway loops.
+//   4. Tool-use loop hard cap (6 rounds) prevents Claude from chaining
+//      forever in a single turn.
+//   5. Audit log + per-tenant cost attribution via logAiUsage.
+
+const _aiSessionToolCounts = new Map(); // sessionId → number
+const AI_MAX_TOOL_CALLS_PER_SESSION = 30;
+
+const SALON_ADMIN_TOOLS = [
+  {
+    name: 'navigate',
+    description: 'Take the owner to a different screen in the app. Use when they want to go somewhere or when a setting lives in a place this assistant can\'t edit directly. The actual navigation happens in the client; just call this and Claude reports back to the user.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        target:   { type: 'string', enum: ['home','schedule','clients','services','employees','reports','marketing','meetings','memberships','products','attendance','communications','reviews','hr','admin'] },
+        tab:      { type: 'string', description: 'Optional sub-tab name (only meaningful when target=admin)' },
+        scrollTo: { type: 'string', description: 'Optional named section to scroll into view' },
+      },
+      required: ['target'],
+    },
+  },
+  {
+    name: 'getCurrentSettings',
+    description: 'Read the current settings doc (hours, timeoutMin, booking URL, cancellation policy). Use to verify state before suggesting a change.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'updateBusinessHours',
+    description: 'Set business hours for one or more days. Each value should be a human string like "9:00 AM - 6:00 PM" or "closed". Pass only the days you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        mon: { type: 'string' }, tue: { type: 'string' }, wed: { type: 'string' },
+        thu: { type: 'string' }, fri: { type: 'string' }, sat: { type: 'string' }, sun: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'updateSettings',
+    description: 'Update a small allow-listed set of settings keys. timeoutMin: auto-logout minutes (1-60). policy: cancellation/no-show policy text. bookingUrl: public booking URL.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        timeoutMin: { type: 'number', description: 'Auto-logout minutes' },
+        policy:     { type: 'string', description: 'Cancellation policy, ≤ 2000 chars' },
+        bookingUrl: { type: 'string', description: 'Public booking URL' },
+      },
+    },
+  },
+  {
+    name: 'listServices',
+    description: 'Return all services with id, name, basePrice, duration, category.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'addService',
+    description: 'Create a new service in the menu. basePrice in dollars; duration in minutes.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name:        { type: 'string' },
+        basePrice:   { type: 'number' },
+        duration:    { type: 'number' },
+        category:    { type: 'string' },
+        description: { type: 'string' },
+      },
+      required: ['name', 'basePrice', 'duration'],
+    },
+  },
+  {
+    name: 'updateService',
+    description: 'Update an existing service. Pass only the fields you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        serviceId:   { type: 'string' },
+        name:        { type: 'string' },
+        basePrice:   { type: 'number' },
+        duration:    { type: 'number' },
+        category:    { type: 'string' },
+        description: { type: 'string' },
+      },
+      required: ['serviceId'],
+    },
+  },
+  {
+    name: 'removeService',
+    description: 'Delete a service from the menu. Soft-delete; recoverable via Admin → Trash for 30 days. Use cautiously.',
+    input_schema: {
+      type: 'object',
+      properties: { serviceId: { type: 'string' } },
+      required:   ['serviceId'],
+    },
+  },
+  {
+    name: 'listEmployees',
+    description: 'Return all employees with id, name, role, email, phone, instagram. Compensation, SSN, banking are NEVER returned.',
+    input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'updateEmployee',
+    description: 'Update an employee profile. Only name, email, phone, role, instagram, facebook, tiktok, venmo, notes can be set. Compensation, banking, SSN are NOT writable here.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        employeeId: { type: 'string' },
+        name:       { type: 'string' },
+        email:      { type: 'string' },
+        phone:      { type: 'string' },
+        role:       { type: 'string', enum: ['admin', 'tech', 'scheduler', 'readonly'] },
+        instagram:  { type: 'string' },
+        facebook:   { type: 'string' },
+        tiktok:     { type: 'string' },
+        venmo:      { type: 'string' },
+        notes:      { type: 'string' },
+      },
+      required: ['employeeId'],
+    },
+  },
+  {
+    name: 'updateMarketingTemplate',
+    description: 'Update a marketing or reminder template (campaign body text, subject lines). templateKey is the doc id of an existing template under tenants/{id}/campaignTemplates.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        templateKey: { type: 'string' },
+        subject:     { type: 'string' },
+        body:        { type: 'string' },
+      },
+      required: ['templateKey'],
+    },
+  },
+];
+
+const SETTINGS_ALLOWED_KEYS = new Set(['timeoutMin', 'policy', 'bookingUrl']);
+const EMPLOYEE_ALLOWED_KEYS = new Set(['name', 'email', 'phone', 'role', 'instagram', 'facebook', 'tiktok', 'venmo', 'notes']);
+const SERVICE_ALLOWED_KEYS  = new Set(['name', 'basePrice', 'duration', 'category', 'description']);
+const HOURS_DAYS            = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const VALID_NAV_TARGETS     = new Set(['home','schedule','clients','services','employees','reports','marketing','meetings','memberships','products','attendance','communications','reviews','hr','admin']);
+
+async function writeAiAuditLog(db, tenantId, payload) {
+  try {
+    await db.collection(`tenants/${tenantId}/aiActions`).add({
+      ...payload,
+      at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.warn(`[chatWithSalonAdmin] audit write failed: ${e?.message}`);
+  }
+}
+
+async function executeTool(db, tenantId, callerEmail, sessionId, toolName, input) {
+  const audit = { sessionId, tool: toolName, input, by: callerEmail };
+
+  switch (toolName) {
+    // ── Read tools ─────────────────────────────────────────
+    case 'navigate': {
+      // Pure intent — client-side React performs the navigation.
+      const target = String(input?.target || '').trim();
+      if (!VALID_NAV_TARGETS.has(target)) {
+        return { ok: false, error: `Unknown target "${target}". Use one of ${[...VALID_NAV_TARGETS].join(', ')}` };
+      }
+      return { ok: true, result: `Will open ${target}${input?.tab ? ` → ${input.tab}` : ''}.`, clientAction: true };
+    }
+    case 'getCurrentSettings': {
+      const s = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const d = s.exists ? s.data() : {};
+      return {
+        ok: true,
+        result: {
+          hours:      d.hours      || {},
+          timeoutMin: d.timeoutMin || null,
+          policy:     d.policy     || null,
+          bookingUrl: d.bookingUrl || null,
+        },
+      };
+    }
+    case 'listServices': {
+      const snap = await db.collection(`tenants/${tenantId}/services`).get();
+      const services = snap.docs
+        .filter(d => d.data()._deleted !== true)
+        .map(doc => {
+          const x = doc.data();
+          return {
+            id: doc.id,
+            name: x.name || '',
+            basePrice: x.basePrice ?? x.price ?? null,
+            duration: x.duration ?? x.durationMin ?? null,
+            category: x.category || null,
+          };
+        });
+      return { ok: true, result: { services } };
+    }
+    case 'listEmployees': {
+      const snap = await db.collection(`tenants/${tenantId}/employees`).get();
+      const employees = snap.docs
+        .filter(d => d.data()._deleted !== true)
+        .map(doc => {
+          const x = doc.data();
+          return {
+            id: doc.id,
+            name: x.name || '',
+            role: x.role || '',
+            email: x.email || null,
+            phone: x.phone || null,
+            instagram: x.instagram || null,
+          };
+        });
+      return { ok: true, result: { employees } };
+    }
+
+    // ── Write tools ────────────────────────────────────────
+    case 'updateBusinessHours': {
+      const ref = db.doc(`tenants/${tenantId}/data/settings`);
+      const before = (await ref.get()).data() || {};
+      const beforeHours = before.hours || {};
+      const patch = {};
+      let changed = false;
+      for (const d of HOURS_DAYS) {
+        if (typeof input?.[d] === 'string') {
+          const v = String(input[d]).slice(0, 80).trim();
+          patch[`hours.${d}`] = v;
+          changed = true;
+        }
+      }
+      if (!changed) return { ok: false, error: 'No day was supplied.' };
+      await ref.set({ updatedAt: new Date().toISOString() }, { merge: true });
+      // Build the merged hours object explicitly since we want dotted paths
+      // to update individual day keys without clobbering siblings.
+      const newHours = { ...beforeHours };
+      for (const d of HOURS_DAYS) if (typeof input?.[d] === 'string') newHours[d] = String(input[d]).slice(0, 80).trim();
+      await ref.set({ hours: newHours, updatedAt: new Date().toISOString() }, { merge: true });
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', before: { hours: beforeHours }, after: { hours: newHours } });
+      return { ok: true, result: 'Hours updated.', writes: { hours: newHours } };
+    }
+    case 'updateSettings': {
+      const ref = db.doc(`tenants/${tenantId}/data/settings`);
+      const before = (await ref.get()).data() || {};
+      const patch = { updatedAt: new Date().toISOString() };
+      const changed = {};
+      for (const [k, v] of Object.entries(input || {})) {
+        if (!SETTINGS_ALLOWED_KEYS.has(k)) continue;
+        if (k === 'timeoutMin') {
+          const n = Number(v);
+          if (!Number.isInteger(n) || n < 1 || n > 60) {
+            return { ok: false, error: 'timeoutMin must be an integer between 1 and 60.' };
+          }
+          patch[k] = n; changed[k] = n;
+        } else if (k === 'policy') {
+          patch[k] = String(v).slice(0, 2000); changed[k] = patch[k];
+        } else if (k === 'bookingUrl') {
+          const s = String(v).slice(0, 300);
+          if (s && !/^https?:\/\//.test(s)) {
+            return { ok: false, error: 'bookingUrl must start with http:// or https://' };
+          }
+          patch[k] = s; changed[k] = s;
+        }
+      }
+      if (Object.keys(changed).length === 0) return { ok: false, error: 'No allow-listed setting key was supplied.' };
+      await ref.set(patch, { merge: true });
+      const beforeChanged = Object.fromEntries(Object.keys(changed).map(k => [k, before[k] ?? null]));
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', before: beforeChanged, after: changed });
+      return { ok: true, result: `Updated: ${Object.keys(changed).join(', ')}`, writes: changed };
+    }
+    case 'addService': {
+      const filtered = {};
+      for (const k of SERVICE_ALLOWED_KEYS) if (input?.[k] !== undefined) filtered[k] = input[k];
+      if (!filtered.name || typeof filtered.name !== 'string') return { ok: false, error: 'name required (string).' };
+      if (typeof filtered.basePrice !== 'number' || filtered.basePrice < 0) return { ok: false, error: 'basePrice required (≥ 0 number).' };
+      if (typeof filtered.duration  !== 'number' || filtered.duration  < 5) return { ok: false, error: 'duration required (≥ 5 minutes).' };
+      filtered.name = String(filtered.name).slice(0, 100);
+      if (filtered.category)    filtered.category    = String(filtered.category).slice(0, 60);
+      if (filtered.description) filtered.description = String(filtered.description).slice(0, 500);
+      filtered.createdAt = new Date().toISOString();
+      filtered.updatedAt = filtered.createdAt;
+      const ref = await db.collection(`tenants/${tenantId}/services`).add(filtered);
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', after: { id: ref.id, ...filtered } });
+      return { ok: true, result: `Added service "${filtered.name}" (id=${ref.id})`, writes: { id: ref.id, ...filtered } };
+    }
+    case 'updateService': {
+      const sid = String(input?.serviceId || '').slice(0, 64);
+      if (!sid) return { ok: false, error: 'serviceId required.' };
+      const ref = db.doc(`tenants/${tenantId}/services/${sid}`);
+      const snap = await ref.get();
+      if (!snap.exists) return { ok: false, error: `Service ${sid} not found.` };
+      const before = snap.data();
+      const patch = {};
+      for (const k of SERVICE_ALLOWED_KEYS) {
+        if (input?.[k] === undefined) continue;
+        if (k === 'name')        patch[k] = String(input[k]).slice(0, 100);
+        else if (k === 'category')    patch[k] = String(input[k]).slice(0, 60);
+        else if (k === 'description') patch[k] = String(input[k]).slice(0, 500);
+        else if (k === 'basePrice' || k === 'duration') {
+          const n = Number(input[k]);
+          if (!Number.isFinite(n) || n < 0) return { ok: false, error: `${k} must be a non-negative number.` };
+          patch[k] = n;
+        }
+      }
+      if (Object.keys(patch).length === 0) return { ok: false, error: 'No fields to update.' };
+      patch.updatedAt = new Date().toISOString();
+      await ref.set(patch, { merge: true });
+      const beforeSlice = Object.fromEntries(Object.keys(patch).filter(k => k !== 'updatedAt').map(k => [k, before[k] ?? null]));
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', before: beforeSlice, after: patch });
+      return { ok: true, result: `Updated service ${sid}.`, writes: patch };
+    }
+    case 'removeService': {
+      const sid = String(input?.serviceId || '').slice(0, 64);
+      if (!sid) return { ok: false, error: 'serviceId required.' };
+      const ref = db.doc(`tenants/${tenantId}/services/${sid}`);
+      const snap = await ref.get();
+      if (!snap.exists) return { ok: false, error: `Service ${sid} not found.` };
+      const before = snap.data();
+      // Soft-delete using the same tombstone pattern as the rest of the
+      // codebase (purgeOldTombstones cron handles the hard cleanup).
+      await ref.set({
+        _deleted:   true,
+        _deletedAt: new Date().toISOString(),
+        _deletedBy: `ai:${callerEmail}`,
+        updatedAt:  new Date().toISOString(),
+      }, { merge: true });
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', before: { name: before.name, basePrice: before.basePrice } });
+      return { ok: true, result: `Removed service "${before.name || sid}". Recoverable for 30 days in Admin → Trash.`, writes: { id: sid, _deleted: true } };
+    }
+    case 'updateEmployee': {
+      const eid = String(input?.employeeId || '').slice(0, 64);
+      if (!eid) return { ok: false, error: 'employeeId required.' };
+      const ref = db.doc(`tenants/${tenantId}/employees/${eid}`);
+      const snap = await ref.get();
+      if (!snap.exists) return { ok: false, error: `Employee ${eid} not found.` };
+      const before = snap.data();
+      const patch = {};
+      for (const k of EMPLOYEE_ALLOWED_KEYS) {
+        if (input?.[k] === undefined) continue;
+        patch[k] = String(input[k]).slice(0, k === 'notes' ? 1000 : 200);
+      }
+      if (Object.keys(patch).length === 0) return { ok: false, error: 'No allow-listed employee field supplied.' };
+      patch.updatedAt = new Date().toISOString();
+      await ref.set(patch, { merge: true });
+      const beforeSlice = Object.fromEntries(Object.keys(patch).filter(k => k !== 'updatedAt').map(k => [k, before[k] ?? null]));
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', before: beforeSlice, after: patch });
+      return { ok: true, result: `Updated employee ${before.name || eid}.`, writes: patch };
+    }
+    case 'updateMarketingTemplate': {
+      const key = String(input?.templateKey || '').slice(0, 80);
+      if (!key) return { ok: false, error: 'templateKey required.' };
+      const ref = db.doc(`tenants/${tenantId}/campaignTemplates/${key}`);
+      const snap = await ref.get();
+      if (!snap.exists) return { ok: false, error: `Template "${key}" not found. Use the Marketing tab to see template names.` };
+      const before = snap.data();
+      const patch = { updatedAt: new Date().toISOString() };
+      if (typeof input?.subject === 'string') patch.subject = String(input.subject).slice(0, 200);
+      if (typeof input?.body    === 'string') patch.body    = String(input.body).slice(0, 5000);
+      if (!patch.subject && !patch.body) return { ok: false, error: 'subject or body required.' };
+      await ref.set(patch, { merge: true });
+      const beforeSlice = { subject: before.subject || null, body: before.body || null };
+      await writeAiAuditLog(db, tenantId, { ...audit, result: 'ok', before: beforeSlice, after: patch });
+      return { ok: true, result: `Updated template "${key}".`, writes: patch };
+    }
+
+    default:
+      return { ok: false, error: `Unknown tool: ${toolName}` };
+  }
+}
+
+const SALON_ADMIN_SYSTEM_PROMPT = `You are the in-app AI assistant for a salon owner using Plume Nexus.
+
+Your job:
+1. Answer questions about the salon, its data, and how to use the app.
+2. Navigate the owner to the right screen when a complex setting lives elsewhere.
+3. Apply allow-listed changes on their behalf when they ask — confirm intent in natural language but do NOT add a second "are you sure" step before calling the tool. The allowlist + audit log is the safety mechanism.
+
+Tone: warm, brief, professional. Sound like a knowledgeable colleague. Sign nothing — you're in-app, not over email.
+
+Decision guide:
+- Question about app behavior / data → answer directly using read tools if helpful.
+- Setting that's NOT in your tool list (taxes, integrations, payouts, payroll) → call \`navigate\` to send them to the right screen and tell them in 1 sentence what to do there.
+- Setting that IS in your tool list → just do it. Echo the change back in the response so the owner sees what you did.
+
+When you make a write tool call:
+- First be SURE you have the values you need. If the owner said "change my hours" without specifics, ASK before calling the tool.
+- After the tool returns, briefly describe what changed (1-2 sentences).
+- If the tool fails, explain the failure simply and suggest a fix.
+
+When a question is purely about another tenant's data, payroll, taxes, or compensation: politely decline and route them to the right surface (HR for payroll, etc.).
+
+NEVER:
+- Promise behavior you haven't verified.
+- Reveal employee compensation, SSN, banking, payroll, or tax form data — you don't have tools that can read those.
+- Talk about Plume Nexus's internal vendors by name (Twilio, SES, BigQuery, etc.). Just say "SMS", "email", "the platform".
+- Make up service names, prices, or employee data — use \`listServices\` / \`listEmployees\` to verify.
+
+Output: short, direct, conversational. Don't use long bulleted lists for simple confirmations.`;
+
+exports.chatWithSalonAdmin = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 90 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+
+    const db = getFirestore();
+    const { tenantId: tid, sessionId, currentView, messages = [] } = request.data || {};
+    const tenantId = String(tid || '').slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    await requireTenantAdmin(db, tenantId, request);
+
+    const session = String(sessionId || '').slice(0, 64) || 'no-session';
+    const used = _aiSessionToolCounts.get(session) || 0;
+    if (used >= AI_MAX_TOOL_CALLS_PER_SESSION) {
+      throw new HttpsError('resource-exhausted',
+        'This chat session has hit its tool-use limit. Refresh the chat to start a new session.');
+    }
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      throw new HttpsError('invalid-argument', 'messages required');
+    }
+    if (messages.length > 24) throw new HttpsError('invalid-argument', 'Too many messages');
+
+    const callerEmail = (await callerEmail_(request)).toLowerCase();
+    const brand = await tenantBranding(db, tenantId);
+    const tenantName = brand?.salonName || tenantId;
+
+    const systemPrompt =
+      `${SALON_ADMIN_SYSTEM_PROMPT}\n\n` +
+      `CONTEXT\nSalon: ${tenantName}\nCurrent view: ${currentView || 'unknown'}\nUser: ${callerEmail}\nToday: ${new Date().toISOString().slice(0, 10)}`;
+
+    const client = new Anthropic({ apiKey });
+    const convo = messages
+      .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+    if (convo.length === 0 || convo[convo.length - 1].role !== 'user') {
+      throw new HttpsError('invalid-argument', 'Last message must be from user');
+    }
+
+    const actionsThisTurn = [];
+    let toolRounds = 0;
+    while (true) {
+      let resp;
+      try {
+        resp = await client.messages.create({
+          model:      'claude-haiku-4-5-20251001',
+          max_tokens: 1200,
+          system: [
+            { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+          ],
+          tools: SALON_ADMIN_TOOLS,
+          messages: convo,
+        });
+      } catch (e) {
+        console.error(`[chatWithSalonAdmin] tenant=${tenantId} Anthropic call failed:`, e?.message);
+        throw new HttpsError('internal', `AI call failed: ${e?.message || 'unknown'}`);
+      }
+
+      usageLog.logAiUsage(db, tenantId, {
+        endpoint: 'chatWithSalonAdmin',
+        model:    resp?.model || 'claude-haiku-4-5-20251001',
+        usage:    resp?.usage,
+      }).catch(() => {});
+
+      const blocks = resp.content || [];
+      if (resp.stop_reason !== 'tool_use') {
+        const text = blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+        return { reply: text, actions: actionsThisTurn };
+      }
+
+      convo.push({ role: 'assistant', content: blocks });
+      const toolResults = [];
+      for (const b of blocks) {
+        if (b.type !== 'tool_use') continue;
+
+        if ((_aiSessionToolCounts.get(session) || 0) >= AI_MAX_TOOL_CALLS_PER_SESSION) {
+          toolResults.push({
+            type: 'tool_result', tool_use_id: b.id,
+            content: JSON.stringify({ ok: false, error: 'Session tool-call limit reached.' }),
+            is_error: true,
+          });
+          continue;
+        }
+
+        let result;
+        try {
+          result = await executeTool(db, tenantId, callerEmail, session, b.name, b.input || {});
+        } catch (e) {
+          console.error(`[chatWithSalonAdmin] tool ${b.name} threw:`, e?.message);
+          result = { ok: false, error: e?.message || 'Tool threw' };
+        }
+        _aiSessionToolCounts.set(session, (_aiSessionToolCounts.get(session) || 0) + 1);
+
+        actionsThisTurn.push({
+          tool:  b.name,
+          input: b.input || {},
+          ok:    result.ok !== false,
+          message: result.result || result.error || null,
+        });
+
+        toolResults.push({
+          type: 'tool_result',
+          tool_use_id: b.id,
+          // Pass the FULL result (incl. writes) so Claude can summarize.
+          content: JSON.stringify(result).slice(0, 8000),
+          is_error: result.ok === false,
+        });
+      }
+      convo.push({ role: 'user', content: toolResults });
+
+      toolRounds += 1;
+      if (toolRounds >= 6) {
+        const final = await client.messages.create({
+          model:      'claude-haiku-4-5-20251001',
+          max_tokens: 800,
+          system: [
+            { type: 'text', text: systemPrompt + '\n\nDo not call any more tools. Summarize what happened.', cache_control: { type: 'ephemeral' } },
+          ],
+          messages: convo,
+        });
+        usageLog.logAiUsage(db, tenantId, {
+          endpoint: 'chatWithSalonAdmin',
+          model:    final?.model || 'claude-haiku-4-5-20251001',
+          usage:    final?.usage,
+        }).catch(() => {});
+        const text = (final.content || []).filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+        return { reply: text, actions: actionsThisTurn };
+      }
+    }
+  }
+);
+
+// `callerEmail` already exists earlier in the file (used by requireTenantAdmin
+// and friends). Re-aliased here so this section is grep-able as a unit.
+async function callerEmail_(request) {
+  return (await callerEmail(request)) || '';
+}

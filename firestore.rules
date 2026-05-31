@@ -665,6 +665,15 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
+      // AI assistant audit log — every write tool the in-app chatbot
+      // calls drops a record here. Owner reads to inspect; platform
+      // admin reads for support / forensics; nobody writes from a
+      // client (Cloud Function admin SDK only).
+      match /aiActions/{actionId} {
+        allow read:  if isTenantAdmin(tenantId) || isPlatformAdmin();
+        allow write: if false;
+      }
+
       // Support tickets: tenant admin reads/creates within their tenant;
       // platform admin can read/update (for triage + status / reply). All
       // writes go through Cloud Functions (admin SDK bypasses rules); the

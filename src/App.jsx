@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
 import { TENANT_ID } from './lib/tenant';
+import { recordNav } from './lib/diagnostics';
 import Splash from './components/Splash';
 import Toast from './components/Toast';
 import ThemeProvider from './components/ThemeProvider';
@@ -144,6 +145,7 @@ function AppShell({ initialView = 'home' }) {
       if (v !== prev && !skipPushRef.current) {
         window.history.pushState({ view: v }, '', window.location.search);
       }
+      if (v !== prev) recordNav(v, skipPushRef.current ? 'back' : 'user');
       skipPushRef.current = false;
       return v;
     });
@@ -160,6 +162,22 @@ function AppShell({ initialView = 'home' }) {
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
+
+  // Global navigate handle — the AI assistant uses this to take the user
+  // to a different module/view from inside the chat. Bounded to known
+  // views so a hallucinated target can't break the app.
+  useEffect(() => {
+    const VALID = new Set(['home','tipflow','schedule','clients','services','employees','reports','marketing','meetings','memberships','products','attendance','communications','reviews','hr']);
+    window.__plumeNavigate = (target, opts = {}) => {
+      const v = String(target || '').trim();
+      if (v === 'admin') { setShowAdmin(true); if (opts.tab) setAdminInitial({ tab: opts.tab, scrollTo: opts.scrollTo }); return true; }
+      if (!VALID.has(v)) return false;
+      setView(v);
+      recordNav(v, 'ai');
+      return true;
+    };
+    return () => { delete window.__plumeNavigate; };
+  }, [setView]);
 
   const openClientProfile = (id) => { if (!id) return; setOpenClientId(id); setView('clients'); };
 

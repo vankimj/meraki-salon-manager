@@ -4,15 +4,47 @@
 
 import { db, callFn } from './firebase';
 import { TENANT_ID } from './tenant';
+import { snapshot as diagnosticsSnapshot } from './diagnostics';
 import {
   collection, query, orderBy, limit, getDocs, doc, getDoc, onSnapshot,
 } from 'firebase/firestore';
 
 const _submitTicket    = callFn('submitSupportTicket');
 const _submitReply     = callFn('submitTicketReply');
+const _chatWithAdmin   = callFn('chatWithSalonAdmin');
 
 export async function submitSupportTicket({ subject, body, priority }) {
-  const r = await _submitTicket({ tenantId: TENANT_ID, subject, body, priority });
+  let recentLogs = [];
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'tenants', TENANT_ID, 'logs'),
+      orderBy('at', 'desc'),
+      limit(20),
+    ));
+    recentLogs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    // Best-effort; tickets still file without logs.
+    console.warn('[support] activity log fetch failed:', e?.message);
+  }
+  const diagnostics = {
+    ...diagnosticsSnapshot(),
+    recentLogs,
+  };
+  const r = await _submitTicket({ tenantId: TENANT_ID, subject, body, priority, diagnostics });
+  return r.data;
+}
+
+// AI assistant — relays each user message + the running history to the
+// Cloud Function, which runs the tool-use loop. Returns the assistant's
+// final text reply plus any UI actions the tools took (navigations,
+// writes) so the chat surface can confirm them in-line.
+export async function chatWithSalonAdmin({ sessionId, messages, currentView }) {
+  const r = await _chatWithAdmin({
+    tenantId: TENANT_ID,
+    sessionId,
+    currentView: currentView || null,
+    messages,
+  });
   return r.data;
 }
 
