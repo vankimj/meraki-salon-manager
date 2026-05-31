@@ -28,6 +28,15 @@
     {
       "//": "Service ratings — list per tech ordered by submittedAt (Reports → ratings tab + leaderboard). Composite required because where(techName) + orderBy(submittedAt) can't use auto-index.",
       "collectionGroup": "serviceRatings",   "queryScope": "COLLECTION", "fields": [{"fieldPath": "techName", "order": "ASCENDING"}, {"fieldPath": "submittedAt", "order": "DESCENDING"}]
+    },
+
+    {
+      "//": "listOpenSupportTickets — cross-tenant queue at admin.plumenexus.com/tickets uses collectionGroup('supportTickets') with where(status==X).orderBy(lastReplyAt desc). Composite CG index required.",
+      "collectionGroup": "supportTickets", "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "status",      "order": "ASCENDING"},
+        {"fieldPath": "lastReplyAt", "order": "DESCENDING"}
+      ]
     }
   ],
   "fieldOverrides": [
@@ -37,6 +46,14 @@
       "fieldPath":       "viewToken",
       "indexes": [
         {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}
+      ]
+    },
+    {
+      "//": "listOpenSupportTickets — 'all' status path drops the where() and just orderBy(lastReplyAt desc) on the supportTickets collection group. Single-field CG → fieldOverrides.",
+      "collectionGroup": "supportTickets",
+      "fieldPath":       "lastReplyAt",
+      "indexes": [
+        {"order": "DESCENDING", "queryScope": "COLLECTION_GROUP"}
       ]
     }
   ]
