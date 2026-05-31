@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
@@ -140,6 +140,7 @@ const PERIODS = [
 const TABS = [
   { id: 'overview',     label: 'Overview' },
   { id: 'transactions', label: 'Transactions' },
+  { id: 'ratings',      label: 'Service Ratings' },
   { id: 'tax',          label: 'IRS / Tax Report' },
   { id: 'ask',          label: 'Ask AI' },
 ];
@@ -295,6 +296,16 @@ export default function ReportsAdmin() {
         <TaxReport />
       ) : activeTab === 'transactions' ? (
         <TransactionsReport
+          startDate={isCustom ? customStart : startOf(periodDays)}
+          endDate={isCustom ? customEnd : todayStr()}
+          isCustom={isCustom}
+          periodDays={periodDays}
+          setPeriodDays={setPeriodDays}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd}     setCustomEnd={setCustomEnd}
+        />
+      ) : activeTab === 'ratings' ? (
+        <RatingsReport
           startDate={isCustom ? customStart : startOf(periodDays)}
           endDate={isCustom ? customEnd : todayStr()}
           isCustom={isCustom}
@@ -1596,6 +1607,327 @@ function taxRevenue(a, techFilter) {
     return split?.revenue || 0;
   }
   return a.payment?.total ?? apptRevenue(a);
+}
+
+// ── Service Ratings tab ─────────────────────────────────────────────────────
+// Surfaces the data collected by the post-checkout rating widget. The
+// underlying serviceRatings collection is one row per (receipt, tech), so
+// multi-tech receipts naturally split into per-tech accountability.
+
+function computeRatingStats(ratings) {
+  const out = {
+    count:        ratings.length,
+    avg:          0,
+    distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    perTech:      {},
+    lowFeedback:  [], // rating <= 3, optionally with comment
+    sourceCounts: { email: 0, sms: 0, web: 0 },
+  };
+  if (ratings.length === 0) return out;
+
+  let sum = 0;
+  for (const r of ratings) {
+    const rating = Number(r.rating) || 0;
+    if (rating < 1 || rating > 5) continue;
+    sum += rating;
+    out.distribution[rating] = (out.distribution[rating] || 0) + 1;
+    out.sourceCounts[r.source] = (out.sourceCounts[r.source] || 0) + 1;
+
+    const tech = r.techName || '—';
+    const t = out.perTech[tech] || (out.perTech[tech] = { count: 0, sum: 0, dist: { 1:0,2:0,3:0,4:0,5:0 } });
+    t.count += 1;
+    t.sum   += rating;
+    t.dist[rating] = (t.dist[rating] || 0) + 1;
+
+    if (rating <= 3) out.lowFeedback.push(r);
+  }
+  out.avg = sum / out.count;
+  Object.values(out.perTech).forEach(t => { t.avg = t.sum / t.count; });
+  // Most recent low-feedback first
+  out.lowFeedback.sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+  return out;
+}
+
+function ratingsToCsv(ratings) {
+  const rows = [['Submitted', 'Tech', 'Client', 'Rating', 'Comment', 'Source', 'Receipt ID']];
+  ratings.forEach(r => {
+    rows.push([
+      r.submittedAt || '',
+      r.techName || '',
+      r.clientName || '',
+      String(r.rating ?? ''),
+      (r.comment || '').replace(/[\r\n]+/g, ' '),
+      r.source || '',
+      r.receiptId || '',
+    ]);
+  });
+  return rows.map(r => r.map(c => {
+    const s = String(c);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }).join(',')).join('\n');
+}
+
+function RatingsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const [ratings, setRatings] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [techFilter, setTechFilter] = useState('all'); // 'all' | techName
+
+  useEffect(() => {
+    setLoading(true);
+    fetchServiceRatingsByRange(startDate, endDate)
+      .then(rs => setRatings(rs.sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))))
+      .catch(() => setRatings([]))
+      .finally(() => setLoading(false));
+  }, [startDate, endDate]);
+
+  const filtered = useMemo(() => {
+    if (!ratings) return [];
+    if (techFilter === 'all') return ratings;
+    return ratings.filter(r => r.techName === techFilter);
+  }, [ratings, techFilter]);
+
+  const stats = useMemo(() => computeRatingStats(filtered), [filtered]);
+  const allTechs = useMemo(() => {
+    const set = new Set();
+    (ratings || []).forEach(r => { if (r.techName) set.add(r.techName); });
+    return Array.from(set).sort();
+  }, [ratings]);
+
+  function downloadCsv() {
+    const blob = new Blob([ratingsToCsv(filtered)], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `service-ratings_${startDate}_to_${endDate}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <>
+      {/* Period + tech filter toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {PERIODS.map(p => (
+            <PillBtn key={p.days} active={periodDays === p.days} onClick={() => setPeriodDays(p.days)}>
+              {p.label}
+            </PillBtn>
+          ))}
+          <PillBtn active={isCustom} onClick={() => setPeriodDays('custom')}>Custom</PillBtn>
+          {isCustom && (
+            <>
+              <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+              <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {allTechs.length > 0 && (
+            <select value={techFilter} onChange={e => setTechFilter(e.target.value)}
+              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fff', color: '#333' }}>
+              <option value="all">All techs</option>
+              {allTechs.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          <button onClick={downloadCsv} disabled={loading || filtered.length === 0}
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', cursor: filtered.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: '#555' }}>
+            ⤓ Export CSV
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 64, color: '#aaa', fontSize: 13 }}>Loading ratings…</div>
+      ) : filtered.length === 0 ? (
+        <EmptyRatings techFilter={techFilter} />
+      ) : (
+        <>
+          <SummaryCards stats={stats} />
+          <DistributionCard stats={stats} />
+          <TechLeaderboard perTech={stats.perTech} />
+          <RecentFeedback lowFeedback={stats.lowFeedback} />
+          <RecentAllRatings ratings={filtered} />
+        </>
+      )}
+    </>
+  );
+}
+
+function EmptyRatings({ techFilter }) {
+  return (
+    <div style={{ textAlign: 'center', padding: 64, color: '#888' }}>
+      <div style={{ fontSize: 36, marginBottom: 12 }}>⭐</div>
+      <div style={{ fontSize: 15, fontWeight: 600, color: '#333', marginBottom: 6 }}>
+        {techFilter === 'all' ? 'No ratings yet in this period' : `No ratings for ${techFilter} in this period`}
+      </div>
+      <div style={{ fontSize: 12, color: '#aaa', maxWidth: 360, margin: '0 auto', lineHeight: 1.5 }}>
+        Ratings come in when clients tap the stars on their email or SMS receipt. They'll start appearing here automatically.
+      </div>
+    </div>
+  );
+}
+
+function SummaryCards({ stats }) {
+  const high = (stats.distribution[4] || 0) + (stats.distribution[5] || 0);
+  const highPct = stats.count ? Math.round((high / stats.count) * 100) : 0;
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 20 }}>
+      <Stat label="Total ratings"     value={stats.count.toLocaleString()} />
+      <Stat label="Average"           value={stats.avg.toFixed(2) + ' ★'} accent="#f5b400" />
+      <Stat label="4–5★ share"        value={highPct + '%'} sub={`${high} of ${stats.count}`} />
+      <Stat label="Needs attention"   value={stats.lowFeedback.length.toString()} sub="≤ 3★" accent={stats.lowFeedback.length > 0 ? '#ef4444' : '#888'} />
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, accent }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: accent || '#1a1a1a', marginTop: 4 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function DistributionCard({ stats }) {
+  const max = Math.max(1, ...Object.values(stats.distribution));
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>Rating distribution</div>
+      {[5, 4, 3, 2, 1].map(n => {
+        const count = stats.distribution[n] || 0;
+        const pct   = stats.count ? Math.round((count / stats.count) * 100) : 0;
+        return (
+          <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{ width: 36, fontSize: 12, color: '#555', fontWeight: 600 }}>{n} ★</div>
+            <div style={{ flex: 1, height: 14, background: '#f4f5f7', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: n >= 4 ? '#2D7A5F' : n === 3 ? '#f5b400' : '#ef4444', transition: 'width .2s' }} />
+            </div>
+            <div style={{ width: 72, fontSize: 11, color: '#888', textAlign: 'right' }}>{count} · {pct}%</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function TechLeaderboard({ perTech }) {
+  const rows = Object.entries(perTech)
+    .map(([tech, t]) => ({ tech, ...t }))
+    .sort((a, b) => (b.avg - a.avg) || (b.count - a.count));
+  if (rows.length === 0) return null;
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>Tech leaderboard</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #e8e8e8' }}>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Tech</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Avg</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Ratings</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>1★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>2★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>3★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>4★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>5★</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.tech} style={{ borderBottom: '1px solid #f5f5f5' }}>
+              <td style={{ padding: '8px', fontSize: 13, color: '#333' }}>{r.tech}</td>
+              <td style={{ padding: '8px', fontSize: 13, color: '#1a1a1a', textAlign: 'right', fontWeight: 600 }}>
+                {r.avg.toFixed(2)} <span style={{ color: '#f5b400' }}>★</span>
+              </td>
+              <td style={{ padding: '8px', fontSize: 12, color: '#888', textAlign: 'right' }}>{r.count}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[1] ? '#ef4444' : '#ddd', textAlign: 'right' }}>{r.dist[1] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[2] ? '#ef4444' : '#ddd', textAlign: 'right' }}>{r.dist[2] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[3] ? '#f5b400' : '#ddd', textAlign: 'right' }}>{r.dist[3] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[4] ? '#2D7A5F' : '#ddd', textAlign: 'right' }}>{r.dist[4] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[5] ? '#2D7A5F' : '#ddd', textAlign: 'right' }}>{r.dist[5] || 0}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RecentFeedback({ lowFeedback }) {
+  if (lowFeedback.length === 0) return null;
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 4 }}>Needs attention</div>
+      <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Ratings of 3★ or below — review these first.</div>
+      {lowFeedback.slice(0, 20).map(r => (
+        <div key={r.id} style={{ padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 14, color: r.rating <= 2 ? '#ef4444' : '#f5b400', fontWeight: 700 }}>
+              {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+            </span>
+            <span style={{ fontSize: 12, color: '#333', fontWeight: 600 }}>{r.techName || '—'}</span>
+            <span style={{ fontSize: 11, color: '#888' }}>· {r.clientName || 'anonymous'}</span>
+            <span style={{ fontSize: 11, color: '#aaa', marginLeft: 'auto' }}>
+              {r.submittedAt ? new Date(r.submittedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+            </span>
+          </div>
+          {r.comment && (
+            <div style={{ fontSize: 12, color: '#555', background: '#fafafa', padding: '8px 10px', borderRadius: 6, marginTop: 4, lineHeight: 1.5 }}>
+              "{r.comment}"
+            </div>
+          )}
+        </div>
+      ))}
+      {lowFeedback.length > 20 && (
+        <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', paddingTop: 10 }}>
+          +{lowFeedback.length - 20} more — export CSV for the full list.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RecentAllRatings({ ratings }) {
+  const recent = ratings.slice(0, 30);
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>Recent ratings ({ratings.length} total)</div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #e8e8e8' }}>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>When</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Tech</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Client</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Rating</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {recent.map(r => (
+            <tr key={r.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
+              <td style={{ padding: '6px 8px', color: '#888', fontSize: 11, whiteSpace: 'nowrap' }}>
+                {r.submittedAt ? new Date(r.submittedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
+              </td>
+              <td style={{ padding: '6px 8px', color: '#333' }}>{r.techName || '—'}</td>
+              <td style={{ padding: '6px 8px', color: '#555' }}>{r.clientName || 'anonymous'}</td>
+              <td style={{ padding: '6px 8px', color: r.rating >= 4 ? '#2D7A5F' : r.rating === 3 ? '#f5b400' : '#ef4444', fontWeight: 600 }}>
+                {r.rating}★
+              </td>
+              <td style={{ padding: '6px 8px', color: '#aaa', fontSize: 11, textTransform: 'capitalize' }}>{r.source || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {ratings.length > 30 && (
+        <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', paddingTop: 10 }}>
+          +{ratings.length - 30} more — export CSV for the full list.
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TaxReport() {
