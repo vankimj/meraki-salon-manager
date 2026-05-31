@@ -17,6 +17,7 @@ import {
   cartTotalDuration, isTechFreeAt, firstFreeTech, getSlots,
 } from '../lib/booking';
 import { pickTech, startOfWeek, endOfWeek, DEFAULT_ASSIGNMENT_METHOD } from '../lib/techAssignment';
+import { getEffectiveFlow } from '../lib/bookingFlow';
 
 // ── constants ──────────────────────────────────────────
 
@@ -178,6 +179,8 @@ export default function BookingScreen() {
 
   // wizard. step 0 = flow chooser, 1..5 = steps. Default to 0 so the user
   // explicitly picks a path; once chosen, flow is locked for this session.
+  // When the tenant has disabled the chooser via Booking Flow config,
+  // these start pre-set in the useEffect below (after cfg loads).
   const [step,    setStep]    = useState(0);
   const [flow,    setFlow]    = useState(null);   // 'time-first' | 'tech-first'
   const [pickedTech, setPickedTech] = useState(null); // populated in tech-first mode
@@ -419,10 +422,25 @@ export default function BookingScreen() {
           : getTheme(wf?.themeId || 'meraki');
         setTheme(t);
         applyThemeVars(t);
+        // Apply Booking Flow config (Tier 0+1): if the tenant has hidden
+        // the flow chooser, jump past Step 0 and pre-select the configured
+        // default flow. The customer never sees the chooser at all.
+        const flowCfg = getEffectiveFlow(c?.flow);
+        if (!flowCfg.showFlowChooser) {
+          const f = flowCfg.defaultFlow === 'tech' ? 'tech-first' : 'time-first';
+          setFlow(f);
+          setStep(1);
+          if (f === 'time-first') setPickedTech(null);
+        }
       })
       .catch(() => setCfg({ enabled: false }))
       .finally(() => setLoading(false));
   }, []);
+
+  // Derive the effective booking-flow config every render. Cheap — just
+  // merges defaults ⊕ template ⊕ overrides. Used throughout the flow for
+  // gating, copy, and behavior toggles.
+  const flowCfg = getEffectiveFlow(cfg?.flow);
 
   // Cart helpers ─────────────────────────────────────────
   // Removal-prompt state. Fires when a service with canRequireRemoval=true
@@ -464,8 +482,17 @@ export default function BookingScreen() {
     const baseInCart      = cart.filter(i => i.service.categoryExclusive === true && i.service.canRequireRemoval).length
                           + (isBaseService ? 1 : 0);
     const removalsInCart  = removalSvc ? cart.filter(i => i.service.id === removalSvc.id).length : 0;
-    if (isBaseService && !isAddingRemoval && !declinedRemoval.has(svc.id) && removalsInCart < baseInCart) {
-      // Pass the parent service id along so Yes adds a Removal LINKED to it.
+    // Tier 1 toggle: removalPromptMode
+    //   • 'never'      → skip entirely (data flag still honored elsewhere)
+    //   • 'first-only' → only the first qualifying mani/pedi in this session triggers
+    //   • 'always'     → fire per qualifying base service (default)
+    const promptMode = flowCfg.removalPromptMode;
+    const sessionHasFiredOnce = baseInCart > 1; // we're already on at least the 2nd base service this booking
+    const promptModeAllows =
+      promptMode === 'never' ? false
+      : promptMode === 'first-only' ? !sessionHasFiredOnce
+      : true;
+    if (promptModeAllows && isBaseService && !isAddingRemoval && !declinedRemoval.has(svc.id) && removalsInCart < baseInCart) {
       setRemovalPrompt({ svcName: svc.name, svcId: svc.id, parentSvcId: svc.id });
     }
   }
@@ -848,6 +875,7 @@ export default function BookingScreen() {
               setStep(haveAll ? 5 : 4);
             }}
             onBack={() => setStep(2)}
+            flowCfg={flowCfg}
           />
         )}
         {step === 4 && (
@@ -866,6 +894,7 @@ export default function BookingScreen() {
             onChange={patch => setForm(f => ({ ...f, ...patch }))}
             onNext={() => setStep(5)}
             onBack={() => setStep(3)}
+            flowCfg={flowCfg}
           />
         )}
         {step === 5 && (
@@ -881,6 +910,8 @@ export default function BookingScreen() {
             onEditInfo={() => setStep(4)}
             onConfirm={handleBook}
             onBack={() => setStep(form.name.trim() && form.phone.trim() ? 3 : 4)}
+            flowCfg={flowCfg}
+            gUser={gUser}
           />
         )}
       </div>
@@ -1458,7 +1489,9 @@ function TechCard({ tech, selected, onSelect }) {
 }
 
 // ── Step 3: Pick a date + start time for the whole cart ─
-function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, setCartDate, cartSlot, setCartSlot, apptsByDate, ensureApptsForDate, removalDur, onProceed, onBack }) {
+function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, setCartDate, cartSlot, setCartSlot, apptsByDate, ensureApptsForDate, removalDur, onProceed, onBack, flowCfg }) {
+  const minLead = Math.max(0, Number(flowCfg?.minLeadTimeMinutes) || 0);
+  const maxDays = Math.max(1, Number(flowCfg?.maxLeadDays) || 30);
   const multiLane = isMultiLane(cart);
   const eligible = techsForServices(allTechs, cart.map(c => c.service));
   const dayAppts = cartDate ? apptsByDate[cartDate] : null;
@@ -1489,6 +1522,14 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
   // means we accept the slot if SOMEONE eligible for that lane is free.
   function isAvailable(slotMins) {
     if (!dayAppts) return false;
+    // Min-lead enforcement: if the chosen date is today, hide slots that
+    // start before now+minLead.
+    const today = dateStr(todayDate());
+    if (cartDate === today) {
+      const now = new Date();
+      const cutoff = now.getHours() * 60 + now.getMinutes() + minLead;
+      if (slotMins < cutoff) return false;
+    }
     if (multiLane) {
       // Mani window starts at the slot.
       const maniTech = cartTechByLane?.Manicures || null;
@@ -1525,7 +1566,7 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
       <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 16 }}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'flex-start' }}>
           <div style={{ flex: '1 1 280px', minWidth: 0 }}>
-            <BookingCalendar value={cartDate} onChange={d => { setCartDate(d); setCartSlot(null); }} />
+            <BookingCalendar value={cartDate} onChange={d => { setCartDate(d); setCartSlot(null); }} maxDays={maxDays} />
           </div>
           {cartDate && (
             <div style={{ flex: '1 1 260px', minWidth: 0 }}>
@@ -1586,11 +1627,12 @@ function Step4Info({
   emailLinkState, onSendEmailLink,
   otpState, otpError, otpPhonePretty,
   onSendOtp, onVerifyOtp, onResetOtp, onGoogleSignIn,
-  onChange, onNext, onBack,
+  onChange, onNext, onBack, flowCfg,
 }) {
   const salonName = webCfg?.salonName || 'our salon';
   // Required: name + phone (signed-in users skip this step entirely so they bypass the validation)
   const valid = form.name.trim() && form.phone.trim();
+  const showNotes = flowCfg?.showNotesField !== false;
 
   const formCard = (
     <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 16 }}>
@@ -1598,8 +1640,8 @@ function Step4Info({
         { key: 'name',  label: 'Name',  type: 'text',  placeholder: 'Your full name',                 required: true  },
         { key: 'phone', label: 'Phone', type: 'tel',   placeholder: '(555) 000-0000',                 required: true  },
         { key: 'email', label: 'Email', type: 'email', placeholder: 'For confirmation & sign-in',     required: false },
-        { key: 'notes', label: 'Notes', type: 'text',  placeholder: 'Any requests or preferences?',   required: false },
-      ].map(({ key, label, type, placeholder, required }, i, arr) => (
+        showNotes && { key: 'notes', label: 'Notes', type: 'text', placeholder: 'Any requests or preferences?', required: false },
+      ].filter(Boolean).map(({ key, label, type, placeholder, required }, i, arr) => (
         <div key={key} style={{ display: 'flex', alignItems: 'center', padding: '13px 16px', borderBottom: i < arr.length - 1 ? '1px solid #f0f0f0' : 'none', gap: 12 }}>
           <div style={{ width: 52, fontSize: 12, color: '#aaa', fontWeight: 600, flexShrink: 0 }}>
             {label}{required && <span style={{ color: '#ef4444' }}> *</span>}
@@ -1727,7 +1769,12 @@ function Step4Info({
 }
 
 // ── Step 5: Confirm (multi-item) ────────────────────────
-function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, editorial, onConfirm, onBack, onEditInfo }) {
+function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, editorial, onConfirm, onBack, onEditInfo, flowCfg, gUser }) {
+  // Tier 1 toggles read here:
+  //   • confirmCtaLabel — button text below
+  //   • requireSignIn   — block submit unless gUser is set
+  const confirmLabel = (flowCfg?.confirmCtaLabel || 'Confirm booking').trim() || 'Confirm booking';
+  const signInGated  = flowCfg?.requireSignIn === true && !gUser;
   const removalDur = 15;
   const totalPrice = cart.reduce((sum, item) => {
     const base = resolveServicePricing(item.service, item.option).price || 0;
@@ -1908,9 +1955,15 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
           <span>{bookingError}</span>
         </div>
       )}
-      <button onClick={onConfirm} disabled={submitting || !!bookingError}
-        style={{ width: '100%', padding: '16px', borderRadius: 14, border: 'none', background: (submitting || bookingError) ? '#aaa' : 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 16, fontWeight: 800, cursor: (submitting || bookingError) ? 'default' : 'pointer', fontFamily: 'inherit', marginBottom: 10, letterSpacing: '.01em' }}>
-        {submitting ? 'Booking…' : bookingError ? 'Booking unavailable' : '✓ Confirm Booking'}
+      {signInGated && (
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, background: '#fff7ed', border: '1px solid #fed7aa', color: '#7c2d12', borderRadius: 10, padding: '10px 14px', marginBottom: 10, fontSize: 13, lineHeight: 1.5 }}>
+          <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>🔒</span>
+          <span>Please sign in (above) before confirming. This salon requires a signed-in account to book.</span>
+        </div>
+      )}
+      <button onClick={onConfirm} disabled={submitting || !!bookingError || signInGated}
+        style={{ width: '100%', padding: '16px', borderRadius: 14, border: 'none', background: (submitting || bookingError || signInGated) ? '#aaa' : 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 16, fontWeight: 800, cursor: (submitting || bookingError || signInGated) ? 'default' : 'pointer', fontFamily: 'inherit', marginBottom: 10, letterSpacing: '.01em' }}>
+        {submitting ? 'Booking…' : bookingError ? 'Booking unavailable' : signInGated ? 'Sign in to continue' : `✓ ${confirmLabel}`}
       </button>
       <BackBtn onClick={onBack} />
       <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 12, lineHeight: 1.6 }}>
@@ -2074,9 +2127,9 @@ function SuccessScreen({ appts, techs, webCfg }) {
 }
 
 // ── Calendar ───────────────────────────────────────────
-function BookingCalendar({ value, onChange }) {
+function BookingCalendar({ value, onChange, maxDays = 60 }) {
   const today   = todayDate();
-  const maxDate = new Date(today); maxDate.setDate(today.getDate() + 60);
+  const maxDate = new Date(today); maxDate.setDate(today.getDate() + Math.max(1, maxDays));
   const initD   = value ? new Date(value + 'T12:00:00') : today;
   const [yr,  setYr]  = useState(initD.getFullYear());
   const [mon, setMon] = useState(initD.getMonth());
