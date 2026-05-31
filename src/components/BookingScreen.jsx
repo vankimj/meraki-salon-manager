@@ -351,17 +351,31 @@ export default function BookingScreen() {
   const [removalPrompt, setRemovalPrompt] = useState(null);            // { cartItemId, svcName }
   const [declinedRemoval, setDeclinedRemoval] = useState(() => new Set()); // service ids the user said "No" to
 
+  // The salon's actual "Removal" service from the menu (Add-ons category).
+  // We add THIS as a separate cart item when a customer confirms they're
+  // wearing a previous set — rather than toggling a side-flag — so the
+  // booking carries real pricing + duration + options from the catalog.
+  const removalSvc = services.find(s => /^removal$/i.test((s.name || '').trim()));
+
   function addToCart(svc, opt) {
+    // Defense-in-depth duplicate guard. The ServiceRow + Add button hides
+    // when the service is already in the cart, but if any other path calls
+    // addToCart (keyboard, deep-link, future code), we still block dupes:
+    // one of each service per booking. Same set of hands/feet either way.
+    if (cart.some(i => i.service.id === svc.id)) return;
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
     setCart(c => [...c, { id, service: svc, option: opt || null, removal: false }]);
     // Adding a service may invalidate prior tech/slot choices (e.g. picked tech
     // can't do the new service). Reset downstream picks; user re-picks at step 2/3.
     setCartTech(t => (t === undefined ? t : t)); // no-op, kept for symmetry
     setCartSlot(null);
-    // Removal prompt — qualifying service, not yet declined, no removal in cart.
-    const removalAlreadyInCart = cart.some(i => i.removal === true);
-    if (svc.canRequireRemoval && !declinedRemoval.has(svc.id) && !removalAlreadyInCart) {
-      setRemovalPrompt({ cartItemId: id, svcName: svc.name, svcId: svc.id });
+    // Removal prompt — qualifying service, not yet declined, no Removal item
+    // already in the cart. (Skip the prompt if the customer is adding Removal
+    // itself, since that doesn't itself need a previous removal.)
+    const removalAlreadyInCart = removalSvc && cart.some(i => i.service.id === removalSvc.id);
+    const isAddingRemoval = removalSvc && svc.id === removalSvc.id;
+    if (svc.canRequireRemoval && !isAddingRemoval && !declinedRemoval.has(svc.id) && !removalAlreadyInCart) {
+      setRemovalPrompt({ svcName: svc.name, svcId: svc.id });
     }
   }
   function removeFromCart(itemId) {
@@ -590,13 +604,15 @@ export default function BookingScreen() {
         />
       )}
 
-      {removalPrompt && (
+      {removalPrompt && removalSvc && (
         <RemovalSuggestionModal
           svcName={removalPrompt.svcName}
-          removalPrice={Number(cfg?.removalPrice ?? 15)}
+          removalPrice={Number(resolveServicePricing(removalSvc, null).price || cfg?.removalPrice || 10)}
           editorial={webCfg?.layout === 'merakiSite'}
           onYes={() => {
-            updateCartItem(removalPrompt.cartItemId, { removal: true });
+            // Add the Removal service as a separate cart item — uses the
+            // catalog's actual pricing + duration + (default) option.
+            addToCart(removalSvc, removalSvc.options?.[0] || null);
             setRemovalPrompt(null);
           }}
           onNo={() => {
@@ -719,6 +735,7 @@ export default function BookingScreen() {
             form={form} submitting={submitting} bookingError={bookingError}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
             updateCartItem={updateCartItem}
+            editorial={webCfg?.layout === 'merakiSite'}
             onEditInfo={() => setStep(4)}
             onConfirm={handleBook}
             onBack={() => setStep(form.name.trim() && form.phone.trim() ? 3 : 4)}
@@ -991,6 +1008,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
                 <ServiceRow key={s.id} svc={s} color={color}
                   selectedOption={pendingOptions[s.id] || null}
                   divider={i < svcs.length - 1}
+                  isInCart={cart.some(item => item.service.id === s.id)}
                   onSelectOption={(opt) => setPendingOptions(p => ({ ...p, [s.id]: opt }))}
                   onAdd={(opt) => {
                     onAdd(s, opt || pendingOptions[s.id] || (s.options?.[0] ?? null));
@@ -1011,10 +1029,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
                 {cart.length} {cart.length === 1 ? 'service' : 'services'} · ${cartTotal}
               </div>
               <div style={{ fontSize: 11, color: '#888', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {cart.map(item => {
-                  const base = item.option?.name || item.service.name;
-                  return item.removal && item.service.canRequireRemoval ? `${base} + Removal` : base;
-                }).join(' · ')}
+                {cart.map(item => item.option?.name || item.service.name).join(' · ')}
               </div>
             </div>
             <button onClick={onProceed}
@@ -1038,7 +1053,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
   );
 }
 
-function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd }) {
+function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd, isInCart }) {
   const [hover,  setHover]  = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const hasImg = svc.image && !imgErr;
@@ -1123,18 +1138,18 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
         <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
           {hasOptions ? `from $${minOptPrice}` : formatPrice(svc)}
         </span>
-        <button onClick={handleAddClick}
+        <button onClick={handleAddClick} disabled={isInCart}
           style={{
             fontSize: 12, fontWeight: 700,
-            color: '#fff', border: 'none',
-            background: 'var(--tm-primary, #2D7A5F)',
+            color: isInCart ? '#888' : '#fff', border: isInCart ? '1px solid #d8d8d8' : 'none',
+            background: isInCart ? '#f4f4f4' : 'var(--tm-primary, #2D7A5F)',
             padding: '7px 16px', borderRadius: 999,
             letterSpacing: '.04em', whiteSpace: 'nowrap',
-            boxShadow: '0 2px 6px rgba(0,0,0,.10)',
-            cursor: 'pointer', fontFamily: 'inherit',
+            boxShadow: isInCart ? 'none' : '0 2px 6px rgba(0,0,0,.10)',
+            cursor: isInCart ? 'default' : 'pointer', fontFamily: 'inherit',
             transition: 'background .15s',
           }}>
-          + Add
+          {isInCart ? '✓ Added' : '+ Add'}
         </button>
       </div>
     </div>
@@ -1453,7 +1468,7 @@ function Step4Info({
 }
 
 // ── Step 5: Confirm (multi-item) ────────────────────────
-function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, onConfirm, onBack, onEditInfo }) {
+function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDate, form, submitting, bookingError, removalPrice, updateCartItem, editorial, onConfirm, onBack, onEditInfo }) {
   const removalDur = 15;
   const totalPrice = cart.reduce((sum, item) => {
     const base = resolveServicePricing(item.service, item.option).price || 0;
@@ -1475,27 +1490,58 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
 
       {/* Combined appointment card */}
       <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,.04)' }}>
-        <div style={{ background: `linear-gradient(135deg,${CATEGORY_COLORS[cart[0]?.service?.category] || 'var(--tm-primary, #2D7A5F)'},var(--tm-accent, #3D95CE))`, padding: '14px 18px' }}>
-          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Your visit</div>
-          <div style={{ fontSize: 16, fontWeight: 800, color: '#fff', marginTop: 2 }}>
-            {cart.length} {cart.length === 1 ? 'service' : 'services'} · {totalDur} min
+        {editorial ? (
+          // Editorial header — leads with TOTAL + TIME RANGE, the two
+          // decisions the customer is about to commit to. Date + duration
+          // are smaller below; per-service breakdown is in the section below.
+          <div style={{ background: '#fbfaf8', padding: '32px 24px 28px', textAlign: 'center', borderBottom: `1px solid rgba(193,154,74,.22)` }}>
+            <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 10, fontWeight: 500, letterSpacing: '.36em', textTransform: 'uppercase', color: '#8a827a', marginBottom: 16 }}>
+              Your visit
+            </div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 24, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontWeight: 300, fontSize: 'clamp(48px, 7vw, 76px)', color: '#302c29', lineHeight: 1, letterSpacing: '-.005em' }}>
+                  ${totalPrice}
+                </div>
+                <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 9, letterSpacing: '.32em', textTransform: 'uppercase', color: '#8a827a', marginTop: 6 }}>
+                  Total
+                </div>
+              </div>
+              <div style={{ width: 1, height: 56, background: 'rgba(193,154,74,.32)' }} />
+              <div>
+                <div style={{ fontFamily: '"Cormorant Garamond", Georgia, serif', fontWeight: 300, fontSize: 'clamp(28px, 4vw, 38px)', color: '#302c29', lineHeight: 1.05, letterSpacing: '.002em' }}>
+                  {minsToStr(cartSlot)} – {minsToStr(endSlot)}
+                </div>
+                <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 9, letterSpacing: '.32em', textTransform: 'uppercase', color: '#8a827a', marginTop: 6 }}>
+                  {fmtDate(cartDate)} · {totalDur} min
+                </div>
+              </div>
+            </div>
+            <div style={{ marginTop: 22, fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontSize: 16, color: '#5a534d' }}>
+              with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{assignedTech?.name || 'any available stylist'}</span>
+            </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,.9)', background: 'rgba(255,255,255,.15)', borderRadius: 6, padding: '2px 8px' }}>${totalPrice}</span>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,.9)', background: 'rgba(255,255,255,.15)', borderRadius: 6, padding: '2px 8px' }}>⏱ {minsToStr(cartSlot)} – {minsToStr(endSlot)}</span>
-          </div>
-        </div>
-        {[
-          { icon: '👩‍💼', label: 'Stylist', value: assignedTech?.name || 'Any available' },
-          { icon: '📅',  label: 'Date',    value: fmtDate(cartDate) },
-          { icon: '🕐',  label: 'Time',    value: minsToStr(cartSlot) },
-        ].map(({ icon, label, value }) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', padding: '10px 18px', borderTop: '1px solid #f0f0f0', gap: 10 }}>
-            <span style={{ fontSize: 14, width: 20, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
-            <span style={{ fontSize: 11, color: '#aaa', width: 56, flexShrink: 0 }}>{label}</span>
-            <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 500 }}>{value}</span>
-          </div>
-        ))}
+        ) : (
+          <>
+            <div style={{ background: `linear-gradient(135deg,${CATEGORY_COLORS[cart[0]?.service?.category] || 'var(--tm-primary, #2D7A5F)'},var(--tm-accent, #3D95CE))`, padding: '22px 18px 20px', textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: 'rgba(255,255,255,.7)', letterSpacing: '.18em', textTransform: 'uppercase', marginBottom: 10 }}>Your visit</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: 18, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 44, fontWeight: 800, color: '#fff', lineHeight: 1, letterSpacing: '-.5px' }}>${totalPrice}</div>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,.7)', letterSpacing: '.18em', textTransform: 'uppercase', marginTop: 4 }}>Total</div>
+                </div>
+                <div style={{ width: 1, height: 40, background: 'rgba(255,255,255,.3)' }} />
+                <div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: '#fff', lineHeight: 1.1 }}>{minsToStr(cartSlot)} – {minsToStr(endSlot)}</div>
+                  <div style={{ fontSize: 9, color: 'rgba(255,255,255,.7)', letterSpacing: '.18em', textTransform: 'uppercase', marginTop: 4 }}>{fmtDate(cartDate)} · {totalDur} min</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 14, fontSize: 13, color: 'rgba(255,255,255,.95)' }}>
+                with <strong>{assignedTech?.name || 'any available stylist'}</strong>
+              </div>
+            </div>
+          </>
+        )}
 
         {/* Service breakdown + per-service removal toggles */}
         <div style={{ borderTop: '1px solid #f0f0f0', padding: '10px 18px', background: '#fafafa' }}>
@@ -1510,19 +1556,6 @@ function Step5Confirm({ cart, allTechs, cartTech, cartDate, cartSlot, apptsByDat
                   <span style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 600 }}>{itemLabel}</span>
                   <span style={{ fontSize: 12, color: '#888' }}>${resolved.price} · {dur} min</span>
                 </div>
-                {item.service.canRequireRemoval && (
-                  <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                    {[true, false].map(v => {
-                      const sel = item.removal === v;
-                      return (
-                        <button key={String(v)} onClick={() => updateCartItem(item.id, { removal: v })}
-                          style={{ flex: 1, padding: '6px 8px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: `1.5px solid ${sel ? (v ? '#2D7A5F' : '#3D95CE') : '#e0e0e0'}`, background: sel ? (v ? '#EDFAF3' : '#EBF4FB') : '#fff', color: sel ? (v ? '#166534' : '#1a5f8a') : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          {v ? `+ Removal $${Number(removalPrice).toFixed(0)}` : 'No removal'}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             );
           })}
