@@ -7,7 +7,7 @@ import { saveAppointment, fetchClient, saveClient,
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit } from '../../lib/turnCredit';
 import { useApp } from '../../context/AppContext';
-import { escapeHtml } from '../../utils/helpers';
+import { escapeHtml, genUrlSafeToken } from '../../utils/helpers';
 import { TENANT_ID } from '../../lib/tenant';
 import RebookPrompt from './RebookPrompt';
 import { loadStripe } from '@stripe/stripe-js';
@@ -446,12 +446,22 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           }
         }
       }
+      // clientPhone: walk-in tmpPhone OR primary appt's stored phone.
+      // Drives sendReceiptSms — without it, SMS receipt silently no-ops.
+      const clientPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || null;
+
+      // Opaque view token for the hosted /r/{token} receipt page.
+      // 22 chars URL-safe ≈ 130 bits; computationally infeasible to guess.
+      const viewToken = genUrlSafeToken(22);
+
       // Always create a receipt — it's the canonical transaction record for
       // Reports. Without it, cash walk-ins without an email would vanish.
       createReceipt({
         clientId:    primaryClient?.id || null,
         clientName:  combinedClientLabel,
         clientEmail: clientEmail || null,
+        clientPhone,
+        viewToken,
         techName:    techSplit ? techSplit.map(t => t.techName).join(', ') : (allUpdatedServices[0]?.techName || ''),
         date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
         startTime:   primaryAppt?.startTime || '',
@@ -479,8 +489,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       setReceipt({
         client:         combinedClientLabel,
         clientId:       primaryClient?.id || null,
-        clientPhone:    primaryAppt?.clientPhone || '',
+        clientPhone:    clientPhone || '',
         clientEmail,
+        viewToken,
         tech:           techSplit ? techSplit.map(t => t.techName).join(', ') : (allUpdatedServices[0]?.techName || ''),
         primaryTechName: allUpdatedServices[0]?.techName || (techSplit?.[0]?.techName) || '',
         date:           primaryAppt?.date || new Date().toISOString().slice(0, 10),
@@ -909,6 +920,42 @@ function ReceiptScreen({ receipt, onDone }) {
   const [reviewSending, setReviewSending] = useState(false);
   const canReview = clientId && clientEmail && settings?.googleReviewUrl;
 
+  // SMS receipt resend — fires the same body as the auto-send trigger,
+  // optionally to a different number. Disabled if no phone on the receipt.
+  const [smsSent,    setSmsSent]    = useState(false);
+  const [smsSending, setSmsSending] = useState(false);
+  const [smsPhoneEdit, setSmsPhoneEdit] = useState(false);
+  const [smsPhone,   setSmsPhone]   = useState(clientPhone || '');
+  const canTextReceipt = Boolean(clientPhone || smsPhone);
+
+  async function sendTextReceipt() {
+    if (!receipt._receiptId && !receipt.viewToken) {
+      showToast('Receipt still saving — try again in a moment.');
+      return;
+    }
+    setSmsSending(true);
+    try {
+      // Look up the receipt by viewToken (just-created docs may not have
+      // surfaced their id back to the client). Use the same callable.
+      const res = await callFn('resendReceiptSms')({
+        tenantId: TENANT_ID,
+        receiptId: receipt._receiptId || null,
+        viewToken: receipt.viewToken,
+        phone: smsPhone || clientPhone,
+      });
+      if (res.data?.ok || res.data?.sandboxed) {
+        setSmsSent(true);
+        showToast(res.data?.sandboxed ? 'Sent (sandbox)' : 'Receipt texted!');
+      } else {
+        showToast('Couldn’t send: ' + (res.data?.error || 'unknown error'));
+      }
+    } catch (e) {
+      showToast('Send failed: ' + (e?.message || 'unknown error'));
+    } finally {
+      setSmsSending(false);
+    }
+  }
+
   async function sendReviewRequest() {
     setReviewSending(true);
     try {
@@ -1039,12 +1086,32 @@ function ReceiptScreen({ receipt, onDone }) {
           </div>
         </div>
 
+        {smsPhoneEdit && (
+          <div style={{ padding: '8px 18px 0', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input value={smsPhone} onChange={e => setSmsPhone(e.target.value)} placeholder="Phone (e.g., 614-555-0123)"
+              inputMode="tel" autoFocus
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 12, fontFamily: 'inherit' }} />
+            <button onClick={() => setSmsPhoneEdit(false)} disabled={smsSending}
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
+              Cancel
+            </button>
+          </div>
+        )}
+
         {/* Footer buttons */}
         <div style={{ display: 'flex', gap: 8, padding: '12px 18px', borderTop: '1px solid #f0f0f0', flexShrink: 0, flexWrap: 'wrap' }}>
           <button onClick={handlePrint}
             style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fafafa', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
             🖨 Print
           </button>
+          {canTextReceipt && (
+            <button onClick={!smsSent && !smsSending ? (smsPhoneEdit ? sendTextReceipt : sendTextReceipt) : undefined}
+              onContextMenu={(e) => { e.preventDefault(); setSmsPhoneEdit(v => !v); }}
+              title="Long-press or right-click to send to a different number"
+              style={{ flex: 1, minWidth: 80, padding: '10px 0', borderRadius: 10, border: `1px solid ${smsSent ? '#bbf7d0' : '#bfdbfe'}`, background: smsSent ? '#f0fdf4' : '#eff6ff', fontSize: 12, fontWeight: 600, cursor: smsSent || smsSending ? 'default' : 'pointer', fontFamily: 'inherit', color: smsSent ? '#16a34a' : '#1e40af' }}>
+              {smsSent ? '✓ Texted!' : smsSending ? 'Sending…' : '💬 Text receipt'}
+            </button>
+          )}
           {canReview && (
             <button onClick={!reviewSent && !reviewSending ? sendReviewRequest : undefined}
               style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: `1px solid ${reviewSent ? '#bbf7d0' : '#fde68a'}`, background: reviewSent ? '#f0fdf4' : '#fffbeb', fontSize: 12, fontWeight: 600, cursor: reviewSent || reviewSending ? 'default' : 'pointer', fontFamily: 'inherit', color: reviewSent ? '#16a34a' : '#92400e' }}>

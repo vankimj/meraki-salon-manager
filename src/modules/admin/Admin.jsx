@@ -54,6 +54,9 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
     fetchTenantRecord(TENANT_ID).then(t => { if (!cancelled) setTenantRecord(t); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+  const [receiptDelivery,        setReceiptDelivery]        = useState(settings.receiptDelivery        || 'auto');
+  const [reviewRoutingThreshold, setReviewRoutingThreshold] = useState(settings.reviewRoutingThreshold ?? 4);
+  const [emailRatingStyle,       setEmailRatingStyle]       = useState(settings.emailRatingStyle       || 'both');
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
@@ -540,6 +543,65 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
+              </div>
+            </Section>
+            <Section title="🧾 Receipts & Ratings">
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Receipt delivery</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                    Auto = email if email on file, SMS if phone on file (no double-send). Override to force one channel or send both.
+                  </div>
+                </div>
+                <select value={receiptDelivery} onChange={e => setReceiptDelivery(e.target.value)}
+                  style={{ width: 200, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  <option value="auto">Auto (recommended)</option>
+                  <option value="email">Email only</option>
+                  <option value="sms">SMS only</option>
+                  <option value="both">Email + SMS (both)</option>
+                </select>
+              </div>
+
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Public review threshold</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                    Ratings at or above this go to Google. Below it, the client lands on a private feedback form so you can address it before it's public.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="range" min={1} max={5} step={1}
+                    value={reviewRoutingThreshold}
+                    onChange={e => setReviewRoutingThreshold(Number(e.target.value))}
+                    style={{ width: 120 }} />
+                  <span style={{ fontSize: 13, color: '#333', fontWeight: 600, minWidth: 24, textAlign: 'right' }}>
+                    {'★'.repeat(reviewRoutingThreshold)}
+                  </span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Email rating CTA</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                    Stars = one tap from inbox to submitted. Button = opens the rating page. Both = stars on top, button below.
+                  </div>
+                </div>
+                <select value={emailRatingStyle} onChange={e => setEmailRatingStyle(e.target.value)}
+                  style={{ width: 200, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  <option value="inline_stars">Inline stars only</option>
+                  <option value="single_button">Single button only</option>
+                  <option value="both">Both (recommended)</option>
+                </select>
+              </div>
+
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({
+                  ...settings,
+                  receiptDelivery,
+                  reviewRoutingThreshold: Math.max(1, Math.min(5, Math.round(Number(reviewRoutingThreshold) || 4))),
+                  emailRatingStyle,
+                })}>Save</Btn>
               </div>
             </Section>
             <Section title="💰 Financial">

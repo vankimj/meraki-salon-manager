@@ -171,3 +171,21 @@ export async function resizeImg(src, maxW, maxH, quality) {
 export const QR_SIZE = 148;
 
 export const PLACEHOLDER_COLORS = ['#4A7DB5', '#2D7A5F', '#7B5EA7', '#C0622F', '#2A8A8A'];
+
+// URL-safe random token for hosted receipt views and similar opaque references.
+// Default 22 chars (base64url alphabet) ≈ 130 bits of entropy — computationally
+// infeasible to guess. Backed by crypto.getRandomValues; falls back to Math.random
+// only in environments without the Web Crypto API (should not happen in modern browsers).
+export function genUrlSafeToken(len = 22) {
+  const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const out = new Array(len);
+  const cryptoObj = (typeof crypto !== 'undefined' && crypto.getRandomValues) ? crypto : null;
+  if (cryptoObj) {
+    const buf = new Uint8Array(len);
+    cryptoObj.getRandomValues(buf);
+    for (let i = 0; i < len; i++) out[i] = ALPHABET[buf[i] % ALPHABET.length];
+  } else {
+    for (let i = 0; i < len; i++) out[i] = ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+  }
+  return out.join('');
+}

@@ -23,6 +23,16 @@
     {
       "//": "subscribeQueue / fetchTodayQueue — walk-in waitlist filtered by date and ordered by addedAt. Required for the Schedule's queue panel + ModuleShell badge. Missing this caused the first crash on the test tenant subdomain (which had never had a waitlist doc to seed the auto-index).",
       "collectionGroup": "waitlist",         "queryScope": "COLLECTION", "fields": [{"fieldPath": "date", "order": "ASCENDING"}, {"fieldPath": "addedAt", "order": "ASCENDING"}]
+    },
+
+    {
+      "//": "getReceiptByToken — collectionGroup lookup of a receipt by opaque viewToken. Powers the hosted receipt view at /r/{token}. Token is globally unique so we don't filter by tenant.",
+      "collectionGroup": "receipts",         "queryScope": "COLLECTION_GROUP", "fields": [{"fieldPath": "viewToken", "order": "ASCENDING"}, {"fieldPath": "__name__", "order": "ASCENDING"}]
+    },
+
+    {
+      "//": "Service ratings — list per tech ordered by submittedAt (Reports → ratings tab + leaderboard). Composite required because where(techName) + orderBy(submittedAt) can't use auto-index.",
+      "collectionGroup": "serviceRatings",   "queryScope": "COLLECTION", "fields": [{"fieldPath": "techName", "order": "ASCENDING"}, {"fieldPath": "submittedAt", "order": "DESCENDING"}]
     }
   ],
   "fieldOverrides": []

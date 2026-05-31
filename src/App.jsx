@@ -37,6 +37,7 @@ import RsvpScreen from './components/RsvpScreen';
 import UnsubscribeScreen from './components/UnsubscribeScreen';
 import ManageAppointmentScreen from './components/ManageAppointmentScreen';
 import { TermsScreen, PrivacyScreen, SmsConsentScreen } from './components/PolicyScreen';
+import ReceiptViewPage from './components/ReceiptViewPage';
 import PinModal from './components/PinModal';
 import OnboardingWizard from './modules/onboarding/OnboardingWizard';
 import OnboardingBanner from './components/OnboardingBanner';
@@ -352,6 +353,9 @@ export default function App() {
     const isTerms       = params.has('terms')       || path === '/terms';
     const isPrivacy     = params.has('privacy')     || path === '/privacy';
     const isSmsConsent  = params.has('sms-consent') || path === '/sms-consent';
+    // Hosted receipt view — `/r/{token}` is the canonical SMS/email link.
+    // Path is dynamic, so we match by prefix rather than equality.
+    const isReceiptView = /^\/r\/[A-Za-z0-9_-]{16,128}\/?$/.test(path) || params.has('r');
     // rsvp / unsub / manage(=token) carry tokens in the query string — they
     // stay query-only (no clean path equivalent). `?manage=<token>` is the
     // appointment-management magic link, distinct from the `/manage` path.
@@ -363,6 +367,7 @@ export default function App() {
     else if (isTerms)      content = <TermsScreen />;
     else if (isPrivacy)    content = <PrivacyScreen />;
     else if (isSmsConsent) content = <SmsConsentScreen />;
+    else if (isReceiptView) content = <ReceiptViewPage />;
     else if (isRsvp)    content = <RsvpScreen />;
     else if (checkinId) content = <CheckInScreen apptId={checkinId} />;
     else if (isBooking) content = <BookingScreen />;

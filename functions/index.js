@@ -872,6 +872,10 @@ function buildHandbookReminderHtml(data, empName, brand) {
 </html>`;
 }
 
+// Rating CTA block injected into the email receipt. Extracted to ./lib/receiptEmail.js
+// so its three style branches + per-tech URL construction are unit-testable.
+const { buildRatingEmailBlock } = require('./lib/receiptEmail');
+
 exports.sendReceiptEmail = onDocumentCreated(
   `tenants/{tenantId}/receipts/{receiptId}`,
   async (event) => {
@@ -885,16 +889,25 @@ exports.sendReceiptEmail = onDocumentCreated(
     const apiKey = awsAccessKey.value();
     if (!apiKey) { await snap.ref.update({ error: 'email_not_configured' }); return; }
 
-    const { clientName, clientEmail, techName, date, startTime, services = [], retailProducts = [], payment = {} } = data;
+    const { clientName, clientEmail, techName, date, startTime, services = [], retailProducts = [], payment = {}, viewToken } = data;
     if (!clientEmail) { await snap.ref.update({ error: 'no_email' }); return; }
 
-    // Read Google review URL from settings (best-effort)
+    // Read Google review URL + email rating style from settings (best-effort).
+    // emailRatingStyle controls the rating CTA shape: inline_stars | single_button | both.
     let googleReviewUrl = null;
+    let emailRatingStyle = 'both';
     try {
       const settingsSnap = await getFirestore().doc(`tenants/${tenantId}/data/settings`).get();
-      if (settingsSnap.exists) googleReviewUrl = settingsSnap.data().googleReviewUrl || null;
+      if (settingsSnap.exists) {
+        const s = settingsSnap.data();
+        googleReviewUrl = s.googleReviewUrl || null;
+        if (s.emailRatingStyle === 'inline_stars' || s.emailRatingStyle === 'single_button' || s.emailRatingStyle === 'both') {
+          emailRatingStyle = s.emailRatingStyle;
+        }
+      }
     } catch { /* non-fatal */ }
-    const brand = await tenantBranding(getFirestore(), tenantId);
+    const brand   = await tenantBranding(getFirestore(), tenantId);
+    const baseUrl = await tenantBaseUrl(getFirestore(), tenantId);
 
     const dateStr     = `${esc(fmtDate(date))}${startTime ? ' at ' + esc(fmtTime(startTime)) : ''}`;
     const firstName   = (clientName || 'there').split(' ')[0];
@@ -947,13 +960,11 @@ exports.sendReceiptEmail = onDocumentCreated(
         </tr>
       </table>
 
-      ${safeUrl(googleReviewUrl)
-        ? `<div style="margin:20px 0 0;text-align:center;">
-             <a href="${esc(safeUrl(googleReviewUrl))}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:13px;font-weight:700;padding:11px 24px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">⭐ Leave us a Google Review</a>
-             <p style="font-size:11px;color:#bbb;margin:8px 0 0;">It takes 30 seconds and means the world to us 🙏</p>
-           </div>`
-        : `<p style="font-size:12px;color:#aaa;margin:16px 0 0;line-height:1.6;">We loved having you! It means a lot. 🙏</p>`
-      }
+      ${buildRatingEmailBlock({
+        viewToken, baseUrl, services, techName,
+        style: emailRatingStyle,
+        fallbackGoogleUrl: googleReviewUrl,
+      })}
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
       <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
@@ -975,6 +986,96 @@ exports.sendReceiptEmail = onDocumentCreated(
     } catch (e) {
       console.error('[Receipt] Failed:', e.message);
       await snap.ref.update({ error: e.message });
+    }
+  }
+);
+
+// Reads tenants/{id}/data/settings.receiptDelivery. Default 'auto':
+//   email-only if email present, sms-only if phone present, both if both.
+// Other values: 'email' | 'sms' | 'both' (force the channel regardless).
+async function tenantReceiptDeliveryPolicy(db, tenantId) {
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+    const v = snap.exists ? snap.data()?.receiptDelivery : null;
+    if (v === 'email' || v === 'sms' || v === 'both' || v === 'auto') return v;
+  } catch (e) {
+    console.warn(`[receiptDelivery] tenant=${tenantId} settings read failed:`, e?.message);
+  }
+  return 'auto';
+}
+
+// SMS twin of sendReceiptEmail — fires on the same receipts/{id} create.
+// Each function is idempotent via its own marker field (sent/smsSent), so
+// running both in parallel for the same doc is safe.
+exports.sendReceiptSms = onDocumentCreated(
+  `tenants/{tenantId}/receipts/{receiptId}`,
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const d = snap.data();
+    if (!d || d.smsSent || d.smsError) return;
+
+    const tenantId = event.params.tenantId;
+    const db = getFirestore();
+
+    const policy = await tenantReceiptDeliveryPolicy(db, tenantId);
+    if (policy === 'email') {
+      await snap.ref.update({ smsError: 'policy_email_only' });
+      return;
+    }
+
+    const phone = String(d.clientPhone || '').trim();
+    if (!phone) {
+      await snap.ref.update({ smsError: 'no_phone' });
+      return;
+    }
+
+    // 'auto' = SMS only when there's no email on file (email is the
+    // richer receipt). Tenants who want both can set policy='both'.
+    if (policy === 'auto' && d.clientEmail) {
+      await snap.ref.update({ smsError: 'skipped_auto_email_preferred' });
+      return;
+    }
+
+    if (!d.viewToken) {
+      await snap.ref.update({ smsError: 'no_view_token' });
+      return;
+    }
+
+    const brand   = await tenantBranding(db, tenantId);
+    const baseUrl = await tenantBaseUrl(db, tenantId);
+    if (!brand?.salonName || !baseUrl) {
+      await snap.ref.update({ smsError: 'branding_not_configured' });
+      return;
+    }
+
+    const total     = Number(d.payment?.total || 0).toFixed(2);
+    const techFirst = String(d.techName || '').split(',')[0].trim() || 'your tech';
+    const viewUrl   = `${baseUrl}/r/${d.viewToken}`;
+
+    // Salon name prefix is required by our A2P TFN use case — every
+    // multi-tenant message must identify the originating business in
+    // the body. sendSms appends "Reply STOP to opt out." automatically.
+    const body =
+      `${brand.salonName}: Your receipt for today's $${total} visit with ${techFirst} ` +
+      `is ready — view & rate: ${viewUrl}`;
+
+    const r = await sendSms({
+      to:        phone,
+      body,
+      tenantId,
+      kind:      'transactional',
+      clientId:  d.clientId || null,
+    });
+
+    if (r.ok) {
+      await snap.ref.update({
+        smsSent:   true,
+        smsSentAt: new Date().toISOString(),
+        smsSid:    r.sid || null,
+      });
+    } else {
+      await snap.ref.update({ smsError: r.error || 'send_failed' });
     }
   }
 );
@@ -1469,6 +1570,230 @@ exports.getPublicAppointment = onCall({ cors: true }, async (request) => {
     status:          a.status || 'scheduled',
     checkedInAt:     a.checkedInAt || null,
   };
+});
+
+// Public read of a checkout receipt by opaque view token. Powers the
+// hosted /r/{token} page that we link from the SMS + email receipts.
+// Token (22 chars URL-safe ≈ 130 bits) is generated client-side at
+// checkout and stored on the receipt doc. Returns only display-safe
+// fields — never raw clientId, never payment.stripeId, never the
+// other tokens.
+exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 120)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+  const token = String(request.data?.token || '').trim();
+  if (!token || token.length < 16) throw new HttpsError('invalid-argument', 'bad_token');
+
+  const db = getFirestore();
+  const q = await db.collectionGroup('receipts').where('viewToken', '==', token).limit(1).get();
+  if (q.empty) throw new HttpsError('not-found', 'receipt_not_found');
+
+  const docRef  = q.docs[0].ref;
+  const d       = q.docs[0].data();
+  const tenantId = docRef.path.split('/')[1];
+
+  const brand   = await tenantBranding(db, tenantId);
+  const sSnap   = await db.doc(`tenants/${tenantId}/data/settings`).get();
+  const sData   = sSnap.exists ? sSnap.data() : {};
+  const threshold = Number.isFinite(Number(sData?.reviewRoutingThreshold))
+    ? Math.max(1, Math.min(5, Number(sData.reviewRoutingThreshold))) : 4;
+
+  // Already-submitted ratings for this receipt — so re-visits show
+  // the prior selection instead of a blank widget.
+  const ratingsSnap = await db.collection(`tenants/${tenantId}/serviceRatings`)
+    .where('receiptId', '==', docRef.id).get();
+  const existingRatings = ratingsSnap.docs.map(r => {
+    const rd = r.data();
+    return { techName: rd.techName, rating: rd.rating, comment: rd.comment || null };
+  });
+
+  return {
+    salonName:   brand?.salonName || '',
+    logoUrl:     brand?.logoUrl || null,
+    salonPhone:  brand?.phone || null,
+    clientFirstName: ((d.clientName || '').trim().split(/\s+/)[0] || ''),
+    techName:    d.techName || '',
+    date:        d.date || '',
+    startTime:   d.startTime || '',
+    services:    Array.isArray(d.services) ? d.services.map(s => ({
+      name: s.name || '', price: Number(s.price) || 0, techName: s.techName || '',
+    })) : [],
+    retailProducts: Array.isArray(d.retailProducts) ? d.retailProducts.map(p => ({
+      name: p.name || '', qty: Number(p.qty) || 1, price: Number(p.price) || 0,
+    })) : [],
+    payment: {
+      total:          Number(d.payment?.total) || 0,
+      method:         d.payment?.method || '',
+      tip:            Number(d.payment?.tip) || 0,
+      discountAmount: Number(d.payment?.discountAmount) || 0,
+      promoAmount:    Number(d.payment?.promoAmount) || 0,
+      promoCode:      d.payment?.promoCode || null,
+      creditApplied:  Number(d.payment?.creditApplied) || 0,
+      giftCard:       d.payment?.giftCard ? { applied: Number(d.payment.giftCard.applied) || 0 } : null,
+    },
+    googleReviewUrl:        sData?.googleReviewUrl || null,
+    reviewRoutingThreshold: threshold,
+    existingRatings,
+  };
+});
+
+// Public submit of a service rating, gated by the receipt's view token
+// (knowing the token == having the receipt). Idempotent per (token, techName)
+// — re-submitting updates the prior row, so a client can change their mind
+// before they leave the page. Rate-limited per IP to defend against scripted
+// abuse against a leaked URL.
+exports.submitServiceRating = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 60)) {
+    throw new HttpsError('resource-exhausted', 'Too many submissions. Try again later.');
+  }
+  const token   = String(request.data?.token || '').trim();
+  const ratings = Array.isArray(request.data?.ratings) ? request.data.ratings : [];
+  const source  = String(request.data?.source || 'email');
+
+  if (!token || token.length < 16) throw new HttpsError('invalid-argument', 'bad_token');
+  if (ratings.length === 0)        throw new HttpsError('invalid-argument', 'no_ratings');
+  if (ratings.length > 10)         throw new HttpsError('invalid-argument', 'too_many_ratings');
+
+  const db = getFirestore();
+  const q = await db.collectionGroup('receipts').where('viewToken', '==', token).limit(1).get();
+  if (q.empty) throw new HttpsError('not-found', 'receipt_not_found');
+
+  const receiptRef = q.docs[0].ref;
+  const r          = q.docs[0].data();
+  const tenantId   = receiptRef.path.split('/')[1];
+
+  const sSnap     = await db.doc(`tenants/${tenantId}/data/settings`).get();
+  const sData     = sSnap.exists ? sSnap.data() : {};
+  const threshold = Number.isFinite(Number(sData?.reviewRoutingThreshold))
+    ? Math.max(1, Math.min(5, Number(sData.reviewRoutingThreshold))) : 4;
+
+  const ratingsCol = db.collection(`tenants/${tenantId}/serviceRatings`);
+  const now        = new Date().toISOString();
+  let highest      = 0;
+
+  // Upsert per techName — one rating row per tech, idempotent.
+  for (const raw of ratings) {
+    const techName = String(raw?.techName || '').trim();
+    const rating   = Math.max(1, Math.min(5, Math.round(Number(raw?.rating))));
+    const comment  = String(raw?.comment || '').slice(0, 1000) || null;
+    if (!techName || !Number.isFinite(rating)) continue;
+    if (rating > highest) highest = rating;
+
+    const existing = await ratingsCol
+      .where('receiptId', '==', receiptRef.id)
+      .where('techName', '==', techName)
+      .limit(1).get();
+
+    const techServices = (r.services || []).filter(s => (s.techName || '') === techName)
+      .map(s => ({ name: s.name || '', price: Number(s.price) || 0 }));
+
+    const payload = {
+      receiptId:   receiptRef.id,
+      clientId:    r.clientId || null,
+      clientName:  r.clientName || '',
+      techName,
+      services:    techServices,
+      rating,
+      comment,
+      source:      (source === 'sms' || source === 'email' || source === 'web') ? source : 'web',
+      submittedAt: now,
+    };
+
+    if (existing.empty) {
+      await ratingsCol.add(payload);
+    } else {
+      await existing.docs[0].ref.update(payload);
+    }
+  }
+
+  const routeToGoogle = highest >= threshold && !!sData?.googleReviewUrl;
+  return {
+    ok: true,
+    routeToGoogle,
+    googleReviewUrl: routeToGoogle ? sData.googleReviewUrl : null,
+  };
+});
+
+// Admin/staff manual re-send of a receipt SMS. Used by the "Text receipt"
+// button on the post-checkout ReceiptScreen + (later) the receipts list.
+// Resets the smsSent/smsError fields so the standard sendReceiptSms trigger
+// path runs again on the next write. Optional phone override lets staff
+// send the receipt to a different number than the one stored on the receipt.
+exports.resendReceiptSms = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, viewToken, phone } = request.data || {};
+  const tenantId = String(tid || TENANT_ID);
+  if (!receiptId && !viewToken) throw new HttpsError('invalid-argument', 'receiptId or viewToken required');
+
+  // Reuse the staff-membership check — admin or techs can re-send their own.
+  const callerEmail = String(request.auth.token?.email || '').toLowerCase();
+  if (!callerEmail) throw new HttpsError('permission-denied', 'No email on token');
+  const usersSnap = await getFirestore().doc(`tenants/${tenantId}/data/usersFull`).get();
+  const list = (usersSnap.exists ? usersSnap.data()?.users : []) || [];
+  const me = list.find(u => String(u.email || '').toLowerCase() === callerEmail);
+  if (!me || (me.role !== 'admin' && me.role !== 'tech')) {
+    throw new HttpsError('permission-denied', 'Staff access required');
+  }
+
+  // Cheap in-process per-user rate limit: 5/min.
+  if (!checkRate(`resendReceiptSms:${callerEmail}`, Date.now(), 60 * 1000, 5)) {
+    throw new HttpsError('resource-exhausted', 'Too many resends. Try again in a minute.');
+  }
+
+  const db = getFirestore();
+  let ref;
+  if (receiptId) {
+    ref = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+  } else {
+    // Look up by viewToken — used when caller just created the receipt
+    // and doesn't have the id yet (addDoc → fire-and-forget pattern).
+    const q = await db.collection(`tenants/${tenantId}/receipts`)
+      .where('viewToken', '==', String(viewToken)).limit(1).get();
+    if (q.empty) throw new HttpsError('not-found', 'Receipt not found');
+    ref = q.docs[0].ref;
+  }
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Receipt not found');
+
+  const update = { smsSent: false, smsError: null, smsResendRequestedAt: new Date().toISOString() };
+  const overridePhone = String(phone || '').trim();
+  if (overridePhone) update.clientPhone = overridePhone;
+  await ref.update(update);
+
+  // The Firestore onUpdate trigger doesn't fire sendReceiptSms (it's
+  // onCreate-only). So invoke the send logic directly here to keep the
+  // resend single-call. Same body construction, same sendSms guarantees.
+  const d        = (await ref.get()).data();
+  const brand    = await tenantBranding(db, tenantId);
+  const baseUrl  = await tenantBaseUrl(db, tenantId);
+  const phoneOut = String(d.clientPhone || '').trim();
+  if (!phoneOut) {
+    await ref.update({ smsError: 'no_phone' });
+    return { ok: false, error: 'no_phone' };
+  }
+  if (!d.viewToken || !brand?.salonName || !baseUrl) {
+    await ref.update({ smsError: 'not_configured' });
+    return { ok: false, error: 'not_configured' };
+  }
+  const total     = Number(d.payment?.total || 0).toFixed(2);
+  const techFirst = String(d.techName || '').split(',')[0].trim() || 'your tech';
+  const viewUrl   = `${baseUrl}/r/${d.viewToken}`;
+  const body      =
+    `${brand.salonName}: Your receipt for today's $${total} visit with ${techFirst} ` +
+    `is ready — view & rate: ${viewUrl}`;
+
+  const r = await sendSms({
+    to: phoneOut, body, tenantId, kind: 'transactional', clientId: d.clientId || null,
+  });
+  if (r.ok) {
+    await ref.update({ smsSent: true, smsSentAt: new Date().toISOString(), smsSid: r.sid || null });
+  } else {
+    await ref.update({ smsError: r.error || 'send_failed' });
+  }
+  return { ok: !!r.ok, error: r.error || null, sandboxed: !!r.sandboxed };
 });
 
 // Returns the CALLER's own role + techName for a tenant. Replaces the
