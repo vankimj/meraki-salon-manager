@@ -8,6 +8,7 @@ import { fetchClients, fetchAppointmentsByRange, subscribeToCampaigns, createCam
 import { logActivity } from '../../lib/logger';
 import GoogleReviewsPanel from '../../components/GoogleReviewsPanel';
 import CompetitorRankingPanel from '../../components/CompetitorRankingPanel';
+import PublicReviewsPanel from '../../components/PublicReviewsPanel';
 
 // ── Built-in templates ─────────────────────────────────
 const BUILTIN_TEMPLATES = [
@@ -262,11 +263,12 @@ export default function MarketingAdmin() {
   if (!campaigns) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
 
   const TABS = [
-    { id: 'campaigns',   label: 'Campaigns' },
-    { id: 'automations', label: 'Automations' },
-    { id: 'reviews',     label: 'Google Reviews' },
-    { id: 'ranking',     label: 'Local Ranking' },
-    { id: 'testmode',    label: '🧪 SMS Test Mode' },
+    { id: 'campaigns',     label: 'Campaigns' },
+    { id: 'automations',   label: 'Automations' },
+    { id: 'reviews',       label: 'Google Reviews' },
+    { id: 'publicreviews', label: 'Public Reviews' },
+    { id: 'ranking',       label: 'Local Ranking' },
+    { id: 'testmode',      label: '🧪 SMS Test Mode' },
   ];
 
   return (
@@ -288,6 +290,8 @@ export default function MarketingAdmin() {
 
       {tab === 'reviews' ? (
         <GoogleReviewsPanel />
+      ) : tab === 'publicreviews' ? (
+        <PublicReviewsPanel />
       ) : tab === 'ranking' ? (
         <CompetitorRankingPanel />
       ) : tab === 'automations' ? (

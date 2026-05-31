@@ -42,17 +42,36 @@ export default function CompetitorRankingPanel() {
 
   const ownPlaceId = (webfrontCfg?.googlePlaceId || settings?.googlePlaceId || '').trim();
 
-  const ranked = useMemo(() => {
-    if (!data?.results) return [];
+  // Bayesian / IMDb-style weighted rating:
+  //   score = (v / (v + m)) · R + (m / (v + m)) · C
+  // where R is the salon's rating, v its review count, m the "minimum
+  // established" review count, and C the area average. Salons with few
+  // reviews get pulled toward C, so a 5★ with 3 reviews can't beat a 4.8
+  // with 174. Industry standard for "best of" lists.
+  const BAYESIAN_M = 50;
+  const { areaAvg, scored } = useMemo(() => {
+    if (!data?.results) return { areaAvg: 0, scored: [] };
     const within = data.results.filter(r => (r.distanceMiles ?? Infinity) <= radius);
-    const sorted = [...within].sort((a, b) => {
+    const trusted = within.filter(r => (r.userRatingCount || 0) >= 5 && r.rating > 0);
+    const C = trusted.length ? trusted.reduce((s, r) => s + r.rating, 0) / trusted.length : 4.3;
+    const withScore = within.map(r => {
+      const v = r.userRatingCount || 0;
+      const R = r.rating || 0;
+      const score = v > 0 ? (v / (v + BAYESIAN_M)) * R + (BAYESIAN_M / (v + BAYESIAN_M)) * C : 0;
+      return { ...r, score };
+    });
+    return { areaAvg: C, scored: withScore };
+  }, [data, radius]);
+
+  const ranked = useMemo(() => {
+    const sorted = [...scored].sort((a, b) => {
       if (sort === 'rating')   return (b.rating || 0) - (a.rating || 0);
       if (sort === 'reviews')  return (b.userRatingCount || 0) - (a.userRatingCount || 0);
       if (sort === 'distance') return (a.distanceMiles || 0) - (b.distanceMiles || 0);
       return (b.score || 0) - (a.score || 0);
     });
     return sorted.map((r, i) => ({ ...r, rank: i + 1, isMeraki: r.placeId === ownPlaceId }));
-  }, [data, sort, ownPlaceId, radius]);
+  }, [scored, sort, ownPlaceId]);
 
   const cachedRadius = data?.radiusMiles ?? 0;
   const needsRefresh = radius > cachedRadius;
@@ -62,12 +81,10 @@ export default function CompetitorRankingPanel() {
   const stats = useMemo(() => {
     if (!ranked.length) return null;
     const totalReviews = ranked.reduce((s, r) => s + (r.userRatingCount || 0), 0);
-    const ratings = ranked.filter(r => r.userRatingCount >= 5).map(r => r.rating);
-    const avgRating = ratings.length ? ratings.reduce((s, r) => s + r, 0) / ratings.length : 0;
     const scoreRank = [...ranked].sort((a, b) => (b.score || 0) - (a.score || 0));
     const merakiScoreRank = meraki ? scoreRank.findIndex(r => r.placeId === ownPlaceId) + 1 : null;
-    return { totalCompetitors: ranked.length, totalReviews, avgRating, merakiScoreRank };
-  }, [ranked, meraki, ownPlaceId]);
+    return { totalCompetitors: ranked.length, totalReviews, avgRating: areaAvg, merakiScoreRank };
+  }, [ranked, meraki, ownPlaceId, areaAvg]);
 
   const handleRefresh = async () => {
     setErr('');
@@ -214,20 +231,20 @@ export default function CompetitorRankingPanel() {
 
           <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 10, padding: '14px 16px', marginTop: 14, fontSize: 12, color: '#444', lineHeight: 1.55 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
-              How the weighted score works
+              How the weighted score works (Bayesian)
             </div>
             <div style={{ marginBottom: 8 }}>
               <code style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, padding: '2px 8px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: '#2D7A5F', fontWeight: 600 }}>
-                score = rating × log₁₀(reviews + 1)
+                score = (v/(v+m)) · R + (m/(v+m)) · C
               </code>
             </div>
             <div style={{ marginBottom: 10 }}>
-              Star ratings alone are misleading — a single 5★ review beats a 4.8 from 500 customers. Pure review count is also misleading — a popular salon with mediocre service shouldn't outrank a great one. This formula multiplies the two so a salon needs <em>both</em> quality and volume to score high. The <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>log₁₀</code> keeps review count from completely dominating: going from 10 → 100 reviews adds the same weight as going from 100 → 1,000.
+              Same approach IMDb's Top 250 and Yelp's "Best of" use. Each salon's rating <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>R</code> with <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>v</code> reviews is blended with the area's overall average <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>C</code> (currently <strong>{areaAvg.toFixed(2)}★</strong>) using <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>m={BAYESIAN_M}</code> as the "established review count" threshold. Low-review shops get pulled toward the area average so a 5★ with 3 reviews can't outrank a 4.8 with 174. As a salon's review count grows past <em>m</em>, the score converges on its true rating.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 10 }}>
-              <ScoreExample label="5.0 ★ · 3 reviews"     value={(5.0 * Math.log10(4)).toFixed(2)}   note="great rating, tiny sample" />
-              <ScoreExample label="4.8 ★ · 400 reviews"   value={(4.8 * Math.log10(401)).toFixed(2)} note="real social proof" />
-              <ScoreExample label="4.2 ★ · 2,000 reviews" value={(4.2 * Math.log10(2001)).toFixed(2)} note="volume can't fully compensate" />
+              <ScoreExample label="5.0 ★ · 3 reviews"     value={bayesianFmt(5.0,    3, areaAvg)}  note="rating pulled to area avg" />
+              <ScoreExample label="4.8 ★ · 174 reviews"   value={bayesianFmt(4.8,  174, areaAvg)}  note="rating mostly trusted" />
+              <ScoreExample label="4.1 ★ · 634 reviews"   value={bayesianFmt(4.1,  634, areaAvg)}  note="lots of reviews — rating dominates" />
             </div>
             <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
               Want a different view? Use the <strong>Sort by</strong> chips above to re-rank by raw rating, review count, or distance — the underlying numbers don't change.
@@ -249,6 +266,12 @@ export function ConfigureReviewsLink({ label = '⚙ Google Reviews config' }) {
       {label}
     </button>
   );
+}
+
+function bayesianFmt(R, v, C) {
+  const m = 50;
+  if (!v) return '—';
+  return ((v / (v + m)) * R + (m / (v + m)) * C).toFixed(2);
 }
 
 function ScoreExample({ label, value, note }) {

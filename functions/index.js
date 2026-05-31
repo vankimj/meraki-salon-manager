@@ -3197,12 +3197,13 @@ exports.refreshGoogleReviews = onCall(async (request) => {
   }
 
   const reviews = (data.reviews || []).map(r => ({
-    name:      r.authorAttribution?.displayName || 'Google Reviewer',
-    rating:    r.rating || 5,
-    text:      r.text?.text || r.originalText?.text || '',
-    date:      r.relativePublishTimeDescription || '',
-    photoUrl:  r.authorAttribution?.photoUri || null,
-    authorUrl: r.authorAttribution?.uri || null,
+    name:        r.authorAttribution?.displayName || 'Google Reviewer',
+    rating:      r.rating || 5,
+    text:        r.text?.text || r.originalText?.text || '',
+    date:        r.relativePublishTimeDescription || '',
+    publishTime: r.publishTime || null,
+    photoUrl:    r.authorAttribution?.photoUri || null,
+    authorUrl:   r.authorAttribution?.uri || null,
   }));
 
   const db = getFirestore();

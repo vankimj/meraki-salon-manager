@@ -2649,6 +2649,13 @@ export async function fetchGoogleReviews() {
   const snap = await getDoc(tenantDoc('googleReviews'));
   return snap.exists() ? snap.data() : null;
 }
+export function subscribeGoogleReviews(callback) {
+  return onSnapshot(tenantDoc('googleReviews'), s => callback(s.exists() ? s.data() : null));
+}
+export async function refreshGoogleReviewsCache(placeId) {
+  const res = await callFn('refreshGoogleReviews')({ tenantId: TENANT_ID, placeId });
+  return res.data;
+}
 
 // ── Competitor ranking (populated by nearbyNailSalons CF) ─
 export async function fetchCompetitorRankings() {
