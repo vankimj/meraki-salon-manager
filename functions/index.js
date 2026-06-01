@@ -1501,6 +1501,43 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
     if (existingData.banned) {
       return { banned: true };
     }
+
+    // Cancellation-history policy: if the tenant has enabled the
+    // card-required-after-N-cancellations policy, refuse the booking
+    // unless the client has a card on file. This is the server-side
+    // enforcement; the admin UI shows the same verdict in the client
+    // modal Cards tab. Returns a structured payload (cardRequired flag)
+    // so the public booking UI can render a friendly inline message.
+    try {
+      const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings = settingsSnap.exists ? settingsSnap.data() : {};
+      const policy = settings && settings.cancellationPolicy;
+      // Cheap exit: only run the (potentially N-doc) appointment fetch when
+      // the tenant actually has the policy turned on OR the client has an
+      // explicit admin override that affects the gate.
+      const overrideMatters = existingData.cardRequiredOverride === true || existingData.cardRequiredOverride === false;
+      if ((policy && policy.enabled === true) || overrideMatters) {
+        const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`)
+          .where('clientId', '==', existingId).get().catch(() => null);
+        const appts = apptsSnap ? apptsSnap.docs.map(d => d.data()) : [];
+        const verdict = evaluateCancellationPolicy(appts, settings, existingData);
+        if (verdict.required) {
+          return {
+            cardRequired:      true,
+            cancellationCount: verdict.cancellationCount,
+            thresholdCount:    verdict.thresholdCount,
+            windowDays:        verdict.windowDays,
+            reason:            verdict.reason,
+            existingId,
+          };
+        }
+      }
+    } catch (e) {
+      // Don't block bookings on policy-evaluation errors — log and continue.
+      // The salon admin can still review cancellations + manually act.
+      console.warn(`[findOrCreateClient] policy eval failed for ${existingId}:`, e?.message);
+    }
+
     // Backfill ONLY blank fields. Never overwrite existing data — guards
     // against typo'd phone matches inadvertently rewriting a real
     // customer's email or name.
@@ -5637,6 +5674,8 @@ const {
   extractCardMetadata, buildOffSessionChargeRequest,
 } = require('./lib/billing');
 
+const { evaluateCancellationPolicy } = require('./lib/cancellationPolicy');
+
 exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { plan, tenantId: tid } = request.data || {};
@@ -7506,7 +7545,7 @@ Power Packs (stack on any tier):
 - Comms Pack ($19/mo) — two-way SMS + dedicated phone + email reply parsing + STOP keyword handling.
 - Marketing Pack ($19/mo) — loyalty + tiers + auto-rebook + send-time optimizer + advanced segments.
 - AI Pack ($19/mo) — voice-command booking + AI-drafted marketing copy + conflict-resolution drafts.
-- Operations Pack ($29/mo) — Gusto payroll sync + advanced reporting + 1099-NEC PDFs + multi-location (already included on Salon Pro).
+- Operations Pack ($29/mo) — one-click Gusto payroll integration (bring your own Gusto account, or set one up in onboarding), advanced earnings reports, 1099-NEC PDF export, and multi-location. Already included on Salon Pro.
 - Brand Pack ($39/mo) — white-label client app + custom-branded TipFlow kiosk + custom email sender domain.
 
 Atomic add-ons (escape hatch for power users who want exactly one feature from a pack):

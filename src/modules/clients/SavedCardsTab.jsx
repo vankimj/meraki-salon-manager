@@ -3,12 +3,14 @@
 // Elements → tokenization in the browser → savePaymentMethod Cloud Function.
 // We never see the raw PAN.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { callFn } from '../../lib/firebase';
 import { TENANT_ID } from '../../lib/tenant';
 import { useApp } from '../../context/AppContext';
+import { fetchClientAppointments, saveClient } from '../../lib/firestore';
+import { evaluateCancellationPolicy } from '../../lib/cancellationPolicy';
 
 const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
   ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
@@ -174,13 +176,139 @@ function AddCardForm({ clientId, onAdded, onCancel }) {
   );
 }
 
+// Renders the cancellation-policy verdict for this client + admin override
+// controls. Color follows the verdict: red when card required, green when
+// satisfied, gray when policy disabled.
+function PolicyBanner({ verdict, busy, onOverride }) {
+  const { required, reason, overrideApplied, cancellationCount, thresholdCount, windowDays, hasCard } = verdict;
+
+  // Pick palette
+  let bg, border, fg, headlineColor;
+  if (required) {
+    bg = '#fef2f2'; border = '#fecaca'; fg = '#7f1d1d'; headlineColor = '#991b1b';
+  } else if (overrideApplied === 'exempt') {
+    bg = '#ecfdf5'; border = '#bbf7d0'; fg = '#14532d'; headlineColor = '#15803d';
+  } else if (cancellationCount >= thresholdCount && hasCard) {
+    bg = '#ecfdf5'; border = '#bbf7d0'; fg = '#14532d'; headlineColor = '#15803d';
+  } else if (cancellationCount > 0) {
+    bg = '#fff7ed'; border = '#fed7aa'; fg = '#7c2d12'; headlineColor = '#9a3412';
+  } else {
+    bg = '#f8fafc'; border = '#e8e8e8'; fg = '#475569'; headlineColor = '#334155';
+  }
+
+  let headline;
+  if (overrideApplied === 'force') {
+    headline = required ? '⚠ Card required (admin override)' : '✓ Card required policy met (override + card on file)';
+  } else if (overrideApplied === 'exempt') {
+    headline = '✓ Exempt from card-required policy';
+  } else if (required) {
+    headline = '⚠ Card on file required before next booking';
+  } else if (cancellationCount >= thresholdCount && hasCard) {
+    headline = '✓ Threshold met, but card on file — booking allowed';
+  } else if (cancellationCount > 0) {
+    headline = `${cancellationCount} cancellation${cancellationCount === 1 ? '' : 's'} in the last ${windowDays} days`;
+  } else {
+    headline = 'No recent cancellations';
+  }
+
+  return (
+    <div style={{
+      background: bg, border: `1px solid ${border}`, color: fg,
+      borderRadius: 10, padding: '12px 14px', marginBottom: 14, fontSize: 12,
+    }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: headlineColor, marginBottom: 4 }}>
+        {headline}
+      </div>
+      <div style={{ lineHeight: 1.5 }}>
+        {cancellationCount} / {thresholdCount} cancellation{thresholdCount === 1 ? '' : 's'} threshold in last {windowDays} days.
+        {' '}
+        {hasCard ? 'Card on file ✓' : 'No card on file.'}
+      </div>
+      {verdict.message && (
+        <div style={{ fontSize: 11, marginTop: 4, opacity: 0.85 }}>{verdict.message}</div>
+      )}
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        {overrideApplied !== 'exempt' && (
+          <button onClick={() => onOverride(false, prompt('Reason for exempting this client (optional):') || '')}
+            disabled={busy}
+            style={{
+              fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6,
+              border: '1px solid #bbf7d0', background: '#fff', color: '#15803d',
+              cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+            }}>
+            Exempt this client
+          </button>
+        )}
+        {overrideApplied !== 'force' && (
+          <button onClick={() => onOverride(true, prompt('Reason for marking card-required (optional):') || '')}
+            disabled={busy}
+            style={{
+              fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6,
+              border: '1px solid #fecaca', background: '#fff', color: '#991b1b',
+              cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+            }}>
+            Force card required
+          </button>
+        )}
+        {overrideApplied && (
+          <button onClick={() => onOverride(null, null)}
+            disabled={busy}
+            style={{
+              fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6,
+              border: '1px solid #e8e8e8', background: '#fff', color: '#555',
+              cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
+            }}>
+            Clear override
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function SavedCardsTab({ client, onChange, onReload }) {
-  const { showToast, isAdmin } = useApp();
+  const { settings, showToast, isAdmin } = useApp();
   const [adding,     setAdding]     = useState(false);
   const [busyId,     setBusyId]     = useState('');
+  const [appts,      setAppts]      = useState(null);
+  const [overrideBusy, setOverrideBusy] = useState(false);
 
   const paymentMethods = client.paymentMethods || [];
   const defaultId      = client.defaultPaymentMethodId;
+
+  // Load appointment history to evaluate the cancellation policy.
+  useEffect(() => {
+    if (!client?.id) return;
+    let cancelled = false;
+    fetchClientAppointments(client.id)
+      .then(rows => { if (!cancelled) setAppts(rows); })
+      .catch(() => { if (!cancelled) setAppts([]); });
+    return () => { cancelled = true; };
+  }, [client?.id]);
+
+  const policyVerdict = appts === null
+    ? null
+    : evaluateCancellationPolicy(appts, settings, client);
+
+  async function handleOverride(value, reason) {
+    if (!client.id) return;
+    setOverrideBusy(true);
+    try {
+      const patch = {
+        cardRequiredOverride: value,
+        cardRequiredOverrideReason: reason || null,
+      };
+      await saveClient(client.id, patch);
+      onChange?.(patch);
+      showToast(value === false ? 'Client exempted from card-required policy'
+                 : value === true ? 'Client marked card-required'
+                 : 'Override cleared');
+    } catch (e) {
+      showToast(`Failed: ${e.message}`, 3000);
+    } finally {
+      setOverrideBusy(false);
+    }
+  }
 
   // Card-on-file is admin-only — taking money is a privileged action.
   if (!isAdmin) {
@@ -266,6 +394,10 @@ export default function SavedCardsTab({ client, onChange, onReload }) {
   return (
     <Elements stripe={stripePromise}>
       <div style={{ marginBottom: 16 }}>
+        {policyVerdict && (policyVerdict.policyEnabled || policyVerdict.overrideApplied) && (
+          <PolicyBanner verdict={policyVerdict} busy={overrideBusy} onOverride={handleOverride} />
+        )}
+
         <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
           Saved cards
         </div>

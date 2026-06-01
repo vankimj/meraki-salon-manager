@@ -689,6 +689,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               }}
             />
             <TechRemindersSection settings={settings} updateSettings={updateSettings} />
+            <CancellationPolicySection settings={settings} updateSettings={updateSettings} />
             <PauseSection settings={settings} updateSettings={updateSettings} />
             <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
@@ -3099,6 +3100,96 @@ function TechRemindersSection({ settings, updateSettings }) {
           <span style={{ fontSize: 12, color: '#888' }}>· tenant-wide on/off switch</span>
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto' }}>✓ Saved</span>}
         </label>
+      </div>
+    </Section>
+  );
+}
+
+// ── Cancellation Policy ───────────────────────────────────────────────────
+// After N cancellations in M days, the booking flow requires the client to
+// have a card on file before they can book again. Tenant-wide opt-in;
+// per-client admin override available in the client modal.
+//
+// Schema lives on settings.cancellationPolicy — see src/lib/cancellationPolicy.js
+// for the full evaluator. The booking page (BookingScreen.handleBook) calls
+// evaluateCancellationPolicy() before allowing a new appointment.
+function CancellationPolicySection({ settings, updateSettings }) {
+  const cfg = settings.cancellationPolicy || {};
+  const [enabled,        setEnabled]        = useState(cfg.enabled === true);
+  const [thresholdCount, setThresholdCount] = useState(cfg.thresholdCount ?? 3);
+  const [windowDays,     setWindowDays]     = useState(cfg.windowDays     ?? 90);
+  const [countNoShows,   setCountNoShows]   = useState(cfg.countNoShows !== false);
+  const [saving,         setSaving]         = useState(false);
+  const [savedAt,        setSavedAt]        = useState(null);
+
+  async function save(patch) {
+    setSaving(true);
+    try {
+      const next = {
+        enabled,
+        thresholdCount: Math.max(1, Math.floor(Number(thresholdCount) || 3)),
+        windowDays:     Math.max(1, Math.floor(Number(windowDays)     || 90)),
+        countNoShows,
+        ...patch,
+      };
+      await updateSettings({ ...settings, cancellationPolicy: next });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2200);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Section title="🚫 Cancellation Policy">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+          After this many cancellations within the window, the booking page will require the client to have a card on file before they can book again. Clients who already have a card on file aren't affected. Admins can override per-client in the client modal.
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', marginBottom: 10 }}>
+          <input type="checkbox" checked={enabled}
+            onChange={e => { setEnabled(e.target.checked); save({ enabled: e.target.checked }); }} disabled={saving} />
+          <span style={{ fontSize: 13, color: '#444', fontWeight: 600 }}>Enable policy</span>
+          {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto' }}>✓ Saved</span>}
+        </label>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' }}>
+          <label style={{ fontSize: 12, color: '#444', display: 'block' }}>
+            <div style={{ marginBottom: 4, fontWeight: 600 }}>Threshold</div>
+            <input
+              type="number" min={1} step={1}
+              value={thresholdCount}
+              onChange={e => setThresholdCount(e.target.value)}
+              onBlur={() => save({ thresholdCount: Math.max(1, Math.floor(Number(thresholdCount) || 3)) })}
+              disabled={saving}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0', fontSize: 13, fontFamily: 'inherit' }}
+            />
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>cancellations</div>
+          </label>
+          <label style={{ fontSize: 12, color: '#444', display: 'block' }}>
+            <div style={{ marginBottom: 4, fontWeight: 600 }}>Window</div>
+            <input
+              type="number" min={1} step={1}
+              value={windowDays}
+              onChange={e => setWindowDays(e.target.value)}
+              onBlur={() => save({ windowDays: Math.max(1, Math.floor(Number(windowDays) || 90)) })}
+              disabled={saving}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0', fontSize: 13, fontFamily: 'inherit' }}
+            />
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>days back</div>
+          </label>
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginTop: 10, fontSize: 12, color: '#555', cursor: 'pointer', opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' }}>
+          <input type="checkbox" checked={countNoShows}
+            onChange={e => { setCountNoShows(e.target.checked); save({ countNoShows: e.target.checked }); }} disabled={saving} />
+          Also count <strong style={{ margin: '0 2px' }}>no-shows</strong> toward the threshold (recommended)
+        </label>
+
+        <div style={{ fontSize: 11, color: '#aaa', marginTop: 12, lineHeight: 1.5 }}>
+          Salon-initiated cancellations (e.g. tech called in sick) don't count against the client.
+        </div>
       </div>
     </Section>
   );

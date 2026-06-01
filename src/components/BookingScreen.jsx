@@ -608,6 +608,17 @@ export default function BookingScreen() {
             setSubmitting(false);
             return;
           }
+          // Cancellation-history gate: when the tenant has enabled the
+          // card-required-after-N-cancellations policy, the server refuses
+          // bookings for clients above the threshold without a card on file.
+          if (res?.data?.cardRequired) {
+            const { cancellationCount, thresholdCount, windowDays } = res.data;
+            setBookingError(
+              `Because of recent cancellations (${cancellationCount} in the last ${windowDays} days, threshold ${thresholdCount}), this salon requires a card on file before your next booking. Please call us to add one — your card will not be charged unless you cancel late or no-show.`
+            );
+            setSubmitting(false);
+            return;
+          }
           clientId = res?.data?.id || '';
         } catch (e) { console.error('[Booking] findOrCreateClient failed:', e); }
       }
