@@ -5634,6 +5634,7 @@ function planForPriceId(priceId) {
 const {
   handleChargeRefunded, handleChargeDisputeCreated, handleChargeDisputeClosed,
   handleInvoicePaymentFailedSaas, handleSubscriptionDeletedSaas,
+  extractCardMetadata, buildOffSessionChargeRequest,
 } = require('./lib/billing');
 
 exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
@@ -5720,6 +5721,233 @@ exports.createTenantBillingPortal = onCall({ cors: true, secrets: [stripeKey] },
   });
 
   return { url: session.url };
+});
+
+// ── Card-on-file (SetupIntent + off-session charges) ─────────────────────
+// Tokenisation-based card storage. The browser uses Stripe.js / Elements
+// to send raw card data DIRECTLY to Stripe's PCI vault, never to our
+// servers. We only ever see + store the resulting PaymentMethod token
+// (pm_xxx) and safe display metadata (brand, last4, exp). Lets us:
+//   - Charge no-show fees on stored cards
+//   - Take booking deposits at booking time, settle balance at checkout
+//   - One-tap repeat checkout for known clients
+//   - Future tech-in-home services where no terminal is present
+//
+// PCI scope: SAQ A (self-attestation, ~20 questions, no audit). Stripe.js
+// keeps PAN out of our app entirely.
+
+// Helper: ensure a Stripe Customer exists for this salon client. Reuses
+// the existing client.stripeCustomerId if set; otherwise creates one and
+// writes back. Mirrors the pattern in createMembershipCheckout.
+async function ensureClientStripeCustomer(stripe, db, tenantId, clientId) {
+  const clientRef = db.doc(`tenants/${tenantId}/clients/${clientId}`);
+  const clientSnap = await clientRef.get();
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const client = clientSnap.data();
+
+  if (client.stripeCustomerId) return { customerId: client.stripeCustomerId, client };
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  const ten = tenSnap.exists ? tenSnap.data() : {};
+
+  const customer = await stripe.customers.create({
+    email: client.email || undefined,
+    name:  client.name  || undefined,
+    phone: client.phone || undefined,
+    metadata: { tenantId, clientId, salonName: ten.name || '' },
+  });
+  await clientRef.set({ stripeCustomerId: customer.id }, { merge: true });
+  return { customerId: customer.id, client: { ...client, stripeCustomerId: customer.id } };
+}
+
+// Create a SetupIntent for collecting a card to charge later. Returns a
+// client_secret that the React frontend passes to stripe.confirmCardSetup().
+// The card is tokenised by Stripe.js in the browser and never touches us.
+exports.createSetupIntent = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { clientId, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  if (!clientId) throw new HttpsError('invalid-argument', 'clientId required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const { customerId } = await ensureClientStripeCustomer(stripe, db, tenantId, clientId);
+
+  const setupIntent = await stripe.setupIntents.create({
+    customer: customerId,
+    payment_method_types: ['card'],
+    usage: 'off_session',
+    metadata: { tenantId, clientId },
+  });
+
+  return {
+    clientSecret: setupIntent.client_secret,
+    customerId,
+  };
+});
+
+// After Stripe.js confirms the SetupIntent in the browser, the frontend
+// posts the resulting payment_method id here. We fetch the PaymentMethod
+// from Stripe (gets brand/last4/exp), strip it down to display-only
+// metadata via extractCardMetadata, and append to the client's
+// paymentMethods array. Idempotent on the pm.id.
+exports.savePaymentMethod = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { clientId, paymentMethodId, makeDefault, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  if (!clientId)        throw new HttpsError('invalid-argument', 'clientId required');
+  if (!paymentMethodId) throw new HttpsError('invalid-argument', 'paymentMethodId required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+  const meta = extractCardMetadata(pm);
+  if (!meta) throw new HttpsError('invalid-argument', 'PaymentMethod is not a card');
+
+  const clientRef = db.doc(`tenants/${tenantId}/clients/${clientId}`);
+  const clientSnap = await clientRef.get();
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const existing = clientSnap.data().paymentMethods || [];
+
+  // Idempotent: if this pm already exists, replace the entry; otherwise append.
+  const filtered = existing.filter(p => p.id !== meta.id);
+  const next = [...filtered, meta];
+
+  const update = { paymentMethods: next };
+  if (makeDefault || next.length === 1) update.defaultPaymentMethodId = meta.id;
+
+  await clientRef.set(update, { merge: true });
+  return { paymentMethod: meta, isDefault: !!update.defaultPaymentMethodId && update.defaultPaymentMethodId === meta.id };
+});
+
+// Detach a PaymentMethod from the Stripe Customer + remove from the
+// client doc. Safe to call repeatedly on the same pm — Stripe returns
+// already-detached gracefully.
+exports.deletePaymentMethod = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { clientId, paymentMethodId, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  if (!clientId)        throw new HttpsError('invalid-argument', 'clientId required');
+  if (!paymentMethodId) throw new HttpsError('invalid-argument', 'paymentMethodId required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  // Best-effort detach; ignore 'already detached' errors.
+  try {
+    await stripe.paymentMethods.detach(paymentMethodId);
+  } catch (e) {
+    if (!/already.*detached|No such payment method/i.test(e?.message || '')) {
+      console.warn(`[deletePaymentMethod] detach failed for ${paymentMethodId}:`, e?.message);
+    }
+  }
+
+  const clientRef = db.doc(`tenants/${tenantId}/clients/${clientId}`);
+  const clientSnap = await clientRef.get();
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const data = clientSnap.data();
+  const existing = data.paymentMethods || [];
+  const next = existing.filter(p => p.id !== paymentMethodId);
+
+  const update = { paymentMethods: next };
+  // Clear default if we removed the default card
+  if (data.defaultPaymentMethodId === paymentMethodId) {
+    update.defaultPaymentMethodId = next.length ? next[0].id : null;
+  }
+  await clientRef.set(update, { merge: true });
+  return { removed: true, remainingCount: next.length };
+});
+
+// Charge a previously-saved card off-session (cardholder not present).
+// REQUIRES the tenant to have completed Stripe Connect onboarding —
+// without a connected account id, the charge would land on Plume's main
+// balance, which is a money-transmitter trap. buildOffSessionChargeRequest
+// enforces this with a throw.
+exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const {
+    clientId, amount, description, paymentMethodId: pmOverride,
+    applicationFeeAmount, statementDescriptorSuffix,
+    tenantId: tid,
+  } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  if (!clientId)             throw new HttpsError('invalid-argument', 'clientId required');
+  if (!amount || amount <= 0) throw new HttpsError('invalid-argument', 'amount (in cents) must be positive');
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  const ten = tenSnap.exists ? tenSnap.data() : {};
+  if (!ten.stripeConnectAccountId) {
+    throw new HttpsError('failed-precondition',
+      'Salon has not completed Stripe Connect onboarding — cards cannot be charged until that\'s done.');
+  }
+
+  const clientSnap = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const client = clientSnap.data();
+  if (!client.stripeCustomerId) throw new HttpsError('failed-precondition', 'Client has no Stripe Customer — save a card first');
+
+  const pmId = pmOverride || client.defaultPaymentMethodId;
+  if (!pmId) throw new HttpsError('failed-precondition', 'Client has no saved card to charge');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  let chargeReq;
+  try {
+    chargeReq = buildOffSessionChargeRequest({
+      amount,
+      currency:         'usd',
+      customerId:       client.stripeCustomerId,
+      paymentMethodId:  pmId,
+      connectAccountId: ten.stripeConnectAccountId,
+      tenantId,
+      clientId,
+      description,
+      applicationFeeAmount,
+      statementDescriptorSuffix,
+    });
+  } catch (e) {
+    // buildOffSessionChargeRequest throws on missing/invalid args — convert
+    // to a proper HttpsError so the client gets a structured response.
+    throw new HttpsError('invalid-argument', e.message);
+  }
+
+  try {
+    const intent = await stripe.paymentIntents.create(chargeReq);
+    return {
+      paymentIntentId: intent.id,
+      status:          intent.status,
+      amountCharged:   intent.amount_received || 0,
+    };
+  } catch (e) {
+    // Common: card declined, requires authentication, insufficient funds.
+    // Surface the Stripe error message so the UI can show it.
+    console.warn(`[chargeStoredCard] declined for tenant=${tenantId} client=${clientId}:`, e?.code, e?.message);
+    throw new HttpsError(
+      e?.code === 'authentication_required' ? 'failed-precondition' : 'aborted',
+      e?.message || 'Card charge failed',
+      { stripeCode: e?.code, declineCode: e?.decline_code },
+    );
+  }
 });
 
 exports.stripeWebhook = onRequest(

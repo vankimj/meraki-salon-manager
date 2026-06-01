@@ -676,6 +676,107 @@ async function handleSubscriptionDeletedSaas(subscription, db, stripe, sendEmail
   return { downgraded: true, emailed: tenant.ownerEmail };
 }
 
+// ── Card-on-file helpers ──────────────────────────────────────────────────
+// PCI compliance note: we never see/store raw card numbers. Stripe.js
+// tokenizes them in the browser; we get back a PaymentMethod ID (pm_xxx)
+// and *display-only* metadata (brand, last4, exp). Those are NOT
+// PCI-restricted under SAQ A — they're explicitly allowed for receipt /
+// wallet UX. The actual PAN lives in Stripe's PCI Level 1 vault.
+//
+// What we DO store on tenants/{tid}/clients/{cid}.paymentMethods:
+//   id        — pm_xxx, the opaque token used to charge later
+//   brand     — 'visa' | 'mastercard' | 'amex' | etc.
+//   last4     — last 4 digits (display only; not a card number)
+//   expMonth  — 1-12
+//   expYear   — 4-digit
+//   funding   — 'credit' | 'debit' | 'prepaid' | 'unknown'
+//   country   — ISO 2-letter (used to detect international cards
+//               so the salon can be warned about Stripe's +1.5% surcharge)
+//   addedAt   — ISO timestamp
+//
+// What we do NOT store anywhere:
+//   - The PAN (full card number)
+//   - The CVC
+//   - The cardholder name (separate field; not regulated but minimised)
+//   - Any field Stripe returns under `card.networks` or `card.three_d_secure`
+
+// Extract the safe-to-store metadata from a Stripe PaymentMethod object.
+// Pure (no I/O), so unit-testable. Returns null if `pm.card` is missing —
+// indicates the PaymentMethod isn't a card (could be us_bank_account, etc.)
+// which we don't handle yet.
+function extractCardMetadata(pm) {
+  if (!pm || !pm.card) return null;
+  const c = pm.card;
+  return {
+    id:       pm.id,
+    brand:    c.brand || 'unknown',
+    last4:    c.last4 || '',
+    expMonth: c.exp_month || null,
+    expYear:  c.exp_year  || null,
+    funding:  c.funding   || 'unknown',
+    country:  c.country   || null,
+    addedAt:  new Date().toISOString(),
+  };
+}
+
+// Build the args object for stripe.paymentIntents.create() to charge a
+// previously-saved card off-session. Centralised so every off-session
+// charge in the codebase uses the same destination-charge + on_behalf_of
+// + metadata shape — and so when a developer adds a new charge path, they
+// can't forget the `on_behalf_of` flag (which is what makes the salon's
+// name appear on the cardholder's statement).
+//
+// Required:
+//   amount             — in smallest currency unit (cents for USD)
+//   currency           — 'usd', 'eur', etc.
+//   customerId         — cus_xxx the PaymentMethod is attached to
+//   paymentMethodId    — pm_xxx to charge
+//   connectAccountId   — acct_xxx of the salon's Stripe Connect account.
+//                        REQUIRED — never charge without routing to a
+//                        connected account, or funds land on the platform
+//                        and we trip money-transmitter rules.
+//   tenantId, clientId — metadata for audit + webhook routing
+//
+// Optional:
+//   description           — appears on Stripe Dashboard charge view
+//   applicationFeeAmount  — Plume's cut in cents (default 0; tunable per
+//                           tenant when the platform-fee field exists)
+//   statementDescriptorSuffix — optional dynamic suffix appended to the
+//                           salon's base descriptor (e.g. 'NOSHOW' for
+//                           no-show fees)
+function buildOffSessionChargeRequest({
+  amount, currency, customerId, paymentMethodId, connectAccountId,
+  tenantId, clientId,
+  description, applicationFeeAmount, statementDescriptorSuffix,
+}) {
+  if (!amount || amount <= 0)        throw new Error('amount must be a positive integer');
+  if (!currency)                      throw new Error('currency required');
+  if (!customerId)                    throw new Error('customerId required');
+  if (!paymentMethodId)               throw new Error('paymentMethodId required');
+  if (!connectAccountId)              throw new Error('connectAccountId required — refusing to charge to platform account (money-transmitter risk)');
+  if (!tenantId)                      throw new Error('tenantId required for audit');
+
+  const req = {
+    amount,
+    currency,
+    customer:         customerId,
+    payment_method:   paymentMethodId,
+    confirm:          true,
+    off_session:      true,                            // cardholder not present; SCA handled if required
+    on_behalf_of:     connectAccountId,                // → salon's name on statement
+    transfer_data:    { destination: connectAccountId }, // → funds route to salon
+    application_fee_amount: Math.max(0, applicationFeeAmount || 0),
+    metadata: {
+      tenantId,
+      clientId: clientId || '',
+      source:   'off_session_card',
+    },
+  };
+  if (description)              req.description = description;
+  if (statementDescriptorSuffix) req.statement_descriptor_suffix = String(statementDescriptorSuffix).slice(0, 22);
+  return req;
+}
+
 module.exports = {
   buildRefundRecord,
   buildTenantRefundEmailHtml,
@@ -692,4 +793,6 @@ module.exports = {
   buildSubscriptionCanceledEmailHtml,
   handleInvoicePaymentFailedSaas,
   handleSubscriptionDeletedSaas,
+  extractCardMetadata,
+  buildOffSessionChargeRequest,
 };

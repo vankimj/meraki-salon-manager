@@ -972,3 +972,165 @@ describe('handleSubscriptionDeletedSaas', () => {
   });
 });
 
+// ── Card-on-file helper tests ────────────────────────────────────────────
+import {
+  extractCardMetadata,
+  buildOffSessionChargeRequest,
+} from './billing.js';
+
+function makePaymentMethod(overrides = {}) {
+  return {
+    id: 'pm_test_001',
+    type: 'card',
+    card: {
+      brand:     'visa',
+      last4:     '4242',
+      exp_month: 12,
+      exp_year:  2027,
+      funding:   'credit',
+      country:   'US',
+    },
+    ...overrides,
+  };
+}
+
+describe('extractCardMetadata', () => {
+  it('extracts the safe-to-store fields from a card PaymentMethod', () => {
+    const meta = extractCardMetadata(makePaymentMethod());
+    expect(meta).toEqual({
+      id:       'pm_test_001',
+      brand:    'visa',
+      last4:    '4242',
+      expMonth: 12,
+      expYear:  2027,
+      funding:  'credit',
+      country:  'US',
+      addedAt:  expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+  });
+
+  it('does NOT include the cardholder name', () => {
+    const pm = makePaymentMethod({
+      billing_details: { name: 'Jane Doe', email: 'jane@x.com' },
+    });
+    const meta = extractCardMetadata(pm);
+    expect(meta).not.toHaveProperty('name');
+    expect(meta).not.toHaveProperty('email');
+    expect(meta).not.toHaveProperty('billing_details');
+  });
+
+  it('does NOT include networks / three_d_secure / fingerprint', () => {
+    const pm = makePaymentMethod({
+      card: {
+        ...makePaymentMethod().card,
+        fingerprint: 'fpr_xxx',
+        networks: { available: ['visa'], preferred: null },
+        three_d_secure_usage: { supported: true },
+      },
+    });
+    const meta = extractCardMetadata(pm);
+    expect(meta).not.toHaveProperty('fingerprint');
+    expect(meta).not.toHaveProperty('networks');
+    expect(meta).not.toHaveProperty('three_d_secure_usage');
+  });
+
+  it('returns null for non-card payment methods (us_bank_account, etc.)', () => {
+    expect(extractCardMetadata({ id: 'pm_x', type: 'us_bank_account' })).toBeNull();
+    expect(extractCardMetadata({ id: 'pm_x' })).toBeNull();
+    expect(extractCardMetadata(null)).toBeNull();
+    expect(extractCardMetadata(undefined)).toBeNull();
+  });
+
+  it('falls back to "unknown" for missing card.brand and card.funding', () => {
+    const pm = makePaymentMethod({ card: { last4: '0000' } });
+    const meta = extractCardMetadata(pm);
+    expect(meta.brand).toBe('unknown');
+    expect(meta.funding).toBe('unknown');
+    expect(meta.last4).toBe('0000');
+  });
+});
+
+describe('buildOffSessionChargeRequest', () => {
+  const valid = {
+    amount:           5000,
+    currency:         'usd',
+    customerId:       'cus_acme_client',
+    paymentMethodId:  'pm_test_001',
+    connectAccountId: 'acct_meraki',
+    tenantId:         'meraki',
+    clientId:         'client_jane',
+  };
+
+  it('produces a charge request with all the marketplace-routing flags', () => {
+    const req = buildOffSessionChargeRequest(valid);
+    expect(req.amount).toBe(5000);
+    expect(req.customer).toBe('cus_acme_client');
+    expect(req.payment_method).toBe('pm_test_001');
+    expect(req.confirm).toBe(true);
+    expect(req.off_session).toBe(true);
+    expect(req.on_behalf_of).toBe('acct_meraki');           // ← salon name on statement
+    expect(req.transfer_data).toEqual({ destination: 'acct_meraki' }); // ← funds to salon
+    expect(req.application_fee_amount).toBe(0);             // default 0 platform fee
+    expect(req.metadata).toEqual({
+      tenantId: 'meraki',
+      clientId: 'client_jane',
+      source:   'off_session_card',
+    });
+  });
+
+  it('honours application_fee_amount when provided', () => {
+    const req = buildOffSessionChargeRequest({ ...valid, applicationFeeAmount: 250 });
+    expect(req.application_fee_amount).toBe(250);
+  });
+
+  it('coerces a negative application_fee_amount to 0 (defensive)', () => {
+    const req = buildOffSessionChargeRequest({ ...valid, applicationFeeAmount: -100 });
+    expect(req.application_fee_amount).toBe(0);
+  });
+
+  it('forwards description + statementDescriptorSuffix when provided', () => {
+    const req = buildOffSessionChargeRequest({
+      ...valid,
+      description: 'No-show fee for May 30 appointment',
+      statementDescriptorSuffix: 'NOSHOW',
+    });
+    expect(req.description).toBe('No-show fee for May 30 appointment');
+    expect(req.statement_descriptor_suffix).toBe('NOSHOW');
+  });
+
+  it('truncates statement_descriptor_suffix to Stripe\'s 22-char limit', () => {
+    const longSuffix = 'A'.repeat(50);
+    const req = buildOffSessionChargeRequest({ ...valid, statementDescriptorSuffix: longSuffix });
+    expect(req.statement_descriptor_suffix.length).toBe(22);
+  });
+
+  it('REFUSES to build a charge without connectAccountId (money-transmitter guard)', () => {
+    expect(() => buildOffSessionChargeRequest({ ...valid, connectAccountId: '' }))
+      .toThrow(/connectAccountId required/);
+  });
+
+  it('throws on missing amount', () => {
+    expect(() => buildOffSessionChargeRequest({ ...valid, amount: 0 }))
+      .toThrow(/amount must be a positive integer/);
+    expect(() => buildOffSessionChargeRequest({ ...valid, amount: -100 }))
+      .toThrow(/amount must be a positive integer/);
+  });
+
+  it('throws on missing customerId / paymentMethodId / currency / tenantId', () => {
+    expect(() => buildOffSessionChargeRequest({ ...valid, customerId: null }))
+      .toThrow(/customerId required/);
+    expect(() => buildOffSessionChargeRequest({ ...valid, paymentMethodId: null }))
+      .toThrow(/paymentMethodId required/);
+    expect(() => buildOffSessionChargeRequest({ ...valid, currency: '' }))
+      .toThrow(/currency required/);
+    expect(() => buildOffSessionChargeRequest({ ...valid, tenantId: null }))
+      .toThrow(/tenantId required/);
+  });
+
+  it('omits clientId from metadata when not provided (still includes the key as empty string)', () => {
+    const req = buildOffSessionChargeRequest({ ...valid, clientId: undefined });
+    expect(req.metadata.clientId).toBe('');
+    expect(req.metadata.tenantId).toBe('meraki');
+  });
+});
+

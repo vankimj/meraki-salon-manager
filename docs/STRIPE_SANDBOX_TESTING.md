@@ -281,6 +281,94 @@ subscription charge would have no tenant linkage. The handler still emails
 the platform owner so they don't miss it. Verified by the `still alerts
 platform even when no subscription` test in `billing.test.js`.
 
+## 2ter. Card-on-file flows (SetupIntent + off-session charges)
+
+Stores client cards via Stripe Elements + SetupIntent → tokenized in the
+browser, only the `pm_xxx` token + display metadata (brand, last4, exp) ever
+touches our servers. PCI scope stays at SAQ A.
+
+### 2ter.1 Add a card via the client modal
+1. Open any client in the Clients module
+2. Click the new **Cards** tab
+3. Click **+ Add a card on file**
+4. Stripe Elements card input appears — enter test card `4242 4242 4242 4242`,
+   any future expiry, any 3-digit CVC, any ZIP
+5. Click **Save card** → frontend calls `createSetupIntent` → Stripe.js
+   confirms → frontend calls `savePaymentMethod`
+6. **Check Firestore** `tenants/{tid}/clients/{cid}`:
+   - `stripeCustomerId: 'cus_...'` (created if missing)
+   - `paymentMethods: [{ id, brand, last4, expMonth, expYear, funding, country, addedAt }]`
+   - `defaultPaymentMethodId: 'pm_...'` (first card is auto-defaulted)
+7. **Check UI** card appears in the Cards tab list with brand badge + last 4
+
+### 2ter.2 Add a card from an international country
+Use card `4000 0082 6000 0000` (UK-issued Visa) instead.
+1. Save it the same way
+2. **Check Firestore** the saved card has `country: 'GB'`
+3. **Check UI** an orange "Intl +1.5%" badge appears next to the card —
+   warns the salon about Stripe's international surcharge so they can
+   factor it into their pricing
+
+### 2ter.3 Make a non-default card the default
+1. Save 2 cards
+2. The second one shows the **Default** badge (auto-assigned)
+3. Click **Make default** on the first card
+4. **Check Firestore** `defaultPaymentMethodId` updates to the first card's id
+5. **Check UI** default badge moves
+
+### 2ter.4 Delete a card
+1. Click **Remove** next to any card
+2. Confirm the prompt
+3. **Check Firestore** the card is removed from `paymentMethods` array;
+   if it was the default, the next card becomes default (or null if last)
+4. **Check Stripe Dashboard** the PaymentMethod is detached from the Customer
+
+### 2ter.5 Test a card that requires 3D Secure (authentication)
+Use card `4000 0025 0000 3155` — triggers SCA challenge.
+1. Save it via Add card flow
+2. Stripe.js renders a 3DS modal — click **Complete authentication**
+3. **Check Firestore** card saves normally (the SetupIntent.usage is
+   'off_session' which pre-authorizes future charges without re-prompt)
+
+### 2ter.6 Off-session charge (no-show fee or repeat charge)
+This is the payoff — charging a saved card without the cardholder present.
+
+**Prerequisite**: tenant must have completed Stripe Connect onboarding
+(`tenants/{tid}.stripeConnectAccountId` set). Until Connect is wired,
+`chargeStoredCard` returns a `failed-precondition` error — by design,
+to prevent funds landing in Plume's main balance (money-transmitter risk).
+
+When Connect is wired, test via the Functions emulator console:
+```js
+await functions.httpsCallable('chargeStoredCard')({
+  tenantId: 'meraki',
+  clientId: 'client_jane',
+  amount:   2500,             // $25.00 no-show fee in cents
+  description: 'No-show fee for 2026-06-15 appointment',
+  statementDescriptorSuffix: 'NOSHOW',
+});
+```
+**Check Firestore + Stripe Dashboard:**
+- PaymentIntent succeeds with `on_behalf_of` set to salon's connected account
+- Funds route to salon (less optional `application_fee_amount` for Plume)
+- Cardholder's statement shows **salon's name** + `NOSHOW` suffix
+
+### 2ter.7 Off-session charge with declined card
+Use card `4000 0000 0000 0341` — attaches successfully but declines on charge.
+1. Save it via Add card flow (succeeds)
+2. Call `chargeStoredCard` — Stripe returns a `card_declined` error
+3. **Check return value** `{ stripeCode: 'card_declined', declineCode: '...' }`
+4. **Check UI** (when wired into POS) — surfaces the decline reason to staff
+
+### 2ter.8 Off-session charge requiring re-authentication
+Use card `4000 0025 0000 3155` (3DS card).
+1. Save the card with SCA (works on-session)
+2. Call `chargeStoredCard` — Stripe returns `authentication_required` because
+   the issuer wants fresh auth for this off-session charge
+3. **Check** Cloud Function returns `failed-precondition` with
+   `stripeCode: 'authentication_required'` — UI should prompt admin to
+   re-collect the card with the cardholder present
+
 ## 3. Membership flows (Stripe-driven client subscriptions)
 
 ### 3.1 Generate Checkout + client pays
@@ -346,6 +434,9 @@ Any future expiry, any 3-digit CVC, any 5-digit ZIP.
 | Refunds (SaaS)  | `tenants/{id}/refunds/{refundId}`                           |
 | Refunds (memb)  | `tenants/{id}/memberships/{memId}/refunds/{refundId}`       |
 | Disputes (all)  | `tenants/{id}/disputes/{disputeId}` (membership ones have `isMembership: true`) |
+| Saved cards     | `tenants/{id}/clients/{cid}.paymentMethods[]` (display metadata only — PAN lives in Stripe) |
+| Client Stripe Customer | `tenants/{id}/clients/{cid}.stripeCustomerId`         |
+| Default card    | `tenants/{id}/clients/{cid}.defaultPaymentMethodId`         |
 | Cancellation    | Same settings doc, `cancelAtPeriodEnd` + `currentPeriodEnd` |
 | Payment status  | Same doc, `subscriptionStatus`                              |
 | Email delivery  | AWS SES Console (us-west-2) → Reputation/Sending stats + Cloud Logs of `sendEmail` calls |

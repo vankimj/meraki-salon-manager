@@ -8,6 +8,7 @@ import { useApp } from '../../context/AppContext';
 import NotesEditor from '../../components/NotesEditor';
 import EmptyState from '../../components/EmptyState';
 import CoachMark from '../../components/CoachMark';
+import SavedCardsTab from './SavedCardsTab';
 
 // ── helpers ────────────────────────────────────────────
 function blankClient() {
@@ -347,7 +348,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
   const fileRef = useRef(null);
   const isNew   = !client.id;
   const isView  = mode === 'view';
-  const TABS    = ['profile', 'social', 'visits'];
+  const TABS    = ['profile', 'social', 'visits', 'cards'];
 
   useEffect(() => {
     fetchServices().then(s => setServices(s.map(sv => sv.name))).catch(() => {});
@@ -1033,6 +1034,15 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                 )
               )}
             </>
+          )}
+
+          {/* ── Cards tab ── */}
+          {tab === 'cards' && (
+            <SavedCardsTab
+              client={client}
+              onChange={onChange}
+              onReload={onReload}
+            />
           )}
         </div>
 
