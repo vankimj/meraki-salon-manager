@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
 import { fetchEmployees, subscribeAttendance, saveAttendance } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
+import { TENANT_ID } from '../../lib/tenant';
+import { EmpAvatar } from '../employees/EmployeesAdmin';
 
 const WORK_DAY_KEYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const DEFAULT_WORK_DAY = { on: true, start: '09:00', end: '18:00' };
@@ -158,6 +160,16 @@ export default function AttendanceAdmin() {
           {sortedEmps.length} active employees · {dow}
         </span>
       </div>
+
+      {/* Live-now panel — only when viewing today */}
+      {date === todayStr() && sortedEmps.length > 0 && (
+        <LiveNowGrid
+          employees={sortedEmps}
+          entryByEmpId={entryByEmpId}
+          isAdmin={isAdmin}
+          showToast={showToast}
+        />
+      )}
 
       {/* KPI band */}
       <div className="kpi-grid" style={{ marginBottom: 16 }}>
@@ -316,3 +328,199 @@ const inputStyle = {
   borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13,
   fontFamily: 'inherit', background: '#fafafa', outline: 'none',
 };
+
+// ── Live-now grid (admin override) ──────────────────────────────────────
+// Mirror of the kiosk grid but with admin actions — no PIN required because
+// the user is already authenticated via Firebase Auth, and clockEvent's
+// admin_override path verifies admin/scheduler role server-side. Tiles
+// surface aging colors so a 47-min break stands out and the admin can
+// correct or close it in one tap.
+
+function computeStateLive(events) {
+  if (!Array.isArray(events) || events.length === 0) return 'out';
+  const last = events[events.length - 1];
+  switch (last && last.kind) {
+    case 'in':          return 'in';
+    case 'break_start': return 'on_break';
+    case 'break_end':   return 'in';
+    default:            return 'out';
+  }
+}
+
+function chipForState(state, events) {
+  if (state === 'out' || !events || !events.length) return null;
+  const last = events[events.length - 1];
+  const mins = Math.max(0, Math.floor((Date.now() - new Date(last.at).getTime()) / 60000));
+  if (state === 'on_break') {
+    const fg = mins >= 60 ? '#b91c1c' : mins >= 30 ? '#b45309' : '#7c5400';
+    const bg = mins >= 60 ? '#fee2e2' : mins >= 30 ? '#fff7ed' : '#fef9c3';
+    return { label: `☕ Break ${mins}m`, bg, fg };
+  }
+  if (state === 'in') {
+    return { label: `🟢 In since ${fmtTime(last.at)}`, bg: '#ecfdf5', fg: '#166534' };
+  }
+  return null;
+}
+
+function actionsForState(state) {
+  switch (state) {
+    case 'out':      return [{ kind: 'in',          label: 'Clock In',    color: '#2D7A5F' }];
+    case 'in':       return [
+      { kind: 'break_start', label: 'Start Break', color: '#d97706' },
+      { kind: 'out',         label: 'Clock Out',   color: '#1f2937' },
+    ];
+    case 'on_break': return [
+      { kind: 'break_end',   label: 'End Break',   color: '#2D7A5F' },
+      { kind: 'out',         label: 'Clock Out',   color: '#1f2937' },
+    ];
+    default:         return [];
+  }
+}
+
+function LiveNowGrid({ employees, entryByEmpId, isAdmin, showToast }) {
+  const [picked, setPicked] = useState(null);
+  // Tick every 30s so aging chips refresh ("Break 47m" → "Break 48m") even
+  // when no underlying event lands.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick(n => n + 1), 30 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div style={{ marginBottom: 18, padding: 14, background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>
+          🕐 Live now
+        </div>
+        <div style={{ fontSize: 11, color: '#888' }}>tap a tech to override</div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+        {employees.map(emp => {
+          const events = entryByEmpId[emp.id]?.events || [];
+          const state  = computeStateLive(events);
+          const chip   = chipForState(state, events);
+          return (
+            <button key={emp.id}
+              onClick={() => setPicked(emp)}
+              disabled={!isAdmin}
+              title={isAdmin ? 'Override clock state' : 'Admin only'}
+              style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                padding: '14px 8px 12px',
+                background: state === 'out' ? '#fafafa' : state === 'on_break' ? '#fffbeb' : '#f0fdf4',
+                border: `1px solid ${state === 'out' ? '#e8e8e8' : state === 'on_break' ? '#fde68a' : '#bbf7d0'}`,
+                borderRadius: 10,
+                cursor: isAdmin ? 'pointer' : 'not-allowed',
+                fontFamily: 'inherit',
+                textAlign: 'center',
+                opacity: isAdmin ? 1 : 0.6,
+              }}>
+              <EmpAvatar emp={emp} size={44} />
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>{emp.name}</div>
+              {chip ? (
+                <div style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 999, background: chip.bg, color: chip.fg }}>{chip.label}</div>
+              ) : (
+                <div style={{ fontSize: 10, color: '#bbb' }}>Out</div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {picked && (
+        <AdminOverrideModal
+          emp={picked}
+          events={entryByEmpId[picked.id]?.events || []}
+          onClose={() => setPicked(null)}
+          onDone={(msg) => { setPicked(null); showToast?.(msg); }}
+        />
+      )}
+    </div>
+  );
+}
+
+// Admin action modal — same layout as the kiosk's action sheet but without
+// PIN entry, plus a back-date control for fixing forgotten clock events.
+function AdminOverrideModal({ emp, events, onClose, onDone }) {
+  const [working, setWorking] = useState(false);
+  const [err,     setErr]     = useState('');
+  const [customAt, setCustomAt] = useState('');  // 'YYYY-MM-DDTHH:MM' (local) — blank = now
+  const state = computeStateLive(events);
+  const actions = actionsForState(state);
+  const lastEvent = events.length ? events[events.length - 1] : null;
+
+  async function run(action) {
+    setWorking(true);
+    setErr('');
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions }     = await import('../../lib/firebase');
+      const fn = httpsCallable(functions, 'clockEvent');
+      const payload = {
+        tenantId:   TENANT_ID,
+        employeeId: emp.id,
+        kind:       action.kind,
+        via:        'admin_override',
+      };
+      if (customAt) payload.at = new Date(customAt).toISOString();
+      const res = await fn(payload);
+      const dup = res?.data?.duplicate ? ' (already recorded)' : '';
+      onDone(`${emp.name} → ${action.label}${dup}`);
+    } catch (e) {
+      const code = e?.code || '';
+      const msg  = (e?.message || '').replace(/^.*?: /, '');
+      if (code === 'functions/failed-precondition') setErr(msg);
+      else setErr(msg || 'Could not record');
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <div onClick={onClose}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 380, padding: 22, boxShadow: '0 18px 50px rgba(0,0,0,.3)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+          <EmpAvatar emp={emp} size={48} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700 }}>{emp.name}</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+              {state === 'out'      && 'Not clocked in today'}
+              {state === 'in'       && lastEvent && `In since ${fmtTime(lastEvent.at)}`}
+              {state === 'on_break' && lastEvent && `On break since ${fmtTime(lastEvent.at)}`}
+            </div>
+          </div>
+        </div>
+
+        {actions.length === 0 ? (
+          <div style={{ fontSize: 12, color: '#888', padding: 12, textAlign: 'center' }}>No actions available.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+            {actions.map(a => (
+              <button key={a.kind} onClick={() => run(a)} disabled={working}
+                style={{ padding: '14px', fontSize: 15, fontWeight: 700, borderRadius: 12, border: 'none', background: a.color, color: '#fff', cursor: working ? 'default' : 'pointer', fontFamily: 'inherit', opacity: working ? .6 : 1 }}>
+                {working ? 'Working…' : a.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Back-date — for fixing "Ana actually went on break at 12:15" */}
+        <div style={{ background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 10, padding: 10, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: '#666', marginBottom: 4, fontWeight: 600 }}>Use a different time (optional)</div>
+          <input type="datetime-local" value={customAt} onChange={e => setCustomAt(e.target.value)}
+            style={{ width: '100%', boxSizing: 'border-box', padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', fontFamily: 'inherit', fontSize: 12 }} />
+          <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>Blank = now. Useful for "Tess started break at 12:15" corrections.</div>
+        </div>
+
+        {err && <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 10, textAlign: 'center' }}>{err}</div>}
+
+        <button onClick={onClose} disabled={working}
+          style={{ width: '100%', padding: '10px 14px', fontSize: 13, fontWeight: 600, borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
