@@ -5938,6 +5938,17 @@ const {
 } = require('./lib/billing');
 
 const { evaluateCancellationPolicy } = require('./lib/cancellationPolicy');
+const {
+  buildOAuthState, verifyOAuthState,
+  summariseAccountStatus, normaliseAccountType,
+} = require('./lib/connect');
+
+// Stripe Connect config. STRIPE_CONNECT_CLIENT_ID (ca_xxx) is only needed
+// for the Standard Connect OAuth flow — Express works without it. The
+// OAuth-state signing secret is reused from the existing
+// UNSUBSCRIBE_SECRET for now (HMAC-SHA256, 32-char truncated). Replace
+// with a dedicated secret later if/when we rotate.
+const stripeConnectClientId = defineString('STRIPE_CONNECT_CLIENT_ID', { default: '' });
 
 exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
@@ -6252,6 +6263,304 @@ exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (r
   }
 });
 
+// ── Stripe Connect onboarding (Express + Standard side by side) ──────────
+// Two paths share one downstream charge architecture. The tenant doc
+// stores stripeConnectAccountId regardless of type; chargeStoredCard
+// already uses it via on_behalf_of + transfer_data.destination.
+//
+// Express  — Plume creates the account programmatically, salon never
+//            visits stripe.com directly. ~5-min hosted onboarding form.
+//            +0.25% + $0.25 per payout (Stripe fee).
+// Standard — Salon authorises Plume via OAuth at stripe.com. Salon keeps
+//            their own login + full Stripe Dashboard. No per-payout fee.
+//
+// Both end with tenant.stripeConnectAccountId set + tenant.stripeConnect
+// object holding the latest UI-relevant status.
+
+// Helper: persist a Stripe Account's summary to both the tenant root doc
+// (used by chargeStoredCard) and data/settings (used by the UI). Mirrors
+// the writeBatch pattern from createTenantOnboarding so the two never
+// get out of sync.
+async function persistConnectStatus(db, tenantId, account, accountType) {
+  const { FieldValue } = require('firebase-admin/firestore');
+  const summary = summariseAccountStatus(account);
+  if (!summary) return null;
+  const batch = db.batch();
+  batch.set(db.doc(`tenants/${tenantId}`), {
+    stripeConnectAccountId:   summary.accountId,
+    stripeConnectAccountType: accountType || summary.accountType,
+    stripeConnectConnectedAt: FieldValue.serverTimestamp(),
+    stripeConnect:            summary,
+  }, { merge: true });
+  batch.set(db.doc(`tenants/${tenantId}/data/settings`), {
+    stripeConnect: {
+      accountId:         summary.accountId,
+      accountType:       accountType || summary.accountType,
+      chargesEnabled:    summary.chargesEnabled,
+      payoutsEnabled:    summary.payoutsEnabled,
+      detailsSubmitted:  summary.detailsSubmitted,
+      businessName:      summary.businessName,
+      statementDescriptor: summary.statementDescriptor,
+      requirementsCurrentlyDue: summary.requirementsCurrentlyDue,
+      updatedAt:         summary.updatedAt,
+    },
+  }, { merge: true });
+  await batch.commit();
+  return summary;
+}
+
+// ─── Express path ────────────────────────────────────────────────────────
+
+// Create an Express connected account for this tenant. Returns the new
+// account id. Idempotent: if the tenant already has one, returns the
+// existing id rather than creating a second.
+exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+
+  if (ten.stripeConnectAccountId) {
+    return { accountId: ten.stripeConnectAccountId, alreadyExists: true, accountType: ten.stripeConnectAccountType || 'express' };
+  }
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const account = await stripe.accounts.create({
+    type:    'express',
+    country: 'US',
+    email:   ten.ownerEmail || undefined,
+    business_profile: ten.name ? { name: ten.name } : undefined,
+    metadata: { tenantId, plumeNexusTenant: 'true' },
+  });
+  await persistConnectStatus(db, tenantId, account, 'express');
+  return { accountId: account.id, alreadyExists: false, accountType: 'express' };
+});
+
+// Mint a one-time hosted-onboarding URL for the Express account. Salon is
+// redirected there, fills out the Stripe-hosted form (business + bank +
+// SSN/EIN), then returns to our app via `refresh_url` / `return_url`.
+exports.createAccountOnboardingLink = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+  if (!ten.stripeConnectAccountId) {
+    throw new HttpsError('failed-precondition', 'Create the Express account first');
+  }
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  const link = await stripe.accountLinks.create({
+    account:     ten.stripeConnectAccountId,
+    refresh_url: `${baseUrl}/?connect=refresh&tenant=${encodeURIComponent(tenantId)}`,
+    return_url:  `${baseUrl}/?connect=return&tenant=${encodeURIComponent(tenantId)}`,
+    type:        'account_onboarding',
+  });
+
+  return { url: link.url, expiresAt: link.expires_at };
+});
+
+// Mint a short-lived Login Link to the Express Dashboard. Salon clicks
+// this from inside Plume's UI and is auto-signed-in to a slim Stripe
+// dashboard scoped to their account (no persistent password). Standard
+// accounts use a different URL — see manageStandardAccount below.
+exports.createExpressLoginLink = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+  if (!ten.stripeConnectAccountId) throw new HttpsError('failed-precondition', 'No connected account');
+  if (ten.stripeConnectAccountType === 'standard') {
+    // Standard accounts have their own stripe.com login; we just
+    // return the public Stripe Dashboard URL — clicking it lands them
+    // at their normal Stripe login page, not a passwordless link.
+    return { url: 'https://dashboard.stripe.com/', accountType: 'standard' };
+  }
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const link = await stripe.accounts.createLoginLink(ten.stripeConnectAccountId);
+  return { url: link.url, accountType: 'express' };
+});
+
+// ─── Standard path (OAuth) ───────────────────────────────────────────────
+
+// Build the Stripe OAuth authorisation URL for the Standard flow. The
+// salon clicks this and is sent to stripe.com to authorise Plume.
+// State is HMAC-signed so the callback can't be forged (CSRF defence).
+exports.getStripeConnectOAuthUrl = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const clientId = stripeConnectClientId.value();
+  if (!clientId) {
+    throw new HttpsError('unavailable',
+      'Standard Connect is not configured. Set STRIPE_CONNECT_CLIENT_ID in functions/.env or use Express instead.');
+  }
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  const ten = tenSnap.exists ? tenSnap.data() : {};
+
+  const state = buildOAuthState(tenantId, unsubscribeSecret.value());
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  const redirectUri = `${baseUrl}/?connect=oauth-callback`;
+  const params = new URLSearchParams({
+    response_type: 'code',
+    client_id:     clientId,
+    scope:         'read_write',
+    state,
+    redirect_uri:  redirectUri,
+    'stripe_user[email]': ten.ownerEmail || '',
+    'stripe_user[business_name]': ten.name || '',
+  });
+  return { url: `https://connect.stripe.com/oauth/v2/authorize?${params.toString()}` };
+});
+
+// Exchange the OAuth code returned by Stripe for an account_id and
+// persist it on the tenant. Verifies the HMAC state to prevent CSRF.
+exports.completeStripeConnectOAuth = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { code, state, tenantId: tid } = request.data || {};
+  if (!code || !state) throw new HttpsError('invalid-argument', 'code and state required');
+
+  const verified = verifyOAuthState(state, unsubscribeSecret.value());
+  if (!verified.ok) throw new HttpsError('permission-denied', 'OAuth state failed verification (CSRF)');
+
+  const tenantId = verified.tenantId || tid || TENANT_ID;
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  // Exchange code for the connected account's id
+  const tokenResp = await stripe.oauth.token({ grant_type: 'authorization_code', code });
+  const accountId = tokenResp.stripe_user_id;
+  if (!accountId) throw new HttpsError('internal', 'Stripe did not return an account id');
+
+  const account = await stripe.accounts.retrieve(accountId);
+  const summary = await persistConnectStatus(db, tenantId, account, 'standard');
+  return { accountId, accountType: 'standard', status: summary };
+});
+
+// ─── Shared: status + disconnect ─────────────────────────────────────────
+
+// Fetch the latest Stripe Account state and re-write the cached summary.
+// UI calls this on demand or after returning from the onboarding flow.
+exports.getStripeConnectStatus = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+  if (!ten.stripeConnectAccountId) return { connected: false };
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  try {
+    const account = await stripe.accounts.retrieve(ten.stripeConnectAccountId);
+    const summary = await persistConnectStatus(db, tenantId, account, ten.stripeConnectAccountType);
+    return { connected: true, status: summary };
+  } catch (e) {
+    // Account may have been deleted server-side (e.g. tenant deauthorized
+    // from Stripe Dashboard). Clear our state so the UI shows
+    // "not connected" rather than spinning forever.
+    if (/No such account|deauthorized/i.test(e?.message || '')) {
+      const { FieldValue } = require('firebase-admin/firestore');
+      const clear = {
+        stripeConnectAccountId:   FieldValue.delete(),
+        stripeConnectAccountType: FieldValue.delete(),
+        stripeConnect:            FieldValue.delete(),
+      };
+      await db.doc(`tenants/${tenantId}`).set(clear, { merge: true });
+      await db.doc(`tenants/${tenantId}/data/settings`).set({ stripeConnect: FieldValue.delete() }, { merge: true });
+      return { connected: false, wasDeauthed: true };
+    }
+    throw new HttpsError('internal', e?.message || 'Stripe account fetch failed');
+  }
+});
+
+// Disconnect the tenant from their connected account. For Express this
+// just clears Plume's local state (the account stays in Stripe so the
+// salon doesn't lose history). For Standard we call Stripe's deauthorize
+// endpoint, which revokes Plume's access on stripe.com.
+exports.disconnectStripeConnect = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+  if (!ten.stripeConnectAccountId) return { connected: false };
+
+  const accountType = ten.stripeConnectAccountType || 'express';
+
+  if (accountType === 'standard') {
+    const key = stripeKey.value();
+    const clientId = stripeConnectClientId.value();
+    if (key && clientId) {
+      const stripe = require('stripe')(key);
+      try {
+        await stripe.oauth.deauthorize({ client_id: clientId, stripe_user_id: ten.stripeConnectAccountId });
+      } catch (e) {
+        console.warn(`[disconnectStripeConnect] deauthorize failed (continuing to clear local):`, e?.message);
+      }
+    }
+  }
+
+  const { FieldValue } = require('firebase-admin/firestore');
+  const clear = {
+    stripeConnectAccountId:   FieldValue.delete(),
+    stripeConnectAccountType: FieldValue.delete(),
+    stripeConnect:            FieldValue.delete(),
+  };
+  await db.doc(`tenants/${tenantId}`).set(clear, { merge: true });
+  await db.doc(`tenants/${tenantId}/data/settings`).set({ stripeConnect: FieldValue.delete() }, { merge: true });
+  return { connected: false, accountType };
+});
+
 exports.stripeWebhook = onRequest(
   { secrets: [stripeWebhookSecret, stripeKey] },
   async (req, res) => {
@@ -6473,6 +6782,72 @@ exports.stripeWebhook = onRequest(
         await handleChargeDisputeClosed(obj, db, require('stripe')(key), sendEmail, platform);
       } catch (e) {
         console.error('[stripeWebhook] charge.dispute.closed handler error:', e?.message, e?.stack);
+      }
+    }
+
+    // ── Stripe Connect lifecycle ────────────────────────────────────────
+    // account.updated: fires when a connected account's status changes
+    // (charges_enabled flips on after KYC clears, payouts_enabled flips
+    // on after bank verification, requirements_currently_due updates,
+    // etc.). We re-cache the summary on the tenant so the UI shows
+    // accurate "Payments live / Stripe reviewing / Bank pending" copy
+    // without needing the user to refresh.
+    if (event.type === 'account.updated') {
+      try {
+        const account = obj;
+        const tenantId = account?.metadata?.tenantId;
+        if (tenantId) {
+          const accountType = account.type || null;
+          await persistConnectStatus(db, tenantId, account, accountType);
+        } else {
+          // Fall back to scanning by accountId — needed for Standard accounts
+          // because OAuth doesn't let us attach metadata at creation time.
+          const snap = await db.collection('tenants')
+            .where('stripeConnectAccountId', '==', account.id).limit(1).get().catch(() => null);
+          if (snap && !snap.empty) {
+            await persistConnectStatus(db, snap.docs[0].id, account, account.type || null);
+          }
+        }
+      } catch (e) {
+        console.error('[stripeWebhook] account.updated handler error:', e?.message);
+      }
+    }
+
+    // account.application.deauthorized: Standard-only — fires when a
+    // salon revokes Plume's access from inside their own Stripe Dashboard.
+    // Express accounts can't deauth this way (Plume created the account
+    // and owns the OAuth relationship).
+    if (event.type === 'account.application.deauthorized') {
+      try {
+        const accountId = obj?.account || obj?.id;
+        if (accountId) {
+          const snap = await db.collection('tenants')
+            .where('stripeConnectAccountId', '==', accountId).limit(1).get().catch(() => null);
+          if (snap && !snap.empty) {
+            const tid = snap.docs[0].id;
+            const { FieldValue } = require('firebase-admin/firestore');
+            const clear = {
+              stripeConnectAccountId:   FieldValue.delete(),
+              stripeConnectAccountType: FieldValue.delete(),
+              stripeConnect:            FieldValue.delete(),
+            };
+            await db.doc(`tenants/${tid}`).set(clear, { merge: true });
+            await db.doc(`tenants/${tid}/data/settings`).set({ stripeConnect: FieldValue.delete() }, { merge: true });
+            // Email the platform owner so we know a tenant disconnected
+            const platform = platformOwnerEmail.value() || 'jvankim@gmail.com';
+            if (platform) {
+              await sendEmail({
+                from: 'Plume Nexus Alerts <noreply@plumenexus.com>',
+                to:   platform,
+                subject: `⚠ Tenant ${tid} deauthorised Plume from their Stripe`,
+                html:  `<p>The tenant <strong>${esc(tid)}</strong> just revoked Plume's access to their Stripe account from inside their own Stripe Dashboard. Their card-on-file flows + POS will fail until they reconnect.</p>`,
+                tenantId: tid,
+              }).catch(e => console.error('[deauth alert email]', e?.message));
+            }
+          }
+        }
+      } catch (e) {
+        console.error('[stripeWebhook] account.application.deauthorized handler error:', e?.message);
       }
     }
 

@@ -60,6 +60,95 @@ Stripe Dashboard → Settings → Billing → Customer Portal → enable. Requir
   ← without this, plan-switch UI won't appear to customers even though the
   webhook is wired
 
+## 0bis. Stripe Connect (Express + Standard side by side)
+
+Salons connect their payment processing via one of two paths picked in the
+onboarding wizard (Phase 3 Money + compliance):
+
+- **Express** — Plume-managed, default. No stripe.com login for the salon.
+- **Standard** — salon manages their own stripe.com account (OAuth).
+
+Both end with `tenant.stripeConnectAccountId` populated, which
+`chargeStoredCard` uses.
+
+### 0bis.1 Express onboarding (sandbox)
+1. Open onboarding wizard → Phase 3 → Stripe Connect section
+2. Click **Set up payments** (the recommended/green card)
+3. Frontend calls `createExpressAccount` → `createAccountOnboardingLink`
+4. Browser redirects to Stripe-hosted onboarding form
+5. Fill in test data: business name "Test Salon", US, EIN `000000000` (Stripe
+   sandbox accepts this), bank routing `110000000` + account `000123456789`
+6. Submit → Stripe redirects back to `<PUBLIC_APP_URL>/?connect=return`
+7. Phase3Money's `useEffect` calls `getStripeConnectStatus` to refresh
+8. **Check Firestore** `tenants/{tid}`:
+   - `stripeConnectAccountId: 'acct_...'`
+   - `stripeConnectAccountType: 'express'`
+   - `stripeConnect.chargesEnabled: true` and `payoutsEnabled: true`
+9. **Check UI** status banner flips to green "Payments are live"
+10. Click **Open Stripe Dashboard ↗** → opens the slim Express dashboard
+    via `createExpressLoginLink` (single-use signed URL)
+
+### 0bis.2 Standard OAuth onboarding (sandbox)
+Prereq: `STRIPE_CONNECT_CLIENT_ID` set in `functions/.env`, and
+`<PUBLIC_APP_URL>/?connect=oauth-callback` registered as a redirect URI
+in Stripe Dashboard → Connect settings → OAuth.
+
+1. Onboarding wizard → Phase 3 → Stripe Connect
+2. Click **Connect my Stripe account** (the gray "Advanced" card)
+3. Browser redirects to `connect.stripe.com/oauth/v2/authorize` with our
+   HMAC-signed `state` parameter
+4. Sign in to a sandbox Stripe account (or create a new one inline)
+5. Authorise Plume Nexus
+6. Stripe redirects back to `<PUBLIC_APP_URL>/?connect=oauth-callback&code=...&state=...`
+7. Phase3Money's `useEffect` calls `completeStripeConnectOAuth` with code + state
+8. **Check Firestore** `tenants/{tid}`:
+   - `stripeConnectAccountId: 'acct_...'`
+   - `stripeConnectAccountType: 'standard'`
+9. **Check UI** status banner shows "Payments are live" + "Open stripe.com Dashboard ↗" link
+
+### 0bis.3 OAuth CSRF defence
+1. Manually craft a callback URL with a tampered `state` value
+2. Hit `<PUBLIC_APP_URL>/?connect=oauth-callback&code=fake&state=attacker:nonce:badsig`
+3. **Check** `completeStripeConnectOAuth` returns `permission-denied` ("OAuth state failed verification")
+4. **Check Firestore** no tenant record was modified
+
+### 0bis.4 account.updated webhook on KYC completion
+This fires automatically when Stripe approves the account after onboarding.
+1. Complete Express onboarding partially (skip bank verification step)
+2. **Check Firestore** `stripeConnect.payoutsEnabled: false`,
+   `requirementsCurrentlyDue` contains `external_account`
+3. Use the Stripe-hosted onboarding link (refresh URL) to finish bank
+4. Stripe fires `account.updated` → webhook handler re-caches summary
+5. **Check Firestore** `payoutsEnabled: true`, requirements empty
+
+### 0bis.5 account.application.deauthorized webhook (Standard only)
+1. After Standard OAuth onboarding, log in to that account at
+   stripe.com → Settings → Connected applications → revoke Plume Nexus
+2. Stripe fires `account.application.deauthorized`
+3. **Check Firestore** `tenants/{tid}` — all `stripeConnect*` fields cleared
+4. **Check email** platform owner gets `⚠ Tenant {tid} deauthorised Plume from their Stripe`
+
+### 0bis.6 Disconnect from inside Plume (both types)
+1. Call `disconnectStripeConnect({ tenantId })` from the admin UI (TBD)
+2. For Express: clears Plume's local state, keeps account in Stripe
+3. For Standard: also calls Stripe's deauthorize endpoint
+4. **Check Firestore** state cleared in both cases
+
+### 0bis.7 Switching from Express to Standard (or vice versa)
+Not supported today — once a tenant picks a type, that's their account
+forever. To switch they'd need to disconnect + re-onboard from scratch.
+Payment + customer history doesn't transfer between connected accounts.
+
+### 0bis.8 chargeStoredCard with a connected account
+Once Connect is live and a card is saved, `chargeStoredCard` finally works.
+1. Save a card via the Cards tab in any client modal
+2. Manually call `chargeStoredCard({ clientId, amount: 2500 })` (e.g. from
+   the Functions emulator console)
+3. **Check Stripe Dashboard** the charge appears in the connected account
+   (NOT Plume's main account) — verifies `on_behalf_of` + `transfer_data`
+4. **Check cardholder's "statement"** (Stripe Dashboard preview) — shows
+   the salon's name, not "Plume Nexus"
+
 ## 1. SaaS subscription flows
 
 ### 1.1 New tenant signup creates 14-day trial

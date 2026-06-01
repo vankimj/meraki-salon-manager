@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
+import { callFn } from '../../lib/firebase';
+import { TENANT_ID } from '../../lib/tenant';
 
 // Phase 3 (UI step 4 of 8) — Money + compliance.
 //
@@ -29,7 +31,11 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
   const termsUrl   = `${origin}/terms`;
   const [privacyOk, setPrivacyOk] = useState(Boolean(stored.privacyOk));
   const [termsOk,   setTermsOk]   = useState(Boolean(stored.termsOk));
-  const stripeConnected = Boolean(settings?.stripeAccountId);
+  // Stripe Connect: two paths share one tenant doc field — Express
+  // (Plume-managed, default) and Standard (salon manages their own
+  // stripe.com login). The mirror lives in settings.stripeConnect.
+  const stripeConnect = settings?.stripeConnect || null;
+  const stripeConnected = Boolean(stripeConnect?.accountId);
 
   const [err, setErr] = useState('');
 
@@ -107,25 +113,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       </Section>
 
       <Section title="Stripe Connect">
-        {stripeConnected ? (
-          <div style={{ padding: 12, borderRadius: 8, background: '#ecfdf5', border: '1px solid #6ee7b7', fontSize: 13, color: '#065f46' }}>
-            ✓ Stripe is connected. Account ID: <code style={{ fontSize: 11, background: 'rgba(0,0,0,.05)', padding: '1px 6px', borderRadius: 4 }}>{settings.stripeAccountId}</code>
-          </div>
-        ) : (
-          <div style={{ padding: 12, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, lineHeight: 1.55 }}>
-            <strong>You can take cards once Stripe is connected.</strong>
-            <div style={{ marginTop: 4 }}>
-              Skip this for now if you're not accepting card payments yet — the calendar, walk-in queue,
-              and all non-payment features work without Stripe. Connect before your first paid appointment.
-            </div>
-            <div style={{ marginTop: 8 }}>
-              <button onClick={() => showToast('Stripe Connect launches in Sprint 3 — for now configure in Admin → Financial.', 5000)}
-                style={btnSecondary} type="button">
-                Connect Stripe (coming soon)
-              </button>
-            </div>
-          </div>
-        )}
+        <StripeConnectStep stripeConnect={stripeConnect} showToast={showToast} />
       </Section>
 
       {err && (
@@ -199,6 +187,218 @@ function CheckRow({ checked, onChange, label, desc }) {
 
 function Link({ href, children }) {
   return <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', fontWeight: 600, textDecoration: 'underline' }}>{children}</a>;
+}
+
+// ── Stripe Connect step (Express + Standard) ─────────────────────────────
+// Two paths share one downstream charge architecture. The salon picks
+// during onboarding:
+//   Express  Plume-managed; no stripe.com login; 5-min Stripe-hosted form
+//   Standard Salon manages their own stripe.com account; full Stripe UX
+function StripeConnectStep({ stripeConnect, showToast }) {
+  const [busy, setBusy] = useState(false);
+  const [err,  setErr]  = useState('');
+
+  // After return from Stripe-hosted onboarding (Express ?connect=return)
+  // or OAuth (Standard ?connect=oauth-callback&code=...&state=...), finish
+  // the handshake + refresh the cached status so the UI flips to live.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const mode = params.get('connect');
+    if (!mode) return;
+
+    async function finalise() {
+      try {
+        if (mode === 'oauth-callback') {
+          const code  = params.get('code');
+          const state = params.get('state');
+          if (code && state) {
+            await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
+          }
+        }
+        await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+      } catch (e) {
+        console.warn('[Connect] finalise failed:', e?.message);
+      } finally {
+        // Strip the query params so a refresh doesn't replay the callback
+        const url = new URL(window.location.href);
+        url.searchParams.delete('connect');
+        url.searchParams.delete('code');
+        url.searchParams.delete('state');
+        url.searchParams.delete('scope');
+        url.searchParams.delete('tenant');
+        window.history.replaceState({}, '', url.toString());
+      }
+    }
+    finalise();
+  }, []);
+
+  async function startExpress() {
+    setBusy(true); setErr('');
+    try {
+      await callFn('createExpressAccount')({ tenantId: TENANT_ID });
+      const { data } = await callFn('createAccountOnboardingLink')({ tenantId: TENANT_ID });
+      if (data?.url) {
+        window.location.href = data.url;        // Stripe-hosted onboarding form
+      } else {
+        throw new Error('No onboarding URL returned');
+      }
+    } catch (e) {
+      setErr(e.message || 'Failed to start Express onboarding');
+      setBusy(false);
+    }
+  }
+
+  async function startStandard() {
+    setBusy(true); setErr('');
+    try {
+      const { data } = await callFn('getStripeConnectOAuthUrl')({ tenantId: TENANT_ID });
+      if (data?.url) {
+        window.location.href = data.url;        // Stripe OAuth
+      } else {
+        throw new Error('No OAuth URL returned');
+      }
+    } catch (e) {
+      setErr(e.message || 'Failed to start Standard OAuth');
+      setBusy(false);
+    }
+  }
+
+  async function continueOnboarding() {
+    setBusy(true); setErr('');
+    try {
+      const { data } = await callFn('createAccountOnboardingLink')({ tenantId: TENANT_ID });
+      if (data?.url) window.location.href = data.url;
+    } catch (e) {
+      setErr(e.message);
+      setBusy(false);
+    }
+  }
+
+  async function openDashboard() {
+    setBusy(true); setErr('');
+    try {
+      const { data } = await callFn('createExpressLoginLink')({ tenantId: TENANT_ID });
+      if (data?.url) window.open(data.url, '_blank', 'noopener');
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Already connected: show status banner + manage controls
+  if (stripeConnect?.accountId) {
+    const { chargesEnabled, payoutsEnabled, detailsSubmitted, accountType,
+            businessName, statementDescriptor, requirementsCurrentlyDue = [] } = stripeConnect;
+    const isLive = chargesEnabled && payoutsEnabled;
+    const needsMore = requirementsCurrentlyDue.length > 0 || !detailsSubmitted;
+    return (
+      <div style={{ padding: 12, borderRadius: 8,
+        background: isLive ? '#ecfdf5' : needsMore ? '#fff7ed' : '#fffbeb',
+        border: `1px solid ${isLive ? '#6ee7b7' : needsMore ? '#fed7aa' : '#fde68a'}`,
+        fontSize: 13, color: isLive ? '#065f46' : needsMore ? '#7c2d12' : '#92400e',
+      }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
+          {isLive ? '✓ Payments are live' : needsMore ? 'More info needed' : 'Stripe reviewing your account'}
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          {accountType === 'express' ? 'Plume-managed' : 'You manage at stripe.com'}
+          {businessName ? ` · ${businessName}` : ''}
+          {statementDescriptor ? ` · "${statementDescriptor}" on receipts` : ''}
+        </div>
+        <div style={{ fontSize: 12, marginBottom: 8 }}>
+          Charges: {chargesEnabled ? '✓' : '✗'}{' · '}
+          Payouts: {payoutsEnabled ? '✓' : '✗'}{' · '}
+          KYC submitted: {detailsSubmitted ? '✓' : '✗'}
+        </div>
+        {requirementsCurrentlyDue.length > 0 && (
+          <div style={{ fontSize: 11, marginBottom: 8 }}>
+            Stripe needs: {requirementsCurrentlyDue.slice(0, 4).join(', ')}{requirementsCurrentlyDue.length > 4 ? '…' : ''}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+          {needsMore && accountType === 'express' && (
+            <button onClick={continueOnboarding} disabled={busy} style={btnPrimary(busy)} type="button">
+              {busy ? 'Loading…' : 'Continue setup'}
+            </button>
+          )}
+          {accountType === 'express' && (
+            <button onClick={openDashboard} disabled={busy} style={btnSecondary} type="button">
+              {busy ? '…' : 'Open Stripe Dashboard ↗'}
+            </button>
+          )}
+          {accountType === 'standard' && (
+            <a href="https://dashboard.stripe.com/" target="_blank" rel="noopener noreferrer"
+              style={{ ...btnSecondary, textDecoration: 'none', display: 'inline-block' }}>
+              Open stripe.com Dashboard ↗
+            </a>
+          )}
+        </div>
+        {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
+      </div>
+    );
+  }
+
+  // Not connected: show the two-path picker
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: '#444', lineHeight: 1.55, marginBottom: 12 }}>
+        You can take cards once Stripe is connected. Pick how you want to handle payments —
+        both work the same for charging customers; the difference is whether you ever have to
+        deal with stripe.com directly.
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+        {/* Express card */}
+        <div style={{ border: '2px solid #6ee7b7', borderRadius: 10, padding: 14, background: '#f0fdf4', position: 'relative' }}>
+          <div style={{ position: 'absolute', top: -10, right: 12,
+            background: '#065f46', color: '#fff', fontSize: 9, fontWeight: 700,
+            padding: '3px 8px', borderRadius: 8, letterSpacing: 0.5 }}>
+            RECOMMENDED
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>⚡ Easy</div>
+          <div style={{ fontSize: 12, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
+            Set up through Plume — quick 5-min Stripe-hosted form. No stripe.com login needed.
+            We handle everything in one place.
+          </div>
+          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 12px', lineHeight: 1.7 }}>
+            <li>No separate stripe.com account</li>
+            <li>Slim Stripe dashboard inside Plume</li>
+            <li>5-min hosted onboarding</li>
+            <li>Slight per-payout fee (Plume absorbs)</li>
+          </ul>
+          <button onClick={startExpress} disabled={busy} style={btnPrimary(busy)} type="button">
+            {busy ? 'Loading…' : 'Set up payments'}
+          </button>
+        </div>
+
+        {/* Standard card */}
+        <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, padding: 14, background: '#fff' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>🔧 Advanced</div>
+          <div style={{ fontSize: 12, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
+            Connect an existing Stripe account (or create one at stripe.com).
+            You'll manage payouts + disputes from your own Stripe Dashboard.
+          </div>
+          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 12px', lineHeight: 1.7 }}>
+            <li>Full Stripe Dashboard access</li>
+            <li>You log in at stripe.com</li>
+            <li>No per-payout fee</li>
+            <li>For salons who already use Stripe</li>
+          </ul>
+          <button onClick={startStandard} disabled={busy} style={btnSecondary} type="button">
+            {busy ? 'Loading…' : 'Connect my Stripe account'}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 11, color: '#888', marginTop: 12, lineHeight: 1.5 }}>
+        You can skip this for now — the calendar, walk-in queue, and all non-payment features
+        work without Stripe. Connect before your first paid appointment.
+      </div>
+
+      {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
+    </div>
+  );
 }
 
 const inp = { boxSizing: 'border-box', padding: '7px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff' };
