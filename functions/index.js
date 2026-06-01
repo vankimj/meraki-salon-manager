@@ -136,6 +136,18 @@ const {
   resolveBirthdayHour, resolveLapsedHour,
 } = require('./lib/tenantTime');
 const { mintShortLink, lookupShortLink } = require('./lib/apptShortLink');
+const {
+  STATES: TC_STATES,
+  computeCurrentState: tcCurrentState,
+  validateTransition: tcValidate,
+  isDuplicate:        tcIsDuplicate,
+  summarizeDay:       tcSummarize,
+  buildEvent:         tcBuildEvent,
+  generateSalt:       tcGenSalt,
+  hashPin:            tcHashPin,
+  verifyPin:          tcVerifyPin,
+  isValidPinFormat:   tcIsValidPin,
+} = require('./lib/timeclock');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -2153,6 +2165,148 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
   }, { merge: true });
 
   return { ok: true, sentTo: email };
+});
+
+// ── Tech time clock — kiosk (PIN) + admin override paths ───────────────
+//
+// Single callable handles both surfaces because they share state machine and
+// idempotency. Kiosk path is unauthenticated (iPad tablet is anonymous) but
+// gated by per-employee scrypt-hashed PIN. Admin override path is gated by
+// admin-or-scheduler role (front desk usually has scheduler, sometimes admin).
+//
+// Date for the attendance doc is computed in the tenant's tz so a 11:50 PM
+// clock-out doesn't roll into tomorrow's doc when interpreted as UTC.
+
+exports.clockEvent = onCall({ cors: true }, async (request) => {
+  const data       = request.data || {};
+  const tenantId   = data.tenantId || TENANT_ID;
+  const employeeId = String(data.employeeId || '').trim();
+  const kind       = String(data.kind || '').trim();
+  const via        = String(data.via || 'kiosk').trim();
+  const pin        = data.pin != null ? String(data.pin).trim() : null;
+  const atProvided = data.at ? String(data.at) : null;
+
+  if (!employeeId) throw new HttpsError('invalid-argument', 'employeeId required');
+  if (!kind)       throw new HttpsError('invalid-argument', 'kind required');
+  if (via !== 'kiosk' && via !== 'admin_override') {
+    throw new HttpsError('invalid-argument', 'via must be "kiosk" or "admin_override"');
+  }
+
+  const db      = getFirestore();
+  const empRef  = db.doc(`tenants/${tenantId}/employees/${employeeId}`);
+  const empSnap = await empRef.get();
+  if (!empSnap.exists) throw new HttpsError('not-found', 'Employee not found');
+  const emp = empSnap.data() || {};
+  if (emp.active === false) {
+    throw new HttpsError('failed-precondition', 'Employee is inactive');
+  }
+
+  let byUserId = null;
+  if (via === 'kiosk') {
+    if (!pin) throw new HttpsError('invalid-argument', 'PIN required for kiosk');
+    if (!tcIsValidPin(pin)) throw new HttpsError('invalid-argument', 'PIN must be 4 digits');
+    if (!emp.pinHash || !emp.pinSalt) {
+      throw new HttpsError('failed-precondition', 'No PIN set for this employee — ask the salon admin to set one');
+    }
+    if (!tcVerifyPin(pin, emp.pinSalt, emp.pinHash)) {
+      throw new HttpsError('permission-denied', 'Wrong PIN');
+    }
+  } else {
+    // admin_override: front desk punches FOR a tech. Admin OR scheduler only
+    // (techs can't override each other; readonly is excluded too).
+    if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+    if (!(await isBootstrapAdmin(request))) {
+      const role = await callerRole(db, tenantId, request);
+      if (role !== 'admin' && role !== 'scheduler') {
+        throw new HttpsError('permission-denied', 'admin or scheduler role required');
+      }
+    }
+    byUserId = request.auth.uid || null;
+  }
+
+  // Date key in the tenant's tz so clock-out at 11:50 PM Eastern doesn't
+  // land in tomorrow's UTC date doc.
+  const at  = atProvided || new Date().toISOString();
+  const tz  = await tenantTimezone(db, tenantId);
+  const date = new Date(at).toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+  const attRef = db.doc(`tenants/${tenantId}/attendance/${date}`);
+
+  let result;
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(attRef);
+    const doc  = snap.exists ? snap.data() : { date, entries: [] };
+    const entries = Array.isArray(doc.entries) ? doc.entries.slice() : [];
+    let idx = entries.findIndex(e => e && e.employeeId === employeeId);
+    if (idx === -1) {
+      idx = entries.length;
+      entries.push({ employeeId, employeeName: emp.name || '', events: [] });
+    }
+    const entry  = entries[idx];
+    const events = Array.isArray(entry.events) ? entry.events : [];
+    const state  = tcCurrentState(events);
+    const check  = tcValidate(state, kind);
+    if (!check.ok) {
+      throw new HttpsError('failed-precondition', check.reason);
+    }
+    const last = events.length ? events[events.length - 1] : null;
+    if (tcIsDuplicate(last, kind, at)) {
+      result = { state, summary: tcSummarize(events), duplicate: true };
+      return;
+    }
+    const newEvent  = tcBuildEvent(kind, via, { at, byUserId });
+    const newEvents = events.concat([newEvent]);
+    entries[idx] = {
+      ...entry,
+      employeeName: emp.name || entry.employeeName || '',
+      events:       newEvents,
+    };
+    tx.set(attRef, { date, entries, updatedAt: new Date().toISOString() }, { merge: true });
+    result = {
+      state:   tcCurrentState(newEvents),
+      summary: tcSummarize(newEvents),
+    };
+  });
+  return result;
+});
+
+// Admin sets / resets a 4-digit PIN for an employee. Stored as scrypt(salt+pin)
+// so a stolen DB doesn't reveal PINs to a buddy-puncher trying to clock for
+// somebody else.
+exports.setEmployeePin = onCall({ cors: true }, async (request) => {
+  const { tenantId: tid, employeeId, pin } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!employeeId) throw new HttpsError('invalid-argument', 'employeeId required');
+  const cleanPin = String(pin || '').trim();
+  if (!tcIsValidPin(cleanPin)) throw new HttpsError('invalid-argument', 'PIN must be exactly 4 digits');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const empRef = db.doc(`tenants/${tenantId}/employees/${employeeId}`);
+  if (!(await empRef.get()).exists) throw new HttpsError('not-found', 'Employee not found');
+  const salt = tcGenSalt();
+  const hash = tcHashPin(cleanPin, salt);
+  await empRef.set({
+    pinSalt:      salt,
+    pinHash:      hash,
+    pinUpdatedAt: new Date().toISOString(),
+  }, { merge: true });
+  return { ok: true };
+});
+
+// Admin removes an employee's PIN. Kiosk clock-in becomes impossible until a
+// new PIN is set; admin override still works.
+exports.clearEmployeePin = onCall({ cors: true }, async (request) => {
+  const { tenantId: tid, employeeId } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!employeeId) throw new HttpsError('invalid-argument', 'employeeId required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const { FieldValue } = require('firebase-admin/firestore');
+  await db.doc(`tenants/${tenantId}/employees/${employeeId}`).set({
+    pinSalt:      FieldValue.delete(),
+    pinHash:      FieldValue.delete(),
+    pinUpdatedAt: new Date().toISOString(),
+  }, { merge: true });
+  return { ok: true };
 });
 
 // Returns the signed manage-appointment URL for staff. Same URL the booking
