@@ -238,7 +238,7 @@ function PinAndActionModal({ emp, state, onClose, onSuccess }) {
         setStep('actions');
       }
     }
-  }, [pin, step]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pin, step]);
 
   async function runAction(action) {
     setStep('working');
