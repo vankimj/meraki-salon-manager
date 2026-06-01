@@ -2,11 +2,16 @@
 
 **Goal:** rename the Firebase project from `meraki-salon-manager` to `plumenexus-prod` before onboarding real (non-Jonathan) tenants. Single user (Jonathan, jvankim@gmail.com); Meraki Nail Studio is the only real data; everything else is demo or pre-prod.
 
-**Budget:** ~$5 total (one-time GCS storage for export bundles; no parallel-run).
+**Budget:** ~$5 total (one-time GCS storage for export bundles; no parallel-run). **Currently $297.78 in Google Cloud Free Trial credit covers this and ~56 days of post-migration baseline** — soft deadline to start within next 2 weeks for maximum credit headroom.
 
 **Cutover strategy:** export-and-archive instead of 30-day parallel-run. Decommission old project on day 7 after green-light, retain export bundles in GCS for 90 days.
 
-**Time estimate:** 3 working days + Google OAuth verification clock (3–5 business days, kicked off day 1).
+**Time estimate:** 3 working days. No Google OAuth verification clock — new project starts in Testing mode (consent screen), and the `business.manage` sensitive-scope flow has zero users on the old project anyway (per Audience tab, 0/100 user cap), so verification can be deferred indefinitely until ready for public sign-ups.
+
+**Project structure on the new platform:** TWO new Firebase projects (split from current single-project setup):
+- `plumenexus-prod` — the SaaS app (Firestore + Functions + Storage + Auth + BQ). Customer-facing, holds all secrets.
+- `plumenexus-marketing` — the static marketing site at `plumenexus.com` only. No backend, no secrets. Splitting it out shrinks the blast radius if marketing deploy access ever leaks.
+- All verticals (nail salons, medspas, barbershops, day spas) remain tenants on the SAME `plumenexus-prod` project — not separate per-vertical projects. The codebase is one horizontal platform; flow templates differentiate verticals.
 
 **Rollback path:** Firestore export bundles re-importable into a scratch project; Stripe webhook history queryable in Stripe Dashboard forever; git tag pre-migration commit.
 
@@ -143,12 +148,18 @@ gsutil lifecycle set /tmp/lifecycle.json gs://plumenexus-migration-snapshot-2026
 
 ## Phase 2 — New Firebase project setup (Day 1, parallel with Phase 1; 2 hr)
 
-### 2.1 — Create Firebase project
-- [ ] Firebase Console → Add Project → name `plumenexus-prod`
-- [ ] Enable Blaze (pay-as-you-go) plan
-- [ ] Link to billing account (same card)
-- [ ] Note the new project number: `_______________________________`
-- [ ] Note the new messagingSenderId: `_______________________________`
+### 2.1 — Create TWO Firebase projects
+- [ ] Firebase Console → Add Project → name `plumenexus-prod` (the SaaS app — Firestore, Functions, Auth, Storage, BQ)
+  - Enable Blaze (pay-as-you-go) plan
+  - Link to billing account (same card that has the $297 free trial credit applied)
+  - Note the new project number: `_______________________________`
+  - Note the new messagingSenderId: `_______________________________`
+- [ ] Firebase Console → Add Project → name `plumenexus-marketing` (the static marketing site — Hosting only)
+  - Spark plan is fine (static site, no Functions/Firestore needed)
+  - Link to same billing account if you want unified billing reporting
+  - This project will host `plumenexus.com` and serve the React marketing build from `plumenexus/dist/`
+
+Why split: the marketing site has zero secrets and zero backend; mixing it with the SaaS project means anyone with marketing deploy access can also deploy to the SaaS project (where Stripe keys + customer PII live). Splitting reduces blast radius for negligible setup cost.
 
 ### 2.2 — Enable required APIs
 Get the list from old project:
@@ -171,18 +182,22 @@ done < /tmp/apis.txt
 ### 2.4 — Enable Firestore PITR (resets to 0; starts fresh)
 - [ ] Firestore → Settings → Point-in-time recovery → enable
 
-### 2.5 — Kick off Google OAuth consent screen verification (LONG CLOCK — START NOW)
-- [ ] Google Cloud Console → APIs & Services → OAuth consent screen → External
-- [ ] App name: `Plume Nexus Salon Manager`
-- [ ] Support email: jvankim@gmail.com
-- [ ] App domain: `plumenexus.com`
-- [ ] Authorized domains: `plumenexus.com`, `cloudfunctions.net`
-- [ ] Scopes: add `https://www.googleapis.com/auth/business.manage`
-- [ ] Test users: jvankim@gmail.com
-- [ ] **Submit for production verification** (3–5 business day clock)
+### 2.5 — Set up OAuth consent screen in **Testing mode** (no verification clock)
+The old project's consent screen is "In production" but only because basic Google sign-in (email+profile scopes) doesn't require verification. The one sensitive scope (`business.manage`) is still capped at 100 users with 0 grants ever (per Audience tab). So:
+
+- [ ] Google Cloud Console (new project) → Google Auth Platform → Branding
+  - App name: `Plume Nexus Salon Manager`
+  - Support email: jvankim@gmail.com
+  - App domain: `plumenexus.com`
+  - Authorized domains: `plumenexus.com`, `cloudfunctions.net`
+- [ ] Audience tab → User type: **External**, Publishing status: **Testing** (default; do NOT submit for verification)
+- [ ] Test users: add jvankim@gmail.com (and any tenant owner emails you want to onboard during the window — max 100)
+- [ ] Scopes: basic email+profile only for now. **Skip the `business.manage` scope** — defer until someone actually wants to use the GBP Connect feature.
 - [ ] Create OAuth client ID (Web application)
   - Redirect URI: `https://us-central1-plumenexus-prod.cloudfunctions.net/googleBusinessAuthCallback`
 - [ ] Save new `GOOGLE_OAUTH_CLIENT_ID` + `GOOGLE_OAUTH_CLIENT_SECRET` to vault
+
+**Future-only — when to submit for production verification:** when you're ready to onboard >10 tenants who use Google sign-in (or any tenant who wants Google Business Profile auto-sync). At that point, submit; the 3–5 day clock runs while you continue feature work.
 
 ### 2.6 — Create new KMS key for refresh-token encryption
 ```bash

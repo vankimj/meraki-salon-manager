@@ -323,11 +323,11 @@ function VersionBadge() {
   );
 }
 
-// Visual marker so it's obvious when you're not on prod (e.g. on the staging
-// preview channel reading from the meraki-staging tenant).
+// Visual marker so it's obvious when you're not on the canonical Meraki tenant
+// (e.g. on a staging preview channel reading from a staging tenant).
 function EnvBanner() {
-  if (TENANT_ID === 'meraki') return null;
-  const label = TENANT_ID === 'meraki-staging' ? 'STAGING' : TENANT_ID.toUpperCase();
+  if (TENANT_ID === 'merakinailstudio') return null;
+  const label = TENANT_ID === 'merakinailstudio-staging' ? 'STAGING' : TENANT_ID.toUpperCase();
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0,

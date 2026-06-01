@@ -1,36 +1,25 @@
 {
   "projects": {
-    "default": "meraki-salon-manager"
+    "default":   "plumenexus-prod",
+    "legacy":    "meraki-salon-manager",
+    "marketing": "plumenexus-marketing"
   },
   "targets": {
+    "plumenexus-prod": {
+      "hosting": {
+        "app": ["plumenexus-prod"]
+      }
+    },
+    "plumenexus-marketing": {
+      "hosting": {
+        "plumenexus": ["plumenexus-marketing"]
+      }
+    },
     "meraki-salon-manager": {
       "hosting": {
-        "app": [
-          "meraki-salon-manager"
-        ],
-        "plumenexus": [
-          "plumenexus"
-        ],
-        "platform-admin": [
-          "plumenexus-admin"
-        ]
-      }
-    }
-  },
-  "etags": {
-    "meraki-salon-manager": {
-      "extensionInstances": {
-        "fs-bq-appointments": "8d36861a1d4a384d593cba902e922b28a932f49e0ed905bb125c43ddc5f5dd8b",
-        "fs-bq-clients": "7235fe54da6eedd831cf79767b16d61a3a0611ae0bbc3592e846460944dab2fc",
-        "fs-bq-data": "f5b78b799e330bcb1e907477543c67c839309278de07b06819a71ad68857a5b9",
-        "fs-bq-disputes": "1c9e36c179f419ad873c598b4503a88fca0e37ed5c7d5623bba0f3bfa64a4094",
-        "fs-bq-employees": "a4afe8b608f1e4ee9a7d3bca2aad43b2948462e397c4eb2fff769ed8b38b86e1",
-        "fs-bq-giftcards": "c7d4f0006fac64770b3d1287f1fe5d590d58767e201171069b5f24e00ddbbeed",
-        "fs-bq-payrollruns": "712c0837f42d98e009494bfed8250c86aae3b38e3c2395423e2fa47072261c3d",
-        "fs-bq-promocodes": "797e7085818a35613360aa8df27523c6e7df177ce54de69046de8fd8a0c4c0f0",
-        "fs-bq-receipts": "9ae150455a5fcf47be2d2e281727e002c2a8b0f57b31c640a814345c56bc1134",
-        "fs-bq-refunds": "6aa6691e0cd60a5ed3bc5a074b68e4b360715181a987af5c0ad4fba25f05eb42",
-        "fs-bq-services": "1b7cb086b5578224e09d9ded7e969b7ef8c05c60ebcc4ed3699fffc2b0e5c270"
+        "app":            ["meraki-salon-manager"],
+        "plumenexus":     ["plumenexus"],
+        "platform-admin": ["plumenexus-admin"]
       }
     }
   }

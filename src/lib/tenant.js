@@ -9,7 +9,7 @@
 //        - alias    → 301 redirect to primary's URL
 //        - reserved → render TenantNotFound (reason: reserved)
 //        - missing  → render TenantNotFound (reason: unknown)
-//   4. meraki-salon-manager.web.app, localhost → fallback to 'meraki'
+//   4. plumenexus-prod.web.app, localhost → fallback to 'merakinailstudio'
 //
 // The `slugs/{slug}` collection is the SaaS lookup layer:
 //   - Public-readable, so anonymous visitors can resolve before sign-in.
@@ -66,7 +66,7 @@ function bootGuess() {
       return sub;
     }
   }
-  // Anything else (e.g. meraki-salon-manager.web.app, custom domain, dev host).
+  // Anything else (e.g. plumenexus-prod.web.app, custom domain, dev host).
   // src/main.jsx redirects .web.app to the SaaS subdomain before render, so
   // this should never be hit in production — log so we notice if it ever is.
   console.warn(`[tenant] no SaaS root matched for ${hostname} — using LEGACY_FALLBACK_TENANT`);
@@ -139,7 +139,7 @@ export async function resolveTenant() {
 
   const sub = hostnameSubdomain(hostname);
   if (!sub) {
-    // Not on a SaaS domain (e.g. meraki-salon-manager.web.app). Fall back
+    // Not on a SaaS domain (e.g. plumenexus-prod.web.app). Fall back
     // to the legacy tenant. No lookup needed.
     resolveState = { status: 'ok' };
     return;

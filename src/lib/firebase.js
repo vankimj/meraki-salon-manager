@@ -9,14 +9,12 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
 
 const FIREBASE_CONFIG = {
-  apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  // OAuth popup flashes plumenexus.com — see plumenexus/src/lib/firebase.js.
-  // Cloud Console OAuth client was updated to allow plumenexus.com.
-  authDomain:        'plumenexus.com',
-  projectId:         'meraki-salon-manager',
-  storageBucket:     'meraki-salon-manager.firebasestorage.app',
-  messagingSenderId: '721171829996',
-  appId:             '1:721171829996:web:57f1a33d174c966b7fc1c9',
+  apiKey:            'AIzaSyDyZkqpU30oiZYtm79ZFLAV7QNzZFvQEIo',
+  authDomain:        'plumenexus-prod.firebaseapp.com',
+  projectId:         'plumenexus-prod',
+  storageBucket:     'plumenexus-prod.firebasestorage.app',
+  messagingSenderId: '563347750501',
+  appId:             '1:563347750501:web:db870fca9aa65f5b3c908c',
 };
 
 const app = initializeApp(FIREBASE_CONFIG);

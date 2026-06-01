@@ -43,7 +43,7 @@ For local testing, forward Stripe events to the emulator (or staging URL):
 firebase emulators:start --only functions
 
 # Terminal 2: forward events
-stripe listen --forward-to http://localhost:5001/meraki-salon-manager/us-central1/stripeWebhook
+stripe listen --forward-to http://localhost:5001/plumenexus-prod/us-central1/stripeWebhook
 # → prints a NEW webhook signing secret like whsec_xxx
 # Copy that secret and set STRIPE_WEBHOOK_SECRET to it for local runs.
 ```

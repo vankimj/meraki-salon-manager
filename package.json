@@ -20,7 +20,7 @@
     "deploy:functions": "firebase deploy --only functions",
     "promote:staging": "npm run deploy:prod",
     "rollback:prod": "git revert HEAD --no-edit && npm run deploy:prod && echo '\\n↩  Rolled prod back by reverting the last commit and redeploying.'",
-    "rollback:console": "node -e \"console.log('\\\\nOpen Firebase Console → Hosting → Release History to roll back to any specific past release:\\\\nhttps://console.firebase.google.com/project/meraki-salon-manager/hosting/main\\\\n');\"",
+    "rollback:console": "node -e \"console.log('\\\\nOpen Firebase Console → Hosting → Release History to roll back to any specific past release:\\\\nhttps://console.firebase.google.com/project/plumenexus-prod/hosting/main\\\\n');\"",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",

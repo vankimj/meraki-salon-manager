@@ -4,17 +4,12 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signO
 import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  // OAuth popup URL flashes plumenexus.com instead of the default
-  // firebaseapp.com. plumenexus.com + admin.plumenexus.com are added
-  // to the Web OAuth client's Authorized Origins + redirect URIs in
-  // Google Cloud Console (manual step — no API). Firebase Hosting
-  // auto-serves the /__/auth/* namespace on any custom hosting domain.
-  authDomain:        'plumenexus.com',
-  projectId:         'meraki-salon-manager',
-  storageBucket:     'meraki-salon-manager.firebasestorage.app',
-  messagingSenderId: '721171829996',
-  appId:             '1:721171829996:web:57f1a33d174c966b7fc1c9',
+  apiKey:            'AIzaSyDyZkqpU30oiZYtm79ZFLAV7QNzZFvQEIo',
+  authDomain:        'plumenexus-prod.firebaseapp.com',
+  projectId:         'plumenexus-prod',
+  storageBucket:     'plumenexus-prod.firebasestorage.app',
+  messagingSenderId: '563347750501',
+  appId:             '1:563347750501:web:db870fca9aa65f5b3c908c',
 };
 
 const app  = initializeApp(firebaseConfig);

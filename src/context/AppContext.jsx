@@ -3,7 +3,6 @@ import { getTheme, detectAutoTheme } from '../lib/themes';
 import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
 import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats, subscribeToRecentNotifications, markNotificationRead, ensureStaffEmailsBackfill, healUsersFullIfMissing } from '../lib/firestore';
-import { migrateFromLegacy } from '../lib/migration';
 import { logActivity, setLoggerUser } from '../lib/logger';
 import { phSVG } from '../utils/helpers';
 import { isFeatureOn } from '../lib/featureFlags';
@@ -205,7 +204,6 @@ export function AppProvider({ children }) {
   useEffect(() => {
     (async () => {
       setSyncDot('syncing');
-      await migrateFromLegacy();
       try {
         const data = await loadAll();
         if (data.slides) {

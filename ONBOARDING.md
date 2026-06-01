@@ -71,7 +71,7 @@ Setup steps:
 3. Firebase will issue an SSL cert covering the wildcard (~24-48 hours)
 4. Verify by visiting `test.plumenexus.com` — should hit Firebase Hosting and resolve tenant=`test`
 
-Until done: every signup creates the Firestore tenant doc but the owner can't actually use the app — `meraki-salon-manager.web.app` always loads tenant `meraki`.
+Until done: every signup creates the Firestore tenant doc but the owner can't actually use the app — `plumenexus-prod.web.app` always loads tenant `meraki`.
 
 **Workaround for testing today:** set `VITE_TENANT_ID=newslug` in `.env.local` for a local dev build to simulate a fresh tenant.
 
