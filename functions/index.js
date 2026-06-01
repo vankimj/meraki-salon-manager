@@ -2266,6 +2266,44 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
       summary: tcSummarize(newEvents),
     };
   });
+
+  // Post-commit: notify the tech by SMS. Best-effort — a failed SMS must
+  // not roll back the clock event the tech already saw confirmed on the
+  // kiosk. Each kind is independently toggleable from settings.timeclock
+  // so the admin can turn off chatty ones. defaultBreakMinutes is used in
+  // the break_start copy so the tech knows the implicit length.
+  try {
+    if (!result?.duplicate && emp.phone) {
+      const sSnap   = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const sCfg    = sSnap.exists ? (sSnap.data().timeclock || {}) : {};
+      const tz      = await tenantTimezone(db, tenantId);
+      const tStr    = new Date(at).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true });
+      const defMin  = Number(sCfg.defaultBreakMinutes) > 0 ? Number(sCfg.defaultBreakMinutes) : 30;
+      const salonName = (sSnap.exists ? (sSnap.data().salonName || sSnap.data().brandName) : '') || '';
+      const prefix    = salonName ? `${salonName}: ` : '';
+      let body = null;
+      if (kind === 'in' && sCfg.smsOnClockIn !== false) {
+        body = `${prefix}Clocked in at ${tStr}. Have a great shift!`;
+      } else if (kind === 'out' && sCfg.smsOnClockOut !== false) {
+        const hrs = (result.summary.workedMinutes / 60).toFixed(1).replace(/\.0$/, '');
+        body = `${prefix}Clocked out at ${tStr}. ${hrs}h worked today.`;
+      } else if (kind === 'break_start' && sCfg.smsOnBreakStart === true) {
+        body = `${prefix}Break started at ${tStr}. Heads up: break length is ${defMin} min.`;
+      } else if (kind === 'break_end' && sCfg.smsOnBreakEnd === true) {
+        body = `${prefix}Back from break at ${tStr}.`;
+      }
+      if (body) {
+        await sendSms({
+          to: emp.phone, body, tenantId,
+          kind: 'transactional', skipQuota: true,
+          appendStopFooter: false,
+        });
+      }
+    }
+  } catch (e) {
+    console.warn(`[clockEvent] post-event SMS failed for tenant=${tenantId} emp=${employeeId}:`, e?.message);
+  }
+
   return result;
 });
 
@@ -2988,6 +3026,77 @@ async function sendMeetingReminderBatch(fromAddr, brand, meeting, participants, 
   await ref.update({ [`reminders.${flag}`]: true });
   console.log(`[MeetingReminders] ${timeLabel} reminders sent for "${meeting.title}" to ${withEmail.length} participant(s)`);
 }
+
+// Break-end reminder cron — fires N minutes before a tech's break is
+// "supposed" to end so they don't drift past the configured length.
+// settings.timeclock.defaultBreakMinutes (default 30) is the target length;
+// settings.timeclock.breakWarningMinutes (default 10) is how early to nudge.
+// Trigger condition: elapsed >= (defaultBreakMinutes - breakWarningMinutes).
+// Tracks `breakReminderSentFor` on the attendance entry so each break only
+// triggers one reminder even when the cron runs every 5 minutes (precision
+// is intentionally ±5 min — close enough for a 30-minute break).
+exports.timeclockBreakReminders = onSchedule(
+  { schedule: 'every 5 minutes', timeZone: 'America/New_York' },
+  async () => {
+    const now = new Date();
+    await forEachActiveTenant('TimeclockBreaks', async (tenantId) => {
+      const db = getFirestore();
+      const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings = sSnap.exists ? sSnap.data() : {};
+      const tc = settings.timeclock || {};
+      if (tc.smsBreakReminder === false) return;
+      const defaultMin = Number(tc.defaultBreakMinutes) > 0 ? Number(tc.defaultBreakMinutes) : 30;
+      const warnMin    = Number(tc.breakWarningMinutes) > 0 ? Number(tc.breakWarningMinutes) : 10;
+      const triggerMin = Math.max(1, defaultMin - warnMin);
+      const tz = resolveTimezone(settings);
+      const today = now.toLocaleDateString('en-CA', { timeZone: tz });
+      const attRef = db.doc(`tenants/${tenantId}/attendance/${today}`);
+      const aSnap = await attRef.get();
+      if (!aSnap.exists) return;
+      const entries = Array.isArray(aSnap.data().entries) ? aSnap.data().entries : [];
+      const salonName = settings.salonName || settings.brandName || '';
+      const prefix    = salonName ? `${salonName}: ` : '';
+      let updated = false;
+      const newEntries = [];
+      for (const entry of entries) {
+        const events = Array.isArray(entry.events) ? entry.events : [];
+        const last = events.length ? events[events.length - 1] : null;
+        // Only nudge if the tech is currently on break (last event = break_start)
+        // and we haven't already pinged them for this specific break_start.
+        if (!last || last.kind !== 'break_start' || entry.breakReminderSentFor === last.at) {
+          newEntries.push(entry);
+          continue;
+        }
+        const elapsedMin = (now.getTime() - new Date(last.at).getTime()) / 60000;
+        if (elapsedMin < triggerMin) {
+          newEntries.push(entry);
+          continue;
+        }
+        // Look up the tech's phone — entries store name only, not phone.
+        let phone = null;
+        try {
+          const eSnap = await db.doc(`tenants/${tenantId}/employees/${entry.employeeId}`).get();
+          phone = eSnap.exists ? (eSnap.data().phone || null) : null;
+        } catch (_) { /* fall through */ }
+        if (phone) {
+          await sendSms({
+            to:    phone,
+            body:  `${prefix}Heads up — your ${defaultMin}-min break started at ${new Date(last.at).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true })}. ${Math.max(1, defaultMin - Math.round(elapsedMin))} min left before you're due back.`,
+            tenantId,
+            kind:             'transactional',
+            skipQuota:        true,
+            appendStopFooter: false,
+          });
+        }
+        newEntries.push({ ...entry, breakReminderSentFor: last.at });
+        updated = true;
+      }
+      if (updated) {
+        await attRef.set({ entries: newEntries, updatedAt: new Date().toISOString() }, { merge: true });
+      }
+    });
+  }
+);
 
 exports.sendMeetingReminders = onSchedule(
   { schedule: 'every 15 minutes', timeZone: 'America/New_York' },
