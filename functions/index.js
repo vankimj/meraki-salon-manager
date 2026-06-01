@@ -7519,7 +7519,7 @@ CRITICAL RULES:
 - Gift Cards & Loyalty: digital gift cards with auto-emailed delivery, points-per-dollar loyalty, tiers (Silver/Gold/Platinum), birthday bonuses, referral bonuses.
 - AI-Powered Reports: chatbot answers natural-language questions about your data ("top three techs in March?", "lapsed clients who used to come monthly?"). IRS-ready tax export, real-time revenue, leaderboards, retention/rebook rate per tech.
 - Voice Commands: hands-free booking ("Book Emma Klein with Riley tomorrow at 2 for a gel mani") — proposes the action and waits for your confirmation before writing.
-- Employee & HR: profiles, photos, social links, compensation models, performance reviews, 1099-NEC PDF export, Gusto payroll sync.
+- Employee & HR: profiles, photos, social links, compensation models, performance reviews, and one-click Gusto payroll sync (Gusto handles W-2 + contractor 1099-NEC filing).
 - Online Booking: public page, embeddable widget, magic-link self-service reschedule, post-visit Google review prompts.
 - TipFlow Kiosk: dedicated front-desk iPad mode for tip selection and queue display. Custom-branded per location.
 - Roles & Permissions: admin/scheduler/tech/read-only, view-as impersonation, PIN-locked HR & Reports, verbose activity logs.
@@ -7545,7 +7545,7 @@ Power Packs (stack on any tier):
 - Comms Pack ($19/mo) — two-way SMS + dedicated phone + email reply parsing + STOP keyword handling.
 - Marketing Pack ($19/mo) — loyalty + tiers + auto-rebook + send-time optimizer + advanced segments.
 - AI Pack ($19/mo) — voice-command booking + AI-drafted marketing copy + conflict-resolution drafts.
-- Operations Pack ($29/mo) — one-click Gusto payroll integration (bring your own Gusto account, or set one up in onboarding), advanced earnings reports, 1099-NEC PDF export, and multi-location. Already included on Salon Pro.
+- Operations Pack ($29/mo) — one-click Gusto payroll integration (bring your own Gusto account, or set one up in onboarding; Gusto handles W-2 + contractor 1099-NEC filing end-to-end), advanced earnings reports, and multi-location. Already included on Salon Pro.
 - Brand Pack ($39/mo) — white-label client app + custom-branded TipFlow kiosk + custom email sender domain.
 
 Atomic add-ons (escape hatch for power users who want exactly one feature from a pack):

@@ -36,10 +36,10 @@ const PILLARS = [
   },
   {
     eyebrow:  'V',
-    title:    'Payroll & 1099',
+    title:    'Payroll',
     accent:   'handled.',
-    body:     'Per-tech earnings dashboards, compensation models that actually fit booth-rent vs commission vs hybrid, 1099-NEC PDF export at year-end, and a one-click Gusto sync when payday hits.',
-    foot:     'Commission · Booth-rent · 1099-NEC · Gusto sync',
+    body:     'Per-tech earnings dashboards, compensation models that actually fit booth-rent vs commission vs hybrid, and a one-click Gusto sync when payday hits. Gusto runs W-2 + contractor payroll and files the tax forms — Plume Nexus owns the salon side: the ledger, the splits, the tips.',
+    foot:     'Commission · Booth-rent · Tips · Gusto sync',
   },
 ];
 

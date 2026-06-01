@@ -81,7 +81,7 @@ const COMPARE = [
   { label: 'Voice booking + AI marketing drafts (AI Pack)',       solo: '+$19/mo',                    studio: '+$19/mo',                    salonPro: 'Included' },
 
   { section: 'Advanced operations' },
-  { label: 'Gusto payroll + 1099-NEC + multi-loc (Operations Pack)', solo: '+$29/mo',                 studio: '+$29/mo',                    salonPro: 'Included' },
+  { label: 'Gusto payroll integration + multi-loc (Operations Pack)',            solo: '+$29/mo',     studio: '+$29/mo',                    salonPro: 'Included' },
   { label: 'White-label client app + branded kiosk (Brand Pack)', solo: '+$39/mo',                    studio: '+$39/mo',                    salonPro: '+$39/mo' },
 
   { section: 'Support' },

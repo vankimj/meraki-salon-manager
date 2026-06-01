@@ -46,9 +46,9 @@ const TIERS = [
     features: [
       'Unlimited staff + multi-location',
       'Everything in Studio, plus:',
+      'Gusto payroll integration (Operations Pack) — included',
       'Marketing Pack (loyalty + auto-rebook) — included',
       'AI Pack (voice + drafted copy) — included',
-      'Operations Pack (Gusto payroll + 1099) — included',
       'Founder-direct support',
       'Dedicated onboarding',
     ],
@@ -80,7 +80,7 @@ const PACKS = [
     icon: '💼',
     name: 'Operations Pack',
     price: 29,
-    body: 'Gusto payroll sync + advanced reporting + 1099-NEC PDFs + multi-location (included on Salon Pro).',
+    body: 'One-click Gusto payroll integration, advanced earnings reports, and multi-location. Bring your existing Gusto account or set one up in onboarding. Gusto handles W-2 + 1099-NEC filing end-to-end. Included on Salon Pro.',
   },
   {
     icon: '🎨',
