@@ -33,6 +33,7 @@ import ClientPortal from './components/ClientPortal';
 import SalonWebfront from './modules/webfront/SalonWebfront';
 import OnboardingScreen from './components/OnboardingScreen';
 import TipFlowLanding from './components/TipFlowLanding';
+import TimeClockKiosk from './modules/timeclock/TimeClockKiosk';
 import TicketCheckoutLauncher from './components/TicketCheckoutLauncher';
 import RsvpScreen from './components/RsvpScreen';
 import UnsubscribeScreen from './components/UnsubscribeScreen';
@@ -366,6 +367,7 @@ export default function App() {
     const isBooking     = params.has('book')        || path === '/book';
     const isQueue       = params.has('queue')       || path === '/queue';
     const isTipFlow     = params.has('tipflow')     || path === '/tipflow';
+    const isTimeClock   = params.has('timeclock')   || path === '/timeclock';
     const isManageApp   = path === '/manage';
     const isSignup      = params.has('signup')      || path === '/signup';
     const isTerms       = params.has('terms')       || path === '/terms';
@@ -390,6 +392,7 @@ export default function App() {
     else if (checkinId) content = <CheckInScreen apptId={checkinId} />;
     else if (isBooking) content = <BookingScreen />;
     else if (isQueue)   content = <QueueKiosk />;
+    else if (isTimeClock) content = <TimeClockKiosk />;
     else if (isSignup)  content = <OnboardingScreen />;
     else if (isManageApp || isTipFlow) content = (
       <AppProvider>

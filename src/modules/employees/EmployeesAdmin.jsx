@@ -580,6 +580,13 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 <textarea value={emp.paymentNotes || ''} onChange={e => onChange({ paymentNotes: e.target.value })} rows={3}
                   placeholder="Routing #, account #, Venmo handle, etc." style={{ ...inp, resize: 'vertical', lineHeight: 1.5 }} />
               </Field>
+
+              {/* Time-clock PIN — admin-only kiosk credential. Stored as
+                  scrypt(salt+pin) server-side; the UI only ever sees a
+                  hash-set flag, never the digits themselves. */}
+              {!isNew && (
+                <TimeClockPinSection emp={emp} onPinChanged={onReload} showToast={showToast} />
+              )}
             </>
           )}
 
@@ -773,3 +780,93 @@ const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 
 
 // Export EmpAvatar for use in SlideModal
 export { EmpAvatar };
+
+// Inline PIN management for the EmployeeModal → Compensation tab. Three
+// visual states (set / unset / editing) with the callable hidden behind a
+// thin wrapper so a parse-failure-on-deploy can't blow up the modal.
+// PIN itself never leaves the browser as anything other than the request
+// body — setEmployeePin scrypt-hashes server-side.
+function TimeClockPinSection({ emp, onPinChanged, showToast }) {
+  const [editing, setEditing] = useState(false);
+  const [pin,     setPin]     = useState('');
+  const [saving,  setSaving]  = useState(false);
+  const [working, setWorking] = useState(false); // for Clear
+  const hasPin = !!emp.pinHash;
+
+  async function callable(name, payload) {
+    const { httpsCallable } = await import('firebase/functions');
+    const { functions }     = await import('../../lib/firebase');
+    return httpsCallable(functions, name)(payload);
+  }
+
+  async function save() {
+    const clean = String(pin || '').trim();
+    if (!/^\d{4}$/.test(clean)) {
+      showToast?.('PIN must be exactly 4 digits');
+      return;
+    }
+    setSaving(true);
+    try {
+      await callable('setEmployeePin', { tenantId: TENANT_ID, employeeId: emp.id, pin: clean });
+      showToast?.(`PIN saved for ${emp.name}`);
+      setEditing(false);
+      setPin('');
+      onPinChanged && onPinChanged();
+    } catch (e) {
+      showToast?.(`Could not save PIN: ${e.message || e.code}`, 5000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clear() {
+    if (!confirm(`Clear ${emp.name}'s time clock PIN? They won't be able to clock in from the kiosk until a new PIN is set.`)) return;
+    setWorking(true);
+    try {
+      await callable('clearEmployeePin', { tenantId: TENANT_ID, employeeId: emp.id });
+      showToast?.(`PIN cleared for ${emp.name}`);
+      onPinChanged && onPinChanged();
+    } catch (e) {
+      showToast?.(`Could not clear PIN: ${e.message || e.code}`, 5000);
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  return (
+    <Field label="🕐 Time clock PIN">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8 }}>
+        {!editing && (
+          <>
+            <div style={{ flex: 1, fontSize: 12, color: hasPin ? '#166534' : '#aaa' }}>
+              {hasPin ? '✓ PIN set' : 'No PIN — kiosk locked out'}
+            </div>
+            <Btn onClick={() => { setPin(''); setEditing(true); }}>{hasPin ? 'Change' : 'Set PIN'}</Btn>
+            {hasPin && <Btn onClick={clear} disabled={working}>Clear</Btn>}
+          </>
+        )}
+        {editing && (
+          <>
+            <input
+              type="password"
+              inputMode="numeric"
+              autoFocus
+              maxLength={4}
+              value={pin}
+              onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              placeholder="••••"
+              style={{ width: 80, fontFamily: 'inherit', fontSize: 18, letterSpacing: 6, textAlign: 'center', border: '1px solid #d8d8d8', borderRadius: 8, padding: '6px 8px', background: '#fff', outline: 'none' }}
+            />
+            <Btn onClick={save} color="#2D7A5F" disabled={saving || pin.length !== 4}>
+              {saving ? 'Saving…' : 'Save'}
+            </Btn>
+            <Btn onClick={() => { setEditing(false); setPin(''); }} disabled={saving}>Cancel</Btn>
+          </>
+        )}
+      </div>
+      <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+        4 digits. The tech enters this at the iPad kiosk to clock in/out and start/end breaks.
+      </div>
+    </Field>
+  );
+}
