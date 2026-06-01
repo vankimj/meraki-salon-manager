@@ -4,6 +4,22 @@ Switching Meraki Nail Studio off GlossGenius and onto Plume Nexus Salon Manager.
 
 ---
 
+## 🚫 OPEN LAUNCH BLOCKERS
+
+- [ ] **BigQuery streaming export is WEDGED on `plumenexus-prod` (server-side).** — _opened 2026-06-01_
+  - **What:** After the `meraki-salon-manager → plumenexus-prod` migration, none of the 11 `fs-bq-*` (firestore-bigquery-export) extension instances will install. All sit in `DEPLOYING` with **zero progress** (first one stuck 15h+; freshly-created ones wedge identically within minutes). The `firestore_export` BQ dataset was never created.
+  - **Root cause:** Firebase Extensions **backend** wedge, not project config. Verified healthy: all required APIs enabled, `firebasemods`/`cloudfunctions`/`eventarc`/`pubsub` service agents + roles present, compute default SA enabled, Blaze on. Decisive evidence: **Cloud Build history = 0** — installs are accepted but never trigger a build. Likely the first poisoned install (04:20 UTC) blocks the project's Extensions queue; deletes also hang on the same lock, configures hit "instance has an ongoing operation."
+  - **Tried (all exhausted):** `firebase ext:uninstall` (manifest-only, doesn't touch cloud); Console UI uninstall (no Manage button while `DEPLOYING`); full reconcile deploy `--force` (aborts on ongoing-operation lock); targeted manifest-removal deploy `--force` (creates new instances that also wedge; deletes never land); Extensions operations API (404, not exposed).
+  - **Status:** Firebase **support ticket OPEN** (user-filed 2026-06-01). Needs Firebase to force-clear the wedged instances/queue server-side.
+  - **Impact while open:** **No customer-facing impact** — app reads Firestore directly. Broken: **Reports → Ask AI** (queries `firestore_export`), **restore-from-BQ** recovery path (`restoreDocFromBQ`/`recoverUsersFromBQ`), and the **BQ-mirror** layer of customer-data defense (PITR + soft-delete/Trash still active). Growing (but currently tiny — near-zero write volume) gap in the BQ changelog.
+  - **Unblock steps once support clears it:**
+    1. `firebase deploy --only extensions --project plumenexus-prod --force` → installs all 11, creates `firestore_export`.
+    2. Verify all 11 reach `ACTIVE` + dataset exists.
+    3. (Optional) backfill pre-cutover history via `bq load` from the Phase-1.5 AVRO snapshot `gs://plumenexus-migration-snapshot-*/bq/`.
+  - **Cross-refs:** invalidates the two BQ items checked off in the "Customer-data defense-in-depth" section below (those were done on the OLD project).
+
+---
+
 ## T-7 to T-3 days — Data migration
 
 - [x] **Import GG Clients CSV** (Admin → Settings → Import from GlossGenius). This is the missing piece for Top Clients / per-tech client counts.
@@ -32,8 +48,8 @@ Switching Meraki Nail Studio off GlossGenius and onto Plume Nexus Salon Manager.
 - [ ] **Audit every hard delete.** Grep for `deleteDoc(` outside the `_demo: true` cleanup paths. Anything touching `clients/`, `appointments/`, `receipts/`, `memberships/`, `giftCards/` should be soft-delete (`_deleted: true, _deletedAt, _deletedBy`) with a separate cleanup job for ≥30-day-old tombstones. Hard delete = unrecoverable.
 - [x] **Heal path validated under fault injection — LOSSLESS** (commit e080f42, 2026-05-11). Two-tier heal: tier 1 calls `recoverUsersFullFromBQ` Cloud Function which queries the BigQuery `data` mirror for the latest snapshot and atomically restores the original `users` array; tier 2 (lossy) reconstructs from `staffEmails` only if BQ returns nothing. Validated via `scripts/test-heal-usersFull.cjs`: console showed `LOSSLESS recovery via BigQuery snapshot @ ...`, verify confirmed 14/14 timestamps + names preserved, 0 `_healed` markers. Re-run any time via `node scripts/test-heal-usersFull.cjs inject|verify`.
 - [x] **Firestore Point-in-Time Recovery (PITR) enabled** — 7-day window, restore to any past microsecond. Enabled 2026-05-10 on `plumenexus-prod` `(default)` db. Verify: `gcloud firestore databases describe --database='(default)' --project=plumenexus-prod --format='value(pointInTimeRecoveryEnablement)'` should print `POINT_IN_TIME_RECOVERY_ENABLED`. Also enable on `plumenexus` project before that goes live.
-- [x] **BigQuery streaming export installed** for the 4 customer-data-risk collections (`clients`, `appointments`, `receipts`, `employees`). Manifest in `firebase.json` + `extensions/fs-bq-*.env`; deployed 2026-05-10 via `firebase deploy --only extensions --non-interactive --force`. Gives forever-history append-only forensic log. Complements PITR (which is 7-day in-database recovery).
-- [x] **BigQuery backfill run** — 14,797 docs total imported (3,403 clients · 2,906 appointments · 8,463 receipts · 25 employees) across all tenants via collection-group queries. Verify in BQ Console: `plumenexus-prod.firestore_export.{clients,appointments,receipts,employees}_raw_changelog`.
+- [ ] ⚠️ **BigQuery streaming export installed** — ~~done 2026-05-10 on the OLD `meraki-salon-manager` project~~. **REGRESSED by migration: WEDGED on `plumenexus-prod`** (see 🚫 OPEN LAUNCH BLOCKERS at top). Manifest in `firebase.json` + `extensions/fs-bq-*.env` is correct, but the Extensions backend won't install any of the 11 instances. Re-verify all reach `ACTIVE` once support clears the wedge.
+- [ ] ⚠️ **BigQuery backfill run** — ~~14,797 docs imported on the OLD project~~. **Must re-run on `plumenexus-prod` after the export is un-wedged**; backfill from the Phase-1.5 AVRO snapshot if you want pre-cutover history. Verify in BQ Console: `plumenexus-prod.firestore_export.{clients,appointments,receipts,employees}_raw_changelog` (dataset does not yet exist).
 - [ ] **Daily Firestore snapshots → GCS bucket** with ≥30-day retention (separate from PITR — covers the >7-day window). Console: Firestore → Backups → Schedule. ~$0.30/month at current data volume.
 - [ ] **Recovery drill: pick one collection (e.g. `clients`) and restore yesterday's snapshot to a side database.** Verify the restore actually works end-to-end before launch — untested backups don't count as backups. Use PITR for recent, daily snapshot for older.
 - [ ] **Surface integrity invariants in Admin → Settings.** Build (or stub for now) a nightly scanner that reads `tenants/{id}/data/integrityReport` and shows a green/yellow/red badge: receipts ↔ appointments link rate, appointments ↔ clients link rate (non-walk-in), employees ↔ comp doc presence, users staffEmails ↔ usersFull match. Silent corruption must become visible.
