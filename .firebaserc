@@ -7,8 +7,7 @@
   "targets": {
     "plumenexus-prod": {
       "hosting": {
-        "app":            ["plumenexus-prod"],
-        "platform-admin": ["plumenexus-admin"]
+        "app": ["plumenexus-prod"]
       }
     },
     "plumenexus-marketing": {
