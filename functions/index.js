@@ -10790,17 +10790,9 @@ exports.aiTriageTicket = onDocumentCreated(
 //      forever in a single turn.
 //   5. Audit log + per-tenant cost attribution via logAiUsage.
 
-const _aiSessionToolCounts = new Map(); // sessionId → number
 const AI_MAX_TOOL_CALLS_PER_SESSION = 30;
-
-// Two-step confirmation for destructive tools. When the AI calls a
-// destructive tool WITHOUT `confirmed: true`, the server records a
-// pending-confirm token keyed by hash(sessionId + tool + inputs) and
-// returns requiresConfirmation. Only when the AI re-calls with the
-// EXACT same inputs + confirmed:true does the server execute. Tokens
-// expire after 5 min so an old confirmation can't be replayed.
-const _pendingAiConfirms = new Map(); // hashKey → { at, intent }
-const AI_CONFIRM_TTL_MS  = 5 * 60 * 1000;
+const AI_SESSION_TTL_MS = 60 * 60 * 1000;        // 1h sliding window
+const AI_CONFIRM_TTL_MS = 5 * 60 * 1000;          // 5 min confirm validity
 
 // Destructive tools require the two-step confirm. Add to this set when
 // adding any new write tool that's not trivially undo-able with a click.
@@ -10809,19 +10801,99 @@ const AI_CONFIRM_TTL_MS  = 5 * 60 * 1000;
 // are non-destructive; soft-deletes go here.
 const DESTRUCTIVE_TOOLS = new Set(['removeService']);
 
-function aiConfirmKey(sessionId, tool, input) {
+// Hash key for the pending-confirm record. Binds the confirm to
+//   tenant + caller + session + tool + sorted inputs
+// so a confirmation issued for one (tenant, user, session) can never
+// match a request from a different tenant or user (even on a hash
+// collision with the same session id — sessionIds are random so this
+// is already astronomically unlikely, but the binding makes it
+// impossible by construction).
+function aiConfirmKey(tenantId, callerEmail, sessionId, tool, input) {
   const normalized = { ...(input || {}) };
   delete normalized.confirmed;
   // Stable string ordering so {a, b} and {b, a} hash identically.
   const sortedJson = JSON.stringify(Object.keys(normalized).sort().reduce((acc, k) => (acc[k] = normalized[k], acc), {}));
-  return crypto.createHash('sha256').update(`${sessionId}|${tool}|${sortedJson}`).digest('hex').slice(0, 32);
+  return crypto
+    .createHash('sha256')
+    .update(`${tenantId}|${String(callerEmail || '').toLowerCase()}|${sessionId}|${tool}|${sortedJson}`)
+    .digest('hex')
+    .slice(0, 32);
 }
 
-function pruneExpiredConfirms() {
-  const cutoff = Date.now() - AI_CONFIRM_TTL_MS;
-  for (const [k, v] of _pendingAiConfirms.entries()) {
-    if (v.at < cutoff) _pendingAiConfirms.delete(k);
+// ── Persistence layer ──
+// Both the pending-confirm and per-session tool-count state used to
+// live in module-scoped Maps. That worked for a single warm Functions
+// instance but lost state on scale-out — a confirmed:true follow-up
+// landing on a cold instance would tell the user to re-confirm.
+// Moving to Firestore docs scoped under the tenant:
+//   tenants/{tid}/aiPendingConfirms/{hashKey}  — TTL 5 min
+//   tenants/{tid}/aiSessions/{sessionId}       — TTL 1h sliding
+// Rules deny client reads/writes (server-only) and the daily
+// purgeOldAiSessions cron drops anything past its expiresAt.
+
+async function getPendingConfirm(db, tenantId, hashKey) {
+  const ref = db.doc(`tenants/${tenantId}/aiPendingConfirms/${hashKey}`);
+  const snap = await ref.get();
+  if (!snap.exists) return null;
+  const d = snap.data();
+  if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) {
+    // Stale — clean up opportunistically.
+    ref.delete().catch(() => {});
+    return null;
   }
+  return d;
+}
+
+async function setPendingConfirm(db, tenantId, hashKey, intent) {
+  const now = Date.now();
+  await db.doc(`tenants/${tenantId}/aiPendingConfirms/${hashKey}`).set({
+    intent,
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + AI_CONFIRM_TTL_MS).toISOString(),
+  });
+}
+
+async function clearPendingConfirm(db, tenantId, hashKey) {
+  try {
+    await db.doc(`tenants/${tenantId}/aiPendingConfirms/${hashKey}`).delete();
+  } catch (_) { /* idempotent */ }
+}
+
+async function readSessionToolCount(db, tenantId, sessionId) {
+  if (!sessionId) return 0;
+  const snap = await db.doc(`tenants/${tenantId}/aiSessions/${sessionId}`).get();
+  if (!snap.exists) return 0;
+  const d = snap.data();
+  // Sliding-window TTL: if the session hasn't been touched in
+  // AI_SESSION_TTL_MS, treat the count as zero. A new tool call will
+  // overwrite the doc with a fresh expiry.
+  if (d.expiresAt && new Date(d.expiresAt).getTime() < Date.now()) return 0;
+  return Number(d.count || 0);
+}
+
+async function incrementSessionToolCount(db, tenantId, sessionId) {
+  if (!sessionId) return 0;
+  const ref = db.doc(`tenants/${tenantId}/aiSessions/${sessionId}`);
+  // Use a transaction so concurrent tool calls within the same session
+  // can't both read+write a stale count and bypass the cap.
+  return await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const now = Date.now();
+    let count = 0;
+    if (snap.exists) {
+      const d = snap.data();
+      const expired = d.expiresAt && new Date(d.expiresAt).getTime() < now;
+      count = expired ? 1 : Number(d.count || 0) + 1;
+    } else {
+      count = 1;
+    }
+    tx.set(ref, {
+      count,
+      expiresAt: new Date(now + AI_SESSION_TTL_MS).toISOString(),
+      updatedAt: new Date(now).toISOString(),
+    }, { merge: true });
+    return count;
+  });
 }
 
 function describeDestructiveIntent(tool, input, context = {}) {
@@ -11021,17 +11093,16 @@ async function executeTool(db, tenantId, callerEmail, sessionId, toolName, input
 
   // ── Destructive-tool two-step confirm ──
   if (DESTRUCTIVE_TOOLS.has(toolName)) {
-    pruneExpiredConfirms();
-    const key = aiConfirmKey(sessionId, toolName, input);
+    const key = aiConfirmKey(tenantId, callerEmail, sessionId, toolName, input);
     if (input?.confirmed === true) {
-      const pending = _pendingAiConfirms.get(key);
+      const pending = await getPendingConfirm(db, tenantId, key);
       if (!pending) {
         return {
           ok: false,
           error: 'No pending confirmation for this action — call without confirmed:true first to get a confirmation intent, read it to the user verbatim, and only call with confirmed:true after they explicitly agree. Confirmations expire after 5 minutes.',
         };
       }
-      _pendingAiConfirms.delete(key);
+      await clearPendingConfirm(db, tenantId, key);
       // fall through to real execution; strip confirmed so dispatch
       // logic works against the original input shape.
       input = { ...input };
@@ -11050,7 +11121,7 @@ async function executeTool(db, tenantId, callerEmail, sessionId, toolName, input
         } catch (_) { /* best effort */ }
       }
       const intent = describeDestructiveIntent(toolName, input, context);
-      _pendingAiConfirms.set(key, { at: Date.now(), intent });
+      await setPendingConfirm(db, tenantId, key, intent);
       return {
         ok:    false,
         requiresConfirmation: true,
@@ -11361,8 +11432,12 @@ exports.chatWithSalonAdmin = onCall(
     }
     await requireTenantAdmin(db, tenantId, request);
 
-    const session = String(sessionId || '').slice(0, 64) || 'no-session';
-    const used = _aiSessionToolCounts.get(session) || 0;
+    // Session id is sanitized to a safe doc-id shape (the React client
+    // mints it; we don't trust the format). Restrict to alphanumerics +
+    // underscore-dash so a hostile client can't smuggle a path segment.
+    const sessionRaw = String(sessionId || '').slice(0, 64);
+    const session = /^[a-zA-Z0-9_-]+$/.test(sessionRaw) ? sessionRaw : 'no-session';
+    const used = await readSessionToolCount(db, tenantId, session);
     if (used >= AI_MAX_TOOL_CALLS_PER_SESSION) {
       throw new HttpsError('resource-exhausted',
         'This chat session has hit its tool-use limit. Refresh the chat to start a new session.');
@@ -11425,7 +11500,18 @@ exports.chatWithSalonAdmin = onCall(
       for (const b of blocks) {
         if (b.type !== 'tool_use') continue;
 
-        if ((_aiSessionToolCounts.get(session) || 0) >= AI_MAX_TOOL_CALLS_PER_SESSION) {
+        // Tx-backed atomic increment also enforces the cap durably. If
+        // two concurrent tool calls race for the last slot, only one
+        // wins; the other gets back > limit and surfaces an error to
+        // the AI without executing.
+        let newCount;
+        try {
+          newCount = await incrementSessionToolCount(db, tenantId, session);
+        } catch (e) {
+          console.error(`[chatWithSalonAdmin] session increment failed:`, e?.message);
+          newCount = AI_MAX_TOOL_CALLS_PER_SESSION + 1; // fail closed
+        }
+        if (newCount > AI_MAX_TOOL_CALLS_PER_SESSION) {
           toolResults.push({
             type: 'tool_result', tool_use_id: b.id,
             content: JSON.stringify({ ok: false, error: 'Session tool-call limit reached.' }),
@@ -11441,7 +11527,6 @@ exports.chatWithSalonAdmin = onCall(
           console.error(`[chatWithSalonAdmin] tool ${b.name} threw:`, e?.message);
           result = { ok: false, error: e?.message || 'Tool threw' };
         }
-        _aiSessionToolCounts.set(session, (_aiSessionToolCounts.get(session) || 0) + 1);
 
         actionsThisTurn.push({
           tool:  b.name,
@@ -11490,3 +11575,41 @@ exports.chatWithSalonAdmin = onCall(
 async function callerEmail_(request) {
   return (await callerEmail(request)) || '';
 }
+
+// Daily cleanup of expired AI session + pending-confirm docs. Pending
+// confirms have a 5-min TTL but we run this cron at 04:00 UTC anyway
+// because (a) it's cheap, (b) it covers any docs we failed to clean
+// opportunistically (e.g. crash between setPendingConfirm and confirm
+// arrival), (c) it deletes session counter docs older than 24h. Each
+// where('expiresAt', '<', cutoff) is a single-field range query, so
+// Firestore auto-indexes — no composite index needed in
+// firestore.indexes.json.
+exports.purgeExpiredAiSessions = onSchedule(
+  { schedule: '0 4 * * *', timeZone: 'Etc/UTC', timeoutSeconds: 540 },
+  async () => {
+    const db = getFirestore();
+    const nowIso = new Date().toISOString();
+    const dayAgoIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const tenantsSnap = await db.collection('tenants').get();
+    let cleanedConfirms = 0;
+    let cleanedSessions = 0;
+    for (const tDoc of tenantsSnap.docs) {
+      const tid = tDoc.id;
+      try {
+        const pSnap = await db.collection(`tenants/${tid}/aiPendingConfirms`)
+          .where('expiresAt', '<', nowIso)
+          .limit(500)
+          .get();
+        for (const d of pSnap.docs) { await d.ref.delete(); cleanedConfirms++; }
+        const sSnap = await db.collection(`tenants/${tid}/aiSessions`)
+          .where('expiresAt', '<', dayAgoIso)
+          .limit(500)
+          .get();
+        for (const d of sSnap.docs) { await d.ref.delete(); cleanedSessions++; }
+      } catch (e) {
+        console.error(`[purgeExpiredAiSessions] tenant=${tid} failed:`, e?.message);
+      }
+    }
+    console.log(`[purgeExpiredAiSessions] cleaned confirms=${cleanedConfirms} sessions=${cleanedSessions}`);
+  }
+);

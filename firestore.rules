@@ -674,6 +674,20 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Server-only state for the chatWithSalonAdmin tool-use loop.
+      // aiPendingConfirms holds destructive-tool confirmation records
+      // (5-min TTL); aiSessions holds per-session tool-call counters
+      // (1h sliding TTL). Cleaned by the daily purgeExpiredAiSessions
+      // cron. Clients never read or write these — leaking the records
+      // would expose nothing sensitive (hash keys + intent strings)
+      // but there's also no reason for a client to need them.
+      match /aiPendingConfirms/{hashKey} {
+        allow read, write: if false;
+      }
+      match /aiSessions/{sessionId} {
+        allow read, write: if false;
+      }
+
       // Support tickets: tenant admin reads/creates within their tenant;
       // platform admin can read/update (for triage + status / reply). All
       // writes go through Cloud Functions (admin SDK bypasses rules); the
