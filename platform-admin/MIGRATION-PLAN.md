@@ -99,7 +99,7 @@ const PLAN_MAP = {
 };
 
 async function main() {
-  initializeApp({ projectId: 'meraki-salon-manager' });
+  initializeApp({ projectId: 'plumenexus-prod' });
   const db = getFirestore();
   const snap = await db.collection('tenants').get();
 

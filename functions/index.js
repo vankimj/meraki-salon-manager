@@ -15,12 +15,11 @@ const usageLog             = require('./lib/usage');
 
 initializeApp();
 
-// Was 'meraki' originally; that tenant was deleted 2026-05-14. Meraki's
-// current production data lives under this UUID (subdomain 'merakinailstudio').
-// Used only as a fallback when a callable/trigger doesn't carry tenant context;
-// crons get the real id from forEachActiveTenant and triggers get it from
-// event.params.tenantId, so real production paths never hit this default.
-const TENANT_ID   = 'tf46226a93a1b546b';
+// Default tenant fallback for cases where a callable/trigger doesn't carry
+// tenant context. Crons get the real id from forEachActiveTenant and triggers
+// get it from event.params.tenantId, so real production paths never hit this
+// default.
+const TENANT_ID   = 'merakinailstudio';
 // Bootstrap super-admin — mirrors src/lib/firebase.js. Always passes staff/admin
 // gates regardless of tenant configuration.
 const BOOTSTRAP_ADMINS = ['jvankim@gmail.com'];
@@ -51,7 +50,7 @@ const awsSesSharedIdentityArn = defineString('AWS_SES_SHARED_IDENTITY_ARN', { de
 const awsAccessKey    = defineString('AWS_ACCESS_KEY_ID',     { default: '' });
 const awsSecretKey    = defineString('AWS_SECRET_ACCESS_KEY', { default: '' });
 const mapsApiKey      = defineString('GOOGLE_MAPS_API_KEY', { default: '' });
-const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://meraki-salon-manager.web.app' });
+const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://plumenexus-prod.web.app' });
 // Google Business Profile OAuth + review-sync config. ClientID is non-
 // sensitive (it's in the auth URL anyway), so defineString is fine.
 // Secret + KMS key are sensitive; both ride defineSecret so deploys fail
@@ -2342,7 +2341,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
 
     const firstName   = (clientName || 'there').split(' ')[0];
     const reqId       = snap.id;
-    const trackUrl    = `https://us-central1-meraki-salon-manager.cloudfunctions.net/trackReviewClick?r=${encodeURIComponent(reqId)}`;
+    const trackUrl    = `https://us-central1-plumenexus-prod.cloudfunctions.net/trackReviewClick?r=${encodeURIComponent(reqId)}`;
     const db0 = getFirestore();
     const brand = await tenantBranding(db0, tenantId);
     const html = `<!DOCTYPE html>
@@ -5674,7 +5673,7 @@ exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, asy
   // Always send the user back to our own app — never accept a caller-supplied
   // returnUrl, which would be an open-redirect / phishing primitive (the
   // post-checkout redirect comes from the legit Stripe-hosted page).
-  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode:     'subscription',
@@ -5714,7 +5713,7 @@ exports.createTenantBillingPortal = onCall({ cors: true, secrets: [stripeKey] },
     throw new HttpsError('failed-precondition', 'No Stripe customer yet — start a checkout first');
   }
 
-  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
   const session = await stripe.billingPortal.sessions.create({
     customer:   stripeCustomerId,
     return_url: baseUrl,
@@ -6014,7 +6013,7 @@ exports.createMembershipCheckout = onCall({ cors: true, secrets: [stripeKey] }, 
     await db.doc(`tenants/${tenantId}/clients/${client.id}`).set({ stripeCustomerId }, { merge: true });
   }
 
-  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
   const session = await stripe.checkout.sessions.create({
     customer:   stripeCustomerId,
     mode:       'subscription',
@@ -6067,7 +6066,7 @@ exports.createMembershipPortal = onCall({ cors: true, secrets: [stripeKey] }, as
 
   // Always send the user back to our own app — never accept a caller-
   // supplied returnUrl, which would be an open-redirect / phishing primitive.
-  const baseUrl = (publicAppUrl.value() || 'https://meraki-salon-manager.web.app').replace(/\/+$/, '');
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
   const session = await stripe.billingPortal.sessions.create({
     customer:   mem.stripeCustomerId,
     return_url: baseUrl,
@@ -6391,7 +6390,7 @@ exports.gustoSubmitPayroll = onCall({ cors: true }, async (request) => {
 // participants[i].response in place.
 
 function rsvpAppUrl({ meetingId, token, response }) {
-  const base = 'https://meraki-salon-manager.web.app';
+  const base = 'https://plumenexus-prod.web.app';
   const params = new URLSearchParams({ rsvp: meetingId, token });
   if (response) params.set('r', response);
   return `${base}/?${params.toString()}`;
@@ -7722,18 +7721,18 @@ exports.recoverUsersFullFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, asyn
   await requireTenantAdmin(db, tenantId, request);
 
   const { BigQuery } = require('@google-cloud/bigquery');
-  const bq = new BigQuery({ projectId: 'meraki-salon-manager' });
+  const bq = new BigQuery({ projectId: 'plumenexus-prod' });
 
   // Match on document_name rather than path_params — IMPORT rows from the
   // backfill script have path_params = null (only realtime triggers
   // populate the wildcard binding). document_name is consistent across both.
-  const docName = `projects/meraki-salon-manager/databases/(default)/documents/tenants/${tenantId}/data/usersFull`;
+  const docName = `projects/plumenexus-prod/databases/(default)/documents/tenants/${tenantId}/data/usersFull`;
   let rows;
   try {
     [rows] = await bq.query({
       query: `
         SELECT data, timestamp, operation
-        FROM \`meraki-salon-manager.firestore_export.data_raw_changelog\`
+        FROM \`plumenexus-prod.firestore_export.data_raw_changelog\`
         WHERE document_name = @docName
           AND operation != 'DELETE'
         ORDER BY timestamp DESC
@@ -7805,7 +7804,7 @@ exports.recoverUsersFullFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, asyn
 const RESTORABLE_COLLECTIONS = new Set(['clients', 'appointments', 'receipts', 'employees']);
 
 function bqDocName(tenantId, collection, docId) {
-  return `projects/meraki-salon-manager/databases/(default)/documents/tenants/${tenantId}/${collection}/${docId}`;
+  return `projects/plumenexus-prod/databases/(default)/documents/tenants/${tenantId}/${collection}/${docId}`;
 }
 
 exports.getDocSnapshotHistory = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
@@ -7820,7 +7819,7 @@ exports.getDocSnapshotHistory = onCall({ cors: true, timeoutSeconds: 30 }, async
   await requireTenantAdmin(db, tenantId, request);
 
   const { BigQuery } = require('@google-cloud/bigquery');
-  const bq = new BigQuery({ projectId: 'meraki-salon-manager' });
+  const bq = new BigQuery({ projectId: 'plumenexus-prod' });
   const docName = bqDocName(tenantId, collection, docId);
 
   let rows;
@@ -7828,7 +7827,7 @@ exports.getDocSnapshotHistory = onCall({ cors: true, timeoutSeconds: 30 }, async
     [rows] = await bq.query({
       query: `
         SELECT timestamp, operation, data
-        FROM \`meraki-salon-manager.firestore_export.${collection}_raw_changelog\`
+        FROM \`plumenexus-prod.firestore_export.${collection}_raw_changelog\`
         WHERE document_name = @docName
           AND operation != 'DELETE'
         ORDER BY timestamp DESC
@@ -7873,7 +7872,7 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
   await requireTenantAdmin(db, tenantId, request);
 
   const { BigQuery } = require('@google-cloud/bigquery');
-  const bq = new BigQuery({ projectId: 'meraki-salon-manager' });
+  const bq = new BigQuery({ projectId: 'plumenexus-prod' });
   const docName = bqDocName(tenantId, collection, docId);
 
   // Either restore a specific snapshot (by timestamp) OR the latest
@@ -7885,7 +7884,7 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
       [rows] = await bq.query({
         query: `
           SELECT timestamp, operation, data
-          FROM \`meraki-salon-manager.firestore_export.${collection}_raw_changelog\`
+          FROM \`plumenexus-prod.firestore_export.${collection}_raw_changelog\`
           WHERE document_name = @docName
             AND TIMESTAMP_TRUNC(timestamp, MICROSECOND) = TIMESTAMP(@wantTs)
             AND operation != 'DELETE'
@@ -7897,7 +7896,7 @@ exports.restoreDocFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, async (req
       [rows] = await bq.query({
         query: `
           SELECT timestamp, operation, data
-          FROM \`meraki-salon-manager.firestore_export.${collection}_raw_changelog\`
+          FROM \`plumenexus-prod.firestore_export.${collection}_raw_changelog\`
           WHERE document_name = @docName
             AND operation != 'DELETE'
           ORDER BY timestamp DESC
@@ -8802,7 +8801,7 @@ exports.provisionTenant = onCall(
     // the owner first visits {slug}.plumenexus.com. Identity Platform
     // doesn't support wildcards here.
     try {
-      const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'meraki-salon-manager';
+      const projectId = process.env.GCLOUD_PROJECT || process.env.GCP_PROJECT || 'plumenexus-prod';
       const res = await addAuthorizedDomain(projectId, `${slug}.plumenexus.com`);
       await update({ 'steps.auth_domain': { ok: true, added: res.added, totalDomains: res.total, at: new Date().toISOString() }, currentStep: 'welcome_email' });
     } catch (e) {
@@ -9369,7 +9368,7 @@ function reviewsCallbackUrl() {
   // Cloud Functions v2 use *.cloudfunctions.net or *.run.app depending
   // on the region. We pin the cloudfunctions.net form because that's
   // what gets added to Authorized redirect URIs in the OAuth client.
-  return 'https://us-central1-meraki-salon-manager.cloudfunctions.net/googleBusinessAuthCallback';
+  return 'https://us-central1-plumenexus-prod.cloudfunctions.net/googleBusinessAuthCallback';
 }
 
 // KMS encrypt / decrypt for the refresh token.

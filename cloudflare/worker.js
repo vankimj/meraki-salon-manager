@@ -1,6 +1,6 @@
 // tenant-router — Cloudflare Worker for *.plumenexus.com routing.
 //
-// Wildcard CNAME *.plumenexus.com → meraki-salon-manager.web.app is
+// Wildcard CNAME *.plumenexus.com → plumenexus-prod.web.app is
 // proxied through Cloudflare (orange cloud). Cloudflare forwards the
 // Host header verbatim, but Firebase Hosting rejects requests whose
 // Host it doesn't recognize as a registered custom domain. This Worker
@@ -25,7 +25,7 @@
 // Deploy via Cloudflare API or `npx wrangler deploy` (uses wrangler.toml).
 // Currently deployed via API; the script id at Cloudflare is `tenant-router`.
 
-const FIREBASE_HOST = 'meraki-salon-manager.web.app';
+const FIREBASE_HOST = 'plumenexus-prod.web.app';
 
 export default {
   async fetch(request) {

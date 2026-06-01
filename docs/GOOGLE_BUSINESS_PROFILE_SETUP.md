@@ -4,7 +4,7 @@ Steps you (Jonathan) need to perform in the Google Cloud Console to enable the "
 
 ## Step 1 — Enable the APIs
 
-In the GCP console for **project `meraki-salon-manager`**:
+In the GCP console for **project `plumenexus-prod`**:
 
 1. Go to **APIs & Services → Library**
 2. Search for and enable each of:
@@ -39,7 +39,7 @@ In Testing mode, up to 100 designated test users can use the app without verific
 3. Name: `Plume Nexus Salon Manager — Google Business`
 4. **Authorized redirect URIs** — add:
    ```
-   https://us-central1-meraki-salon-manager.cloudfunctions.net/googleBusinessAuthCallback
+   https://us-central1-plumenexus-prod.cloudfunctions.net/googleBusinessAuthCallback
    https://merakinailstudio.plumenexus.com/auth/google-business/callback
    ```
    (Two URIs because the Cloud Function URL is what Google actually calls, but if we later add a Hosting-routed callback we'll already have the alternate URL whitelisted.)
@@ -58,12 +58,12 @@ The OAuth refresh token must be encrypted at rest. We use Google Cloud KMS so th
    - Purpose: Symmetric encrypt/decrypt
    - Rotation: 90 days
 3. After creation, on the key's **Permissions** tab, grant your Cloud Functions service account the role:
-   - Principal: `meraki-salon-manager@appspot.gserviceaccount.com` (or the 2nd-gen functions runner — usually `<project-number>-compute@developer.gserviceaccount.com`; check `gcloud functions list` if unsure)
+   - Principal: `plumenexus-prod@appspot.gserviceaccount.com` (or the 2nd-gen functions runner — usually `<project-number>-compute@developer.gserviceaccount.com`; check `gcloud functions list` if unsure)
    - Role: **Cloud KMS CryptoKey Encrypter/Decrypter**
 
 You can verify the key path from the Console; it should look like:
 ```
-projects/meraki-salon-manager/locations/us-central1/keyRings/salon-secrets/cryptoKeys/business-profile-refresh-token
+projects/plumenexus-prod/locations/us-central1/keyRings/salon-secrets/cryptoKeys/business-profile-refresh-token
 ```
 
 ## Step 5 — Wire the secrets into Firebase Functions
@@ -73,7 +73,7 @@ Three params need to be set in `functions/.env`:
 ```bash
 GOOGLE_OAUTH_CLIENT_ID=<from Step 3>
 GOOGLE_OAUTH_CLIENT_SECRET=<from Step 3>
-GOOGLE_BUSINESS_KMS_KEY=projects/meraki-salon-manager/locations/us-central1/keyRings/salon-secrets/cryptoKeys/business-profile-refresh-token
+GOOGLE_BUSINESS_KMS_KEY=projects/plumenexus-prod/locations/us-central1/keyRings/salon-secrets/cryptoKeys/business-profile-refresh-token
 ```
 
 Then redeploy functions:

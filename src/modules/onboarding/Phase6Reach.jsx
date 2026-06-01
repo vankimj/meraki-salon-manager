@@ -68,7 +68,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
   // Auto-derive the public booking URL. Priority: explicit subdomain from
   // Phase 1, then live hostname (currentSubdomain), then onboarding payload
   // fallback. Always emits the *.plumenexus.com form even when accessed
-  // from the legacy meraki-salon-manager.web.app URL, since that's the
+  // from the legacy plumenexus-prod.web.app URL, since that's the
   // canonical booking URL we want tenants to share.
   const slug = settings?.subdomain
     || currentSubdomain()

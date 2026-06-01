@@ -15,7 +15,7 @@
 
 import { test, expect } from '@playwright/test';
 
-const BASE = process.env.PLAYWRIGHT_BASE_URL || 'https://meraki-salon-manager.web.app';
+const BASE = process.env.PLAYWRIGHT_BASE_URL || 'https://plumenexus-prod.web.app';
 const BOGUS_TOKEN = 'NotARealTokenJustForTesting42';
 
 test.describe('Hosted receipt view (/r/{token})', () => {

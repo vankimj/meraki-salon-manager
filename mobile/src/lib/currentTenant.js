@@ -13,7 +13,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEY = 'currentTenantId';
-const FALLBACK = 'meraki';   // legacy default — preserves existing behavior if storage is empty
+const FALLBACK = 'merakinailstudio';   // default tenant if storage is empty
 
 let current = FALLBACK;
 let loaded = false;

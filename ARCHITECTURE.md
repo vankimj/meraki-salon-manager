@@ -111,7 +111,7 @@ graph LR
 
 | Surface | Lives at | Purpose | Auth |
 |---|---|---|---|
-| **Web PWA** | `meraki-salon-manager.web.app` | Day-to-day admin + tech app | Google sign-in (Firebase Auth) |
+| **Web PWA** | `plumenexus-prod.web.app` | Day-to-day admin + tech app | Google sign-in (Firebase Auth) |
 | **TipFlow kiosk** | Same domain, kiosk view | Tip-suggestion display at front desk | None (kiosk mode) |
 | **Walk-in kiosk** | Same domain | Walk-in waitlist on iPad | None (kiosk mode) |
 | **Booking page** | `?book=1` | Public online booking | None |
@@ -178,17 +178,17 @@ _oauthNonces/{nonce}                        ← Gusto OAuth state pin (single-us
 
 | Target | Site | Source | URL |
 |---|---|---|---|
-| `app` | `meraki-salon-manager` | `dist/` (web app build) | `meraki-salon-manager.web.app` (routed via `*.plumenexus.com`) |
+| `app` | `plumenexus-prod` | `dist/` (web app build) | `plumenexus-prod.web.app` (routed via `*.plumenexus.com`) |
 | `plumenexus` | `plumenexus` | `plumenexus/dist/` (marketing site) | `plumenexus.com` |
 | `platform-admin` | Hostname TBD | `platform-admin/dist/` (super-admin console) | TBD |
 
-Deploys via `firebase deploy --only hosting:app` etc. Staging via Firebase Hosting Channels (`deploy:staging` → `promote:staging`). The underlying Firebase Hosting site is still named `meraki-salon-manager` (it inherits the project ID and cannot be renamed without a project migration); only the local target alias is `app`.
+Deploys via `firebase deploy --only hosting:app` etc. Staging via Firebase Hosting Channels (`deploy:staging` → `promote:staging`). The underlying Firebase Hosting site is still named `plumenexus-prod` (it inherits the project ID and cannot be renamed without a project migration); only the local target alias is `app`.
 
 ---
 
 ## Multi-tenant architecture
 
-The single Firebase project (`meraki-salon-manager`) serves N tenants. Each tenant = one salon. The same SPA bundle is deployed once and serves all tenants; tenant identity is resolved at runtime from the request's hostname. Data isolation is enforced by Firestore security rules; cross-tenant operations go through the `requireTenantStaff` / `requireTenantAdmin` helpers and the `forEachActiveTenant` iterator.
+The single Firebase project (`plumenexus-prod`) serves N tenants. Each tenant = one salon. The same SPA bundle is deployed once and serves all tenants; tenant identity is resolved at runtime from the request's hostname. Data isolation is enforced by Firestore security rules; cross-tenant operations go through the `requireTenantStaff` / `requireTenantAdmin` helpers and the `forEachActiveTenant` iterator.
 
 ### Tenant data isolation
 
@@ -250,7 +250,7 @@ sequenceDiagram
 
     U->>DNS: meraki.plumenexus.com
     DNS->>CFW: route
-    CFW->>FH: rewrite host → meraki-salon-manager.web.app
+    CFW->>FH: rewrite host → plumenexus-prod.web.app
     FH-->>SPA: serve same bundle for all tenants
     SPA->>TJS: detectTenantId()
     Note over TJS: 1. ?tenant param?<br/>2. VITE_TENANT_ID env?<br/>3. hostname → "meraki"<br/>4. fallback "meraki"
@@ -702,20 +702,20 @@ Firestore retains every write at 1-microsecond granularity for **7 days**. Resto
 
 ```bash
 # Verify PITR is enabled
-gcloud firestore databases describe --database='(default)' --project=meraki-salon-manager --format='value(pointInTimeRecoveryEnablement)'
+gcloud firestore databases describe --database='(default)' --project=plumenexus-prod --format='value(pointInTimeRecoveryEnablement)'
 # Should print: POINT_IN_TIME_RECOVERY_ENABLED
 
 # CLONE (NOT `restore` — that's for managed backups) to a new database
 # at any point-in-time within the 7-day window. Snapshot-time MUST be on
 # an exact minute boundary (no seconds component).
 gcloud firestore databases clone \
-  --source-database='projects/meraki-salon-manager/databases/(default)' \
+  --source-database='projects/plumenexus-prod/databases/(default)' \
   --snapshot-time='2026-05-12T10:00:00.000Z' \
   --destination-database=restore-YYYYMMDD \
-  --project=meraki-salon-manager
+  --project=plumenexus-prod
 
 # Async — returns immediately with an Operation. Poll with:
-gcloud firestore operations list --database=restore-YYYYMMDD --project=meraki-salon-manager
+gcloud firestore operations list --database=restore-YYYYMMDD --project=plumenexus-prod
 ```
 
 **Timing** — verified by drill (2026-05-30, restoring 1h-ago snapshot of full prod DB ~500MB): **~11 minutes** end-to-end (database create + clone + verify). Counts matched prod exactly.
@@ -730,7 +730,7 @@ Once per day Firestore writes a full backup of the `(default)` database to manag
 
 **Schedule:**
 ```
-projects/meraki-salon-manager/databases/(default)/backupSchedules/95f8ce3d-6d3e-4dc8-8ca2-aa4bee43e8b9
+projects/plumenexus-prod/databases/(default)/backupSchedules/95f8ce3d-6d3e-4dc8-8ca2-aa4bee43e8b9
   recurrence: daily
   retention: 30 days (2592000s)
   first run: ~2026-05-30 (24h after creation)
@@ -744,32 +744,32 @@ projects/meraki-salon-manager/databases/(default)/backupSchedules/95f8ce3d-6d3e-
 **How to verify the schedule is still firing:**
 ```bash
 # Lists all snapshots in the last 30 days. Should grow by 1 per day.
-gcloud firestore backups list --location=us-central1 --project=meraki-salon-manager
+gcloud firestore backups list --location=us-central1 --project=plumenexus-prod
 ```
 
 **How to restore:**
 ```bash
 # 1. List backups to find the one you want
-gcloud firestore backups list --location=us-central1 --project=meraki-salon-manager \
+gcloud firestore backups list --location=us-central1 --project=plumenexus-prod \
   --format='table(name,snapshotTime,state)' --sort-by=snapshotTime
 
 # 2. Copy the backup name (last segment after backups/)
-BACKUP=projects/meraki-salon-manager/locations/us-central1/backups/XXXX-XXXX-XXXX
+BACKUP=projects/plumenexus-prod/locations/us-central1/backups/XXXX-XXXX-XXXX
 
 # 3. Restore into a NEW database (NEVER restore over (default) — there is no undo)
 gcloud firestore databases restore \
   --source-backup=$BACKUP \
   --destination-database=restore-YYYYMMDD \
-  --project=meraki-salon-manager
+  --project=plumenexus-prod
 
 # 4. Verify by querying a known record
 gcloud firestore documents describe \
-  "projects/meraki-salon-manager/databases/restore-YYYYMMDD/documents/tenants/tf46226a93a1b546b/data/settings"
+  "projects/plumenexus-prod/databases/restore-YYYYMMDD/documents/tenants/tf46226a93a1b546b/data/settings"
 
 # 5. To swap into prod, EXPORT from restore db and IMPORT into (default), then delete restore-YYYYMMDD
-gcloud firestore export gs://meraki-restore-staging --database=restore-YYYYMMDD --project=meraki-salon-manager
-gcloud firestore import gs://meraki-restore-staging/<export-folder> --database='(default)' --project=meraki-salon-manager
-gcloud firestore databases delete restore-YYYYMMDD --project=meraki-salon-manager
+gcloud firestore export gs://meraki-restore-staging --database=restore-YYYYMMDD --project=plumenexus-prod
+gcloud firestore import gs://meraki-restore-staging/<export-folder> --database='(default)' --project=plumenexus-prod
+gcloud firestore databases delete restore-YYYYMMDD --project=plumenexus-prod
 ```
 
 **⚠ Critical safety rules:**
@@ -787,11 +787,11 @@ Every change to clients / appointments / receipts / employees / `tenants/{id}/da
 
 **Tables:**
 ```
-meraki-salon-manager.firestore_export.clients_raw_changelog
-meraki-salon-manager.firestore_export.appointments_raw_changelog
-meraki-salon-manager.firestore_export.receipts_raw_changelog
-meraki-salon-manager.firestore_export.employees_raw_changelog
-meraki-salon-manager.firestore_export.data_raw_changelog
+plumenexus-prod.firestore_export.clients_raw_changelog
+plumenexus-prod.firestore_export.appointments_raw_changelog
+plumenexus-prod.firestore_export.receipts_raw_changelog
+plumenexus-prod.firestore_export.employees_raw_changelog
+plumenexus-prod.firestore_export.data_raw_changelog
 ```
 
 **Per-doc UI restore:** every detail modal (Clients, Schedule appointments, Reports receipts, Employees) has a ⏳ History button for admins. Lists last 20 CREATE/UPDATE snapshots with collection-aware previews. Pick one, click Restore — full-doc replacement via `restoreDocFromBQ` callable.
@@ -799,8 +799,8 @@ meraki-salon-manager.firestore_export.data_raw_changelog
 **Forensic query — "show me everything that happened to this client":**
 ```sql
 SELECT timestamp, operation, JSON_EXTRACT(data, '$.notes') AS notes
-FROM `meraki-salon-manager.firestore_export.clients_raw_changelog`
-WHERE document_name = 'projects/meraki-salon-manager/databases/(default)/documents/tenants/meraki/clients/CLIENT_ID'
+FROM `plumenexus-prod.firestore_export.clients_raw_changelog`
+WHERE document_name = 'projects/plumenexus-prod/databases/(default)/documents/tenants/meraki/clients/CLIENT_ID'
 ORDER BY timestamp ASC
 ```
 
@@ -880,7 +880,7 @@ BQ billing export → 02:00 UTC pullGcpCostDaily ─→ platform/gcpCost/daily/{
 ### One-time GCP setup (for GCP cost line to populate)
 
 1. **Enable BQ billing export.** GCP Console → Billing → Billing export → Daily cost detail → choose a BQ dataset.
-2. **Grant BQ Data Viewer to the Functions SA.** IAM → grant `roles/bigquery.dataViewer` on the billing dataset to `meraki-salon-manager@appspot.gserviceaccount.com`.
+2. **Grant BQ Data Viewer to the Functions SA.** IAM → grant `roles/bigquery.dataViewer` on the billing dataset to `plumenexus-prod@appspot.gserviceaccount.com`.
 3. **Set env params.** Add to `functions/.env` (these are `defineString` params, not secrets):
    ```
    GCP_BILLING_BQ_PROJECT=<projectId>

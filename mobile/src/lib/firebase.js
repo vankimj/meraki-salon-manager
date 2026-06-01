@@ -6,12 +6,12 @@ import { getFunctions, httpsCallable } from 'firebase/functions';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const FIREBASE_CONFIG = {
-  apiKey:            'AIzaSyD2zxSXuxtDKyuXKTpDDjfnKdyhLcLs59c',
-  authDomain:        'meraki-salon-manager.firebaseapp.com',
-  projectId:         'meraki-salon-manager',
-  storageBucket:     'meraki-salon-manager.firebasestorage.app',
-  messagingSenderId: '721171829996',
-  appId:             '1:721171829996:web:57f1a33d174c966b7fc1c9',
+  apiKey:            'AIzaSyDyZkqpU30oiZYtm79ZFLAV7QNzZFvQEIo',
+  authDomain:        'plumenexus-prod.firebaseapp.com',
+  projectId:         'plumenexus-prod',
+  storageBucket:     'plumenexus-prod.firebasestorage.app',
+  messagingSenderId: '563347750501',
+  appId:             '1:563347750501:web:db870fca9aa65f5b3c908c',
 };
 
 const app = getApps().length ? getApps()[0] : initializeApp(FIREBASE_CONFIG);
@@ -41,4 +41,3 @@ export const callFn    = (name) => httpsCallable(functions, name);
 export const googleProvider = new GoogleAuthProvider();
 
 export const ALLOWED_EMAILS = ['jvankim@gmail.com'];
-export const TENANT_ID = 'meraki';
