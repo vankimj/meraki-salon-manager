@@ -39,6 +39,17 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [birthdayHour,   setBirthdayHour]  = useState(settings.birthdayHour ?? 10);
   const [lapsedHour,     setLapsedHour]    = useState(settings.lapsedHour   ?? 11);
   const [timezone,       setTimezone]      = useState(settings.timezone || 'America/New_York');
+  // Time clock settings (settings.timeclock.*). Defaults match the backend
+  // fallbacks so saving the form for the first time doesn't alter behavior.
+  const tcCfg = settings.timeclock || {};
+  const [tcDefaultBreak,     setTcDefaultBreak]     = useState(tcCfg.defaultBreakMinutes ?? 30);
+  const [tcBreakWarning,     setTcBreakWarning]     = useState(tcCfg.breakWarningMinutes ?? 10);
+  const [tcSmsOnIn,          setTcSmsOnIn]          = useState(tcCfg.smsOnClockIn      !== false);
+  const [tcSmsOnOut,         setTcSmsOnOut]         = useState(tcCfg.smsOnClockOut     !== false);
+  const [tcSmsOnBreakStart,  setTcSmsOnBreakStart]  = useState(tcCfg.smsOnBreakStart   === true);
+  const [tcSmsOnBreakEnd,    setTcSmsOnBreakEnd]    = useState(tcCfg.smsOnBreakEnd     === true);
+  const [tcSmsBreakReminder, setTcSmsBreakReminder] = useState(tcCfg.smsBreakReminder  !== false);
+  const [tcSaving,           setTcSaving]           = useState(false);
   const [salonName,        setSalonName]        = useState(settings.salonName        || '');
   const [brandName,        setBrandName]        = useState(settings.brandName        || '');
   const [brandTagline,     setBrandTagline]     = useState(settings.brandTagline     || '');
@@ -544,6 +555,61 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
+              </div>
+            </Section>
+            <Section title="🕐 Time Clock">
+              {/* Break length + warning */}
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Default break length</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used by the break-end reminder to know when a tech is "due back."</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="number" min={5} max={240} value={tcDefaultBreak}
+                    onChange={e => setTcDefaultBreak(Number(e.target.value) || 30)}
+                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: '#888' }}>min</span>
+                </div>
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: '#333' }}>Break-end warning</div>
+                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>SMS the tech this many minutes before the break length is up.</div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="number" min={1} max={60} value={tcBreakWarning}
+                    onChange={e => setTcBreakWarning(Number(e.target.value) || 10)}
+                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: '#888' }}>min before</span>
+                </div>
+              </div>
+
+              {/* SMS toggles */}
+              <TcToggle border value={tcSmsOnIn}          onChange={setTcSmsOnIn}          label="Text tech on clock-in"  hint="“Clocked in at 9:01 AM…”" />
+              <TcToggle border value={tcSmsOnOut}         onChange={setTcSmsOnOut}         label="Text tech on clock-out" hint="“Clocked out at 5:30 PM. 8h worked today.”" />
+              <TcToggle border value={tcSmsBreakReminder} onChange={setTcSmsBreakReminder} label="Text break-end warning" hint="Heads-up before the break length is up." />
+              <TcToggle border value={tcSmsOnBreakStart}  onChange={setTcSmsOnBreakStart}  label="Text tech on break start" hint="Verbose — default off." />
+              <TcToggle border value={tcSmsOnBreakEnd}    onChange={setTcSmsOnBreakEnd}    label="Text tech on break end"   hint="Verbose — default off." />
+
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+                <Btn color="#3D95CE" savedLabel={tcSaving ? '...' : '✓ Saved'} onClick={async () => {
+                  setTcSaving(true);
+                  try {
+                    await updateSettings({
+                      ...settings,
+                      timeclock: {
+                        ...(settings.timeclock || {}),
+                        defaultBreakMinutes: Math.max(5, Math.min(240, Number(tcDefaultBreak) || 30)),
+                        breakWarningMinutes: Math.max(1, Math.min(60,  Number(tcBreakWarning) || 10)),
+                        smsOnClockIn:    tcSmsOnIn,
+                        smsOnClockOut:   tcSmsOnOut,
+                        smsBreakReminder: tcSmsBreakReminder,
+                        smsOnBreakStart: tcSmsOnBreakStart,
+                        smsOnBreakEnd:   tcSmsOnBreakEnd,
+                      },
+                    });
+                  } finally { setTcSaving(false); }
+                }}>Save</Btn>
               </div>
             </Section>
             <Section title="🧾 Receipts & Ratings">
@@ -1564,6 +1630,33 @@ function RoleBadge({ role }) {
   const colors = { admin: ['rgba(61,149,206,.15)', '#3D95CE'], readonly: ['rgba(34,197,94,.15)', '#16a34a'], tech: ['rgba(245,158,11,.15)', '#d97706'], scheduler: ['rgba(139,92,246,.15)', '#7c3aed'], pending: ['rgba(245,158,11,.15)', '#d97706'], denied: ['rgba(239,68,68,.15)', '#ef4444'] };
   const [bg, fg] = colors[role] || ['#eee', '#888'];
   return <span style={{ display: 'inline-block', fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 20, letterSpacing: '.04em', textTransform: 'uppercase', background: bg, color: fg }}>{role}</span>;
+}
+
+// Toggle row matching the visual rhythm of the other settings rows in the
+// ⚙ App Settings / 🕐 Time Clock sections. `border` adds a top divider so it
+// can sit between other rows without a wrapper.
+function TcToggle({ value, onChange, label, hint, border = false }) {
+  return (
+    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: border ? '1px solid #f0f0f0' : 'none' }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, color: '#333' }}>{label}</div>
+        {hint && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{hint}</div>}
+      </div>
+      <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: 'pointer', flexShrink: 0 }}>
+        <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+        <span style={{
+          position: 'absolute', inset: 0, borderRadius: 999,
+          background: value ? '#10B981' : '#d0d0d0',
+          transition: 'background .15s',
+        }} />
+        <span style={{
+          position: 'absolute', top: 2, left: value ? 22 : 2, width: 20, height: 20,
+          borderRadius: '50%', background: '#fff', transition: 'left .15s',
+          boxShadow: '0 2px 6px rgba(0,0,0,.2)',
+        }} />
+      </label>
+    </div>
+  );
 }
 
 function Btn({ onClick, color, children, disabled, savedLabel }) {
