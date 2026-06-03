@@ -225,7 +225,7 @@ function ConnectComparisonTable() {
   };
 
   return (
-    <details style={{ marginBottom: 14, borderRadius: 10, border: '1px solid #e8e8e8', background: '#fafafa' }}>
+    <details open style={{ marginBottom: 14, borderRadius: 10, border: '1px solid #e8e8e8', background: '#fafafa' }}>
       <summary style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#5b3b8c', cursor: 'pointer', userSelect: 'none' }}>
         Compare the two options side-by-side
       </summary>
