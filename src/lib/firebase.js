@@ -56,6 +56,11 @@ if (skipPersist) {
 }
 export const db = _db;
 export const auth      = getAuth(app);
+// Expose the auth instance on window for e2e tests (signInAnonymously,
+// linkWithPhoneNumber, signInWithCustomToken). Same pattern as
+// plumenexus/src/lib/firebase.js. No secrets exposed — auth is an SDK
+// handle anyone with the public Firebase config can construct.
+if (typeof window !== 'undefined') window.__plumeAuth = auth;
 export const functions = getFunctions(app);
 export const callFn    = (name) => httpsCallable(functions, name);
 export const storage   = getStorage(app);
