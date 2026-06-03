@@ -3,6 +3,7 @@ import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
 import { callFn } from '../../lib/firebase';
 import { TENANT_ID } from '../../lib/tenant';
+import { EmbeddedOnboarding, EmbeddedAccountManagement } from './ConnectEmbedded';
 
 // Phase 3 (UI step 4 of 8) — Money + compliance.
 //
@@ -197,6 +198,12 @@ function Link({ href, children }) {
 function StripeConnectStep({ stripeConnect, showToast }) {
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
+  const [prefillOpen, setPrefillOpen] = useState(false);
+  // When true, render the Stripe Embedded Connect onboarding component
+  // inline instead of redirecting to connect.stripe.com. Express only —
+  // Standard accounts still use OAuth redirect.
+  const [embeddedOnboardingOpen, setEmbeddedOnboardingOpen] = useState(false);
+  const [embeddedManagementOpen, setEmbeddedManagementOpen] = useState(false);
 
   // After return from Stripe-hosted onboarding (Express ?connect=return)
   // or OAuth (Standard ?connect=oauth-callback&code=...&state=...), finish
@@ -232,20 +239,47 @@ function StripeConnectStep({ stripeConnect, showToast }) {
     finalise();
   }, []);
 
-  async function startExpress() {
+  // Trigger from the "Set up payments" card. Creates the Stripe Express
+  // account with prefill, then opens the EMBEDDED onboarding flow inline
+  // (Plume-branded, no redirect to connect.stripe.com).
+  async function startExpress(prefill) {
     setBusy(true); setErr('');
     try {
-      await callFn('createExpressAccount')({ tenantId: TENANT_ID });
-      const { data } = await callFn('createAccountOnboardingLink')({ tenantId: TENANT_ID });
-      if (data?.url) {
-        window.location.href = data.url;        // Stripe-hosted onboarding form
-      } else {
-        throw new Error('No onboarding URL returned');
-      }
+      await callFn('createExpressAccount')({ tenantId: TENANT_ID, prefill: prefill || undefined });
+      // Open the embedded onboarding flow — Stripe renders the form
+      // inside our app via the @stripe/react-connect-js component.
+      setEmbeddedOnboardingOpen(true);
+      setBusy(false);
     } catch (e) {
       setErr(e.message || 'Failed to start Express onboarding');
       setBusy(false);
     }
+  }
+
+  async function openManagement() {
+    setErr('');
+    setEmbeddedManagementOpen(true);
+  }
+
+  async function handleEmbeddedExit() {
+    // Salon completed (or exited) the embedded onboarding. Refresh the
+    // cached status so the UI flips from "onboarding pending" to live.
+    setEmbeddedOnboardingOpen(false);
+    try {
+      await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+    } catch (e) {
+      console.warn('[Connect] post-onboarding status refresh failed:', e?.message);
+    }
+  }
+
+  function openPrefillModal() {
+    setErr('');
+    setPrefillOpen(true);
+  }
+
+  async function handlePrefillSubmit(prefill) {
+    setPrefillOpen(false);
+    await startExpress(prefill);
   }
 
   async function startStandard() {
@@ -323,8 +357,8 @@ function StripeConnectStep({ stripeConnect, showToast }) {
             </button>
           )}
           {accountType === 'express' && (
-            <button onClick={openDashboard} disabled={busy} style={btnSecondary} type="button">
-              {busy ? '…' : 'Open Stripe Dashboard ↗'}
+            <button onClick={openManagement} disabled={busy} style={btnSecondary} type="button">
+              Manage payments
             </button>
           )}
           {accountType === 'standard' && (
@@ -367,7 +401,7 @@ function StripeConnectStep({ stripeConnect, showToast }) {
             <li>5-min hosted onboarding</li>
             <li>Slight per-payout fee (Plume absorbs)</li>
           </ul>
-          <button onClick={startExpress} disabled={busy} style={btnPrimary(busy)} type="button">
+          <button onClick={openPrefillModal} disabled={busy} style={btnPrimary(busy)} type="button">
             {busy ? 'Loading…' : 'Set up payments'}
           </button>
         </div>
@@ -397,6 +431,232 @@ function StripeConnectStep({ stripeConnect, showToast }) {
       </div>
 
       {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
+
+      {prefillOpen && (
+        <ExpressPrefillModal
+          onCancel={() => setPrefillOpen(false)}
+          onSubmit={handlePrefillSubmit}
+          busy={busy}
+        />
+      )}
+
+      {embeddedOnboardingOpen && (
+        <EmbeddedModal title="Set up payments" onClose={handleEmbeddedExit}>
+          <EmbeddedOnboarding onExit={handleEmbeddedExit} />
+        </EmbeddedModal>
+      )}
+
+      {embeddedManagementOpen && (
+        <EmbeddedModal title="Manage payments" onClose={() => setEmbeddedManagementOpen(false)}>
+          <EmbeddedAccountManagement />
+        </EmbeddedModal>
+      )}
+    </div>
+  );
+}
+
+// Simple full-screen overlay that hosts an embedded Connect component.
+// Keeps Plume's chrome around the Stripe iframe so the experience feels
+// native rather than a popup-to-stripe.com.
+function EmbeddedModal({ title, children, onClose }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 0, width: '100%', maxWidth: 760, boxShadow: '0 12px 36px rgba(0,0,0,.18)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #eee' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{title}</div>
+          <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#999', padding: 4, lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: 14 }}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Collected once, sent straight to Stripe, NOT stored on the tenant doc.
+// SSN last 4 + bank account still come from Stripe's hosted form because
+// those are highly sensitive and we don't want them flowing through our
+// server. Everything else (EIN, DOB, addresses, names) is just identity
+// data Stripe needs — collecting it here means the hosted form is mostly
+// pre-populated and the salon owner has less to type.
+function ExpressPrefillModal({ onCancel, onSubmit, busy }) {
+  const [businessType,   setBusinessType]   = useState('company');   // LLC default
+  const [ein,            setEin]            = useState('');
+  const [businessPhone,  setBusinessPhone]  = useState('');
+  const [bizLine1,       setBizLine1]       = useState('');
+  const [bizCity,        setBizCity]        = useState('');
+  const [bizState,       setBizState]       = useState('');
+  const [bizZip,         setBizZip]         = useState('');
+
+  const [repFirstName,   setRepFirstName]   = useState('');
+  const [repLastName,    setRepLastName]    = useState('');
+  const [dobMonth,       setDobMonth]       = useState('');
+  const [dobDay,         setDobDay]         = useState('');
+  const [dobYear,        setDobYear]        = useState('');
+
+  const [sameHomeAsBiz,  setSameHomeAsBiz]  = useState(true);
+  const [homeLine1,      setHomeLine1]      = useState('');
+  const [homeCity,       setHomeCity]       = useState('');
+  const [homeState,      setHomeState]      = useState('');
+  const [homeZip,        setHomeZip]        = useState('');
+
+  const [submitting,     setSubmitting]     = useState(false);
+  const [err,            setErr]            = useState('');
+
+  function validateAndSubmit() {
+    setErr('');
+    // Minimum needed for prefill to be useful: at least DOB. EIN is required
+    // if business_type=company. Business address is strongly recommended.
+    if (businessType === 'company' && !ein.replace(/\D/g, '').match(/^\d{9}$/)) {
+      setErr('Enter the LLC\'s 9-digit EIN.'); return;
+    }
+    if (!(Number(dobMonth) >= 1 && Number(dobMonth) <= 12 &&
+          Number(dobDay)   >= 1 && Number(dobDay)   <= 31 &&
+          Number(dobYear)  >= 1900 && Number(dobYear) <= 2010)) {
+      setErr('Enter a valid date of birth.'); return;
+    }
+
+    const businessAddress = (bizLine1 && bizCity && bizState && bizZip)
+      ? { line1: bizLine1, city: bizCity, state: bizState, postal_code: bizZip }
+      : undefined;
+
+    const homeAddress = sameHomeAsBiz
+      ? businessAddress
+      : (homeLine1 && homeCity && homeState && homeZip
+          ? { line1: homeLine1, city: homeCity, state: homeState, postal_code: homeZip }
+          : undefined);
+
+    const payload = {
+      business: {
+        type: businessType,
+        ein: businessType === 'company' ? ein.replace(/\D/g, '') : undefined,
+        phone: businessPhone || undefined,
+        address: businessAddress,
+      },
+      representative: {
+        firstName: repFirstName || undefined,
+        lastName:  repLastName  || undefined,
+        dob: { month: Number(dobMonth), day: Number(dobDay), year: Number(dobYear) },
+        homeAddress,
+      },
+    };
+
+    setSubmitting(true);
+    onSubmit(payload);
+  }
+
+  const inpRow = { boxSizing: 'border-box', padding: '8px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff', width: '100%' };
+  const label = { display: 'block', fontSize: 11, color: '#555', fontWeight: 600, marginBottom: 4 };
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 24, width: '100%', maxWidth: 560, maxHeight: '90vh', overflowY: 'auto' }}>
+        <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
+          A few quick details
+        </div>
+        <div style={{ fontSize: 12, color: '#666', marginBottom: 16, lineHeight: 1.55 }}>
+          Filling these out here means the Stripe form on the next screen will be mostly pre-populated.
+          We pass these straight to Stripe — we don't store them.
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={label}>Business type</div>
+          <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="radio" name="btype" checked={businessType === 'company'} onChange={() => setBusinessType('company')} />
+              LLC / Corp
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="radio" name="btype" checked={businessType === 'individual'} onChange={() => setBusinessType('individual')} />
+              Sole proprietor
+            </label>
+          </div>
+        </div>
+
+        {businessType === 'company' && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={label}>EIN (Tax ID)</div>
+            <input style={inpRow} value={ein} onChange={e => setEin(e.target.value)} placeholder="12-3456789" />
+          </div>
+        )}
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={label}>Business phone</div>
+          <input style={inpRow} value={businessPhone} onChange={e => setBusinessPhone(e.target.value)} placeholder="(555) 555-0123" />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={label}>Business address</div>
+          <input style={{ ...inpRow, marginBottom: 6 }} value={bizLine1} onChange={e => setBizLine1(e.target.value)} placeholder="Street address" />
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 6 }}>
+            <input style={inpRow} value={bizCity}  onChange={e => setBizCity(e.target.value)}  placeholder="City" />
+            <input style={inpRow} value={bizState} onChange={e => setBizState(e.target.value)} placeholder="State" />
+            <input style={inpRow} value={bizZip}   onChange={e => setBizZip(e.target.value)}   placeholder="ZIP" />
+          </div>
+        </div>
+
+        <hr style={{ border: 0, borderTop: '1px solid #eee', margin: '20px 0 16px' }} />
+
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>About you (account representative)</div>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+          Stripe requires identity info for the person legally responsible for the account.
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, marginBottom: 14 }}>
+          <div>
+            <div style={label}>First name</div>
+            <input style={inpRow} value={repFirstName} onChange={e => setRepFirstName(e.target.value)} placeholder="Jane" />
+          </div>
+          <div>
+            <div style={label}>Last name</div>
+            <input style={inpRow} value={repLastName} onChange={e => setRepLastName(e.target.value)} placeholder="Doe" />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <div style={label}>Date of birth</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1.4fr', gap: 6 }}>
+            <input style={inpRow} value={dobMonth} onChange={e => setDobMonth(e.target.value)} placeholder="MM" maxLength={2} />
+            <input style={inpRow} value={dobDay}   onChange={e => setDobDay(e.target.value)}   placeholder="DD" maxLength={2} />
+            <input style={inpRow} value={dobYear}  onChange={e => setDobYear(e.target.value)}  placeholder="YYYY" maxLength={4} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#444', cursor: 'pointer' }}>
+            <input type="checkbox" checked={sameHomeAsBiz} onChange={e => setSameHomeAsBiz(e.target.checked)} />
+            My home address is the same as the business address
+          </label>
+        </div>
+
+        {!sameHomeAsBiz && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={label}>Home address</div>
+            <input style={{ ...inpRow, marginBottom: 6 }} value={homeLine1} onChange={e => setHomeLine1(e.target.value)} placeholder="Street address" />
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 6 }}>
+              <input style={inpRow} value={homeCity}  onChange={e => setHomeCity(e.target.value)}  placeholder="City" />
+              <input style={inpRow} value={homeState} onChange={e => setHomeState(e.target.value)} placeholder="State" />
+              <input style={inpRow} value={homeZip}   onChange={e => setHomeZip(e.target.value)}   placeholder="ZIP" />
+            </div>
+          </div>
+        )}
+
+        {err && <div style={{ fontSize: 12, color: '#dc2626', marginBottom: 12 }}>{err}</div>}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button type="button" onClick={onCancel} disabled={submitting || busy} style={btnSecondary}>
+            Cancel
+          </button>
+          <button type="button" onClick={validateAndSubmit} disabled={submitting || busy} style={btnPrimary(submitting || busy)}>
+            {submitting || busy ? 'Loading…' : 'Continue to Stripe →'}
+          </button>
+        </div>
+
+        <div style={{ fontSize: 11, color: '#aaa', marginTop: 14, lineHeight: 1.45 }}>
+          You'll still confirm everything on Stripe's hosted form + add your SSN last-4 and bank account there (those don't flow through Plume).
+        </div>
+      </div>
     </div>
   );
 }

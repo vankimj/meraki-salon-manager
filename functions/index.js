@@ -6316,7 +6316,7 @@ async function persistConnectStatus(db, tenantId, account, accountType) {
 // existing id rather than creating a second.
 exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const { tenantId: tid } = request.data || {};
+  const { tenantId: tid, prefill = {} } = request.data || {};
   const tenantId = tid || TENANT_ID;
 
   const db = getFirestore();
@@ -6330,17 +6330,109 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
     return { accountId: ten.stripeConnectAccountId, alreadyExists: true, accountType: ten.stripeConnectAccountType || 'express' };
   }
 
+  // Pull complementary fields from the tenant's settings doc — we never
+  // store sensitive prefill (DOB, EIN, home address) on the tenant doc;
+  // those come from the request.data.prefill payload and pass straight
+  // through to Stripe without being persisted on our side.
+  const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+  const settings = settingsSnap.exists ? settingsSnap.data() : {};
+
+  // Split a single ownerName string into first + last for Stripe.
+  const ownerNameFull = ten.ownerName || '';
+  const ownerNameParts = ownerNameFull.trim().split(/\s+/);
+  const ownerFirstName = ownerNameParts[0] || '';
+  const ownerLastName  = ownerNameParts.slice(1).join(' ') || '';
+
+  const businessName = ten.name || settings.salonName || settings.brandName || '';
+  const businessPhone = settings.contactPhone || settings.phone || '';
+  const tenantUrl = ten.tenantUrl || `https://${tenantId}.plumenexus.com`;
+
+  // Sanitize prefill — only allow specific safe fields through. We do NOT
+  // log or persist these; they go straight into the Stripe create call.
+  const pfBusiness = prefill.business || {};
+  const pfRep      = prefill.representative || {};
+
+  function safeAddr(a) {
+    if (!a || typeof a !== 'object') return undefined;
+    const out = {};
+    if (a.line1)       out.line1       = String(a.line1).slice(0, 200);
+    if (a.line2)       out.line2       = String(a.line2).slice(0, 200);
+    if (a.city)        out.city        = String(a.city).slice(0, 100);
+    if (a.state)       out.state       = String(a.state).slice(0, 50);
+    if (a.postal_code) out.postal_code = String(a.postal_code).slice(0, 20);
+    out.country = 'US';
+    return Object.keys(out).length > 1 ? out : undefined;
+  }
+
+  function safeDob(d) {
+    if (!d || typeof d !== 'object') return undefined;
+    const day = Number(d.day), month = Number(d.month), year = Number(d.year);
+    if (!Number.isInteger(day) || !Number.isInteger(month) || !Number.isInteger(year)) return undefined;
+    if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2010) return undefined;
+    return { day, month, year };
+  }
+
+  const acctPayload = {
+    type:    'express',
+    country: 'US',
+    email:   ten.ownerEmail || undefined,
+    business_type: pfBusiness.type === 'individual' ? 'individual' : 'company',
+    business_profile: {
+      name: businessName || undefined,
+      url:  tenantUrl,
+      mcc:  '7230',                      // Barber & Beauty Shops — covers nail salons
+      product_description: 'Salon services including manicure, pedicure, nail art, gels, and related beauty services. Sold in-person + via online booking. Plume Nexus is the SaaS platform providing scheduling, POS, and Connect-based payment processing.',
+      support_email: ten.ownerEmail || undefined,
+      support_phone: businessPhone || undefined,
+    },
+    metadata: { tenantId, plumeNexusTenant: 'true' },
+  };
+
+  // Company block (for LLC / Corp). Stripe will collect EIN here.
+  if (acctPayload.business_type === 'company') {
+    acctPayload.company = {
+      name:   businessName || undefined,
+      phone:  pfBusiness.phone || businessPhone || undefined,
+      tax_id: pfBusiness.ein || undefined,
+      address: safeAddr(pfBusiness.address),
+    };
+    // Strip undefineds so Stripe doesn't reject the call
+    Object.keys(acctPayload.company).forEach(k => acctPayload.company[k] === undefined && delete acctPayload.company[k]);
+    if (acctPayload.company.address === undefined) delete acctPayload.company.address;
+  }
+
+  // Individual / representative block — applies for both LLC (account rep)
+  // and sole prop (sole owner). Stripe still collects the SSN last 4 in the
+  // hosted form; we just pre-fill what we have.
+  const repFirstName = pfRep.firstName || ownerFirstName;
+  const repLastName  = pfRep.lastName  || ownerLastName;
+  if (repFirstName || repLastName || pfRep.dob || pfRep.homeAddress) {
+    acctPayload.individual = {
+      first_name: repFirstName || undefined,
+      last_name:  repLastName  || undefined,
+      email:      ten.ownerEmail || undefined,
+      phone:      pfRep.phone || undefined,
+      dob:        safeDob(pfRep.dob),
+      address:    safeAddr(pfRep.homeAddress),
+    };
+    Object.keys(acctPayload.individual).forEach(k => acctPayload.individual[k] === undefined && delete acctPayload.individual[k]);
+    if (acctPayload.individual.address === undefined) delete acctPayload.individual.address;
+    if (acctPayload.individual.dob     === undefined) delete acctPayload.individual.dob;
+  }
+
   const key = stripeKey.value();
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
   const stripe = require('stripe')(key);
 
-  const account = await stripe.accounts.create({
-    type:    'express',
-    country: 'US',
-    email:   ten.ownerEmail || undefined,
-    business_profile: ten.name ? { name: ten.name } : undefined,
-    metadata: { tenantId, plumeNexusTenant: 'true' },
-  });
+  let account;
+  try {
+    account = await stripe.accounts.create(acctPayload);
+  } catch (e) {
+    console.warn(`[createExpressAccount] Stripe rejected payload for ${tenantId}:`, e?.message);
+    // Re-throw with friendlier message + Stripe's reason
+    throw new HttpsError('invalid-argument', e?.message || 'Stripe rejected the account creation', { stripeMessage: e?.message });
+  }
+
   await persistConnectStatus(db, tenantId, account, 'express');
   return { accountId: account.id, alreadyExists: false, accountType: 'express' };
 });
@@ -6407,6 +6499,82 @@ exports.createExpressLoginLink = onCall({ cors: true, secrets: [stripeKey] }, as
 
   const link = await stripe.accounts.createLoginLink(ten.stripeConnectAccountId);
   return { url: link.url, accountType: 'express' };
+});
+
+// Create an AccountSession for embedded Connect components. Returns a
+// short-lived client_secret that the React app uses to mount Stripe's
+// pre-built UI components INSIDE Plume (no redirect to stripe.com).
+//
+// `components` is an array of component names the salon will use in this
+// session: 'account_onboarding', 'account_management', 'payouts',
+// 'payments', 'notification_banner', etc. We request only the ones the
+// caller asked for so the session token has minimal scope.
+//
+// Each session has a TTL (~1 hour). The frontend re-fetches on expiry.
+exports.createAccountSession = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, components: requestedComponents } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+  if (!ten.stripeConnectAccountId) {
+    throw new HttpsError('failed-precondition',
+      'No connected account yet — call createExpressAccount first');
+  }
+  if (ten.stripeConnectAccountType !== 'express') {
+    // Embedded components are only available for Express accounts.
+    // Standard salons keep their own stripe.com dashboard.
+    throw new HttpsError('failed-precondition',
+      'Embedded components are only available for Express accounts');
+  }
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  // Allowlist of components we support. Stripe rejects unknown names.
+  const ALLOWED = new Set([
+    'account_onboarding', 'account_management', 'payouts',
+    'payments', 'notification_banner', 'documents', 'tax_registrations',
+    'tax_settings', 'balances', 'disputes_list', 'payout_details',
+  ]);
+  const safe = Array.isArray(requestedComponents)
+    ? requestedComponents.filter(c => ALLOWED.has(c))
+    : ['account_onboarding'];
+
+  // Build the components map Stripe expects, with all features enabled
+  // by default. Future iterations could pass per-component feature
+  // toggles from the caller.
+  const componentsMap = {};
+  safe.forEach(c => {
+    componentsMap[c] = { enabled: true, features: {} };
+    // Per-component defaults Stripe wants explicitly:
+    if (c === 'payouts')           componentsMap[c].features.standard_payouts = true;
+    if (c === 'payments')          componentsMap[c].features.refund_management = true;
+    if (c === 'account_management') {
+      componentsMap[c].features.external_account_collection = true;
+    }
+  });
+
+  try {
+    const session = await stripe.accountSessions.create({
+      account:    ten.stripeConnectAccountId,
+      components: componentsMap,
+    });
+    return {
+      clientSecret:   session.client_secret,
+      expiresAt:      session.expires_at,
+      componentsEnabled: safe,
+    };
+  } catch (e) {
+    console.warn(`[createAccountSession] Stripe error for ${tenantId}:`, e?.message);
+    throw new HttpsError('internal', e?.message || 'Failed to mint Account Session');
+  }
 });
 
 // ─── Standard path (OAuth) ───────────────────────────────────────────────
