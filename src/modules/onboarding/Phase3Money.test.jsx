@@ -130,6 +130,25 @@ describe('Phase3Money — Stripe Connect step', () => {
     window.confirm = origConfirm;
   });
 
+  it('Standard accounts show a "Disconnect" button (not "Start over") when not yet live', async () => {
+    // Standard accounts: salon owns the Stripe account, we just have
+    // OAuth access. "Disconnect" is correct — server-side this calls
+    // stripe.oauth.deauthorize instead of stripe.accounts.del.
+    appState = {
+      stripeConnect: {
+        accountId:      'acct_standard_xx',
+        accountType:    'standard',
+        chargesEnabled: false,
+        payoutsEnabled: false,
+        detailsSubmitted: false,
+        requirementsCurrentlyDue: ['business_profile.url'],
+      },
+    };
+    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    expect(screen.getByRole('button', { name: /Disconnect/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Start over/i })).not.toBeInTheDocument();
+  });
+
   it('clicking "Use Plume-managed" (Express fallback) opens the embedded modal', async () => {
     appState = { stripeConnect: null };
     render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);

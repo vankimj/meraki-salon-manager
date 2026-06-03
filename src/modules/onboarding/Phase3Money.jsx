@@ -244,7 +244,11 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
   }
 
   async function deleteAccount() {
-    if (!window.confirm('Delete this Stripe account and start over? This wipes any in-progress onboarding.')) return;
+    const isStandard = stripeConnect?.accountType === 'standard';
+    const msg = isStandard
+      ? 'Disconnect your Stripe account from Plume? Your Stripe account itself (and its data on stripe.com) stays intact — only Plume loses access. You can reconnect any time.'
+      : 'Delete this Stripe account and start over? This wipes any in-progress onboarding.';
+    if (!window.confirm(msg)) return;
     setBusy(true); setErr('');
     try {
       await callFn('deleteConnectAccount')({ tenantId: TENANT_ID });
@@ -258,7 +262,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
         delete next.stripeConnect;
         await updateSettings(next);
       }
-      showToast?.('Stripe account cleared — pick a path below');
+      showToast?.(isStandard ? 'Stripe disconnected — pick a path below' : 'Stripe account cleared — pick a path below');
     } catch (e) {
       setErr(e.message || 'Failed to delete account');
     } finally {
@@ -367,10 +371,10 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
               Open stripe.com Dashboard ↗
             </a>
           )}
-          {accountType === 'express' && !isLive && (
+          {!isLive && (
             <button onClick={deleteAccount} disabled={busy} type="button"
               style={{ background: 'none', border: 'none', color: '#a16207', fontSize: 11, fontWeight: 600, cursor: busy ? 'default' : 'pointer', textDecoration: 'underline', padding: 6 }}>
-              Start over
+              {accountType === 'standard' ? 'Disconnect' : 'Start over'}
             </button>
           )}
         </div>

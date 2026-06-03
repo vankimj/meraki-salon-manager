@@ -6469,21 +6469,35 @@ exports.deleteConnectAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
   // cleanup, manual ops), the settings.stripeConnect mirror may still be
   // showing stale "More info needed" panel — clear it and return success
   // so the UI flips back to the green "Connect Stripe account" card.
+  //
+  // Dispatch by account type:
+  //   Express  → stripe.accounts.del (we own it, full delete)
+  //   Standard → stripe.oauth.deauthorize (salon owns the account; we
+  //              only have OAuth access, which is what we want to revoke;
+  //              the underlying Stripe account stays on their side)
+  const acctType = ten.stripeConnectAccountType;
   let deletedFromStripe = false;
   if (acctId) {
     const key = stripeKey.value();
     if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
     const stripe = require('stripe')(key);
     try {
-      await stripe.accounts.del(acctId);
+      if (acctType === 'standard') {
+        const clientId = stripeConnectClientId.value();
+        if (!clientId) throw new Error('STRIPE_CONNECT_CLIENT_ID not configured');
+        await stripe.oauth.deauthorize({ client_id: clientId, stripe_user_id: acctId });
+      } else {
+        await stripe.accounts.del(acctId);
+      }
       deletedFromStripe = true;
     } catch (e) {
-      // "No such account" means the upstream is already gone — also fine
-      // to clear our local state and return success.
-      if (/No such account|deauthorized/i.test(e?.message || '')) {
+      // "No such account" or "already revoked" means the upstream is
+      // already gone — also fine to clear our local state and return
+      // success.
+      if (/No such account|deauthorized|not connected|already.*revoked/i.test(e?.message || '')) {
         deletedFromStripe = false;
       } else {
-        console.warn(`[deleteConnectAccount] Stripe rejected delete for ${tenantId}/${acctId}:`, e?.message);
+        console.warn(`[deleteConnectAccount] Stripe rejected disconnect for ${tenantId}/${acctId} (type=${acctType}):`, e?.message);
         throw new HttpsError('failed-precondition', e?.message || 'Stripe rejected the delete', { stripeMessage: e?.message });
       }
     }
