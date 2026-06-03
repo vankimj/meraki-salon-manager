@@ -73,33 +73,6 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       </div>
 
       <Section title="Financial defaults">
-        {/* CC processing rate isn't user-editable: Stripe sets it. Showing
-            it informationally so the salon knows what their effective
-            processing cost is. Online vs Terminal rates differ —
-            salons typically hit both (online prepay at booking, Terminal
-            at the front desk). Admin → Settings has overridable inputs
-            for the rare custom platform-negotiated case. */}
-        <div style={{
-          padding: 10, borderRadius: 8, background: '#f8f9fa',
-          border: '1px solid #e8e8e8', fontSize: 12, color: '#555', lineHeight: 1.55,
-        }}>
-          <div style={{ fontWeight: 600, color: '#1a1a1a', marginBottom: 6 }}>
-            Card processing rates
-          </div>
-          <div style={{ marginBottom: 4 }}>
-            <strong>Online (booking page):</strong> 2.9% + $0.30 per transaction
-          </div>
-          <div style={{ marginBottom: 6 }}>
-            <strong>In-person (Stripe Terminal):</strong> 2.7% + $0.05 per transaction
-          </div>
-          <div style={{ fontSize: 11, color: '#888' }}>
-            Set by Stripe — applies to every salon, nothing to configure here.{' '}
-            <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
-              style={{ color: '#5b3b8c', textDecoration: 'underline' }}>
-              See stripe.com/pricing ↗
-            </a>
-          </div>
-        </div>
         <ToggleRow checked={!noCardTips} onChange={v => setNoCardTips(!v)}
           label="Allow tips on credit cards"
           desc="Off = tips must be cash-only. On = clients can tip on their card at checkout (most common)." />
@@ -411,6 +384,45 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
           Charges: {chargesEnabled ? '✓' : '✗'}{' · '}
           Payouts: {payoutsEnabled ? '✓' : '✗'}{' · '}
           KYC submitted: {detailsSubmitted ? '✓' : '✗'}
+        </div>
+
+        {/* Rate card. Stripe publishes these uniformly per account type,
+            so this is informational rather than configurable. Standard:
+            salon pays Stripe directly at base rates. Express: same base
+            rates apply; Plume absorbs Stripe's per-payout Connect fee
+            so the salon's effective rate is unchanged. Verified against
+            stripe.com/pricing on 2026-06-03 via WebFetch. */}
+        <div style={{
+          padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.6)',
+          border: '1px dashed rgba(0,0,0,0.12)', fontSize: 12, lineHeight: 1.55, marginBottom: 8,
+          color: isLive ? '#065f46' : needsMore ? '#7c2d12' : '#92400e',
+        }}>
+          <div style={{ fontWeight: 600, marginBottom: 6 }}>Card processing rates</div>
+          <div style={{ marginBottom: 4 }}>
+            <strong>Online (booking page):</strong> 2.9% + $0.30 per transaction
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>In-person (Stripe Terminal):</strong> 2.7% + $0.05 per transaction
+          </div>
+          {accountType === 'standard' && (
+            <div style={{ fontSize: 11, opacity: 0.85 }}>
+              You pay Stripe directly at these rates — Plume does not add a fee.{' '}
+              <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'underline' }}>
+                See stripe.com/pricing ↗
+              </a>
+            </div>
+          )}
+          {accountType === 'express' && (
+            <div style={{ fontSize: 11, opacity: 0.85 }}>
+              Same base rates as Standard — Plume absorbs Stripe's per-payout
+              Connect fee so your effective rate is unchanged.{' '}
+              <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
+                style={{ color: 'inherit', textDecoration: 'underline' }}>
+                See stripe.com/pricing ↗
+              </a>
+            </div>
+          )}
         </div>
         {friendlyItems.length > 0 && (
           <div style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.6 }}>
