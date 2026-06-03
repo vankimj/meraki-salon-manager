@@ -437,6 +437,26 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             </button>
           )}
         </div>
+        {/* Standard-only edge-case helper. Stripe doesn't honor deep-links
+            to accounts the logged-in user can't access — it silently
+            redirects to whatever workspace they're already in. Surfaces
+            the target account so the owner knows which identity to log
+            in as, plus a one-click sign-out-and-retry path. */}
+        {accountType === 'standard' && needsStripeSide && (
+          <div style={{ fontSize: 11, color: '#92400e', opacity: 0.85, marginTop: 10, paddingTop: 8, borderTop: '1px dashed #fed7aa', lineHeight: 1.55 }}>
+            Connecting to <code style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, background: '#fff7ed', padding: '1px 4px', borderRadius: 3 }}>{stripeConnect.accountId}</code>
+            {businessName && <> ({businessName})</>}.
+            <br />
+            Wrong account on stripe.com?{' '}
+            <a
+              href={`https://dashboard.stripe.com/logout?redirect=${encodeURIComponent(stripeDashUrl.replace('https://dashboard.stripe.com', ''))}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ color: '#7c2d12', textDecoration: 'underline', fontWeight: 600 }}
+            >
+              Sign out + sign back in as the salon owner
+            </a>.
+          </div>
+        )}
         {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
       </div>
     );
