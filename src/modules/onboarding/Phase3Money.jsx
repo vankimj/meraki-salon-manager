@@ -245,9 +245,15 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
 
   async function deleteAccount() {
     const isStandard = stripeConnect?.accountType === 'standard';
-    const msg = isStandard
-      ? 'Disconnect your Stripe account from Plume? Your Stripe account itself (and its data on stripe.com) stays intact — only Plume loses access. You can reconnect any time.'
-      : 'Delete this Stripe account and start over? This wipes any in-progress onboarding.';
+    const isLiveNow  = stripeConnect?.chargesEnabled && stripeConnect?.payoutsEnabled;
+    let msg;
+    if (isStandard) {
+      msg = 'Disconnect your Stripe account from Plume? Your Stripe account itself (and its data on stripe.com) stays intact — only Plume loses access. You can reconnect any time.';
+    } else if (isLiveNow) {
+      msg = 'DELETE this Stripe account?\n\nThis permanently removes the merchant account from Stripe. All transaction history, payout schedules, and any stored customer cards on this account will be gone — no undo. Type-and-click carefully.';
+    } else {
+      msg = 'Delete this Stripe account and start over? This wipes any in-progress onboarding.';
+    }
     if (!window.confirm(msg)) return;
     setBusy(true); setErr('');
     try {
@@ -430,12 +436,10 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
               Open stripe.com to finish ↗
             </a>
           )}
-          {!isLive && (
-            <button onClick={deleteAccount} disabled={busy} type="button"
-              style={{ background: 'none', border: 'none', color: '#a16207', fontSize: 11, fontWeight: 600, cursor: busy ? 'default' : 'pointer', textDecoration: 'underline', padding: 6 }}>
-              {accountType === 'standard' ? 'Disconnect' : 'Start over'}
-            </button>
-          )}
+          <button onClick={deleteAccount} disabled={busy} type="button"
+            style={{ background: 'none', border: 'none', color: '#a16207', fontSize: 11, fontWeight: 600, cursor: busy ? 'default' : 'pointer', textDecoration: 'underline', padding: 6 }}>
+            {accountType === 'standard' ? 'Disconnect' : (isLive ? 'Delete account' : 'Start over')}
+          </button>
         </div>
         {/* Standard-only edge-case helper. Stripe doesn't honor deep-links
             to accounts the logged-in user can't access — it silently

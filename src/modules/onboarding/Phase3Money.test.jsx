@@ -130,6 +130,54 @@ describe('Phase3Money — Stripe Connect step', () => {
     window.confirm = origConfirm;
   });
 
+  it('Standard accounts show "Disconnect" even when fully live (added 2026-06-03 per user req)', async () => {
+    appState = {
+      stripeConnect: {
+        accountId:        'acct_live_std',
+        accountType:      'standard',
+        chargesEnabled:   true,
+        payoutsEnabled:   true,
+        detailsSubmitted: true,
+        requirementsCurrentlyDue: [],
+      },
+    };
+    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    expect(screen.getByText(/Payments are live/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Disconnect/i })).toBeInTheDocument();
+  });
+
+  it('Express accounts show "Delete account" (stronger label) when live, "Start over" when not', async () => {
+    // Not live → "Start over"
+    appState = {
+      stripeConnect: {
+        accountId:        'acct_express_pending',
+        accountType:      'express',
+        chargesEnabled:   false,
+        payoutsEnabled:   false,
+        detailsSubmitted: false,
+        requirementsCurrentlyDue: ['external_account'],
+      },
+    };
+    const { unmount } = render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    expect(screen.getByRole('button', { name: /Start over/i })).toBeInTheDocument();
+    unmount();
+    cleanup();
+
+    // Live → "Delete account"
+    appState = {
+      stripeConnect: {
+        accountId:        'acct_express_live',
+        accountType:      'express',
+        chargesEnabled:   true,
+        payoutsEnabled:   true,
+        detailsSubmitted: true,
+        requirementsCurrentlyDue: [],
+      },
+    };
+    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    expect(screen.getByRole('button', { name: /Delete account/i })).toBeInTheDocument();
+  });
+
   it('Standard accounts show a "Disconnect" button (not "Start over") when not yet live', async () => {
     // Standard accounts: salon owns the Stripe account, we just have
     // OAuth access. "Disconnect" is correct — server-side this calls
