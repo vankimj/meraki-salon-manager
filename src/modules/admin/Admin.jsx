@@ -1456,21 +1456,31 @@ function OnboardingTab({ onOpenWizard }) {
           const bg    = s === 'done' ? '#ecfdf5' : s === 'skipped' ? '#f8f9fa' : '#fffbeb';
           const label = s === 'done' ? 'Complete' : s === 'skipped' ? 'Skipped' : 'Pending';
           return (
-            <div key={p.key} style={{
-              display: 'flex', alignItems: 'center', gap: 12,
-              padding: '8px 12px', borderRadius: 8,
-              border: `1px solid ${color}33`, background: bg,
-            }}>
+            <button
+              key={p.key}
+              onClick={() => onOpenWizard?.(p.key)}
+              type="button"
+              title={`Open ${p.label}`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '8px 12px', borderRadius: 8,
+                border: `1px solid ${color}33`, background: bg,
+                cursor: 'pointer', textAlign: 'left', font: 'inherit', width: '100%',
+                transition: 'background 80ms, border-color 80ms',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = `${color}88`; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = `${color}33`; }}>
               <span style={{ width: 24, fontSize: 11, color: '#888', textAlign: 'right' }}>{i + 1}.</span>
               <span style={{ width: 20, textAlign: 'center', fontSize: 14, color, fontWeight: 700 }}>{icon}</span>
               <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{p.label}</span>
               <span style={{ fontSize: 11, color, fontWeight: 600 }}>{label}</span>
-            </div>
+              <span style={{ fontSize: 12, color: '#888' }}>›</span>
+            </button>
           );
         })}
       </div>
 
-      <Btn color="#5b3b8c" onClick={onOpenWizard}>
+      <Btn color="#5b3b8c" onClick={() => onOpenWizard?.()}>
         {done ? '🎯 Re-open wizard' : '🎯 Continue setup'}
       </Btn>
     </div>

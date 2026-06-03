@@ -314,7 +314,13 @@ function AppShell({ initialView = 'home' }) {
         initialTab={adminInitial?.tab}
         scrollTo={adminInitial?.scrollTo}
         onClose={() => { setShowAdmin(false); setAdminInitial(null); }}
-        onOpenWizard={() => { setShowAdmin(false); setAdminInitial(null); setShowWizard(true); setDismissedThisSession(false); }}
+        onOpenWizard={(phaseKey) => {
+          setShowAdmin(false);
+          setAdminInitial(null);
+          setWizardInitialPhase(phaseKey || null);
+          setShowWizard(true);
+          setDismissedThisSession(false);
+        }}
       />}
 
       {showWizard && (
