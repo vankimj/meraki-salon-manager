@@ -24,6 +24,23 @@
           "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
         },
         {
+          "//": "Service worker + its registration must NEVER be cached. The general **/*.js glob above matches sw.js + registerSW.js as 'immutable max-age=1yr', which froze old SW versions in Cloudflare + browser caches for up to a year. This rule comes LAST so it overrides the earlier glob (Firebase Hosting: last matching rule wins).",
+          "source": "**/sw.js",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+        },
+        {
+          "source": "**/registerSW.js",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+        },
+        {
+          "source": "**/workbox-*.js",
+          "headers": [{ "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }]
+        },
+        {
+          "source": "**/manifest.webmanifest",
+          "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
+        },
+        {
           "source": "**",
           "headers": [
             { "key": "Cross-Origin-Opener-Policy", "value": "same-origin-allow-popups" },
