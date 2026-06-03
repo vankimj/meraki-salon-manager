@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
 import { TENANT_ID } from './lib/tenant';
-import { callFn } from './lib/firebase';
+import { useStripeConnectOAuthCallback } from './hooks/useStripeConnectOAuthCallback';
 import { recordNav } from './lib/diagnostics';
 import Splash from './components/Splash';
 import Toast from './components/Toast';
@@ -125,58 +125,10 @@ function AppShell({ initialView = 'home' }) {
     return () => window.removeEventListener('open-admin', handler);
   }, []);
 
-  // Stripe Connect Standard OAuth callback. Lives at AppShell level (not
-  // inside Phase3Money) so it fires regardless of whether the wizard is
-  // open or what view the user is on. Stripe registers
-  // `https://<tenant>.plumenexus.com/?connect=oauth-callback` as the
-  // return URL — App.jsx routes that landing to the management app, then
-  // this effect claims the OAuth code and syncs settings.stripeConnect.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('connect') !== 'oauth-callback') return;
-    // CRITICAL: do NOT strip URL params until gUser is resolved. The
-    // effect fires once on mount when gUser is still null (Firebase Auth
-    // resolves async), and again when gUser arrives. If we stripped on
-    // the first pass, the code+state would be lost before we could claim
-    // them. Bail without stripping; the re-run with gUser does the work.
-    if (!gUser) return;
-    const code  = params.get('code');
-    const state = params.get('state');
-
-    // Strip params synchronously so a refresh/Back can't replay the
-    // now-consumed code (Stripe rejects re-used codes).
-    const url = new URL(window.location.href);
-    ['connect', 'code', 'state', 'scope', 'tenant'].forEach(k => url.searchParams.delete(k));
-    window.history.replaceState({}, '', url.toString());
-
-    let cancelled = false;
-    (async () => {
-      try {
-        console.log('[Connect] claiming OAuth code', { codeLen: code?.length, stateLen: state?.length });
-        if (code && state) {
-          await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
-        }
-        const { data } = await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
-        if (!cancelled && data?.status) {
-          await updateSettings({ ...(settings || {}), stripeConnect: {
-            accountId:                data.status.accountId,
-            accountType:              data.status.accountType,
-            chargesEnabled:           data.status.chargesEnabled,
-            payoutsEnabled:           data.status.payoutsEnabled,
-            detailsSubmitted:         data.status.detailsSubmitted,
-            businessName:             data.status.businessName,
-            statementDescriptor:      data.status.statementDescriptor,
-            requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
-            updatedAt:                data.status.updatedAt,
-          }});
-          console.log('[Connect] claimed', data.status.accountId, data.status.accountType);
-        }
-      } catch (e) {
-        console.warn('[Connect] OAuth callback finalise failed:', e?.message, e?.code);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [gUser?.uid]);
+  // Stripe Connect Standard OAuth callback handler. Behaviour is covered
+  // by src/hooks/useStripeConnectOAuthCallback.test.jsx — including the
+  // race against Firebase Auth's async resolution.
+  useStripeConnectOAuthCallback({ gUser, settings, updateSettings });
 
   const [showWizard, setShowWizard]   = useState(false);
   // `undefined` = subscription hasn't fired yet (loading).
