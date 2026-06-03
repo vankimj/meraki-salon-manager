@@ -96,6 +96,40 @@ describe('Phase3Money — Stripe Connect step', () => {
     window.location = originalLocation;
   });
 
+  it('clicking "Start over" calls deleteConnectAccount and clears the local mirror so the UI flips back to the picker', async () => {
+    // Drift state: mirror shows "More info needed" but the tenant doc
+    // has lost the accountId server-side. Server delete is idempotent
+    // and returns success; client must clear the cached mirror locally.
+    appState = {
+      stripeConnect: {
+        accountId:      'acct_stale',
+        accountType:    'express',
+        chargesEnabled: false,
+        payoutsEnabled: false,
+        detailsSubmitted: false,
+        requirementsCurrentlyDue: ['external_account'],
+      },
+    };
+    const deleteCallable = vi.fn(() => Promise.resolve({ data: { ok: true, deletedAccountId: null, deletedFromStripe: false } }));
+    callFnImpls['deleteConnectAccount'] = deleteCallable;
+
+    // Capture confirm + reroute updateSettings into a spy that mutates
+    // appState so the next render reflects the cleared mirror.
+    const origConfirm = window.confirm;
+    window.confirm = () => true;
+
+    const { rerender } = render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    // Verify orange panel is showing (driven by the drift mirror)
+    expect(screen.getByText(/More info needed/i)).toBeInTheDocument();
+
+    const startOverBtn = screen.getByRole('button', { name: /Start over/i });
+    fireEvent.click(startOverBtn);
+
+    await waitFor(() => expect(deleteCallable).toHaveBeenCalled());
+
+    window.confirm = origConfirm;
+  });
+
   it('clicking "Use Plume-managed" (Express fallback) opens the embedded modal', async () => {
     appState = { stripeConnect: null };
     render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);

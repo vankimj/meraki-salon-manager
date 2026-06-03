@@ -6464,17 +6464,29 @@ exports.deleteConnectAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
   if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
   const ten = tenSnap.data();
   const acctId = ten.stripeConnectAccountId;
-  if (!acctId) throw new HttpsError('failed-precondition', 'No connected account to delete');
 
-  const key = stripeKey.value();
-  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
-  const stripe = require('stripe')(key);
-
-  try {
-    await stripe.accounts.del(acctId);
-  } catch (e) {
-    console.warn(`[deleteConnectAccount] Stripe rejected delete for ${tenantId}/${acctId}:`, e?.message);
-    throw new HttpsError('failed-precondition', e?.message || 'Stripe rejected the delete', { stripeMessage: e?.message });
+  // Idempotent. If the tenant doc lost its accountId (drift, prior partial
+  // cleanup, manual ops), the settings.stripeConnect mirror may still be
+  // showing stale "More info needed" panel — clear it and return success
+  // so the UI flips back to the green "Connect Stripe account" card.
+  let deletedFromStripe = false;
+  if (acctId) {
+    const key = stripeKey.value();
+    if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+    const stripe = require('stripe')(key);
+    try {
+      await stripe.accounts.del(acctId);
+      deletedFromStripe = true;
+    } catch (e) {
+      // "No such account" means the upstream is already gone — also fine
+      // to clear our local state and return success.
+      if (/No such account|deauthorized/i.test(e?.message || '')) {
+        deletedFromStripe = false;
+      } else {
+        console.warn(`[deleteConnectAccount] Stripe rejected delete for ${tenantId}/${acctId}:`, e?.message);
+        throw new HttpsError('failed-precondition', e?.message || 'Stripe rejected the delete', { stripeMessage: e?.message });
+      }
+    }
   }
 
   const batch = db.batch();
@@ -6489,7 +6501,7 @@ exports.deleteConnectAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
   }, { merge: true });
   await batch.commit();
 
-  return { ok: true, deletedAccountId: acctId };
+  return { ok: true, deletedAccountId: acctId || null, deletedFromStripe };
 });
 
 // Mint a one-time hosted-onboarding URL for the Express account. Salon is

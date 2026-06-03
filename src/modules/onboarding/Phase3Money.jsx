@@ -115,7 +115,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       </Section>
 
       <Section title="Stripe Connect">
-        <StripeConnectStep stripeConnect={stripeConnect} showToast={showToast} />
+        <StripeConnectStep stripeConnect={stripeConnect} showToast={showToast} settings={settings} updateSettings={updateSettings} />
       </Section>
 
       {err && (
@@ -196,7 +196,7 @@ function Link({ href, children }) {
 // during onboarding:
 //   Express  Plume-managed; no stripe.com login; 5-min Stripe-hosted form
 //   Standard Salon manages their own stripe.com account; full Stripe UX
-function StripeConnectStep({ stripeConnect, showToast }) {
+function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings }) {
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState('');
   // When true, render the Stripe Embedded Connect onboarding component
@@ -278,8 +278,17 @@ function StripeConnectStep({ stripeConnect, showToast }) {
     setBusy(true); setErr('');
     try {
       await callFn('deleteConnectAccount')({ tenantId: TENANT_ID });
-      await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
-      showToast?.('Stripe account deleted');
+      // Clear the cached mirror locally so the UI flips to the green
+      // "Connect Stripe account" card without a page refresh. Server
+      // already cleared the Firestore mirror; this just syncs the React
+      // state. updateSettings ignores undefined fields when persisting,
+      // so we don't double-write the cleared field.
+      if (updateSettings && settings) {
+        const next = { ...settings };
+        delete next.stripeConnect;
+        await updateSettings(next);
+      }
+      showToast?.('Stripe account cleared — pick a path below');
     } catch (e) {
       setErr(e.message || 'Failed to delete account');
     } finally {
