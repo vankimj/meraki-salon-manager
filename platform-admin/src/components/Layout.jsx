@@ -31,6 +31,7 @@ export default function Layout({ user, currentPath, children }) {
           <NavLink href="/"           label="Tenants"  active={currentPath === '/'} />
           <NavLink href="/tickets"    label="Support"  active={currentPath === '/tickets'} />
           <NavLink href="/audit"      label="Audit log" active={currentPath === '/audit'} />
+          <NavLink href="/coupons"    label="Coupons"  active={currentPath === '/coupons'} />
           {/* Future tabs — disabled placeholders */}
           <NavLink href="#"          label="Onboarding" disabled />
           <NavLink href="#"          label="Financials" disabled />

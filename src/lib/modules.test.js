@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { effectivePlan, isModuleAvailableForPlan, getVisibleModules, MODULES, PLAN_RANK, isInTrial, trialDaysRemaining } from './modules';
+import { effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, getVisibleModules, MODULES, PLAN_RANK, isInTrial, trialDaysRemaining } from './modules';
 
 describe('effectivePlan', () => {
   it('falls back to pro when no plan is set (grandfathered tenants)', () => {
@@ -142,6 +142,47 @@ describe('getVisibleModules', () => {
     const ids = getVisibleModules({}, adminCtx).map(m => m.id);
     expect(ids).toContain('reports');
     expect(ids).toContain('marketing');
+  });
+});
+
+describe('isModuleEnabled', () => {
+  it('returns true when disabledModules is absent', () => {
+    expect(isModuleEnabled({}, 'memberships')).toBe(true);
+    expect(isModuleEnabled({ plan: 'pro' }, 'hr')).toBe(true);
+  });
+  it('returns false for a module the owner turned off', () => {
+    expect(isModuleEnabled({ disabledModules: ['memberships'] }, 'memberships')).toBe(false);
+    expect(isModuleEnabled({ disabledModules: ['memberships'] }, 'hr')).toBe(true);
+  });
+});
+
+describe('modulesLostOnDowngrade', () => {
+  it('pro → studio drops the four pro modules', () => {
+    const ids = modulesLostOnDowngrade('pro', 'studio').map(m => m.id);
+    expect(ids.sort()).toEqual(['chat', 'hr', 'marketing', 'memberships']);
+  });
+  it('pro → starter drops both pro and studio modules', () => {
+    const ids = modulesLostOnDowngrade('pro', 'starter').map(m => m.id);
+    expect(ids).toContain('memberships'); // pro
+    expect(ids).toContain('reports');     // studio
+    expect(ids).not.toContain('schedule'); // starter stays
+  });
+  it('studio → starter drops only studio modules', () => {
+    const ids = modulesLostOnDowngrade('studio', 'starter').map(m => m.id);
+    expect(ids).toContain('reports');
+    expect(ids).not.toContain('memberships'); // wasn't available on studio anyway
+  });
+  it('upgrades and same-plan return nothing', () => {
+    expect(modulesLostOnDowngrade('studio', 'pro')).toEqual([]);
+    expect(modulesLostOnDowngrade('pro', 'pro')).toEqual([]);
+  });
+});
+
+describe('getVisibleModules with disabledModules', () => {
+  it('hides a module the owner turned off even though the plan includes it', () => {
+    const ids = getVisibleModules({ plan: 'pro', disabledModules: ['memberships'] }, { isAdmin: true }).map(m => m.id);
+    expect(ids).not.toContain('memberships');
+    expect(ids).toContain('hr'); // not disabled, still shown
   });
 });
 

@@ -45,7 +45,7 @@ import PinModal from './components/PinModal';
 import OnboardingWizard from './modules/onboarding/OnboardingWizard';
 import OnboardingBanner from './components/OnboardingBanner';
 import { subscribeOnboarding, isOnboardingComplete } from './lib/onboarding';
-import { isModuleAvailableForPlan, effectivePlan } from './lib/modules';
+import { isModuleAvailableForPlan, isModuleEnabled, effectivePlan } from './lib/modules';
 
 const MODULE_TITLES = {
   schedule:   'Schedule',
@@ -276,7 +276,7 @@ function AppShell({ initialView = 'home' }) {
           state, URL hash, etc). The home-screen tile filter is the
           primary gate; this guard catches anything that slips through. */}
       {Object.keys(MODULE_TITLES).map(id => view === id && (
-        !isModuleAvailableForPlan(id, effectivePlan(settings)) ? (
+        (!isModuleAvailableForPlan(id, effectivePlan(settings)) || !isModuleEnabled(settings, id)) ? (
           <ModuleShell key={id} view="home" title="Upgrade required" onHome={() => setView('home')} onAdmin={() => setShowAdmin(true)} onNavigate={setView}>
             <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>🔒</div>

@@ -233,6 +233,24 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
       setBusyMember(null);
     }
   }
+
+  // Actually cancel the client's Stripe subscription (stops recurring billing).
+  // Distinct from Edit→Cancelled, which only changed the local status and left
+  // Stripe charging. The onSnapshot listener reflects the status flip live.
+  async function cancelSub(m) {
+    if (!window.confirm(`Cancel ${m.clientName}'s ${m.planName} subscription?\n\nThis stops their recurring Stripe charge immediately.`)) return;
+    setBusyMember({ id: m.id, action: 'cancelSub' });
+    try {
+      const { httpsCallable } = await import('firebase/functions');
+      const { functions } = await import('../../lib/firebase');
+      await httpsCallable(functions, 'cancelMembership')({ membershipId: m.id });
+      showToast('Subscription cancelled');
+    } catch (e) {
+      showToast(`Cancel failed: ${e.message || 'unknown'}`, 4500);
+    } finally {
+      setBusyMember(null);
+    }
+  }
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
@@ -292,11 +310,20 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
                     <td style={td}>{m.startedAt ? new Date(m.startedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}</td>
                     <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
                       {hasStripe ? (
-                        <button onClick={() => openBillingPortal(m)} disabled={busyAction === 'portal'}
-                          title="Open Stripe Customer Portal in new tab"
-                          style={{ ...secondaryBtn, padding: '4px 10px', fontSize: 11, marginRight: 4 }}>
-                          {busyAction === 'portal' ? '…' : '💳 Portal'}
-                        </button>
+                        <>
+                          <button onClick={() => openBillingPortal(m)} disabled={busyAction === 'portal'}
+                            title="Open Stripe Customer Portal in new tab"
+                            style={{ ...secondaryBtn, padding: '4px 10px', fontSize: 11, marginRight: 4 }}>
+                            {busyAction === 'portal' ? '…' : '💳 Portal'}
+                          </button>
+                          {m.status !== 'cancelled' && (
+                            <button onClick={() => cancelSub(m)} disabled={busyAction === 'cancelSub'}
+                              title="Cancel this client's Stripe subscription (stops recurring billing)"
+                              style={{ ...secondaryBtn, padding: '4px 10px', fontSize: 11, marginRight: 4, color: '#ef4444', borderColor: '#fca5a5' }}>
+                              {busyAction === 'cancelSub' ? '…' : 'Cancel sub'}
+                            </button>
+                          )}
+                        </>
                       ) : (
                         <button onClick={() => sendPaymentLink(m)} disabled={busyAction === 'sendLink'}
                           title="Generate a Stripe Checkout link and email it to the client"

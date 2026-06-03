@@ -90,6 +90,10 @@ const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
 const stripePriceId        = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
 const stripeStudioPriceId  = defineString('STRIPE_STUDIO_PRICE_ID',  { default: '' });
 const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
+// Coupon applied to Starter checkouts — gives the intro free window (100% off,
+// repeating, 6 months) before the $19/mo Starter price kicks in. Empty = no
+// promo (Starter bills immediately).
+const stripeStarterCoupon  = defineString('STRIPE_STARTER_COUPON_ID', { default: '' });
 const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
 // Where chargeback / dispute alert emails go. Disputes are time-sensitive
 // (~7-21 day evidence window) so this MUST be a real, monitored inbox.
@@ -5931,6 +5935,19 @@ function planForPriceId(priceId) {
   return null;
 }
 
+// ── Plan / module gating ─────────────────────────────────────────────────
+// Pure logic lives in ./lib/planGating (server mirror of src/lib/modules.js,
+// kept in sync by hand). Used by changeTenantPlan's downgrade teardown gate
+// and setModuleEnabled's Memberships precondition.
+const {
+  SAAS_PLAN_RANK, isBlockingMembership, buildDowngradeBlockers,
+} = require('./lib/planGating');
+
+async function countActiveMemberships(db, tid) {
+  const snap = await db.collection(`tenants/${tid}/memberships`).get();
+  return snap.docs.filter(d => isBlockingMembership(d.data())).length;
+}
+
 const {
   handleChargeRefunded, handleChargeDisputeCreated, handleChargeDisputeClosed,
   handleInvoicePaymentFailedSaas, handleSubscriptionDeletedSaas,
@@ -5988,10 +6005,17 @@ exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, asy
   // returnUrl, which would be an open-redirect / phishing primitive (the
   // post-checkout redirect comes from the legit Stripe-hosted page).
   const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  // Starter's intro free window is a repeating 100%-off coupon ($0 invoices
+  // for 6 months, then the $19/mo Starter price). Card is still captured at
+  // checkout, so billing resumes automatically when the coupon expires.
+  const starterCoupon = stripeStarterCoupon.value();
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode:     'subscription',
     line_items: [{ price: priceId, quantity: 1 }],
+    ...(plan === 'starter' && starterCoupon
+      ? { discounts: [{ coupon: starterCoupon }] }
+      : {}),
     success_url: `${baseUrl}/?stripe=success`,
     cancel_url:  `${baseUrl}/?stripe=cancel`,
     metadata: { tenantId: tId, plan },
@@ -6034,6 +6058,299 @@ exports.createTenantBillingPortal = onCall({ cors: true, secrets: [stripeKey] },
   });
 
   return { url: session.url };
+});
+
+// ── Stripe coupon / promotion-code management (platform admin) ───────────
+// Powers the Coupons section on admin.plumenexus.com. Coupons are the
+// discount rule (e.g. STARTER6FREE = 100% off for 6 months); promotion
+// codes are the customer-facing strings that apply a coupon at checkout.
+// All gated to platform admins — these mint real money-off rules on the
+// single platform Stripe account.
+
+// Flatten a Stripe coupon into the shape the admin UI renders.
+function serializeCoupon(c) {
+  return {
+    id:                c.id,
+    name:              c.name || null,
+    percentOff:        c.percent_off ?? null,
+    amountOff:         c.amount_off ?? null,   // cents
+    currency:          c.currency || null,
+    duration:          c.duration,             // once | repeating | forever
+    durationInMonths:  c.duration_in_months ?? null,
+    maxRedemptions:    c.max_redemptions ?? null,
+    timesRedeemed:     c.times_redeemed || 0,
+    redeemBy:          c.redeem_by ?? null,    // unix seconds
+    valid:             c.valid,
+    created:           c.created,              // unix seconds
+  };
+}
+
+function serializePromo(p) {
+  return {
+    id:             p.id,
+    code:           p.code,
+    couponId:       p.coupon?.id || null,
+    active:         p.active,
+    timesRedeemed:  p.times_redeemed || 0,
+    maxRedemptions: p.max_redemptions ?? null,
+    expiresAt:      p.expires_at ?? null,
+    created:        p.created,
+  };
+}
+
+async function requirePlatformAdminStripe(request) {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!await isPlatformAdmin(request.auth.token.email)) {
+    throw new HttpsError('permission-denied', 'Platform admin only');
+  }
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  return require('stripe')(key);
+}
+
+exports.listStripeCoupons = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const stripe = await requirePlatformAdminStripe(request);
+  const coupons = await stripe.coupons.list({ limit: 100 });
+  // Pull promotion codes once (up to 100) and group by coupon, rather than
+  // one list call per coupon.
+  const promos = await stripe.promotionCodes.list({ limit: 100 });
+  const byCoupon = {};
+  for (const p of promos.data) {
+    const cid = p.coupon?.id;
+    if (!cid) continue;
+    (byCoupon[cid] ||= []).push(serializePromo(p));
+  }
+  return {
+    coupons: coupons.data.map(c => ({
+      ...serializeCoupon(c),
+      promotionCodes: byCoupon[c.id] || [],
+    })),
+  };
+});
+
+exports.createStripeCoupon = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const stripe = await requirePlatformAdminStripe(request);
+  const d = request.data || {};
+
+  const params = {};
+  const percentOff = Number(d.percentOff);
+  const amountOff  = Number(d.amountOff);
+  if (d.percentOff != null && d.percentOff !== '') {
+    if (!(percentOff > 0 && percentOff <= 100)) throw new HttpsError('invalid-argument', 'percentOff must be 1–100');
+    params.percent_off = percentOff;
+  } else if (d.amountOff != null && d.amountOff !== '') {
+    if (!(amountOff > 0)) throw new HttpsError('invalid-argument', 'amountOff must be > 0 (cents)');
+    params.amount_off = Math.round(amountOff);
+    params.currency   = (d.currency || 'usd').toLowerCase();
+  } else {
+    throw new HttpsError('invalid-argument', 'Provide either percentOff or amountOff');
+  }
+
+  const duration = d.duration || 'once';
+  if (!['once', 'repeating', 'forever'].includes(duration)) {
+    throw new HttpsError('invalid-argument', 'duration must be once | repeating | forever');
+  }
+  params.duration = duration;
+  if (duration === 'repeating') {
+    const months = Number(d.durationInMonths);
+    if (!(months >= 1)) throw new HttpsError('invalid-argument', 'durationInMonths required for repeating coupons');
+    params.duration_in_months = Math.round(months);
+  }
+
+  if (d.name)            params.name = String(d.name).slice(0, 200);
+  if (d.id)              params.id   = String(d.id).trim();          // optional human-readable id
+  if (d.maxRedemptions)  params.max_redemptions = Math.round(Number(d.maxRedemptions));
+  if (d.redeemBy)        params.redeem_by = Math.round(Number(d.redeemBy)); // unix seconds
+
+  try {
+    const c = await stripe.coupons.create(params);
+    return { coupon: serializeCoupon(c) };
+  } catch (e) {
+    throw new HttpsError('invalid-argument', e?.message || 'Stripe rejected the coupon');
+  }
+});
+
+exports.deleteStripeCoupon = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const stripe = await requirePlatformAdminStripe(request);
+  const id = String(request.data?.id || '').trim();
+  if (!id) throw new HttpsError('invalid-argument', 'Coupon id required');
+  // Deleting a coupon does NOT affect subscriptions already using it — Stripe
+  // keeps applying it to existing customers; it just can't be applied to new
+  // ones. Safe to expose.
+  try {
+    const res = await stripe.coupons.del(id);
+    return { deleted: res.deleted === true, id };
+  } catch (e) {
+    throw new HttpsError('not-found', e?.message || 'Could not delete coupon');
+  }
+});
+
+exports.createStripePromotionCode = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const stripe = await requirePlatformAdminStripe(request);
+  const d = request.data || {};
+  const couponId = String(d.couponId || '').trim();
+  if (!couponId) throw new HttpsError('invalid-argument', 'couponId required');
+
+  const params = { coupon: couponId };
+  if (d.code)           params.code = String(d.code).trim().toUpperCase().slice(0, 64);
+  if (d.maxRedemptions) params.max_redemptions = Math.round(Number(d.maxRedemptions));
+  if (d.expiresAt)      params.expires_at = Math.round(Number(d.expiresAt));
+
+  try {
+    const p = await stripe.promotionCodes.create(params);
+    return { promotionCode: serializePromo(p) };
+  } catch (e) {
+    throw new HttpsError('invalid-argument', e?.message || 'Stripe rejected the promotion code');
+  }
+});
+
+// Promotion codes can't be deleted, only deactivated/reactivated.
+exports.setStripePromotionCodeActive = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const stripe = await requirePlatformAdminStripe(request);
+  const id = String(request.data?.id || '').trim();
+  if (!id) throw new HttpsError('invalid-argument', 'Promotion code id required');
+  const active = request.data?.active === true;
+  try {
+    const p = await stripe.promotionCodes.update(id, { active });
+    return { promotionCode: serializePromo(p) };
+  } catch (e) {
+    throw new HttpsError('invalid-argument', e?.message || 'Could not update promotion code');
+  }
+});
+
+// ── In-app plan changes + module teardown gating ────────────────────────
+// Plan-switching lives in the app (NOT the Stripe portal) so a downgrade can
+// be blocked until the modules the target tier drops are safely torn down —
+// most importantly, until all client memberships (recurring Stripe subs that
+// bill the salon's OWN clients) are cancelled. The Stripe portal can't run a
+// pre-check, so its plan-switching is disabled; it keeps cancel/card/invoices.
+
+// Owner toggles a higher-tier module on/off. Disabling Memberships is gated on
+// having zero still-billing client memberships (the money-critical teardown).
+exports.setModuleEnabled = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
+  const { moduleId, enabled, tenantId: tid } = request.data || {};
+  const tId = tid || TENANT_ID;
+  if (!moduleId || typeof enabled !== 'boolean') {
+    throw new HttpsError('invalid-argument', 'moduleId (string) + enabled (boolean) required');
+  }
+  const db = getFirestore();
+  await requireTenantAdmin(db, tId, request);
+
+  if (!enabled && moduleId === 'memberships') {
+    const n = await countActiveMemberships(db, tId);
+    if (n > 0) {
+      throw new HttpsError('failed-precondition', JSON.stringify({
+        message: `Cancel all ${n} active membership${n === 1 ? '' : 's'} before turning off Memberships`,
+        count: n,
+      }));
+    }
+  }
+
+  const ref = db.doc(`tenants/${tId}/data/settings`);
+  const snap = await ref.get();
+  const cur = new Set((snap.exists ? snap.data().disabledModules : []) || []);
+  if (enabled) cur.delete(moduleId); else cur.add(moduleId);
+  await ref.set({ disabledModules: Array.from(cur), updatedAt: new Date().toISOString() }, { merge: true });
+  return { ok: true, disabledModules: Array.from(cur) };
+});
+
+// Single in-app path for plan changes. Upgrades apply immediately; downgrades
+// run the teardown gate first. `dryRun:true` returns the blocker list without
+// touching Stripe (the UI uses it to render readiness). The authoritative
+// money check (no active memberships) is re-run here regardless of the
+// client-side disabledModules flag — UI gate is convenience, this is the boundary.
+exports.changeTenantPlan = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const { targetPlan, dryRun, tenantId: tid } = request.data || {};
+  const tId = tid || TENANT_ID;
+  if (!['starter', 'studio', 'pro'].includes(targetPlan)) {
+    throw new HttpsError('invalid-argument', `Unknown plan "${targetPlan}"`);
+  }
+  const db = getFirestore();
+  await requireTenantAdmin(db, tId, request);
+
+  const setSnap = await db.doc(`tenants/${tId}/data/settings`).get();
+  const s = setSnap.exists ? setSnap.data() : {};
+  const currentPlan = s.plan || 'starter';
+  const subId  = s.stripeSubscriptionId;
+  const status = s.subscriptionStatus;
+
+  if (targetPlan === currentPlan) return { ok: true, noop: true };
+
+  const isDowngrade = SAAS_PLAN_RANK[targetPlan] < SAAS_PLAN_RANK[currentPlan];
+
+  if (isDowngrade) {
+    // Only count memberships when the downgrade actually drops that module.
+    const dropsMemberships = SAAS_PLAN_RANK['pro'] <= SAAS_PLAN_RANK[currentPlan] && SAAS_PLAN_RANK['pro'] > SAAS_PLAN_RANK[targetPlan];
+    const activeMembershipCount = dropsMemberships ? await countActiveMemberships(db, tId) : 0;
+    const { lost, blockers } = buildDowngradeBlockers(currentPlan, targetPlan, {
+      disabledModules: s.disabledModules || [],
+      activeMembershipCount,
+    });
+    if (dryRun) return { ok: blockers.length === 0, blockers, lost };
+    if (blockers.length) {
+      throw new HttpsError('failed-precondition', JSON.stringify({ message: 'Downgrade blocked', blockers }));
+    }
+  } else if (dryRun) {
+    return { ok: true, blockers: [], lost: [] };
+  }
+
+  // In-app switching requires an existing, in-good-standing subscription.
+  // No paid sub (trial / starter) → caller should run createCheckoutSession.
+  if (!subId || !['active', 'trialing', 'past_due'].includes(status)) {
+    return { ok: false, needsCheckout: true };
+  }
+
+  const newPrice = priceIdForPlan(targetPlan);
+  if (!newPrice) throw new HttpsError('failed-precondition', `Price for "${targetPlan}" not configured`);
+
+  const stripe = require('stripe')(stripeKey.value());
+  const sub    = await stripe.subscriptions.retrieve(subId);
+  const itemId = sub.items.data[0].id;
+  await stripe.subscriptions.update(subId, {
+    items: [{ id: itemId, price: newPrice }],
+    proration_behavior: 'create_prorations',
+    metadata: { ...(sub.metadata || {}), tenantId: tId, plan: targetPlan },
+  });
+
+  // customer.subscription.updated will write the plan; mirror optimistically
+  // so the UI reflects the change before the webhook round-trips.
+  const updates = { plan: targetPlan, updatedAt: new Date().toISOString() };
+  await db.doc(`tenants/${tId}/data/settings`).set(updates, { merge: true });
+  await db.doc(`tenants/${tId}`).set(updates, { merge: true });
+  return { ok: true, plan: targetPlan };
+});
+
+// Actually cancels a client's membership Stripe subscription (the existing
+// admin "Edit → Cancelled" only set a local status and left Stripe billing).
+// Needed so an owner can clear the Memberships teardown gate from the app.
+exports.cancelMembership = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const { membershipId, tenantId: tid } = request.data || {};
+  const tId = tid || TENANT_ID;
+  if (!membershipId) throw new HttpsError('invalid-argument', 'membershipId required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tId, request);
+
+  const ref  = db.doc(`tenants/${tId}/memberships/${membershipId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Membership not found');
+  const m = snap.data();
+
+  if (m.stripeSubscriptionId) {
+    const stripe = require('stripe')(stripeKey.value());
+    try {
+      await stripe.subscriptions.cancel(m.stripeSubscriptionId);
+    } catch (e) {
+      // Already-gone subs are fine (idempotent); anything else is a real error.
+      if (!/No such subscription|already been canceled|resource_missing/i.test(e?.message || '')) {
+        throw new HttpsError('internal', e?.message || 'Stripe cancel failed');
+      }
+    }
+  }
+  await ref.set({
+    status: 'cancelled', cancelledAt: new Date().toISOString(),
+    cancelAtPeriodEnd: false, updatedAt: new Date().toISOString(),
+  }, { merge: true });
+  return { ok: true };
 });
 
 // ── Card-on-file (SetupIntent + off-session charges) ─────────────────────

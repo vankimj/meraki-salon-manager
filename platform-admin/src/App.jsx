@@ -7,6 +7,7 @@ import TenantList from './components/TenantList.jsx';
 import TenantDetail from './components/TenantDetail.jsx';
 import AuditLog from './components/AuditLog.jsx';
 import TicketsQueue from './components/TicketsQueue.jsx';
+import CouponsAdmin from './components/CouponsAdmin.jsx';
 import { C, FONT } from './theme.js';
 
 const norm = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
@@ -57,6 +58,8 @@ export default function App() {
         <AuditLog />
       ) : path === '/tickets' ? (
         <TicketsQueue />
+      ) : path === '/coupons' ? (
+        <CouponsAdmin />
       ) : (
         <NotFound />
       )}

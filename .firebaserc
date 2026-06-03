@@ -1,26 +1,37 @@
 {
   "projects": {
-    "default":   "plumenexus-prod",
-    "legacy":    "meraki-salon-manager",
+    "default": "plumenexus-prod",
+    "legacy": "meraki-salon-manager",
     "marketing": "plumenexus-marketing"
   },
   "targets": {
     "plumenexus-prod": {
       "hosting": {
-        "app": ["plumenexus-prod"]
+        "app": [
+          "plumenexus-prod"
+        ],
+        "platform-admin": [
+          "plumenexus-platform-admin"
+        ]
       }
     },
     "plumenexus-marketing": {
       "hosting": {
-        "plumenexus": ["plumenexus-marketing"]
+        "plumenexus": [
+          "plumenexus-marketing"
+        ]
       }
     },
     "meraki-salon-manager": {
       "hosting": {
-        "app":            ["meraki-salon-manager"],
-        "plumenexus":     ["plumenexus"],
-        "platform-admin": ["plumenexus-admin"]
+        "app": [
+          "meraki-salon-manager"
+        ],
+        "plumenexus": [
+          "plumenexus"
+        ]
       }
     }
-  }
+  },
+  "etags": {}
 }

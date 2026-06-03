@@ -83,14 +83,33 @@ export function isModuleAvailableForPlan(moduleOrId, plan) {
   return PLAN_RANK[mod.plan] <= PLAN_RANK[plan];
 }
 
+// Owner-controlled on/off state, distinct from hiddenTiles (which only hides a
+// home-screen tile). A disabled module is fully off: hidden AND not routable.
+// `settings.disabledModules` is written only by the setModuleEnabled callable
+// so the Memberships cancel-first precondition can't be skipped from the client.
+export function isModuleEnabled(settings, moduleId) {
+  return !(settings?.disabledModules || []).includes(moduleId);
+}
+
+// Modules a downgrade from currentPlan → targetPlan would remove (available
+// now, not available on the target tier). Pure — reused by the downgrade UI
+// and tests. Returns full module objects.
+export function modulesLostOnDowngrade(currentPlan, targetPlan) {
+  if (PLAN_RANK[targetPlan] >= PLAN_RANK[currentPlan]) return [];
+  return MODULES.filter(m =>
+    isModuleAvailableForPlan(m, currentPlan) && !isModuleAvailableForPlan(m, targetPlan)
+  );
+}
+
 // Filter the module list down to what should be visible on the home screen
-// for this user. Combines: plan gate + role gate + per-tile hide preference.
+// for this user. Combines: plan gate + role gate + owner-disabled + per-tile hide.
 export function getVisibleModules(settings, { isAdmin, hiddenTiles } = {}) {
   const plan = effectivePlan(settings);
   const hidden = new Set(hiddenTiles || settings?.hiddenTiles || []);
   return MODULES.filter(m => {
     if (m.adminOnly && !isAdmin) return false;
     if (!isModuleAvailableForPlan(m, plan)) return false;
+    if (!isModuleEnabled(settings, m.id)) return false;
     if (hidden.has(m.id)) return false;
     return true;
   });

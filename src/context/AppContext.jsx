@@ -644,7 +644,7 @@ export function AppProvider({ children }) {
   return (
     <Ctx.Provider value={{
       slides, def, cur, setCur,
-      users, settings,
+      users, settings, setSettings,
       gUser, syncState, toast, toastAction, loaded, isOnline,
       isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
       isPortalUser, portalClientId,

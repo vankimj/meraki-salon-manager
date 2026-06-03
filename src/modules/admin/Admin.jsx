@@ -17,7 +17,8 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          subscribeGoogleReviews } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
-import { MODULES, effectivePlan, isModuleAvailableForPlan, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
+import { MODULES, effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
+import { fetchMemberships } from '../../lib/firestore';
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
 import { seedFullDemo, clearDemoData, addFutureAppointments } from '../../data/seedDemo';
@@ -758,6 +759,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <CancellationPolicySection settings={settings} updateSettings={updateSettings} />
             <PauseSection settings={settings} updateSettings={updateSettings} />
             <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
+            <ModulesSection />
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
             <UpgradeSection settings={settings} gUser={gUser} />
             <DisputesSection />
@@ -3527,6 +3529,70 @@ function TileVisibilitySection({ settings, updateSettings }) {
   );
 }
 
+// ── Module on/off toggles ─────────────────────────────────────────────────────
+// Higher-tier features the current plan includes can be turned off here.
+// Turning off Memberships is gated server-side (setModuleEnabled) on having
+// zero still-billing client memberships — the same teardown the downgrade flow
+// enforces — so the owner can't strand recurring client charges.
+function ModulesSection() {
+  const { settings, setSettings, showToast } = useApp();
+  const plan = effectivePlan(settings);
+  const [busy, setBusy] = useState('');
+  const toggleable = MODULES.filter(m => m.plan !== 'starter' && isModuleAvailableForPlan(m, plan));
+  if (toggleable.length === 0) return null;
+
+  async function toggle(m, enable) {
+    setBusy(m.id);
+    try {
+      const res = await callFn('setModuleEnabled', { moduleId: m.id, enabled: enable });
+      setSettings(s => ({ ...s, disabledModules: res.disabledModules }));
+      logActivity('module_toggled', `${m.id} → ${enable ? 'on' : 'off'}`);
+    } catch (e) { showToast(friendlyFnError(e), 4500); }
+    finally { setBusy(''); }
+  }
+
+  return (
+    <Section title="🧩 Modules · turn features on or off">
+      <div style={{ padding: '10px 16px 14px' }}>
+        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+          Turn off features you don't use. Some need cleanup first — Memberships
+          can't be turned off while clients still have active subscriptions.
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 8 }}>
+          {toggleable.map(m => {
+            const enabled = isModuleEnabled(settings, m.id);
+            return (
+              <div key={m.id} style={{
+                display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10,
+                border: `1px solid ${enabled ? '#bfdbfe' : '#e5e7eb'}`, background: enabled ? '#eff6ff' : '#fff',
+              }}>
+                <button onClick={() => toggle(m, !enabled)} disabled={busy === m.id}
+                  style={{
+                    flexShrink: 0, marginTop: 1, minWidth: 44, padding: '4px 0', borderRadius: 999,
+                    border: 'none', fontSize: 11, fontWeight: 700, fontFamily: 'inherit',
+                    cursor: busy === m.id ? 'wait' : 'pointer',
+                    background: enabled ? '#3D95CE' : '#e5e7eb', color: enabled ? '#fff' : '#6b7280',
+                  }}>
+                  {busy === m.id ? '…' : enabled ? 'On' : 'Off'}
+                </button>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {m.label}
+                    {m.adminOnly && (
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', letterSpacing: '.04em', textTransform: 'uppercase' }}>Admin only</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{m.desc}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 // ── Notes preferences ─────────────────────────────────────────────────────────
 // Single toggle for clinical (SOAP) note format. Off by default — most
 // salons (nail, hair, barbershop) capture quick free-form notes.
@@ -3667,25 +3733,42 @@ function DisputeRow({ d, variant }) {
 }
 
 // ── Plan & Billing ────────────────────────────────────────────────────────────
+// Lazy callable invoker (matches the dynamic-import pattern used elsewhere
+// in this file so firebase/functions isn't pulled into the initial bundle).
+async function callFn(name, data) {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions }     = await import('../../lib/firebase');
+  const res = await httpsCallable(functions, name)(data || {});
+  return res.data;
+}
+
+// HttpsError messages from our gated callables are JSON.stringify({message,...});
+// surface the human message, falling back to the raw text.
+function friendlyFnError(e) {
+  const msg = e?.message || 'Something went wrong';
+  try { const p = JSON.parse(msg); if (p && p.message) return p.message; } catch { /* plain message */ }
+  return msg;
+}
+
 const PLAN_TIERS = [
   {
     id:      'starter',
     label:   'Starter',
-    price:   'Free',
+    price:   '$19/mo',
     color:   '#888',
     features:['Schedule & appointments', 'Clients & profiles', 'Services menu', 'Employees', 'Walk-in kiosk'],
   },
   {
     id:      'studio',
     label:   'Studio',
-    price:   '$29/mo',
+    price:   '$49/mo',
     color:   '#3D9E8A',
     features:['Everything in Starter', 'Reports & analytics', 'Earnings dashboard', 'Gift cards & promos', 'Retail inventory', 'Attendance tracking'],
   },
   {
     id:      'pro',
     label:   'Pro',
-    price:   '$49/mo',
+    price:   '$149/mo',
     color:   '#2563eb',
     features:['Everything in Studio', 'SMS + email comms', 'Marketing campaigns', 'HR & payroll (Gusto)', 'Membership subscriptions', 'AI chatbot on webfront'],
   },
@@ -3697,10 +3780,13 @@ function UpgradeSection({ settings, gUser }) {
   // The stored plan (what they're nominally on or trialling) — distinct
   // from the effectivePlan (which downgrades to starter when trial
   // expires without payment).
+  const { showToast, setSettings } = useApp();
+  const [downgradeTarget, setDowngradeTarget] = useState(null); // tier object or null
   const storedPlan    = settings.plan || 'starter';
   const visiblePlan   = effectivePlan(settings);
   const inTrial       = isInTrial(settings);
   const trialDays     = trialDaysRemaining(settings);
+  const hasPaidSubscription = !!settings.stripeSubscriptionId;
 
   async function handleCheckout(planId) {
     setLoading(planId); setError('');
@@ -3711,6 +3797,18 @@ function UpgradeSection({ settings, gUser }) {
       const res = await fn({ plan: planId });
       if (res.data?.url) window.location.href = res.data.url;
     } catch (e) { setError(e.message); }
+    finally { setLoading(''); }
+  }
+
+  // Upgrade an existing paid subscription in-app (immediate, prorated). Falls
+  // back to checkout if there's no live subscription yet (trial / new tenant).
+  async function handleUpgrade(tier) {
+    setLoading(tier.id); setError('');
+    try {
+      const res = await callFn('changeTenantPlan', { targetPlan: tier.id });
+      if (res?.needsCheckout) { await handleCheckout(tier.id); return; }
+      if (res?.ok) { setSettings(s => ({ ...s, plan: tier.id })); showToast(`Now on ${tier.label}`); }
+    } catch (e) { setError(friendlyFnError(e)); }
     finally { setLoading(''); }
   }
 
@@ -3727,7 +3825,6 @@ function UpgradeSection({ settings, gUser }) {
   }
 
   const currentTier = PLAN_TIERS.find(t => t.id === visiblePlan) || PLAN_TIERS[0];
-  const hasPaidSubscription = !!settings.stripeSubscriptionId;
 
   return (
     <Section title="💳 Plan &amp; Billing">
@@ -3767,9 +3864,16 @@ function UpgradeSection({ settings, gUser }) {
         {/* 3-tier picker */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           {PLAN_TIERS.map(tier => {
-            const isCurrent = tier.id === storedPlan && !inTrial && (tier.id === 'starter' || hasPaidSubscription);
+            const isCurrent = tier.id === storedPlan && !inTrial && (tier.id === 'starter' ? !hasPaidSubscription : hasPaidSubscription);
             const isLoading = loading === tier.id;
-            const canSelect = tier.id !== 'starter' && !isCurrent;
+            // No paid sub yet (trial / new tenant): every non-current tier is a
+            // checkout. With a live subscription: compare rank → in-app upgrade
+            // (immediate) or guarded downgrade (opens the teardown modal).
+            const rankDelta = PLAN_RANK[tier.id] - PLAN_RANK[storedPlan];
+            const action = isCurrent ? null
+              : (!hasPaidSubscription || inTrial) ? 'checkout'
+              : rankDelta > 0 ? 'upgrade'
+              : 'downgrade';
             return (
               <div key={tier.id}
                 style={{
@@ -3787,14 +3891,23 @@ function UpgradeSection({ settings, gUser }) {
                 <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0', fontSize: 11, color: '#555', lineHeight: 1.7, flex: 1 }}>
                   {tier.features.map(f => <li key={f}>✓ {f}</li>)}
                 </ul>
-                {canSelect && (
-                  <button onClick={() => handleCheckout(tier.id)} disabled={isLoading}
-                    style={{ background: isLoading ? '#ccc' : tier.color, color: '#fff', border: 'none', borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600, cursor: isLoading ? 'wait' : 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
-                    {isLoading ? 'Loading…' : `Choose ${tier.label}`}
+                {action && (
+                  <button
+                    onClick={() => action === 'checkout' ? handleCheckout(tier.id)
+                                 : action === 'upgrade'  ? handleUpgrade(tier)
+                                 : setDowngradeTarget(tier)}
+                    disabled={isLoading}
+                    style={{
+                      background: isLoading ? '#ccc' : action === 'downgrade' ? '#fff' : tier.color,
+                      color: action === 'downgrade' ? '#6b7280' : '#fff',
+                      border: action === 'downgrade' ? '1px solid #d1d5db' : 'none',
+                      borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600,
+                      cursor: isLoading ? 'wait' : 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
+                    {isLoading ? 'Working…'
+                      : action === 'checkout' ? `Choose ${tier.label}`
+                      : action === 'upgrade'  ? `Upgrade to ${tier.label}`
+                      : `Downgrade to ${tier.label}`}
                   </button>
-                )}
-                {!canSelect && tier.id === 'starter' && !isCurrent && (
-                  <div style={{ fontSize: 10, color: '#aaa', textAlign: 'center', padding: '8px 0' }}>Cancel via Manage billing</div>
                 )}
               </div>
             );
@@ -3803,7 +3916,137 @@ function UpgradeSection({ settings, gUser }) {
 
         {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 10 }}>{error}</div>}
       </div>
+
+      {downgradeTarget && (
+        <DowngradeModal
+          tier={downgradeTarget}
+          currentPlan={storedPlan}
+          onClose={() => setDowngradeTarget(null)}
+          onDone={() => { setSettings(s => ({ ...s, plan: downgradeTarget.id })); showToast(`Now on ${downgradeTarget.label}`); setDowngradeTarget(null); }}
+        />
+      )}
     </Section>
+  );
+}
+
+// Guided teardown for a downgrade. Reads readiness from changeTenantPlan
+// (dryRun) and lets the owner clear each blocker inline — cancel each still-
+// billing membership, turn off each higher-tier module — before confirming.
+function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
+  const { setSettings, showToast } = useApp();
+  const [blockers, setBlockers] = useState(null); // null = loading
+  const [members,  setMembers]  = useState([]);    // active memberships when blocked
+  const [busy,     setBusy]     = useState('');
+  const [error,    setError]    = useState('');
+
+  async function refresh() {
+    setError('');
+    try {
+      const res = await callFn('changeTenantPlan', { targetPlan: tier.id, dryRun: true });
+      const b = res?.blockers || [];
+      setBlockers(b);
+      if (b.some(x => x.moduleId === 'memberships')) {
+        const all = await fetchMemberships();
+        setMembers(all.filter(m => ['active', 'past_due', 'paused', 'trialing'].includes(String(m.status || '').toLowerCase())));
+      } else { setMembers([]); }
+    } catch (e) { setError(friendlyFnError(e)); setBlockers([]); }
+  }
+  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+
+  async function turnOff(moduleId) {
+    setBusy(moduleId); setError('');
+    try {
+      const res = await callFn('setModuleEnabled', { moduleId, enabled: false });
+      setSettings(s => ({ ...s, disabledModules: res.disabledModules }));
+      await refresh();
+    } catch (e) { setError(friendlyFnError(e)); }
+    finally { setBusy(''); }
+  }
+
+  async function cancelMember(id) {
+    setBusy(id); setError('');
+    try { await callFn('cancelMembership', { membershipId: id }); await refresh(); }
+    catch (e) { setError(friendlyFnError(e)); }
+    finally { setBusy(''); }
+  }
+
+  async function confirmDowngrade() {
+    setBusy('confirm'); setError('');
+    try {
+      const res = await callFn('changeTenantPlan', { targetPlan: tier.id });
+      if (res?.needsCheckout) { setError('No active subscription to change. Use Manage billing.'); return; }
+      if (res?.ok) onDone();
+    } catch (e) { setError(friendlyFnError(e)); await refresh(); }
+    finally { setBusy(''); }
+  }
+
+  const ready = blockers !== null && blockers.length === 0;
+  const memBlocker = (blockers || []).find(b => b.moduleId === 'memberships');
+  const moduleBlockers = (blockers || []).filter(b => b.moduleId !== 'memberships');
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, maxWidth: 520, width: '100%', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee' }}>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Downgrade to {tier.label}</div>
+          <div style={{ fontSize: 12, color: '#888', marginTop: 3 }}>
+            These features aren't on {tier.label}. Turn them off — and cancel any active memberships — before downgrading. Data stays saved and returns if you upgrade again.
+          </div>
+        </div>
+        <div style={{ padding: 18 }}>
+          {blockers === null ? (
+            <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13 }}>Checking…</div>
+          ) : ready ? (
+            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#166534' }}>
+              ✓ Everything's clear. You can downgrade to {tier.label} now.
+            </div>
+          ) : (
+            <>
+              {memBlocker && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 6 }}>
+                    Memberships — {memBlocker.count} still billing
+                  </div>
+                  <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Cancel each client's subscription. This stops their recurring charge in Stripe.</div>
+                  {members.map(m => (
+                    <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', border: '1px solid #fee2e2', borderRadius: 8, marginBottom: 6 }}>
+                      <div style={{ fontSize: 12 }}>
+                        <div style={{ fontWeight: 600, color: '#1a1a1a' }}>{m.clientName || 'Member'}</div>
+                        <div style={{ color: '#999', fontSize: 11 }}>{m.planName} · ${Number(m.price || 0).toFixed(0)}/{m.billingPeriod === 'yearly' ? 'yr' : 'mo'}</div>
+                      </div>
+                      <button onClick={() => cancelMember(m.id)} disabled={!!busy}
+                        style={{ background: busy === m.id ? '#ccc' : '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                        {busy === m.id ? 'Cancelling…' : 'Cancel'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {moduleBlockers.map(b => (
+                <div key={b.moduleId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8 }}>
+                  <div style={{ fontSize: 13 }}>
+                    <div style={{ fontWeight: 600, color: '#1a1a1a' }}>{b.label}</div>
+                    <div style={{ color: '#999', fontSize: 11 }}>{b.reason}</div>
+                  </div>
+                  <button onClick={() => turnOff(b.moduleId)} disabled={!!busy}
+                    style={{ background: busy === b.moduleId ? '#ccc' : '#6b7280', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                    {busy === b.moduleId ? 'Turning off…' : 'Turn off'}
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+          {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 10 }}>{error}</div>}
+        </div>
+        <div style={{ padding: '14px 18px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={confirmDowngrade} disabled={!ready || busy === 'confirm'}
+            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: ready ? tier.color : '#d1d5db', color: '#fff', fontSize: 13, fontWeight: 700, cursor: ready && busy !== 'confirm' ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+            {busy === 'confirm' ? 'Downgrading…' : `Downgrade to ${tier.label}`}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
