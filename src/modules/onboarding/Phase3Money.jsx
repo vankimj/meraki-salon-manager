@@ -244,10 +244,27 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
 
   async function handleEmbeddedExit() {
     // Salon completed (or exited) the embedded onboarding. Refresh the
-    // cached status so the UI flips from "onboarding pending" to live.
+    // server mirror AND push the result through updateSettings — without
+    // the local push, the React settings cache stays stale and the panel
+    // doesn't repaint until the next page refresh. Same bug pattern the
+    // OAuth callback hook handles via onSuccess.
     setEmbeddedOnboardingOpen(false);
     try {
-      await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+      const { data } = await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+      if (data?.status && updateSettings && settings) {
+        await updateSettings({ ...settings, stripeConnect: {
+          accountId:                data.status.accountId,
+          accountType:              data.status.accountType,
+          chargesEnabled:           data.status.chargesEnabled,
+          payoutsEnabled:           data.status.payoutsEnabled,
+          detailsSubmitted:         data.status.detailsSubmitted,
+          businessName:             data.status.businessName,
+          statementDescriptor:      data.status.statementDescriptor,
+          requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
+          updatedAt:                data.status.updatedAt,
+        }});
+        showToast?.(`✓ Stripe ${data.status.accountType || 'account'} connected`, 5000);
+      }
     } catch (e) {
       console.warn('[Connect] post-onboarding status refresh failed:', e?.message);
     }
