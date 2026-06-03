@@ -170,6 +170,98 @@ function Link({ href, children }) {
   return <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', fontWeight: 600, textDecoration: 'underline' }}>{children}</a>;
 }
 
+// Side-by-side trade-off table. Renders ABOVE the two picker cards so
+// the salon owner sees the substantive differences at decision time
+// (cost, ownership, login surface, dispute handling, portability).
+// Rates + Connect fees verified against stripe.com/pricing and
+// stripe.com/connect/pricing via WebFetch on 2026-06-03.
+function ConnectComparisonTable() {
+  const ROWS = [
+    {
+      label: 'Setup time',
+      std:   '~5 min on stripe.com',
+      exp:   '~5 min embedded in Plume',
+    },
+    {
+      label: 'Where you log in',
+      std:   'stripe.com (separate account)',
+      exp:   'Plume only — no stripe.com login',
+    },
+    {
+      label: 'Processing rate',
+      std:   '2.9% + $0.30 online · 2.7% + $0.05 Terminal',
+      exp:   'Same',
+    },
+    {
+      label: 'Per-payout fee',
+      std:   <span style={{ color: '#065f46', fontWeight: 600 }}>None</span>,
+      exp:   <>~0.25% + $0.25 <em style={{ opacity: 0.7 }}>per payout</em></>,
+    },
+    {
+      label: 'Monthly account fee',
+      std:   <span style={{ color: '#065f46', fontWeight: 600 }}>None</span>,
+      exp:   <>$2 <em style={{ opacity: 0.7 }}>per active account</em></>,
+    },
+    {
+      label: 'Disputes / chargebacks',
+      std:   'You handle directly with Stripe',
+      exp:   'Plume coordinates',
+    },
+    {
+      label: 'Account ownership',
+      std:   <span style={{ color: '#065f46', fontWeight: 600 }}>You own it forever</span>,
+      exp:   'Plume owns it (sub-account)',
+    },
+    {
+      label: 'If you ever leave Plume',
+      std:   <span style={{ color: '#065f46', fontWeight: 600 }}>Keep your Stripe account</span>,
+      exp:   'Sub-account closes',
+    },
+  ];
+
+  const cellBase = {
+    padding: '8px 10px', fontSize: 12, lineHeight: 1.45,
+    borderBottom: '1px solid #eee', verticalAlign: 'top',
+  };
+
+  return (
+    <details style={{ marginBottom: 14, borderRadius: 10, border: '1px solid #e8e8e8', background: '#fafafa' }}>
+      <summary style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#5b3b8c', cursor: 'pointer', userSelect: 'none' }}>
+        Compare the two options side-by-side
+      </summary>
+      <div style={{ overflowX: 'auto', padding: '0 4px 10px' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: '#1a1a1a' }}>
+          <thead>
+            <tr>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#5b3b8c', background: '#fafafa', borderBottom: '2px solid #e8e8e8', width: '32%' }}></th>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#065f46', background: '#f0fdf4', borderBottom: '2px solid #6ee7b7' }}>
+                ✓ Your own Stripe (Standard)
+              </th>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#1a1a1a', background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+                Plume-managed (Express)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {ROWS.map(r => (
+              <tr key={r.label}>
+                <td style={{ ...cellBase, color: '#555', fontWeight: 600 }}>{r.label}</td>
+                <td style={cellBase}>{r.std}</td>
+                <td style={cellBase}>{r.exp}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div style={{ padding: '8px 10px 0', fontSize: 11, color: '#888' }}>
+          Rates set by Stripe ·{' '}
+          <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', textDecoration: 'underline' }}>stripe.com/pricing</a> ·{' '}
+          <a href="https://stripe.com/connect/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', textDecoration: 'underline' }}>stripe.com/connect/pricing</a>
+        </div>
+      </div>
+    </details>
+  );
+}
+
 // Card-processing rates display. Same rates apply to both account
 // types (Stripe sets them); the footnote differs by accountType so
 // each card explains what the salon's effective cost actually is.
@@ -502,6 +594,8 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
         both work the same for charging customers; the difference is whether you ever have to
         deal with stripe.com directly.
       </div>
+
+      <ConnectComparisonTable />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
         {/* Standard card — now recommended */}
