@@ -205,53 +205,9 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
   const [embeddedOnboardingOpen, setEmbeddedOnboardingOpen] = useState(false);
   const [embeddedManagementOpen, setEmbeddedManagementOpen] = useState(false);
 
-  // After return from Stripe-hosted onboarding (Express ?connect=return)
-  // or OAuth (Standard ?connect=oauth-callback&code=...&state=...), finish
-  // the handshake + refresh the cached status so the UI flips to live.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const mode = params.get('connect');
-    if (!mode) return;
-    const code  = params.get('code');
-    const state = params.get('state');
-
-    // Strip the query params BEFORE async work, so a refresh / browser
-    // back during the round-trip can't replay the callback with an
-    // already-consumed code (Stripe rejects those with an opaque error).
-    const url = new URL(window.location.href);
-    ['connect', 'code', 'state', 'scope', 'tenant'].forEach(k => url.searchParams.delete(k));
-    window.history.replaceState({}, '', url.toString());
-
-    async function finalise() {
-      try {
-        if (mode === 'oauth-callback' && code && state) {
-          await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
-        }
-        const { data } = await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
-        // Push the fresh status into the local settings cache so the UI
-        // repaints to "Payments are live" without needing a page refresh.
-        // AppContext loads settings once at startup (no Firestore
-        // listener), so without this the UI would lag the server.
-        if (data?.status) {
-          const next = { ...(settings || {}), stripeConnect: {
-            accountId:                 data.status.accountId,
-            accountType:               data.status.accountType,
-            chargesEnabled:            data.status.chargesEnabled,
-            payoutsEnabled:            data.status.payoutsEnabled,
-            detailsSubmitted:          data.status.detailsSubmitted,
-            businessName:              data.status.businessName,
-            statementDescriptor:       data.status.statementDescriptor,
-            requirementsCurrentlyDue:  data.status.requirementsCurrentlyDue,
-            updatedAt:                 data.status.updatedAt,
-          }};
-          await updateSettings?.(next);
-        }
-      } catch (e) {
-        console.warn('[Connect] finalise failed:', e?.message);
-      }
-    }
-    finalise();
-  }, []);
+  // Note: the Stripe Connect OAuth callback handler lives in App.jsx
+  // (AppShell) so it fires at the routing level regardless of which view
+  // the user is on. Don't duplicate it here.
 
   // Trigger from the "Set up payments" card. One click: create the Stripe
   // Express account with the bare minimum we already know (tenant name,

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
 import { TENANT_ID } from './lib/tenant';
+import { callFn } from './lib/firebase';
 import { recordNav } from './lib/diagnostics';
 import Splash from './components/Splash';
 import Toast from './components/Toast';
@@ -123,6 +124,57 @@ function AppShell({ initialView = 'home' }) {
     window.addEventListener('open-admin', handler);
     return () => window.removeEventListener('open-admin', handler);
   }, []);
+
+  // Stripe Connect Standard OAuth callback. Lives at AppShell level (not
+  // inside Phase3Money) so it fires regardless of whether the wizard is
+  // open or what view the user is on. Stripe registers
+  // `https://<tenant>.plumenexus.com/?connect=oauth-callback` as the
+  // return URL — App.jsx routes that landing to the management app, then
+  // this effect claims the OAuth code and syncs settings.stripeConnect.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('connect') !== 'oauth-callback') return;
+    const code  = params.get('code');
+    const state = params.get('state');
+
+    // Strip params BEFORE async work — a refresh / Back during the
+    // round-trip would otherwise replay the now-consumed code.
+    const url = new URL(window.location.href);
+    ['connect', 'code', 'state', 'scope', 'tenant'].forEach(k => url.searchParams.delete(k));
+    window.history.replaceState({}, '', url.toString());
+
+    if (!gUser) return; // unauthenticated user can't claim the code; the
+                       // params are stripped, so a re-login won't retry.
+                       // Acceptable: salon admins should already be signed
+                       // in when they initiated OAuth on this subdomain.
+
+    let cancelled = false;
+    (async () => {
+      try {
+        if (code && state) {
+          await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
+        }
+        const { data } = await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+        if (!cancelled && data?.status) {
+          await updateSettings({ ...(settings || {}), stripeConnect: {
+            accountId:                data.status.accountId,
+            accountType:              data.status.accountType,
+            chargesEnabled:           data.status.chargesEnabled,
+            payoutsEnabled:           data.status.payoutsEnabled,
+            detailsSubmitted:         data.status.detailsSubmitted,
+            businessName:             data.status.businessName,
+            statementDescriptor:      data.status.statementDescriptor,
+            requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
+            updatedAt:                data.status.updatedAt,
+          }});
+        }
+      } catch (e) {
+        console.warn('[Connect] OAuth callback finalise failed:', e?.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [gUser?.uid]);
+
   const [showWizard, setShowWizard]   = useState(false);
   // `undefined` = subscription hasn't fired yet (loading).
   // `null`      = subscription fired and the tenant has no onboarding doc.
@@ -369,6 +421,12 @@ export default function App() {
     const isTipFlow     = params.has('tipflow')     || path === '/tipflow';
     const isTimeClock   = params.has('timeclock')   || path === '/timeclock';
     const isManageApp   = path === '/manage';
+    // Stripe Connect Standard OAuth registers `https://<tenant>.plumenexus.com/?connect=oauth-callback`
+    // as its return URL — Stripe requires exact pre-registration of redirect URIs and
+    // we don't want to register a different URI per surface. So any landing at root
+    // with ?connect=oauth-callback is a Stripe round-trip; route to the management
+    // app so the callback handler can claim the OAuth code.
+    const isConnectCallback = params.get('connect') === 'oauth-callback';
     const isSignup      = params.has('signup')      || path === '/signup';
     const isTerms       = params.has('terms')       || path === '/terms';
     const isPrivacy     = params.has('privacy')     || path === '/privacy';
@@ -394,7 +452,7 @@ export default function App() {
     else if (isQueue)   content = <QueueKiosk />;
     else if (isTimeClock) content = <TimeClockKiosk />;
     else if (isSignup)  content = <OnboardingScreen />;
-    else if (isManageApp || isTipFlow) content = (
+    else if (isManageApp || isTipFlow || isConnectCallback) content = (
       <AppProvider>
         <ThemeProvider>
           <div style={{ width: '100vw', height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#eef0f3', overflow: 'hidden' }}>
