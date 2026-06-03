@@ -19,8 +19,27 @@ export function useStripeConnectOAuthCallback({ gUser, settings, updateSettings,
   useEffect(() => {
     const location = loc();
     const params = new URLSearchParams(location.search);
-    if (params.get('connect') !== 'oauth-callback') return;
-    if (!gUser) return;
+    const connectVal = params.get('connect');
+    const hasGUser = !!gUser;
+    // Always log when this effect runs so we can see whether the
+    // routing put the callback on this surface AND whether auth
+    // resolved. Without these logs a silent bail looks the same as
+    // "nothing happened" — making the failure undiagnosable.
+    console.log('[Connect] effect fired', {
+      url:        location.href.split('?')[0],
+      connectVal,
+      hasGUser,
+      gUserUid:   gUser?.uid,
+      gUserEmail: gUser?.email,
+    });
+    if (connectVal !== 'oauth-callback') {
+      console.log('[Connect] bail: no connect=oauth-callback in URL');
+      return;
+    }
+    if (!hasGUser) {
+      console.log('[Connect] bail: gUser still null, waiting for auth to resolve');
+      return;
+    }
 
     const code  = params.get('code');
     const state = params.get('state');
