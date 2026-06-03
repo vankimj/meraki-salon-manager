@@ -297,15 +297,13 @@ function StripeConnectStep({ stripeConnect, showToast }) {
     }
   }
 
+  // Resume an in-progress Express onboarding (account exists but Stripe
+  // still needs more — e.g. bank account, ToS acceptance, ID upload).
+  // Opens the embedded onboarding component inline; the component shows
+  // only the screens the salon still needs to complete.
   async function continueOnboarding() {
-    setBusy(true); setErr('');
-    try {
-      const { data } = await callFn('createAccountOnboardingLink')({ tenantId: TENANT_ID });
-      if (data?.url) window.location.href = data.url;
-    } catch (e) {
-      setErr(e.message);
-      setBusy(false);
-    }
+    setErr('');
+    setEmbeddedOnboardingOpen(true);
   }
 
   async function openDashboard() {
