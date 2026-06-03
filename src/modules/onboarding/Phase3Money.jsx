@@ -251,7 +251,6 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
       }
     }
     finalise();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Trigger from the "Set up payments" card. One click: create the Stripe
