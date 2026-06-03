@@ -319,13 +319,19 @@ function StripeConnectStep({ stripeConnect, showToast }) {
     }
   }
 
-  // Already connected: show status banner + manage controls
+  // Render the body content based on connect state. We compute it as a
+  // variable instead of early-returning so the embedded modals (rendered
+  // at the bottom of this function) are reachable in BOTH paths — a
+  // previous version had two early returns and modals only existed in
+  // the "not connected" branch, so clicking "Continue setup" or
+  // "Manage payments" on the connected branch did nothing.
+  let body;
   if (stripeConnect?.accountId) {
     const { chargesEnabled, payoutsEnabled, detailsSubmitted, accountType,
             businessName, statementDescriptor, requirementsCurrentlyDue = [] } = stripeConnect;
     const isLive = chargesEnabled && payoutsEnabled;
     const needsMore = requirementsCurrentlyDue.length > 0 || !detailsSubmitted;
-    return (
+    body = (
       <div style={{ padding: 12, borderRadius: 8,
         background: isLive ? '#ecfdf5' : needsMore ? '#fff7ed' : '#fffbeb',
         border: `1px solid ${isLive ? '#6ee7b7' : needsMore ? '#fed7aa' : '#fde68a'}`,
@@ -370,10 +376,9 @@ function StripeConnectStep({ stripeConnect, showToast }) {
         {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
       </div>
     );
-  }
-
-  // Not connected: show the two-path picker
-  return (
+  } else {
+    // Not connected: show the two-path picker
+    body = (
     <div>
       <div style={{ fontSize: 13, color: '#444', lineHeight: 1.55, marginBottom: 12 }}>
         You can take cards once Stripe is connected. Pick how you want to handle payments —
@@ -430,6 +435,27 @@ function StripeConnectStep({ stripeConnect, showToast }) {
       </div>
 
       {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
+    </div>
+    );
+  }
+
+  // Single return that wraps the body content + global modals (prefill
+  // and embedded). Modals MUST render here, not inside either body
+  // branch, because state updates from buttons in either branch need
+  // to be able to mount the corresponding modal.
+  return (
+    <>
+      {body}
+
+      {/* Hidden state marker — used by Phase3Money.test.jsx to verify
+          that click handlers update the modal-open flags. Costs nothing
+          at runtime since it's display:none. */}
+      <div data-testid="connect-state-marker"
+        data-embedded-onboarding-open={String(embeddedOnboardingOpen)}
+        data-embedded-management-open={String(embeddedManagementOpen)}
+        data-prefill-open={String(prefillOpen)}
+        style={{ display: 'none' }}
+      />
 
       {prefillOpen && (
         <ExpressPrefillModal
@@ -450,17 +476,25 @@ function StripeConnectStep({ stripeConnect, showToast }) {
           <EmbeddedAccountManagement />
         </EmbeddedModal>
       )}
-    </div>
+    </>
   );
 }
 
-// Simple full-screen overlay that hosts an embedded Connect component.
+// Full-screen overlay that hosts an embedded Connect component.
 // Rendered via React Portal to document.body so it escapes the onboarding
 // wizard's stacking context (the wizard is a modal too — without the
 // portal, our modal mounts INSIDE its container and gets trapped).
+// We mount the portal target inside a useEffect so SSR / test environments
+// without a document don't crash, and so the portal target is consistent
+// across re-renders (createPortal target switching can drop the child).
 function EmbeddedModal({ title, children, onClose }) {
-  if (typeof document === 'undefined') return null;
-  return createPortal(
+  const [target, setTarget] = useState(null);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    setTarget(document.body);
+  }, []);
+
+  const content = (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto' }}>
       <div style={{ background: '#fff', borderRadius: 12, padding: 0, width: '100%', maxWidth: 760, boxShadow: '0 12px 36px rgba(0,0,0,.25)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #eee' }}>
@@ -471,9 +505,16 @@ function EmbeddedModal({ title, children, onClose }) {
           {children}
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+
+  if (!target) {
+    // First render before useEffect fires — render inline so tests can
+    // find the content, and so the user sees the modal immediately on
+    // production (one extra synchronous render with inline content).
+    return content;
+  }
+  return createPortal(content, target);
 }
 
 // Collected once, sent straight to Stripe, NOT stored on the tenant doc.
