@@ -134,23 +134,25 @@ function AppShell({ initialView = 'home' }) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('connect') !== 'oauth-callback') return;
+    // CRITICAL: do NOT strip URL params until gUser is resolved. The
+    // effect fires once on mount when gUser is still null (Firebase Auth
+    // resolves async), and again when gUser arrives. If we stripped on
+    // the first pass, the code+state would be lost before we could claim
+    // them. Bail without stripping; the re-run with gUser does the work.
+    if (!gUser) return;
     const code  = params.get('code');
     const state = params.get('state');
 
-    // Strip params BEFORE async work — a refresh / Back during the
-    // round-trip would otherwise replay the now-consumed code.
+    // Strip params synchronously so a refresh/Back can't replay the
+    // now-consumed code (Stripe rejects re-used codes).
     const url = new URL(window.location.href);
     ['connect', 'code', 'state', 'scope', 'tenant'].forEach(k => url.searchParams.delete(k));
     window.history.replaceState({}, '', url.toString());
 
-    if (!gUser) return; // unauthenticated user can't claim the code; the
-                       // params are stripped, so a re-login won't retry.
-                       // Acceptable: salon admins should already be signed
-                       // in when they initiated OAuth on this subdomain.
-
     let cancelled = false;
     (async () => {
       try {
+        console.log('[Connect] claiming OAuth code', { codeLen: code?.length, stateLen: state?.length });
         if (code && state) {
           await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
         }
@@ -167,9 +169,10 @@ function AppShell({ initialView = 'home' }) {
             requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
             updatedAt:                data.status.updatedAt,
           }});
+          console.log('[Connect] claimed', data.status.accountId, data.status.accountType);
         }
       } catch (e) {
-        console.warn('[Connect] OAuth callback finalise failed:', e?.message);
+        console.warn('[Connect] OAuth callback finalise failed:', e?.message, e?.code);
       }
     })();
     return () => { cancelled = true; };
