@@ -399,44 +399,44 @@ function StripeConnectStep({ stripeConnect, showToast }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-        {/* Express card */}
+        {/* Standard card — now recommended */}
         <div style={{ border: '2px solid #6ee7b7', borderRadius: 10, padding: 14, background: '#f0fdf4', position: 'relative' }}>
           <div style={{ position: 'absolute', top: -10, right: 12,
             background: '#065f46', color: '#fff', fontSize: 9, fontWeight: 700,
             padding: '3px 8px', borderRadius: 8, letterSpacing: 0.5 }}>
             RECOMMENDED
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>⚡ Easy</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>✓ Your own Stripe account</div>
           <div style={{ fontSize: 12, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
-            Set up through Plume — quick 5-min Stripe-hosted form. No stripe.com login needed.
-            We handle everything in one place.
+            Connect (or create) a Stripe account in your salon's name. You own it,
+            you keep it if you ever leave Plume, and there's no per-payout fee.
           </div>
           <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 12px', lineHeight: 1.7 }}>
-            <li>No separate stripe.com account</li>
-            <li>Slim Stripe dashboard inside Plume</li>
-            <li>5-min hosted onboarding</li>
-            <li>Slight per-payout fee (Plume absorbs)</li>
+            <li>You own the merchant account</li>
+            <li>Full Stripe Dashboard at stripe.com</li>
+            <li>No per-payout fee</li>
+            <li>Stripe handles your disputes directly</li>
           </ul>
-          <button onClick={startExpress} disabled={busy} style={btnPrimary(busy)} type="button">
-            {busy ? 'Loading…' : 'Set up payments'}
+          <button onClick={startStandard} disabled={busy} style={btnPrimary(busy)} type="button">
+            {busy ? 'Loading…' : 'Connect Stripe account'}
           </button>
         </div>
 
-        {/* Standard card */}
+        {/* Express card — alternative */}
         <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, padding: 14, background: '#fff' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>🔧 Advanced</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>Plume-managed</div>
           <div style={{ fontSize: 12, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
-            Connect an existing Stripe account (or create one at stripe.com).
-            You'll manage payouts + disputes from your own Stripe Dashboard.
+            We create + manage a sub-account for you. Dashboard lives inside Plume,
+            no stripe.com login. Small per-payout fee covers it.
           </div>
           <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 12px', lineHeight: 1.7 }}>
-            <li>Full Stripe Dashboard access</li>
-            <li>You log in at stripe.com</li>
-            <li>No per-payout fee</li>
-            <li>For salons who already use Stripe</li>
+            <li>Dashboard inside Plume</li>
+            <li>No separate stripe.com account</li>
+            <li>Small per-payout fee</li>
+            <li>Disputes routed through Plume</li>
           </ul>
-          <button onClick={startStandard} disabled={busy} style={btnSecondary} type="button">
-            {busy ? 'Loading…' : 'Connect my Stripe account'}
+          <button onClick={startExpress} disabled={busy} style={btnSecondary} type="button">
+            {busy ? 'Loading…' : 'Use Plume-managed'}
           </button>
         </div>
       </div>

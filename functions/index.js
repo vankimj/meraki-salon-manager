@@ -6637,7 +6637,7 @@ exports.createAccountSession = onCall({ cors: true, secrets: [stripeKey] }, asyn
 // Build the Stripe OAuth authorisation URL for the Standard flow. The
 // salon clicks this and is sent to stripe.com to authorise Plume.
 // State is HMAC-signed so the callback can't be forged (CSRF defence).
-exports.getStripeConnectOAuthUrl = onCall({ cors: true }, async (request) => {
+exports.getStripeConnectOAuthUrl = onCall({ cors: true, secrets: [unsubscribeSecret] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { tenantId: tid } = request.data || {};
   const tenantId = tid || TENANT_ID;
@@ -6655,7 +6655,16 @@ exports.getStripeConnectOAuthUrl = onCall({ cors: true }, async (request) => {
   const ten = tenSnap.exists ? tenSnap.data() : {};
 
   const state = buildOAuthState(tenantId, unsubscribeSecret.value());
-  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  // Prefer the tenant's own branded subdomain (e.g.
+  // merakinailstudio.plumenexus.com) so the salon stays on their own
+  // domain through the round-trip — no Firebase Auth re-prompt, no
+  // cross-domain bounce. Each tenant subdomain must be pre-registered in
+  // Stripe Dashboard → Connect → OAuth redirect URIs; Stripe caps the
+  // list at ~20, so this scales linearly to the first 20 salons before
+  // we need a cross-subdomain bounce pattern.
+  const fallbackBase = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  const tenantBase = (ten.tenantUrl || '').replace(/\/+$/, '');
+  const baseUrl = tenantBase || fallbackBase;
   const redirectUri = `${baseUrl}/?connect=oauth-callback`;
   const params = new URLSearchParams({
     response_type: 'code',
@@ -6671,7 +6680,7 @@ exports.getStripeConnectOAuthUrl = onCall({ cors: true }, async (request) => {
 
 // Exchange the OAuth code returned by Stripe for an account_id and
 // persist it on the tenant. Verifies the HMAC state to prevent CSRF.
-exports.completeStripeConnectOAuth = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+exports.completeStripeConnectOAuth = onCall({ cors: true, secrets: [stripeKey, unsubscribeSecret] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const { code, state, tenantId: tid } = request.data || {};
   if (!code || !state) throw new HttpsError('invalid-argument', 'code and state required');

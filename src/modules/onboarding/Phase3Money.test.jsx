@@ -20,8 +20,12 @@ vi.mock('@stripe/react-connect-js', () => ({
 // Firebase + tenant + AppContext mocks. Tests override appState before
 // each render to control which Connect status the component sees.
 let appState = { stripeConnect: null };
+// Per-function-name mock so we can return Standard OAuth URLs from
+// getStripeConnectOAuthUrl while still serving clientSecret stubs to
+// the embedded components when they call createAccountSession.
+const callFnImpls = {};
 vi.mock('../../lib/firebase', () => ({
-  callFn: () => vi.fn(() => Promise.resolve({ data: { clientSecret: 'cs_fake' } })),
+  callFn: (name) => callFnImpls[name] || vi.fn(() => Promise.resolve({ data: { clientSecret: 'cs_fake' } })),
 }));
 vi.mock('../../lib/tenant', () => ({ TENANT_ID: 'meraki' }));
 vi.mock('../../context/AppContext', () => ({
@@ -43,16 +47,55 @@ beforeEach(() => cleanup());
 describe('Phase3Money — Stripe Connect step', () => {
   const baseOnboarding = { phases: { money: {} } };
 
-  it('shows "Set up payments" when no account exists', () => {
-    appState = { stripeConnect: null };
-    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
-    expect(screen.getByRole('button', { name: /Set up payments/i })).toBeInTheDocument();
+  beforeEach(() => {
+    Object.keys(callFnImpls).forEach(k => delete callFnImpls[k]);
   });
 
-  it('clicking "Set up payments" opens the embedded modal directly (no prefill, no redirect)', async () => {
+  it('shows "Connect Stripe account" as the primary CTA when no account exists', () => {
     appState = { stripeConnect: null };
     render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
-    fireEvent.click(screen.getByRole('button', { name: /Set up payments/i }));
+    expect(screen.getByRole('button', { name: /Connect Stripe account/i })).toBeInTheDocument();
+    // Express is still available as a secondary option
+    expect(screen.getByRole('button', { name: /Use Plume-managed/i })).toBeInTheDocument();
+  });
+
+  it('Standard is marked RECOMMENDED, Express is not', () => {
+    appState = { stripeConnect: null };
+    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    const recommended = screen.getByText(/RECOMMENDED/i);
+    // Walk up to the card div (the ancestor that holds a button)
+    let card = recommended.parentElement;
+    while (card && !card.querySelector('button')) card = card.parentElement;
+    expect(card).not.toBeNull();
+    expect(card.querySelector('button')).toHaveTextContent(/Connect Stripe account/i);
+  });
+
+  it('clicking "Connect Stripe account" calls getStripeConnectOAuthUrl and navigates to stripe.com', async () => {
+    appState = { stripeConnect: null };
+    const fakeOAuthUrl = 'https://connect.stripe.com/oauth/v2/authorize?client_id=ca_test&scope=read_write&state=fake';
+    const oauthCallable = vi.fn(() => Promise.resolve({ data: { url: fakeOAuthUrl } }));
+    callFnImpls['getStripeConnectOAuthUrl'] = oauthCallable;
+
+    // Stub window.location.href so the test can verify the navigation target
+    // without the test runner trying to actually navigate.
+    const originalLocation = window.location;
+    let navigated = null;
+    delete window.location;
+    window.location = { ...originalLocation, search: '', href: '', set href(v) { navigated = v; } };
+
+    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    fireEvent.click(screen.getByRole('button', { name: /Connect Stripe account/i }));
+
+    await waitFor(() => expect(oauthCallable).toHaveBeenCalled());
+    await waitFor(() => expect(navigated).toBe(fakeOAuthUrl));
+
+    window.location = originalLocation;
+  });
+
+  it('clicking "Use Plume-managed" (Express fallback) opens the embedded modal', async () => {
+    appState = { stripeConnect: null };
+    render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
+    fireEvent.click(screen.getByRole('button', { name: /Use Plume-managed/i }));
     const iframe = await screen.findByTestId('stripe-onboarding-iframe', undefined, { timeout: 2000 });
     expect(iframe).toBeInTheDocument();
   });
