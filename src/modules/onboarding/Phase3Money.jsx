@@ -75,18 +75,25 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       <Section title="Financial defaults">
         {/* CC processing rate isn't user-editable: Stripe sets it. Showing
             it informationally so the salon knows what their effective
-            processing cost is. (Admin → Settings has overridable inputs
-            for the rare case of a custom platform-negotiated rate.) */}
+            processing cost is. Online vs Terminal rates differ —
+            salons typically hit both (online prepay at booking, Terminal
+            at the front desk). Admin → Settings has overridable inputs
+            for the rare custom platform-negotiated case. */}
         <div style={{
           padding: 10, borderRadius: 8, background: '#f8f9fa',
           border: '1px solid #e8e8e8', fontSize: 12, color: '#555', lineHeight: 1.55,
         }}>
-          <div style={{ fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>
-            Card processing rate
+          <div style={{ fontWeight: 600, color: '#1a1a1a', marginBottom: 6 }}>
+            Card processing rates
           </div>
-          <div>
-            Stripe charges <strong>2.9% + $0.30</strong> per online card transaction.
-            This is set by Stripe and applies to every salon — there's nothing to configure here.
+          <div style={{ marginBottom: 4 }}>
+            <strong>Online (booking page):</strong> 2.9% + $0.30 per transaction
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>In-person (Stripe Terminal):</strong> 2.7% + $0.05 per transaction
+          </div>
+          <div style={{ fontSize: 11, color: '#888' }}>
+            Set by Stripe — applies to every salon, nothing to configure here.
           </div>
         </div>
         <ToggleRow checked={!noCardTips} onChange={v => setNoCardTips(!v)}
