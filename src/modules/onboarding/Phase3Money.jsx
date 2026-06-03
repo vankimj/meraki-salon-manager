@@ -304,11 +304,13 @@ function StripeConnectStep({ stripeConnect, showToast }) {
 
   // Resume an in-progress Express onboarding (account exists but Stripe
   // still needs more — e.g. bank account, ToS acceptance, ID upload).
-  // Opens the embedded onboarding component inline; the component shows
-  // only the screens the salon still needs to complete.
+  // Calls createExpressAccount first because it's idempotent — returns
+  // the existing account if one is still on the tenant doc, or creates
+  // a fresh one if the doc drifted (e.g. mirror says "exists" but the
+  // top-level tenant doc lost the accountId, which we saw in the wild).
+  // Either way the modal opens against a known-good account.
   async function continueOnboarding() {
-    setErr('');
-    setEmbeddedOnboardingOpen(true);
+    return startExpress();
   }
 
   async function openDashboard() {

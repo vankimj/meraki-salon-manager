@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 
 // Mock the Stripe Connect React + JS SDKs so the test doesn't need a live
@@ -87,11 +87,12 @@ describe('Phase3Money — Stripe Connect step', () => {
     // Click it
     fireEvent.click(continueBtn);
 
-    // Check state AFTER click — confirms whether the click handler fired
-    // and updated state. If this fails, the click handler isn't running
-    // or React isn't re-rendering.
-    const markerAfter = screen.getByTestId('connect-state-marker');
-    expect(markerAfter.getAttribute('data-embedded-onboarding-open')).toBe('true');
+    // Continue setup now calls createExpressAccount (idempotent) before
+    // opening the modal — so the state flip is async. Wait for it.
+    await waitFor(() => {
+      const marker = screen.getByTestId('connect-state-marker');
+      expect(marker.getAttribute('data-embedded-onboarding-open')).toBe('true');
+    });
 
     // The Stripe iframe placeholder we mocked should be mounted —
     // this is what the EmbeddedOnboarding renders inside the modal.

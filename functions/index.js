@@ -6707,7 +6707,15 @@ exports.getStripeConnectStatus = onCall({ cors: true, secrets: [stripeKey] }, as
   const tenSnap = await db.doc(`tenants/${tenantId}`).get();
   if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
   const ten = tenSnap.data();
-  if (!ten.stripeConnectAccountId) return { connected: false };
+  if (!ten.stripeConnectAccountId) {
+    // No account on the truth-source doc — make sure the settings mirror
+    // doesn't keep saying we have one. Drift here causes the UI to render
+    // action buttons (Continue setup / Manage payments) against a
+    // non-existent account, which then 400s when those buttons run.
+    const { FieldValue } = require('firebase-admin/firestore');
+    await db.doc(`tenants/${tenantId}/data/settings`).set({ stripeConnect: FieldValue.delete() }, { merge: true });
+    return { connected: false };
+  }
 
   const key = stripeKey.value();
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
