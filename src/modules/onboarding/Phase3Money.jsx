@@ -243,34 +243,6 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
     }
   }
 
-  // For Standard accounts, tos_acceptance.date + tos_acceptance.ip are
-  // platform-side requirements (Plume captures the salon's consent to
-  // OUR platform agreement, separate from their own Stripe ToS which
-  // they accepted when they made the Stripe account). The salon won't
-  // find this on stripe.com — we record it via accounts.update.
-  async function acceptStripeTos() {
-    setBusy(true); setErr('');
-    try {
-      const { data } = await callFn('acceptStripeConnectTos')({ tenantId: TENANT_ID });
-      // Refresh local mirror with the updated status the server returned.
-      if (data?.status && updateSettings && settings) {
-        await updateSettings({ ...settings, stripeConnect: {
-          ...settings.stripeConnect,
-          chargesEnabled:           data.status.chargesEnabled,
-          payoutsEnabled:           data.status.payoutsEnabled,
-          detailsSubmitted:         data.status.detailsSubmitted,
-          requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
-          updatedAt:                data.status.updatedAt,
-        }});
-      }
-      showToast?.('Plume terms accepted');
-    } catch (e) {
-      setErr(e.message || 'Failed to accept terms');
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function deleteAccount() {
     const isStandard = stripeConnect?.accountType === 'standard';
     const msg = isStandard
@@ -368,8 +340,8 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
       'business_profile.support_email':       { label: 'Customer support email', where: 'on stripe.com' },
       'business_profile.url':                 { label: 'Business website',       where: 'on stripe.com' },
       'business_profile.mcc':                 { label: 'Industry / category',    where: 'on stripe.com' },
-      'tos_acceptance.date':                  { label: "Accept Plume's terms",  where: 'here in Plume', isTos: true },
-      'tos_acceptance.ip':                    { label: "Accept Plume's terms",  where: 'here in Plume', isTos: true },
+      'tos_acceptance.date':                  { label: "Accept Stripe's service agreement", where: 'on stripe.com' },
+      'tos_acceptance.ip':                    { label: "Accept Stripe's service agreement", where: 'on stripe.com' },
       'external_account':                     { label: 'Bank account for payouts', where: 'on stripe.com' },
       'individual.dob.day':                   { label: 'Date of birth',          where: 'on stripe.com' },
       'individual.dob.month':                 { label: 'Date of birth',          where: 'on stripe.com' },
@@ -391,8 +363,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
       seenLabels.add(info.label);
       friendlyItems.push(info);
     }
-    const needsTos = friendlyItems.some(i => i.isTos);
-    const needsStripeSide = friendlyItems.some(i => !i.isTos);
+    const needsStripeSide = friendlyItems.length > 0;
 
     // Deep-link target: the public-details page covers business_profile.*
     // (URL, support phone, product description). Other field categories
@@ -441,11 +412,6 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
           {accountType === 'express' && (
             <button onClick={openManagement} disabled={busy} style={btnSecondary} type="button">
               Manage payments
-            </button>
-          )}
-          {accountType === 'standard' && needsTos && (
-            <button onClick={acceptStripeTos} disabled={busy} style={btnPrimary(busy)} type="button">
-              {busy ? 'Accepting…' : "Accept Plume's terms"}
             </button>
           )}
           {accountType === 'standard' && needsStripeSide && (

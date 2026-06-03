@@ -6518,58 +6518,6 @@ exports.deleteConnectAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
   return { ok: true, deletedAccountId: acctId || null, deletedFromStripe };
 });
 
-// Accept Stripe's Connect Terms of Service on behalf of the salon. For
-// Standard accounts, tos_acceptance.date + tos_acceptance.ip are
-// PLATFORM-side requirements — the salon already accepted Stripe's
-// account ToS when they made their Stripe account, but they ALSO need
-// to accept Plume Nexus's Connect platform agreement. Stripe lets the
-// platform record this via stripe.accounts.update on the connected
-// account. Captures the current timestamp + caller IP as required.
-exports.acceptStripeConnectTos = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
-  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const { tenantId: tid } = request.data || {};
-  const tenantId = tid || TENANT_ID;
-
-  const db = getFirestore();
-  await requireTenantAdmin(db, tenantId, request);
-
-  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
-  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
-  const ten = tenSnap.data();
-  const acctId = ten.stripeConnectAccountId;
-  if (!acctId) throw new HttpsError('failed-precondition', 'No connected account');
-
-  const key = stripeKey.value();
-  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
-  const stripe = require('stripe')(key);
-
-  // Stripe expects a unix timestamp (seconds) for tos_acceptance.date
-  // and an IPv4/IPv6 string for tos_acceptance.ip. The IP must be the
-  // user's actual browser IP — pulled from the request headers Cloud
-  // Functions passes through.
-  const tosDate = Math.floor(Date.now() / 1000);
-  const xfwd = request.rawRequest?.headers?.['x-forwarded-for'] || '';
-  const tosIp = (typeof xfwd === 'string' ? xfwd.split(',')[0].trim() : '')
-    || request.rawRequest?.ip
-    || request.rawRequest?.socket?.remoteAddress
-    || '0.0.0.0';
-
-  try {
-    await stripe.accounts.update(acctId, {
-      tos_acceptance: { date: tosDate, ip: tosIp },
-    });
-  } catch (e) {
-    console.warn(`[acceptStripeConnectTos] Stripe rejected update for ${tenantId}/${acctId}:`, e?.message);
-    throw new HttpsError('failed-precondition', e?.message || 'Stripe rejected the ToS update');
-  }
-
-  // Refresh the account so the returned status reflects post-acceptance
-  // state (some requirements may now be satisfied + chargesEnabled flip).
-  const account = await stripe.accounts.retrieve(acctId);
-  const summary = await persistConnectStatus(db, tenantId, account, ten.stripeConnectAccountType);
-  return { ok: true, status: summary };
-});
-
 // Mint a one-time hosted-onboarding URL for the Express account. Salon is
 // redirected there, fills out the Stripe-hosted form (business + bank +
 // SSN/EIN), then returns to our app via `refresh_url` / `return_url`.
