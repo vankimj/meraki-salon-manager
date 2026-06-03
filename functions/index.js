@@ -6376,7 +6376,6 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
     type:    'express',
     country: 'US',
     email:   ten.ownerEmail || undefined,
-    business_type: pfBusiness.type === 'individual' ? 'individual' : 'company',
     business_profile: {
       name: businessName || undefined,
       url:  tenantUrl,
@@ -6388,41 +6387,47 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
     metadata: { tenantId, plumeNexusTenant: 'true' },
   };
 
-  // Company block (for LLC / Corp). Stripe will collect EIN here.
-  if (acctPayload.business_type === 'company') {
+  // Only set business_type + the matching block when prefill explicitly
+  // told us which kind of entity this is. Setting business_type=company
+  // and ALSO passing an individual block makes Stripe reject the call
+  // ("You can only provide individual parameters for accounts with
+  // business_type of 'individual'"). When no prefill: leave it all blank,
+  // Stripe's embedded form asks the salon to pick + fill everything.
+  if (pfBusiness.type === 'company') {
+    acctPayload.business_type = 'company';
     acctPayload.company = {
       name:   businessName || undefined,
       phone:  pfBusiness.phone || businessPhone || undefined,
       tax_id: pfBusiness.ein || undefined,
       address: safeAddr(pfBusiness.address),
     };
-    // Strip undefineds so Stripe doesn't reject the call
     Object.keys(acctPayload.company).forEach(k => acctPayload.company[k] === undefined && delete acctPayload.company[k]);
     if (acctPayload.company.address === undefined) delete acctPayload.company.address;
-  }
-
-  // Individual / representative block — applies for both LLC (account rep)
-  // and sole prop (sole owner). Stripe still collects the SSN last 4 in the
-  // hosted form; we just pre-fill what we have.
-  //
-  // We intentionally do NOT set individual.phone. When a phone is on the
-  // account, Stripe marks it as phone-verified and forces SMS re-auth on
-  // any future embedded onboarding session — which top-level redirects out
-  // of our embedded modal to connect.stripe.com. Skipping phone keeps the
-  // whole onboarding flow inside Plume.
-  const repFirstName = pfRep.firstName || ownerFirstName;
-  const repLastName  = pfRep.lastName  || ownerLastName;
-  if (repFirstName || repLastName || pfRep.dob || pfRep.homeAddress) {
-    acctPayload.individual = {
-      first_name: repFirstName || undefined,
-      last_name:  repLastName  || undefined,
-      email:      ten.ownerEmail || undefined,
-      dob:        safeDob(pfRep.dob),
-      address:    safeAddr(pfRep.homeAddress),
-    };
-    Object.keys(acctPayload.individual).forEach(k => acctPayload.individual[k] === undefined && delete acctPayload.individual[k]);
-    if (acctPayload.individual.address === undefined) delete acctPayload.individual.address;
-    if (acctPayload.individual.dob     === undefined) delete acctPayload.individual.dob;
+  } else if (pfBusiness.type === 'individual') {
+    acctPayload.business_type = 'individual';
+    // Individual / representative block. Stripe still collects the SSN
+    // last 4 in the hosted form; we just pre-fill what we have.
+    //
+    // We intentionally do NOT set individual.phone. When a phone is on
+    // the account, Stripe marks it as phone-verified and forces SMS
+    // re-auth on any future embedded onboarding session — which
+    // top-level redirects out of our embedded modal to
+    // connect.stripe.com. Skipping phone keeps the whole flow inside
+    // Plume.
+    const repFirstName = pfRep.firstName || ownerFirstName;
+    const repLastName  = pfRep.lastName  || ownerLastName;
+    if (repFirstName || repLastName || pfRep.dob || pfRep.homeAddress) {
+      acctPayload.individual = {
+        first_name: repFirstName || undefined,
+        last_name:  repLastName  || undefined,
+        email:      ten.ownerEmail || undefined,
+        dob:        safeDob(pfRep.dob),
+        address:    safeAddr(pfRep.homeAddress),
+      };
+      Object.keys(acctPayload.individual).forEach(k => acctPayload.individual[k] === undefined && delete acctPayload.individual[k]);
+      if (acctPayload.individual.address === undefined) delete acctPayload.individual.address;
+      if (acctPayload.individual.dob     === undefined) delete acctPayload.individual.dob;
+    }
   }
 
   const key = stripeKey.value();
