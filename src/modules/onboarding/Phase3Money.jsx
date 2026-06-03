@@ -93,7 +93,11 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
             <strong>In-person (Stripe Terminal):</strong> 2.7% + $0.05 per transaction
           </div>
           <div style={{ fontSize: 11, color: '#888' }}>
-            Set by Stripe — applies to every salon, nothing to configure here.
+            Set by Stripe — applies to every salon, nothing to configure here.{' '}
+            <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
+              style={{ color: '#5b3b8c', textDecoration: 'underline' }}>
+              See stripe.com/pricing ↗
+            </a>
           </div>
         </div>
         <ToggleRow checked={!noCardTips} onChange={v => setNoCardTips(!v)}
