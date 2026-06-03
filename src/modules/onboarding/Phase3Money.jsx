@@ -170,6 +170,37 @@ function Link({ href, children }) {
   return <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', fontWeight: 600, textDecoration: 'underline' }}>{children}</a>;
 }
 
+// Card-processing rates display. Same rates apply to both account
+// types (Stripe sets them); the footnote differs by accountType so
+// each card explains what the salon's effective cost actually is.
+// Rates verified against stripe.com/pricing via WebFetch on 2026-06-03.
+function RateCard({ accountType, color = 'inherit', borderColor = 'rgba(0,0,0,0.12)', background = 'rgba(255,255,255,0.6)' }) {
+  return (
+    <div style={{
+      padding: 10, borderRadius: 8, background,
+      border: `1px dashed ${borderColor}`, fontSize: 12, lineHeight: 1.55, marginBottom: 8,
+      color,
+    }}>
+      <div style={{ fontWeight: 600, marginBottom: 6 }}>Card processing rates</div>
+      <div style={{ marginBottom: 4 }}>
+        <strong>Online (booking page):</strong> 2.9% + $0.30 per transaction
+      </div>
+      <div style={{ marginBottom: 6 }}>
+        <strong>In-person (Stripe Terminal):</strong> 2.7% + $0.05 per transaction
+      </div>
+      <div style={{ fontSize: 11, opacity: 0.85 }}>
+        {accountType === 'express'
+          ? "Same base rates as Standard — Plume absorbs Stripe's per-payout Connect fee so your effective rate is unchanged. "
+          : "You pay Stripe directly at these rates — Plume does not add a fee. "}
+        <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
+          style={{ color: 'inherit', textDecoration: 'underline' }}>
+          See stripe.com/pricing ↗
+        </a>
+      </div>
+    </div>
+  );
+}
+
 // ── Stripe Connect step (Express + Standard) ─────────────────────────────
 // Two paths share one downstream charge architecture. The salon picks
 // during onboarding:
@@ -386,44 +417,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
           KYC submitted: {detailsSubmitted ? '✓' : '✗'}
         </div>
 
-        {/* Rate card. Stripe publishes these uniformly per account type,
-            so this is informational rather than configurable. Standard:
-            salon pays Stripe directly at base rates. Express: same base
-            rates apply; Plume absorbs Stripe's per-payout Connect fee
-            so the salon's effective rate is unchanged. Verified against
-            stripe.com/pricing on 2026-06-03 via WebFetch. */}
-        <div style={{
-          padding: 10, borderRadius: 8, background: 'rgba(255,255,255,0.6)',
-          border: '1px dashed rgba(0,0,0,0.12)', fontSize: 12, lineHeight: 1.55, marginBottom: 8,
-          color: isLive ? '#065f46' : needsMore ? '#7c2d12' : '#92400e',
-        }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Card processing rates</div>
-          <div style={{ marginBottom: 4 }}>
-            <strong>Online (booking page):</strong> 2.9% + $0.30 per transaction
-          </div>
-          <div style={{ marginBottom: 6 }}>
-            <strong>In-person (Stripe Terminal):</strong> 2.7% + $0.05 per transaction
-          </div>
-          {accountType === 'standard' && (
-            <div style={{ fontSize: 11, opacity: 0.85 }}>
-              You pay Stripe directly at these rates — Plume does not add a fee.{' '}
-              <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
-                style={{ color: 'inherit', textDecoration: 'underline' }}>
-                See stripe.com/pricing ↗
-              </a>
-            </div>
-          )}
-          {accountType === 'express' && (
-            <div style={{ fontSize: 11, opacity: 0.85 }}>
-              Same base rates as Standard — Plume absorbs Stripe's per-payout
-              Connect fee so your effective rate is unchanged.{' '}
-              <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
-                style={{ color: 'inherit', textDecoration: 'underline' }}>
-                See stripe.com/pricing ↗
-              </a>
-            </div>
-          )}
-        </div>
+        <RateCard accountType={accountType} color={isLive ? '#065f46' : needsMore ? '#7c2d12' : '#92400e'} />
         {friendlyItems.length > 0 && (
           <div style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.6 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Still needed:</div>
@@ -505,12 +499,13 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             Connect (or create) a Stripe account in your salon's name. You own it,
             you keep it if you ever leave Plume, and there's no per-payout fee.
           </div>
-          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 12px', lineHeight: 1.7 }}>
+          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
             <li>You own the merchant account</li>
             <li>Full Stripe Dashboard at stripe.com</li>
             <li>No per-payout fee</li>
             <li>Stripe handles your disputes directly</li>
           </ul>
+          <RateCard accountType="standard" color="#065f46" borderColor="#a7f3d0" background="rgba(255,255,255,0.7)" />
           <button onClick={startStandard} disabled={busy} style={btnPrimary(busy)} type="button">
             {busy ? 'Loading…' : 'Connect Stripe account'}
           </button>
@@ -523,12 +518,13 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             We create + manage a sub-account for you. Dashboard lives inside Plume,
             no stripe.com login. Small per-payout fee covers it.
           </div>
-          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 12px', lineHeight: 1.7 }}>
+          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
             <li>Dashboard inside Plume</li>
             <li>No separate stripe.com account</li>
             <li>Small per-payout fee</li>
             <li>Disputes routed through Plume</li>
           </ul>
+          <RateCard accountType="express" color="#555" borderColor="#e8e8e8" background="#fafafa" />
           <button onClick={startExpress} disabled={busy} style={btnSecondary} type="button">
             {busy ? 'Loading…' : 'Use Plume-managed'}
           </button>
