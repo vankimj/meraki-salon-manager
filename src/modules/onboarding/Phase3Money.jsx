@@ -276,6 +276,11 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
       const origin = (typeof window !== 'undefined') ? window.location.origin : undefined;
       const { data } = await callFn('getStripeConnectOAuthUrl')({ tenantId: TENANT_ID, origin });
       if (data?.url) {
+        // Stash where to re-open the wizard after the OAuth round-trip.
+        // AppShell's OAuth callback hook reads this and re-mounts the
+        // wizard at the same phase, so the salon owner sees the result
+        // inline instead of landing on the home tile grid.
+        sessionStorage.setItem('connect-return-to-wizard', 'money');
         window.location.href = data.url;        // Stripe OAuth
       } else {
         throw new Error('No OAuth URL returned');

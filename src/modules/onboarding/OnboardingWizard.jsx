@@ -22,7 +22,7 @@ import { logActivity, logError } from '../../lib/logger';
 // tenants/{tid}/data/onboarding via the markOnboardingPhase Cloud
 // Function. Re-entry resumes at the next pending phase. Audit mode for
 // existing tenants comes via Phase 7's status grid: ✓ done · ⚠ pending.
-export default function OnboardingWizard({ onDismiss }) {
+export default function OnboardingWizard({ onDismiss, initialPhase }) {
   const { showToast, pauseLogoutTimer, resumeLogoutTimer } = useApp();
 
   // Pause the auto-logout timer while the wizard is open. Owners often
@@ -51,16 +51,21 @@ export default function OnboardingWizard({ onDismiss }) {
   // to a complete wizard start at 'welcome' so the user can step through
   // every section to revise. Manual navigation (Back / phase strip
   // clicks) is preserved after first mount via `currentKey`.
+  // `initialPhase` overrides both — used by the Stripe OAuth callback
+  // flow to drop the user back at the phase that initiated the
+  // round-trip so they see the result inline.
   const [bootstrapped, setBootstrapped] = useState(false);
   useEffect(() => {
     if (bootstrapped) return;
     if (onboarding === undefined) return; // still loading
     const complete = isOnboardingComplete(onboarding);
     setWasCompleteOnEntry(complete);
-    const next = complete ? 'welcome' : (nextPendingPhase(onboarding) || 'welcome');
+    const phaseFromProp = initialPhase && PHASES.some(p => p.key === initialPhase) ? initialPhase : null;
+    const next = phaseFromProp
+      || (complete ? 'welcome' : (nextPendingPhase(onboarding) || 'welcome'));
     setCurrentKey(next);
     setBootstrapped(true);
-  }, [onboarding, bootstrapped]);
+  }, [onboarding, bootstrapped, initialPhase]);
 
   const idx = PHASES.findIndex(p => p.key === currentKey);
   const curPhase = PHASES[idx] || PHASES[0];

@@ -11,7 +11,7 @@ import { TENANT_ID } from '../lib/tenant';
 // twice — once on mount with gUser=null, again when auth resolves. If we
 // stripped on the first pass, the code+state would disappear before the
 // second pass could claim them.
-export function useStripeConnectOAuthCallback({ gUser, settings, updateSettings, getLocation, replaceState }) {
+export function useStripeConnectOAuthCallback({ gUser, settings, updateSettings, onSuccess, getLocation, replaceState }) {
   // Indirection on window access so tests can drive the URL without JSDOM.
   const loc = getLocation || (() => window.location);
   const replace = replaceState || ((href) => window.history.replaceState({}, '', href));
@@ -91,6 +91,11 @@ export function useStripeConnectOAuthCallback({ gUser, settings, updateSettings,
             requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
             updatedAt:                data.status.updatedAt,
           }});
+          // Fire the success hook so the host (AppShell) can toast +
+          // restore wizard context. Called AFTER settings updates so
+          // the consumer sees the fresh stripeConnect in their next
+          // render if they re-read it.
+          onSuccess?.(data.status);
         }
       } catch (e) {
         console.warn('[Connect] OAuth callback finalise failed:', e?.message, e?.code);

@@ -104,7 +104,7 @@ function MagicLinkPrompt() {
 }
 
 function AppShell({ initialView = 'home' }) {
-  const { magicLinkPending, handbookPending, isPortalUser, settings, updateSettings, isAdmin, gUser, pinPrompt, acceptPinPrompt, dismissPinPrompt } = useApp();
+  const { magicLinkPending, handbookPending, isPortalUser, settings, updateSettings, isAdmin, gUser, pinPrompt, acceptPinPrompt, dismissPinPrompt, showToast } = useApp();
 
   if (isPortalUser) return <ClientPortal />;
   const [view,      setViewState] = useState(initialView); // 'home' | 'tipflow' | 'schedule' | 'clients' | 'services' | 'employees'
@@ -125,10 +125,31 @@ function AppShell({ initialView = 'home' }) {
     return () => window.removeEventListener('open-admin', handler);
   }, []);
 
+  // When set, OnboardingWizard opens at this phase instead of resuming
+  // at the next pending phase. Used by the OAuth callback flow to drop
+  // the user back where they were when they clicked Connect.
+  const [wizardInitialPhase, setWizardInitialPhase] = useState(null);
+
   // Stripe Connect Standard OAuth callback handler. Behaviour is covered
   // by src/hooks/useStripeConnectOAuthCallback.test.jsx — including the
-  // race against Firebase Auth's async resolution.
-  useStripeConnectOAuthCallback({ gUser, settings, updateSettings });
+  // race against Firebase Auth's async resolution. onSuccess re-opens the
+  // wizard at the phase that initiated OAuth (stored in sessionStorage by
+  // Phase3Money before redirecting to Stripe) and shows a confirmation
+  // toast, so the user doesn't land on the home tile grid wondering if
+  // anything happened.
+  useStripeConnectOAuthCallback({
+    gUser, settings, updateSettings,
+    onSuccess: (status) => {
+      showToast?.(`✓ Stripe ${status?.accountType || 'account'} connected`, 5000);
+      const returnTo = sessionStorage.getItem('connect-return-to-wizard');
+      if (returnTo) {
+        sessionStorage.removeItem('connect-return-to-wizard');
+        setWizardInitialPhase(returnTo);
+        setShowWizard(true);
+        setDismissedThisSession(false);
+      }
+    },
+  });
 
   const [showWizard, setShowWizard]   = useState(false);
   // `undefined` = subscription hasn't fired yet (loading).
@@ -297,10 +318,14 @@ function AppShell({ initialView = 'home' }) {
       />}
 
       {showWizard && (
-        <OnboardingWizard onDismiss={() => {
-          setShowWizard(false);
-          setDismissedThisSession(true);
-        }} />
+        <OnboardingWizard
+          initialPhase={wizardInitialPhase}
+          onDismiss={() => {
+            setShowWizard(false);
+            setDismissedThisSession(true);
+            setWizardInitialPhase(null);
+          }}
+        />
       )}
 
       {/* Handbook signing — shown to non-admin staff on first login after publish */}

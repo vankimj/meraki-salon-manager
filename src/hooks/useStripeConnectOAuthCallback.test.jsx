@@ -119,6 +119,22 @@ describe('useStripeConnectOAuthCallback', () => {
     }));
   });
 
+  it('calls onSuccess with the status after a successful claim — wires up the toast + wizard-restore flow', async () => {
+    const replaceState = vi.fn();
+    const updateSettings = vi.fn();
+    const onSuccess = vi.fn();
+    renderHook(() => useStripeConnectOAuthCallback({
+      gUser: { uid: 'u1', email: 'admin@example.com' },
+      settings: {}, updateSettings, onSuccess,
+      getLocation: () => fakeLocation('https://merakinailstudio.plumenexus.com/?connect=oauth-callback&code=ac_x&state=s_x'),
+      replaceState,
+    }));
+    await waitFor(() => expect(onSuccess).toHaveBeenCalled());
+    const status = onSuccess.mock.calls[0][0];
+    expect(status.accountId).toBe('acct_test_123');
+    expect(status.accountType).toBe('standard');
+  });
+
   it('does NOT call the claim function when gUser is set but auth.currentUser is null (the drift case we saw in prod logs)', async () => {
     // React's gUser can be set while Firebase's auth.currentUser has
     // cleared (e.g., token expired during the Stripe round-trip).
