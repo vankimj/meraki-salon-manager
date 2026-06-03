@@ -71,9 +71,36 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // Cache the app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,svg,png,woff2}'],
-        // Network-first for Firestore / auth (handled by Firebase SDK itself)
-        // Cache-first for static assets handled by glob above
+        // Disable the auto-added NavigationRoute(CacheFirst on index.html).
+        // It registers BEFORE any runtimeCaching entry, so our NetworkFirst
+        // navigation handler below would never run with the default. We
+        // implement the navigate-with-offline-fallback pattern manually in
+        // runtimeCaching using NetworkFirst + the precached index.html via
+        // the cacheName 'workbox-precache-v2-https://...index.html'.
+        navigateFallback: null,
+        // NetworkFirst for HTML navigation. The default Workbox setup
+        // serves the precached index.html (CacheFirst) on every
+        // navigation, which means a user already on the app can see a
+        // stale index.html — referencing old hashed assets — for an
+        // entire session after a deploy, even though skipWaiting +
+        // clientsClaim are set. NetworkFirst on navigation requests
+        // means fresh HTML when online, with the precached copy as
+        // the offline fallback.
+        //
+        // Registered FIRST so workbox tries it before the auto-added
+        // NavigationRoute(createHandlerBoundToURL('index.html'))
+        // fallback.
         runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'pages-cache',
+              networkTimeoutSeconds: 3, // fall back to cache if network is slow
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
