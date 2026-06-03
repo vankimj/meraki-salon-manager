@@ -49,11 +49,12 @@ describe('Phase3Money — Stripe Connect step', () => {
     expect(screen.getByRole('button', { name: /Set up payments/i })).toBeInTheDocument();
   });
 
-  it('clicking "Set up payments" opens the prefill modal (no redirect)', async () => {
+  it('clicking "Set up payments" opens the embedded modal directly (no prefill, no redirect)', async () => {
     appState = { stripeConnect: null };
     render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
     fireEvent.click(screen.getByRole('button', { name: /Set up payments/i }));
-    expect(await screen.findByText(/A few quick details/i)).toBeInTheDocument();
+    const iframe = await screen.findByTestId('stripe-onboarding-iframe', undefined, { timeout: 2000 });
+    expect(iframe).toBeInTheDocument();
   });
 
   // THE BUG: when an Express account already exists but Stripe still needs

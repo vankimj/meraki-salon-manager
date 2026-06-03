@@ -6404,6 +6404,12 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
   // Individual / representative block — applies for both LLC (account rep)
   // and sole prop (sole owner). Stripe still collects the SSN last 4 in the
   // hosted form; we just pre-fill what we have.
+  //
+  // We intentionally do NOT set individual.phone. When a phone is on the
+  // account, Stripe marks it as phone-verified and forces SMS re-auth on
+  // any future embedded onboarding session — which top-level redirects out
+  // of our embedded modal to connect.stripe.com. Skipping phone keeps the
+  // whole onboarding flow inside Plume.
   const repFirstName = pfRep.firstName || ownerFirstName;
   const repLastName  = pfRep.lastName  || ownerLastName;
   if (repFirstName || repLastName || pfRep.dob || pfRep.homeAddress) {
@@ -6411,7 +6417,6 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
       first_name: repFirstName || undefined,
       last_name:  repLastName  || undefined,
       email:      ten.ownerEmail || undefined,
-      phone:      pfRep.phone || undefined,
       dob:        safeDob(pfRep.dob),
       address:    safeAddr(pfRep.homeAddress),
     };
@@ -6435,6 +6440,51 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
 
   await persistConnectStatus(db, tenantId, account, 'express');
   return { accountId: account.id, alreadyExists: false, accountType: 'express' };
+});
+
+// Delete the connected account from Stripe and clear it off the tenant doc.
+// Sandbox-only escape hatch: lets the salon wipe a half-onboarded account and
+// start fresh. In LIVE mode Stripe blocks deletion of accounts that have
+// processed charges, so this throws cleanly back to the UI.
+exports.deleteConnectAccount = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { FieldValue } = require('firebase-admin/firestore');
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  if (!tenSnap.exists) throw new HttpsError('not-found', 'Tenant not found');
+  const ten = tenSnap.data();
+  const acctId = ten.stripeConnectAccountId;
+  if (!acctId) throw new HttpsError('failed-precondition', 'No connected account to delete');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  try {
+    await stripe.accounts.del(acctId);
+  } catch (e) {
+    console.warn(`[deleteConnectAccount] Stripe rejected delete for ${tenantId}/${acctId}:`, e?.message);
+    throw new HttpsError('failed-precondition', e?.message || 'Stripe rejected the delete', { stripeMessage: e?.message });
+  }
+
+  const batch = db.batch();
+  batch.set(db.doc(`tenants/${tenantId}`), {
+    stripeConnectAccountId:   FieldValue.delete(),
+    stripeConnectAccountType: FieldValue.delete(),
+    stripeConnectConnectedAt: FieldValue.delete(),
+    stripeConnect:            FieldValue.delete(),
+  }, { merge: true });
+  batch.set(db.doc(`tenants/${tenantId}/data/settings`), {
+    stripeConnect: FieldValue.delete(),
+  }, { merge: true });
+  await batch.commit();
+
+  return { ok: true, deletedAccountId: acctId };
 });
 
 // Mint a one-time hosted-onboarding URL for the Express account. Salon is
