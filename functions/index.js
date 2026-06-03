@@ -6651,7 +6651,7 @@ exports.createAccountSession = onCall({ cors: true, secrets: [stripeKey] }, asyn
 // State is HMAC-signed so the callback can't be forged (CSRF defence).
 exports.getStripeConnectOAuthUrl = onCall({ cors: true, secrets: [unsubscribeSecret] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const { tenantId: tid } = request.data || {};
+  const { tenantId: tid, origin: clientOrigin } = request.data || {};
   const tenantId = tid || TENANT_ID;
 
   const db = getFirestore();
@@ -6667,16 +6667,25 @@ exports.getStripeConnectOAuthUrl = onCall({ cors: true, secrets: [unsubscribeSec
   const ten = tenSnap.exists ? tenSnap.data() : {};
 
   const state = buildOAuthState(tenantId, unsubscribeSecret.value());
-  // Prefer the tenant's own branded subdomain (e.g.
-  // merakinailstudio.plumenexus.com) so the salon stays on their own
-  // domain through the round-trip — no Firebase Auth re-prompt, no
-  // cross-domain bounce. Each tenant subdomain must be pre-registered in
-  // Stripe Dashboard → Connect → OAuth redirect URIs; Stripe caps the
-  // list at ~20, so this scales linearly to the first 20 salons before
-  // we need a cross-subdomain bounce pattern.
+
+  // Pick the redirect base in priority order:
+  //   1. clientOrigin passed by the caller (validated against an
+  //      allowlist) — this is the subdomain the user is currently on.
+  //      Best UX: salon stays on their own domain through the round-trip,
+  //      no Firebase Auth re-prompt across domains.
+  //   2. ten.tenantUrl from the tenant doc — fine when set.
+  //   3. publicAppUrl — last-resort fallback.
+  // Stripe enforces its own allowlist on top of this (registered
+  // redirect URIs in the Dashboard), so a malicious clientOrigin can't
+  // smuggle a foreign redirect — but we also gate it client-side to
+  // *.plumenexus.com / *.web.app so the error surfaces in our logs.
+  const SAFE_ORIGIN_RE = /^https:\/\/[a-z0-9-]+\.(plumenexus\.com|web\.app)$/i;
+  const safeClientOrigin = (typeof clientOrigin === 'string' && SAFE_ORIGIN_RE.test(clientOrigin))
+    ? clientOrigin.replace(/\/+$/, '')
+    : null;
   const fallbackBase = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
   const tenantBase = (ten.tenantUrl || '').replace(/\/+$/, '');
-  const baseUrl = tenantBase || fallbackBase;
+  const baseUrl = safeClientOrigin || tenantBase || fallbackBase;
   const redirectUri = `${baseUrl}/?connect=oauth-callback`;
   const params = new URLSearchParams({
     response_type: 'code',

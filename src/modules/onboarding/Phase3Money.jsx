@@ -212,31 +212,46 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('connect');
     if (!mode) return;
+    const code  = params.get('code');
+    const state = params.get('state');
+
+    // Strip the query params BEFORE async work, so a refresh / browser
+    // back during the round-trip can't replay the callback with an
+    // already-consumed code (Stripe rejects those with an opaque error).
+    const url = new URL(window.location.href);
+    ['connect', 'code', 'state', 'scope', 'tenant'].forEach(k => url.searchParams.delete(k));
+    window.history.replaceState({}, '', url.toString());
 
     async function finalise() {
       try {
-        if (mode === 'oauth-callback') {
-          const code  = params.get('code');
-          const state = params.get('state');
-          if (code && state) {
-            await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
-          }
+        if (mode === 'oauth-callback' && code && state) {
+          await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
         }
-        await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+        const { data } = await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
+        // Push the fresh status into the local settings cache so the UI
+        // repaints to "Payments are live" without needing a page refresh.
+        // AppContext loads settings once at startup (no Firestore
+        // listener), so without this the UI would lag the server.
+        if (data?.status) {
+          const next = { ...(settings || {}), stripeConnect: {
+            accountId:                 data.status.accountId,
+            accountType:               data.status.accountType,
+            chargesEnabled:            data.status.chargesEnabled,
+            payoutsEnabled:            data.status.payoutsEnabled,
+            detailsSubmitted:          data.status.detailsSubmitted,
+            businessName:              data.status.businessName,
+            statementDescriptor:       data.status.statementDescriptor,
+            requirementsCurrentlyDue:  data.status.requirementsCurrentlyDue,
+            updatedAt:                 data.status.updatedAt,
+          }};
+          await updateSettings?.(next);
+        }
       } catch (e) {
         console.warn('[Connect] finalise failed:', e?.message);
-      } finally {
-        // Strip the query params so a refresh doesn't replay the callback
-        const url = new URL(window.location.href);
-        url.searchParams.delete('connect');
-        url.searchParams.delete('code');
-        url.searchParams.delete('state');
-        url.searchParams.delete('scope');
-        url.searchParams.delete('tenant');
-        window.history.replaceState({}, '', url.toString());
       }
     }
     finalise();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Trigger from the "Set up payments" card. One click: create the Stripe
@@ -299,7 +314,12 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
   async function startStandard() {
     setBusy(true); setErr('');
     try {
-      const { data } = await callFn('getStripeConnectOAuthUrl')({ tenantId: TENANT_ID });
+      // Pass our current origin so the server uses the SAME subdomain
+      // as the redirect target. Otherwise the server falls back to
+      // publicAppUrl and the user lands on a domain they're not
+      // authenticated on, breaking the callback.
+      const origin = (typeof window !== 'undefined') ? window.location.origin : undefined;
+      const { data } = await callFn('getStripeConnectOAuthUrl')({ tenantId: TENANT_ID, origin });
       if (data?.url) {
         window.location.href = data.url;        // Stripe OAuth
       } else {
