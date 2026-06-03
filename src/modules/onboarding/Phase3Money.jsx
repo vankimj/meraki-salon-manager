@@ -22,10 +22,12 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
   const stored = onboarding?.phases?.money || {};
 
   // Money
-  const [ccFeePct,     setCcFeePct]     = useState(stored.ccFeePct     ?? settings?.ccFeePct     ?? 2.9);
-  const [ccFeeFlat,    setCcFeeFlat]    = useState(stored.ccFeeFlat    ?? settings?.ccFeeFlat    ?? 0.30);
+  // CC processing rate is dictated by Stripe (2.9% + $0.30 for online
+  // cards) — not user-configurable here. Removal-upcharge moved out of
+  // the wizard (it's a service-pricing decision, not a compliance one).
+  // Admin → Settings still exposes overridable inputs for the rare
+  // custom-rate platform-negotiated case.
   const [noCardTips,   setNoCardTips]   = useState(stored.noCardTips   ?? Boolean(settings?.noCardTips));
-  const [removalPrice, setRemovalPrice] = useState(stored.removalPrice ?? settings?.removalPrice ?? 15);
 
   // Compliance
   const origin     = typeof window !== 'undefined' ? window.location.origin : '';
@@ -45,20 +47,18 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
     setErr('');
     if (skip) { onAdvance({ skip: true }); return; }
     try {
+      // Default the CC rate fields to Stripe's published rate if the
+      // tenant doesn't already have a value. This keeps CheckoutModal +
+      // reports working (they read settings.ccFeePct / ccFeeFlat) without
+      // forcing the salon to type a number Stripe already fixed.
       await updateSettings({
         ...settings,
-        ccFeePct:     Number(ccFeePct)     || 0,
-        ccFeeFlat:    Number(ccFeeFlat)    || 0,
-        noCardTips:   Boolean(noCardTips),
-        removalPrice: Number(removalPrice) || 0,
+        ccFeePct:   Number(settings?.ccFeePct  ?? 2.9),
+        ccFeeFlat:  Number(settings?.ccFeeFlat ?? 0.30),
+        noCardTips: Boolean(noCardTips),
       });
-      logActivity('onboarding_money_saved', `cc ${ccFeePct}% + $${ccFeeFlat}, removal $${removalPrice}`);
-      onAdvance({
-        phaseData: {
-          ccFeePct, ccFeeFlat, noCardTips, removalPrice,
-          privacyOk, termsOk,
-        },
-      });
+      logActivity('onboarding_money_saved', `tips-on-cards=${!noCardTips}`);
+      onAdvance({ phaseData: { noCardTips, privacyOk, termsOk } });
     } catch (e) {
       setErr(e?.message || String(e));
       logError('onboarding_money_save', e);
@@ -73,27 +73,22 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       </div>
 
       <Section title="Financial defaults">
-        <Row label="Credit-card processing — percent">
-          <input type="number" step="0.01" min="0" max="20" value={ccFeePct}
-            onChange={e => setCcFeePct(Number(e.target.value))}
-            style={{ ...inp, width: 90 }} />
-          <span style={{ marginLeft: 6, fontSize: 12, color: '#888' }}>%</span>
-          <Hint>Stripe default is 2.9%</Hint>
-        </Row>
-        <Row label="Credit-card processing — flat fee">
-          <span style={{ marginRight: 4, fontSize: 13, color: '#666' }}>$</span>
-          <input type="number" step="0.01" min="0" value={ccFeeFlat}
-            onChange={e => setCcFeeFlat(Number(e.target.value))}
-            style={{ ...inp, width: 90 }} />
-          <Hint>Stripe default is $0.30</Hint>
-        </Row>
-        <Row label="Removal upcharge">
-          <span style={{ marginRight: 4, fontSize: 13, color: '#666' }}>$</span>
-          <input type="number" step="1" min="0" value={removalPrice}
-            onChange={e => setRemovalPrice(Number(e.target.value))}
-            style={{ ...inp, width: 90 }} />
-          <Hint>Charged when a client needs old gel/dip/acrylic removed before service</Hint>
-        </Row>
+        {/* CC processing rate isn't user-editable: Stripe sets it. Showing
+            it informationally so the salon knows what their effective
+            processing cost is. (Admin → Settings has overridable inputs
+            for the rare case of a custom platform-negotiated rate.) */}
+        <div style={{
+          padding: 10, borderRadius: 8, background: '#f8f9fa',
+          border: '1px solid #e8e8e8', fontSize: 12, color: '#555', lineHeight: 1.55,
+        }}>
+          <div style={{ fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>
+            Card processing rate
+          </div>
+          <div>
+            Stripe charges <strong>2.9% + $0.30</strong> per online card transaction.
+            This is set by Stripe and applies to every salon — there's nothing to configure here.
+          </div>
+        </div>
         <ToggleRow checked={!noCardTips} onChange={v => setNoCardTips(!v)}
           label="Allow tips on credit cards"
           desc="Off = tips must be cash-only. On = clients can tip on their card at checkout (most common)." />
