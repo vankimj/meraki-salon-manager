@@ -76,9 +76,11 @@ describe('useStripeConnectOAuthCallback', () => {
       replaceState,
     }));
 
-    // Params should be stripped synchronously
+    // Params should be stripped synchronously AND the path rewritten to
+    // /manage. Without the path rewrite, a refresh would render the
+    // public SalonWebfront instead of the management app.
     expect(replaceState).toHaveBeenCalledTimes(1);
-    expect(replaceState.mock.calls[0][0]).toBe('https://merakinailstudio.plumenexus.com/');
+    expect(replaceState.mock.calls[0][0]).toBe('https://merakinailstudio.plumenexus.com/manage');
 
     // Callable should be invoked with the captured code+state
     await waitFor(() => expect(completeMock).toHaveBeenCalledWith({
@@ -112,8 +114,9 @@ describe('useStripeConnectOAuthCallback', () => {
     // Auth resolves: gUser becomes a real user
     rerender({ gUser: { uid: 'u1' } });
 
-    // Second pass: now we strip + claim
+    // Second pass: now we strip + rewrite path to /manage + claim
     expect(replaceState).toHaveBeenCalledTimes(1);
+    expect(replaceState.mock.calls[0][0]).toBe('https://merakinailstudio.plumenexus.com/manage');
     await waitFor(() => expect(completeMock).toHaveBeenCalledWith({
       code: 'ac_x', state: 's_x', tenantId: 'meraki',
     }));

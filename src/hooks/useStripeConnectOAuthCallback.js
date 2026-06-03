@@ -46,6 +46,14 @@ export function useStripeConnectOAuthCallback({ gUser, settings, updateSettings,
 
     const url = new URL(location.href);
     ['connect', 'code', 'state', 'scope', 'tenant'].forEach(k => url.searchParams.delete(k));
+    // Stripe registers the redirect URI as <tenant-subdomain>/?connect=oauth-callback
+    // (no /manage path) — so on return we're at "/". If we just strip the
+    // params, the URL becomes plain "/", and the next refresh would render
+    // the public SalonWebfront instead of the management app. Rewrite the
+    // path to /manage so a refresh keeps the salon in the admin surface.
+    if (url.pathname === '/' || url.pathname === '') {
+      url.pathname = '/manage';
+    }
     replace(url.toString());
 
     let cancelled = false;
