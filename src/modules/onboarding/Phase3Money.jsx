@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
 import { callFn } from '../../lib/firebase';
@@ -454,21 +455,24 @@ function StripeConnectStep({ stripeConnect, showToast }) {
 }
 
 // Simple full-screen overlay that hosts an embedded Connect component.
-// Keeps Plume's chrome around the Stripe iframe so the experience feels
-// native rather than a popup-to-stripe.com.
+// Rendered via React Portal to document.body so it escapes the onboarding
+// wizard's stacking context (the wizard is a modal too — without the
+// portal, our modal mounts INSIDE its container and gets trapped).
 function EmbeddedModal({ title, children, onClose }) {
-  return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto' }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 0, width: '100%', maxWidth: 760, boxShadow: '0 12px 36px rgba(0,0,0,.18)' }}>
+  if (typeof document === 'undefined') return null;
+  return createPortal(
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto' }}>
+      <div style={{ background: '#fff', borderRadius: 12, padding: 0, width: '100%', maxWidth: 760, boxShadow: '0 12px 36px rgba(0,0,0,.25)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #eee' }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{title}</div>
-          <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#999', padding: 4, lineHeight: 1 }}>×</button>
+          <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#999', padding: 4, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: 14 }}>
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
