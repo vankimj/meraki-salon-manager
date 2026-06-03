@@ -190,7 +190,7 @@ function RateCard({ accountType, color = 'inherit', borderColor = 'rgba(0,0,0,0.
       </div>
       <div style={{ fontSize: 11, opacity: 0.85 }}>
         {accountType === 'express'
-          ? "Same base rates as Standard — Plume absorbs Stripe's per-payout Connect fee so your effective rate is unchanged. "
+          ? "Same base rates as Standard, plus Stripe's per-payout Connect fee (~0.25% + $0.25 per payout) and a $2/month active-account fee — passed through, not absorbed. "
           : "You pay Stripe directly at these rates — Plume does not add a fee. "}
         <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'underline' }}>
