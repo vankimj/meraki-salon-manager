@@ -81,7 +81,11 @@ describe('Phase3Money — Stripe Connect step', () => {
     const originalLocation = window.location;
     let navigated = null;
     delete window.location;
-    window.location = { ...originalLocation, search: '', href: '', set href(v) { navigated = v; } };
+    window.location = Object.defineProperty(
+      { ...originalLocation, search: '' },
+      'href',
+      { configurable: true, set(v) { navigated = v; }, get() { return navigated || ''; } }
+    );
 
     render(<Phase3Money onboarding={baseOnboarding} onAdvance={vi.fn()} saving={false} />);
     fireEvent.click(screen.getByRole('button', { name: /Connect Stripe account/i }));
