@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { callFn } from '../lib/firebase';
+import { callFn, auth } from '../lib/firebase';
 import { TENANT_ID } from '../lib/tenant';
 
 // Claims the Stripe Connect Standard OAuth code returned to the tenant's
@@ -32,8 +32,32 @@ export function useStripeConnectOAuthCallback({ gUser, settings, updateSettings,
     let cancelled = false;
     (async () => {
       try {
+        // Logs intentionally verbose — we hit a "auth: MISSING" on the
+        // server side in 2026-06-03 session that we couldn't diagnose
+        // without seeing what was true on the client at call time.
+        console.log('[Connect] hook fired', {
+          hasGUser:           !!gUser,
+          gUserUid:           gUser?.uid,
+          gUserEmail:         gUser?.email,
+          authCurrentUserUid: auth?.currentUser?.uid,
+          authCurrentEmail:   auth?.currentUser?.email,
+          codePresent:        !!code,
+          statePresent:       !!state,
+        });
+        // Explicitly force an ID-token refresh BEFORE the callable so
+        // the httpsCallable SDK definitely has a fresh token to attach.
+        // If auth.currentUser is null we can't even get one — surface
+        // that case loudly instead of silently posting unauthenticated.
+        if (!auth?.currentUser) {
+          console.error('[Connect] auth.currentUser is NULL — cannot claim OAuth code. Reload and re-sign-in.');
+          return;
+        }
+        const idToken = await auth.currentUser.getIdToken(/* forceRefresh */ true);
+        console.log('[Connect] got fresh ID token, len=', idToken?.length || 0);
+
         if (code && state) {
-          await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
+          const claimRes = await callFn('completeStripeConnectOAuth')({ code, state, tenantId: TENANT_ID });
+          console.log('[Connect] claim result', claimRes?.data);
         }
         const { data } = await callFn('getStripeConnectStatus')({ tenantId: TENANT_ID });
         if (!cancelled && data?.status) {

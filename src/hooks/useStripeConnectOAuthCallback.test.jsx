@@ -2,19 +2,28 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 
 // Mock callFn so we can spy on which Cloud Function is invoked with what.
-const completeMock = vi.fn(() => Promise.resolve({ data: { ok: true } }));
-const statusMock   = vi.fn(() => Promise.resolve({ data: { status: {
-  accountId: 'acct_test_123', accountType: 'standard',
-  chargesEnabled: true, payoutsEnabled: true, detailsSubmitted: true,
-  businessName: 'Test Salon', statementDescriptor: 'TEST',
-  requirementsCurrentlyDue: [], updatedAt: '2026-06-03',
-}}}));
+// Hoisted so the vi.mock factory below can reference them.
+const { completeMock, statusMock } = vi.hoisted(() => ({
+  completeMock: vi.fn(() => Promise.resolve({ data: { ok: true } })),
+  statusMock:   vi.fn(() => Promise.resolve({ data: { status: {
+    accountId: 'acct_test_123', accountType: 'standard',
+    chargesEnabled: true, payoutsEnabled: true, detailsSubmitted: true,
+    businessName: 'Test Salon', statementDescriptor: 'TEST',
+    requirementsCurrentlyDue: [], updatedAt: '2026-06-03',
+  }}})),
+}));
+// Mutable auth.currentUser so tests can flip it between null and a user
+// to mirror the real Firebase Auth lifecycle. vi.hoisted lets the mock
+// factory (which gets hoisted above all other top-level code) reach
+// values we can mutate from tests.
+const { fakeAuth } = vi.hoisted(() => ({ fakeAuth: { currentUser: null } }));
 vi.mock('../lib/firebase', () => ({
   callFn: (name) => {
     if (name === 'completeStripeConnectOAuth') return completeMock;
     if (name === 'getStripeConnectStatus')      return statusMock;
     return vi.fn(() => Promise.resolve({ data: {} }));
   },
+  auth: fakeAuth,
 }));
 vi.mock('../lib/tenant', () => ({ TENANT_ID: 'meraki' }));
 
@@ -23,6 +32,9 @@ import { useStripeConnectOAuthCallback } from './useStripeConnectOAuthCallback';
 beforeEach(() => {
   completeMock.mockClear();
   statusMock.mockClear();
+  // Default to a present user (whose token we can mint) for the happy
+  // path tests. The null-gUser tests don't care about auth.currentUser.
+  fakeAuth.currentUser = { uid: 'u1', email: 'admin@example.com', getIdToken: vi.fn(() => Promise.resolve('id_token_abc')) };
 });
 
 describe('useStripeConnectOAuthCallback', () => {
@@ -105,6 +117,26 @@ describe('useStripeConnectOAuthCallback', () => {
     await waitFor(() => expect(completeMock).toHaveBeenCalledWith({
       code: 'ac_x', state: 's_x', tenantId: 'meraki',
     }));
+  });
+
+  it('does NOT call the claim function when gUser is set but auth.currentUser is null (the drift case we saw in prod logs)', async () => {
+    // React's gUser can be set while Firebase's auth.currentUser has
+    // cleared (e.g., token expired during the Stripe round-trip).
+    // Posting with no token caused the "auth: MISSING" we saw in
+    // 06:45:01 server logs. Guard surfaces this as a console.error
+    // and skips the claim, instead of silently posting unauthenticated.
+    fakeAuth.currentUser = null;
+    const replaceState = vi.fn();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    renderHook(() => useStripeConnectOAuthCallback({
+      gUser: { uid: 'u1', email: 'admin@example.com' },
+      settings: {}, updateSettings: vi.fn(),
+      getLocation: () => fakeLocation('https://merakinailstudio.plumenexus.com/?connect=oauth-callback&code=cd&state=st'),
+      replaceState,
+    }));
+    await waitFor(() => expect(errSpy).toHaveBeenCalled());
+    expect(completeMock).not.toHaveBeenCalled();
+    errSpy.mockRestore();
   });
 
   it('swallows server errors without surfacing them as unhandled promise rejections', async () => {
