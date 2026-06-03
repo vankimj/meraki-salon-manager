@@ -243,6 +243,34 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
     }
   }
 
+  // For Standard accounts, tos_acceptance.date + tos_acceptance.ip are
+  // platform-side requirements (Plume captures the salon's consent to
+  // OUR platform agreement, separate from their own Stripe ToS which
+  // they accepted when they made the Stripe account). The salon won't
+  // find this on stripe.com — we record it via accounts.update.
+  async function acceptStripeTos() {
+    setBusy(true); setErr('');
+    try {
+      const { data } = await callFn('acceptStripeConnectTos')({ tenantId: TENANT_ID });
+      // Refresh local mirror with the updated status the server returned.
+      if (data?.status && updateSettings && settings) {
+        await updateSettings({ ...settings, stripeConnect: {
+          ...settings.stripeConnect,
+          chargesEnabled:           data.status.chargesEnabled,
+          payoutsEnabled:           data.status.payoutsEnabled,
+          detailsSubmitted:         data.status.detailsSubmitted,
+          requirementsCurrentlyDue: data.status.requirementsCurrentlyDue,
+          updatedAt:                data.status.updatedAt,
+        }});
+      }
+      showToast?.('Plume terms accepted');
+    } catch (e) {
+      setErr(e.message || 'Failed to accept terms');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function deleteAccount() {
     const isStandard = stripeConnect?.accountType === 'standard';
     const msg = isStandard
@@ -330,6 +358,48 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             businessName, statementDescriptor, requirementsCurrentlyDue = [] } = stripeConnect;
     const isLive = chargesEnabled && payoutsEnabled;
     const needsMore = requirementsCurrentlyDue.length > 0 || !detailsSubmitted;
+
+    // Map Stripe's machine requirement keys to salon-friendly descriptions.
+    // Anything not in this map shows up verbatim (rare; only when Stripe
+    // adds new requirement types we haven't seen yet).
+    const FIELD_LABEL = {
+      'business_profile.product_description': { label: 'What you sell',         where: 'on stripe.com' },
+      'business_profile.support_phone':       { label: 'Customer support phone', where: 'on stripe.com' },
+      'business_profile.support_email':       { label: 'Customer support email', where: 'on stripe.com' },
+      'business_profile.url':                 { label: 'Business website',       where: 'on stripe.com' },
+      'business_profile.mcc':                 { label: 'Industry / category',    where: 'on stripe.com' },
+      'tos_acceptance.date':                  { label: "Accept Plume's terms",  where: 'here in Plume', isTos: true },
+      'tos_acceptance.ip':                    { label: "Accept Plume's terms",  where: 'here in Plume', isTos: true },
+      'external_account':                     { label: 'Bank account for payouts', where: 'on stripe.com' },
+      'individual.dob.day':                   { label: 'Date of birth',          where: 'on stripe.com' },
+      'individual.dob.month':                 { label: 'Date of birth',          where: 'on stripe.com' },
+      'individual.dob.year':                  { label: 'Date of birth',          where: 'on stripe.com' },
+      'individual.ssn_last_4':                { label: 'Last 4 of SSN',          where: 'on stripe.com' },
+      'individual.id_number':                 { label: 'Full SSN',               where: 'on stripe.com' },
+      'individual.verification.document':     { label: 'Government ID photo',    where: 'on stripe.com' },
+      'individual.address.line1':             { label: 'Home address',           where: 'on stripe.com' },
+      'company.tax_id':                       { label: 'EIN (business tax ID)',  where: 'on stripe.com' },
+      'company.address.line1':                { label: 'Business address',       where: 'on stripe.com' },
+      'company.verification.document':        { label: 'Business verification docs', where: 'on stripe.com' },
+    };
+    // Dedupe by label so DOB doesn't show 3 times for day/month/year.
+    const friendlyItems = [];
+    const seenLabels = new Set();
+    for (const k of requirementsCurrentlyDue) {
+      const info = FIELD_LABEL[k] || { label: k, where: '' };
+      if (seenLabels.has(info.label)) continue;
+      seenLabels.add(info.label);
+      friendlyItems.push(info);
+    }
+    const needsTos = friendlyItems.some(i => i.isTos);
+    const needsStripeSide = friendlyItems.some(i => !i.isTos);
+
+    // Deep-link target: the public-details page covers business_profile.*
+    // (URL, support phone, product description). Other field categories
+    // live at different paths, but public-details is the most common
+    // landing for the requirements we see on a freshly-connected account.
+    const stripeDashUrl = 'https://dashboard.stripe.com/settings/public-details';
+
     body = (
       <div style={{ padding: 12, borderRadius: 8,
         background: isLive ? '#ecfdf5' : needsMore ? '#fff7ed' : '#fffbeb',
@@ -349,9 +419,17 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
           Payouts: {payoutsEnabled ? '✓' : '✗'}{' · '}
           KYC submitted: {detailsSubmitted ? '✓' : '✗'}
         </div>
-        {requirementsCurrentlyDue.length > 0 && (
-          <div style={{ fontSize: 11, marginBottom: 8 }}>
-            Stripe needs: {requirementsCurrentlyDue.slice(0, 4).join(', ')}{requirementsCurrentlyDue.length > 4 ? '…' : ''}
+        {friendlyItems.length > 0 && (
+          <div style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.6 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Still needed:</div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {friendlyItems.map((i, idx) => (
+                <li key={idx}>
+                  {i.label}
+                  {i.where && <span style={{ color: '#92400e', opacity: 0.7, fontSize: 11 }}> — {i.where}</span>}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
@@ -365,10 +443,15 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
               Manage payments
             </button>
           )}
-          {accountType === 'standard' && (
-            <a href="https://dashboard.stripe.com/" target="_blank" rel="noopener noreferrer"
+          {accountType === 'standard' && needsTos && (
+            <button onClick={acceptStripeTos} disabled={busy} style={btnPrimary(busy)} type="button">
+              {busy ? 'Accepting…' : "Accept Plume's terms"}
+            </button>
+          )}
+          {accountType === 'standard' && needsStripeSide && (
+            <a href={stripeDashUrl} target="_blank" rel="noopener noreferrer"
               style={{ ...btnSecondary, textDecoration: 'none', display: 'inline-block' }}>
-              Open stripe.com Dashboard ↗
+              Open stripe.com to finish ↗
             </a>
           )}
           {!isLive && (
