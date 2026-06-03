@@ -369,7 +369,17 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
     // (URL, support phone, product description). Other field categories
     // live at different paths, but public-details is the most common
     // landing for the requirements we see on a freshly-connected account.
-    const stripeDashUrl = 'https://dashboard.stripe.com/settings/public-details';
+    //
+    // CRITICAL: include the connected account ID. Without it, Stripe
+    // routes to whatever workspace the user is currently logged into —
+    // typically the wrong one (we saw this with the EvieSoft sandbox
+    // bleeding through). Stripe's accounts.retrieve does NOT return a
+    // livemode field, so we infer it from our publishable key prefix:
+    // pk_test_xxx → test mode, pk_live_xxx → live. Verified that
+    // dashboard.stripe.com/<acctId>/test/settings/public-details returns
+    // 303 to login → on login lands the user on the right account.
+    const isTestMode = (import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY || '').startsWith('pk_test_');
+    const stripeDashUrl = `https://dashboard.stripe.com/${stripeConnect.accountId}${isTestMode ? '/test' : ''}/settings/public-details`;
 
     body = (
       <div style={{ padding: 12, borderRadius: 8,
