@@ -2,7 +2,7 @@ import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
   query, where, orderBy, limit, onSnapshot, arrayUnion, increment,
 } from 'firebase/firestore';
-import { db, callFn } from './firebase';
+import { db, callFn, auth } from './firebase';
 import { getCurrentTenant } from './currentTenant';
 
 // tenantCol/tenantDoc read getCurrentTenant() at CALL time so a tenant
@@ -13,11 +13,26 @@ import { getCurrentTenant } from './currentTenant';
 const tenantCol = (path) => collection(db, 'tenants', getCurrentTenant(), path);
 const tenantDoc = (path) => doc(db, 'tenants', getCurrentTenant(), 'data', ...path.split('/'));
 
+// ── Soft-delete (data defense) ─────────────────────────
+// Mirrors the web softDelete (src/lib/firestore.js): writes a tombstone
+// instead of a hard delete so records land in the web Trash, stay in the
+// BQ mirror, and auto-purge after 30 days. Every read MUST drop
+// tombstoned docs via notTombstoned, or soft-deleted rows reappear.
+const notTombstoned = (d) => d._deleted !== true;
+function softDelete(ref, by) {
+  return updateDoc(ref, {
+    _deleted:   true,
+    _deletedAt: new Date().toISOString(),
+    _deletedBy: by || auth?.currentUser?.email || null,
+  });
+}
+
 // ── Appointments ───────────────────────────────────────
 export async function fetchAppointments(date) {
   const snap = await getDocs(query(tenantCol('appointments'), where('date', '==', date)));
   return snap.docs
     .map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 }
 
@@ -31,6 +46,7 @@ export function subscribeAppointments(date, cb) {
   return onSnapshot(q, (snap) => {
     const list = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
+      .filter(notTombstoned)
       .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
     cb(list);
   }, (err) => {
@@ -67,8 +83,22 @@ export async function setAppointmentNotes(id, notes) {
   await updateAppointment(id, { notes });
 }
 
-export async function deleteAppointment(id) {
-  await deleteDoc(doc(tenantCol('appointments'), id));
+// Soft-delete an appointment (tombstone). `by` is the acting user's
+// email for the audit trail. Reads filter these out via notTombstoned;
+// the web Admin → Trash can restore them within 30 days.
+export async function softDeleteAppointment(id, by) {
+  await updateDoc(doc(tenantCol('appointments'), id), {
+    _deleted:   true,
+    _deletedAt: new Date().toISOString(),
+    _deletedBy: by || auth?.currentUser?.email || null,
+    updatedAt:  new Date().toISOString(),
+  });
+}
+
+// Back-compat alias — repurposed from the old HARD delete to the soft
+// path so nothing in the app ever bypasses the data-defense system.
+export async function deleteAppointment(id, by) {
+  return softDeleteAppointment(id, by);
 }
 
 // ── Clients ────────────────────────────────────────────
@@ -103,6 +133,7 @@ export async function fetchClientAppointments(clientId) {
   if (!clientId) return [];
   const snap = await getDocs(query(tenantCol('appointments'), where('clientId', '==', clientId)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
     .sort((a, b) => `${b.date} ${b.startTime}`.localeCompare(`${a.date} ${a.startTime}`));
 }
 
@@ -160,7 +191,7 @@ export async function fetchAppointmentsByRange(startDate, endDate) {
     where('date', '>=', startDate),
     where('date', '<=', endDate),
   ));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
 // Time off — used by ScheduleScreen to mark days where the tech is
@@ -186,7 +217,19 @@ export async function deleteTimeOff(id) {
 // ── Services ───────────────────────────────────────────
 export async function fetchServices() {
   const snap = await getDocs(query(tenantCol('services'), orderBy('sortOrder')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function createService(data) {
+  const ref = await addDoc(tenantCol('services'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveService(id, data) {
+  await setDoc(doc(tenantCol('services'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteService(id) {
+  await softDelete(doc(tenantCol('services'), id));
 }
 
 // ── Settings ───────────────────────────────────────────
@@ -264,4 +307,105 @@ export async function sendSmsToClient(clientId, body) {
 export async function sendEmailToClient(clientId, subject, body) {
   const res = await callFn('sendDirectEmail')({ tenantId: getCurrentTenant(), clientId, subject, body });
   return res?.data || { ok: true };
+}
+
+// ── Products (Studio, admin) ───────────────────────────
+export async function fetchProducts() {
+  const snap = await getDocs(tenantCol('products'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+export async function createProduct(data) {
+  const ref = await addDoc(tenantCol('products'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveProduct(id, data) {
+  await setDoc(doc(tenantCol('products'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteProduct(id) {
+  await softDelete(doc(tenantCol('products'), id));
+}
+
+// ── Attendance (Studio, admin) — one doc per YYYY-MM-DD ─
+export async function fetchAttendance(dateKey) {
+  const snap = await getDoc(doc(tenantCol('attendance'), dateKey));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : { id: dateKey, date: dateKey, entries: [] };
+}
+export async function saveAttendance(dateKey, entries) {
+  await setDoc(doc(tenantCol('attendance'), dateKey),
+    { date: dateKey, entries, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// ── Gift cards + promo codes (Studio, admin) ───────────
+export async function fetchGiftCards() {
+  const snap = await getDocs(tenantCol('giftCards'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+export async function createGiftCard(data) {
+  const ref = await addDoc(tenantCol('giftCards'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function updateGiftCard(id, data) {
+  await setDoc(doc(tenantCol('giftCards'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteGiftCard(id) {
+  await softDelete(doc(tenantCol('giftCards'), id));
+}
+export async function fetchPromoCodes() {
+  const snap = await getDocs(tenantCol('promoCodes'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+export async function createPromoCode(data) {
+  const ref = await addDoc(tenantCol('promoCodes'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function savePromoCode(id, data) {
+  await setDoc(doc(tenantCol('promoCodes'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deletePromoCode(id) {
+  await softDelete(doc(tenantCol('promoCodes'), id));
+}
+
+// ── Memberships (Pro, admin) ───────────────────────────
+export async function fetchMembershipPlans() {
+  const snap = await getDocs(tenantCol('membershipPlans'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+export async function createMembershipPlan(data) {
+  const ref = await addDoc(tenantCol('membershipPlans'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveMembershipPlan(id, data) {
+  await setDoc(doc(tenantCol('membershipPlans'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteMembershipPlan(id) {
+  await softDelete(doc(tenantCol('membershipPlans'), id));
+}
+export async function fetchMemberships() {
+  const snap = await getDocs(tenantCol('memberships'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
+}
+export async function createMembership(data) {
+  const ref = await addDoc(tenantCol('memberships'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveMembership(id, data) {
+  await setDoc(doc(tenantCol('memberships'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteMembership(id) {
+  await softDelete(doc(tenantCol('memberships'), id));
 }
