@@ -11,6 +11,7 @@ import {
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import useTenantAccess from '../hooks/useTenantAccess';
+import useResponsive from '../hooks/useResponsive';
 import useTrashHeader from '../hooks/useTrashHeader';
 import Icon from '../components/Icon';
 
@@ -411,6 +412,7 @@ export default function ScheduleScreen({ navigation }) {
 // duration (1 SLOT_PX per 30 min). Multi-tech overlaps are stacked
 // horizontally; "Just me" mode never overlaps so most days are clean.
 function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays, timeOff, techName, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+  const { contentMaxWidth } = useResponsive();
   // Working-window awareness — same rules as WeekView's gap calc.
   // Only meaningful when scoped to a single tech (showAll=false).
   const off    = !showAll ? timeOffOn(date, techName, timeOff) : null;
@@ -448,7 +450,7 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: '#fff' }}
-      contentContainerStyle={{ paddingBottom: 40 }}
+      contentContainerStyle={{ paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D95CE" />}
     >
       {Array.from({ length: SLOT_COUNT }).map((_, idx) => {
@@ -517,6 +519,7 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
 const WEEK_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, timeOff, onTapAppt, onTapEmpty, onPickDay }) {
+  const { contentMaxWidth } = useResponsive();
   const [byDay, setByDay] = useState({});  // 'YYYY-MM-DD' → appts[]
   const [loading, setLoading] = useState(true);
 
@@ -555,7 +558,7 @@ function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, ti
   const today = todayStr();
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#f5f7fa' }} contentContainerStyle={{ padding: 8 }}>
+    <ScrollView style={{ flex: 1, backgroundColor: '#f5f7fa' }} contentContainerStyle={{ padding: 8, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}>
       {loading && <ActivityIndicator style={{ marginTop: 12 }} color="#3D95CE" />}
       {days.map(d => {
         const appts = byDay[d.iso] || [];
@@ -1062,6 +1065,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 function MonthView({ date, techName, showAll, onPickDay }) {
+  const { contentMaxWidth } = useResponsive();
   const [byDay, setByDay] = useState({});      // 'YYYY-MM-DD' → count
   const [loading, setLoading] = useState(true);
 
@@ -1102,7 +1106,7 @@ function MonthView({ date, techName, showAll, onPickDay }) {
   const today = todayStr();
 
   return (
-    <ScrollView style={styles.monthScroll} contentContainerStyle={{ paddingBottom: 20 }}>
+    <ScrollView style={styles.monthScroll} contentContainerStyle={{ paddingBottom: 20, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}>
       <View style={styles.monthWeekdayRow}>
         {WEEKDAY_LABELS.map((w, i) => (
           <Text key={i} style={styles.monthWeekdayLabel}>{w}</Text>

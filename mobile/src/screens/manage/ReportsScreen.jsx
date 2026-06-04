@@ -5,6 +5,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../../lib/firestore';
 import { buildTransactions, computeMetrics, computeCancellations } from '../../lib/metrics';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useResponsive from '../../hooks/useResponsive';
 import useTrashHeader from '../../hooks/useTrashHeader';
 
 const GREEN = '#2D7A5F', BLUE = '#3D95CE';
@@ -19,11 +20,12 @@ function presetRange(days) {
 }
 
 // Revenue-by-day bar chart (react-native-svg — already a dep, no native add).
-function RevenueChart({ byDay }) {
+// `width` is the inner card width; falls back to the phone window width.
+function RevenueChart({ byDay, width }) {
   const entries = Object.entries(byDay || {}).sort((a, b) => a[0].localeCompare(b[0]));
   if (entries.length === 0) return null;
   const max = Math.max(...entries.map(e => e[1]), 1);
-  const W = Dimensions.get('window').width - 60;
+  const W = width || (Dimensions.get('window').width - 60);
   const H = 120, gap = entries.length > 40 ? 1 : 2;
   const bw = Math.max(2, (W - gap * (entries.length - 1)) / entries.length);
   return (
@@ -47,6 +49,7 @@ function RevenueChart({ byDay }) {
 // PDF/1099 export stay web-only.
 export default function ReportsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
+  const { isTablet, contentMaxWidth, width: winW } = useResponsive();
   useTrashHeader(navigation, ['receipts'], isAdmin);
   const [days, setDays]       = useState(30);
   const [custom, setCustom]   = useState(false);
@@ -59,6 +62,10 @@ export default function ReportsScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
+  // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
+  const colW = isTablet ? '23.5%' : '48%';
+  const containerW = Math.min(winW, contentMaxWidth || winW);
+  const chartW = containerW - 14 * 2 - 12 * 2;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -87,7 +94,7 @@ export default function ReportsScreen({ navigation }) {
   const services = metrics ? Object.entries(metrics.byService).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 8) : [];
 
   return (
-    <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
+    <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 14, paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}>
       <View style={styles.tabs}>
         {PERIODS.map(p => (
@@ -127,24 +134,24 @@ export default function ReportsScreen({ navigation }) {
       ) : (
         <>
           <View style={styles.kpis}>
-            <Kpi label="Revenue" value={money(metrics.totalRevenue)} big delta={pctDelta(metrics.totalRevenue, prev?.totalRevenue)} />
-            <Kpi label="Appts" value={metrics.totalAppts} delta={pctDelta(metrics.totalAppts, prev?.totalAppts)} />
-            <Kpi label="Avg ticket" value={money(metrics.avgTicket)} delta={pctDelta(metrics.avgTicket, prev?.avgTicket)} />
-            <Kpi label="Tips" value={money(metrics.tipTotal)} delta={pctDelta(metrics.tipTotal, prev?.tipTotal)} />
+            <Kpi label="Revenue" value={money(metrics.totalRevenue)} big colW={colW} delta={pctDelta(metrics.totalRevenue, prev?.totalRevenue)} />
+            <Kpi label="Appts" value={metrics.totalAppts} colW={colW} delta={pctDelta(metrics.totalAppts, prev?.totalAppts)} />
+            <Kpi label="Avg ticket" value={money(metrics.avgTicket)} colW={colW} delta={pctDelta(metrics.avgTicket, prev?.avgTicket)} />
+            <Kpi label="Tips" value={money(metrics.tipTotal)} colW={colW} delta={pctDelta(metrics.tipTotal, prev?.tipTotal)} />
           </View>
           <Text style={styles.deltaNote}>▲▼ vs the previous {custom ? 'period' : (days === 0 ? 'day' : `${days} days`)}</Text>
 
           <Text style={styles.section}>Revenue per day</Text>
-          <RevenueChart byDay={metrics.byDay} />
+          <RevenueChart byDay={metrics.byDay} width={chartW} />
 
           {!!cancels && (cancels.cancelCount > 0 || cancels.lostRevenue > 0) && (
             <>
               <Text style={styles.section}>Cancellations</Text>
               <View style={styles.kpis}>
-                <Kpi label="Cancelled" value={cancels.cancelCount || 0} />
-                <Kpi label="Cancel rate" value={`${Math.round((cancels.cancelRate || 0) * 100)}%`} />
-                <Kpi label="Lost revenue" value={money(cancels.lostRevenue)} />
-                <Kpi label="No-shows" value={cancels.noShowCount || 0} />
+                <Kpi label="Cancelled" value={cancels.cancelCount || 0} colW={colW} />
+                <Kpi label="Cancel rate" value={`${Math.round((cancels.cancelRate || 0) * 100)}%`} colW={colW} />
+                <Kpi label="Lost revenue" value={money(cancels.lostRevenue)} colW={colW} />
+                <Kpi label="No-shows" value={cancels.noShowCount || 0} colW={colW} />
               </View>
             </>
           )}
@@ -189,10 +196,10 @@ function pctDelta(cur, prev) {
   return Math.round(((cur - prev) / Math.abs(prev)) * 100);
 }
 
-function Kpi({ label, value, big, delta }) {
+function Kpi({ label, value, big, delta, colW }) {
   const up = delta != null && delta >= 0;
   return (
-    <View style={[styles.kpi, big && styles.kpiBig]}>
+    <View style={[styles.kpi, big && styles.kpiBig, colW && { width: colW }]}>
       <Text style={[styles.kpiValue, big && styles.kpiValueBig]}>{value}</Text>
       <View style={styles.kpiBottom}>
         <Text style={styles.kpiLabel}>{label}</Text>

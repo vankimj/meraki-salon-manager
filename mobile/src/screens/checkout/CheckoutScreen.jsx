@@ -9,6 +9,7 @@ import {
 } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken } from '../../lib/checkout';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useResponsive from '../../hooks/useResponsive';
 
 const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -19,6 +20,8 @@ const TIP_PCTS = [15, 18, 20, 25];
 // receipt shape (done appt + payment) the web does, so Reports/Earnings update.
 export default function CheckoutScreen({ navigation }) {
   const { email } = useTenantAccess();
+  const { isTablet } = useResponsive();
+  const pageMax = isTablet ? 920 : undefined;
   const [settings, setSettings] = useState(null);
   const [tab] = useState(() => getCurrentTab());
 
@@ -189,7 +192,9 @@ export default function CheckoutScreen({ navigation }) {
   if (settings === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
 
   return (
-    <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+    <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16, paddingBottom: 40, maxWidth: pageMax, width: '100%', alignSelf: 'center' }}>
+      <View style={isTablet ? styles.twoCol : null}>
+      <View style={isTablet ? styles.colLeft : styles.colFull}>
       <Text style={styles.section}>Items</Text>
       {lines0.length === 0 && <Text style={styles.muted}>Tab is empty.</Text>}
       {lines0.map((l, i) => (
@@ -258,8 +263,10 @@ export default function CheckoutScreen({ navigation }) {
         {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor="#bbb" />}
       </View>
 
+      </View>
+      <View style={isTablet ? styles.colRight : styles.colFull}>
       {/* Totals */}
-      <View style={styles.totals}>
+      <View style={[styles.totals, isTablet && { marginTop: 0 }]}>
         <Row label="Subtotal" value={money(totals.subtotal)} />
         {totals.discountAmount > 0 && <Row label="Discount" value={`-${money(totals.discountAmount)}`} />}
         {totals.promoAmount > 0 && <Row label={`Promo ${promo?.code || ''}`} value={`-${money(totals.promoAmount)}`} />}
@@ -281,6 +288,8 @@ export default function CheckoutScreen({ navigation }) {
         <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
       </TouchableOpacity>
       <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
+      </View>
+      </View>
 
       <Modal visible={showPicker} animationType="slide" transparent onRequestClose={() => setShowPicker(false)}>
         <View style={styles.backdrop}>
@@ -318,6 +327,10 @@ function Row({ label, value, big }) {
 const styles = StyleSheet.create({
   wrap:      { flex: 1, backgroundColor: '#f5f7fa' },
   center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
+  twoCol:    { flexDirection: 'row', gap: 22, alignItems: 'flex-start' },
+  colLeft:   { flex: 1.5 },
+  colRight:  { flex: 1 },
+  colFull:   { width: '100%' },
   section:   { fontSize: 13, fontWeight: '800', color: '#1a1a1a', marginTop: 20, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
   muted:     { color: '#999', fontSize: 13 },
   lineRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#ececec' },
