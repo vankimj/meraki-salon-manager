@@ -200,7 +200,7 @@ function ConnectComparisonTable() {
     {
       label: 'Monthly account fee',
       std:   <span style={{ color: '#065f46', fontWeight: 600 }}>None</span>,
-      exp:   <>$2 <em style={{ opacity: 0.7 }}>per active account</em></>,
+      exp:   <>$2/mo <em style={{ opacity: 0.7 }}>for the whole salon (not per staff or client)</em></>,
     },
     {
       label: 'Disputes / chargebacks',
@@ -282,7 +282,7 @@ function RateCard({ accountType, color = 'inherit', borderColor = 'rgba(0,0,0,0.
       </div>
       <div style={{ fontSize: 11, opacity: 0.85 }}>
         {accountType === 'express'
-          ? "Same base rates as Standard, plus Stripe's per-payout Connect fee (~0.25% + $0.25 per payout) and a $2/month active-account fee — passed through, not absorbed. "
+          ? "Same base rates as Standard, plus Stripe's per-payout Connect fee (~0.25% + $0.25 each time funds reach your bank) and a flat $2/month for your salon — that's one Stripe account for the whole business, not per nail tech or per client. Passed through, not absorbed. "
           : "You pay Stripe directly at these rates — Plume does not add a fee. "}
         <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer"
           style={{ color: 'inherit', textDecoration: 'underline' }}>
