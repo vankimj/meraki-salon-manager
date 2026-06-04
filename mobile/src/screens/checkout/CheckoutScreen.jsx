@@ -8,6 +8,8 @@ import {
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient,
 } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken } from '../../lib/checkout';
+import { isTerminalAvailable } from '../../lib/terminal';
+import CardPayButton from './CardPayButton';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 
@@ -86,6 +88,22 @@ export default function CheckoutScreen({ navigation }) {
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
   }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
 
+  // Card total can differ from cash when the salon passes the card fee to the
+  // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
+  // button must charge this amount, not the cash total.
+  const cardTotals = useMemo(() => computeTotals({
+    lines, productsTotal,
+    discount: discType === 'none' ? null : { isPercent: discType === 'percent', value: Number(discVal) || 0 },
+    promo: normalizePromo(promo),
+    taxRate: Number(settings?.taxRate) || 0,
+    ccFeePct: Number(settings?.ccFeePct) || 0,
+    ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
+    method: 'card',
+    noCardTips: !!settings?.noCardTips,
+    tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
+    giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
+
   const split = buildTechSplit(lines, totals.tipAmt);
 
   async function applyPromo() {
@@ -105,14 +123,16 @@ export default function CheckoutScreen({ navigation }) {
     if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
     Alert.alert('Take cash payment?', `Total ${money(totals.total)} in cash.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: `Charge ${money(totals.total)}`, onPress: complete },
+      { text: `Charge ${money(totals.total)}`, onPress: () => complete({ method: 'cash' }) },
     ]);
   }
 
-  async function complete() {
+  async function complete({ method = 'cash', stripePaymentIntentId = null } = {}) {
     setSaving(true);
     try {
-      const t = totals;
+      const card = method === 'card';
+      const t = card ? cardTotals : totals;
+      const sp = buildTechSplit(lines, t.tipAmt);
       const retailProducts = products.length > 0
         ? products.map(it => ({ id: it.product.id, name: it.product.name, price: it.product.price, qty: it.qty }))
         : null;
@@ -128,9 +148,10 @@ export default function CheckoutScreen({ navigation }) {
         giftCard: giftCard && t.gcApply > 0 ? { code: giftCard.code, id: giftCard.id, applied: t.gcApply } : null,
         creditApplied: t.creditApply,
         charged: t.charged, tip: t.tipAmt, total: t.total,
-        method: 'cash', ccFee: t.ccFee,
+        method, ccFee: t.ccFee,
         ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
-        techSplit: split,
+        stripePaymentIntentId: stripePaymentIntentId || null,
+        techSplit: sp,
         apptIds: (tab.appts || []).map(a => a.id),
         paidAt: new Date().toISOString(), paidBy: email || null,
       };
@@ -173,7 +194,7 @@ export default function CheckoutScreen({ navigation }) {
         clientPhone: primaryAppt?.clientPhone || null,
         clientEmail,
         viewToken:   genReceiptToken(22),
-        techName:    split ? split.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
+        techName:    sp ? sp.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
         date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
         startTime:   primaryAppt?.startTime || '',
         services:    allServices,
@@ -183,7 +204,7 @@ export default function CheckoutScreen({ navigation }) {
       });
 
       await clearTab();
-      Alert.alert('Paid', `${money(t.total)} collected (cash).`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+      Alert.alert('Paid', `${money(t.total)} collected (${card ? 'card' : 'cash'}).`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
       Alert.alert('Checkout failed', e?.message || 'Please try again.');
     } finally { setSaving(false); }
@@ -287,7 +308,20 @@ export default function CheckoutScreen({ navigation }) {
       <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
         <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
       </TouchableOpacity>
-      <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
+      {isTerminalAvailable() ? (
+        <CardPayButton
+          amountCents={Math.round((cardTotals.total || 0) * 100)}
+          description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
+          locationId={settings?.terminalLocationId || null}
+          onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
+          merchantName={settings?.salonName || settings?.name || 'Salon'}
+          preferReader={isTablet}
+          disabled={saving || (lines.length === 0 && products.length === 0)}
+          onPaid={(piId) => complete({ method: 'card', stripePaymentIntentId: piId })}
+        />
+      ) : (
+        <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
+      )}
       </View>
       </View>
 
