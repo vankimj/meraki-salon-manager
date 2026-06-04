@@ -7,6 +7,7 @@ import {
   fetchGiftCards, createGiftCard, updateGiftCard, deleteGiftCard,
   fetchPromoCodes, createPromoCode, savePromoCode, deletePromoCode,
 } from '../../lib/firestore';
+import { useThemedStyles } from '../../theme/ThemeContext';
 
 function genCode(prefix) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -36,6 +37,7 @@ export default function GiftCardsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
   useTrashHeader(navigation, ['giftCards', 'promoCodes'], isAdmin);
   const [tab, setTab] = useState('cards');
+  const styles = useThemedStyles(makeStyles);
 
   return (
     <View style={styles.wrap}>
@@ -81,11 +83,11 @@ export default function GiftCardsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:      { flex: 1, backgroundColor: '#f5f7fa' },
-  tabs:      { flexDirection: 'row', backgroundColor: '#fff', padding: 6, gap: 6, borderBottomWidth: 1, borderBottomColor: '#ececec' },
-  tab:       { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: '#f1f3f5' },
-  tabOn:     { backgroundColor: '#eef5f2' },
-  tabText:   { fontSize: 13, fontWeight: '700', color: '#888' },
-  tabTextOn: { color: '#2D7A5F' },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:      { flex: 1, backgroundColor: t.bg },
+  tabs:      { flexDirection: 'row', backgroundColor: t.surface, padding: 6, gap: 6, borderBottomWidth: 1, borderBottomColor: t.border },
+  tab:       { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: t.surfaceAlt },
+  tabOn:     { backgroundColor: t.greenSoft },
+  tabText:   { fontSize: 13, fontWeight: '700', color: t.textMuted },
+  tabTextOn: { color: t.green },
 });

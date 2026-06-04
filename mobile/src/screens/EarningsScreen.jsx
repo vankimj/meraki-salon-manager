@@ -3,6 +3,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../lib/firestore';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import Icon from '../components/Icon';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 function todayStr() {
   const d = new Date();
@@ -94,6 +95,8 @@ const RANGES = [
 ];
 
 export default function EarningsScreen() {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { techName, loading: empLoading } = useCurrentEmployee();
   const [range, setRange] = useState('week');
   const [data,  setData]  = useState({ revenue: 0, tips: 0, serviceCount: 0, clientCount: 0, tipEntries: [], serviceList: [] });
@@ -126,13 +129,13 @@ export default function EarningsScreen() {
   useEffect(() => { load(); /* eslint-disable-line */ }, [range, techName]);
 
   if (empLoading) {
-    return <ActivityIndicator style={{ marginTop: 60 }} color="#3D95CE" />;
+    return <ActivityIndicator style={{ marginTop: 60 }} color={theme.blue} />;
   }
 
   if (!techName) {
     return (
       <View style={styles.emptyState}>
-        <Icon name="dollar" size={56} color="#cbd0d6" strokeWidth={1.5} />
+        <Icon name="dollar" size={56} color={theme.textFaint} strokeWidth={1.5} />
         <Text style={[styles.emptyTitle, { marginTop: 14 }]}>No employee record</Text>
         <Text style={styles.emptyBody}>
           Your account isn't linked to an employee profile yet. Ask your salon owner to add you in Employees.
@@ -152,7 +155,7 @@ export default function EarningsScreen() {
           setRefreshing(true);
           await load();
           setRefreshing(false);
-        }} tintColor="#3D95CE" />
+        }} tintColor={theme.blue} />
       }
     >
       {/* Range selector */}
@@ -180,7 +183,7 @@ export default function EarningsScreen() {
         </Text>
       </View>
 
-      {loading ? <ActivityIndicator style={{ marginVertical: 30 }} color="#3D95CE" /> : (
+      {loading ? <ActivityIndicator style={{ marginVertical: 30 }} color={theme.blue} /> : (
         <>
           {/* Stat grid */}
           <View style={styles.statGrid}>
@@ -192,7 +195,7 @@ export default function EarningsScreen() {
 
           {data.serviceCount === 0 && data.tips === 0 && (
             <View style={styles.welcomeCard}>
-              <Icon name="sparkles" size={36} color="#3D9E8A" strokeWidth={2} />
+              <Icon name="sparkles" size={36} color={theme.teal} strokeWidth={2} />
               <Text style={[styles.welcomeTitle, { marginTop: 10 }]}>You're all set up</Text>
               <Text style={styles.welcomeBody}>
                 As soon as appointments wrap up and tips come in, your take-home and stats will populate here.
@@ -240,6 +243,7 @@ export default function EarningsScreen() {
 }
 
 function Stat({ label, value, accent }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.statCard, { borderLeftColor: accent }]}>
       <Text style={styles.statLabel}>{label}</Text>
@@ -248,13 +252,13 @@ function Stat({ label, value, accent }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.bg },
   content:   { padding: 16, paddingBottom: 32 },
-  rangeRow:  { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 10, padding: 4, marginBottom: 14 },
+  rangeRow:  { flexDirection: 'row', backgroundColor: t.surface, borderRadius: 10, padding: 4, marginBottom: 14 },
   rangeBtn:  { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: 8 },
-  rangeBtnActive: { backgroundColor: '#2D7A5F' },
-  rangeBtnText: { fontSize: 13, color: '#666', fontWeight: '500' },
+  rangeBtnActive: { backgroundColor: t.green },
+  rangeBtnText: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
   rangeBtnTextActive: { color: '#fff', fontWeight: '700' },
 
   hero:      { backgroundColor: '#0f1923', borderRadius: 16, padding: 22, marginBottom: 14, alignItems: 'center' },
@@ -263,32 +267,32 @@ const styles = StyleSheet.create({
   heroSub:   { fontSize: 12, color: 'rgba(255,255,255,.6)', marginTop: 4 },
 
   statGrid:  { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  statCard:  { backgroundColor: '#fff', borderRadius: 12, padding: 14, flexBasis: '47%', flexGrow: 1, borderLeftWidth: 3 },
-  statLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600' },
-  statValue: { fontSize: 22, fontWeight: '700', color: '#1a1a1a', marginTop: 4 },
+  statCard:  { backgroundColor: t.surface, borderRadius: 12, padding: 14, flexBasis: '47%', flexGrow: 1, borderLeftWidth: 3 },
+  statLabel: { fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600' },
+  statValue: { fontSize: 22, fontWeight: '700', color: t.text, marginTop: 4 },
 
-  sectionLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
-  card:         { backgroundColor: '#fff', borderRadius: 12, padding: 4 },
+  sectionLabel: { fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
+  card:         { backgroundColor: t.surface, borderRadius: 12, padding: 4 },
 
   serviceRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, gap: 12 },
-  serviceRowDivider: { borderTopWidth: 1, borderTopColor: '#f5f5f5' },
-  serviceName:       { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  serviceCount:      { fontSize: 11, color: '#888', marginTop: 2 },
-  serviceRevenue:    { fontSize: 14, fontWeight: '700', color: '#2D7A5F' },
+  serviceRowDivider: { borderTopWidth: 1, borderTopColor: t.border },
+  serviceName:       { fontSize: 14, fontWeight: '600', color: t.text },
+  serviceCount:      { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  serviceRevenue:    { fontSize: 14, fontWeight: '700', color: t.green },
 
   tipRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 9, paddingHorizontal: 12, gap: 10 },
-  tipRowDivider: { borderTopWidth: 1, borderTopColor: '#f5f5f5' },
-  tipDate:       { fontSize: 11, color: '#888', width: 56 },
-  tipClient:     { flex: 1, fontSize: 13, color: '#1a1a1a' },
-  tipAmount:     { fontSize: 13, fontWeight: '700', color: '#3D9E8A' },
+  tipRowDivider: { borderTopWidth: 1, borderTopColor: t.border },
+  tipDate:       { fontSize: 11, color: t.textMuted, width: 56 },
+  tipClient:     { flex: 1, fontSize: 13, color: t.text },
+  tipAmount:     { fontSize: 13, fontWeight: '700', color: t.teal },
 
-  welcomeCard:  { backgroundColor: '#fff', borderRadius: 14, padding: 20, marginTop: 14, alignItems: 'center' },
+  welcomeCard:  { backgroundColor: t.surface, borderRadius: 14, padding: 20, marginTop: 14, alignItems: 'center' },
   welcomeIcon:  { fontSize: 36, marginBottom: 8 },
-  welcomeTitle: { fontSize: 15, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
-  welcomeBody:  { fontSize: 13, color: '#888', textAlign: 'center', lineHeight: 19 },
+  welcomeTitle: { fontSize: 15, fontWeight: '700', color: t.text, marginBottom: 6 },
+  welcomeBody:  { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 19 },
 
   emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 40 },
   emptyIcon:  { fontSize: 44, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
-  emptyBody:  { fontSize: 13, color: '#888', textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: t.text, marginBottom: 6 },
+  emptyBody:  { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 19 },
 });

@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { fetchRecentlyDeleted, restoreDocFromBQ, clearTombstone } from '../../lib/firestore';
-
-const GREEN = '#2D7A5F';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // Scoped trash/restore list. `route.params.collections` (optional) limits
 // it to one module's collections; omitted = the global Admin trash. Mirrors
@@ -27,6 +26,8 @@ function previewLabel(item) {
 }
 
 export default function TrashScreen({ route }) {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const collections = route?.params?.collections || null;
   const [items,   setItems]   = useState(null);
   const [busy,    setBusy]     = useState(false);
@@ -59,7 +60,7 @@ export default function TrashScreen({ route }) {
     ]);
   }
 
-  if (items === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
+  if (items === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   return (
     <View style={styles.wrap}>
@@ -72,7 +73,7 @@ export default function TrashScreen({ route }) {
         data={items}
         keyExtractor={(it) => `${it.collection}-${it.id}`}
         contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
         ListEmptyComponent={<Text style={styles.empty}>Nothing in the trash.</Text>}
         renderItem={({ item }) => (
           <View style={styles.row}>
@@ -95,17 +96,17 @@ export default function TrashScreen({ route }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:       { flex: 1, backgroundColor: '#f5f7fa' },
-  center:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  banner:     { backgroundColor: '#fffbeb', borderBottomWidth: 1, borderBottomColor: '#fde68a', padding: 12 },
-  bannerText: { fontSize: 11.5, color: '#7c5e10', lineHeight: 16 },
-  empty:      { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
-  row:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#ececec', gap: 10 },
-  badge:      { backgroundColor: '#fef2f2', borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, minWidth: 78, alignItems: 'center' },
-  badgeText:  { fontSize: 9, fontWeight: '800', color: '#7f1d1d', textTransform: 'uppercase' },
-  title:      { fontSize: 13.5, fontWeight: '600', color: '#1a1a1a' },
-  meta:       { fontSize: 11, color: '#999', marginTop: 2 },
-  restoreBtn: { borderWidth: 1, borderColor: '#16a34a', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
-  restoreText:{ fontSize: 12, fontWeight: '700', color: '#16a34a' },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:       { flex: 1, backgroundColor: t.bg },
+  center:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  banner:     { backgroundColor: t.warningBg, borderBottomWidth: 1, borderBottomColor: t.warning, padding: 12 },
+  bannerText: { fontSize: 11.5, color: t.warning, lineHeight: 16 },
+  empty:      { textAlign: 'center', color: t.textFaint, marginTop: 50, fontSize: 13 },
+  row:        { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.border, gap: 10 },
+  badge:      { backgroundColor: t.dangerBg, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 3, minWidth: 78, alignItems: 'center' },
+  badgeText:  { fontSize: 9, fontWeight: '800', color: t.danger, textTransform: 'uppercase' },
+  title:      { fontSize: 13.5, fontWeight: '600', color: t.text },
+  meta:       { fontSize: 11, color: t.textFaint, marginTop: 2 },
+  restoreBtn: { borderWidth: 1, borderColor: t.success, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
+  restoreText:{ fontSize: 12, fontWeight: '700', color: t.success },
 });

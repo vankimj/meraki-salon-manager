@@ -6,9 +6,7 @@ import useResponsive from '../../hooks/useResponsive';
 import { getVisibleModules, moduleMeta } from '../../lib/modules';
 import { fetchSettings } from '../../lib/firestore';
 import { subscribeTenant } from '../../lib/currentTenant';
-
-const BRAND_GREEN = '#2D7A5F';
-const BRAND_BLUE  = '#3D95CE';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // Mirrors the web /manage tile grid. Visibility is computed by the
 // shared getVisibleModules() (plan gate + adminOnly + owner-disabled +
@@ -16,6 +14,8 @@ const BRAND_BLUE  = '#3D95CE';
 // rendered. Built modules navigate to their screen / tab; not-yet-built
 // ones open a "Coming soon" placeholder.
 export default function ManageGridScreen({ navigation }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { isAdmin, plan, loading: accessLoading } = useTenantAccess();
   const { columns } = useResponsive();
   // 2 cols (phone) → 48.5%, 3 → 31.8%, 4 → 23.4%. space-between handles gaps.
@@ -46,14 +46,14 @@ export default function ManageGridScreen({ navigation }) {
   }
 
   if (accessLoading && !loaded) {
-    return <View style={styles.center}><ActivityIndicator color={BRAND_GREEN} /></View>;
+    return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
   }
 
   return (
     <ScrollView
       style={styles.scroll}
       contentContainerStyle={styles.content}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={BRAND_GREEN} />}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
     >
       <View style={styles.gridWrap}>
         {visible.map(mod => {
@@ -67,7 +67,7 @@ export default function ManageGridScreen({ navigation }) {
               onPress={() => openModule(mod)}
             >
               <View style={styles.iconWrap}>
-                <Icon name={meta.icon} size={26} color={BRAND_GREEN} />
+                <Icon name={meta.icon} size={26} color={theme.green} />
               </View>
               <Text style={styles.tileLabel} numberOfLines={1}>{mod.label}</Text>
               <Text style={styles.tileDesc} numberOfLines={2}>{mod.desc}</Text>
@@ -83,7 +83,7 @@ export default function ManageGridScreen({ navigation }) {
             onPress={() => navigation.navigate('AdminHome')}
           >
             <View style={[styles.iconWrap, styles.adminIconWrap]}>
-              <Icon name="briefcase" size={26} color="#b91c1c" />
+              <Icon name="briefcase" size={26} color={theme.danger} />
             </View>
             <Text style={styles.tileLabel} numberOfLines={1}>Admin</Text>
             <Text style={styles.tileDesc} numberOfLines={2}>Users, settings, logs & trash</Text>
@@ -97,25 +97,25 @@ export default function ManageGridScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  scroll:   { flex: 1, backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  scroll:   { flex: 1, backgroundColor: t.bg },
   content:  { padding: 14, paddingBottom: 40 },
-  center:   { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
+  center:   { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
   gridWrap: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   tile: {
-    width: '48.5%', backgroundColor: '#fff', borderRadius: 16, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: '#ececec',
+    width: '48.5%', backgroundColor: t.surface, borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: t.border,
     shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   iconWrap: {
-    width: 46, height: 46, borderRadius: 12, backgroundColor: '#eef5f2',
+    width: 46, height: 46, borderRadius: 12, backgroundColor: t.greenSoft,
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  tileLabel: { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  tileDesc:  { fontSize: 11.5, color: '#8a8a8a', marginTop: 3, lineHeight: 15 },
-  soonPill:  { alignSelf: 'flex-start', marginTop: 8, backgroundColor: '#fdf2e6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
-  soonText:  { fontSize: 10, fontWeight: '700', color: '#c47d2e', letterSpacing: 0.2 },
-  adminTile:    { borderColor: '#f3d3d0' },
-  adminIconWrap:{ backgroundColor: '#fdecea' },
-  empty:     { textAlign: 'center', color: '#999', marginTop: 40, fontSize: 13 },
+  tileLabel: { fontSize: 15, fontWeight: '700', color: t.text },
+  tileDesc:  { fontSize: 11.5, color: t.textMuted, marginTop: 3, lineHeight: 15 },
+  soonPill:  { alignSelf: 'flex-start', marginTop: 8, backgroundColor: t.warningBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  soonText:  { fontSize: 10, fontWeight: '700', color: t.warning, letterSpacing: 0.2 },
+  adminTile:    { borderColor: t.dangerBg },
+  adminIconWrap:{ backgroundColor: t.dangerBg },
+  empty:     { textAlign: 'center', color: t.textFaint, marginTop: 40, fontSize: 13 },
 });

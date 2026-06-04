@@ -3,8 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, 
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import { fetchEmployees, fetchAttendance, saveAttendance } from '../../lib/firestore';
-
-const GREEN = '#2D7A5F';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 function todayKey() {
   const d = new Date();
@@ -28,6 +27,8 @@ function hoursWorked(e) {
 export default function AttendanceScreen() {
   const { isAdmin } = useTenantAccess();
   const { contentMaxWidth } = useResponsive();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [dateKey, setDateKey] = useState(todayKey());
   const [emps,    setEmps]    = useState([]);
   const [byEmp,   setByEmp]   = useState({});   // employeeId → { clockInAt, clockOutAt, employeeName }
@@ -55,7 +56,7 @@ export default function AttendanceScreen() {
     persist({ ...byEmp, [emp.id]: { ...prev, employeeName: emp.name, ...patch } });
   }
 
-  if (loading) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
+  if (loading) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   const entries   = Object.values(byEmp);
   const present   = entries.filter(e => e.clockInAt).length;
@@ -85,7 +86,7 @@ export default function AttendanceScreen() {
         data={emps}
         keyExtractor={(e) => e.id}
         contentContainerStyle={{ padding: 14, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
-        refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
         ListEmptyComponent={<Text style={styles.empty}>No employees.</Text>}
         renderItem={({ item }) => {
           const e  = byEmp[item.id] || {};
@@ -116,6 +117,7 @@ export default function AttendanceScreen() {
 }
 
 function Kpi({ value, label }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.kpiCell}>
       <Text style={styles.kpiVal}>{value}</Text>
@@ -124,27 +126,27 @@ function Kpi({ value, label }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:    { flex: 1, backgroundColor: '#f5f7fa' },
-  kpiBar:  { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ececec', paddingVertical: 12 },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:    { flex: 1, backgroundColor: t.bg },
+  kpiBar:  { flexDirection: 'row', backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border, paddingVertical: 12 },
   kpiCell: { flex: 1, alignItems: 'center' },
-  kpiVal:  { fontSize: 19, fontWeight: '800', color: '#2D7A5F' },
-  kpiLab:  { fontSize: 10.5, color: '#999', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
-  center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  dateBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#ececec' },
-  navBtn:  { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f3f5' },
-  navText: { fontSize: 22, color: GREEN, lineHeight: 24 },
-  dateText:{ fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  empty:   { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
-  row:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#ececec' },
-  name:    { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  times:   { fontSize: 12.5, color: '#8a8a8a', marginTop: 3 },
+  kpiVal:  { fontSize: 19, fontWeight: '800', color: t.green },
+  kpiLab:  { fontSize: 10.5, color: t.textFaint, marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
+  center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  dateBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: t.surface, paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: t.border },
+  navBtn:  { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surfaceAlt },
+  navText: { fontSize: 22, color: t.green, lineHeight: 24 },
+  dateText:{ fontSize: 15, fontWeight: '700', color: t.text },
+  empty:   { textAlign: 'center', color: t.textFaint, marginTop: 50, fontSize: 13 },
+  row:     { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+  name:    { fontSize: 15, fontWeight: '700', color: t.text },
+  times:   { fontSize: 12.5, color: t.textMuted, marginTop: 3 },
   actions: { marginLeft: 8 },
   btn:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
-  inBtn:   { backgroundColor: '#eef5f2', borderColor: GREEN },
-  inText:  { color: GREEN, fontWeight: '800', fontSize: 13 },
-  outBtn:  { backgroundColor: '#fdf2e6', borderColor: '#c47d2e' },
-  outText: { color: '#c47d2e', fontWeight: '800', fontSize: 13 },
-  resetBtn:{ backgroundColor: '#f1f3f5', borderColor: '#d5d8db' },
-  resetText:{ color: '#888', fontWeight: '700', fontSize: 13 },
+  inBtn:   { backgroundColor: t.greenSoft, borderColor: t.green },
+  inText:  { color: t.green, fontWeight: '800', fontSize: 13 },
+  outBtn:  { backgroundColor: t.warningBg, borderColor: t.warning },
+  outText: { color: t.warning, fontWeight: '800', fontSize: 13 },
+  resetBtn:{ backgroundColor: t.surfaceAlt, borderColor: t.borderStrong },
+  resetText:{ color: t.textMuted, fontWeight: '700', fontSize: 13 },
 });

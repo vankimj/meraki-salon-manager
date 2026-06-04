@@ -1,14 +1,13 @@
 import { useRef, useState } from 'react';
 import { Text, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
 import { createCardPaymentIntent } from '../../lib/terminal';
+import { useThemedStyles } from '../../theme/ThemeContext';
 
 // Rendered ONLY when the native Terminal module is present (CheckoutScreen
 // gates this behind isTerminalAvailable()), so the useStripeTerminal hook
 // below is guaranteed available when this mounts.
 let SDK = null;
 try { SDK = require('@stripe/stripe-terminal-react-native'); } catch { SDK = null; }
-
-const GREEN = '#2D7A5F';
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // In-person card capture via Stripe Terminal.
@@ -17,6 +16,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // Flow: connect a reader (once) → server-created card_present PaymentIntent
 // → collectPaymentMethod → confirmPaymentIntent → onPaid(paymentIntentId).
 export default function CardPayButton({ amountCents, description, locationId, onBehalfOf, merchantName, preferReader, disabled, onPaid }) {
+  const styles = useThemedStyles(makeStyles);
   const useStripeTerminal = SDK?.useStripeTerminal;
   const readersRef   = useRef([]);
   const connectedRef = useRef(false);
@@ -101,7 +101,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
   );
 }
 
-const styles = StyleSheet.create({
-  btn: { marginTop: 10, backgroundColor: GREEN, borderRadius: 14, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
+const makeStyles = (t) => StyleSheet.create({
+  btn: { marginTop: 10, backgroundColor: t.green, borderRadius: 14, paddingVertical: 16, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
   txt: { color: '#fff', fontWeight: '800', fontSize: 15 },
 });

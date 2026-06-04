@@ -6,6 +6,7 @@ import {
 import { auth } from '../lib/firebase';
 import { subscribeToChats, fetchClients, sendChatMessage, sendSmsToClient, sendEmailToClient } from '../lib/firestore';
 import Icon from '../components/Icon';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 function fmtRelative(iso) {
   if (!iso) return '';
@@ -23,6 +24,8 @@ export default function ChatScreen({ navigation }) {
   const [threads, setThreads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [composeOpen, setComposeOpen] = useState(false);
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
 
   useEffect(() => {
     const unsub = subscribeToChats((list) => {
@@ -33,14 +36,14 @@ export default function ChatScreen({ navigation }) {
   }, []);
 
   if (loading) {
-    return <ActivityIndicator style={{ marginTop: 60 }} color="#3D95CE" />;
+    return <ActivityIndicator style={{ marginTop: 60 }} color={theme.blue} />;
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: theme.surface }}>
       {threads.length === 0 ? (
         <View style={styles.emptyState}>
-          <Icon name="chat" size={56} color="#cbd0d6" strokeWidth={1.5} />
+          <Icon name="chat" size={56} color={theme.textFaint} strokeWidth={1.5} />
           <Text style={[styles.emptyTitle, { marginTop: 14 }]}>No messages yet</Text>
           <Text style={styles.emptyBody}>
             Client conversations show up here. You'll get a push when a client replies.
@@ -129,6 +132,8 @@ function ComposeModal({ open, onClose, onSent }) {
   const [subject, setSubject] = useState('Message from your salon');
   const [text, setText]       = useState('');
   const [sending, setSending] = useState(false);
+  const composeStyles = useThemedStyles(makeComposeStyles);
+  const { theme } = useTheme();
 
   useEffect(() => {
     if (!open) return;
@@ -208,11 +213,11 @@ function ComposeModal({ open, onClose, onSent }) {
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search clients by name…"
-                    placeholderTextColor="#bbb"
+                    placeholderTextColor={theme.placeholder}
                     autoFocus
                   />
                   <ScrollView style={composeStyles.clientList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-                    {allClients === null && <ActivityIndicator style={{ padding: 16 }} color="#3D95CE" />}
+                    {allClients === null && <ActivityIndicator style={{ padding: 16 }} color={theme.blue} />}
                     {allClients !== null && filtered.length === 0 && (
                       <Text style={composeStyles.empty}>No matches{search ? ` for "${search}"` : ''}</Text>
                     )}
@@ -280,7 +285,7 @@ function ComposeModal({ open, onClose, onSent }) {
                         value={subject}
                         onChangeText={setSubject}
                         placeholder="Subject"
-                        placeholderTextColor="#bbb"
+                        placeholderTextColor={theme.placeholder}
                         maxLength={200}
                       />
                     </>
@@ -292,7 +297,7 @@ function ComposeModal({ open, onClose, onSent }) {
                     value={text}
                     onChangeText={setText}
                     placeholder={channel === 'sms' ? 'Send as SMS…' : channel === 'email' ? 'Email body…' : 'Type a message…'}
-                    placeholderTextColor="#bbb"
+                    placeholderTextColor={theme.placeholder}
                     multiline
                     maxLength={2000}
                   />
@@ -314,64 +319,64 @@ function ComposeModal({ open, onClose, onSent }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { backgroundColor: '#fff' },
-  sep:       { height: 1, backgroundColor: '#f0f0f0', marginLeft: 70 },
+const makeStyles = (t) => StyleSheet.create({
+  container: { backgroundColor: t.surface },
+  sep:       { height: 1, backgroundColor: t.border, marginLeft: 70 },
   row: {
     flexDirection: 'row', alignItems: 'center',
     paddingVertical: 12, paddingHorizontal: 16, gap: 12,
-    backgroundColor: '#fff',
+    backgroundColor: t.surface,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#e8f4f0', alignItems: 'center', justifyContent: 'center' },
-  avatarUnread: { backgroundColor: '#3D95CE' },
-  avatarInitial: { fontSize: 16, fontWeight: '700', color: '#2D7A5F' },
+  avatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: t.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  avatarUnread: { backgroundColor: t.blue },
+  avatarInitial: { fontSize: 16, fontWeight: '700', color: t.green },
   rowTop:        { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  name:          { fontSize: 14, fontWeight: '600', color: '#1a1a1a', flex: 1 },
+  name:          { fontSize: 14, fontWeight: '600', color: t.text, flex: 1 },
   nameUnread:    { fontWeight: '700' },
-  time:          { fontSize: 11, color: '#aaa' },
-  preview:       { fontSize: 12, color: '#888', marginTop: 3 },
-  previewUnread: { color: '#1a1a1a', fontWeight: '500' },
-  unreadBadge:   { backgroundColor: '#ef4444', borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' },
+  time:          { fontSize: 11, color: t.textFaint },
+  preview:       { fontSize: 12, color: t.textMuted, marginTop: 3 },
+  previewUnread: { color: t.text, fontWeight: '500' },
+  unreadBadge:   { backgroundColor: t.danger, borderRadius: 10, minWidth: 20, paddingHorizontal: 6, paddingVertical: 2, alignItems: 'center' },
   unreadBadgeText: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
   emptyState: { alignItems: 'center', paddingTop: 80, paddingHorizontal: 40 },
   emptyIcon:  { fontSize: 48, marginBottom: 12 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: '#1a1a1a', marginBottom: 8 },
-  emptyBody:  { fontSize: 13, color: '#888', textAlign: 'center', lineHeight: 19 },
-  emptyComposeBtn: { marginTop: 22, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 22, backgroundColor: '#2D7A5F' },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: t.text, marginBottom: 8 },
+  emptyBody:  { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 19 },
+  emptyComposeBtn: { marginTop: 22, paddingHorizontal: 22, paddingVertical: 12, borderRadius: 22, backgroundColor: t.green },
   emptyComposeBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
-  fab: { position: 'absolute', right: 20, bottom: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: '#2D7A5F', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
+  fab: { position: 'absolute', right: 20, bottom: 24, width: 56, height: 56, borderRadius: 28, backgroundColor: t.green, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, elevation: 6 },
   fabText: { fontSize: 30, color: '#fff', fontWeight: '300', lineHeight: 32 },
 });
 
-const composeStyles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.55)' },
-  sheet:    { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '85%', paddingBottom: 20 },
-  header:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  title:    { flex: 1, fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f5' },
-  closeBtnText: { fontSize: 22, color: '#666', lineHeight: 24 },
-  label:    { fontSize: 11, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-  search:   { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1a1a1a', backgroundColor: '#fafafa' },
-  clientList: { marginTop: 8, height: 320, backgroundColor: '#fafafa', borderRadius: 10 },
-  clientRow:  { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, borderBottomColor: '#eee' },
-  clientName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  clientMeta: { fontSize: 11, color: '#888', marginTop: 2 },
-  empty:      { padding: 20, textAlign: 'center', color: '#888', fontSize: 12 },
-  toRow:      { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#f0faf6', borderRadius: 10, padding: 12 },
-  toName:     { fontSize: 15, fontWeight: '700', color: '#1a4d3a' },
-  toMeta:     { fontSize: 12, color: '#2d7a5f', marginTop: 2 },
-  changeBtn:  { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: '#fff', borderWidth: 1, borderColor: '#bbf7d0' },
-  changeBtnText: { fontSize: 11, color: '#2D7A5F', fontWeight: '700' },
+const makeComposeStyles = (t) => StyleSheet.create({
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: t.overlay },
+  sheet:    { backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '85%', paddingBottom: 20 },
+  header:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: t.border },
+  title:    { flex: 1, fontSize: 16, fontWeight: '700', color: t.text },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surfaceAlt },
+  closeBtnText: { fontSize: 22, color: t.textMuted, lineHeight: 24 },
+  label:    { fontSize: 11, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  search:   { borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: t.text, backgroundColor: t.surfaceAlt },
+  clientList: { marginTop: 8, height: 320, backgroundColor: t.surfaceAlt, borderRadius: 10 },
+  clientRow:  { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, borderBottomColor: t.border },
+  clientName: { fontSize: 14, fontWeight: '600', color: t.text },
+  clientMeta: { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  empty:      { padding: 20, textAlign: 'center', color: t.textMuted, fontSize: 12 },
+  toRow:      { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: t.greenSoft, borderRadius: 10, padding: 12 },
+  toName:     { fontSize: 15, fontWeight: '700', color: t.text },
+  toMeta:     { fontSize: 12, color: t.green, marginTop: 2 },
+  changeBtn:  { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  changeBtnText: { fontSize: 11, color: t.green, fontWeight: '700' },
   channelRow: { flexDirection: 'row', gap: 6 },
-  channelChip:        { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#e5e7eb' },
-  channelChipActive:  { backgroundColor: '#EBF4FB', borderColor: '#3D95CE' },
+  channelChip:        { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 14, backgroundColor: t.surfaceMuted, borderWidth: 1, borderColor: t.border },
+  channelChipActive:  { backgroundColor: t.blueSoft, borderColor: t.blue },
   channelChipDisabled:{ opacity: 0.4 },
-  channelChipText:        { fontSize: 13, fontWeight: '600', color: '#666' },
-  channelChipTextActive:  { color: '#1a5f8a', fontWeight: '700' },
-  channelChipTextDisabled:{ color: '#aaa' },
-  input:      { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1a1a1a', backgroundColor: '#fff' },
-  sendBtn:    { backgroundColor: '#2D7A5F', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  channelChipText:        { fontSize: 13, fontWeight: '600', color: t.textMuted },
+  channelChipTextActive:  { color: t.blue, fontWeight: '700' },
+  channelChipTextDisabled:{ color: t.textFaint },
+  input:      { borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: t.text, backgroundColor: t.surface },
+  sendBtn:    { backgroundColor: t.green, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   sendBtnText:{ color: '#fff', fontSize: 14, fontWeight: '700' },
 });

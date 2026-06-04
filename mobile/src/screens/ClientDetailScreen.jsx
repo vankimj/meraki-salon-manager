@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { fetchClient, saveClient, fetchClientAppointments } from '../lib/firestore';
 import Icon from '../components/Icon';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 const TABS = [
   { id: 'profile', label: 'Profile' },
@@ -27,6 +28,8 @@ export default function ClientDetailScreen({ route, navigation }) {
   const [editing, setEditing] = useState(false);
   const [tab,     setTab]     = useState('profile');
   const [visits,  setVisits]  = useState([]);
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
 
   // Load client + visit history once on mount.
   useEffect(() => {
@@ -106,12 +109,12 @@ export default function ClientDetailScreen({ route, navigation }) {
   }, [draft, saving, client, clientId]);
 
   if (loading) {
-    return <ActivityIndicator style={{ marginTop: 60 }} color="#3D95CE" />;
+    return <ActivityIndicator style={{ marginTop: 60 }} color={theme.blue} />;
   }
   if (!client) {
     return (
       <View style={styles.emptyState}>
-        <Icon name="person" size={56} color="#cbd0d6" strokeWidth={1.5} />
+        <Icon name="person" size={56} color={theme.textFaint} strokeWidth={1.5} />
         <Text style={[styles.emptyTitle, { marginTop: 14 }]}>Client not found</Text>
       </View>
     );
@@ -194,7 +197,7 @@ export default function ClientDetailScreen({ route, navigation }) {
           {tab === 'visits' && (
             visits.length === 0
               ? <View style={styles.visitEmpty}>
-                  <Icon name="calendar" size={40} color="#cbd0d6" strokeWidth={1.5} />
+                  <Icon name="calendar" size={40} color={theme.textFaint} strokeWidth={1.5} />
                   <Text style={[styles.visitEmptyText, { marginTop: 10 }]}>No appointments yet</Text>
                 </View>
               : visits.map(v => (
@@ -220,6 +223,8 @@ export default function ClientDetailScreen({ route, navigation }) {
 }
 
 function Field({ label, value, onChange, editing, multiline, rows, placeholder, keyboard, tel, mail, warn }) {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   if (!editing) {
     if (!value) return null;
     return (
@@ -265,7 +270,7 @@ function Field({ label, value, onChange, editing, multiline, rows, placeholder, 
         numberOfLines={rows}
         keyboardType={keyboard}
         placeholder={placeholder}
-        placeholderTextColor="#bbb"
+        placeholderTextColor={theme.placeholder}
         style={[styles.editInput, multiline && { minHeight: rows ? rows * 22 : 60, textAlignVertical: 'top' }]}
       />
     </View>
@@ -273,12 +278,13 @@ function Field({ label, value, onChange, editing, multiline, rows, placeholder, 
 }
 
 function StatusPill({ status }) {
+  const { theme } = useTheme();
   const meta = {
-    scheduled: { label: 'Scheduled', color: '#3D95CE', bg: '#EBF4FB' },
-    done:      { label: 'Done',      color: '#16a34a', bg: '#f0fdf4' },
-    cancelled: { label: 'Cancelled', color: '#ef4444', bg: '#fef2f2' },
-    no_show:   { label: 'No-show',   color: '#92400e', bg: '#fef3c7' },
-  }[status] || { label: status || 'Unknown', color: '#888', bg: '#f5f5f5' };
+    scheduled: { label: 'Scheduled', color: theme.blue,    bg: theme.blueSoft  },
+    done:      { label: 'Done',      color: theme.success,  bg: theme.greenSoft },
+    cancelled: { label: 'Cancelled', color: theme.danger,   bg: theme.dangerBg  },
+    no_show:   { label: 'No-show',   color: theme.warning,  bg: theme.warningBg },
+  }[status] || { label: status || 'Unknown', color: theme.textMuted, bg: theme.surfaceAlt };
   return (
     <View style={{ paddingVertical: 3, paddingHorizontal: 8, borderRadius: 10, backgroundColor: meta.bg }}>
       <Text style={{ fontSize: 10, fontWeight: '700', color: meta.color }}>{meta.label}</Text>
@@ -287,62 +293,64 @@ function StatusPill({ status }) {
 }
 
 function ToggleRow({ label, value, editing, onChange, danger }) {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   return (
     <View style={styles.toggleRow}>
-      <Text style={[styles.toggleLabel, danger && value && { color: '#b45309', fontWeight: '700' }]}>{label}</Text>
+      <Text style={[styles.toggleLabel, danger && value && { color: theme.warning, fontWeight: '700' }]}>{label}</Text>
       {editing
-        ? <Switch value={value} onValueChange={onChange} trackColor={{ true: '#2D7A5F' }} />
+        ? <Switch value={value} onValueChange={onChange} trackColor={{ true: theme.green }} />
         : <Text style={styles.toggleVal}>{danger ? (value ? 'Opted out' : 'Subscribed') : (value ? 'On' : 'Off')}</Text>}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
-  commHeader:{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginTop: 18, marginBottom: 4 },
-  commHint:  { fontSize: 11.5, color: '#aaa', marginTop: 8, lineHeight: 16 },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginTop: 8, borderWidth: 1, borderColor: '#ececec' },
-  toggleLabel:{ fontSize: 14, color: '#1a1a1a', flex: 1 },
-  toggleVal: { fontSize: 13, color: '#888', fontWeight: '600' },
-  headerBtn: { color: '#2D7A5F', fontSize: 15, fontWeight: '600' },
+const makeStyles = (t) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.bg },
+  commHeader:{ fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginTop: 18, marginBottom: 4 },
+  commHint:  { fontSize: 11.5, color: t.textFaint, marginTop: 8, lineHeight: 16 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginTop: 8, borderWidth: 1, borderColor: t.border },
+  toggleLabel:{ fontSize: 14, color: t.text, flex: 1 },
+  toggleVal: { fontSize: 13, color: t.textMuted, fontWeight: '600' },
+  headerBtn: { color: t.green, fontSize: 15, fontWeight: '600' },
 
-  identity: { alignItems: 'center', paddingVertical: 22, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ebebeb' },
+  identity: { alignItems: 'center', paddingVertical: 22, backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
   avatar:   { width: 84, height: 84, borderRadius: 42, marginBottom: 10 },
-  avatarFallback:  { backgroundColor: '#e8f4f0', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial:   { fontSize: 30, fontWeight: '700', color: '#2D7A5F' },
-  name:        { fontSize: 18, fontWeight: '700', color: '#1a1a1a' },
-  visitsCount: { fontSize: 12, color: '#3D95CE', fontWeight: '600', marginTop: 4 },
+  avatarFallback:  { backgroundColor: t.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  avatarInitial:   { fontSize: 30, fontWeight: '700', color: t.green },
+  name:        { fontSize: 18, fontWeight: '700', color: t.text },
+  visitsCount: { fontSize: 12, color: t.blue, fontWeight: '600', marginTop: 4 },
 
-  tabRow:        { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ebebeb' },
+  tabRow:        { flexDirection: 'row', backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
   tabBtn:        { flex: 1, paddingVertical: 11, alignItems: 'center' },
-  tabBtnActive:  { borderBottomWidth: 2, borderBottomColor: '#3D95CE' },
-  tabBtnText:    { fontSize: 13, color: '#888', fontWeight: '500' },
-  tabBtnTextActive: { color: '#1a5f8a', fontWeight: '700' },
+  tabBtnActive:  { borderBottomWidth: 2, borderBottomColor: t.blue },
+  tabBtnText:    { fontSize: 13, color: t.textMuted, fontWeight: '500' },
+  tabBtnTextActive: { color: t.blue, fontWeight: '700' },
 
-  viewRow:    { backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 10 },
-  editRow:    { backgroundColor: '#fff', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginBottom: 10 },
-  fieldLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', marginBottom: 4 },
-  fieldValue: { fontSize: 14, color: '#1a1a1a' },
-  linkText:   { color: '#3D95CE', textDecorationLine: 'underline' },
+  viewRow:    { backgroundColor: t.surface, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 10 },
+  editRow:    { backgroundColor: t.surface, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginBottom: 10 },
+  fieldLabel: { fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', marginBottom: 4 },
+  fieldValue: { fontSize: 14, color: t.text },
+  linkText:   { color: t.blue, textDecorationLine: 'underline' },
   contactBtnRow:  { flexDirection: 'row', gap: 8, marginTop: 8 },
-  contactBtn:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14, backgroundColor: '#EBF4FB', borderWidth: 1, borderColor: '#3D95CE' },
-  contactBtnText: { fontSize: 13, fontWeight: '700', color: '#1a5f8a' },
+  contactBtn:     { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 14, backgroundColor: t.blueSoft, borderWidth: 1, borderColor: t.blue },
+  contactBtnText: { fontSize: 13, fontWeight: '700', color: t.blue },
   // Warn variant — used for the Allergies field so it stands out from
   // the rest of the profile rows. Red tint on the card + label + value.
-  viewRowWarn:    { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fca5a5' },
-  fieldLabelWarn: { color: '#991b1b' },
-  fieldValueWarn: { color: '#991b1b', fontWeight: '700' },
-  editInput:  { fontSize: 14, color: '#1a1a1a', padding: 0 },
+  viewRowWarn:    { backgroundColor: t.dangerBg, borderWidth: 1, borderColor: t.danger },
+  fieldLabelWarn: { color: t.danger },
+  fieldValueWarn: { color: t.danger, fontWeight: '700' },
+  editInput:  { fontSize: 14, color: t.text, padding: 0 },
 
-  visitCard:  { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  visitDate:  { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
-  visitTech:  { fontSize: 12, color: '#888', marginTop: 3 },
-  visitNotes: { fontSize: 12, color: '#666', marginTop: 6, fontStyle: 'italic' },
+  visitCard:  { backgroundColor: t.surface, borderRadius: 12, padding: 14, marginBottom: 10, flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
+  visitDate:  { fontSize: 13, fontWeight: '700', color: t.text },
+  visitTech:  { fontSize: 12, color: t.textMuted, marginTop: 3 },
+  visitNotes: { fontSize: 12, color: t.textMuted, marginTop: 6, fontStyle: 'italic' },
   visitEmpty: { alignItems: 'center', paddingTop: 40 },
   visitEmptyIcon: { fontSize: 36, marginBottom: 8 },
-  visitEmptyText: { fontSize: 13, color: '#888' },
+  visitEmptyText: { fontSize: 13, color: t.textMuted },
 
   emptyState: { alignItems: 'center', paddingTop: 80 },
   emptyIcon:  { fontSize: 44, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: t.text },
 });

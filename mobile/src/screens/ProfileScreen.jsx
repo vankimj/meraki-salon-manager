@@ -13,8 +13,11 @@ import { clearCurrentTenant } from '../lib/currentTenant';
 import { getPrefs, setTheme, setAutoLogoutMin, subscribePrefs } from '../lib/userPrefs';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import useMyTenants from '../hooks/useMyTenants';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 export default function ProfileScreen({ navigation }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const user = auth.currentUser;
   const { employee, loading: empLoading } = useCurrentEmployee();
   const { tenants, current: currentTenant, switchTo, loading: tenantsLoading } = useMyTenants();
@@ -354,7 +357,7 @@ export default function ProfileScreen({ navigation }) {
   const photo       = draft?.photo || employee?.photo || user?.photoURL || null;
 
   if (empLoading) {
-    return <ActivityIndicator style={{ marginTop: 60 }} color="#3D95CE" />;
+    return <ActivityIndicator style={{ marginTop: 60 }} color={theme.blue} />;
   }
 
   return (
@@ -592,6 +595,8 @@ function isoFromDate(d) {
 // so this doesn't trigger another dev-client rebuild. Today's date is
 // pre-filled into both fields as a sensible starting point.
 function AddTimeOffModal({ open, onClose, onSaved, techName }) {
+  const { theme } = useTheme();
+  const timeOffStyles = useThemedStyles(makeTimeOffStyles);
   const today = new Date().toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState(today);
   const [endDate,   setEndDate]   = useState(today);
@@ -690,7 +695,7 @@ function AddTimeOffModal({ open, onClose, onSaved, techName }) {
                 value={reason}
                 onChangeText={setReason}
                 placeholder="What's it for?"
-                placeholderTextColor="#bbb"
+                placeholderTextColor={theme.placeholder}
                 multiline
                 maxLength={400}
               />
@@ -710,22 +715,22 @@ function AddTimeOffModal({ open, onClose, onSaved, techName }) {
   );
 }
 
-const timeOffStyles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.55)' },
-  sheet:    { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '80%', paddingBottom: 20 },
-  header:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  title:    { flex: 1, fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
-  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f5' },
-  closeBtnText: { fontSize: 22, color: '#666', lineHeight: 24 },
-  label:    { fontSize: 11, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
-  input:    { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1a1a1a', backgroundColor: '#fafafa' },
-  hint:     { fontSize: 11, color: '#b91c1c', marginTop: 4 },
+const makeTimeOffStyles = (t) => StyleSheet.create({
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: t.overlay },
+  sheet:    { backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '80%', paddingBottom: 20 },
+  header:   { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: t.border },
+  title:    { flex: 1, fontSize: 16, fontWeight: '700', color: t.text },
+  closeBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surfaceAlt },
+  closeBtnText: { fontSize: 22, color: t.textMuted, lineHeight: 24 },
+  label:    { fontSize: 11, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 },
+  input:    { borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: t.text, backgroundColor: t.surfaceAlt },
+  hint:     { fontSize: 11, color: t.danger, marginTop: 4 },
   typeRow:  { flexDirection: 'row', gap: 6 },
-  typeChip: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#e5e7eb', alignItems: 'center' },
-  typeChipActive: { backgroundColor: '#EBF4FB', borderColor: '#3D95CE' },
-  typeChipText:        { fontSize: 13, fontWeight: '600', color: '#666' },
-  typeChipTextActive:  { color: '#1a5f8a', fontWeight: '700' },
-  saveBtn:     { backgroundColor: '#2D7A5F', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  typeChip: { flex: 1, paddingVertical: 10, borderRadius: 10, backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.border, alignItems: 'center' },
+  typeChipActive: { backgroundColor: t.blueSoft, borderColor: t.blue },
+  typeChipText:        { fontSize: 13, fontWeight: '600', color: t.textMuted },
+  typeChipTextActive:  { color: t.blue, fontWeight: '700' },
+  saveBtn:     { backgroundColor: t.green, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
 });
 
@@ -749,6 +754,7 @@ const WEEK_DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // current value on the right, tap to open a sheet picker. Same pattern
 // as iOS native Settings.
 function SettingRow({ label, value, onPress }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity onPress={onPress} style={styles.settingRow} activeOpacity={0.6}>
       <Text style={styles.settingRowLabel}>{label}</Text>
@@ -761,6 +767,8 @@ function SettingRow({ label, value, onPress }) {
 }
 
 function Field({ label, value, onChange, editing, multiline, keyboard, placeholder, tel, mail }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   if (!editing) {
     if (!value) return null;
     return (
@@ -789,7 +797,7 @@ function Field({ label, value, onChange, editing, multiline, keyboard, placehold
         multiline={multiline}
         keyboardType={keyboard}
         placeholder={placeholder}
-        placeholderTextColor="#bbb"
+        placeholderTextColor={theme.placeholder}
         autoCapitalize={keyboard === 'email-address' || keyboard === 'url' ? 'none' : 'sentences'}
         style={styles.editInput}
       />
@@ -797,54 +805,54 @@ function Field({ label, value, onChange, editing, multiline, keyboard, placehold
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.bg },
   content:   { padding: 16, paddingBottom: 32 },
-  headerBtn: { color: '#2D7A5F', fontSize: 15, fontWeight: '600' },
+  headerBtn: { color: t.green, fontSize: 15, fontWeight: '600' },
 
-  identity:    { alignItems: 'center', paddingVertical: 22, backgroundColor: '#fff', borderRadius: 14 },
+  identity:    { alignItems: 'center', paddingVertical: 22, backgroundColor: t.surface, borderRadius: 14 },
   avatarWrap:  { position: 'relative', marginBottom: 10 },
   avatar:      { width: 88, height: 88, borderRadius: 44 },
-  avatarFallback: { backgroundColor: '#2D7A5F', alignItems: 'center', justifyContent: 'center' },
+  avatarFallback: { backgroundColor: t.green, alignItems: 'center', justifyContent: 'center' },
   avatarInitial:  { color: '#fff', fontSize: 36, fontWeight: '700' },
-  avatarEditBadge: { position: 'absolute', right: -2, bottom: -2, width: 28, height: 28, borderRadius: 14, backgroundColor: '#3D95CE', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
+  avatarEditBadge: { position: 'absolute', right: -2, bottom: -2, width: 28, height: 28, borderRadius: 14, backgroundColor: t.blue, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#fff' },
   avatarEditBadgeText: { fontSize: 18, color: '#fff', fontWeight: '700', lineHeight: 20 },
-  name:        { fontSize: 18, fontWeight: '700', color: '#1a1a1a' },
-  email:       { fontSize: 13, color: '#888', marginTop: 4 },
+  name:        { fontSize: 18, fontWeight: '700', color: t.text },
+  email:       { fontSize: 13, color: t.textMuted, marginTop: 4 },
 
-  warningPill:     { marginTop: 10, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 12, backgroundColor: '#fef3c7' },
-  warningPillText: { fontSize: 12, color: '#92400e', fontWeight: '600' },
+  warningPill:     { marginTop: 10, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 12, backgroundColor: t.warningBg },
+  warningPillText: { fontSize: 12, color: t.warning, fontWeight: '600' },
 
-  sectionLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
+  sectionLabel: { fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
 
-  viewRow: { backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
-  editRow: { backgroundColor: '#fff', paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
-  fieldLabel: { fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', marginBottom: 4 },
-  fieldValue: { fontSize: 14, color: '#1a1a1a' },
-  linkText:   { color: '#3D95CE', textDecorationLine: 'underline' },
-  editInput:  { fontSize: 14, color: '#1a1a1a', padding: 0 },
+  viewRow: { backgroundColor: t.surface, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
+  editRow: { backgroundColor: t.surface, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
+  fieldLabel: { fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', marginBottom: 4 },
+  fieldValue: { fontSize: 14, color: t.text },
+  linkText:   { color: t.blue, textDecorationLine: 'underline' },
+  editInput:  { fontSize: 14, color: t.text, padding: 0 },
 
-  cardRow:      { backgroundColor: '#fff', borderRadius: 12, padding: 16 },
-  settingsBody: { fontSize: 13, color: '#888', lineHeight: 19 },
+  cardRow:      { backgroundColor: t.surface, borderRadius: 12, padding: 16 },
+  settingsBody: { fontSize: 13, color: t.textMuted, lineHeight: 19 },
 
-  settingRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', paddingVertical: 14, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
-  settingRowLabel:   { fontSize: 14, color: '#1a1a1a', fontWeight: '500' },
-  settingRowValue:   { fontSize: 14, color: '#888', fontWeight: '500' },
-  settingRowChevron: { fontSize: 20, color: '#cbd0d6', lineHeight: 22 },
+  settingRow:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: t.surface, paddingVertical: 14, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
+  settingRowLabel:   { fontSize: 14, color: t.text, fontWeight: '500' },
+  settingRowValue:   { fontSize: 14, color: t.textMuted, fontWeight: '500' },
+  settingRowChevron: { fontSize: 20, color: t.textFaint, lineHeight: 22 },
 
-  timeOffRow:        { backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
-  timeOffRowType:    { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
-  timeOffRowRange:   { fontSize: 12, color: '#666', marginTop: 2 },
-  timeOffRowReason:  { fontSize: 11, color: '#888', marginTop: 4, fontStyle: 'italic' },
-  timeOffAddBtn:     { paddingVertical: 11, alignItems: 'center', borderRadius: 12, backgroundColor: '#f0faf6', borderWidth: 1, borderColor: '#bbf7d0' },
-  timeOffAddBtnText: { fontSize: 13, color: '#2D7A5F', fontWeight: '700' },
+  timeOffRow:        { backgroundColor: t.surface, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
+  timeOffRowType:    { fontSize: 13, fontWeight: '700', color: t.text },
+  timeOffRowRange:   { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  timeOffRowReason:  { fontSize: 11, color: t.textMuted, marginTop: 4, fontStyle: 'italic' },
+  timeOffAddBtn:     { paddingVertical: 11, alignItems: 'center', borderRadius: 12, backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.border },
+  timeOffAddBtnText: { fontSize: 13, color: t.green, fontWeight: '700' },
 
-  tenantRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
-  tenantRowActive: { backgroundColor: '#f0faf6', borderWidth: 1, borderColor: '#2D7A5F' },
-  tenantName:      { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
-  tenantMeta:      { fontSize: 12, color: '#888', marginTop: 2 },
-  tenantCheck:     { fontSize: 18, color: '#2D7A5F', fontWeight: '700' },
+  tenantRow:       { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, paddingVertical: 12, paddingHorizontal: 14, borderRadius: 12, marginBottom: 8 },
+  tenantRowActive: { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green },
+  tenantName:      { fontSize: 15, fontWeight: '600', color: t.text },
+  tenantMeta:      { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  tenantCheck:     { fontSize: 18, color: t.green, fontWeight: '700' },
 
-  signOutBtn:  { marginTop: 20, alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 30, borderRadius: 22, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' },
-  signOutText: { color: '#ef4444', fontSize: 14, fontWeight: '600' },
+  signOutBtn:  { marginTop: 20, alignSelf: 'center', paddingVertical: 10, paddingHorizontal: 30, borderRadius: 22, backgroundColor: t.dangerBg, borderWidth: 1, borderColor: t.danger },
+  signOutText: { color: t.danger, fontSize: 14, fontWeight: '600' },
 });
