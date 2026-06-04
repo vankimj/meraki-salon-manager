@@ -1,13 +1,13 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
-  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert,
+  View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert, Modal, FlatList,
 } from 'react-native';
 import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, updateAppointment,
-  updateGiftCard, savePromoCode,
+  updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient,
 } from '../../lib/firestore';
-import { computeTotals, buildTechSplit, normalizePromo } from '../../lib/checkout';
+import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken } from '../../lib/checkout';
 import useTenantAccess from '../../hooks/useTenantAccess';
 
 const GREEN = '#2D7A5F', BLUE = '#3D95CE';
@@ -43,14 +43,35 @@ export default function CheckoutScreen({ navigation }) {
   const [tipMode, setTipMode]     = useState('none');   // none | pct | custom
   const [tipPct, setTipPct]       = useState(null);
   const [tipAmtStr, setTipAmtStr] = useState('');
+  const [products, setProducts]   = useState([]);    // [{ product, qty }]
+  const [allProducts, setAllProducts] = useState(null);
+  const [showPicker, setShowPicker]   = useState(false);
   const [saving, setSaving]       = useState(false);
 
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
 
   const lines = lines0.map((l, i) => ({ ...l, price: Number(prices[i]) || 0 }));
+  const productsTotal = products.reduce((s, it) => s + (Number(it.product.price) || 0) * it.qty, 0);
+
+  async function openPicker() {
+    if (!allProducts) {
+      const p = await fetchProducts().catch(() => []);
+      setAllProducts(p.filter(x => x.active !== false && (x.stock || 0) > 0));
+    }
+    setShowPicker(true);
+  }
+  function addProduct(p) {
+    setProducts(prev => {
+      const ex = prev.find(it => it.product.id === p.id);
+      if (ex) return prev.map(it => it.product.id === p.id ? { ...it, qty: it.qty + 1 } : it);
+      return [...prev, { product: p, qty: 1 }];
+    });
+    setShowPicker(false);
+  }
+  function removeProduct(id) { setProducts(prev => prev.filter(it => it.product.id !== id)); }
 
   const totals = useMemo(() => computeTotals({
-    lines,
+    lines, productsTotal,
     discount: discType === 'none' ? null : { isPercent: discType === 'percent', value: Number(discVal) || 0 },
     promo: normalizePromo(promo),
     taxRate: Number(settings?.taxRate) || 0,
@@ -60,7 +81,7 @@ export default function CheckoutScreen({ navigation }) {
     noCardTips: !!settings?.noCardTips,
     tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
-  }), [JSON.stringify(prices), discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
 
   const split = buildTechSplit(lines, totals.tipAmt);
 
@@ -78,7 +99,7 @@ export default function CheckoutScreen({ navigation }) {
   }
 
   function confirmCash() {
-    if (lines.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
+    if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
     Alert.alert('Take cash payment?', `Total ${money(totals.total)} in cash.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: `Charge ${money(totals.total)}`, onPress: complete },
@@ -89,7 +110,11 @@ export default function CheckoutScreen({ navigation }) {
     setSaving(true);
     try {
       const t = totals;
+      const retailProducts = products.length > 0
+        ? products.map(it => ({ id: it.product.id, name: it.product.name, price: it.product.price, qty: it.qty }))
+        : null;
       const payment = {
+        retailProducts,
         subtotal: t.subtotal,
         discountType: discType === 'none' ? null : discType,
         discountValue: Number(discVal) || 0,
@@ -127,6 +152,32 @@ export default function CheckoutScreen({ navigation }) {
         const maxHit = promo.maxUses && newCount >= promo.maxUses;
         await savePromoCode(promo.id, { usedCount: newCount, ...((promo.singleUse || maxHit) ? { active: false } : {}) });
       }
+      // Retail stock decrement.
+      for (const it of products) {
+        await saveProduct(it.product.id, { stock: Math.max(0, (Number(it.product.stock) || 0) - it.qty) }).catch(() => {});
+      }
+
+      // Canonical receipt — it carries apptIds (so Reports counts it once, not
+      // double with the done appts) AND its clientPhone fires sendReceiptSms.
+      const primaryAppt = (tab.appts || [])[0] || null;
+      const clientNames = Array.from(new Set((tab.appts || []).map(a => a.clientName || 'Walk-in').filter(Boolean)));
+      const allServices = lines.map(l => ({ name: l.name, price: l.price, techName: l.techName }));
+      let clientEmail = null;
+      try { if (primaryAppt?.clientId) clientEmail = (await fetchClient(primaryAppt.clientId))?.email || null; } catch {}
+      await createReceipt({
+        clientId:    primaryAppt?.clientId || null,
+        clientName:  clientNames.join(' + ') || 'Walk-in',
+        clientPhone: primaryAppt?.clientPhone || null,
+        clientEmail,
+        viewToken:   genReceiptToken(22),
+        techName:    split ? split.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
+        date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
+        startTime:   primaryAppt?.startTime || '',
+        services:    allServices,
+        retailProducts,
+        payment,
+        apptIds:     (tab.appts || []).map(a => a.id),
+      });
 
       await clearTab();
       Alert.alert('Paid', `${money(t.total)} collected (cash).`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
@@ -153,6 +204,19 @@ export default function CheckoutScreen({ navigation }) {
           </View>
         </View>
       ))}
+
+      <Text style={styles.section}>Products</Text>
+      {products.map(it => (
+        <View key={it.product.id} style={styles.lineRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.lineName}>{it.product.name} × {it.qty}</Text>
+            <Text style={styles.lineTech}>{money(it.product.price)} ea</Text>
+          </View>
+          <Text style={styles.lineName}>{money(it.product.price * it.qty)}</Text>
+          <TouchableOpacity onPress={() => removeProduct(it.product.id)} style={{ marginLeft: 10 }}><Text style={{ color: '#c0392b', fontSize: 16, fontWeight: '700' }}>✕</Text></TouchableOpacity>
+        </View>
+      ))}
+      <TouchableOpacity style={styles.addProdBtn} onPress={openPicker}><Text style={styles.addProdText}>＋ Add product</Text></TouchableOpacity>
 
       <Text style={styles.section}>Discount</Text>
       <View style={styles.chips}>
@@ -216,7 +280,28 @@ export default function CheckoutScreen({ navigation }) {
       <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
         <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
       </TouchableOpacity>
-      <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — reader coming soon</Text></View>
+      <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
+
+      <Modal visible={showPicker} animationType="slide" transparent onRequestClose={() => setShowPicker(false)}>
+        <View style={styles.backdrop}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>Add product</Text>
+            <FlatList
+              data={allProducts || []}
+              keyExtractor={(p) => p.id}
+              style={{ maxHeight: 380 }}
+              ListEmptyComponent={<Text style={styles.muted}>No products in stock.</Text>}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={styles.pickRow} onPress={() => addProduct(item)}>
+                  <Text style={styles.pickName}>{item.name}</Text>
+                  <Text style={styles.pickPrice}>{money(item.price)} · {item.stock} left</Text>
+                </TouchableOpacity>
+              )}
+            />
+            <TouchableOpacity onPress={() => setShowPicker(false)} style={{ alignItems: 'center', paddingVertical: 12 }}><Text style={{ color: '#888', fontWeight: '600' }}>Close</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -267,4 +352,12 @@ const styles = StyleSheet.create({
   payText:   { color: '#fff', fontWeight: '800', fontSize: 16 },
   cardBtn:   { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#e3e6e8', backgroundColor: '#fafafa' },
   cardText:  { color: '#aaa', fontWeight: '700', fontSize: 13 },
+  addProdBtn:{ borderWidth: 1, borderColor: '#d8d8d8', borderStyle: 'dashed', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  addProdText:{ color: '#666', fontWeight: '700', fontSize: 14 },
+  backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
+  sheet:     { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
+  sheetTitle:{ fontSize: 18, fontWeight: '800', color: '#1a1a1a', marginBottom: 10 },
+  pickRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  pickName:  { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
+  pickPrice: { fontSize: 13, color: '#888' },
 });

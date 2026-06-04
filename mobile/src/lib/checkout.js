@@ -87,6 +87,15 @@ export function buildTechSplit(lines, tipAmt) {
   });
 }
 
+// Opaque URL-safe token for the hosted /r/{token} receipt page (mirrors web
+// genUrlSafeToken). 22 chars ≈ 130 bits — infeasible to guess.
+export function genReceiptToken(len = 22) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  let s = '';
+  for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+  return s;
+}
+
 // Normalize a mobile promo record ({type, discountPct, discountAmount}) into
 // the {type, value} shape computeTotals expects.
 export function normalizePromo(p) {

@@ -430,6 +430,17 @@ export async function fetchGiftCardByCode(code) {
   const d = { id: snap.docs[0].id, ...snap.docs[0].data() };
   return notTombstoned(d) ? d : null;
 }
+// Stripe Terminal (Slice 2) — backend callables. The reader/Tap-to-Pay flow
+// that consumes these lives in lib/terminal.js (needs the native SDK + a
+// rebuild + a reader to run).
+export async function createTerminalConnectionToken() {
+  const res = await callFn('createTerminalConnectionToken')({ tenantId: getCurrentTenant() });
+  return res?.data?.secret || null;
+}
+export async function createCardPaymentIntent(amountCents, description) {
+  const res = await callFn('createPaymentIntent')({ tenantId: getCurrentTenant(), amountCents, description, paymentMethodType: 'card_present' });
+  return res?.data || null; // { clientSecret, paymentIntentId }
+}
 
 // ── Trash / restore (mirrors web src/lib/firestore.js) ─────────────────
 // Each soft-delete collection's path == its key under tenantCol. The 4
