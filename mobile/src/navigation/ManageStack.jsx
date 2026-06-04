@@ -28,6 +28,7 @@ import AdminOnboardingScreen from '../screens/admin/AdminOnboardingScreen';
 import AdminWebfrontScreen from '../screens/admin/AdminWebfrontScreen';
 import AdminSmsScreen      from '../screens/admin/AdminSmsScreen';
 import AdminDemoScreen     from '../screens/admin/AdminDemoScreen';
+import AdminGoogleBusinessScreen from '../screens/admin/AdminGoogleBusinessScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -100,6 +101,8 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="SMS" /> }} />
       <Stack.Screen name="AdminDemo" component={AdminDemoScreen}
         options={{ headerTitle: () => <HeaderTitle title="Demo Data" /> }} />
+      <Stack.Screen name="AdminGoogleBusiness" component={AdminGoogleBusinessScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Google Business" /> }} />
     </Stack.Navigator>
   );
 }
