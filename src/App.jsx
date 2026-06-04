@@ -328,8 +328,10 @@ function AppShell({ initialView = 'home' }) {
         scrollTo={adminInitial?.scrollTo}
         onClose={() => { setShowAdmin(false); setAdminInitial(null); }}
         onOpenWizard={(phaseKey) => {
-          setShowAdmin(false);
-          setAdminInitial(null);
+          // Keep Admin open underneath — the wizard (z-index 200) renders over
+          // the Admin overlay (z-index 50), so Settings stays put behind the
+          // dimmed backdrop instead of flashing the home grid. Closing the
+          // wizard returns the user to where they were in Settings.
           setWizardInitialPhase(phaseKey || null);
           setShowWizard(true);
           setDismissedThisSession(false);
