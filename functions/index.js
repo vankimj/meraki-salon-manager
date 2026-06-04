@@ -6225,6 +6225,14 @@ exports.setStripePromotionCodeActive = onCall({ cors: true, secrets: [stripeKey]
 // bill the salon's OWN clients) are cancelled. The Stripe portal can't run a
 // pre-check, so its plan-switching is disabled; it keeps cancel/card/invoices.
 
+// The Functions emulator can't mount Secret Manager secrets, so omit the secret
+// binding when emulated (the downgrade-gate e2e only exercises Stripe-free
+// paths). Real deploys bind stripeKey as normal. FIREBASE_EMULATOR_HUB is set
+// throughout the emulator lifecycle (incl. the function-discovery phase, where
+// FUNCTIONS_EMULATOR is not yet present).
+const IS_EMULATED = !!(process.env.FUNCTIONS_EMULATOR || process.env.FIREBASE_EMULATOR_HUB);
+const gateStripeSecrets = IS_EMULATED ? [] : [stripeKey];
+
 // Owner toggles a higher-tier module on/off. Disabling Memberships is gated on
 // having zero still-billing client memberships (the money-critical teardown).
 exports.setModuleEnabled = onCall({ cors: true, timeoutSeconds: 30 }, async (request) => {
@@ -6259,7 +6267,7 @@ exports.setModuleEnabled = onCall({ cors: true, timeoutSeconds: 30 }, async (req
 // touching Stripe (the UI uses it to render readiness). The authoritative
 // money check (no active memberships) is re-run here regardless of the
 // client-side disabledModules flag — UI gate is convenience, this is the boundary.
-exports.changeTenantPlan = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+exports.changeTenantPlan = onCall({ cors: true, secrets: gateStripeSecrets, timeoutSeconds: 30 }, async (request) => {
   const { targetPlan, dryRun, tenantId: tid } = request.data || {};
   const tId = tid || TENANT_ID;
   if (!['starter', 'studio', 'pro'].includes(targetPlan)) {
@@ -6323,7 +6331,7 @@ exports.changeTenantPlan = onCall({ cors: true, secrets: [stripeKey], timeoutSec
 // Actually cancels a client's membership Stripe subscription (the existing
 // admin "Edit → Cancelled" only set a local status and left Stripe billing).
 // Needed so an owner can clear the Memberships teardown gate from the app.
-exports.cancelMembership = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+exports.cancelMembership = onCall({ cors: true, secrets: gateStripeSecrets, timeoutSeconds: 30 }, async (request) => {
   const { membershipId, tenantId: tid } = request.data || {};
   const tId = tid || TENANT_ID;
   if (!membershipId) throw new HttpsError('invalid-argument', 'membershipId required');

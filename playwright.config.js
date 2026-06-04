@@ -34,7 +34,9 @@ export default defineConfig({
   // Skip the local dev server when running against a remote URL.
   ...(REMOTE_BASE_URL ? {} : {
     webServer: {
-      command: 'npm run dev',
+      // E2E_EMULATORS=1 serves the app pointed at the local Firebase emulators
+      // (VITE_USE_EMULATORS=1) for the authed downgrade-gate spec.
+      command: process.env.E2E_EMULATORS === '1' ? 'npm run dev:emulated' : 'npm run dev',
       url: 'http://localhost:5173',
       timeout: 120 * 1000,
       reuseExistingServer: !process.env.CI,

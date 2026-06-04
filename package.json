@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:emulated": "VITE_USE_EMULATORS=1 vite",
     "build": "vite build",
     "build:staging": "vite build --mode staging",
     "version:print": "node -e \"const p=require('./package.json'); const sha=require('child_process').execSync('git rev-parse --short HEAD').toString().trim(); console.log('\\n🚀 Deployed: v'+p.version+' · '+sha+' · '+new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})+'\\n   Look for this in the bottom-right badge of the app.\\n')\"",
@@ -28,7 +29,8 @@
     "test:ui": "vitest --ui",
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
-    "e2e:ui": "playwright test --ui"
+    "e2e:ui": "playwright test --ui",
+    "e2e:emulated": "firebase emulators:exec --only auth,firestore,functions --project plumenexus-prod \"node scripts/e2e-seed.cjs && E2E_EMULATORS=1 npx playwright test downgrade-gate.spec.js\""
   },
   "dependencies": {
     "@stripe/connect-js": "^3.4.5",

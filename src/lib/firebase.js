@@ -4,9 +4,16 @@ import {
   initializeFirestore,
   persistentLocalCache,
 } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getAuth, connectAuthEmulator, signInWithEmailAndPassword } from 'firebase/auth';
+import { getFunctions, httpsCallable, connectFunctionsEmulator } from 'firebase/functions';
 import { getStorage } from 'firebase/storage';
+import { connectFirestoreEmulator } from 'firebase/firestore';
+
+// E2E: point Auth/Firestore/Functions at the local Firebase emulators when
+// VITE_USE_EMULATORS=1. Lets Playwright drive admin-gated flows (the downgrade
+// gate) without Google OAuth or touching prod. No-op in any normal build.
+const USE_EMULATORS = typeof import.meta !== 'undefined'
+  && import.meta.env && import.meta.env.VITE_USE_EMULATORS === '1';
 
 const FIREBASE_CONFIG = {
   apiKey:            'AIzaSyDyZkqpU30oiZYtm79ZFLAV7QNzZFvQEIo',
@@ -39,7 +46,7 @@ const isPhoneUA = typeof navigator !== 'undefined' &&
   /iPhone|iPod|Android.*Mobile/i.test(navigator.userAgent);
 const forceNoPersist = typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('nopersist') === '1';
-const skipPersist = isPhoneUA || forceNoPersist;
+const skipPersist = isPhoneUA || forceNoPersist || USE_EMULATORS;
 
 let _db;
 if (skipPersist) {
@@ -62,6 +69,22 @@ export const auth      = getAuth(app);
 // handle anyone with the public Firebase config can construct.
 if (typeof window !== 'undefined') window.__plumeAuth = auth;
 export const functions = getFunctions(app);
+
+if (USE_EMULATORS) {
+  connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+  connectFirestoreEmulator(_db, 'localhost', 8080);
+  connectFunctionsEmulator(functions, 'localhost', 5001);
+  // eslint-disable-next-line no-console
+  console.info('[firebase] using local emulators (auth:9099 firestore:8080 functions:5001)');
+  // E2E helper: lets Playwright sign in through the real onAuthStateChanged →
+  // checkUserAccess path (which hydrates gUser/isAdmin) without a Google popup.
+  if (typeof window !== 'undefined') {
+    window.__e2eSignIn = (email, password) => signInWithEmailAndPassword(auth, email, password);
+    // Invoke a callable through the emulated functions stack, returning .data.
+    window.__e2eCall = (name, data) => httpsCallable(functions, name)(data || {}).then(r => r.data);
+  }
+}
+
 export const callFn    = (name) => httpsCallable(functions, name);
 export const storage   = getStorage(app);
 
