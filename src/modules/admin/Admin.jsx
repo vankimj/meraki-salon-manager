@@ -761,7 +761,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
             <ModulesSection />
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
-            <StripeConnectSection onOpenWizard={onOpenWizard} />
+            <div data-anchor="payments"><StripeConnectSection onOpenWizard={onOpenWizard} /></div>
             <UpgradeSection settings={settings} gUser={gUser} />
             <DisputesSection />
             <BackupRestoreSection />

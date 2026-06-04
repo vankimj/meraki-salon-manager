@@ -137,17 +137,30 @@ function AppShell({ initialView = 'home' }) {
   // Phase3Money before redirecting to Stripe) and shows a confirmation
   // toast, so the user doesn't land on the home tile grid wondering if
   // anything happened.
+  // Land the salon back in Admin → Settings → Payments after the OAuth
+  // round-trip, with a clear success/failure toast — the Payments section
+  // shows the live status, so they always see the outcome (previously a
+  // success relied on a fleeting toast + a wizard re-open that didn't surface,
+  // and failures were silent).
+  const finishConnectCallback = (toastMsg, toastMs) => {
+    sessionStorage.removeItem('connect-return-to-wizard');
+    showToast?.(toastMsg, toastMs);
+    setShowAdmin(true);
+    setAdminInitial({ tab: 'settings', scrollTo: 'payments' });
+  };
   useStripeConnectOAuthCallback({
     gUser, settings, updateSettings,
     onSuccess: (status) => {
-      showToast?.(`✓ Stripe ${status?.accountType || 'account'} connected`, 5000);
-      const returnTo = sessionStorage.getItem('connect-return-to-wizard');
-      if (returnTo) {
-        sessionStorage.removeItem('connect-return-to-wizard');
-        setWizardInitialPhase(returnTo);
-        setShowWizard(true);
-        setDismissedThisSession(false);
-      }
+      const live = status?.chargesEnabled && status?.payoutsEnabled;
+      finishConnectCallback(
+        live
+          ? '✓ Stripe connected — card payments are ready.'
+          : '✓ Stripe connected — finish a couple details in Payments to enable payouts.',
+        6500,
+      );
+    },
+    onError: (e) => {
+      finishConnectCallback(`✗ Stripe connection didn’t finish — ${e?.message || 'try again from Settings → Payments.'}`, 8000);
     },
   });
 
