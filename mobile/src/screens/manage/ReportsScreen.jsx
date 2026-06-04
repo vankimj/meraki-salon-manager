@@ -55,6 +55,7 @@ export default function ReportsScreen({ navigation }) {
   const [picker, setPicker]   = useState(null); // 'start' | 'end' | null
   const [metrics, setMetrics] = useState(null);
   const [cancels, setCancels] = useState(null);
+  const [prev, setPrev]       = useState(null);
   const [loading, setLoading] = useState(true);
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
@@ -63,13 +64,21 @@ export default function ReportsScreen({ navigation }) {
     setLoading(true);
     try {
       const { startDate, endDate } = range;
-      const [receipts, appts] = await Promise.all([
+      // Previous equal-length window, immediately before, for the deltas.
+      const s = new Date(startDate + 'T00:00:00'), e = new Date(endDate + 'T00:00:00');
+      const prevEnd = new Date(s.getTime() - 86400000);
+      const prevStart = new Date(prevEnd.getTime() - (e - s));
+      const pIso = (d) => d.toISOString().slice(0, 10);
+      const [receipts, appts, pReceipts, pAppts] = await Promise.all([
         fetchReceiptsByRange(startDate, endDate).catch(() => []),
         fetchAppointmentsByRange(startDate, endDate).catch(() => []),
+        fetchReceiptsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
+        fetchAppointmentsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
       ]);
       setMetrics(computeMetrics(buildTransactions(receipts, appts)));
       setCancels(computeCancellations(appts, receipts));
-    } catch { setMetrics(null); setCancels(null); }
+      setPrev(computeMetrics(buildTransactions(pReceipts, pAppts)));
+    } catch { setMetrics(null); setCancels(null); setPrev(null); }
     finally { setLoading(false); }
   }, [custom, days, cStart, cEnd]);
   useEffect(() => { load(); }, [load]);
@@ -118,11 +127,12 @@ export default function ReportsScreen({ navigation }) {
       ) : (
         <>
           <View style={styles.kpis}>
-            <Kpi label="Revenue" value={money(metrics.totalRevenue)} big />
-            <Kpi label="Appts" value={metrics.totalAppts} />
-            <Kpi label="Avg ticket" value={money(metrics.avgTicket)} />
-            <Kpi label="Tips" value={money(metrics.tipTotal)} />
+            <Kpi label="Revenue" value={money(metrics.totalRevenue)} big delta={pctDelta(metrics.totalRevenue, prev?.totalRevenue)} />
+            <Kpi label="Appts" value={metrics.totalAppts} delta={pctDelta(metrics.totalAppts, prev?.totalAppts)} />
+            <Kpi label="Avg ticket" value={money(metrics.avgTicket)} delta={pctDelta(metrics.avgTicket, prev?.avgTicket)} />
+            <Kpi label="Tips" value={money(metrics.tipTotal)} delta={pctDelta(metrics.tipTotal, prev?.tipTotal)} />
           </View>
+          <Text style={styles.deltaNote}>▲▼ vs the previous {custom ? 'period' : (days === 0 ? 'day' : `${days} days`)}</Text>
 
           <Text style={styles.section}>Revenue per day</Text>
           <RevenueChart byDay={metrics.byDay} />
@@ -174,11 +184,22 @@ export default function ReportsScreen({ navigation }) {
   );
 }
 
-function Kpi({ label, value, big }) {
+function pctDelta(cur, prev) {
+  if (prev == null || prev === 0) return null;
+  return Math.round(((cur - prev) / Math.abs(prev)) * 100);
+}
+
+function Kpi({ label, value, big, delta }) {
+  const up = delta != null && delta >= 0;
   return (
     <View style={[styles.kpi, big && styles.kpiBig]}>
       <Text style={[styles.kpiValue, big && styles.kpiValueBig]}>{value}</Text>
-      <Text style={styles.kpiLabel}>{label}</Text>
+      <View style={styles.kpiBottom}>
+        <Text style={styles.kpiLabel}>{label}</Text>
+        {delta != null && (
+          <Text style={[styles.kpiDelta, { color: up ? '#16a34a' : '#c0392b' }]}>{up ? '▲' : '▼'} {Math.abs(delta)}%</Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -205,6 +226,9 @@ const styles = StyleSheet.create({
   kpiValue: { fontSize: 20, fontWeight: '800', color: '#1a1a1a' },
   kpiValueBig:{ fontSize: 26, color: GREEN },
   kpiLabel: { fontSize: 11, color: '#888', marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.3 },
+  kpiBottom:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 },
+  kpiDelta: { fontSize: 11, fontWeight: '800' },
+  deltaNote:{ fontSize: 11, color: '#aaa', marginTop: 2, marginBottom: 4 },
   section:  { fontSize: 14, fontWeight: '800', color: '#1a1a1a', marginTop: 22, marginBottom: 8 },
   row:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: '#ececec', gap: 10 },
   rank:     { fontSize: 14, fontWeight: '800', color: '#bbb', width: 18, textAlign: 'center' },
