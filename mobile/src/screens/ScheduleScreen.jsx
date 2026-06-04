@@ -286,13 +286,14 @@ export default function ScheduleScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Tab / cart pill — only when something's been staged */}
+      {/* Tab / cart bar — only when something's been staged */}
       {tabSnap.appts.length + tabSnap.products.length > 0 && (
-        <TouchableOpacity style={styles.cartPill} onPress={() => setTabOpen(true)} activeOpacity={0.8}>
-          <Text style={styles.cartPillText}>
-            🛒 Tab · {tabSnap.appts.length} appt{tabSnap.appts.length !== 1 ? 's' : ''}
-            {' · $'}{tabTotal().toFixed(2)}
-          </Text>
+        <TouchableOpacity style={styles.cartBar} onPress={() => setTabOpen(true)} activeOpacity={0.85}>
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{tabSnap.appts.length + tabSnap.products.length}</Text>
+          </View>
+          <Text style={styles.cartBarText}>🛒  Tab · ${tabTotal().toFixed(2)}</Text>
+          <Text style={styles.cartBarCta}>Check out ›</Text>
         </TouchableOpacity>
       )}
 
@@ -1891,8 +1892,11 @@ const styles = StyleSheet.create({
   modalContactBtnText: { fontSize: 12, fontWeight: '700', color: '#1a5f8a' },
 
   // Cart / tab pill in the date-row header
-  cartPill:        { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#fde68a' },
-  cartPillText:    { fontSize: 13, color: '#92400e', fontWeight: '700' },
+  cartBar:         { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: '#2D7A5F', marginHorizontal: 12, marginTop: 8, marginBottom: 4, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  cartBadge:       { minWidth: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
+  cartBadgeText:   { color: '#fff', fontWeight: '800', fontSize: 14 },
+  cartBarText:     { flex: 1, color: '#fff', fontWeight: '800', fontSize: 16 },
+  cartBarCta:      { color: '#fff', fontWeight: '800', fontSize: 15, opacity: 0.95 },
 
   // Add-to-tab button on detail modal
   tabAddBtn:           { backgroundColor: '#fffbeb', borderWidth: 1.5, borderColor: '#fde68a', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
