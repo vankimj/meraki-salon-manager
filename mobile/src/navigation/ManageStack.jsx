@@ -13,6 +13,8 @@ import EmployeesScreen     from '../screens/manage/EmployeesScreen';
 import MeetingsScreen      from '../screens/manage/MeetingsScreen';
 import WalkinScreen        from '../screens/manage/WalkinScreen';
 import ReportsScreen       from '../screens/manage/ReportsScreen';
+import HRScreen            from '../screens/manage/HRScreen';
+import MarketingScreen     from '../screens/manage/MarketingScreen';
 import TrashScreen         from '../screens/manage/TrashScreen';
 import AdminHomeScreen     from '../screens/admin/AdminHomeScreen';
 import AdminLogsScreen     from '../screens/admin/AdminLogsScreen';
@@ -23,6 +25,8 @@ import AdminIntegrityScreen from '../screens/admin/AdminIntegrityScreen';
 import AdminNotifsScreen   from '../screens/admin/AdminNotifsScreen';
 import AdminReviewsScreen  from '../screens/admin/AdminReviewsScreen';
 import AdminOnboardingScreen from '../screens/admin/AdminOnboardingScreen';
+import AdminWebfrontScreen from '../screens/admin/AdminWebfrontScreen';
+import AdminSmsScreen      from '../screens/admin/AdminSmsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -55,6 +59,10 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Walk-in Kiosk" /> }} />
       <Stack.Screen name="Reports" component={ReportsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Reports" /> }} />
+      <Stack.Screen name="HR" component={HRScreen}
+        options={{ headerTitle: () => <HeaderTitle title="HR" /> }} />
+      <Stack.Screen name="Marketing" component={MarketingScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Marketing" /> }} />
 
       <Stack.Screen name="ManageChat"  component={ChatScreen}
         options={{ headerTitle: () => <HeaderTitle title="Messages" /> }} />
@@ -85,6 +93,10 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Reviews" /> }} />
       <Stack.Screen name="AdminOnboarding" component={AdminOnboardingScreen}
         options={{ headerTitle: () => <HeaderTitle title="Onboarding" /> }} />
+      <Stack.Screen name="AdminWebfront" component={AdminWebfrontScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Public Site" /> }} />
+      <Stack.Screen name="AdminSms" component={AdminSmsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="SMS" /> }} />
     </Stack.Navigator>
   );
 }

@@ -14,6 +14,8 @@ const ROWS = [
   { key: 'AdminNotifs',    icon: 'mail',      label: 'Notifications',  desc: 'Sent alerts & delivery status' },
   { key: 'AdminReviews',   icon: 'star',      label: 'Reviews',        desc: 'Google review requests & received' },
   { key: 'AdminOnboarding',icon: 'check',     label: 'Onboarding',     desc: 'Setup progress' },
+  { key: 'AdminWebfront',  icon: 'pin',       label: 'Public Site',    desc: 'Business info shown to clients' },
+  { key: 'AdminSms',       icon: 'phone',     label: 'SMS',            desc: 'Texting status & number' },
   { key: 'AdminIntegrity', icon: 'check',     label: 'Data Integrity', desc: 'Nightly data-health scan' },
   { key: 'Trash',          icon: 'trash',     label: 'Trash',          desc: 'Restore anything deleted (all modules)' },
 ];
@@ -41,7 +43,7 @@ export default function AdminHomeScreen({ navigation }) {
         </TouchableOpacity>
       ))}
       <Text style={styles.note}>
-        More admin tools (Webfront, SMS, Demo Data, full Settings, role editing) live on the web app and are coming to mobile.
+        The full Settings catalog (40+ sections) and the Demo Data seeder live on the web app. Webfront hours editing + Google Business connection are also web-only for now.
       </Text>
     </ScrollView>
   );
