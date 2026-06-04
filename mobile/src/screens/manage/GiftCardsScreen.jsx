@@ -20,6 +20,7 @@ const CARD_FIELDS = [
   { key: 'value',   label: 'Value ($)',   type: 'number', placeholder: '50' },
   { key: 'balance', label: 'Balance ($)', type: 'number', placeholder: '50' },
   { key: 'active',  label: 'Active',      type: 'bool' },
+  { key: 'voided',  label: 'Void this card', type: 'bool' },
 ];
 
 const PROMO_FIELDS = [
@@ -49,13 +50,13 @@ export default function GiftCardsScreen({ navigation }) {
         <ManageCrud
           load={fetchGiftCards}
           create={(d) => createGiftCard({ ...d, balance: d.balance || d.value })}
-          save={updateGiftCard}
+          save={(id, d) => updateGiftCard(id, d.voided ? { ...d, balance: 0, active: false, voidedAt: new Date().toISOString() } : d)}
           remove={deleteGiftCard}
           canEdit={isAdmin}
-          blank={() => ({ code: genCode('GC'), value: 0, balance: 0, active: true })}
+          blank={() => ({ code: genCode('GC'), value: 0, balance: 0, active: true, voided: false })}
           fields={CARD_FIELDS}
           titleOf={(c) => c.code}
-          subtitleOf={(c) => `$${c.balance ?? c.value ?? 0} of $${c.value ?? 0}${c.active === false ? ' · inactive' : ''}`}
+          subtitleOf={(c) => c.voided ? `VOIDED · was $${c.value ?? 0}` : `$${c.balance ?? c.value ?? 0} of $${c.value ?? 0}${c.active === false ? ' · inactive' : ''}`}
           addLabel="New gift card"
         />
       ) : (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Image, Alert, KeyboardAvoidingView, Platform, Linking,
+  ActivityIndicator, Image, Alert, KeyboardAvoidingView, Platform, Linking, Switch,
 } from 'react-native';
 import { fetchClient, saveClient, fetchClientAppointments } from '../lib/firestore';
 import Icon from '../components/Icon';
@@ -85,6 +85,15 @@ export default function ClientDetailScreen({ route, navigation }) {
         facebook:   draft.facebook || '',
         tiktok:     draft.tiktok || '',
         venmo:      draft.venmo || '',
+        // Marketing consent (TCPA) — the same fields the campaign-send audience
+        // filter (buildMarketingRecipients) honors.
+        marketingOptOut: !!draft.marketingOptOut,
+        commPreferences: {
+          appointmentSms:   draft.commPreferences?.appointmentSms   !== false,
+          appointmentEmail: draft.commPreferences?.appointmentEmail !== false,
+          marketingSms:     draft.commPreferences?.marketingSms     !== false,
+          marketingEmail:   draft.commPreferences?.marketingEmail   !== false,
+        },
       };
       await saveClient(clientId, payload);
       setClient({ ...client, ...payload });
@@ -157,6 +166,19 @@ export default function ClientDetailScreen({ route, navigation }) {
               <Field label="⚠ Allergies" value={draft.allergies} onChange={v => set('allergies', v)} editing={editing} placeholder="e.g. Latex, acetone, gel" warn />
               <Field label="Notes"    value={draft.notes}    onChange={v => set('notes', v)}    editing={editing} multiline rows={4}
                      placeholder="Allergies, preferences, last polish, anything the next stylist should know..." />
+
+              <Text style={styles.commHeader}>Marketing consent</Text>
+              <ToggleRow label="Opt out of ALL marketing" value={!!draft.marketingOptOut} editing={editing}
+                onChange={v => set('marketingOptOut', v)} danger />
+              {!draft.marketingOptOut && (
+                <>
+                  <ToggleRow label="Marketing texts" value={draft.commPreferences?.marketingSms !== false} editing={editing}
+                    onChange={v => setDraft(p => ({ ...p, commPreferences: { ...(p.commPreferences || {}), marketingSms: v } }))} />
+                  <ToggleRow label="Marketing emails" value={draft.commPreferences?.marketingEmail !== false} editing={editing}
+                    onChange={v => setDraft(p => ({ ...p, commPreferences: { ...(p.commPreferences || {}), marketingEmail: v } }))} />
+                </>
+              )}
+              <Text style={styles.commHint}>Campaigns only send to clients who haven't opted out (TCPA).</Text>
             </>
           )}
 
@@ -264,8 +286,24 @@ function StatusPill({ status }) {
   );
 }
 
+function ToggleRow({ label, value, editing, onChange, danger }) {
+  return (
+    <View style={styles.toggleRow}>
+      <Text style={[styles.toggleLabel, danger && value && { color: '#b45309', fontWeight: '700' }]}>{label}</Text>
+      {editing
+        ? <Switch value={value} onValueChange={onChange} trackColor={{ true: '#2D7A5F' }} />
+        : <Text style={styles.toggleVal}>{danger ? (value ? 'Opted out' : 'Subscribed') : (value ? 'On' : 'Off')}</Text>}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
+  commHeader:{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginTop: 18, marginBottom: 4 },
+  commHint:  { fontSize: 11.5, color: '#aaa', marginTop: 8, lineHeight: 16 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, marginTop: 8, borderWidth: 1, borderColor: '#ececec' },
+  toggleLabel:{ fontSize: 14, color: '#1a1a1a', flex: 1 },
+  toggleVal: { fontSize: 13, color: '#888', fontWeight: '600' },
   headerBtn: { color: '#2D7A5F', fontSize: 15, fontWeight: '600' },
 
   identity: { alignItems: 'center', paddingVertical: 22, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ebebeb' },
