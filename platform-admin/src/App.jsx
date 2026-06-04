@@ -8,6 +8,7 @@ import TenantDetail from './components/TenantDetail.jsx';
 import AuditLog from './components/AuditLog.jsx';
 import TicketsQueue from './components/TicketsQueue.jsx';
 import CouponsAdmin from './components/CouponsAdmin.jsx';
+import SmsAdmin from './components/SmsAdmin.jsx';
 import { C, FONT } from './theme.js';
 
 const norm = (p) => (p.length > 1 && p.endsWith('/') ? p.slice(0, -1) : p);
@@ -60,6 +61,8 @@ export default function App() {
         <TicketsQueue />
       ) : path === '/coupons' ? (
         <CouponsAdmin />
+      ) : path === '/sms' ? (
+        <SmsAdmin />
       ) : (
         <NotFound />
       )}

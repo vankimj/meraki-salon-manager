@@ -9199,6 +9199,164 @@ exports.getTenantMetadata = onCall(
   }
 );
 
+// ── Platform SMS: shared TFN marker + inbound orphan triage ────────────────
+// Used by platform-admin's SMS panel. The shared-TFN model (one Plume Nexus
+// number fanning out to many salons) requires:
+//   (a) a one-time call to mark the TFN as shared in the registry
+//   (b) a triage queue for inbound messages that arrive on the shared TFN
+//       from a phone we have no client→salon mapping for (the
+//       `platform/inboundOrphans/queue` collection populated by
+//       twilioInboundSms).
+// All four callables are platform-admin only and write to the audit log.
+
+const { markTfnAsShared: _markTfnAsShared } = require('./lib/tfnRegistry');
+
+exports.markSharedTfn = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!await isPlatformAdmin(request.auth.token.email)) {
+    throw new HttpsError('permission-denied', 'Platform admin only');
+  }
+  const phone = String(request.data?.phone || '').trim();
+  if (!/^\+\d{10,15}$/.test(phone)) {
+    throw new HttpsError('invalid-argument', 'phone must be E.164 with leading +');
+  }
+  // Rate-limit per admin: at most 3 marks/hour. This is a privileged action
+  // that touches routing infrastructure; tighter than typical CRUD.
+  const rate = checkAdminActionRate(request.auth.token.email, 'markSharedTfn', 3, 60 * 60 * 1000);
+  if (!rate.allowed) throw new HttpsError('resource-exhausted', `Rate limited; retry in ${Math.ceil(rate.retryAfterMs / 1000)}s`);
+
+  const db = getFirestore();
+  await _markTfnAsShared(db, phone);
+  await logAdminAction(db, request, 'sms.markSharedTfn', { phone });
+  return { ok: true, phone };
+});
+
+exports.listInboundOrphans = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!await isPlatformAdmin(request.auth.token.email)) {
+    throw new HttpsError('permission-denied', 'Platform admin only');
+  }
+  const lim = Math.max(1, Math.min(200, Number(request.data?.limit) || 50));
+  const db  = getFirestore();
+  const snap = await db.collection('platform/inboundOrphans/queue')
+    .orderBy('at', 'desc').limit(lim).get();
+  return {
+    orphans: snap.docs.map(d => ({
+      id:        d.id,
+      from:     d.data().from || '',
+      to:       d.data().to   || '',
+      body:     String(d.data().body || '').slice(0, 1400),
+      twilioSid: d.data().twilioSid || null,
+      at:       d.data().at || null,
+    })),
+  };
+});
+
+exports.forwardInboundOrphan = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!await isPlatformAdmin(request.auth.token.email)) {
+    throw new HttpsError('permission-denied', 'Platform admin only');
+  }
+  const orphanId = String(request.data?.orphanId || '').trim();
+  const tenantId = String(request.data?.tenantId || '').trim();
+  if (!orphanId) throw new HttpsError('invalid-argument', 'orphanId required');
+  if (!tenantId) throw new HttpsError('invalid-argument', 'tenantId required');
+
+  // Rate-limit: 30 forwards/hr per admin. Forward is a write that
+  // creates a chat entry in a tenant's data; tighter limit than a
+  // pure-read operation.
+  const rate = checkAdminActionRate(request.auth.token.email, 'forwardInboundOrphan', 30, 60 * 60 * 1000);
+  if (!rate.allowed) throw new HttpsError('resource-exhausted', `Rate limited; retry in ${Math.ceil(rate.retryAfterMs / 1000)}s`);
+
+  const db = getFirestore();
+  const ref = db.doc(`platform/inboundOrphans/queue/${orphanId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'orphan not found');
+  const orph = snap.data();
+  const from = String(orph.from || '').trim();
+  if (!from) throw new HttpsError('failed-precondition', 'orphan missing From');
+
+  // Confirm the target tenant exists before mutating its chat data.
+  const tDoc = await db.doc(`tenants/${tenantId}`).get();
+  if (!tDoc.exists) throw new HttpsError('not-found', 'tenant not found');
+
+  // Find an existing client in this tenant by last-10-digit match; if
+  // none, mint a minimal client doc so the chat thread has somewhere
+  // to land. Salon admin can rename/fill in details later.
+  let client = await findClientByPhone(tenantId, from);
+  if (!client) {
+    const newClient = {
+      name:    `Unknown caller (${from.slice(-4)})`,
+      phone:   from,
+      email:   '',
+      source: 'inbound_orphan_forward',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      _orphanForwardedFrom: orphanId,
+    };
+    const ref2 = await db.collection(`tenants/${tenantId}/clients`).add(newClient);
+    client = { id: ref2.id, ...newClient };
+  }
+
+  // Append the orphan body to the tenant's chat thread for this client.
+  const message = {
+    text:      String(orph.body || ''),
+    channel:  'sms',
+    from:     'client',
+    at:       orph.at || new Date().toISOString(),
+    twilioSid: orph.twilioSid || null,
+    phone:    from,
+    forwardedFromOrphan: true,
+  };
+  await appendChatMessage(tenantId, client.id, client, message);
+
+  // Also pre-seed the cross-tenant routing index so future replies from
+  // this client land directly in the right tenant — no orphan loop.
+  await setClientLastSalon(db, from, tenantId, client.id).catch(() => {});
+
+  // Mirror the inbound-notify pattern used by twilioInboundSms.
+  await db.collection(`tenants/${tenantId}/chatNotifications`).add({
+    clientId:    client.id,
+    clientName:  client.name || 'Client',
+    clientEmail: client.email || '',
+    clientPhone: from,
+    preview:     String(orph.body || '').slice(0, 240),
+    channel:    'sms',
+    at:         new Date().toISOString(),
+    source:    'orphan_forward',
+  }).catch(() => {});
+
+  await ref.delete();
+  await logAdminAction(db, request, 'sms.forwardInboundOrphan', {
+    orphanId, tenantId, clientId: client.id, from,
+  });
+  return { ok: true, tenantId, clientId: client.id };
+});
+
+exports.deleteInboundOrphan = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!await isPlatformAdmin(request.auth.token.email)) {
+    throw new HttpsError('permission-denied', 'Platform admin only');
+  }
+  const orphanId = String(request.data?.orphanId || '').trim();
+  if (!orphanId) throw new HttpsError('invalid-argument', 'orphanId required');
+
+  const rate = checkAdminActionRate(request.auth.token.email, 'deleteInboundOrphan', 60, 60 * 60 * 1000);
+  if (!rate.allowed) throw new HttpsError('resource-exhausted', `Rate limited; retry in ${Math.ceil(rate.retryAfterMs / 1000)}s`);
+
+  const db = getFirestore();
+  const ref = db.doc(`platform/inboundOrphans/queue/${orphanId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'orphan not found');
+  const orph = snap.data();
+
+  await ref.delete();
+  await logAdminAction(db, request, 'sms.deleteInboundOrphan', {
+    orphanId, from: orph.from || '', to: orph.to || '',
+  });
+  return { ok: true };
+});
+
 exports.listTenants = onCall(
   { cors: true, timeoutSeconds: 30 },
   async (request) => {

@@ -164,6 +164,18 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ── Inbound SMS orphan triage queue ──────────────────
+    //   `platform/inboundOrphans/queue/{id}` → { from, to, body, twilioSid, at }.
+    //   Populated by twilioInboundSms when a message arrives on the shared
+    //   Plume Nexus TFN from a phone we have no client→salon mapping for.
+    //   Bootstrap admin can read for the platform-admin SMS triage view;
+    //   all writes happen via admin SDK (twilioInboundSms write, the
+    //   forwardInboundOrphan / deleteInboundOrphan callables delete).
+    match /platform/inboundOrphans/queue/{id} {
+      allow read:  if isBootstrapAdmin();
+      allow write: if false;
+    }
+
     // ── Tenant data ──────────────────────────────────────
     match /tenants/{tenantId} {
       // Root tenant registry document. Holds plan, billing, owner contact,
