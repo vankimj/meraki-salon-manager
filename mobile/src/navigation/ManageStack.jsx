@@ -9,6 +9,11 @@ import ProductsScreen      from '../screens/manage/ProductsScreen';
 import AttendanceScreen    from '../screens/manage/AttendanceScreen';
 import GiftCardsScreen     from '../screens/manage/GiftCardsScreen';
 import MembershipsScreen   from '../screens/manage/MembershipsScreen';
+import TrashScreen         from '../screens/manage/TrashScreen';
+import AdminHomeScreen     from '../screens/admin/AdminHomeScreen';
+import AdminLogsScreen     from '../screens/admin/AdminLogsScreen';
+import AdminSettingsScreen from '../screens/admin/AdminSettingsScreen';
+import AdminUsersScreen    from '../screens/admin/AdminUsersScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -41,6 +46,18 @@ export default function ManageStack() {
 
       <Stack.Screen name="ModulePlaceholder" component={ModulePlaceholder}
         options={({ route }) => ({ headerTitle: () => <HeaderTitle title={route.params?.label || 'Module'} /> })} />
+
+      <Stack.Screen name="Trash" component={TrashScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />
+
+      <Stack.Screen name="AdminHome" component={AdminHomeScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Admin" /> }} />
+      <Stack.Screen name="AdminLogs" component={AdminLogsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Activity Log" /> }} />
+      <Stack.Screen name="AdminSettings" component={AdminSettingsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Settings" /> }} />
+      <Stack.Screen name="AdminUsers" component={AdminUsersScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Users & Roles" /> }} />
     </Stack.Navigator>
   );
 }

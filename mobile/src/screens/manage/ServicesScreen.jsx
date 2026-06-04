@@ -1,5 +1,6 @@
 import ManageCrud from './ManageCrud';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useTrashHeader from '../../hooks/useTrashHeader';
 import { fetchServices, createService, saveService, deleteService } from '../../lib/firestore';
 
 const FIELDS = [
@@ -11,8 +12,9 @@ const FIELDS = [
   { key: 'active',      label: 'Active',      type: 'bool' },
 ];
 
-export default function ServicesScreen() {
+export default function ServicesScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
+  useTrashHeader(navigation, ['services'], isAdmin);
   return (
     <ManageCrud
       load={fetchServices}

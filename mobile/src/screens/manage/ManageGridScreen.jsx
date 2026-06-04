@@ -71,6 +71,20 @@ export default function ManageGridScreen({ navigation }) {
             </TouchableOpacity>
           );
         })}
+
+        {isAdmin && (
+          <TouchableOpacity
+            style={[styles.tile, styles.adminTile]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('AdminHome')}
+          >
+            <View style={[styles.iconWrap, styles.adminIconWrap]}>
+              <Icon name="briefcase" size={26} color="#b91c1c" />
+            </View>
+            <Text style={styles.tileLabel} numberOfLines={1}>Admin</Text>
+            <Text style={styles.tileDesc} numberOfLines={2}>Users, settings, logs & trash</Text>
+          </TouchableOpacity>
+        )}
       </View>
       {visible.length === 0 && (
         <Text style={styles.empty}>No modules available for your role.</Text>
@@ -97,5 +111,7 @@ const styles = StyleSheet.create({
   tileDesc:  { fontSize: 11.5, color: '#8a8a8a', marginTop: 3, lineHeight: 15 },
   soonPill:  { alignSelf: 'flex-start', marginTop: 8, backgroundColor: '#fdf2e6', borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   soonText:  { fontSize: 10, fontWeight: '700', color: '#c47d2e', letterSpacing: 0.2 },
+  adminTile:    { borderColor: '#f3d3d0' },
+  adminIconWrap:{ backgroundColor: '#fdecea' },
   empty:     { textAlign: 'center', color: '#999', marginTop: 40, fontSize: 13 },
 });

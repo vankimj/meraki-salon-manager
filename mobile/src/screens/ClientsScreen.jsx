@@ -2,8 +2,12 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { fetchClients } from '../lib/firestore';
+import useTenantAccess from '../hooks/useTenantAccess';
+import useTrashHeader from '../hooks/useTrashHeader';
 
 export default function ClientsScreen({ navigation }) {
+  const { isAdmin } = useTenantAccess();
+  useTrashHeader(navigation, ['clients'], isAdmin);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

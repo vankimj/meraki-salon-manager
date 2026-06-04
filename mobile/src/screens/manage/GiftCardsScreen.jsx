@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import ManageCrud from './ManageCrud';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useTrashHeader from '../../hooks/useTrashHeader';
 import {
   fetchGiftCards, createGiftCard, updateGiftCard, deleteGiftCard,
   fetchPromoCodes, createPromoCode, savePromoCode, deletePromoCode,
@@ -30,8 +31,9 @@ const PROMO_FIELDS = [
   { key: 'active',         label: 'Active',       type: 'bool' },
 ];
 
-export default function GiftCardsScreen() {
+export default function GiftCardsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
+  useTrashHeader(navigation, ['giftCards', 'promoCodes'], isAdmin);
   const [tab, setTab] = useState('cards');
 
   return (

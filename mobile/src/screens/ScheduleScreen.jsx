@@ -11,6 +11,7 @@ import {
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import useTenantAccess from '../hooks/useTenantAccess';
+import useTrashHeader from '../hooks/useTrashHeader';
 import Icon from '../components/Icon';
 
 // Salon hours + slot grid. Matches the web SLOT_H=40 / 9am-8pm convention
@@ -154,9 +155,10 @@ function colorsForAppt(appt, allTechs) {
   return { bg: col.bg, border: col.solid, text: col.text, faded: false };
 }
 
-export default function ScheduleScreen() {
+export default function ScheduleScreen({ navigation }) {
   const { employee, techName, loading: empLoading } = useCurrentEmployee();
   const { isAdmin, canEditSchedule, email } = useTenantAccess();
+  useTrashHeader(navigation, ['appointments', 'timeOff'], isAdmin);
   const [date,    setDate]    = useState(todayStr());
   const [appts,   setAppts]   = useState([]);
   const [loading, setLoading] = useState(true);

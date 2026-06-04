@@ -1,5 +1,6 @@
 import ManageCrud from './ManageCrud';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useTrashHeader from '../../hooks/useTrashHeader';
 import { fetchProducts, createProduct, saveProduct, deleteProduct } from '../../lib/firestore';
 
 const FIELDS = [
@@ -11,8 +12,9 @@ const FIELDS = [
   { key: 'active',      label: 'Active',    type: 'bool' },
 ];
 
-export default function ProductsScreen() {
+export default function ProductsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
+  useTrashHeader(navigation, ['products'], isAdmin);
   return (
     <ManageCrud
       load={fetchProducts}

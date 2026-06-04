@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
-  query, where, orderBy, limit, onSnapshot, arrayUnion, increment,
+  query, where, orderBy, limit, onSnapshot, arrayUnion, increment, deleteField,
 } from 'firebase/firestore';
 import { db, callFn, auth } from './firebase';
 import { getCurrentTenant } from './currentTenant';
@@ -408,4 +408,88 @@ export async function saveMembership(id, data) {
 }
 export async function deleteMembership(id) {
   await softDelete(doc(tenantCol('memberships'), id));
+}
+
+// ── Trash / restore (mirrors web src/lib/firestore.js) ─────────────────
+// Each soft-delete collection's path == its key under tenantCol. The 4
+// BQ-mirrored collections restore losslessly via the restoreDocFromBQ
+// Cloud Function; the rest un-tombstone in place via clearTombstone.
+const SOFT_DELETED_COLLECTIONS = [
+  { key: 'clients',         restorable: true  },
+  { key: 'appointments',    restorable: true  },
+  { key: 'receipts',        restorable: true  },
+  { key: 'employees',       restorable: true  },
+  { key: 'memberships',     restorable: false },
+  { key: 'giftCards',       restorable: false },
+  { key: 'services',        restorable: false },
+  { key: 'bonuses',         restorable: false },
+  { key: 'membershipPlans', restorable: false },
+  { key: 'timeOff',         restorable: false },
+  { key: 'promoCodes',      restorable: false },
+  { key: 'reviews',         restorable: false },
+  { key: 'meetings',        restorable: false },
+  { key: 'products',        restorable: false },
+  { key: 'campaigns',       restorable: false },
+];
+
+// `collections` (optional) scopes to specific keys for per-module/calendar
+// trash; omit for the global Admin trash. Single-field `_deleted` index —
+// no composite needed. Failing collections are skipped, not fatal.
+export async function fetchRecentlyDeleted({ maxPerCollection = 50, collections = null } = {}) {
+  const targets = collections
+    ? SOFT_DELETED_COLLECTIONS.filter(s => collections.includes(s.key))
+    : SOFT_DELETED_COLLECTIONS;
+  const results = await Promise.all(targets.map(async ({ key, restorable }) => {
+    try {
+      const snap = await getDocs(query(tenantCol(key), where('_deleted', '==', true), limit(maxPerCollection)));
+      return snap.docs.map(d => ({ id: d.id, collection: key, restorable, ...d.data() }));
+    } catch (e) {
+      console.warn(`[fetchRecentlyDeleted] ${key} failed:`, e?.code || e?.message);
+      return [];
+    }
+  }));
+  return results.flat().sort((a, b) => (b._deletedAt || '').localeCompare(a._deletedAt || ''));
+}
+
+// Un-tombstone in place (non-BQ collections). Admin-only via rules.
+export async function clearTombstone(collectionKey, docId) {
+  if (!SOFT_DELETED_COLLECTIONS.some(s => s.key === collectionKey)) {
+    throw new Error(`Collection "${collectionKey}" not in soft-delete allowlist`);
+  }
+  await updateDoc(doc(tenantCol(collectionKey), docId), {
+    _deleted:    deleteField(),
+    _deletedAt:  deleteField(),
+    _deletedBy:  deleteField(),
+    _restoredAt: new Date().toISOString(),
+  });
+}
+
+// Lossless restore from the BigQuery mirror (clients/appointments/receipts/
+// employees) via the existing Cloud Function.
+export async function restoreDocFromBQ(collectionKey, docId, snapshotTimestamp) {
+  const res = await callFn('restoreDocFromBQ')({
+    tenantId: getCurrentTenant(), collection: collectionKey, docId, snapshotTimestamp,
+  });
+  return res?.data || { restored: false };
+}
+
+// ── Admin (mobile) ─────────────────────────────────────
+// Activity log — same shape as web logActivity (timestamp/email/name/
+// action/details). Admin-only read via rules.
+export async function fetchLogs(n = 100) {
+  const snap = await getDocs(query(tenantCol('logs'), orderBy('timestamp', 'desc'), limit(n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// Merge-update tenant settings (data/settings). Mirrors the web
+// updateSettings — only the passed keys change.
+export async function updateSettings(payload) {
+  await setDoc(tenantDoc('settings'), { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// Rich users[] from data/usersFull (admin-only doc). Read-only on mobile
+// for now; role edits stay on web until the projection writeBatch is ported.
+export async function fetchUsersFull() {
+  const snap = await getDoc(tenantDoc('usersFull'));
+  return snap.exists() ? (snap.data().users || []) : [];
 }

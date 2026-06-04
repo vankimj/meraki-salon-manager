@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchServices, createService, saveService, deleteService, servicesExist, clearServices } from '../../lib/firestore';
 import { groupByCategory, formatPrice, formatDuration, validateService, blankService } from '../../utils/serviceHelpers';
+import TrashButton from '../../components/TrashButton';
 import { SEED_SERVICES, CATEGORY_ORDER } from '../../data/seedServices';
 import { logActivity } from '../../lib/logger';
 import EmptyState from '../../components/EmptyState';
@@ -271,6 +272,7 @@ export default function ServicesAdmin() {
           <span style={{ fontSize: 12, color: '#aaa' }}>{services.length} total · {activeCount} active</span>
           {undoStack.length > 0 && <Btn onClick={handleUndo}>↩ Undo</Btn>}
           {redoStack.length > 0 && <Btn onClick={handleRedo}>↪ Redo</Btn>}
+          <TrashButton collections={['services']} scope="Services" />
           {!isTech && <Btn color="#3D95CE" onClick={() => { setEditing(blankService()); setErrors({}); }}>+ Add Service</Btn>}
         </div>
       </div>

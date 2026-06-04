@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { fetchProducts, saveProduct, createProduct, deleteProduct } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
+import TrashButton from '../../components/TrashButton';
 
 const CATEGORIES = ['Nail Care', 'Skincare', 'Tools', 'Accessories', 'Other'];
 
@@ -79,12 +80,15 @@ export default function ProductsAdmin() {
           <PillBtn active={filter === 'low'}    onClick={() => setFilter('low')}>Low Stock ({lowStock.length})</PillBtn>
           <PillBtn active={filter === 'all'}    onClick={() => setFilter('all')}>All ({products.length})</PillBtn>
         </div>
-        {isAdmin && (
-          <button onClick={() => setModal('new')}
-            style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-            + Add Product
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <TrashButton collections={['products']} scope="Products" />
+          {isAdmin && (
+            <button onClick={() => setModal('new')}
+              style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+              + Add Product
+            </button>
+          )}
+        </div>
       </div>
 
       {shown.length === 0

@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import ScheduleScreen from '../screens/ScheduleScreen';
+import ScheduleStack  from './ScheduleStack';
 import ClientsStack   from './ClientsStack';
 import EarningsScreen from '../screens/EarningsScreen';
 import ManageStack    from './ManageStack';
@@ -84,7 +84,7 @@ export default function RootNav() {
           tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
         })}
       >
-        <Tab.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Today' }} />
+        <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Today' }} />
         <Tab.Screen name="Earnings" component={EarningsScreen} />
         <Tab.Screen
           name="Clients"

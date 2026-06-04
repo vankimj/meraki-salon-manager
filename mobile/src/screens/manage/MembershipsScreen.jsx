@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import ManageCrud from './ManageCrud';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useTrashHeader from '../../hooks/useTrashHeader';
 import {
   fetchMembershipPlans, createMembershipPlan, saveMembershipPlan, deleteMembershipPlan,
   fetchMemberships, createMembership, saveMembership, deleteMembership,
@@ -33,8 +34,9 @@ function mrr(members) {
     .reduce((s, m) => s + (Number(m.price) || 0) * (m.billingPeriod === 'yearly' ? 1 / 12 : 1), 0);
 }
 
-export default function MembershipsScreen() {
+export default function MembershipsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
+  useTrashHeader(navigation, ['memberships', 'membershipPlans'], isAdmin);
   const [tab, setTab] = useState('plans');
 
   return (

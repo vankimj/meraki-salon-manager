@@ -13,6 +13,7 @@ import {
 import { EmpAvatar } from '../employees/EmployeesAdmin';
 import { logActivity } from '../../lib/logger';
 import { useApp } from '../../context/AppContext';
+import TrashButton from '../../components/TrashButton';
 import { escapeHtml } from '../../utils/helpers';
 
 const gustoGetAuthUrlFn    = httpsCallable(functions, 'gustoGetAuthUrl');
@@ -293,6 +294,11 @@ export default function HRAdmin() {
         ))}
       </div>
 
+      {tab === 'payroll' && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+          <TrashButton collections={['bonuses', 'reviews']} scope="HR" />
+        </div>
+      )}
       {tab === 'payroll' && (
         <PayrollTab
           periodDays={periodDays}
