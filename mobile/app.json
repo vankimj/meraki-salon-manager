@@ -21,9 +21,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.plumenexus.pro",
-      "entitlements": {
-        "com.apple.developer.proximity-reader.payment.acceptance": true
-      },
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "CFBundleURLTypes": [
