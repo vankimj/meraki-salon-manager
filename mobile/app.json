@@ -19,7 +19,7 @@
       "iosDisplayInForeground": true
     },
     "ios": {
-      "supportsTablet": false,
+      "supportsTablet": true,
       "bundleIdentifier": "app.plumenexus.pro",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
