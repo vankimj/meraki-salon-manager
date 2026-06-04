@@ -12,6 +12,7 @@ import MembershipsScreen   from '../screens/manage/MembershipsScreen';
 import EmployeesScreen     from '../screens/manage/EmployeesScreen';
 import MeetingsScreen      from '../screens/manage/MeetingsScreen';
 import WalkinScreen        from '../screens/manage/WalkinScreen';
+import ReportsScreen       from '../screens/manage/ReportsScreen';
 import TrashScreen         from '../screens/manage/TrashScreen';
 import AdminHomeScreen     from '../screens/admin/AdminHomeScreen';
 import AdminLogsScreen     from '../screens/admin/AdminLogsScreen';
@@ -52,6 +53,8 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Meetings" /> }} />
       <Stack.Screen name="Walkin" component={WalkinScreen}
         options={{ headerTitle: () => <HeaderTitle title="Walk-in Kiosk" /> }} />
+      <Stack.Screen name="Reports" component={ReportsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Reports" /> }} />
 
       <Stack.Screen name="ManageChat"  component={ChatScreen}
         options={{ headerTitle: () => <HeaderTitle title="Messages" /> }} />
