@@ -707,6 +707,8 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   // Editable time fields — only used in edit mode but the state stays
   // declared unconditionally to keep hook order stable.
   const [editStartTime, setEditStartTime] = useState('');
+  const [repeat, setRepeat]         = useState('none');   // none | weekly | biweekly | monthly
+  const [repeatCount, setRepeatCount] = useState('4');
   // Inline new-client form state — opens when user taps "+ New client".
   const [newClientOpen,  setNewClientOpen]  = useState(false);
   const [newClientName,  setNewClientName]  = useState('');
@@ -729,6 +731,8 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
     setNewClientOpen(false);
     setNewClientName('');
     setNewClientPhone('');
+    setRepeat('none');
+    setRepeatCount('4');
     if (isEdit) {
       setPickedClient(editAppt.clientId
         ? { id: editAppt.clientId, name: editAppt.clientName || '' }
@@ -829,18 +833,34 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
           duration:  totalDuration,
         });
       } else {
-        await createAppointment({
-          date:      prefill.date,
-          startTime: prefill.startTime,
-          techName:  prefill.techName || '',
-          clientId:  pickedClient.id,
-          clientName: pickedClient.name,
-          services:  pickedServices,
-          duration:  totalDuration,
-          status:    'scheduled',
-          notes:     '',
-          techRequestType: 'scheduler',
-        });
+        // Recurring series: create N appts stepped by the chosen interval,
+        // linked by a shared recurringGroupId.
+        const stepDate = (iso, mode) => {
+          const dt = new Date(iso + 'T12:00:00');
+          if (mode === 'weekly')   dt.setDate(dt.getDate() + 7);
+          if (mode === 'biweekly') dt.setDate(dt.getDate() + 14);
+          if (mode === 'monthly')  dt.setMonth(dt.getMonth() + 1);
+          return dt.toISOString().slice(0, 10);
+        };
+        const count   = repeat === 'none' ? 1 : Math.max(1, Math.min(52, Number(repeatCount) || 1));
+        const groupId = repeat === 'none' ? null : `rec_${count}_${pickedClient.id}_${prefill.date}_${prefill.startTime}`;
+        let d = prefill.date;
+        for (let i = 0; i < count; i++) {
+          await createAppointment({
+            date:      d,
+            startTime: prefill.startTime,
+            techName:  prefill.techName || '',
+            clientId:  pickedClient.id,
+            clientName: pickedClient.name,
+            services:  pickedServices,
+            duration:  totalDuration,
+            status:    'scheduled',
+            notes:     '',
+            techRequestType: 'scheduler',
+            ...(groupId ? { recurringGroupId: groupId, recurring: true } : {}),
+          });
+          d = stepDate(d, repeat);
+        }
       }
       onCreated?.();
     } catch (e) {
@@ -993,6 +1013,25 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                   );
                 })}
               </ScrollView>
+
+              {!isEdit && (
+                <View style={{ marginTop: 18 }}>
+                  <Text style={styles.repeatLabel}>Repeat</Text>
+                  <View style={styles.repeatRow}>
+                    {[['none', 'Once'], ['weekly', 'Weekly'], ['biweekly', 'Every 2 wks'], ['monthly', 'Monthly']].map(([id, lbl]) => (
+                      <TouchableOpacity key={id} onPress={() => setRepeat(id)} style={[styles.repeatChip, repeat === id && styles.repeatChipOn]}>
+                        <Text style={[styles.repeatChipText, repeat === id && styles.repeatChipTextOn]}>{lbl}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {repeat !== 'none' && (
+                    <View style={styles.repeatCountRow}>
+                      <Text style={styles.repeatCountLabel}>Occurrences</Text>
+                      <TextInput style={styles.repeatCountInput} value={repeatCount} onChangeText={setRepeatCount} keyboardType="number-pad" />
+                    </View>
+                  )}
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.primaryBtn, (working || pickedServices.length === 0) && { opacity: 0.5 }, { marginTop: 22 }]}
@@ -1724,6 +1763,15 @@ const styles = StyleSheet.create({
   tabBtnTextActive: { color: '#1a5f8a', fontWeight: '700' },
 
   sectionLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  repeatLabel:     { fontSize: 12, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 8 },
+  repeatRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  repeatChip:      { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e0e0e0' },
+  repeatChipOn:    { backgroundColor: '#eef5f2', borderColor: '#2D7A5F' },
+  repeatChipText:  { fontSize: 13, color: '#666', fontWeight: '600' },
+  repeatChipTextOn:{ color: '#2D7A5F', fontWeight: '800' },
+  repeatCountRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  repeatCountLabel:{ fontSize: 13, color: '#555', fontWeight: '600' },
+  repeatCountInput:{ width: 70, backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, borderWidth: 1, borderColor: '#ececec', textAlign: 'center' },
   primaryBtn: { backgroundColor: '#2D7A5F', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
   checkedInPill: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
