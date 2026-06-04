@@ -1,9 +1,10 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
-  query, where, orderBy, limit, onSnapshot, arrayUnion, increment, deleteField,
+  query, where, orderBy, limit, onSnapshot, arrayUnion, increment, deleteField, writeBatch,
 } from 'firebase/firestore';
 import { db, callFn, auth } from './firebase';
 import { getCurrentTenant } from './currentTenant';
+import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
 
 // tenantCol/tenantDoc read getCurrentTenant() at CALL time so a tenant
 // switch in Profile re-routes subsequent queries without rebinding any
@@ -590,4 +591,110 @@ export async function updateWaitlistEntry(id, data) {
 }
 export async function removeWaitlistEntry(id) {
   await deleteDoc(doc(tenantCol('waitlist'), id));
+}
+
+// ── HR: bonuses / performance reviews / payroll (read) ──
+export async function fetchBonuses() {
+  const snap = await getDocs(query(tenantCol('bonuses'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function createBonus(data) {
+  const ref = await addDoc(tenantCol('bonuses'), { ...data, createdAt: new Date().toISOString() });
+  return ref.id;
+}
+export async function deleteBonus(id) { await softDelete(doc(tenantCol('bonuses'), id)); }
+export async function fetchReviews() {
+  const snap = await getDocs(query(tenantCol('reviews'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function saveReview(id, data) {
+  const now = new Date().toISOString();
+  if (id) { await setDoc(doc(tenantCol('reviews'), id), { ...data, updatedAt: now }, { merge: true }); return id; }
+  const ref = await addDoc(tenantCol('reviews'), { ...data, createdAt: now, updatedAt: now });
+  return ref.id;
+}
+export async function deleteReview(id) { await softDelete(doc(tenantCol('reviews'), id)); }
+export async function fetchPayrollRuns() {
+  const snap = await getDocs(query(tenantCol('payrollRuns'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// ── Marketing campaigns — DRAFT management only on mobile ──
+// Mobile intentionally does NOT schedule/send campaigns (that fires real
+// SMS/email to clients via the Cloud Function sweep). Create here lands a
+// status:'draft'; scheduling/sending happens on the web app.
+export async function fetchCampaigns() {
+  const snap = await getDocs(query(tenantCol('campaigns'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function createCampaignDraft(data) {
+  await addDoc(tenantCol('campaigns'), { ...data, status: 'draft', createdAt: new Date().toISOString() });
+}
+export async function deleteCampaign(id) { await softDelete(doc(tenantCol('campaigns'), id)); }
+export async function cancelCampaign(id) {
+  const ref = doc(tenantCol('campaigns'), id);
+  const snap = await getDoc(ref);
+  const cur = snap.exists() ? snap.data() : null;
+  const isScheduled = cur?.status === 'scheduled';
+  await setDoc(ref, {
+    cancelRequested: true, cancelRequestedAt: new Date().toISOString(),
+    ...(isScheduled ? { status: 'cancelled', cancelledAt: new Date().toISOString() } : {}),
+  }, { merge: true });
+}
+
+// ── Webfront (public site) config — business info + hours ──
+export async function fetchWebfrontConfig() {
+  const snap = await getDoc(tenantDoc('webfront'));
+  return snap.exists() ? snap.data() : {};
+}
+export async function saveWebfrontConfig(partial) {
+  await setDoc(tenantDoc('webfront'), { ...partial, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+// ── SMS status (read-only) ─────────────────────────────
+export async function fetchSmsStatus() {
+  const [smsSnap, tenSnap] = await Promise.all([
+    getDoc(tenantDoc('sms')).catch(() => null),
+    getDoc(doc(db, 'tenants', getCurrentTenant())).catch(() => null),
+  ]);
+  const sms = smsSnap?.exists() ? smsSnap.data() : null;
+  const ten = tenSnap?.exists() ? tenSnap.data() : {};
+  return { sms, sandboxMode: ten.sandboxMode !== false, tfn: ten.tfn || sms?.tfn || null };
+}
+
+// ── Role editing — FAITHFUL port of web saveUsers (writeBatch) ──
+// Atomically writes data/usersFull (rich array) + data/users (projections)
+// in ONE batch — identical to web src/lib/firestore.js saveUsers. This is
+// the fix that prevents the usersFull-missing incident, not the cause.
+async function saveUsers(users) {
+  const batch = writeBatch(db);
+  batch.set(tenantDoc('users'), {
+    users:       deleteField(),
+    byEmail:     deleteField(),
+    staffEmails: buildStaffEmails(users),
+    adminEmails: buildAdminEmails(users),
+    scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
+  }, { merge: true });
+  batch.set(tenantDoc('usersFull'), { users }, { merge: true });
+  await batch.commit();
+}
+
+// Change one user's role/techName/scheduleAccess. Reads the current rich
+// array, updates the matching entry, re-projects + writes atomically.
+export async function setUserRole(email, role, { techName, scheduleAccess } = {}) {
+  const e = String(email || '').toLowerCase();
+  const users = await fetchUsersFull();
+  let found = false;
+  const updated = users.map(u => {
+    if ((u.email || '').toLowerCase() !== e) return u;
+    found = true;
+    return {
+      ...u, role,
+      techName: techName !== undefined ? techName : (u.techName || null),
+      scheduleAccess: scheduleAccess !== undefined ? scheduleAccess : (u.scheduleAccess || 'edit'),
+      grantedAt: new Date().toISOString(),
+    };
+  });
+  if (!found) throw new Error('User not found in the access list');
+  await saveUsers(updated);
 }

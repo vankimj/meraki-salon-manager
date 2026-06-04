@@ -82,8 +82,8 @@ export const MOBILE_MODULE_META = {
   walkin:      { icon: 'walk',      screen: 'Walkin' },
   meetings:    { icon: 'users',     screen: 'Meetings' },
   reports:     { icon: 'chart',     screen: 'Reports' },
-  marketing:   { icon: 'megaphone', screen: null },
-  hr:          { icon: 'briefcase', screen: null },
+  marketing:   { icon: 'megaphone', screen: 'Marketing' },
+  hr:          { icon: 'briefcase', screen: 'HR' },
 };
 
 export function moduleMeta(id) {
