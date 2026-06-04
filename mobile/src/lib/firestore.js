@@ -542,3 +542,52 @@ export async function updateMeeting(id, data) {
 export async function deleteMeeting(id) {
   await softDelete(doc(tenantCol('meetings'), id));
 }
+
+// ── Admin read tabs (Notifs / Reviews / Onboarding) ────
+export async function fetchNotifications(n = 150) {
+  const snap = await getDocs(query(tenantCol('notifications'), orderBy('createdAt', 'desc'), limit(n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function fetchReviewRequests(n = 200) {
+  const snap = await getDocs(query(tenantCol('reviewRequests'), orderBy('createdAt', 'desc'), limit(n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function fetchReviewReceived() {
+  const snap = await getDocs(tenantCol('reviewReceived'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+export async function fetchOnboarding() {
+  const snap = await getDoc(tenantDoc('onboarding'));
+  return snap.exists() ? snap.data() : null;
+}
+
+// ── Walk-in kiosk: turn roster (doc per day) + waitlist ─
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+export async function fetchTurnRoster(date = todayKey()) {
+  const snap = await getDoc(doc(tenantCol('turnRoster'), date));
+  return snap.exists() ? { date, ...snap.data() } : { date, roster: [] };
+}
+export async function saveTurnRoster(date, roster) {
+  await setDoc(doc(tenantCol('turnRoster'), date), { date, roster, updatedAt: new Date().toISOString() });
+}
+export async function fetchWaitlist(date = todayKey()) {
+  const snap = await getDocs(query(tenantCol('waitlist'), where('date', '==', date)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (a.addedAt || '').localeCompare(b.addedAt || ''));
+}
+export async function addWaitlistEntry(data) {
+  const ref = await addDoc(tenantCol('waitlist'), {
+    ...data, date: todayKey(), addedAt: new Date().toISOString(), status: 'waiting',
+  });
+  return ref.id;
+}
+export async function updateWaitlistEntry(id, data) {
+  await updateDoc(doc(tenantCol('waitlist'), id), { ...data, updatedAt: new Date().toISOString() });
+}
+export async function removeWaitlistEntry(id) {
+  await deleteDoc(doc(tenantCol('waitlist'), id));
+}
