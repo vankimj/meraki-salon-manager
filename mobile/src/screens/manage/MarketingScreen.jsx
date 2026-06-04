@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useTrashHeader from '../../hooks/useTrashHeader';
-import { fetchCampaigns, createCampaignDraft, cancelCampaign, deleteCampaign } from '../../lib/firestore';
+import { fetchCampaigns, createCampaignDraft, cancelCampaign, deleteCampaign, buildMarketingRecipients, sendCampaignNow } from '../../lib/firestore';
 
 const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 const STATUS_COLOR = {
@@ -40,6 +40,46 @@ export default function MarketingScreen({ navigation }) {
       { text: 'Cancel it', style: 'destructive', onPress: async () => { try { await cancelCampaign(item.id); await load(); } catch {} } },
     ]);
   }
+  // Mass-send with TCPA opt-in filtering + a hard double-confirm. Creates a
+  // 'pending' campaign doc → the send Cloud Function trigger delivers it.
+  async function sendDraft(item) {
+    const channel = item.type || 'sms';
+    let recipients;
+    try { recipients = await buildMarketingRecipients(channel); }
+    catch (e) { Alert.alert('Couldn\'t build audience', e?.message || 'Try again.'); return; }
+    const n = recipients.length;
+    if (n === 0) { Alert.alert('No recipients', `No clients are opted in for ${channel.toUpperCase()} marketing.`); return; }
+    const segs = channel === 'sms' ? Math.max(1, Math.ceil((item.template || '').length / 160)) : 1;
+    const cost = channel === 'sms' ? n * segs * 0.0079 : 0;
+    const costStr = cost ? ` · ~$${cost.toFixed(2)}` : '';
+    Alert.alert(
+      `Send to ${n} client${n === 1 ? '' : 's'}?`,
+      `This sends a REAL ${channel.toUpperCase()} to ${n} opted-in client${n === 1 ? '' : 's'}${costStr}. It cannot be undone once it starts.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Review', onPress: () => Alert.alert(
+          'Final confirmation',
+          `Send "${item.title}" now to ${n} ${channel.toUpperCase()} recipient${n === 1 ? '' : 's'}?`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: `Send to ${n}`, style: 'destructive', onPress: async () => {
+              try {
+                await sendCampaignNow({
+                  name: item.title, channel,
+                  smsBody: channel === 'sms' ? (item.template || '') : '',
+                  subject: item.title, body: channel === 'email' ? (item.template || '') : '',
+                  recipients,
+                });
+                await load();
+                Alert.alert('Sending', `Campaign queued to ${n} recipient${n === 1 ? '' : 's'}.`);
+              } catch (e) { Alert.alert('Send failed', e?.message || 'Try again.'); }
+            } },
+          ],
+        ) },
+      ],
+    );
+  }
+
   function confirmDelete(item) {
     Alert.alert('Delete campaign?', 'Restorable from Trash for 30 days.', [
       { text: 'No', style: 'cancel' },
@@ -56,7 +96,7 @@ export default function MarketingScreen({ navigation }) {
         keyExtractor={(c) => c.id}
         contentContainerStyle={{ padding: 14, paddingBottom: 90 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}
-        ListHeaderComponent={<Text style={styles.note}>Create drafts here; schedule & send on the web app.</Text>}
+        ListHeaderComponent={<Text style={styles.note}>Create a draft, then Send to all opted-in clients (with confirmation). Advanced audience segmentation + scheduling are on the web app.</Text>}
         ListEmptyComponent={<Text style={styles.empty}>No campaigns yet.</Text>}
         renderItem={({ item }) => {
           const [bg, c] = STATUS_COLOR[item.status] || STATUS_COLOR.draft;
@@ -68,6 +108,7 @@ export default function MarketingScreen({ navigation }) {
                 <Text style={styles.sub} numberOfLines={1}>{(item.type || 'sms').toUpperCase()}{item.scheduledFor ? ` · ${new Date(item.scheduledFor).toLocaleDateString()}` : ''}</Text>
               </View>
               <View style={[styles.badge, { backgroundColor: bg }]}><Text style={[styles.badgeText, { color: c }]}>{item.status || 'draft'}</Text></View>
+              {isAdmin && (item.status === 'draft' || !item.status) && <TouchableOpacity onPress={() => sendDraft(item)} style={styles.sendBtn}><Text style={styles.sendText}>Send</Text></TouchableOpacity>}
               {isAdmin && canCancel && <TouchableOpacity onPress={() => confirmCancel(item)} style={styles.smallBtn}><Text style={styles.smallText}>Cancel</Text></TouchableOpacity>}
               {isAdmin && <TouchableOpacity onPress={() => confirmDelete(item)} style={styles.xBtn}><Text style={styles.xText}>🗑</Text></TouchableOpacity>}
             </View>
@@ -119,6 +160,8 @@ const styles = StyleSheet.create({
   sub:       { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
   badge:     { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 },
   badgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  sendBtn:   { backgroundColor: '#eef5f2', borderWidth: 1, borderColor: GREEN, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 5 },
+  sendText:  { fontSize: 12, fontWeight: '800', color: GREEN },
   smallBtn:  { borderWidth: 1, borderColor: '#d5d8db', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
   smallText: { fontSize: 11, fontWeight: '700', color: '#555' },
   xBtn:      { width: 30, height: 30, borderRadius: 15, backgroundColor: '#fdecea', alignItems: 'center', justifyContent: 'center' },

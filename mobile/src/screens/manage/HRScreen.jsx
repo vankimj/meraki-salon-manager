@@ -6,8 +6,9 @@ import useTrashHeader from '../../hooks/useTrashHeader';
 import {
   fetchBonuses, createBonus, deleteBonus,
   fetchReviews, saveReview, deleteReview,
-  fetchPayrollRuns,
+  fetchPayrollRuns, fetchSettings, getGustoAuthUrl,
 } from '../../lib/firestore';
+import OAuthConnect from '../../components/OAuthConnect';
 
 const BONUS_FIELDS = [
   { key: 'techName', label: 'Tech',   type: 'text',   required: true },
@@ -64,7 +65,12 @@ export default function HRScreen({ navigation }) {
 
 function PayrollList() {
   const [runs, setRuns] = useState(null);
-  const load = useCallback(async () => { try { setRuns(await fetchPayrollRuns()); } catch { setRuns([]); } }, []);
+  const [gusto, setGusto] = useState(null);
+  const load = useCallback(async () => {
+    try { setRuns(await fetchPayrollRuns()); } catch { setRuns([]); }
+    try { const s = await fetchSettings(); setGusto(s?.gusto || null); } catch { setGusto(null); }
+  }, []);
+  const reloadGusto = useCallback(async () => { try { const s = await fetchSettings(); setGusto(s?.gusto || null); } catch {} }, []);
   useEffect(() => { load(); }, [load]);
   if (runs === null) return <View style={styles.center}><ActivityIndicator color="#2D7A5F" /></View>;
   return (
@@ -72,7 +78,19 @@ function PayrollList() {
       data={runs}
       keyExtractor={(r) => r.id}
       contentContainerStyle={{ padding: 14 }}
-      ListHeaderComponent={<Text style={styles.note}>Run payroll + Gusto sync are on the web app.</Text>}
+      ListHeaderComponent={
+        <View style={{ marginBottom: 10 }}>
+          <Text style={styles.gustoLabel}>Gusto payroll</Text>
+          <OAuthConnect
+            label="Connect Gusto"
+            getUrl={getGustoAuthUrl}
+            onReturn={reloadGusto}
+            connected={!!gusto?.accessToken}
+            connectedLabel={gusto?.companyName ? `Gusto · ${gusto.companyName}` : 'Gusto connected'}
+          />
+          <Text style={styles.note}>Running a payroll batch + submitting to Gusto stays on the web app.</Text>
+        </View>
+      }
       ListEmptyComponent={<Text style={styles.empty}>No payroll runs yet.</Text>}
       renderItem={({ item }) => (
         <View style={styles.row}>
@@ -96,7 +114,8 @@ const styles = StyleSheet.create({
   tabText:   { fontSize: 13, fontWeight: '700', color: '#888' },
   tabTextOn: { color: '#2D7A5F' },
   empty:     { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
-  note:      { fontSize: 12, color: '#aaa', marginBottom: 10 },
+  note:      { fontSize: 12, color: '#aaa', marginTop: 8 },
+  gustoLabel:{ fontSize: 13, fontWeight: '800', color: '#1a1a1a', marginBottom: 4 },
   row:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ececec', gap: 10 },
   name:      { fontSize: 14.5, fontWeight: '700', color: '#1a1a1a' },
   sub:       { fontSize: 12, color: '#8a8a8a', marginTop: 2 },

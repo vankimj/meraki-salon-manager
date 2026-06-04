@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
-import { fetchWebfrontConfig, saveWebfrontConfig } from '../../lib/firestore';
+import { fetchWebfrontConfig, saveWebfrontConfig, getGoogleBusinessAuthUrl, fetchGoogleBusinessAuth } from '../../lib/firestore';
+import OAuthConnect from '../../components/OAuthConnect';
 
 const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 const FIELDS = [
@@ -21,8 +22,13 @@ const DAYS = [['mon', 'Mon'], ['tue', 'Tue'], ['wed', 'Wed'], ['thu', 'Thu'], ['
 export default function AdminWebfrontScreen() {
   const [cfg, setCfg]   = useState(null);
   const [saving, setSaving] = useState(false);
+  const [gbAuth, setGbAuth] = useState(null);
 
-  const load = useCallback(async () => { setCfg(await fetchWebfrontConfig().catch(() => ({}))); }, []);
+  const load = useCallback(async () => {
+    setCfg(await fetchWebfrontConfig().catch(() => ({})));
+    setGbAuth(await fetchGoogleBusinessAuth().catch(() => null));
+  }, []);
+  const reloadGb = useCallback(async () => { setGbAuth(await fetchGoogleBusinessAuth().catch(() => null)); }, []);
   useEffect(() => { load(); }, [load]);
 
   async function save() {
@@ -70,7 +76,17 @@ export default function AdminWebfrontScreen() {
       <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save public site'}</Text>
       </TouchableOpacity>
-      <Text style={styles.note}>Google Business connection (reviews sync) is managed on the web app.</Text>
+
+      <Text style={[styles.label, { marginTop: 24 }]}>Google Business Profile</Text>
+      <Text style={styles.help}>Connect to sync Google reviews onto your public site.</Text>
+      <OAuthConnect
+        label="Connect Google Business"
+        getUrl={getGoogleBusinessAuthUrl}
+        onReturn={reloadGb}
+        connected={!!gbAuth}
+        connectedLabel={gbAuth?.accountName || gbAuth?.placeId || 'Google Business connected'}
+      />
+      <Text style={styles.note}>After authorizing in the browser, return here — the status updates automatically.</Text>
     </ScrollView>
   );
 }
@@ -80,6 +96,7 @@ const styles = StyleSheet.create({
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
   label:   { fontSize: 12, fontWeight: '700', color: '#888', marginTop: 14, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
   input:   { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#1a1a1a', borderWidth: 1, borderColor: '#ececec' },
+  help:    { fontSize: 12.5, color: '#888', marginTop: 4 },
   hoursRow:{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 },
   dayLabel:{ width: 38, fontSize: 13, fontWeight: '700', color: '#555' },
   saveBtn: { marginTop: 22, backgroundColor: BLUE, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
