@@ -1,4 +1,4 @@
-# Meraki Mobile — Setup
+# Plume Nexus Mobile — Setup
 
 Expo (React Native) app for staff. Phase 1 ships the foundation; Phase 2+ fills in screens.
 

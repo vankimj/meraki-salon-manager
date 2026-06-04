@@ -6,13 +6,15 @@ import Constants from 'expo-constants';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
 
 // EAS Dev Client / production native build: real Google Sign-In via the
-// native SDK. We pass BOTH the iOS-specific client ID (matches the
-// app's bundle id com.meraki.salonmanager) AND the Web client ID. The
-// Web client ID is what Firebase Auth expects for
-// `GoogleAuthProvider.credential(idToken)` — it's the audience the
-// returned id_token is signed for.
-const WEB_CLIENT_ID = '721171829996-l4r31smgf04r3fnagshfh4hpld1eb91n.apps.googleusercontent.com';
-const IOS_CLIENT_ID = '721171829996-ap9a74l13h4c9rdtf4vv168c4kq1q5ep.apps.googleusercontent.com';
+// native SDK. We pass BOTH the iOS-specific client ID (matches bundle id
+// app.plumenexus.pro) AND the Web client ID. The Web client ID is what
+// Firebase Auth expects for `GoogleAuthProvider.credential(idToken)` —
+// it's the audience the returned id_token is signed for. Both clients
+// live in the plumenexus-prod project (number 563347750501); the old
+// 721171829996 clients were from the pre-migration project and rejected
+// id_tokens as invalid_audience.
+const WEB_CLIENT_ID = '563347750501-jlmqatcbesk7r9ltou2sl928sgmtk606.apps.googleusercontent.com';
+const IOS_CLIENT_ID = '563347750501-n1pe3i700s6fh75cpu1sspjjd63n04oa.apps.googleusercontent.com';
 
 // In Expo Go the native module isn't available — guard the configure
 // call so the screen still renders (with the dev-anonymous fallback).
@@ -66,9 +68,8 @@ export default function AuthScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.card}>
-        <Text style={styles.brand}>Meraki</Text>
-        <Text style={styles.sub}>NAIL STUDIO</Text>
-        <Text style={styles.tagline}>Salon Manager</Text>
+        <Text style={styles.brand}>Plume Nexus</Text>
+        <Text style={styles.sub}>SALON MANAGER</Text>
 
         <TouchableOpacity
           style={[styles.googleBtn, loading && { opacity: 0.6 }]}
