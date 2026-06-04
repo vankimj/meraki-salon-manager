@@ -398,7 +398,8 @@ export default function ScheduleScreen({ navigation }) {
         onCreated={() => { setCreatePrefill(null); setEditAppt(null); }}
       />
 
-      <TabModal open={tabOpen} tab={tabSnap} onClose={() => setTabOpen(false)} />
+      <TabModal open={tabOpen} tab={tabSnap} onClose={() => setTabOpen(false)}
+        onCheckout={() => { setTabOpen(false); navigation.navigate('Checkout'); }} />
     </View>
   );
 }
@@ -1121,7 +1122,7 @@ const SOCIAL_EMOJI = { instagram: '📸', facebook: '👥', tiktok: '🎵', venm
 // pay button is disabled with a "coming soon" affordance so the
 // interaction is documented in the UI but the code path doesn't
 // silently do nothing.
-function TabModal({ open, tab, onClose }) {
+function TabModal({ open, tab, onClose, onCheckout }) {
   if (!open) return null;
   const total = tab.appts.reduce((s, a) => {
     const svcSum = (a.services || []).reduce((ss, sv) => ss + (Number(sv.price) || 0), 0);
@@ -1182,15 +1183,15 @@ function TabModal({ open, tab, onClose }) {
                 </View>
 
                 <TouchableOpacity
-                  disabled
-                  style={[styles.primaryBtn, { marginTop: 18, opacity: 0.55 }]}
-                  activeOpacity={1}
+                  style={[styles.primaryBtn, { marginTop: 18 }]}
+                  activeOpacity={0.85}
+                  onPress={() => onCheckout?.()}
                 >
-                  <Text style={styles.primaryBtnText}>📲 Tap to pay (NFC) — coming soon</Text>
+                  <Text style={styles.primaryBtnText}>Check out · ${total.toFixed(2)}</Text>
                 </TouchableOpacity>
                 <Text style={styles.tabFootnote}>
-                  NFC checkout will activate once the physical terminals arrive. For now the tab
-                  is just a staging area — settle these appts manually on the web checkout flow.
+                  Cash checkout is live — services, discounts, promo/gift cards, tips & multi-tech
+                  split. Card (Stripe Terminal / Tap to Pay) activates once the reader is connected.
                 </Text>
 
                 <TouchableOpacity
