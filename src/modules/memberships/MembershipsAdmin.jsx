@@ -6,6 +6,7 @@ import {
   fetchClients,
 } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
+import TrashButton from '../../components/TrashButton';
 
 const TABS = [
   { id: 'plans',   label: 'Plans' },
@@ -135,7 +136,10 @@ function PlansTab({ plans, onNew, onEdit, onDelete }) {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ fontSize: 14, color: '#666' }}>Define recurring subscription plans your clients can sign up for.</div>
-        <button onClick={onNew} style={primaryBtn}>+ New plan</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <TrashButton collections={['memberships', 'membershipPlans']} scope="Memberships" />
+          <button onClick={onNew} style={primaryBtn}>+ New plan</button>
+        </div>
       </div>
 
       {plans.length === 0 ? (

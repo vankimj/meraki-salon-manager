@@ -6,10 +6,12 @@ import {
 import {
   subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes,
   fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
-  fetchTimeOff, createClient, updateAppointment, fetchClient,
+  fetchTimeOff, createClient, updateAppointment, fetchClient, softDeleteAppointment,
 } from '../lib/firestore';
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
+import useTenantAccess from '../hooks/useTenantAccess';
+import useTrashHeader from '../hooks/useTrashHeader';
 import Icon from '../components/Icon';
 
 // Salon hours + slot grid. Matches the web SLOT_H=40 / 9am-8pm convention
@@ -153,8 +155,10 @@ function colorsForAppt(appt, allTechs) {
   return { bg: col.bg, border: col.solid, text: col.text, faded: false };
 }
 
-export default function ScheduleScreen() {
+export default function ScheduleScreen({ navigation }) {
   const { employee, techName, loading: empLoading } = useCurrentEmployee();
+  const { isAdmin, canEditSchedule, email } = useTenantAccess();
+  useTrashHeader(navigation, ['appointments', 'timeOff'], isAdmin);
   const [date,    setDate]    = useState(todayStr());
   const [appts,   setAppts]   = useState([]);
   const [loading, setLoading] = useState(true);
@@ -370,9 +374,16 @@ export default function ScheduleScreen() {
       <ApptDetailModal
         appt={detail}
         cartTab={tabSnap}
+        canDelete={!!detail && (isAdmin || (!!techName && detail.techName === techName && canEditSchedule))}
         onClose={() => setDetail(null)}
         onEdit={(a) => { setDetail(null); setEditAppt(a); }}
         onAddToTab={(a) => addApptToTab(a)}
+        onDelete={async (a) => {
+          await softDeleteAppointment(a.id, email);
+          removeApptFromTab(a.id);
+          setAppts(prev => prev.filter(x => x.id !== a.id));
+          setDetail(null);
+        }}
         onUpdate={(patch) => {
           // Optimistic local update; live sub will reconcile.
           setAppts(prev => prev.map(a => a.id === detail.id ? { ...a, ...patch } : a));
@@ -1199,7 +1210,7 @@ function TabModal({ open, tab, onClose }) {
 }
 
 // ── Detail modal (status, check-in, notes, client snapshot) ─────────────
-function ApptDetailModal({ appt, cartTab, onClose, onUpdate, onEdit, onAddToTab }) {
+function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, onAddToTab, onDelete }) {
   const [notes,   setNotes]   = useState('');
   const [working, setWorking] = useState(false);
   const [tab,     setTab]     = useState('actions');
@@ -1260,6 +1271,29 @@ function ApptDetailModal({ appt, cartTab, onClose, onUpdate, onEdit, onAddToTab 
     } finally {
       setWorking(false);
     }
+  }
+
+  function confirmDelete() {
+    if (working) return;
+    Alert.alert(
+      'Delete appointment?',
+      `${appt.clientName || 'This appointment'}${appt.startTime ? ` at ${fmtTime(appt.startTime)}` : ''} will be removed. An admin can restore it from the web Trash within 30 days.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => {
+            setWorking(true);
+            try {
+              await onDelete?.(appt);
+            } catch (e) {
+              Alert.alert('Couldn\'t delete', e?.message || 'Please try again.');
+              setWorking(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ')
@@ -1349,6 +1383,11 @@ function ApptDetailModal({ appt, cartTab, onClose, onUpdate, onEdit, onAddToTab 
             {onEdit && (
               <TouchableOpacity onPress={() => onEdit(appt)} style={styles.modalEditBtn}>
                 <Text style={styles.modalEditBtnText}>Edit</Text>
+              </TouchableOpacity>
+            )}
+            {canDelete && (
+              <TouchableOpacity onPress={confirmDelete} disabled={working} style={styles.modalDeleteBtn}>
+                <Icon name="trash" size={16} color="#c0392b" />
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
@@ -1627,6 +1666,7 @@ const styles = StyleSheet.create({
   modalCloseText: { fontSize: 22, color: '#666', lineHeight: 24 },
   modalEditBtn:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: '#EBF4FB', borderWidth: 1, borderColor: '#3D95CE', marginRight: 8 },
   modalEditBtnText: { fontSize: 13, fontWeight: '700', color: '#1a5f8a' },
+  modalDeleteBtn:   { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdecea', borderWidth: 1, borderColor: '#e7b4ad', marginRight: 8 },
   modalAvatar:         { width: 48, height: 48, borderRadius: 24 },
   modalAvatarFallback: { backgroundColor: '#e8eaee', alignItems: 'center', justifyContent: 'center' },
   modalAvatarInitial:  { fontSize: 20, fontWeight: '700', color: '#888' },

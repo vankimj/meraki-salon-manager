@@ -4,6 +4,7 @@ import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subs
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
+import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
@@ -773,6 +774,8 @@ function openNew(techName, slotMins) {
             </button>
           );
         })()}
+
+        <TrashButton collections={['appointments', 'timeOff']} scope="Schedule" />
 
         {/* Overflow menu — keeps the toolbar focused on daily controls
             (date nav, view toggle, queue) and tucks infrequent ones

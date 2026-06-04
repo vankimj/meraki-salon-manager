@@ -75,8 +75,15 @@ const SOFT_DELETED_COLLECTIONS = [
   { key: 'products',        col: () => PRODUCTS_COL,         restorable: false },
   { key: 'campaigns',       col: () => CAMPAIGNS_COL,        restorable: false },
 ];
-export async function fetchRecentlyDeleted({ maxPerCollection = 50 } = {}) {
-  const results = await Promise.all(SOFT_DELETED_COLLECTIONS.map(async ({ key, col, restorable }) => {
+export async function fetchRecentlyDeleted({ maxPerCollection = 50, collections = null } = {}) {
+  // `collections` (optional) scopes the scan to specific collection keys —
+  // used by the per-module + calendar trash panels so each shows only its
+  // own deleted records. No filter → every soft-delete collection (the
+  // global Admin trash).
+  const targets = collections
+    ? SOFT_DELETED_COLLECTIONS.filter(s => collections.includes(s.key))
+    : SOFT_DELETED_COLLECTIONS;
+  const results = await Promise.all(targets.map(async ({ key, col, restorable }) => {
     try {
       const snap = await getDocs(query(col(), where('_deleted', '==', true), limit(maxPerCollection)));
       return snap.docs.map(d => ({

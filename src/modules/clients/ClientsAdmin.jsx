@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchClients, createClient, saveClient, deleteClient, fetchServices, fetchClientAppointments, createReviewRequest, saveReviewReceived } from '../../lib/firestore';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
+import TrashButton from '../../components/TrashButton';
 import { resizeImg, formatTime } from '../../utils/helpers';
 import { logActivity, logError } from '../../lib/logger';
 
@@ -215,6 +216,7 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
         {redoStack.length > 0 && <Btn onClick={handleRedo}>↪ Redo</Btn>}
         <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>{clients.length} clients</span>
         <Btn onClick={exportCSV}>⬇ CSV</Btn>
+        <TrashButton collections={['clients']} scope="Clients" />
         <Btn color="#3D95CE" onClick={() => setModal({ client: blankClient(), mode: 'edit' })}>+ Add Client</Btn>
       </div>
 

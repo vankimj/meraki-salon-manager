@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
+import TrashButton from '../../components/TrashButton';
 import { TENANT_ID } from '../../lib/tenant';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { resizeImg } from '../../utils/helpers';
@@ -141,6 +142,7 @@ async function assignAllServicesToAll() {
             {seeding ? 'Adding…' : '↺ Seed from defaults'}
           </Btn>
         )}
+        <TrashButton collections={['employees']} scope="Employees" />
         <Btn color="#3D95CE" onClick={() => setEditing(blankEmployee())}>+ Add</Btn>
       </div>
 

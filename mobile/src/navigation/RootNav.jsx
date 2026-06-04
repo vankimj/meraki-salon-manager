@@ -3,10 +3,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
-import ScheduleScreen from '../screens/ScheduleScreen';
+import ScheduleStack  from './ScheduleStack';
 import ClientsStack   from './ClientsStack';
 import EarningsScreen from '../screens/EarningsScreen';
-import ChatStack      from './ChatStack';
+import ManageStack    from './ManageStack';
 import ProfileScreen  from '../screens/ProfileScreen';
 import usePushRegistration from '../hooks/usePushRegistration';
 import { getCurrentTenant, subscribeTenant } from '../lib/currentTenant';
@@ -31,8 +31,8 @@ function TabIcon({ name, color }) {
       return <Svg {...props}><Path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></Svg>;
     case 'Clients':
       return <Svg {...props}><Path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /><Circle cx="9" cy="7" r="4" /></Svg>;
-    case 'Chat':
-      return <Svg {...props}><Path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" /></Svg>;
+    case 'Manage':
+      return <Svg {...props}><Rect x="3" y="3" width="7" height="7" rx="1" /><Rect x="14" y="3" width="7" height="7" rx="1" /><Rect x="3" y="14" width="7" height="7" rx="1" /><Rect x="14" y="14" width="7" height="7" rx="1" /></Svg>;
     case 'Profile':
       return <Svg {...props}><Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><Circle cx="12" cy="7" r="4" /></Svg>;
     default:
@@ -84,7 +84,7 @@ export default function RootNav() {
           tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
         })}
       >
-        <Tab.Screen name="Schedule" component={ScheduleScreen} options={{ title: 'Today' }} />
+        <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Today' }} />
         <Tab.Screen name="Earnings" component={EarningsScreen} />
         <Tab.Screen
           name="Clients"
@@ -92,9 +92,9 @@ export default function RootNav() {
           options={{ headerShown: false /* the inner stack provides its own header */ }}
         />
         <Tab.Screen
-          name="Chat"
-          component={ChatStack}
-          options={{ headerShown: false, title: 'Messages' }}
+          name="Manage"
+          component={ManageStack}
+          options={{ headerShown: false /* the inner stack provides its own header */ }}
         />
         <Tab.Screen name="Profile"  component={ProfileScreen} />
       </Tab.Navigator>

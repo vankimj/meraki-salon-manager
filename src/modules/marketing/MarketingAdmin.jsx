@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../../context/AppContext';
+import TrashButton from '../../components/TrashButton';
 import { fetchClients, fetchAppointmentsByRange, subscribeToCampaigns, createCampaign, deleteCampaign, cancelCampaign,
          fetchEmployees, fetchServices, fetchPromoCodes,
          fetchCampaignTemplates, saveCampaignTemplate, deleteCampaignTemplate,
@@ -308,7 +309,8 @@ export default function MarketingAdmin() {
               sub={autoActive === 0 ? 'Enable in Automations tab' : autoActive === 1 ? '1 active' : 'Birthday + Lapsed'} />
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', marginBottom: 14 }}>
+            <TrashButton collections={['campaigns']} scope="Marketing" />
             {isAdmin && (
               <button onClick={() => setModal(true)}
                 style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>

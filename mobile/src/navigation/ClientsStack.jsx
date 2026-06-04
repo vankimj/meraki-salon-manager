@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import ClientsScreen      from '../screens/ClientsScreen';
 import ClientDetailScreen from '../screens/ClientDetailScreen';
+import TrashScreen        from '../screens/manage/TrashScreen';
 import HeaderTitle        from '../components/HeaderTitle';
 
 const Stack = createNativeStackNavigator();
@@ -30,6 +31,11 @@ export default function ClientsStack() {
         name="ClientDetail"
         component={ClientDetailScreen}
         options={({ route }) => ({ headerTitle: () => <HeaderTitle title={route.params?.clientName || 'Client'} /> })}
+      />
+      <Stack.Screen
+        name="Trash"
+        component={TrashScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Trash" /> }}
       />
     </Stack.Navigator>
   );

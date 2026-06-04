@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchMeetings, createMeeting, updateMeeting, deleteMeeting, fetchEmployees } from '../../lib/firestore';
+import TrashButton from '../../components/TrashButton';
 import { logActivity } from '../../lib/logger';
 import { useApp } from '../../context/AppContext';
 import { httpsCallable } from 'firebase/functions';
@@ -284,6 +285,7 @@ export default function MeetingsAdmin() {
             </button>
           ))}
         </div>
+        <TrashButton collections={['meetings']} scope="Meetings" />
         <button onClick={() => setEditMtg({})}
           style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
           + New Meeting

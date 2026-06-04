@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange } from '../../lib/firestore';
+import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
@@ -335,7 +336,10 @@ export default function ReportsAdmin() {
                 </>
               )}
             </div>
-            <ExportMenu appts={filteredAppts} metrics={metrics} startDate={displayStartDate} endDate={endDate} filtersActive={activeFilterCount > 0} />
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <TrashButton collections={['receipts']} scope="Receipts" />
+              <ExportMenu appts={filteredAppts} metrics={metrics} startDate={displayStartDate} endDate={endDate} filtersActive={activeFilterCount > 0} />
+            </div>
           </div>
 
           {/* Filters */}

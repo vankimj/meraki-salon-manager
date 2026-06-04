@@ -6,6 +6,7 @@ import {
 } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
+import TrashButton from '../../components/TrashButton';
 
 // ── helpers ─────────────────────────────────────────────
 function genCode() {
@@ -229,6 +230,7 @@ function GiftCardsTab({ giftCards, activeGC, depletedGC, voidedGC, totalOutstand
             <PillBtn key={f.id} active={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</PillBtn>
           ))}
         </div>
+        <TrashButton collections={['giftCards', 'promoCodes']} scope="Gift Cards" />
         {isAdmin && (
           <button onClick={onNew} style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             + Issue Gift Card
