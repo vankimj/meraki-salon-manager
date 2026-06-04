@@ -4,6 +4,7 @@ import {
   Modal, TextInput, ScrollView, Alert, RefreshControl, Switch,
 } from 'react-native';
 import Icon from '../../components/Icon';
+import useResponsive from '../../hooks/useResponsive';
 
 const GREEN = '#2D7A5F';
 const BLUE  = '#3D95CE';
@@ -27,6 +28,7 @@ export default function ManageCrud({
   load, create, save, remove, canEdit = false, blank, fields,
   titleOf, subtitleOf, addLabel = 'Add', headerNote,
 }) {
+  const { contentMaxWidth } = useResponsive();
   const [items,   setItems]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);   // draft object (with optional id) or null
@@ -79,7 +81,7 @@ export default function ManageCrud({
       <FlatList
         data={items}
         keyExtractor={(it) => it.id}
-        contentContainerStyle={{ padding: 14, paddingBottom: 90 }}
+        contentContainerStyle={{ padding: 14, paddingBottom: 90, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={GREEN} />}
         ListHeaderComponent={headerNote ? <Text style={styles.note}>{headerNote(items)}</Text> : null}
         ListEmptyComponent={<Text style={styles.empty}>Nothing here yet.</Text>}
@@ -110,7 +112,7 @@ export default function ManageCrud({
 
       <Modal visible={!!editing} animationType="slide" transparent onRequestClose={() => setEditing(null)}>
         <View style={styles.backdrop}>
-          <View style={styles.sheet}>
+          <View style={[styles.sheet, { maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }]}>
             <View style={styles.sheetHeader}>
               <Text style={styles.sheetTitle}>{editing?.id ? 'Edit' : addLabel}</Text>
               <TouchableOpacity onPress={() => setEditing(null)} style={styles.close}><Text style={styles.closeText}>×</Text></TouchableOpacity>

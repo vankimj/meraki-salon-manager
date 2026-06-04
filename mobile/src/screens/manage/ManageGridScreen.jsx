@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import Icon from '../../components/Icon';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useResponsive from '../../hooks/useResponsive';
 import { getVisibleModules, moduleMeta } from '../../lib/modules';
 import { fetchSettings } from '../../lib/firestore';
 import { subscribeTenant } from '../../lib/currentTenant';
@@ -16,6 +17,9 @@ const BRAND_BLUE  = '#3D95CE';
 // ones open a "Coming soon" placeholder.
 export default function ManageGridScreen({ navigation }) {
   const { isAdmin, plan, loading: accessLoading } = useTenantAccess();
+  const { columns } = useResponsive();
+  // 2 cols (phone) → 48.5%, 3 → 31.8%, 4 → 23.4%. space-between handles gaps.
+  const tileW = columns === 2 ? '48.5%' : columns === 3 ? '31.8%' : '23.4%';
   const [settings, setSettings] = useState(null);
   const [loaded,   setLoaded]   = useState(false);
 
@@ -58,7 +62,7 @@ export default function ManageGridScreen({ navigation }) {
           return (
             <TouchableOpacity
               key={mod.id}
-              style={styles.tile}
+              style={[styles.tile, { width: tileW }]}
               activeOpacity={0.7}
               onPress={() => openModule(mod)}
             >
@@ -74,7 +78,7 @@ export default function ManageGridScreen({ navigation }) {
 
         {isAdmin && (
           <TouchableOpacity
-            style={[styles.tile, styles.adminTile]}
+            style={[styles.tile, styles.adminTile, { width: tileW }]}
             activeOpacity={0.7}
             onPress={() => navigation.navigate('AdminHome')}
           >

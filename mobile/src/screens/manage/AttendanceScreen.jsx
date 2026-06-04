@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import useResponsive from '../../hooks/useResponsive';
 import { fetchEmployees, fetchAttendance, saveAttendance } from '../../lib/firestore';
 
 const GREEN = '#2D7A5F';
@@ -26,6 +27,7 @@ function hoursWorked(e) {
 
 export default function AttendanceScreen() {
   const { isAdmin } = useTenantAccess();
+  const { contentMaxWidth } = useResponsive();
   const [dateKey, setDateKey] = useState(todayKey());
   const [emps,    setEmps]    = useState([]);
   const [byEmp,   setByEmp]   = useState({});   // employeeId → { clockInAt, clockOutAt, employeeName }
@@ -82,7 +84,7 @@ export default function AttendanceScreen() {
       <FlatList
         data={emps}
         keyExtractor={(e) => e.id}
-        contentContainerStyle={{ padding: 14 }}
+        contentContainerStyle={{ padding: 14, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}
         ListEmptyComponent={<Text style={styles.empty}>No employees.</Text>}
         renderItem={({ item }) => {
