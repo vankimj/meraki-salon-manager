@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../../lib/firestore';
@@ -104,6 +104,12 @@ export default function ReportsScreen({ navigation }) {
   const ptAvgPrev = tbPrev && tbPrev.count ? tbPrev.revenue / tbPrev.count : null;
   const ptServices= tb ? Object.entries(tb.services).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 12) : [];
   const ptCancel  = techFilter ? (cancels?.byTech?.[techFilter] || null) : null;
+
+  async function shareSummary() {
+    try {
+      await Share.share({ message: buildSummary({ custom, days, range, techFilter, metrics, tb, ptTips, ptAvg, ptServices, techs, services }) });
+    } catch {}
+  }
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 14, paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
@@ -244,6 +250,9 @@ export default function ReportsScreen({ navigation }) {
           ))}
           </>
           )}
+          <TouchableOpacity onPress={shareSummary} style={styles.shareBtn} activeOpacity={0.85}>
+            <Text style={styles.shareBtnText}>⤴  Share summary</Text>
+          </TouchableOpacity>
           <Text style={styles.note}>AI assistant + PDF/1099 export are on the web app.</Text>
         </>
       )}
@@ -254,6 +263,35 @@ export default function ReportsScreen({ navigation }) {
 function pctDelta(cur, prev) {
   if (prev == null || prev === 0) return null;
   return Math.round(((cur - prev) / Math.abs(prev)) * 100);
+}
+
+function periodLabel(custom, days, range) {
+  if (custom) return `${range.startDate} → ${range.endDate}`;
+  return days === 0 ? 'Today' : `Last ${days} days`;
+}
+
+// Plain-text report summary for the native Share sheet (text/SMS/email/etc).
+function buildSummary({ custom, days, range, techFilter, metrics, tb, ptTips, ptAvg, ptServices, techs, services }) {
+  const L = [`Plume Nexus — ${periodLabel(custom, days, range)}`];
+  if (techFilter) {
+    L.push(`Tech: ${techFilter}`);
+    L.push(`Revenue ${money(tb.revenue)} · ${tb.count} appts · avg ${money(ptAvg)} · tips ${money(ptTips)}`);
+    if (ptServices.length) {
+      L.push('Top services:');
+      ptServices.slice(0, 5).forEach(s => L.push(`  • ${s.name} — ${s.count}× ${money(s.revenue)}`));
+    }
+  } else {
+    L.push(`Revenue ${money(metrics.totalRevenue)} · ${metrics.totalAppts} appts · avg ${money(metrics.avgTicket)} · tips ${money(metrics.tipTotal)}`);
+    if (techs.length) {
+      L.push('Top techs:');
+      techs.slice(0, 5).forEach((t, i) => L.push(`  ${i + 1}. ${t.name || '(unassigned)'} — ${money(t.revenue)} (${t.count})`));
+    }
+    if (services.length) {
+      L.push('Top services:');
+      services.slice(0, 5).forEach(s => L.push(`  • ${s.name} — ${s.count}× ${money(s.revenue)}`));
+    }
+  }
+  return L.join('\n');
 }
 
 function Kpi({ label, value, big, delta, colW }) {
@@ -307,4 +345,6 @@ const styles = StyleSheet.create({
   sub:      { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
   amount:   { fontSize: 15, fontWeight: '800', color: GREEN },
   note:     { fontSize: 12, color: '#aaa', marginTop: 16, lineHeight: 17 },
+  shareBtn: { marginTop: 22, borderRadius: 12, paddingVertical: 13, alignItems: 'center', backgroundColor: '#eef5f2', borderWidth: 1, borderColor: GREEN },
+  shareBtnText: { color: GREEN, fontWeight: '800', fontSize: 14 },
 });
