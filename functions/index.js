@@ -6725,6 +6725,15 @@ exports.createExpressAccount = onCall({ cors: true, secrets: [stripeKey] }, asyn
       support_email: ten.ownerEmail || undefined,
       support_phone: businessPhone || undefined,
     },
+    // Required so the embedded onboarding collects the right KYC and the
+    // account can actually take card payments routed to it: card_payments
+    // (salon is merchant of record via on_behalf_of) + transfers (receives
+    // the destination charge). Without these, Express has nothing to onboard
+    // for and createPaymentIntent's transfer_data.destination would fail.
+    capabilities: {
+      card_payments: { requested: true },
+      transfers:     { requested: true },
+    },
     metadata: { tenantId, plumeNexusTenant: 'true' },
   };
 
