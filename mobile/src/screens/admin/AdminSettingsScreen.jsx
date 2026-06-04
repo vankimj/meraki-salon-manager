@@ -18,6 +18,7 @@ const FIELDS = [
   { key: 'ccFeeFlat',      label: 'Card fee (flat $)',       type: 'number', def: 0 },
   { key: 'removalPrice',   label: 'Removal service price ($)', type: 'number', def: 0 },
   { key: 'noCardTips',     label: 'Disable tips on card',    type: 'bool' },
+  { key: 'terminalLocationId', label: 'Stripe Terminal Location ID (tml_…)', type: 'text' },
   { key: 'googleReviewUrl',label: 'Google review URL',       type: 'text' },
   { key: 'ein',            label: 'Business EIN',            type: 'text' },
 ];
