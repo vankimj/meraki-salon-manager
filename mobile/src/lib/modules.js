@@ -81,7 +81,7 @@ export const MOBILE_MODULE_META = {
   employees:   { icon: 'idcard',    screen: 'Employees' },
   walkin:      { icon: 'walk',      screen: 'Walkin' },
   meetings:    { icon: 'users',     screen: 'Meetings' },
-  reports:     { icon: 'chart',     screen: null },
+  reports:     { icon: 'chart',     screen: 'Reports' },
   marketing:   { icon: 'megaphone', screen: null },
   hr:          { icon: 'briefcase', screen: null },
 };
