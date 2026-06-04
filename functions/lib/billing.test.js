@@ -976,6 +976,7 @@ describe('handleSubscriptionDeletedSaas', () => {
 import {
   extractCardMetadata,
   buildOffSessionChargeRequest,
+  buildPosChargeRequest,
 } from './billing.js';
 
 function makePaymentMethod(overrides = {}) {
@@ -1131,6 +1132,46 @@ describe('buildOffSessionChargeRequest', () => {
     const req = buildOffSessionChargeRequest({ ...valid, clientId: undefined });
     expect(req.metadata.clientId).toBe('');
     expect(req.metadata.tenantId).toBe('meraki');
+  });
+});
+
+describe('buildPosChargeRequest', () => {
+  const valid = {
+    amount:           4200,
+    currency:         'usd',
+    connectAccountId: 'acct_meraki',
+    tenantId:         'meraki',
+  };
+
+  it('routes the interactive charge to the salon via Connect (destination + on_behalf_of)', () => {
+    const req = buildPosChargeRequest(valid);
+    expect(req.amount).toBe(4200);
+    expect(req.on_behalf_of).toBe('acct_meraki');
+    expect(req.transfer_data).toEqual({ destination: 'acct_meraki' });
+    expect(req.automatic_payment_methods).toEqual({ enabled: true, allow_redirects: 'never' });
+    expect(req.application_fee_amount).toBe(0); // no processing markup by default
+    expect(req.metadata).toEqual({ tenantId: 'meraki', source: 'pos_interactive' });
+  });
+
+  it('honours + rounds application_fee_amount and floors negatives at 0', () => {
+    expect(buildPosChargeRequest({ ...valid, applicationFeeAmount: 175 }).application_fee_amount).toBe(175);
+    expect(buildPosChargeRequest({ ...valid, applicationFeeAmount: 12.6 }).application_fee_amount).toBe(13);
+    expect(buildPosChargeRequest({ ...valid, applicationFeeAmount: -50 }).application_fee_amount).toBe(0);
+  });
+
+  it('forwards description when provided', () => {
+    expect(buildPosChargeRequest({ ...valid, description: 'Tess + Jen' }).description).toBe('Tess + Jen');
+  });
+
+  it('REFUSES to charge to the platform account (no connectAccountId)', () => {
+    expect(() => buildPosChargeRequest({ ...valid, connectAccountId: '' }))
+      .toThrow(/connectAccountId required/);
+  });
+
+  it('throws on missing amount / currency / tenantId', () => {
+    expect(() => buildPosChargeRequest({ ...valid, amount: 0 })).toThrow(/amount must be a positive integer/);
+    expect(() => buildPosChargeRequest({ ...valid, currency: '' })).toThrow(/currency required/);
+    expect(() => buildPosChargeRequest({ ...valid, tenantId: null })).toThrow(/tenantId required/);
   });
 });
 

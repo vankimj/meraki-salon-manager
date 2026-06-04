@@ -777,7 +777,35 @@ function buildOffSessionChargeRequest({
   return req;
 }
 
+// PaymentIntent params for the INTERACTIVE (Stripe Elements) POS checkout —
+// cardholder present, confirmed client-side. Same Connect routing as the
+// off-session path: funds settle to the salon's connected account and the
+// salon is the merchant of record, so the platform never holds salon money
+// (money-transmitter risk). application_fee_amount is the platform's cut
+// (0 by default — Plume takes no processing markup; revenue is the SaaS sub).
+function buildPosChargeRequest({
+  amount, currency, connectAccountId, tenantId, description, applicationFeeAmount,
+}) {
+  if (!amount || amount <= 0)   throw new Error('amount must be a positive integer');
+  if (!currency)                throw new Error('currency required');
+  if (!connectAccountId)        throw new Error('connectAccountId required — refusing to charge to platform account (money-transmitter risk)');
+  if (!tenantId)                throw new Error('tenantId required for audit');
+
+  const req = {
+    amount,
+    currency,
+    automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
+    on_behalf_of:  connectAccountId,
+    transfer_data: { destination: connectAccountId },
+    application_fee_amount: Math.max(0, Math.round(Number(applicationFeeAmount) || 0)),
+    metadata: { tenantId, source: 'pos_interactive' },
+  };
+  if (description) req.description = String(description);
+  return req;
+}
+
 module.exports = {
+  buildPosChargeRequest,
   buildRefundRecord,
   buildTenantRefundEmailHtml,
   buildMemberRefundEmailHtml,

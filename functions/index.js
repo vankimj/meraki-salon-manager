@@ -5362,7 +5362,7 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   // OUR publishable key + the returned clientSecret, scams victims into
   // paying us, then disputes / disappears — with the salon's brand on the
   // Stripe Element).
-  const { tenantId: tid, amountCents, description } = request.data || {};
+  const { tenantId: tid, amountCents, description, applicationFeeAmount } = request.data || {};
   const tenantId = String(tid || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
     throw new HttpsError('invalid-argument', 'Invalid tenantId');
@@ -5374,18 +5374,34 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   const key = stripeKey.value();
   if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
 
-  // Resolve a brand label for Stripe's payment intent description. Falls
-  // through to the tenant id if no name is set on the doc.
   const tenSnap = await getFirestore().doc(`tenants/${tenantId}`).get();
-  const salonName = (tenSnap.exists ? tenSnap.data().name : null) || tenantId;
+  const ten = tenSnap.exists ? tenSnap.data() : {};
+  const salonName = ten.name || tenantId;
+  // Route funds to the salon's connected account — same Connect model the
+  // off-session (stored-card) path uses. Refuse to charge to the platform
+  // account: that would have the client's money land in Plume's balance, not
+  // the salon's (incorrect for multi-tenant + a money-transmitter risk).
+  if (!ten.stripeConnectAccountId) {
+    throw new HttpsError('failed-precondition',
+      'Salon has not completed Stripe Connect onboarding — card payments cannot be taken until that\'s done.');
+  }
+
+  let chargeReq;
+  try {
+    chargeReq = buildPosChargeRequest({
+      amount:           Math.round(amountCents),
+      currency:         'usd',
+      connectAccountId: ten.stripeConnectAccountId,
+      tenantId,
+      description:      description || salonName,
+      applicationFeeAmount,
+    });
+  } catch (e) {
+    throw new HttpsError('invalid-argument', e.message);
+  }
 
   const stripe = require('stripe')(key);
-  const paymentIntent = await stripe.paymentIntents.create({
-    amount:   Math.round(amountCents),
-    currency: 'usd',
-    description: description || salonName,
-    automatic_payment_methods: { enabled: true, allow_redirects: 'never' },
-  });
+  const paymentIntent = await stripe.paymentIntents.create(chargeReq);
 
   return { clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id };
 });
@@ -5951,7 +5967,7 @@ async function countActiveMemberships(db, tid) {
 const {
   handleChargeRefunded, handleChargeDisputeCreated, handleChargeDisputeClosed,
   handleInvoicePaymentFailedSaas, handleSubscriptionDeletedSaas,
-  extractCardMetadata, buildOffSessionChargeRequest,
+  extractCardMetadata, buildOffSessionChargeRequest, buildPosChargeRequest,
 } = require('./lib/billing');
 
 const { evaluateCancellationPolicy } = require('./lib/cancellationPolicy');
