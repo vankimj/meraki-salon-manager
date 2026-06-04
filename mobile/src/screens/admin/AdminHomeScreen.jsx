@@ -17,6 +17,7 @@ const ROWS = [
   { key: 'AdminWebfront',  icon: 'pin',       label: 'Public Site',    desc: 'Business info shown to clients' },
   { key: 'AdminSms',       icon: 'phone',     label: 'SMS',            desc: 'Texting status & number' },
   { key: 'AdminIntegrity', icon: 'check',     label: 'Data Integrity', desc: 'Nightly data-health scan' },
+  { key: 'AdminDemo',      icon: 'box',       label: 'Demo Data',      desc: 'Seed / clear test data' },
   { key: 'Trash',          icon: 'trash',     label: 'Trash',          desc: 'Restore anything deleted (all modules)' },
 ];
 
@@ -43,7 +44,7 @@ export default function AdminHomeScreen({ navigation }) {
         </TouchableOpacity>
       ))}
       <Text style={styles.note}>
-        The full Settings catalog (40+ sections) and the Demo Data seeder live on the web app. Webfront hours editing + Google Business connection are also web-only for now.
+        The full Settings catalog (40+ sections) lives on the web app. The mobile Demo Data seed is a lighter version of the web's full-scale seeder.
       </Text>
     </ScrollView>
   );
