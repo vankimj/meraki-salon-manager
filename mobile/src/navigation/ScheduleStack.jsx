@@ -3,15 +3,17 @@ import ScheduleScreen from '../screens/ScheduleScreen';
 import TrashScreen    from '../screens/manage/TrashScreen';
 import CheckoutScreen from '../screens/checkout/CheckoutScreen';
 import HeaderTitle    from '../components/HeaderTitle';
+import { useTheme }   from '../theme/ThemeContext';
 
 const Stack = createNativeStackNavigator();
 
 // Schedule gets its own stack so the calendar can push a scoped Trash
 // screen (deleted appointments + time off) with a real back button.
 export default function ScheduleStack() {
+  const { theme } = useTheme();
   return (
     <Stack.Navigator
-      screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: '#2D7A5F' }}
+      screenOptions={{ headerStyle: { backgroundColor: theme.headerBg }, headerTintColor: theme.green, contentStyle: { backgroundColor: theme.bg } }}
     >
       <Stack.Screen name="ScheduleHome" component={ScheduleScreen}
         options={{ headerTitle: () => <HeaderTitle title="Today" /> }} />

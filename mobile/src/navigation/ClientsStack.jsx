@@ -3,6 +3,7 @@ import ClientsScreen      from '../screens/ClientsScreen';
 import ClientDetailScreen from '../screens/ClientDetailScreen';
 import TrashScreen        from '../screens/manage/TrashScreen';
 import HeaderTitle        from '../components/HeaderTitle';
+import { useTheme }       from '../theme/ThemeContext';
 
 const Stack = createNativeStackNavigator();
 
@@ -15,11 +16,13 @@ const Stack = createNativeStackNavigator();
 // users keep seeing which salon they're scoped to even when drilled
 // into a sub-screen.
 export default function ClientsStack() {
+  const { theme } = useTheme();
   return (
     <Stack.Navigator
       screenOptions={{
-        headerStyle:      { backgroundColor: '#fff' },
-        headerTintColor:  '#2D7A5F',
+        headerStyle:      { backgroundColor: theme.headerBg },
+        headerTintColor:  theme.green,
+        contentStyle:     { backgroundColor: theme.bg },
       }}
     >
       <Stack.Screen
