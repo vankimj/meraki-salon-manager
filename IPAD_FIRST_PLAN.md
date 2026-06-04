@@ -80,5 +80,13 @@ Public booking page + SEO, marketing site, bulk CSV import, the 40-section Setti
 - Apple: iPad screenshots + the in-person-payments disclosures for App Store review.
 - Decide: does POS launch on **Meraki first** (dogfood) before other tenants?
 
+## 6b. POS status (2026-06-04)
+- **Slice 1 (cash) DONE + merged** — full checkout: editable prices, products, discount, promo, gift-card redeem, tips, multi-tech split, cash; writes the canonical receipt (apptIds → no double count; clientPhone → auto receipt-SMS). Money math unit-tested.
+- **Slice 2 (card) — backend DONE, on-hardware remaining:**
+  1. `cd functions && firebase deploy --only functions:createTerminalConnectionToken,createPaymentIntent`
+  2. `cd mobile && npx expo install @stripe/stripe-terminal-react-native` → **native rebuild** (eas dev + prod). Don't hand-pin the version.
+  3. app.json: iOS Tap-to-Pay entitlement + reader/location usage strings; Stripe dashboard: register a Terminal Location.
+  4. Wrap checkout in `<StripeTerminalProvider tokenProvider={tokenProvider}>` (from `mobile/src/lib/terminal.js`); `useStripeTerminal()` → iPad `discoverReaders`+`connectReader`, iPhone `connectTapToPayReader`; then `createCardPaymentIntent` → `collectPaymentMethod` → `confirmPaymentIntent` → complete with `method:'card'`, `ccFee`, `stripePaymentIntentId`.
+
 ## 7. Bottom line
 There's no technical reason a salon can't run entirely on the iPad app — and doing it head-on with **POS as the wedge** is how you beat GlossGenius rather than match it. The cost is committing to two front-ends; the payoff is owning the front desk *and* the payment.

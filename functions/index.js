@@ -5362,7 +5362,7 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   // OUR publishable key + the returned clientSecret, scams victims into
   // paying us, then disputes / disappears — with the salon's brand on the
   // Stripe Element).
-  const { tenantId: tid, amountCents, description, applicationFeeAmount } = request.data || {};
+  const { tenantId: tid, amountCents, description, applicationFeeAmount, paymentMethodType } = request.data || {};
   const tenantId = String(tid || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
     throw new HttpsError('invalid-argument', 'Invalid tenantId');
@@ -5400,10 +5400,39 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
     throw new HttpsError('invalid-argument', e.message);
   }
 
+  // Stripe Terminal / Tap to Pay (in-person): swap the online auto-methods for
+  // a card_present PaymentIntent. on_behalf_of + transfer_data stay, so funds
+  // still route to the salon (destination-charge model) while the reader is
+  // driven from the platform account (where the connection token is minted).
+  if (paymentMethodType === 'card_present') {
+    delete chargeReq.automatic_payment_methods;
+    chargeReq.payment_method_types = ['card_present'];
+    chargeReq.capture_method = 'automatic';
+  }
+
   const stripe = require('stripe')(key);
   const paymentIntent = await stripe.paymentIntents.create(chargeReq);
 
   return { clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id };
+});
+
+// Stripe Terminal connection token — required by @stripe/stripe-terminal-react-
+// native to talk to readers / Tap to Pay. Minted on the PLATFORM account
+// (matching the destination-charge model: readers live on the platform, funds
+// route per-tenant via the PaymentIntent's on_behalf_of/transfer_data). Staff-
+// gated so randoms can't mint tokens against our Terminal.
+exports.createTerminalConnectionToken = onCall({ secrets: [stripeKey] }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  await requireTenantStaff(getFirestore(), tenantId, request);
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
+
+  const stripe = require('stripe')(key);
+  const token = await stripe.terminal.connectionTokens.create();
+  return { secret: token.secret };
 });
 
 // Tracks when a client clicks the review link in their email, then redirects to Google.
