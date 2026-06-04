@@ -618,6 +618,68 @@ export async function fetchPayrollRuns() {
   const snap = await getDocs(query(tenantCol('payrollRuns'), orderBy('createdAt', 'desc')));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
+// Admin-only: public employee doc + the private/comp sub-doc (commissionPct,
+// rateType, gustoId, …) merged. Non-admin callers get public fields only.
+export async function fetchEmployeesWithComp() {
+  const list = await fetchEmployees();
+  await Promise.all(list.map(async emp => {
+    try {
+      const c = await getDoc(doc(tenantCol('employees'), emp.id, 'private', 'comp'));
+      if (c.exists()) Object.assign(emp, c.data());
+    } catch { /* non-admin — leave public only */ }
+  }));
+  return list;
+}
+export async function createPayrollRun(run) {
+  const ref = await addDoc(tenantCol('payrollRuns'), { ...run, status: 'draft', createdAt: new Date().toISOString() });
+  return ref.id;
+}
+// Submit a saved run to Gusto as an off-cycle payroll (existing Cloud Function).
+export async function gustoSubmitPayroll(payrollRunId) {
+  const res = await callFn('gustoSubmitPayroll')({ tenantId: getCurrentTenant(), payrollRunId });
+  return res?.data || {};
+}
+
+// ── Demo data (LEAN mobile seeder) ─────────────────────
+// A small, safe seed for testing — NOT the web's 600-client batch. All rows
+// tagged _demo:true so clearDemoData removes exactly what was seeded.
+const DEMO_FIRST = ['Ava', 'Mia', 'Zoe', 'Leah', 'Nora', 'Ivy', 'Ruby', 'Cleo', 'Esme', 'Lila', 'Tara', 'Remy', 'Sage', 'Wren', 'Faye'];
+const DEMO_LAST  = ['Park', 'Cole', 'Hayes', 'Reed', 'Lane', 'Frost', 'Vance', 'Quinn', 'Beck', 'Shaw'];
+export async function seedDemoData(onProgress) {
+  const today = new Date();
+  let made = 0;
+  for (let i = 0; i < 15; i++) {
+    const name = `${DEMO_FIRST[i % DEMO_FIRST.length]} ${DEMO_LAST[i % DEMO_LAST.length]}`;
+    const cref = await addDoc(tenantCol('clients'), {
+      _demo: true, name,
+      phone: `+1614555${String(1000 + i).slice(-4)}`,
+      email: `${name.toLowerCase().replace(/\s/g, '.')}@example.com`,
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    });
+    // ~2 appointments each over the last 20 days
+    for (let k = 0; k < 2; k++) {
+      const d = new Date(today); d.setDate(d.getDate() - ((i + k) % 20));
+      await addDoc(tenantCol('appointments'), {
+        _demo: true, clientId: cref.id, clientName: name,
+        date: d.toISOString().slice(0, 10),
+        startTime: `${10 + (k % 7)}:00`, duration: 60, status: 'done',
+        services: [{ name: 'Gel Manicure', price: 45 }],
+        createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      });
+    }
+    made++;
+    onProgress?.(`Seeded ${made}/15 demo clients…`);
+  }
+  return { clients: made };
+}
+export async function clearDemoData(onProgress) {
+  let removed = 0;
+  for (const col of ['appointments', 'clients']) {
+    const snap = await getDocs(query(tenantCol(col), where('_demo', '==', true)));
+    for (const d of snap.docs) { await deleteDoc(doc(tenantCol(col), d.id)); removed++; onProgress?.(`Removed ${removed} demo records…`); }
+  }
+  return { removed };
+}
 
 // ── Marketing campaigns — DRAFT management only on mobile ──
 // Mobile intentionally does NOT schedule/send campaigns (that fires real
