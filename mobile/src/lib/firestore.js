@@ -740,6 +740,19 @@ export async function getGustoAuthUrl() {
   const res = await callFn('gustoGetAuthUrl')({ tenantId: getCurrentTenant() });
   return res?.data?.url || null;
 }
+// Google Business: per-tenant listing confirmation + review sync.
+export async function findBusinessByAddress(address) {
+  const res = await callFn('findBusinessByAddress')({ tenantId: getCurrentTenant(), address });
+  return res?.data || {};
+}
+export async function syncGoogleBusinessReviews() {
+  const res = await callFn('syncGoogleBusinessReviews')({ tenantId: getCurrentTenant() });
+  return res?.data || {};
+}
+export async function disconnectGoogleBusiness() {
+  const res = await callFn('disconnectGoogleBusiness')({ tenantId: getCurrentTenant() });
+  return res?.data || {};
+}
 // Gusto connection status lives in settings.gusto (settings.gusto.accessToken).
 
 // ── Marketing SEND (opt-in gated) ──────────────────────
