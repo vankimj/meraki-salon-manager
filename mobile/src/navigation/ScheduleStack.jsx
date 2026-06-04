@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import ScheduleScreen from '../screens/ScheduleScreen';
 import TrashScreen    from '../screens/manage/TrashScreen';
+import CheckoutScreen from '../screens/checkout/CheckoutScreen';
 import HeaderTitle    from '../components/HeaderTitle';
 
 const Stack = createNativeStackNavigator();
@@ -16,6 +17,8 @@ export default function ScheduleStack() {
         options={{ headerTitle: () => <HeaderTitle title="Today" /> }} />
       <Stack.Screen name="Trash" component={TrashScreen}
         options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />
+      <Stack.Screen name="Checkout" component={CheckoutScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Checkout" /> }} />
     </Stack.Navigator>
   );
 }

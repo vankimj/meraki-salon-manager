@@ -411,6 +411,26 @@ export async function deleteMembership(id) {
   await softDelete(doc(tenantCol('memberships'), id));
 }
 
+// ── Checkout / receipts ────────────────────────────────
+// Mirrors web createReceipt — a done appointment carries its `payment` and
+// IS the receipt for metrics; createReceipt is for retail-only / walk-in
+// sales with no appointment.
+export async function createReceipt(data) {
+  await addDoc(tenantCol('receipts'), { sent: false, ...data, createdAt: data.createdAt || new Date().toISOString() });
+}
+export async function fetchPromoByCode(code) {
+  const snap = await getDocs(query(tenantCol('promoCodes'), where('code', '==', String(code || '').trim().toUpperCase())));
+  if (snap.empty) return null;
+  const d = { id: snap.docs[0].id, ...snap.docs[0].data() };
+  return notTombstoned(d) ? d : null;
+}
+export async function fetchGiftCardByCode(code) {
+  const snap = await getDocs(query(tenantCol('giftCards'), where('code', '==', String(code || '').trim().toUpperCase())));
+  if (snap.empty) return null;
+  const d = { id: snap.docs[0].id, ...snap.docs[0].data() };
+  return notTombstoned(d) ? d : null;
+}
+
 // ── Trash / restore (mirrors web src/lib/firestore.js) ─────────────────
 // Each soft-delete collection's path == its key under tenantCol. The 4
 // BQ-mirrored collections restore losslessly via the restoreDocFromBQ
