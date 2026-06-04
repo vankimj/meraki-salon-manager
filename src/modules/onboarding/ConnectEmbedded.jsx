@@ -80,7 +80,7 @@ function ConnectShell({ components, children, onError }) {
   }
   if (!stripeConnect) {
     return (
-      <div style={{ padding: 14, color: '#888', fontSize: 13 }}>Loading…</div>
+      <div style={{ padding: 14, color: 'var(--pn-text-muted)', fontSize: 13 }}>Loading…</div>
     );
   }
   return (

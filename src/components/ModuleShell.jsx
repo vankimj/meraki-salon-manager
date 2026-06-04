@@ -59,18 +59,18 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
       {/* Desktop left-rail navigation */}
       {sidebarItems.length > 0 && (
         <nav className="ms-sidebar" style={{
-          width: 220, flexShrink: 0, background: '#fff',
+          width: 220, flexShrink: 0, background: 'var(--pn-surface)',
           borderRight: '1px solid var(--tm-border, #ebebeb)',
           display: 'flex', flexDirection: 'column', position: 'sticky', top: 0, height: '100dvh',
           overflowY: 'auto',
         }}>
           <button onClick={onHome}
-            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid #f0f0f0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
             <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <svg viewBox="0 0 60 60" fill="none" width={16} height={16}><circle cx="30" cy="22" r="7" fill="white"/><path d="M14 50c0-8.8 7.2-16 16-16s16 7.2 16 16" stroke="white" strokeWidth="3.5" strokeLinecap="round"/></svg>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>{settings?.brandName || settings?.salonName || 'Plume Nexus'}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1.2 }}>{settings?.brandName || settings?.salonName || 'Plume Nexus'}</div>
               <div style={{ fontSize: 10, color: 'var(--tm-muted, #aaa)' }}>Salon Manager</div>
             </div>
           </button>
@@ -87,13 +87,13 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '9px 12px', borderRadius: 10,
                     border: 'none', background: active ? 'var(--tm-primary, #2D7A5F)' : 'transparent',
-                    color: active ? '#fff' : locked ? '#bbb' : '#444',
+                    color: active ? '#fff' : locked ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)',
                     cursor: 'pointer', fontFamily: 'inherit',
                     fontSize: 13, fontWeight: active ? 700 : 500, textAlign: 'left',
                     transition: 'background .15s, color .15s',
                     opacity: locked && !active ? 0.7 : 1,
                   }}
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = '#f5f5f5'; }}
+                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--pn-surface-muted)'; }}
                   onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'transparent'; }}>
                   {Icon ? <Icon size={16} /> : <span style={{ width: 16 }} />}
                   <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.label}</span>
@@ -133,7 +133,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
           activates the zIndex so this stacking context lifts above the
           schedule's sticky tech-header row (z-index 10 there). */}
       <div className="ms-topnav" style={{
-        background: '#fff',
+        background: 'var(--pn-surface)',
         borderBottom: `1px solid var(--tm-border, #ebebeb)`,
         padding: '0 16px',
         height: 52,
@@ -153,12 +153,12 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
           <span className="ms-home-label">Home</span>
         </button>
 
-        <span className="ms-topnav-divider" style={{ color: '#e0e0e0', fontSize: 16, flexShrink: 0 }}>›</span>
+        <span className="ms-topnav-divider" style={{ color: 'var(--pn-border)', fontSize: 16, flexShrink: 0 }}>›</span>
 
         {/* Module title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, color: '#555' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, color: 'var(--pn-text-muted)' }}>
           {ModuleIcon ? <ModuleIcon size={18} /> : <span style={{ fontSize: 16 }}>◆</span>}
-          <span style={{ fontSize: 15, fontWeight: 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--pn-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
         </div>
 
         {/* Right side */}
@@ -179,7 +179,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
           {realIsAdmin && !viewAs && (
             <select value="" onChange={e => { const v = parsePreview(e.target.value); if (v) setViewAs(v); }}
               className="ms-preview-select"
-              style={{ height: 40, borderRadius: 20, border: '1px solid #e0e0e0', background: '#fafafa', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#888', fontFamily: 'inherit', padding: '0 12px', outline: 'none' }}>
+              style={{ height: 40, borderRadius: 20, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', fontFamily: 'inherit', padding: '0 12px', outline: 'none' }}>
               <option value="">👤 Preview as…</option>
               {techUsers.map(u => (
                 <option key={u.email} value={`tech:${u.techName}`}>👩‍💼 {u.techName}</option>

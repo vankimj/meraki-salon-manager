@@ -106,7 +106,7 @@ export default function NotificationsBell() {
   return (
     <div ref={wrapRef} style={{ position: 'relative' }}>
       <button onClick={() => setOpen(!open)} title="Notifications"
-        style={{ height: 40, width: 40, borderRadius: 20, border: '1px solid #e0e0e0', background: open ? '#f0f0f0' : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
+        style={{ height: 40, width: 40, borderRadius: 20, border: '1px solid var(--pn-border)', background: open ? 'var(--pn-surface-muted)' : 'var(--pn-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pn-text-muted)', position: 'relative', flexShrink: 0, transition: 'background .15s' }}>
         <IconBell size={18} />
         {totalIndicator > 0 && (
           <span style={{ position: 'absolute', top: 4, right: 4, minWidth: 16, height: 16, padding: '0 4px', borderRadius: 8, background: '#ef4444', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px solid #fff', lineHeight: 1, boxShadow: '0 1px 3px rgba(0,0,0,.2)' }}>
@@ -116,9 +116,9 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 360, maxWidth: 'calc(100vw - 24px)', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,.14)', zIndex: 1000, overflow: 'hidden', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>Notifications</div>
+        <div style={{ position: 'absolute', top: 'calc(100% + 8px)', right: 0, width: 360, maxWidth: 'calc(100vw - 24px)', background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 14, boxShadow: '0 16px 40px rgba(0,0,0,.14)', zIndex: 1000, overflow: 'hidden', maxHeight: '70vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>Notifications</div>
             {unreadItems.length > 0 && (
               <button onClick={markAllRead} style={{ fontSize: 11, fontWeight: 600, color: 'var(--tm-accent, #3D95CE)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
                 Mark all as read
@@ -128,30 +128,30 @@ export default function NotificationsBell() {
 
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {totalChatUnread > 0 && (
-              <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #f5f5f5', background: '#fafafa' }}>
+              <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
                 <div style={{ color: '#1a5f8a', display: 'flex', alignItems: 'center' }}>
                   <IconMessage size={16} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a' }}>Unread client messages</div>
-                  <div style={{ fontSize: 11, color: '#888' }}>{totalChatUnread} unread thread{totalChatUnread === 1 ? '' : 's'}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pn-text)' }}>Unread client messages</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{totalChatUnread} unread thread{totalChatUnread === 1 ? '' : 's'}</div>
                 </div>
               </div>
             )}
 
             {unreadItems.length === 0 && totalChatUnread === 0 ? (
-              <div style={{ padding: '32px 14px', textAlign: 'center', color: '#aaa', fontSize: 12 }}>You're all caught up.</div>
+              <div style={{ padding: '32px 14px', textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12 }}>You're all caught up.</div>
             ) : unreadItems.length === 0 ? null : (
               unreadItems.map(n => {
                 const { title, body } = formatNotif(n);
                 return (
                   <div key={n.id} onClick={() => markNotifRead(n.id)}
-                    style={{ padding: '10px 14px', borderBottom: '1px solid #f5f5f5', display: 'flex', alignItems: 'flex-start', gap: 10, background: '#f8fbfd', cursor: 'pointer' }}>
+                    style={{ padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'flex-start', gap: 10, background: '#f8fbfd', cursor: 'pointer' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', marginTop: 6, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{title}</div>
-                      {body && <div style={{ fontSize: 11, color: '#666', lineHeight: 1.45, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{body}</div>}
-                      <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>{relativeTime(n.createdAt)}</div>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 2 }}>{title}</div>
+                      {body && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.45, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{body}</div>}
+                      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2 }}>{relativeTime(n.createdAt)}</div>
                     </div>
                   </div>
                 );

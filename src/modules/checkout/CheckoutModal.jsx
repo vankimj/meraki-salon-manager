@@ -520,7 +520,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Header */}
         <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -563,28 +563,28 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 return (
                   <div key={a.id || ai} style={{ marginBottom: showHeader ? 10 : 0 }}>
                     {showHeader && (
-                      <div style={{ fontSize: 10, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4, paddingTop: ai > 0 ? 6 : 0 }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4, paddingTop: ai > 0 ? 6 : 0 }}>
                         {a.clientName || 'Walk-in'}
-                        <span style={{ marginLeft: 6, color: '#bbb', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>· {a.techName || 'TBD'}</span>
+                        <span style={{ marginLeft: 6, color: 'var(--pn-text-faint)', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>· {a.techName || 'TBD'}</span>
                       </div>
                     )}
                     {apptLines.map((l, lidx) => (
-                      <div key={l.flatIdx} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 0', borderBottom: lidx < apptLines.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
-                        <span style={{ fontSize: 13, color: '#333', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name || '—'}</span>
+                      <div key={l.flatIdx} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 0', borderBottom: lidx < apptLines.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+                        <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name || '—'}</span>
                         {techs.length > 1 && (
                           <select
                             value={techNames[l.flatIdx] || ''}
                             onChange={e => setTechNames(n => n.map((v, idx) => idx === l.flatIdx ? e.target.value : v))}
-                            style={{ fontFamily: 'inherit', fontSize: 11, border: '1px solid #d8d8d8', borderRadius: 6, padding: '3px 4px', background: '#fafafa', color: '#555', maxWidth: 90, flexShrink: 0 }}
+                            style={{ fontFamily: 'inherit', fontSize: 11, border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '3px 4px', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', maxWidth: 90, flexShrink: 0 }}
                           >
                             {techs.map(t => <option key={t} value={t}>{t.split(' ')[0]}</option>)}
                           </select>
                         )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                          <span style={{ fontSize: 11, color: '#aaa' }}>$</span>
+                          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>$</span>
                           <input type="number" min={0} value={prices[l.flatIdx]}
                             onChange={e => setPrices(p => p.map((v, idx) => idx === l.flatIdx ? e.target.value : v))}
-                            style={{ width: 68, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 13, textAlign: 'right', background: '#fafafa', color: '#1a1a1a' }}
+                            style={{ width: 68, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 13, textAlign: 'right', background: 'var(--pn-bg)', color: 'var(--pn-text)' }}
                           />
                         </div>
                       </div>
@@ -609,22 +609,22 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             {cartItems.length > 0 ? (
               <div>
                 {cartItems.map(item => (
-                  <div key={item.product.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
-                    <span style={{ fontSize: 13, color: '#333', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product.name}</span>
+                  <div key={item.product.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--pn-border)' }}>
+                    <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product.name}</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                      <button onClick={() => setCartQty(item.product.id, item.qty - 1)} style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid #e0e0e0', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#555', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>−</button>
+                      <button onClick={() => setCartQty(item.product.id, item.qty - 1)} style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 14, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>−</button>
                       <span style={{ fontSize: 13, fontWeight: 600, minWidth: 16, textAlign: 'center' }}>{item.qty}</span>
-                      <button onClick={() => setCartQty(item.product.id, item.qty + 1)} disabled={item.qty >= (item.product.stock || 0)} style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid #e0e0e0', background: '#fff', cursor: item.qty < (item.product.stock || 0) ? 'pointer' : 'default', fontSize: 14, color: item.qty < (item.product.stock || 0) ? '#555' : '#ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
+                      <button onClick={() => setCartQty(item.product.id, item.qty + 1)} disabled={item.qty >= (item.product.stock || 0)} style={{ width: 22, height: 22, borderRadius: 4, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', cursor: item.qty < (item.product.stock || 0) ? 'pointer' : 'default', fontSize: 14, color: item.qty < (item.product.stock || 0) ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
                     </div>
-                    <span style={{ fontSize: 13, color: '#555', width: 56, textAlign: 'right', flexShrink: 0 }}>${(item.product.price * item.qty).toFixed(2)}</span>
-                    <button onClick={() => setCartQty(item.product.id, 0)} style={{ fontSize: 15, background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', padding: '0 2px', flexShrink: 0 }}>×</button>
+                    <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', width: 56, textAlign: 'right', flexShrink: 0 }}>${(item.product.price * item.qty).toFixed(2)}</span>
+                    <button onClick={() => setCartQty(item.product.id, 0)} style={{ fontSize: 15, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pn-text-faint)', padding: '0 2px', flexShrink: 0 }}>×</button>
                   </div>
                 ))}
                 <SummaryRow label="Products total" value={`$${productsTotal.toFixed(2)}`} />
               </div>
             ) : (
-              <div style={{ fontSize: 11, color: '#aaa', padding: '4px 2px', lineHeight: 1.5 }}>
-                Selling polish, lotion, or a gift card? Tap <strong style={{ color: '#666' }}>+ Add product</strong> to include it on this bill.
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', padding: '4px 2px', lineHeight: 1.5 }}>
+                Selling polish, lotion, or a gift card? Tap <strong style={{ color: 'var(--pn-text-muted)' }}>+ Add product</strong> to include it on this bill.
               </div>
             )}
           </Section>
@@ -642,20 +642,20 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             {gcSales.length > 0 ? (
               <div>
                 {gcSales.map(g => (
-                  <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid #f5f5f5' }}>
-                    <span style={{ fontSize: 13, color: '#333', flex: 1, minWidth: 0 }}>
+                  <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--pn-border)' }}>
+                    <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1, minWidth: 0 }}>
                       🎁 Gift card <span style={{ color: '#7c3aed', fontWeight: 700, fontFamily: 'monospace' }}>{g.code}</span>
-                      {g.recipientName && <span style={{ color: '#888', fontSize: 11 }}> · for {g.recipientName}</span>}
+                      {g.recipientName && <span style={{ color: 'var(--pn-text-muted)', fontSize: 11 }}> · for {g.recipientName}</span>}
                     </span>
-                    <span style={{ fontSize: 13, color: '#555', width: 70, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>${g.amount.toFixed(2)}</span>
-                    <button onClick={() => setGcSales(s => s.filter(x => x.id !== g.id))} style={{ fontSize: 15, background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', padding: '0 2px', flexShrink: 0 }}>×</button>
+                    <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', width: 70, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>${g.amount.toFixed(2)}</span>
+                    <button onClick={() => setGcSales(s => s.filter(x => x.id !== g.id))} style={{ fontSize: 15, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pn-text-faint)', padding: '0 2px', flexShrink: 0 }}>×</button>
                   </div>
                 ))}
-                <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, fontStyle: 'italic' }}>Gift cards are not taxed. Codes are auto-generated and emailed to the recipient on completion.</div>
+                <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 4, fontStyle: 'italic' }}>Gift cards are not taxed. Codes are auto-generated and emailed to the recipient on completion.</div>
               </div>
             ) : (
-              <div style={{ fontSize: 11, color: '#aaa', padding: '4px 2px', lineHeight: 1.5 }}>
-                Selling a gift card? Tap <strong style={{ color: '#666' }}>+ Sell gift card</strong>. They're non-taxable and credited to the salon (no tech).
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', padding: '4px 2px', lineHeight: 1.5 }}>
+                Selling a gift card? Tap <strong style={{ color: 'var(--pn-text-muted)' }}>+ Sell gift card</strong>. They're non-taxable and credited to the salon (no tech).
               </div>
             )}
           </Section>
@@ -670,30 +670,30 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {showPicker && (
             <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 400 }}
               onClick={e => { if (e.target === e.currentTarget) setShowPicker(false); }}>
-              <div style={{ background: '#fff', borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 480, maxHeight: '60vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+              <div style={{ background: 'var(--pn-surface)', borderRadius: '16px 16px 0 0', width: '100%', maxWidth: 480, maxHeight: '60vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
                   <span style={{ fontSize: 14, fontWeight: 600 }}>Add Retail Product</span>
-                  <button onClick={() => setShowPicker(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                  <button onClick={() => setShowPicker(false)} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 16, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto' }}>
                   {!allProducts
-                    ? <div style={{ padding: 24, textAlign: 'center', color: '#bbb', fontSize: 13 }}>Loading…</div>
+                    ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
                     : allProducts.length === 0
-                      ? <div style={{ padding: 24, textAlign: 'center', color: '#bbb', fontSize: 13 }}>No products in stock. Add some in the Products module.</div>
+                      ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>No products in stock. Add some in the Products module.</div>
                       : allProducts.map((p, i) => {
                           const inCart = cartItems.find(c => c.product.id === p.id);
                           return (
                             <div key={p.id} onClick={() => { addToCart(p); setShowPicker(false); }}
-                              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 18px', borderBottom: i < allProducts.length - 1 ? '1px solid #f5f5f5' : 'none', cursor: 'pointer' }}
-                              onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
+                              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 18px', borderBottom: i < allProducts.length - 1 ? '1px solid var(--pn-border)' : 'none', cursor: 'pointer' }}
+                              onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-bg)'}
                               onMouseLeave={e => e.currentTarget.style.background = ''}>
                               <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{p.name}</div>
-                                {p.brand && <div style={{ fontSize: 11, color: '#aaa' }}>{p.brand}</div>}
+                                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{p.name}</div>
+                                {p.brand && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{p.brand}</div>}
                               </div>
                               <div style={{ textAlign: 'right', flexShrink: 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>${(p.price || 0).toFixed(2)}</div>
-                                <div style={{ fontSize: 10, color: '#bbb' }}>{p.stock} in stock{inCart ? ` · ${inCart.qty} added` : ''}</div>
+                                <div style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{p.stock} in stock{inCart ? ` · ${inCart.qty} added` : ''}</div>
                               </div>
                             </div>
                           );
@@ -709,7 +709,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             <div style={{ display: 'flex', gap: 6, marginBottom: discountType ? 10 : 0 }}>
               {DISCOUNT_TYPES.map(d => (
                 <button key={String(d.id)} onClick={() => pickDiscount(d.id)}
-                  style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${discountType === d.id ? '#3D95CE' : '#e0e0e0'}`, background: discountType === d.id ? '#EBF4FB' : '#fafafa', color: discountType === d.id ? '#1a5f8a' : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${discountType === d.id ? '#3D95CE' : 'var(--pn-border)'}`, background: discountType === d.id ? '#EBF4FB' : 'var(--pn-bg)', color: discountType === d.id ? '#1a5f8a' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                   {d.label}
                 </button>
               ))}
@@ -719,7 +719,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 <input type="number" min={0} value={discountValue}
                   onChange={e => setDiscountValue(e.target.value)}
                   placeholder={discountDef?.hint}
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa' }}
+                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)' }}
                 />
                 {discountAmount > 0 && <span style={{ fontSize: 13, color: '#22c55e', fontWeight: 600, flexShrink: 0 }}>−${discountAmount.toFixed(2)}</span>}
               </div>
@@ -737,14 +737,14 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                     {promoAmount > 0 && ` · −$${promoAmount.toFixed(2)}`}
                   </span>
                 </div>
-                <button onClick={() => { setPromo(null); setPromoInput(''); }} style={{ fontSize: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: '0 4px' }}>×</button>
+                <button onClick={() => { setPromo(null); setPromoInput(''); }} style={{ fontSize: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pn-text-faint)', padding: '0 4px' }}>×</button>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: 8 }}>
                 <input value={promoInput} onChange={e => { setPromoInput(e.target.value); setPromoErr(''); }}
                   onKeyDown={e => e.key === 'Enter' && applyPromo()}
                   placeholder="Enter code…"
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa', textTransform: 'uppercase' }}
+                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', textTransform: 'uppercase' }}
                 />
                 <button onClick={applyPromo} disabled={promoLoading || !promoInput.trim()}
                   style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#3D95CE', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: (!promoInput.trim() || promoLoading) ? .5 : 1 }}>
@@ -764,9 +764,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#166534' }}>{giftCard.code}</span>
                     <span style={{ fontSize: 11, color: '#16a34a', marginLeft: 8 }}>Balance: ${giftCard.balance.toFixed(2)}</span>
                   </div>
-                  <button onClick={() => { setGiftCard(null); setGcInput(''); }} style={{ fontSize: 16, background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', padding: '0 4px' }}>×</button>
+                  <button onClick={() => { setGiftCard(null); setGcInput(''); }} style={{ fontSize: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pn-text-faint)', padding: '0 4px' }}>×</button>
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555', cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--pn-text-muted)', cursor: 'pointer' }}>
                   <input type="checkbox" checked={applyGC} onChange={e => setApplyGC(e.target.checked)} />
                   Apply ${gcApply > 0 ? gcApply.toFixed(2) : giftCard.balance.toFixed(2)} to this order
                 </label>
@@ -776,7 +776,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 <input value={gcInput} onChange={e => { setGcInput(e.target.value); setGcErr(''); }}
                   onKeyDown={e => e.key === 'Enter' && applyGiftCard()}
                   placeholder="Gift card code…"
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa', textTransform: 'uppercase' }}
+                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', textTransform: 'uppercase' }}
                 />
                 <button onClick={applyGiftCard} disabled={gcLoading || !gcInput.trim()}
                   style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#3D95CE', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: (!gcInput.trim() || gcLoading) ? .5 : 1 }}>
@@ -792,9 +792,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             <Section title="Store Credit">
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                 <input type="checkbox" checked={applyCredit} onChange={e => setApplyCredit(e.target.checked)} />
-                <span style={{ color: '#333' }}>
+                <span style={{ color: 'var(--pn-text)' }}>
                   Apply ${Math.min(clientCredit, afterDiscounts - gcApply).toFixed(2)} credit
-                  <span style={{ fontSize: 11, color: '#aaa', marginLeft: 6 }}>(balance: ${clientCredit.toFixed(2)})</span>
+                  <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 6 }}>(balance: ${clientCredit.toFixed(2)})</span>
                 </span>
               </label>
             </Section>
@@ -809,24 +809,24 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                   const amt    = subtotal * pct / 100;
                   return (
                     <button key={pct} onClick={() => pickTipPct(pct)}
-                      style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#EDFAF3' : '#fafafa', color: active ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                      style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`, background: active ? '#EDFAF3' : 'var(--pn-bg)', color: active ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{pct}%</span>
                       <span style={{ fontSize: 10, opacity: .7 }}>${amt.toFixed(2)}</span>
                     </button>
                   );
                 })}
                 <button onClick={pickCustomTip}
-                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : '#e0e0e0'}`, background: customTip ? '#EDFAF3' : '#fafafa', color: customTip ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : 'var(--pn-border)'}`, background: customTip ? '#EDFAF3' : 'var(--pn-bg)', color: customTip ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>Other</span>
                   <span style={{ fontSize: 10, opacity: .7 }}>custom $</span>
                 </button>
               </div>
               {customTip && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
                   <input type="number" min={0} value={tip} onChange={e => setTip(e.target.value)}
                     placeholder="0" autoFocus
-                    style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa' }}
+                    style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)' }}
                   />
                 </div>
               )}
@@ -852,9 +852,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                     title={isCardOffline ? 'Card requires a live network — try cash or store credit'
                          : isCardNotSetUp ? 'Set up payments first: Admin → Settings → Payments'
                          : undefined}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : '#e0e0e0'}`, background: isCardDisabled ? '#f5f5f5' : (method === m.id ? '#EBF4FB' : '#fafafa'), cursor: isCardDisabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardDisabled ? .5 : 1 }}>
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : 'var(--pn-border)'}`, background: isCardDisabled ? 'var(--pn-surface-alt)' : (method === m.id ? '#EBF4FB' : 'var(--pn-bg)'), cursor: isCardDisabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardDisabled ? .5 : 1 }}>
                     <span style={{ fontSize: 20 }}>{m.icon}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? '#1a5f8a' : '#888' }}>{m.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? '#1a5f8a' : 'var(--pn-text-muted)' }}>{m.label}</span>
                   </button>
                 );
               })}
@@ -866,7 +866,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             )}
             {method === 'card' && stripePromise && charged > 0 && (
               <div>
-                <div style={{ border: '1px solid #d8d8d8', borderRadius: 10, padding: '11px 12px', background: '#fafafa' }}>
+                <div style={{ border: '1px solid var(--pn-border-strong)', borderRadius: 10, padding: '11px 12px', background: 'var(--pn-bg)' }}>
                   <CardElement options={{ style: { base: { fontSize: '14px', fontFamily: '-apple-system, sans-serif', color: '#1a1a1a', '::placeholder': { color: '#aaa' } }, invalid: { color: '#ef4444' } } }} />
                 </div>
                 {cardError && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>{cardError}</div>}
@@ -875,7 +875,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           </Section>
 
           {/* Total summary */}
-          <div style={{ background: '#f8f9fa', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+          <div style={{ background: 'var(--pn-bg)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
             <SummaryRow label="Subtotal" value={`$${subtotal}`} />
             {discountAmount > 0 && <SummaryRow label={discountType === 'member' ? `Member${membership?.planName ? ` (${membership.planName})` : ''}` : discountType === 'ff' ? 'Friends & Family' : 'Discount'} value={`−$${discountAmount.toFixed(2)}`} valueColor="#22c55e" />}
             {promoAmount > 0    && <SummaryRow label={`Promo: ${promo.code}`} value={`−$${promoAmount.toFixed(2)}`} valueColor="#22c55e" />}
@@ -883,12 +883,12 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             {gcApply > 0        && <SummaryRow label={`Gift Card: ${giftCard.code}`} value={`−$${gcApply.toFixed(2)}`} valueColor="#22c55e" />}
             {creditApply > 0    && <SummaryRow label="Store Credit" value={`−$${creditApply.toFixed(2)}`} valueColor="#22c55e" />}
             {tipAmt > 0         && <SummaryRow label="Tip" value={`+$${tipAmt.toFixed(2)}`} />}
-            <div style={{ borderTop: '1px solid #e8e8e8', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>Total</span>
+            <div style={{ borderTop: '1px solid var(--pn-border)', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>Total</span>
               <span style={{ fontSize: 24, fontWeight: 800, color: '#2D7A5F' }}>${total.toFixed(2)}</span>
             </div>
             {ccFee > 0 && (
-              <div style={{ marginTop: 6, fontSize: 10, color: '#aaa', textAlign: 'right', fontStyle: 'italic' }}>
+              <div style={{ marginTop: 6, fontSize: 10, color: 'var(--pn-text-faint)', textAlign: 'right', fontStyle: 'italic' }}>
                 Card processing fee: ~${ccFee.toFixed(2)} (recorded for reports, not added to charge)
               </div>
             )}
@@ -898,14 +898,14 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {primaryClient?.id && (
             <Section title="Issue Store Credit">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
                 <input type="number" min={0} value={issueCredit} onChange={e => setIssueCredit(e.target.value)}
                   placeholder="0.00  — credit added to client's account"
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: '#fafafa' }}
+                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)' }}
                 />
               </div>
               {Number(issueCredit) > 0 && (
-                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
                   Client's credit balance will become ${(clientCredit + Number(issueCredit) - creditApply).toFixed(2)}
                 </div>
               )}
@@ -915,9 +915,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 18px', borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid var(--pn-border)', flexShrink: 0 }}>
           <button onClick={complete} disabled={saving}
-            style={{ width: '100%', background: saving ? '#aaa' : 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ width: '100%', background: saving ? 'var(--pn-surface-muted)' : 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Processing…' : `Complete Checkout · $${total.toFixed(2)}`}
           </button>
         </div>
@@ -1024,7 +1024,7 @@ function ReceiptScreen({ receipt, onDone }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 400, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 400, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', padding: '18px 20px', textAlign: 'center', color: '#fff', flexShrink: 0 }}>
           <div style={{ fontSize: 28, marginBottom: 6 }}>✓</div>
@@ -1043,38 +1043,38 @@ function ReceiptScreen({ receipt, onDone }) {
             visitDate={date}
             visitServices={visitServices}
           />
-          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 12 }}>{fmtDate}</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 12 }}>{fmtDate}</div>
 
           {isMultiTech ? (
             p.techSplit.map(split => (
               <div key={split.techName} style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>{split.techName}</div>
+                <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>{split.techName}</div>
                 {services.filter(s => s.techName === split.techName).map((s, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
-                    <span style={{ color: '#333' }}>{s.name || '—'}</span>
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--pn-border)' }}>
+                    <span style={{ color: 'var(--pn-text)' }}>{s.name || '—'}</span>
                     <span style={{ fontWeight: 500 }}>${s.price.toFixed(2)}</span>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#aaa', padding: '3px 0' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--pn-text-faint)', padding: '3px 0' }}>
                   <span>subtotal</span><span>${split.revenue.toFixed(2)}</span>
                 </div>
               </div>
             ))
           ) : (
             services.map((s, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid #f5f5f5' }}>
-                <span style={{ color: '#333' }}>{s.name || '—'}</span>
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '5px 0', borderBottom: '1px solid var(--pn-border)' }}>
+                <span style={{ color: 'var(--pn-text)' }}>{s.name || '—'}</span>
                 <span style={{ fontWeight: 500 }}>${s.price.toFixed(2)}</span>
               </div>
             ))
           )}
 
           {retailProducts?.length > 0 && (
-            <div style={{ marginTop: 10, borderTop: '1px solid #f0f0f0', paddingTop: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Retail Products</div>
+            <div style={{ marginTop: 10, borderTop: '1px solid var(--pn-border)', paddingTop: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Retail Products</div>
               {retailProducts.map((rp, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
-                  <span style={{ color: '#333' }}>{rp.name}{rp.qty > 1 ? ` ×${rp.qty}` : ''}</span>
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid var(--pn-border)' }}>
+                  <span style={{ color: 'var(--pn-text)' }}>{rp.name}{rp.qty > 1 ? ` ×${rp.qty}` : ''}</span>
                   <span style={{ fontWeight: 500 }}>${(rp.price * rp.qty).toFixed(2)}</span>
                 </div>
               ))}
@@ -1087,16 +1087,16 @@ function ReceiptScreen({ receipt, onDone }) {
             {p.giftCard           && <RRow label="Gift card"        value={`-$${p.giftCard.applied.toFixed(2)}`} color="#ef4444" />}
             {p.creditApplied > 0  && <RRow label="Credit applied"  value={`-$${p.creditApplied.toFixed(2)}`} color="#ef4444" />}
             {p.tip           > 0  && <RRow label="Tip"             value={`$${p.tip.toFixed(2)}`} />}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 6px', borderTop: '2px solid #1a1a1a', marginTop: 6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 6px', borderTop: '2px solid var(--pn-text)', marginTop: 6 }}>
               <span style={{ fontSize: 15, fontWeight: 700 }}>Total</span>
               <span style={{ fontSize: 15, fontWeight: 700 }}>${p.total.toFixed(2)}</span>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#888', paddingBottom: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--pn-text-muted)', paddingBottom: 4 }}>
               <span>Paid via</span><span>{methodLabel}</span>
             </div>
           </div>
 
-          <div style={{ textAlign: 'center', fontSize: 12, color: '#aaa', marginTop: 16 }}>
+          <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 16 }}>
             Thank you, {client}! We appreciate your visit 💅
           </div>
         </div>
@@ -1105,18 +1105,18 @@ function ReceiptScreen({ receipt, onDone }) {
           <div style={{ padding: '8px 18px 0', display: 'flex', gap: 6, alignItems: 'center' }}>
             <input value={smsPhone} onChange={e => setSmsPhone(e.target.value)} placeholder="Phone (e.g., 614-555-0123)"
               inputMode="tel" autoFocus
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 12, fontFamily: 'inherit' }} />
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 12, fontFamily: 'inherit' }} />
             <button onClick={() => setSmsPhoneEdit(false)} disabled={smsSending}
-              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
               Cancel
             </button>
           </div>
         )}
 
         {/* Footer buttons */}
-        <div style={{ display: 'flex', gap: 8, padding: '12px 18px', borderTop: '1px solid #f0f0f0', flexShrink: 0, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, padding: '12px 18px', borderTop: '1px solid var(--pn-border)', flexShrink: 0, flexWrap: 'wrap' }}>
           <button onClick={handlePrint}
-            style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fafafa', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
+            style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
             🖨 Print
           </button>
           {canTextReceipt && (
@@ -1145,8 +1145,8 @@ function ReceiptScreen({ receipt, onDone }) {
 
 function RRow({ label, value, color }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', color: '#555' }}>
-      <span>{label}</span><span style={{ color: color || '#1a1a1a', fontWeight: 500 }}>{value}</span>
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', color: 'var(--pn-text-muted)' }}>
+      <span>{label}</span><span style={{ color: color || 'var(--pn-text)', fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -1155,7 +1155,7 @@ function Section({ title, action, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.08em' }}>{title}</div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em' }}>{title}</div>
         {action}
       </div>
       {children}
@@ -1166,8 +1166,8 @@ function Section({ title, action, children }) {
 function SummaryRow({ label, value, valueColor, bold }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-      <span style={{ fontSize: 12, color: '#888', fontWeight: bold ? 600 : 400 }}>{label}</span>
-      <span style={{ fontSize: bold ? 14 : 13, fontWeight: bold ? 700 : 500, color: valueColor || (bold ? '#1a1a1a' : '#333') }}>{value}</span>
+      <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', fontWeight: bold ? 600 : 400 }}>{label}</span>
+      <span style={{ fontSize: bold ? 14 : 13, fontWeight: bold ? 700 : 500, color: valueColor || (bold ? 'var(--pn-text)' : 'var(--pn-text)') }}>{value}</span>
     </div>
   );
 }
@@ -1204,26 +1204,26 @@ function GiftCardSaleModal({ onClose, onAdd }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, padding: '20px 22px', width: '92%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>🎁 Sell gift card</div>
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>A unique code is generated automatically. The recipient email is required — we email the gift card code to them on purchase.</div>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, padding: '20px 22px', width: '92%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>🎁 Sell gift card</div>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 14 }}>A unique code is generated automatically. The recipient email is required — we email the gift card code to them on purchase.</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-          <span style={{ fontSize: 14, color: '#aaa' }}>$</span>
+          <span style={{ fontSize: 14, color: 'var(--pn-text-faint)' }}>$</span>
           <input type="number" min={1} value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" autoFocus
             onKeyDown={e => e.key === 'Enter' && valid && add()}
-            style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '10px 12px', fontSize: 13, background: '#fafafa' }}
+            style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '10px 12px', fontSize: 13, background: 'var(--pn-bg)' }}
           />
         </div>
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Recipient name (optional)"
-          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: '#fafafa' }} />
+          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: 'var(--pn-bg)' }} />
         <input value={email} onChange={e => setEmail(e.target.value)} placeholder="Recipient email *" inputMode="email"
-          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: `1px solid ${email && !validEmail ? '#ef4444' : '#d8d8d8'}`, fontSize: 13, fontFamily: 'inherit', marginBottom: 4, background: '#fafafa' }} />
+          style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: `1px solid ${email && !validEmail ? '#ef4444' : 'var(--pn-border-strong)'}`, fontSize: 13, fontFamily: 'inherit', marginBottom: 4, background: 'var(--pn-bg)' }} />
         {email && !validEmail && <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 8 }}>Enter a valid email — we'll send the code here.</div>}
         {(!email || validEmail) && <div style={{ height: 10 }} />}
         <div style={{ display: 'flex', gap: 8 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
           <button onClick={add} disabled={!valid}
-            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: valid ? '#7c3aed' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: valid ? '#7c3aed' : 'var(--pn-surface-muted)', color: '#fff', fontSize: 13, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit' }}>
             Add to ticket →
           </button>
         </div>
@@ -1256,11 +1256,11 @@ function TipSplitPreview({ tipAmt, serviceLines, prices, techNames }) {
     return { name, rev, ratio, share };
   });
   return (
-    <div style={{ marginTop: 10, padding: '10px 12px', background: '#f8f9fa', borderRadius: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: '#666', marginBottom: 6, letterSpacing: '.04em' }}>SPLIT BY SERVICE REVENUE</div>
+    <div style={{ marginTop: 10, padding: '10px 12px', background: 'var(--pn-bg)', borderRadius: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', marginBottom: 6, letterSpacing: '.04em' }}>SPLIT BY SERVICE REVENUE</div>
       {shares.map(s => (
         <div key={s.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 12, padding: '3px 0' }}>
-          <span style={{ color: '#1a1a1a', fontWeight: 500 }}>{s.name} <span style={{ color: '#aaa', fontWeight: 400 }}>· {(s.ratio * 100).toFixed(0)}% of services</span></span>
+          <span style={{ color: 'var(--pn-text)', fontWeight: 500 }}>{s.name} <span style={{ color: 'var(--pn-text-faint)', fontWeight: 400 }}>· {(s.ratio * 100).toFixed(0)}% of services</span></span>
           <span style={{ fontWeight: 700, color: '#2D7A5F' }}>${s.share.toFixed(2)}</span>
         </div>
       ))}

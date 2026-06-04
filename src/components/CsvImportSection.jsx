@@ -330,19 +330,19 @@ export default function CsvImportSection({ onBusyChange }) {
   const busyReceipts = running === 'receipts';
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
-      <div style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', background: '#fafafa', fontSize: 13, fontWeight: 700, color: '#1a1a1a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)', fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>📥 Import from GlossGenius</span>
         {(clientsFile || paymentsFile || lineItemsFile) && (
           <button onClick={resetAll}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
             Reset wizard
           </button>
         )}
       </div>
 
       <div style={{ padding: '14px 16px' }}>
-        <div style={{ fontSize: 12, color: '#666', lineHeight: 1.55, marginBottom: 14 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 14 }}>
           Three sequential imports — each unlocks the next. Export from <strong>GlossGenius → Insights → Reports</strong>. Records get tagged <code style={{ background: '#fef3c7', padding: '0 4px', borderRadius: 3 }}>_importedFrom: glossgenius</code>.
         </div>
 
@@ -452,7 +452,7 @@ export default function CsvImportSection({ onBusyChange }) {
         )}
 
         {progress && (
-          <div style={{ fontSize: 12, color: '#666', fontStyle: 'italic', marginTop: 10 }}>{progress}</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', fontStyle: 'italic', marginTop: 10 }}>{progress}</div>
         )}
 
         {skipped && <SkippedPanel skipped={skipped} onClose={() => setSkipped(null)} />}
@@ -473,14 +473,14 @@ function Step({ num, title, description, state, locked, children }) {
                : state === 'running' ? '#3D95CE'
                : '#2D7A5F';
   return (
-    <div style={{ marginBottom: 14, padding: 14, background: locked ? '#fafafa' : '#fff', border: `1px solid ${locked ? '#e8e8e8' : '#e0e0e0'}`, borderRadius: 10, opacity: locked ? 0.65 : 1 }}>
+    <div style={{ marginBottom: 14, padding: 14, background: locked ? 'var(--pn-bg)' : 'var(--pn-surface)', border: `1px solid var(--pn-border)`, borderRadius: 10, opacity: locked ? 0.65 : 1 }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flexShrink: 0, width: 28, height: 28, borderRadius: '50%', background: accent, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700 }}>
           {state === 'done' ? '✓' : num}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>Step {num} · {title}</div>
-          <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.5 }}>{description}</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>Step {num} · {title}</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{description}</div>
           <div style={{ marginTop: 10 }}>{children}</div>
         </div>
       </div>
@@ -489,7 +489,7 @@ function Step({ num, title, description, state, locked, children }) {
 }
 
 function Locked({ children }) {
-  return <div style={{ fontSize: 11, color: '#999', padding: '8px 0', fontStyle: 'italic' }}>🔒 {children}</div>;
+  return <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', padding: '8px 0', fontStyle: 'italic' }}>🔒 {children}</div>;
 }
 
 function ProgressBar({ current, total, label, onCancel, cancelling }) {
@@ -505,15 +505,15 @@ function ProgressBar({ current, total, label, onCancel, cancelling }) {
           disabled={cancelling}
           style={{
             fontSize: 11, padding: '4px 10px', borderRadius: 6,
-            border: `1px solid ${cancelling ? '#ccc' : '#d97706'}`,
-            background: '#fff', color: cancelling ? '#999' : '#d97706',
+            border: `1px solid ${cancelling ? 'var(--pn-border-strong)' : '#d97706'}`,
+            background: 'var(--pn-surface)', color: cancelling ? 'var(--pn-text-faint)' : '#d97706',
             cursor: cancelling ? 'wait' : 'pointer', fontFamily: 'inherit', fontWeight: 600,
           }}
         >
           {cancelling ? 'Cancelling…' : 'Cancel'}
         </button>
       </div>
-      <div style={{ height: 8, background: '#fff', borderRadius: 4, overflow: 'hidden', border: '1px solid #e0d4f5' }}>
+      <div style={{ height: 8, background: 'var(--pn-surface)', borderRadius: 4, overflow: 'hidden', border: '1px solid #e0d4f5' }}>
         <div style={{
           width: `${pct}%`, height: '100%',
           background: 'linear-gradient(90deg, #5b3b8c, #7e57c2)',
@@ -538,7 +538,7 @@ const FilePickerRow = ({ ref_, onChange, disabled, file, expectedLabel }) => (
       disabled={disabled}
       style={{ fontSize: 12, fontFamily: 'inherit' }}
     />
-    {!file && <span style={{ fontSize: 11, color: '#999' }}>Pick the {expectedLabel}</span>}
+    {!file && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>Pick the {expectedLabel}</span>}
     {file && (
       <span style={{ fontSize: 11, color: '#166534', background: '#f0fdf4', padding: '3px 10px', borderRadius: 12, fontWeight: 600 }}>
         ✓ {file.fileName} ({file.records.length.toLocaleString()} rows)
@@ -565,10 +565,10 @@ function PreviewBlock({ file, type, rows, joinedSummary }) {
           </span>
         </div>
       )}
-      <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 6, overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 6, overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
         <PreviewTable type={type} rows={rows.slice(0, 8)} />
         {rows.length > 8 && (
-          <div style={{ padding: '6px 10px', fontSize: 10, color: '#aaa', borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
+          <div style={{ padding: '6px 10px', fontSize: 10, color: 'var(--pn-text-faint)', borderTop: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
             + {rows.length - 8} more rows…
           </div>
         )}
@@ -616,11 +616,11 @@ function SkippedPanel({ skipped, onClose }) {
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
           <button onClick={downloadCsv}
-            style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #78350f', background: '#fff', color: '#78350f', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #78350f', background: 'var(--pn-surface)', color: '#78350f', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             ↓ Download CSV
           </button>
           <button onClick={onClose}
-            style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
             ✕ Dismiss
           </button>
         </div>
@@ -630,7 +630,7 @@ function SkippedPanel({ skipped, onClose }) {
           Showing the first {MAX_INLINE_SKIPPED.toLocaleString()} of {rows.length.toLocaleString()} skipped rows below. Use <strong>Download CSV</strong> to see all.
         </div>
       )}
-      <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 6, overflowX: 'auto', maxHeight: 320, overflowY: 'auto' }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid #fde68a', borderRadius: 6, overflowX: 'auto', maxHeight: 320, overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
           <thead><tr style={{ background: '#fefce8', position: 'sticky', top: 0 }}>
             {headersForType(type).map(h => (
@@ -640,7 +640,7 @@ function SkippedPanel({ skipped, onClose }) {
           <tbody>{visible.map((row, i) => (
             <tr key={i} style={{ borderTop: i === 0 ? 'none' : '1px solid #fef3c7' }}>
               {headersForType(type).map(h => (
-                <td key={h} style={{ padding: '5px 8px', fontSize: 11, color: '#333', whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                <td key={h} style={{ padding: '5px 8px', fontSize: 11, color: 'var(--pn-text)', whiteSpace: 'nowrap', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {formatCell(type, h, row)}
                 </td>
               ))}
@@ -686,11 +686,11 @@ function PreviewTable({ type, rows }) {
   if (type === 'clients') {
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-        <thead><tr style={{ background: '#fafafa' }}>
+        <thead><tr style={{ background: 'var(--pn-bg)' }}>
           <Th>Name</Th><Th>Email</Th><Th>Phone</Th><Th>Birthday</Th>
         </tr></thead>
         <tbody>{rows.map((r, i) => (
-          <tr key={i} style={{ borderTop: '1px solid #f5f5f5' }}>
+          <tr key={i} style={{ borderTop: '1px solid var(--pn-border)' }}>
             <Td>{r.name}</Td><Td>{r.email || '—'}</Td><Td>{r.phone || '—'}</Td><Td>{r.birthday || '—'}</Td>
           </tr>
         ))}</tbody>
@@ -700,14 +700,14 @@ function PreviewTable({ type, rows }) {
   if (type === 'sales') {
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-        <thead><tr style={{ background: '#fafafa' }}>
+        <thead><tr style={{ background: 'var(--pn-bg)' }}>
           <Th>Date</Th><Th>Client</Th><Th>Tech</Th><Th>Items</Th><Th>Method</Th><Th>Tip</Th><Th>Tax</Th><Th>Fee</Th><Th>Total</Th>
         </tr></thead>
         <tbody>{rows.map((r, i) => {
           const p = r.payment || {};
           const itemNames = (r.services || []).map(s => s.name).concat((r.retailProducts || []).map(p => p.name)).join(', ');
           return (
-            <tr key={i} style={{ borderTop: '1px solid #f5f5f5' }}>
+            <tr key={i} style={{ borderTop: '1px solid var(--pn-border)' }}>
               <Td>{r.date}</Td>
               <Td>{r.clientName}</Td>
               <Td>{r.techName || '—'}</Td>
@@ -727,8 +727,8 @@ function PreviewTable({ type, rows }) {
 }
 
 function Th({ children }) {
-  return <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.04em' }}>{children}</th>;
+  return <th style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{children}</th>;
 }
 function Td({ children, style, ...rest }) {
-  return <td style={{ padding: '5px 8px', fontSize: 11, color: '#333', ...style }} {...rest}>{children}</td>;
+  return <td style={{ padding: '5px 8px', fontSize: 11, color: 'var(--pn-text)', ...style }} {...rest}>{children}</td>;
 }

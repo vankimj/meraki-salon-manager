@@ -71,18 +71,18 @@ export default function RestoreFromBQModal({ collection, docId, label, onClose, 
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,.2)' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        style={{ background: 'var(--pn-surface)', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 8px 32px rgba(0,0,0,.2)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>Restore previous version</div>
-            <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{collection}/{docId}{label ? ` — ${label}` : ''}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)' }}>Restore previous version</div>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 2 }}>{collection}/{docId}{label ? ` — ${label}` : ''}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#888', padding: 0 }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--pn-text-muted)', padding: 0 }}>×</button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
           {snapshots === null && !loadErr && (
-            <div style={{ padding: 20, textAlign: 'center', color: '#888', fontSize: 13 }}>Loading snapshot history from BigQuery…</div>
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>Loading snapshot history from BigQuery…</div>
           )}
           {loadErr && (
             <div style={{ padding: 20, color: '#b91c1c', fontSize: 13, background: '#fef2f2', margin: 16, borderRadius: 8 }}>
@@ -90,13 +90,13 @@ export default function RestoreFromBQModal({ collection, docId, label, onClose, 
             </div>
           )}
           {snapshots && snapshots.length === 0 && (
-            <div style={{ padding: 20, textAlign: 'center', color: '#888', fontSize: 13 }}>
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>
               No snapshots in BigQuery for this doc yet. Either it was never written, or the BQ mirror was installed after this doc was created and last edited.
             </div>
           )}
           {snapshots && snapshots.length > 0 && snapshots.map(s => (
             <label key={s.timestamp}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 20px', cursor: 'pointer', borderBottom: '1px solid #f4f4f4', background: chosen?.timestamp === s.timestamp ? '#f0faf6' : 'transparent' }}>
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 20px', cursor: 'pointer', borderBottom: '1px solid var(--pn-border)', background: chosen?.timestamp === s.timestamp ? '#f0faf6' : 'transparent' }}>
               <input
                 type="radio"
                 name="snapshot"
@@ -105,17 +105,17 @@ export default function RestoreFromBQModal({ collection, docId, label, onClose, 
                 style={{ marginTop: 4 }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: '#1a1a1a' }}>{fmtTime(s.timestamp)}</div>
-                <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{s.operation}</div>
-                <div style={{ fontSize: 12, color: '#555', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{previewLine(s.preview)}</div>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>{fmtTime(s.timestamp)}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>{s.operation}</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{previewLine(s.preview)}</div>
               </div>
             </label>
           ))}
         </div>
 
-        <div style={{ padding: '12px 20px', borderTop: '1px solid #eee', display: 'flex', gap: 8, justifyContent: 'flex-end', background: '#fafafa' }}>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8, justifyContent: 'flex-end', background: 'var(--pn-bg)' }}>
           <button onClick={onClose} disabled={working}
-            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: '#444' }}>
+            style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
             Cancel
           </button>
           <button onClick={doRestore} disabled={!chosen || working}

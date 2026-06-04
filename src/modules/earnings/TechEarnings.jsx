@@ -217,7 +217,7 @@ export default function TechEarnings() {
 
   if (!techName) {
     return (
-      <div style={{ maxWidth: 1080, margin: '0 auto', padding: 24, textAlign: 'center', color: '#888' }}>
+      <div style={{ maxWidth: 1080, margin: '0 auto', padding: 24, textAlign: 'center', color: 'var(--pn-text-muted)' }}>
         No tech profile linked to your account. Ask an admin to add you.
       </div>
     );
@@ -228,26 +228,26 @@ export default function TechEarnings() {
       {/* Header / tech picker */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, gap: 12, flexWrap: 'wrap' }}>
         <div>
-          <div style={{ fontSize: 13, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Earnings dashboard</div>
-          <div style={{ fontSize: 24, fontWeight: 700, color: '#1a1a1a' }}>{techName}</div>
+          <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Earnings dashboard</div>
+          <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--pn-text)' }}>{techName}</div>
         </div>
         {canPickTech && techList.length > 1 && (
           <select value={techName} onChange={e => setTechName(e.target.value)}
-            style={{ fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', outline: 'none' }}>
+            style={{ fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', outline: 'none' }}>
             {techList.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         )}
       </div>
 
       {loading && (
-        <div style={{ textAlign: 'center', padding: '60px 20px', color: '#bbb' }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: '60px 20px', color: 'var(--pn-text-faint)' }}>Loading…</div>
       )}
 
       {!loading && data && data.month.serviceCount === 0 && data.todayRemaining.length === 0 && data.nextSevenDays.length === 0 && (
         <div style={{ background: 'linear-gradient(135deg, #f3eafc 0%, #eaf3fc 100%)', border: '1px solid #d8d0e8', borderRadius: 14, padding: 24, textAlign: 'center', marginBottom: 18 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>✨</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Welcome, {techName.split(' ')[0]}!</div>
-          <div style={{ fontSize: 13, color: '#666', maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>Welcome, {techName.split(' ')[0]}!</div>
+          <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>
             Your dashboard will fill in once you start completing appointments. Tips, services done, and your weekly take-home will all appear here in real time.
           </div>
         </div>
@@ -300,10 +300,10 @@ export default function TechEarnings() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {data.month.tipEntries.slice(0, 8).map((e, i) => (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: '#f8fafc', borderRadius: 8 }}>
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--pn-bg)', borderRadius: 8 }}>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{e.clientName}</div>
-                        <div style={{ fontSize: 11, color: '#888' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{e.clientName}</div>
+                        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
                           {new Date(e.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                           {e.services?.length ? ` · ${e.services.map(s => s.name || s).filter(Boolean).slice(0, 2).join(', ')}` : ''}
                         </div>
@@ -322,7 +322,7 @@ export default function TechEarnings() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {data.todayRemaining.length > 0 && (
                     <>
-                      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em' }}>Today's remaining</div>
+                      <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Today's remaining</div>
                       {data.todayRemaining.map(a => (
                         <ApptRow key={a.id} a={a} />
                       ))}
@@ -330,7 +330,7 @@ export default function TechEarnings() {
                   )}
                   {data.nextSevenDays.length > 0 && (
                     <>
-                      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 4 }}>Next 7 days</div>
+                      <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 4 }}>Next 7 days</div>
                       {data.nextSevenDays.slice(0, 8).map(a => (
                         <ApptRow key={a.id} a={a} showDate />
                       ))}
@@ -346,13 +346,13 @@ export default function TechEarnings() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {data.topClients.map((c, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: i === 0 ? '#fff7ed' : '#f8fafc', borderRadius: 8 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: i === 0 ? '#fff7ed' : 'var(--pn-bg)', borderRadius: 8 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
                         {i === 0 && '⭐ '}
                         {c.name}
                       </div>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: '#888' }}>{c.visits} visit{c.visits === 1 ? '' : 's'}</span>
+                        <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{c.visits} visit{c.visits === 1 ? '' : 's'}</span>
                         <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>{fmtMoney(c.spend)}</span>
                       </div>
                     </div>
@@ -371,10 +371,10 @@ export default function TechEarnings() {
                     .sort((a, b) => b[1].count - a[1].count)
                     .slice(0, 6)
                     .map(([name, s]) => (
-                      <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: '#f8fafc', borderRadius: 8 }}>
-                        <div style={{ fontSize: 13, color: '#1a1a1a' }}>{name}</div>
+                      <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: 'var(--pn-bg)', borderRadius: 8 }}>
+                        <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>{name}</div>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                          <span style={{ fontSize: 11, color: '#888' }}>×{s.count}</span>
+                          <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>×{s.count}</span>
                           <span style={{ fontSize: 13, fontWeight: 600, color: '#5b3b8c' }}>{fmtMoney(s.revenue)}</span>
                         </div>
                       </div>
@@ -394,24 +394,24 @@ function StatCard({ title, accent, services, revenue, tips, avgTip, clients, com
   const trendColor = compareDelta == null ? '#888' : compareDelta > 0 ? '#22c55e' : compareDelta < 0 ? '#ef4444' : '#888';
   const trendArrow = compareDelta == null ? '·' : compareDelta > 0 ? '▲' : compareDelta < 0 ? '▼' : '—';
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 18, position: 'relative', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 14, padding: 18, position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: accent }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>{title}</div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 700 }}>{title}</div>
         {compareDelta != null && (
           <div style={{ fontSize: 11, color: trendColor, fontWeight: 700 }}>
-            {trendArrow} {Math.abs(compareDelta)}% <span style={{ fontWeight: 400, color: '#999' }}>{compareLabel}</span>
+            {trendArrow} {Math.abs(compareDelta)}% <span style={{ fontWeight: 400, color: 'var(--pn-text-faint)' }}>{compareLabel}</span>
           </div>
         )}
       </div>
       <div style={{ fontSize: 32, fontWeight: 700, color: accent, lineHeight: 1.1, marginBottom: 4 }}>{fmtMoney(total)}</div>
-      <div style={{ fontSize: 11, color: '#888' }}>Total: services + tips</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Total: services + tips</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 14 }}>
         <Stat label="Services" value={fmtMoney(revenue)} sub={`${services} done`} />
         <Stat label="Tips" value={fmtMoney(tips)} sub={services ? `avg ${fmtMoneyExact(avgTip)}` : '—'} />
       </div>
-      <div style={{ marginTop: 8, fontSize: 11, color: '#888' }}>
+      <div style={{ marginTop: 8, fontSize: 11, color: 'var(--pn-text-muted)' }}>
         {clients} unique client{clients === 1 ? '' : 's'}
       </div>
     </div>
@@ -420,25 +420,25 @@ function StatCard({ title, accent, services, revenue, tips, avgTip, clients, com
 
 function Stat({ label, value, sub }) {
   return (
-    <div style={{ background: '#fafafa', borderRadius: 8, padding: '8px 10px' }}>
-      <div style={{ fontSize: 10, color: '#888', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
-      <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2 }}>{value}</div>
-      <div style={{ fontSize: 10, color: '#999' }}>{sub}</div>
+    <div style={{ background: 'var(--pn-bg)', borderRadius: 8, padding: '8px 10px' }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1.2 }}>{value}</div>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{sub}</div>
     </div>
   );
 }
 
 function Panel({ title, children }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 }}>{title}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 14, padding: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 12 }}>{title}</div>
       {children}
     </div>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ fontSize: 12, color: '#bbb', padding: '14px 4px', textAlign: 'center' }}>{children}</div>;
+  return <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', padding: '14px 4px', textAlign: 'center' }}>{children}</div>;
 }
 
 function ApptRow({ a, showDate }) {
@@ -447,10 +447,10 @@ function ApptRow({ a, showDate }) {
     : '';
   const t = a.startTime || '';
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: '#f8fafc', borderRadius: 8 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: 'var(--pn-bg)', borderRadius: 8 }}>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{a.clientName || 'Walk-in'}</div>
-        <div style={{ fontSize: 11, color: '#888' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{a.clientName || 'Walk-in'}</div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
           {showDate ? `${dateStr} · ${t}` : t}
           {Array.isArray(a.services) && a.services.length > 0 ? ` · ${a.services.map(s => s.name).filter(Boolean).join(', ')}` : ''}
         </div>

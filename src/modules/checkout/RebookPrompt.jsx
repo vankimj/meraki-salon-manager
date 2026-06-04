@@ -116,7 +116,7 @@ export default function RebookPrompt({
   if (allServices === null || futureAppts === null) {
     return (
       <div style={cardStyle}>
-        <div style={{ fontSize: 12, color: '#888' }}>Checking availability…</div>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Checking availability…</div>
       </div>
     );
   }
@@ -210,10 +210,10 @@ export default function RebookPrompt({
   if (!expanded) {
     return (
       <div style={cardStyle}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>
           Book your next visit?
         </div>
-        <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5, marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
           Suggested: <strong>{fmtDate(suggestedDate)}</strong> with {tech?.name || techName}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -222,7 +222,7 @@ export default function RebookPrompt({
             Yes — pick a time
           </button>
           <button onClick={() => setSkipped(true)}
-            style={{ fontSize: 12, padding: '8px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ fontSize: 12, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
             Skip
           </button>
         </div>
@@ -234,10 +234,10 @@ export default function RebookPrompt({
   return (
     <div style={{ ...cardStyle, borderColor: '#2D7A5F' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>
           Book next visit · {totalDur} min · {tech?.name || techName}
         </div>
-        <button onClick={() => setExpanded(false)} style={{ background: 'none', border: 'none', fontSize: 11, color: '#888', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
+        <button onClick={() => setExpanded(false)} style={{ background: 'none', border: 'none', fontSize: 11, color: 'var(--pn-text-muted)', cursor: 'pointer', padding: 0, fontFamily: 'inherit' }}>
           ✕ collapse
         </button>
       </div>
@@ -247,13 +247,13 @@ export default function RebookPrompt({
           min={addWeeks(visitDate, 1)}
           max={addWeeks(visitDate, 26)}
           onChange={e => { setPickedDate(e.target.value); setPickedSlot(null); }}
-          style={{ width: '100%', padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, background: '#fafafa', boxSizing: 'border-box' }} />
+          style={{ width: '100%', padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, background: 'var(--pn-bg)', boxSizing: 'border-box' }} />
       </div>
 
       {dayAppts == null ? (
-        <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', padding: '12px 0' }}>Loading…</div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'center', padding: '12px 0' }}>Loading…</div>
       ) : !anyAvail ? (
-        <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '14px 8px', background: '#fafafa', borderRadius: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', textAlign: 'center', padding: '14px 8px', background: 'var(--pn-bg)', borderRadius: 6 }}>
           No openings on this day — try another date.
         </div>
       ) : (
@@ -265,9 +265,9 @@ export default function RebookPrompt({
               <button key={m} onClick={() => free && setPickedSlot(m)} disabled={!free}
                 style={{
                   padding: '8px 4px', fontSize: 11, fontWeight: 600, borderRadius: 6, fontFamily: 'inherit',
-                  border: `1.5px solid ${sel ? '#2D7A5F' : free ? '#c3e6d8' : '#ececec'}`,
-                  background: sel ? '#2D7A5F' : free ? '#f0f9f5' : '#fafafa',
-                  color: sel ? '#fff' : free ? '#1a6040' : '#ccc',
+                  border: `1.5px solid ${sel ? '#2D7A5F' : free ? '#c3e6d8' : 'var(--pn-border)'}`,
+                  background: sel ? '#2D7A5F' : free ? '#f0f9f5' : 'var(--pn-bg)',
+                  color: sel ? '#fff' : free ? '#1a6040' : 'var(--pn-text-faint)',
                   cursor: free ? 'pointer' : 'default',
                 }}>
                 {minsToStr(m)}
@@ -279,11 +279,11 @@ export default function RebookPrompt({
 
       <div style={{ display: 'flex', gap: 6 }}>
         <button onClick={() => setSkipped(true)}
-          style={{ fontSize: 12, padding: '8px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ fontSize: 12, padding: '8px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
           Skip
         </button>
         <button onClick={bookIt} disabled={!pickedDate || pickedSlot == null || booking}
-          style={{ flex: 1, fontSize: 12, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: 'none', background: (pickedDate && pickedSlot != null && !booking) ? '#2D7A5F' : '#d0d0d0', color: '#fff', cursor: (pickedDate && pickedSlot != null && !booking) ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+          style={{ flex: 1, fontSize: 12, fontWeight: 700, padding: '8px 12px', borderRadius: 8, border: 'none', background: (pickedDate && pickedSlot != null && !booking) ? '#2D7A5F' : 'var(--pn-surface-alt)', color: '#fff', cursor: (pickedDate && pickedSlot != null && !booking) ? 'pointer' : 'default', fontFamily: 'inherit' }}>
           {booking ? 'Booking…' : 'Confirm booking'}
         </button>
       </div>

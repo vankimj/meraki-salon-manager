@@ -69,9 +69,9 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
   }
 
   const body = (
-    <div style={{ background: '#fff', borderRadius: onClose ? 12 : 0, overflow: 'hidden', border: onClose ? '1px solid #ececec' : 'none', maxHeight: onClose ? '80vh' : 'none', display: 'flex', flexDirection: 'column', width: onClose ? 'min(560px, 92vw)' : '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #f0f0f0' }}>
-        <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: onClose ? 12 : 0, overflow: 'hidden', border: onClose ? '1px solid var(--pn-border)' : 'none', maxHeight: onClose ? '80vh' : 'none', display: 'flex', flexDirection: 'column', width: onClose ? 'min(560px, 92vw)' : '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid var(--pn-border)' }}>
+        <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>
           {title}{items ? ` (${items.length})` : ''}
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -80,7 +80,7 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
         </div>
       </div>
 
-      <div style={{ padding: '10px 16px', fontSize: 12, color: '#666', lineHeight: 1.55, background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
+      <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55, background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
         Tombstones from the last 30 days. After 30 days the <code>purgeOldTombstones</code> cron permanently deletes them — BigQuery keeps a copy for the 4 mirrored collections (clients, appointments, receipts, employees); other collections are gone forever past 30 days.
       </div>
 
@@ -92,22 +92,22 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
         ) : (
           items.map(item => (
             <div key={`${item.collection}-${item.id}`}
-              style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 10 }}>
+              style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 10, fontWeight: 700, color: '#7f1d1d', background: '#fef2f2', padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase', flexShrink: 0, minWidth: 86, textAlign: 'center' }}>
                 {item.collection}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, color: '#1a1a1a', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {previewLabel(item)}
                 </div>
-                <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
                   Deleted {item._deletedAt ? new Date(item._deletedAt).toLocaleString() : 'unknown time'}
                   {item._deletedBy ? ` by ${item._deletedBy}` : ''}
                   {!item.restorable && <span style={{ marginLeft: 6, color: '#92400e' }}>· no BQ history</span>}
                 </div>
               </div>
               <button onClick={() => handleRestore(item)} disabled={busy}
-                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #16a34a', background: busy ? '#f0fdf4' : '#fff', color: '#16a34a', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, flexShrink: 0 }}>
+                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #16a34a', background: busy ? '#f0fdf4' : 'var(--pn-surface)', color: '#16a34a', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, flexShrink: 0 }}>
                 {busy ? '…' : '↩ Restore'}
               </button>
             </div>
@@ -126,7 +126,7 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
   );
 }
 
-const empty = { padding: '40px 16px', textAlign: 'center', color: '#999', fontSize: 13 };
+const empty = { padding: '40px 16px', textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 };
 function btn(color) {
-  return { fontSize: 12, padding: '6px 12px', borderRadius: 8, border: `1px solid ${color}`, background: '#fff', color, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 };
+  return { fontSize: 12, padding: '6px 12px', borderRadius: 8, border: `1px solid ${color}`, background: 'var(--pn-surface)', color, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 };
 }

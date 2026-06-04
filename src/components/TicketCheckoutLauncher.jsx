@@ -57,18 +57,18 @@ export default function TicketCheckoutLauncher() {
     return (
       <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 350 }}
            onClick={e => { if (e.target === e.currentTarget) close(); }}>
-        <div style={{ background: '#fff', borderRadius: 16, padding: '20px 22px', width: '92%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>🛍 Retail sale</div>
-          <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>Just a customer name so we can attach the receipt. Phone and email are optional.</div>
+        <div style={{ background: 'var(--pn-surface)', borderRadius: 16, padding: '20px 22px', width: '92%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>🛍 Retail sale</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 14 }}>Just a customer name so we can attach the receipt. Phone and email are optional.</div>
           <input value={tmpName} onChange={e => setTmpName(e.target.value)} placeholder="Customer name *" autoFocus
             onKeyDown={e => e.key === 'Enter' && valid && submit()}
-            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: '#fafafa' }} />
+            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: 'var(--pn-bg)' }} />
           <input value={tmpPhone} onChange={e => setTmpPhone(e.target.value)} placeholder="Phone (optional)" inputMode="tel"
-            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: '#fafafa' }} />
+            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 13, fontFamily: 'inherit', marginBottom: 8, background: 'var(--pn-bg)' }} />
           <input value={tmpEmail} onChange={e => setTmpEmail(e.target.value)} placeholder="Email (optional, for receipt)" inputMode="email"
-            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginBottom: 14, background: '#fafafa' }} />
+            style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 13, fontFamily: 'inherit', marginBottom: 14, background: 'var(--pn-bg)' }} />
           <div style={{ display: 'flex', gap: 8 }}>
-            <button onClick={close} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+            <button onClick={close} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
             <button onClick={submit} disabled={!valid}
               style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: valid ? '#7c3aed' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 700, cursor: valid ? 'pointer' : 'default', fontFamily: 'inherit' }}>
               Continue to checkout →

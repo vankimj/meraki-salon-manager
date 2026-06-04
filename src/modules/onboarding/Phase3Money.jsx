@@ -67,7 +67,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         Set your financial defaults and confirm the legal pages are published. Every salon needs
         these dialed before the first paid appointment — but Stripe Connect can wait until you're ready.
       </div>
@@ -103,7 +103,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', marginTop: 18 }}>
         {!(privacyOk && termsOk) && (
-          <div style={{ fontSize: 11, color: '#888', marginRight: 'auto' }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginRight: 'auto' }}>
             Confirm the privacy and terms boxes above to continue.
           </div>
         )}
@@ -130,24 +130,24 @@ function Section({ title, children }) {
 function Row({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{children}</div>
     </div>
   );
 }
 
 function Hint({ children }) {
-  return <span style={{ marginLeft: 8, fontSize: 11, color: '#888' }}>{children}</span>;
+  return <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--pn-text-faint)' }}>{children}</span>;
 }
 
 function ToggleRow({ checked, onChange, label, desc }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid #e8e8e8', borderRadius: 8, cursor: 'pointer', background: '#fff' }}>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: 'pointer', background: 'var(--pn-surface)' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
         style={{ marginTop: 2, accentColor: '#5b3b8c' }} />
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{label}</div>
-        {desc && <div style={{ fontSize: 11, color: '#666', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{label}</div>
+        {desc && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
       </div>
     </label>
   );
@@ -155,12 +155,12 @@ function ToggleRow({ checked, onChange, label, desc }) {
 
 function CheckRow({ checked, onChange, label, desc }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid #e8e8e8', borderRadius: 8, cursor: 'pointer', background: checked ? '#ecfdf5' : '#fff' }}>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: 'pointer', background: checked ? '#ecfdf5' : 'var(--pn-surface)' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
         style={{ marginTop: 2, accentColor: '#10b981' }} />
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 12, color: '#1a1a1a', lineHeight: 1.5 }}>{label}</div>
-        {desc && <div style={{ fontSize: 11, color: '#666', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
+        <div style={{ fontSize: 12, color: 'var(--pn-text)', lineHeight: 1.5 }}>{label}</div>
+        {desc && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
       </div>
     </label>
   );
@@ -221,23 +221,23 @@ function ConnectComparisonTable() {
 
   const cellBase = {
     padding: '8px 10px', fontSize: 12, lineHeight: 1.45,
-    borderBottom: '1px solid #eee', verticalAlign: 'top',
+    borderBottom: '1px solid var(--pn-border)', verticalAlign: 'top',
   };
 
   return (
-    <details open style={{ marginBottom: 14, borderRadius: 10, border: '1px solid #e8e8e8', background: '#fafafa' }}>
+    <details open style={{ marginBottom: 14, borderRadius: 10, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
       <summary style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#5b3b8c', cursor: 'pointer', userSelect: 'none' }}>
         Compare the two options side-by-side
       </summary>
       <div style={{ overflowX: 'auto', padding: '0 4px 10px' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: '#1a1a1a' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: 'var(--pn-text)' }}>
           <thead>
             <tr>
-              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#5b3b8c', background: '#fafafa', borderBottom: '2px solid #e8e8e8', width: '32%' }}></th>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#5b3b8c', background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)', width: '32%' }}></th>
               <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#065f46', background: '#f0fdf4', borderBottom: '2px solid #6ee7b7' }}>
                 ✓ Your own Stripe (Standard)
               </th>
-              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#1a1a1a', background: '#fafafa', borderBottom: '2px solid #e8e8e8' }}>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: 'var(--pn-text)', background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)' }}>
                 Plume-managed (Express)
               </th>
             </tr>
@@ -245,14 +245,14 @@ function ConnectComparisonTable() {
           <tbody>
             {ROWS.map(r => (
               <tr key={r.label}>
-                <td style={{ ...cellBase, color: '#555', fontWeight: 600 }}>{r.label}</td>
+                <td style={{ ...cellBase, color: 'var(--pn-text-muted)', fontWeight: 600 }}>{r.label}</td>
                 <td style={cellBase}>{r.std}</td>
                 <td style={cellBase}>{r.exp}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <div style={{ padding: '8px 10px 0', fontSize: 11, color: '#888' }}>
+        <div style={{ padding: '8px 10px 0', fontSize: 11, color: 'var(--pn-text-faint)' }}>
           Rates set by Stripe ·{' '}
           <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', textDecoration: 'underline' }}>stripe.com/pricing</a> ·{' '}
           <a href="https://stripe.com/connect/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', textDecoration: 'underline' }}>stripe.com/connect/pricing</a>
@@ -589,7 +589,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
     // Not connected: show the two-path picker
     body = (
     <div>
-      <div style={{ fontSize: 13, color: '#444', lineHeight: 1.55, marginBottom: 12 }}>
+      <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 12 }}>
         You can take cards once Stripe is connected. Pick how you want to handle payments —
         both work the same for charging customers; the difference is whether you ever have to
         deal with stripe.com directly.
@@ -606,11 +606,11 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             RECOMMENDED
           </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>✓ Your own Stripe account</div>
-          <div style={{ fontSize: 12, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
             Connect (or create) a Stripe account in your salon's name. You own it,
             you keep it if you ever leave Plume, and there's no per-payout fee.
           </div>
-          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
+          <ul style={{ fontSize: 11, color: 'var(--pn-text-muted)', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
             <li>You own the merchant account</li>
             <li>Full Stripe Dashboard at stripe.com</li>
             <li>No per-payout fee</li>
@@ -623,26 +623,26 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
         </div>
 
         {/* Express card — alternative */}
-        <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, padding: 14, background: '#fff' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>Plume-managed</div>
-          <div style={{ fontSize: 12, color: '#444', marginBottom: 10, lineHeight: 1.5 }}>
+        <div style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: 14, background: 'var(--pn-surface)' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>Plume-managed</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
             We create + manage a sub-account for you. Dashboard lives inside Plume,
             no stripe.com login. Small per-payout fee covers it.
           </div>
-          <ul style={{ fontSize: 11, color: '#555', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
+          <ul style={{ fontSize: 11, color: 'var(--pn-text-muted)', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
             <li>Dashboard inside Plume</li>
             <li>No separate stripe.com account</li>
             <li>Small per-payout fee</li>
             <li>Disputes routed through Plume</li>
           </ul>
-          <RateCard accountType="express" color="#555" borderColor="#e8e8e8" background="#fafafa" />
+          <RateCard accountType="express" color="var(--pn-text-muted)" borderColor="var(--pn-border)" background="var(--pn-bg)" />
           <button onClick={startExpress} disabled={busy} style={btnSecondary} type="button">
             {busy ? 'Loading…' : 'Use Plume-managed'}
           </button>
         </div>
       </div>
 
-      <div style={{ fontSize: 11, color: '#888', marginTop: 12, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
         You can skip this for now — the calendar, walk-in queue, and all non-payment features
         work without Stripe. Connect before your first paid appointment.
       </div>
@@ -700,10 +700,10 @@ function EmbeddedModal({ title, children, onClose }) {
 
   const content = (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100000, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '32px 16px', overflowY: 'auto' }}>
-      <div style={{ background: '#fff', borderRadius: 12, padding: 0, width: '100%', maxWidth: 760, boxShadow: '0 12px 36px rgba(0,0,0,.25)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #eee' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{title}</div>
-          <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#999', padding: 4, lineHeight: 1 }}>×</button>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 12, padding: 0, width: '100%', maxWidth: 760, boxShadow: '0 12px 36px rgba(0,0,0,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)' }}>{title}</div>
+          <button onClick={onClose} type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: 'var(--pn-text-faint)', padding: 4, lineHeight: 1 }}>×</button>
         </div>
         <div style={{ padding: 14 }}>
           {children}
@@ -721,6 +721,6 @@ function EmbeddedModal({ title, children, onClose }) {
   return createPortal(content, target);
 }
 
-const inp = { boxSizing: 'border-box', padding: '7px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff' };
+const inp = { boxSizing: 'border-box', padding: '7px 10px', fontSize: 13, border: '1px solid var(--pn-border-strong)', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: 'var(--pn-surface)' };
 const btnPrimary = (disabled) => ({ padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: disabled ? '#cfc2e3' : '#5b3b8c', color: '#fff', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' });
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

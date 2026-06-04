@@ -136,7 +136,7 @@ async function assignAllServicesToAll() {
   return (
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, fontSize: 13, color: '#888' }}>{employees.length} team member{employees.length !== 1 ? 's' : ''}</div>
+        <div style={{ flex: 1, fontSize: 13, color: 'var(--pn-text-muted)' }}>{employees.length} team member{employees.length !== 1 ? 's' : ''}</div>
         {employees.length === 0 && (
           <Btn onClick={seedEmployees} disabled={seeding} color="#f59e0b">
             {seeding ? 'Adding…' : '↺ Seed from defaults'}
@@ -157,7 +157,7 @@ async function assignAllServicesToAll() {
           ]}
         />
       ) : (
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', overflow: 'hidden' }}>
           {employees.map((emp, i) => (
             <EmployeeRow
               key={emp.id}
@@ -206,20 +206,20 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
   const svcCount = emp.serviceIds?.length || 0;
   const svcConfigured = svcCount > 0;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid #f0f0f0', opacity: emp.active ? 1 : .5 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid var(--pn-border)', opacity: emp.active ? 1 : .5 }}>
       <button onClick={onView}
         title="View profile"
         style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}>
         <EmpAvatar emp={emp} size={40} />
       </button>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>
           <button onClick={onView}
             title="View profile"
             style={{ background: 'none', border: 'none', padding: 0, font: 'inherit', color: 'inherit', cursor: 'pointer', textAlign: 'left' }}>
             {emp.name}
           </button>
-          {!emp.active && <span style={{ fontSize: 10, color: '#bbb', marginLeft: 6, fontWeight: 400 }}>inactive</span>}
+          {!emp.active && <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginLeft: 6, fontWeight: 400 }}>inactive</span>}
           {totalServices > 0 && (
             <span title={svcConfigured ? `Performs ${svcCount} of ${totalServices} services` : 'No services configured — defaults to all services'}
               style={{ fontSize: 10, marginLeft: 8, padding: '1px 7px', borderRadius: 10, fontWeight: 600, background: svcConfigured ? '#EBF4FB' : '#fef3c7', color: svcConfigured ? '#1a5f8a' : '#92400e', border: `1px solid ${svcConfigured ? '#bfdbfe' : '#fde68a'}` }}>
@@ -227,11 +227,11 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
             </span>
           )}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
           {[emp.phone, emp.email].filter(Boolean).join(' · ') || (emp.instagram ? emp.instagram : 'No contact info')}
         </div>
         {(emp.venmo || emp.instagram || emp.facebook || emp.tiktok) && (
-          <div style={{ fontSize: 10, color: '#bbb', marginTop: 1 }}>
+          <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 1 }}>
             {[emp.venmo && `💸 ${emp.venmo}`, emp.instagram && `📸 ${emp.instagram}`, emp.facebook && `👥 ${emp.facebook}`, emp.tiktok && `🎵 ${emp.tiktok}`].filter(Boolean).join('  ')}
           </div>
         )}
@@ -240,11 +240,11 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
         {emp.email && onSendInvite && (
           <button onClick={onSendInvite}
             title={emp.inviteSentAt ? `Resend sign-in link (last sent ${new Date(emp.inviteSentAt).toLocaleDateString()})` : 'Send sign-in invite to this employee'}
-            style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d0e8', background: emp.inviteSentAt ? '#f3eafc' : '#fff', color: '#5b3b8c', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d0e8', background: emp.inviteSentAt ? '#f3eafc' : 'var(--pn-surface)', color: '#5b3b8c', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             {emp.inviteSentAt ? '↻ Resend' : '📨 Invite'}
           </button>
         )}
-        <button onClick={onToggleActive} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: emp.active ? '#f0fdf4' : '#f5f5f5', color: emp.active ? '#16a34a' : '#aaa', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+        <button onClick={onToggleActive} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: emp.active ? '#f0fdf4' : 'var(--pn-surface-muted)', color: emp.active ? '#16a34a' : 'var(--pn-text-faint)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
           {emp.active ? 'Active' : 'Inactive'}
         </button>
         <Btn onClick={onEdit}>Edit</Btn>
@@ -304,18 +304,18 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 440, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 440, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 600 }}>{isNew ? 'New Employee' : viewOnly ? (emp.name || 'Employee') : 'Edit Employee'}</span>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e8e8e8', flexShrink: 0 }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           {TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '9px 0', fontSize: 12, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#3D95CE' : '#888', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid #3D95CE' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '9px 0', fontSize: 12, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#3D95CE' : 'var(--pn-text-muted)', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid #3D95CE' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
               {t}
             </button>
           ))}
@@ -332,13 +332,13 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
             <>
               <div style={{ display: 'flex', gap: 14, marginBottom: 14, alignItems: 'flex-start' }}>
                 <div style={{ flexShrink: 0 }}>
-                  <div onClick={viewOnly ? undefined : () => fileRef.current?.click()} style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: '#f0f0f0', cursor: viewOnly ? 'default' : 'pointer', border: '2px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div onClick={viewOnly ? undefined : () => fileRef.current?.click()} style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: 'var(--pn-surface-alt)', cursor: viewOnly ? 'default' : 'pointer', border: '2px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     {emp.photo
                       ? <img src={emp.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       : <EmpAvatar emp={emp} size={72} />
                     }
                   </div>
-                  <div style={{ fontSize: 10, color: '#aaa', textAlign: 'center', marginTop: 3, cursor: 'pointer' }} onClick={() => fileRef.current?.click()}>photo</div>
+                  <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 3, cursor: 'pointer' }} onClick={() => fileRef.current?.click()}>photo</div>
                   <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: 'none' }} onChange={handlePhoto} />
                 </div>
                 <div style={{ flex: 1 }}>
@@ -359,11 +359,11 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                   placeholder="Specialties, bio, anything to note…" style={{ ...inp, resize: 'vertical', lineHeight: 1.5 }} />
               </Field>
 
-              <label style={{ fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4 }}>
+              <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 4 }}>
                 <input type="checkbox" checked={!!emp.active} onChange={e => onChange({ active: e.target.checked })} />
                 Active (shows on schedule & tip flow)
               </label>
-              <label style={{ fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 8 }}>
+              <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 8 }}>
                 <input type="checkbox" checked={!!emp.extendedHoursAllowed} onChange={e => onChange({ extendedHoursAllowed: e.target.checked })} />
                 Available during appointment-only hours
               </label>
@@ -374,9 +374,9 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                   tech tune timing / channel / opt-out individually.
                   Server-side `sendTechAppointmentReminders` reads these
                   with fallback defaults: 15 min before, email. */}
-              <div style={{ marginTop: 18, padding: '12px 14px', background: '#fafafa', border: '1px solid #ececec', borderRadius: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>🔔 Notifications</div>
-                <label style={{ fontSize: 12, color: '#555', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+              <div style={{ marginTop: 18, padding: '12px 14px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>🔔 Notifications</div>
+                <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!emp.techReminderOptOut}
                     onChange={e => onChange({ techReminderOptOut: e.target.checked })} />
                   Opt out of appointment reminders
@@ -384,7 +384,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 {!emp.techReminderOptOut && (
                   <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Lead time</div>
+                      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 4 }}>Lead time</div>
                       <select value={emp.techReminderLeadMinutes ?? 15}
                         onChange={e => onChange({ techReminderLeadMinutes: Number(e.target.value) })}
                         style={{ ...inp, padding: '7px 10px' }}>
@@ -394,7 +394,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Channel</div>
+                      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 4 }}>Channel</div>
                       <select value={emp.techReminderChannel || 'email'}
                         onChange={e => onChange({ techReminderChannel: e.target.value })}
                         style={{ ...inp, padding: '7px 10px' }}>
@@ -439,7 +439,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
               <Field label="Taxpayer ID (TIN / SSN)">
                 <input value={emp.tin || ''} onChange={e => onChange({ tin: e.target.value })}
                   placeholder="XXX-XX-XXXX or XX-XXXXXXX" style={inp} />
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>
                   Used on the contractor's 1099-NEC summary. Stored encrypted at rest by Firestore.
                 </div>
               </Field>
@@ -454,16 +454,16 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                   for everyone else (admin/scheduler/readonly) we show a
                   soft hint instead. */}
               {isAdmin && (
-                <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+                <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
                     Schedule access (when this tech logs in)
                   </div>
                   {!linkedUser ? (
-                    <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
                       No app access yet for this employee. Grant access from <strong>Admin → Users</strong> first; the toggle will appear here once they're a tech-role user.
                     </div>
                   ) : linkedUser.role !== 'tech' ? (
-                    <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
                       This employee logs in as <strong>{linkedUser.role}</strong>. Schedule edit permission only applies to tech-role users — admins and schedulers can already edit any schedule.
                     </div>
                   ) : (
@@ -474,15 +474,15 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                           <button key={v} onClick={() => setScheduleAccess(v)}
                             style={{
                               flex: 1, minWidth: 160, padding: '8px 12px', borderRadius: 8,
-                              border: `1.5px solid ${active ? color : '#e0e0e0'}`,
-                              background: active ? (v === 'edit' ? '#f0fdf4' : '#f5f5f5') : '#fff',
-                              color: active ? color : '#666',
+                              border: `1.5px solid ${active ? color : 'var(--pn-border)'}`,
+                              background: active ? (v === 'edit' ? '#f0fdf4' : 'var(--pn-surface-muted)') : 'var(--pn-surface)',
+                              color: active ? color : 'var(--pn-text-muted)',
                               fontSize: 12, fontWeight: active ? 700 : 500,
                               cursor: 'pointer', fontFamily: 'inherit',
                               textAlign: 'left',
                             }}>
                             <div>{active ? '✓ ' : ''}{label}</div>
-                            <div style={{ fontSize: 10, fontWeight: 400, color: '#999', marginTop: 2 }}>
+                            <div style={{ fontSize: 10, fontWeight: 400, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                               {v === 'edit' ? 'Add, move, edit appointments on their own day' : 'Read-only schedule view, no edits'}
                             </div>
                           </button>
@@ -490,34 +490,34 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                       })}
                     </div>
                   )}
-                  <div style={{ fontSize: 10, color: '#bbb', marginTop: 8, lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 8, lineHeight: 1.5 }}>
                     Saves immediately. Also editable at <strong>Admin → Users</strong> — both surfaces edit the same field.
                   </div>
                 </div>
               )}
 
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 14, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 14, lineHeight: 1.5 }}>
                 Days marked off are grayed out in the schedule view.
               </div>
               {WORK_DAYS.map(day => {
                 const d = emp.workDays?.[day] ?? DEFAULT_WORK_DAY;
                 return (
                   <div key={day} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                    <div style={{ width: 34, fontSize: 13, fontWeight: 500, color: d.on ? '#333' : '#bbb' }}>{day}</div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#888', cursor: 'pointer', userSelect: 'none', minWidth: 48 }}>
+                    <div style={{ width: 34, fontSize: 13, fontWeight: 500, color: d.on ? 'var(--pn-text)' : 'var(--pn-text-faint)' }}>{day}</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--pn-text-muted)', cursor: 'pointer', userSelect: 'none', minWidth: 48 }}>
                       <input type="checkbox" checked={d.on} onChange={e => patchWorkDay(day, { on: e.target.checked })} />
                       {d.on ? 'On' : 'Off'}
                     </label>
                     {d.on ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
                         <input type="time" value={d.start} onChange={e => patchWorkDay(day, { start: e.target.value })}
-                          style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
-                        <span style={{ color: '#bbb', fontSize: 12 }}>–</span>
+                          style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+                        <span style={{ color: 'var(--pn-text-faint)', fontSize: 12 }}>–</span>
                         <input type="time" value={d.end} onChange={e => patchWorkDay(day, { end: e.target.value })}
-                          style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+                          style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
                       </div>
                     ) : (
-                      <span style={{ fontSize: 11, color: '#d0d0d0', marginLeft: 'auto' }}>not working</span>
+                      <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>not working</span>
                     )}
                   </div>
                 );
@@ -543,7 +543,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[['commission', 'Commission'], ['hourly', 'Hourly'], ['both', 'Both']].map(([v, l]) => (
                     <button key={v} onClick={() => onChange({ rateType: v })}
-                      style={{ flex: 1, padding: '7px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.rateType === v ? '#3D95CE' : '#e0e0e0'}`, background: emp.rateType === v ? '#EBF4FB' : '#fafafa', color: emp.rateType === v ? '#1a5f8a' : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ flex: 1, padding: '7px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.rateType === v ? '#3D95CE' : 'var(--pn-border)'}`, background: emp.rateType === v ? '#EBF4FB' : 'var(--pn-bg)', color: emp.rateType === v ? '#1a5f8a' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {l}
                     </button>
                   ))}
@@ -566,7 +566,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[['cash', 'Cash'], ['check', 'Check'], ['direct_deposit', 'Direct Deposit']].map(([v, l]) => (
                     <button key={v} onClick={() => onChange({ paymentPref: v })}
-                      style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.paymentPref === v ? '#2D7A5F' : '#e0e0e0'}`, background: emp.paymentPref === v ? '#EDFAF3' : '#fafafa', color: emp.paymentPref === v ? '#166534' : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.paymentPref === v ? '#2D7A5F' : 'var(--pn-border)'}`, background: emp.paymentPref === v ? '#EDFAF3' : 'var(--pn-bg)', color: emp.paymentPref === v ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {l}
                     </button>
                   ))}
@@ -604,10 +604,10 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
               ].map(({ key, label, prefix, placeholder }) => (
                 <Field key={key} label={label}>
                   {prefix ? (
-                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d8d8d8', borderRadius: 8, background: '#fafafa', overflow: 'hidden' }}>
-                      <span style={{ padding: '8px 0 8px 12px', fontSize: 14, fontWeight: 500, color: '#aaa', userSelect: 'none' }}>{prefix}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid var(--pn-border-strong)', borderRadius: 8, background: 'var(--pn-bg)', overflow: 'hidden' }}>
+                      <span style={{ padding: '8px 0 8px 12px', fontSize: 14, fontWeight: 500, color: 'var(--pn-text-faint)', userSelect: 'none' }}>{prefix}</span>
                       <input value={emp[key] || ''} onChange={e => onChange({ [key]: e.target.value })} placeholder={placeholder}
-                        style={{ flex: 1, border: 'none', background: 'transparent', padding: '8px 12px 8px 3px', fontSize: 13, color: '#333', outline: 'none', fontFamily: 'inherit' }} />
+                        style={{ flex: 1, border: 'none', background: 'transparent', padding: '8px 12px 8px 3px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', fontFamily: 'inherit' }} />
                     </div>
                   ) : (
                     <input value={emp[key] || ''} onChange={e => onChange({ [key]: e.target.value })} placeholder={placeholder} style={inp} />
@@ -619,14 +619,14 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
         </fieldset>
 
         {/* Footer */}
-        <div style={{ padding: '12px 18px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, flexShrink: 0 }}>
+        <div style={{ padding: '12px 18px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8, flexShrink: 0 }}>
           {viewOnly ? (
             <>
               <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Close</button>
               {!isNew && isAdmin && (
                 <button onClick={() => setRestoreOpen(true)}
                   title="Restore an earlier version of this employee from the BigQuery mirror"
-                  style={{ ...btnBase, padding: '8px 12px', fontSize: 12, color: '#666' }}>
+                  style={{ ...btnBase, padding: '8px 12px', fontSize: 12, color: 'var(--pn-text-muted)' }}>
                   ⏳ History
                 </button>
               )}
@@ -690,32 +690,32 @@ function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDur
 
   return (
     <>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
         Pick which services this tech can perform, and optionally set how long <em>this tech</em> takes per service.
         Leave the minutes blank to use the service's standard time. {isAll && <strong style={{ color: '#16a34a' }}>No services checked = can do every service.</strong>}
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <button onClick={selectAll} style={{ ...btnBase, fontSize: 11, padding: '5px 10px' }}>Select all</button>
         <button onClick={clearAll}  style={{ ...btnBase, fontSize: 11, padding: '5px 10px' }}>Clear all</button>
-        <div style={{ marginLeft: 'auto', fontSize: 11, color: '#aaa', alignSelf: 'center' }}>
+        <div style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--pn-text-faint)', alignSelf: 'center' }}>
           {isAll ? 'all' : `${selectedIds.length} of ${services.length}`}
         </div>
       </div>
       {services.length === 0 ? (
-        <div style={{ fontSize: 12, color: '#aaa', padding: 16, textAlign: 'center' }}>No services configured yet.</div>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', padding: 16, textAlign: 'center' }}>No services configured yet.</div>
       ) : Object.entries(grouped).map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: '#555', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>{cat}</div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>{cat}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 6 }}>
             {items.map(s => {
               const checked = selectedIds.includes(s.id);
               const canDo   = isAll || checked;
               const override = durations[s.id];
               return (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 8, border: `1px solid ${checked ? '#3D95CE' : '#e0e0e0'}`, background: checked ? '#EBF4FB' : '#fafafa' }}>
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 8, border: `1px solid ${checked ? '#3D95CE' : 'var(--pn-border)'}`, background: checked ? '#EBF4FB' : 'var(--pn-bg)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', flex: 1, minWidth: 0 }}>
                     <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: checked ? '#1a5f8a' : '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                    <span style={{ fontSize: 12, color: checked ? '#1a5f8a' : 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
                   </label>
                   {canDo && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
@@ -725,9 +725,9 @@ function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDur
                         onChange={e => setDuration(s.id, e.target.value)}
                         placeholder={String(s.duration ?? '')}
                         title={`Standard: ${s.duration ?? '?'} min`}
-                        style={{ width: 46, fontFamily: 'inherit', border: `1px solid ${override ? '#3D95CE' : '#d8d8d8'}`, borderRadius: 6, padding: '3px 5px', fontSize: 11, textAlign: 'right', color: '#333', background: '#fff', outline: 'none' }}
+                        style={{ width: 46, fontFamily: 'inherit', border: `1px solid ${override ? '#3D95CE' : 'var(--pn-border-strong)'}`, borderRadius: 6, padding: '3px 5px', fontSize: 11, textAlign: 'right', color: 'var(--pn-text)', background: 'var(--pn-surface)', outline: 'none' }}
                       />
-                      <span style={{ fontSize: 10, color: '#aaa' }}>min</span>
+                      <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>min</span>
                     </span>
                   )}
                 </div>
@@ -759,7 +759,7 @@ function EmpAvatar({ emp, size = 36 }) {
 function Field({ label, children, style }) {
   return (
     <div style={{ marginBottom: 10, ...style }}>
-      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>{label}</label>
+      <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>{label}</label>
       {children}
     </div>
   );
@@ -767,18 +767,18 @@ function Field({ label, children, style }) {
 
 function Btn({ onClick, color, children, disabled }) {
   return (
-    <button onClick={onClick} disabled={disabled} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: color || '#e8e8e8', color: color ? '#fff' : '#555', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 500, opacity: disabled ? .6 : 1 }}>
+    <button onClick={onClick} disabled={disabled} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: color || 'var(--pn-surface-muted)', color: color ? '#fff' : 'var(--pn-text-muted)', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 500, opacity: disabled ? .6 : 1 }}>
       {children}
     </button>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ padding: 20, textAlign: 'center', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
-const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 11px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };
-const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, padding: '8px 14px', color: '#333' };
+const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 11px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
+const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 14px', color: 'var(--pn-text)' };
 
 // Export EmpAvatar for use in SlideModal
 export { EmpAvatar };
@@ -837,10 +837,10 @@ function TimeClockPinSection({ emp, onPinChanged, showToast }) {
 
   return (
     <Field label="🕐 Time clock PIN">
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8 }}>
         {!editing && (
           <>
-            <div style={{ flex: 1, fontSize: 12, color: hasPin ? '#166534' : '#aaa' }}>
+            <div style={{ flex: 1, fontSize: 12, color: hasPin ? '#166534' : 'var(--pn-text-faint)' }}>
               {hasPin ? '✓ PIN set' : 'No PIN — kiosk locked out'}
             </div>
             <Btn onClick={() => { setPin(''); setEditing(true); }}>{hasPin ? 'Change' : 'Set PIN'}</Btn>
@@ -857,7 +857,7 @@ function TimeClockPinSection({ emp, onPinChanged, showToast }) {
               value={pin}
               onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
               placeholder="••••"
-              style={{ width: 80, fontFamily: 'inherit', fontSize: 18, letterSpacing: 6, textAlign: 'center', border: '1px solid #d8d8d8', borderRadius: 8, padding: '6px 8px', background: '#fff', outline: 'none' }}
+              style={{ width: 80, fontFamily: 'inherit', fontSize: 18, letterSpacing: 6, textAlign: 'center', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '6px 8px', background: 'var(--pn-surface)', outline: 'none' }}
             />
             <Btn onClick={save} color="#2D7A5F" disabled={saving || pin.length !== 4}>
               {saving ? 'Saving…' : 'Save'}
@@ -866,7 +866,7 @@ function TimeClockPinSection({ emp, onPinChanged, showToast }) {
           </>
         )}
       </div>
-      <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 4 }}>
         4 digits. The tech enters this at the iPad kiosk to clock in/out and start/end breaks.
       </div>
     </Field>

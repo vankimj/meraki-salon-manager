@@ -177,18 +177,18 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const others = users.filter(u => u.role !== 'pending');
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: '#f5f5f5', zIndex: 50, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ position: 'absolute', inset: 0, background: 'var(--pn-surface-alt)', zIndex: 50, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ background: '#fff', borderBottom: '1px solid #ebebeb', padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+      <div style={{ background: 'var(--pn-surface)', borderBottom: '1px solid var(--pn-border)', padding: '0 16px', height: 52, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
         <button onClick={onClose}
           style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, color: '#3D95CE', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, padding: '8px 6px', borderRadius: 6, flexShrink: 0, minWidth: 44, minHeight: 44, justifyContent: 'center' }}>
           <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           Home
         </button>
-        <span style={{ color: '#e0e0e0', fontSize: 16, flexShrink: 0 }}>›</span>
+        <span style={{ color: 'var(--pn-border)', fontSize: 16, flexShrink: 0 }}>›</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
           <span style={{ fontSize: 16 }}>⚙</span>
-          <span style={{ fontSize: 15, fontWeight: 600, color: '#1a1a1a' }}>Admin</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--pn-text)' }}>Admin</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: { syncing: '#f59e0b', ok: '#22c55e', err: '#ef4444', idle: '#ddd' }[syncState] || '#ddd', transition: 'background .3s', animation: syncState === 'syncing' ? 'pulse .8s infinite' : 'none', marginRight: 2 }} />
@@ -198,15 +198,15 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <span style={{ fontSize: 15 }}>💬</span> Feedback
           </button>
           <NotificationsBell />
-          {gUser?.photoURL && <img src={gUser.photoURL} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '1px solid #e8e8e8' }} />}
+          {gUser?.photoURL && <img src={gUser.photoURL} alt="" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', border: '1px solid var(--pn-border)' }} />}
         </div>
       </div>
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #e8e8e8', background: '#fff', flexShrink: 0 }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-surface)', flexShrink: 0 }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, padding: '10px 0', fontSize: 11, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? '#3D95CE' : '#888', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid #3D95CE' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, padding: '10px 0', fontSize: 11, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? '#3D95CE' : 'var(--pn-text-muted)', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid #3D95CE' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit' }}>
             {t.label}
           </button>
         ))}
@@ -238,7 +238,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 <UserRow key={u.email} user={u}>
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <select value={u.role} onChange={e => grantAccess(u.email, e.target.value, u.techName)}
-                      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit' }}>
+                      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' }}>
                       <option value="readonly">View only</option>
                       <option value="tech">Tech</option>
                       <option value="scheduler">Front desk</option>
@@ -256,7 +256,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                         const emp = newTechName && employees.find(ex => ex.name === newTechName);
                         if (emp) await saveEmployee(emp.id, { email: u.email });
                       }}
-                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit' }}>
+                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' }}>
                         <option value="">{u.role === 'tech' ? 'Assign tech…' : 'Also a tech? (optional)'}</option>
                         {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
                       </select>
@@ -269,7 +269,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                       <select value={u.scheduleAccess || 'edit'}
                         title="Whether this tech can edit their own schedule, or only view it"
                         onChange={e => grantAccess(u.email, u.role, u.techName, e.target.value)}
-                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit' }}>
+                        style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' }}>
                         <option value="edit">Can edit schedule</option>
                         <option value="view">Schedule: view only</option>
                       </select>
@@ -329,11 +329,11 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <Section title="🌐 Brand & Identity">
               {/* Salon URL — read-only display + coming-soon CTA. */}
               <div style={{ padding: '12px 16px' }}>
-                <div style={{ fontSize: 11, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Your salon URL</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Your salon URL</div>
                 <div style={{
-                  padding: '10px 14px', background: '#fafafa', border: '1px solid #e8e8e8',
+                  padding: '10px 14px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)',
                   borderRadius: 10, marginBottom: 8,
-                  fontSize: 14, fontWeight: 600, color: '#1a1a1a',
+                  fontSize: 14, fontWeight: 600, color: 'var(--pn-text)',
                   fontFamily: 'ui-monospace, SFMono-Regular, monospace',
                 }}>
                   https://{tenantSubdomain}.plumenexus.com
@@ -350,62 +350,62 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 )}
                 <button onClick={() => setShowUrlSoon(true)} style={{
                   padding: '6px 12px', fontSize: 12, fontWeight: 600,
-                  background: '#fff', color: '#5b3b8c', border: '1px solid #d8c8ec',
+                  background: 'var(--pn-surface)', color: '#5b3b8c', border: '1px solid #d8c8ec',
                   borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
                 }}>Change my URL</button>
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 8, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8, lineHeight: 1.5 }}>
                   Your old URL keeps working forever as a 301 redirect — bookmarks, QR codes, and shared links never break.
                 </div>
               </div>
 
               {/* Brand fields */}
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Salon name</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Full business name shown in the header, sidebar, and customer emails.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Salon name</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Full business name shown in the header, sidebar, and customer emails.</div>
                 </div>
                 <input value={salonName} onChange={e => setSalonName(e.target.value)} placeholder="e.g. Meraki Nail Studio" maxLength={80}
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Brand name (short)</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used in cursive on the launch splash. Often the first word of your salon name.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Brand name (short)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Used in cursive on the launch splash. Often the first word of your salon name.</div>
                 </div>
                 <input value={brandName} onChange={e => setBrandName(e.target.value)} placeholder="e.g. Meraki" maxLength={40}
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Tagline (above brand)</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Small cursive line above the brand name on the splash. Optional.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Tagline (above brand)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Small cursive line above the brand name on the splash. Optional.</div>
                 </div>
                 <input value={brandTaglineTop} onChange={e => setBrandTaglineTop(e.target.value)} placeholder="e.g. Welcome to" maxLength={40}
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Tagline (below brand)</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Small caps under the brand name on the splash. Leave blank to hide.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Tagline (below brand)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Small caps under the brand name on the splash. Leave blank to hide.</div>
                 </div>
                 <input value={brandTagline} onChange={e => setBrandTagline(e.target.value)} placeholder="e.g. Nail Studio" maxLength={40}
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Logo URL (optional)</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>If set, used in place of the default mark on the splash and shell.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Logo URL (optional)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>If set, used in place of the default mark on the splash and shell.</div>
                 </div>
                 <input value={brandLogoUrl} onChange={e => setBrandLogoUrl(e.target.value)} placeholder="https://…/logo.png"
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Welcome screen style</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Layout of the pre-login welcome card. &ldquo;Centered&rdquo; is the default.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Welcome screen style</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Layout of the pre-login welcome card. &ldquo;Centered&rdquo; is the default.</div>
                 </div>
                 <select value={welcomeStyle} onChange={e => setWelcomeStyle(e.target.value)}
-                  style={{ width: 240, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff', cursor: 'pointer' }}>
+                  style={{ width: 240, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', cursor: 'pointer' }}>
                   <option value="centered">Boutique &mdash; centered (default)</option>
                   <option value="hairlineSplit">Boutique &mdash; split (hairline)</option>
                   <option value="stacked">Boutique &mdash; stacked card</option>
@@ -414,15 +414,15 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   <option value="merakiSite">Editorial homepage &mdash; full landing page</option>
                 </select>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Brand color</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Primary accent for buttons, headers, and email gradients.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Brand color</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Primary accent for buttons, headers, and email gradients.</div>
                 </div>
                 <input type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)}
-                  style={{ width: 44, height: 34, border: '1px solid #d8d8d8', borderRadius: 8, cursor: 'pointer', padding: 2, background: '#fff' }} />
+                  style={{ width: 44, height: 34, border: '1px solid var(--pn-border-strong)', borderRadius: 8, cursor: 'pointer', padding: 2, background: 'var(--pn-surface)' }} />
               </div>
-              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={async () => {
                   const sName = salonName.trim()      || null;
                   const bName = brandName.trim()      || null;
@@ -452,10 +452,10 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {/* Coming-soon modal for "Change my URL" */}
             {showUrlSoon && (
               <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }} onClick={() => setShowUrlSoon(false)}>
-                <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, padding: 24, maxWidth: 440, width: '100%', boxShadow: '0 16px 40px rgba(0,0,0,.2)' }}>
+                <div onClick={e => e.stopPropagation()} style={{ background: 'var(--pn-surface)', borderRadius: 14, padding: 24, maxWidth: 440, width: '100%', boxShadow: '0 16px 40px rgba(0,0,0,.2)' }}>
                   <div style={{ width: 52, height: 52, borderRadius: 12, background: 'linear-gradient(135deg, #5b3b8c, #3d95ce)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 14 }}>🚧</div>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', margin: '0 0 8px' }}>Self-serve URL change — coming soon</h3>
-                  <p style={{ fontSize: 13, color: '#666', lineHeight: 1.6, margin: '0 0 14px' }}>
+                  <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)', margin: '0 0 8px' }}>Self-serve URL change — coming soon</h3>
+                  <p style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.6, margin: '0 0 14px' }}>
                     We're building a self-serve flow so you can change your salon URL anytime. Until then, email <a href="mailto:hello@plumenexus.com" style={{ color: '#5b3b8c', fontWeight: 600 }}>hello@plumenexus.com</a> and we'll handle it within one business day. Your old URL stays as a permanent 301 redirect so nothing breaks.
                   </p>
                   <button onClick={() => setShowUrlSoon(false)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: '#5b3b8c', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>Got it</button>
@@ -466,44 +466,44 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <Section title="⚙ App Settings">
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Auto-logout timeout</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Minutes of inactivity before signing out</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Auto-logout timeout</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Minutes of inactivity before signing out</div>
                 </div>
                 <input type="number" value={timeout} onChange={e => setTimeoutVal(Number(e.target.value))} min={1} max={60}
-                  style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
+                  style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 12px', fontSize: 13 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>HR &amp; Reports PIN lock</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>4-digit PIN required to open HR and Reports. Leave blank to disable.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>HR &amp; Reports PIN lock</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>4-digit PIN required to open HR and Reports. Leave blank to disable.</div>
                 </div>
                 <input type="password" inputMode="numeric" maxLength={4} value={pin}
                   onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))} placeholder="----"
-                  style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 12px', fontSize: 18, letterSpacing: 6 }} />
+                  style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 12px', fontSize: 18, letterSpacing: 6 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Google Review URL</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Included as a button in receipt emails sent to clients.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Google Review URL</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Included as a button in receipt emails sent to clients.</div>
                 </div>
                 <input type="url" value={reviewUrl} onChange={e => setReviewUrl(e.target.value)} placeholder="https://g.page/r/…/review"
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
               </div>
-<div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+<div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Business EIN</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Employer Identification Number — printed on 1099-NEC forms.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Business EIN</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Employer Identification Number — printed on 1099-NEC forms.</div>
                 </div>
                 <input value={ein} onChange={e => setEin(e.target.value)} placeholder="XX-XXXXXXX"
-                  style={{ width: 140, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  style={{ width: 140, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Reminder send time</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>What hour to send appointment reminders for tomorrow's appointments.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Reminder send time</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>What hour to send appointment reminders for tomorrow's appointments.</div>
                 </div>
                 <select value={reminderHour} onChange={e => setReminderHour(Number(e.target.value))}
-                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
                   {Array.from({ length: 24 }, (_, h) => {
                     const ampm = h >= 12 ? 'PM' : 'AM';
                     const hh   = h === 0 ? 12 : (h > 12 ? h - 12 : h);
@@ -511,13 +511,13 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   })}
                 </select>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Birthday campaign hour</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Hour to send birthday emails (auto-birthday campaign).</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Birthday campaign hour</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Hour to send birthday emails (auto-birthday campaign).</div>
                 </div>
                 <select value={birthdayHour} onChange={e => setBirthdayHour(Number(e.target.value))}
-                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
                   {Array.from({ length: 24 }, (_, h) => {
                     const ampm = h >= 12 ? 'PM' : 'AM';
                     const hh   = h === 0 ? 12 : (h > 12 ? h - 12 : h);
@@ -525,13 +525,13 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   })}
                 </select>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Lapsed-client hour (Mondays)</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Hour to send re-engagement emails (auto-lapsed campaign, Mondays).</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Lapsed-client hour (Mondays)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Hour to send re-engagement emails (auto-lapsed campaign, Mondays).</div>
                 </div>
                 <select value={lapsedHour} onChange={e => setLapsedHour(Number(e.target.value))}
-                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  style={{ width: 110, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
                   {Array.from({ length: 24 }, (_, h) => {
                     const ampm = h >= 12 ? 'PM' : 'AM';
                     const hh   = h === 0 ? 12 : (h > 12 ? h - 12 : h);
@@ -539,13 +539,13 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   })}
                 </select>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Time zone</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used for reminder timing and date-based comparisons.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Time zone</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Used for reminder timing and date-based comparisons.</div>
                 </div>
                 <select value={timezone} onChange={e => setTimezone(e.target.value)}
-                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
                   <option value="America/New_York">Eastern (New York)</option>
                   <option value="America/Chicago">Central (Chicago)</option>
                   <option value="America/Denver">Mountain (Denver)</option>
@@ -555,7 +555,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   <option value="Pacific/Honolulu">Hawaii</option>
                 </select>
               </div>
-              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
               </div>
             </Section>
@@ -563,26 +563,26 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               {/* Break length + warning */}
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Default break length</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Used by the break-end reminder to know when a tech is "due back."</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Default break length</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Used by the break-end reminder to know when a tech is "due back."</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input type="number" min={5} max={240} value={tcDefaultBreak}
                     onChange={e => setTcDefaultBreak(Number(e.target.value) || 30)}
-                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-                  <span style={{ fontSize: 12, color: '#888' }}>min</span>
+                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>min</span>
                 </div>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Break-end warning</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>SMS the tech this many minutes before the break length is up.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Break-end warning</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>SMS the tech this many minutes before the break length is up.</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input type="number" min={1} max={60} value={tcBreakWarning}
                     onChange={e => setTcBreakWarning(Number(e.target.value) || 10)}
-                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-                  <span style={{ fontSize: 12, color: '#888' }}>min before</span>
+                    style={{ width: 70, textAlign: 'center', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>min before</span>
                 </div>
               </div>
 
@@ -593,7 +593,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               <TcToggle border value={tcSmsOnBreakStart}  onChange={setTcSmsOnBreakStart}  label="Text tech on break start" hint="Verbose — default off." />
               <TcToggle border value={tcSmsOnBreakEnd}    onChange={setTcSmsOnBreakEnd}    label="Text tech on break end"   hint="Verbose — default off." />
 
-              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel={tcSaving ? '...' : '✓ Saved'} onClick={async () => {
                   setTcSaving(true);
                   try {
@@ -617,13 +617,13 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <Section title="🧾 Receipts & Ratings">
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Receipt delivery</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Receipt delivery</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                     Auto = email if email on file, SMS if phone on file (no double-send). Override to force one channel or send both.
                   </div>
                 </div>
                 <select value={receiptDelivery} onChange={e => setReceiptDelivery(e.target.value)}
-                  style={{ width: 200, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  style={{ width: 200, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
                   <option value="auto">Auto (recommended)</option>
                   <option value="email">Email only</option>
                   <option value="sms">SMS only</option>
@@ -633,8 +633,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Public review threshold</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Public review threshold</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                     Ratings at or above this go to Google. Below it, the client lands on a private feedback form so you can address it before it's public.
                   </div>
                 </div>
@@ -643,7 +643,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                     value={reviewRoutingThreshold}
                     onChange={e => setReviewRoutingThreshold(Number(e.target.value))}
                     style={{ width: 120 }} />
-                  <span style={{ fontSize: 13, color: '#333', fontWeight: 600, minWidth: 24, textAlign: 'right' }}>
+                  <span style={{ fontSize: 13, color: 'var(--pn-text)', fontWeight: 600, minWidth: 24, textAlign: 'right' }}>
                     {'★'.repeat(reviewRoutingThreshold)}
                   </span>
                 </div>
@@ -651,20 +651,20 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Email rating CTA</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Email rating CTA</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                     Stars = one tap from inbox to submitted. Button = opens the rating page. Both = stars on top, button below.
                   </div>
                 </div>
                 <select value={emailRatingStyle} onChange={e => setEmailRatingStyle(e.target.value)}
-                  style={{ width: 200, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: '#fff' }}>
+                  style={{ width: 200, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
                   <option value="inline_stars">Inline stars only</option>
                   <option value="single_button">Single button only</option>
                   <option value="both">Both (recommended)</option>
                 </select>
               </div>
 
-              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({
                   ...settings,
                   receiptDelivery,
@@ -676,48 +676,48 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <Section title="💰 Financial">
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Sales tax rate</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Applied to services and retail products. Gift card sales are not taxed.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Sales tax rate</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Applied to services and retail products. Gift card sales are not taxed.</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <input type="number" value={taxRate} step="0.01" min={0} max={20}
                     onChange={e => setTaxRate(Number(e.target.value))}
-                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-                  <span style={{ fontSize: 12, color: '#aaa' }}>%</span>
+                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>%</span>
                 </div>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Card processing fee</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Stripe-style: percentage + flat amount. Recorded on each card transaction so reports can show your true take-home.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Card processing fee</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Stripe-style: percentage + flat amount. Recorded on each card transaction so reports can show your true take-home.</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                   <input type="number" value={ccFeePct} step="0.01" min={0} max={10}
                     onChange={e => setCcFeePct(Number(e.target.value))}
-                    style={{ width: 70, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-                  <span style={{ fontSize: 12, color: '#aaa' }}>%  +</span>
-                  <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
+                    style={{ width: 70, textAlign: 'right', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>%  +</span>
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
                   <input type="number" value={ccFeeFlat} step="0.01" min={0} max={5}
                     onChange={e => setCcFeeFlat(Number(e.target.value))}
-                    style={{ width: 70, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                    style={{ width: 70, textAlign: 'right', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
                 </div>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: '#333' }}>Removal service price</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Charged when a customer says "yes" to the removal question on a service that allows it.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Removal service price</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Charged when a customer says "yes" to the removal question on a service that allows it.</div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: '#aaa' }}>$</span>
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
                   <input type="number" value={removalPrice} step="1" min={0} max={200}
                     onChange={e => setRemovalPrice(Number(e.target.value))}
-                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
                 </div>
               </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, color: '#333' }}>Disable tips on credit card</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Hide the tip selector during checkout when payment method is card. Cash, Venmo, and other methods still prompt for a tip.</div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Disable tips on credit card</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Hide the tip selector during checkout when payment method is card. Cash, Venmo, and other methods still prompt for a tip.</div>
                 </div>
                 <button onClick={() => setNoCardTips(v => !v)} style={{
                   width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', padding: 0,
@@ -730,7 +730,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   }} />
                 </button>
               </div>
-              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+              <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
                   await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips });
@@ -840,32 +840,32 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
     <Section title="🌐 Online Booking">
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 13, color: '#333' }}>Enable online booking</div>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Clients can book appointments from the public booking page</div>
+          <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Enable online booking</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Clients can book appointments from the public booking page</div>
         </div>
         <Toggle active={bookingCfg.enabled} onChange={() => save({ enabled: !bookingCfg.enabled })} disabled={saving} />
       </div>
       {bookingCfg.enabled && (
         <>
-          <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0' }}>
-            <div style={{ fontSize: 12, color: '#aaa', marginBottom: 6, fontWeight: 600 }}>BOOKING PAGE URL</div>
+          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 6, fontWeight: 600 }}>BOOKING PAGE URL</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div style={{ flex: 1, fontSize: 12, color: '#555', background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '7px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ flex: 1, fontSize: 12, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '7px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {bookingUrl}
               </div>
-              <button onClick={copyUrl} style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: copied ? '#2D7A5F' : '#555', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+              <button onClick={copyUrl} style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: copied ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                 {copied ? '✓ Copied' : 'Copy'}
               </button>
             </div>
           </div>
-          <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0' }}>
-            <div style={{ fontSize: 12, color: '#aaa', marginBottom: 6, fontWeight: 600 }}>CUSTOM NOTE (shown to clients)</div>
+          <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 6, fontWeight: 600 }}>CUSTOM NOTE (shown to clients)</div>
             <input
               value={bookingCfg.note || ''}
               onChange={e => setBookingCfg(c => ({ ...c, note: e.target.value }))}
               onBlur={() => save({ note: bookingCfg.note || '' })}
               placeholder="e.g. Walk-ins also welcome! Call us for same-day slots."
-              style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 12px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+              style={{ width: '100%', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 12px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
           <AutoAssignSection
@@ -877,16 +877,16 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
       )}
 
       {/* Geo-location check-in — independent of online booking toggle */}
-      <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+      <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
-          <div style={{ fontSize: 13, color: '#333' }}>Geo-location check-in</div>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>Show clients how close they are to the salon when they check in</div>
+          <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Geo-location check-in</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Show clients how close they are to the salon when they check in</div>
         </div>
         <Toggle active={!!bookingCfg.geoEnabled} onChange={() => save({ geoEnabled: !bookingCfg.geoEnabled })} disabled={saving} />
       </div>
       {bookingCfg.geoEnabled && (
-        <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0' }}>
-          <div style={{ fontSize: 12, color: '#aaa', marginBottom: 10, fontWeight: 600 }}>SALON COORDINATES</div>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 10, fontWeight: 600 }}>SALON COORDINATES</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input
               type="number" step="any"
@@ -894,7 +894,7 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
               onChange={e => setBookingCfg(c => ({ ...c, salonLat: parseFloat(e.target.value) || null }))}
               onBlur={() => save({})}
               placeholder="Latitude"
-              style={{ flex: 1, minWidth: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none' }}
+              style={{ flex: 1, minWidth: 110, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none' }}
             />
             <input
               type="number" step="any"
@@ -902,7 +902,7 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
               onChange={e => setBookingCfg(c => ({ ...c, salonLng: parseFloat(e.target.value) || null }))}
               onBlur={() => save({})}
               placeholder="Longitude"
-              style={{ flex: 1, minWidth: 110, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none' }}
+              style={{ flex: 1, minWidth: 110, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none' }}
             />
             <button onClick={detectLocation} disabled={geoLocating || !navigator.geolocation}
               style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #3D95CE', background: '#EBF4FB', color: '#1a5f8a', fontSize: 12, fontWeight: 600, cursor: geoLocating ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
@@ -915,15 +915,15 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
             </div>
           )}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 12, color: '#555', flexShrink: 0 }}>Check-in radius</span>
+            <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', flexShrink: 0 }}>Check-in radius</span>
             <input
               type="number" min={50} max={2000} step={50}
               value={bookingCfg.checkinRadius || 200}
               onChange={e => setBookingCfg(c => ({ ...c, checkinRadius: Number(e.target.value) }))}
               onBlur={() => save({})}
-              style={{ width: 80, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '5px 8px', fontSize: 12, outline: 'none', textAlign: 'center' }}
+              style={{ width: 80, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '5px 8px', fontSize: 12, outline: 'none', textAlign: 'center' }}
             />
-            <span style={{ fontSize: 12, color: '#aaa' }}>meters</span>
+            <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>meters</span>
           </div>
         </div>
       )}
@@ -944,16 +944,16 @@ function Toggle({ active, onChange, disabled }) {
 
 function AutoAssignSection({ method, onChange, saving }) {
   return (
-    <div style={{ padding: '12px 16px', borderTop: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8, fontWeight: 600 }}>"NO PREFERENCE" AUTO-ASSIGNMENT</div>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 10, lineHeight: 1.5 }}>
+    <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8, fontWeight: 600 }}>"NO PREFERENCE" AUTO-ASSIGNMENT</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
         When a customer picks "no preference" while booking, how should we choose which tech gets the appointment? Clients who ask for a specific tech are always honored — those bookings show a ⭐ on the schedule.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {ASSIGNMENT_METHODS.map(m => {
           const selected = method === m;
           return (
-            <label key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${selected ? '#2D7A5F' : '#e8e8e8'}`, background: selected ? '#f0faf6' : '#fff', transition: 'border-color .15s, background .15s' }}>
+            <label key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${selected ? '#2D7A5F' : 'var(--pn-border)'}`, background: selected ? '#f0faf6' : 'var(--pn-surface)', transition: 'border-color .15s, background .15s' }}>
               <input type="radio" name="assignmentMethod" value={m}
                 checked={selected}
                 disabled={saving}
@@ -961,8 +961,8 @@ function AutoAssignSection({ method, onChange, saving }) {
                 style={{ marginTop: 2, accentColor: '#2D7A5F', cursor: saving ? 'default' : 'pointer' }}
               />
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{ASSIGNMENT_METHOD_LABELS[m]}</div>
-                <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>{ASSIGNMENT_METHOD_DESCRIPTIONS[m]}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{ASSIGNMENT_METHOD_LABELS[m]}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>{ASSIGNMENT_METHOD_DESCRIPTIONS[m]}</div>
               </div>
             </label>
           );
@@ -1003,13 +1003,13 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
 
   return (
     <Section title="🧭 Booking Flow">
-      <div style={{ padding: '12px 16px 6px', fontSize: 11, color: '#888', lineHeight: 1.5 }}>
+      <div style={{ padding: '12px 16px 6px', fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
         Pick a starting template, then fine-tune. Changes apply to the next page load on the public booking page.
       </div>
 
       {/* Template picker */}
       <div style={{ padding: '8px 16px 12px' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
           Industry template
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 8 }}>
@@ -1020,16 +1020,16 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
                 style={{
                   textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
                   padding: '10px 12px', borderRadius: 10,
-                  border: `2px solid ${active ? '#3D95CE' : '#e8e8e8'}`,
-                  background: active ? '#EBF4FB' : '#fff',
+                  border: `2px solid ${active ? '#3D95CE' : 'var(--pn-border)'}`,
+                  background: active ? '#EBF4FB' : 'var(--pn-surface)',
                   boxShadow: active ? '0 0 0 2px rgba(61,149,206,.15)' : 'none',
                 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ fontSize: 18 }}>{t.icon}</span>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{t.name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>{t.name}</span>
                   {active && <span style={{ fontSize: 10, fontWeight: 700, color: '#1a5f8a', background: '#d4e9f8', padding: '2px 6px', borderRadius: 3, letterSpacing: '.04em' }}>ACTIVE</span>}
                 </div>
-                <div style={{ fontSize: 11, color: '#666', lineHeight: 1.4 }}>{t.description}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.4 }}>{t.description}</div>
               </button>
             );
           })}
@@ -1046,7 +1046,7 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
           desc="Which path opens when the chooser is hidden, or pre-selects if it's shown."
           control={
             <select value={eff.defaultFlow} onChange={e => patchFlow({ defaultFlow: e.target.value })}
-              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid #d8d8d8', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', cursor: 'pointer' }}>
               <option value="time">Time-first (pick services, then stylist)</option>
               <option value="tech">Tech-first (pick stylist, then services)</option>
             </select>
@@ -1072,7 +1072,7 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
           desc="Back-to-back = one tech does mani then a second does pedi after. Simultaneous = both techs work at once."
           control={
             <select value={eff.multiLaneShape} onChange={e => patchFlow({ multiLaneShape: e.target.value })}
-              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid #d8d8d8', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', cursor: 'pointer' }}>
               <option value="back-to-back">Back-to-back</option>
               <option value="simultaneous">Simultaneous</option>
               <option value="ask">Ask the customer</option>
@@ -1082,7 +1082,7 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
           desc="When to ask 'are you wearing a previous gel/dip set?'. Always = every qualifying service. First-only = once per booking."
           control={
             <select value={eff.removalPromptMode} onChange={e => patchFlow({ removalPromptMode: e.target.value })}
-              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid #d8d8d8', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', cursor: 'pointer' }}>
               <option value="always">Always</option>
               <option value="first-only">First-only</option>
               <option value="never">Never</option>
@@ -1097,14 +1097,14 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
           control={
             <input type="number" min={0} max={1440} value={eff.minLeadTimeMinutes}
               onChange={e => patchFlow({ minLeadTimeMinutes: Math.max(0, Number(e.target.value) || 0) })}
-              style={{ width: 90, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+              style={{ width: 90, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
           } />
         <FlowRow label="Booking window (days ahead)"
           desc="Furthest day visible in the calendar. Typical: 14-60."
           control={
             <input type="number" min={1} max={365} value={eff.maxLeadDays}
               onChange={e => patchFlow({ maxLeadDays: Math.max(1, Number(e.target.value) || 30) })}
-              style={{ width: 90, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+              style={{ width: 90, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
           } />
       </FlowSubGroup>
 
@@ -1116,7 +1116,7 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
             <input type="text" maxLength={40} value={eff.confirmCtaLabel}
               onChange={e => patchFlow({ confirmCtaLabel: e.target.value })}
               placeholder={FLOW_DEFAULTS.confirmCtaLabel}
-              style={{ width: 220, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
+              style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '6px 10px', fontSize: 13 }} />
           } />
       </FlowSubGroup>
     </Section>
@@ -1125,8 +1125,8 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
 
 function FlowSubGroup({ title, children }) {
   return (
-    <div style={{ borderTop: '1px solid #f0f0f0' }}>
-      <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: '#aaa', letterSpacing: '.1em', textTransform: 'uppercase' }}>
+    <div style={{ borderTop: '1px solid var(--pn-border)' }}>
+      <div style={{ padding: '10px 16px 6px', fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.1em', textTransform: 'uppercase' }}>
         {title}
       </div>
       {children}
@@ -1136,10 +1136,10 @@ function FlowSubGroup({ title, children }) {
 
 function FlowRow({ label, desc, control }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '10px 16px', borderTop: '1px solid #fafafa' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, padding: '10px 16px', borderTop: '1px solid var(--pn-border)' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: '#333' }}>{label}</div>
-        {desc && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, lineHeight: 1.45 }}>{desc}</div>}
+        <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>{label}</div>
+        {desc && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, lineHeight: 1.45 }}>{desc}</div>}
       </div>
       <div style={{ flexShrink: 0 }}>{control}</div>
     </div>
@@ -1149,8 +1149,8 @@ function FlowRow({ label, desc, control }) {
 function ThemeCard({ th, isSelected, badge, onClick }) {
   return (
     <button onClick={onClick} style={{
-      border: `2px solid ${isSelected ? 'var(--tm-accent, #3D95CE)' : '#e8e8e8'}`,
-      borderRadius: 12, padding: 0, cursor: 'pointer', background: '#fff',
+      border: `2px solid ${isSelected ? 'var(--tm-accent, #3D95CE)' : 'var(--pn-border)'}`,
+      borderRadius: 12, padding: 0, cursor: 'pointer', background: 'var(--pn-surface)',
       overflow: 'hidden',
       boxShadow: isSelected ? '0 0 0 3px rgba(61,149,206,.18)' : 'none',
       transition: 'border-color .15s, box-shadow .15s',
@@ -1159,11 +1159,11 @@ function ThemeCard({ th, isSelected, badge, onClick }) {
       <div style={{ height: 38, background: `linear-gradient(135deg, ${th.gradStart} 0%, ${th.gradEnd} 100%)`, position: 'relative' }}>
         <span style={{ position: 'absolute', bottom: 4, right: 6, fontSize: 15 }}>{th.icon}</span>
         {badge && (
-          <span style={{ position: 'absolute', top: 3, left: 4, fontSize: 8, background: 'rgba(255,255,255,.92)', borderRadius: 4, padding: '1px 4px', fontWeight: 700, color: '#333', letterSpacing: '.02em' }}>{badge}</span>
+          <span style={{ position: 'absolute', top: 3, left: 4, fontSize: 8, background: 'rgba(255,255,255,.92)', borderRadius: 4, padding: '1px 4px', fontWeight: 700, color: 'var(--pn-text)', letterSpacing: '.02em' }}>{badge}</span>
         )}
       </div>
       <div style={{ padding: '5px 6px 6px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{th.name}</div>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{th.name}</div>
       </div>
       {isSelected && (
         <div style={{ position: 'absolute', top: 4, left: 4, width: 16, height: 16, borderRadius: '50%', background: 'rgba(255,255,255,.92)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10 }}>✓</div>
@@ -1194,8 +1194,8 @@ function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, savin
       {/* Auto-seasonal toggle */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, color: '#333' }}>Auto-seasonal themes</div>
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+          <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Auto-seasonal themes</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
             {autoTheme && autoDetected
               ? `Active now: ${autoDetected.icon} ${autoDetected.name}`
               : 'Switches to holiday themes automatically based on the date'}
@@ -1214,22 +1214,22 @@ function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, savin
       </div>
 
       {/* Core palettes */}
-      <div style={{ padding: '0 12px 14px', borderTop: '1px solid #f0f0f0' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#bbb', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
+      <div style={{ padding: '0 12px 14px', borderTop: '1px solid var(--pn-border)' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
           {autoTheme ? 'Default palette (when no holiday is active)' : 'Core palettes'}
         </div>
         {grid(CORE_THEMES)}
       </div>
 
       {/* Holiday / seasonal */}
-      <div style={{ padding: '0 12px 14px', borderTop: '1px solid #f0f0f0' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#bbb', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
+      <div style={{ padding: '0 12px 14px', borderTop: '1px solid var(--pn-border)' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
           Holidays &amp; seasons{autoTheme ? ' — auto-activate by date' : ' — select to pin'}
         </div>
         {grid(HOLIDAY_THEMES)}
       </div>
 
-      <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #f0f0f0', paddingTop: 12 }}>
+      <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
         <Btn color="var(--tm-accent, #3D95CE)" onClick={onSave}>{saving ? 'Saving…' : 'Save Appearance'}</Btn>
       </div>
     </Section>
@@ -1282,13 +1282,13 @@ function AddMissingTechUsersBtn({ employees, users, addTechUsersForEmployees, sh
 function Section({ title, children, action, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', marginBottom: 14, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', marginBottom: 14, overflow: 'hidden' }}>
       <div
         onClick={() => setOpen(o => !o)}
-        style={{ padding: '12px 16px', borderBottom: open ? '1px solid #e8e8e8' : 'none', fontSize: 12, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+        style={{ padding: '12px 16px', borderBottom: open ? '1px solid var(--pn-border)' : 'none', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 10, color: '#bbb' }}>▶</span>
+          <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 10, color: 'var(--pn-text-faint)' }}>▶</span>
           {title}
         </span>
         {action && (
@@ -1303,12 +1303,12 @@ function Section({ title, children, action, defaultOpen = false }) {
 
 function UserRow({ user, children }) {
   return (
-    <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12 }}>
-      <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#e0e0e0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, color: '#888', overflow: 'hidden', flexShrink: 0 }}>
+    <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--pn-surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 600, color: 'var(--pn-text-muted)', overflow: 'hidden', flexShrink: 0 }}>
         {user.picture ? <img src={user.picture} alt="" style={{ width: 36, height: 36, objectFit: 'cover' }} /> : (user.name?.[0] || user.email?.[0])}
       </div>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>
           {user.name || user.email}
           {' '}<RoleBadge role={user.role} />
           {user.emailPending && (
@@ -1317,8 +1317,8 @@ function UserRow({ user, children }) {
             </span>
           )}
         </div>
-        <div style={{ fontSize: 11, color: '#888' }}>{user.email}</div>
-        <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{user.grantedAt ? 'Granted: ' + formatTime(user.grantedAt) : 'Requested: ' + formatTime(user.requestedAt)}</div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{user.email}</div>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2 }}>{user.grantedAt ? 'Granted: ' + formatTime(user.grantedAt) : 'Requested: ' + formatTime(user.requestedAt)}</div>
       </div>
       <div style={{ display: 'flex', gap: 6 }}>{children}</div>
     </div>
@@ -1333,16 +1333,16 @@ function LogRow({ log }) {
   const color = isErr ? '#ef4444' : (LOG_COLORS[log.action] || '#888');
   const hasDetail = isErr && (log._stack || log._ua || log._context);
   return (
-    <div style={{ borderBottom: '1px solid #f0f0f0', background: isErr ? '#fff8f8' : 'transparent' }}>
+    <div style={{ borderBottom: '1px solid var(--pn-border)', background: isErr ? '#fff8f8' : 'transparent' }}>
       <div style={{ padding: '10px 16px', cursor: hasDetail ? 'pointer' : 'default' }}
            onClick={() => hasDetail && setExpanded(x => !x)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, fontWeight: 600, color, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             {isErr ? '⚠ ' : ''}{log.action?.replace(/_/g, ' ')}
           </span>
-          {hasDetail && <span style={{ fontSize: 10, color: '#bbb' }}>{expanded ? '▲' : '▼'}</span>}
-          {log._version && <span style={{ fontSize: 9, color: '#d0d0d0', background: '#f5f5f5', borderRadius: 6, padding: '1px 5px' }}>v{log._version}</span>}
-        <span style={{ fontSize: 10, color: '#bbb', marginLeft: 'auto' }}>{formatTime(log.timestamp)}</span>
+          {hasDetail && <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{expanded ? '▲' : '▼'}</span>}
+          {log._version && <span style={{ fontSize: 9, color: 'var(--pn-text-faint)', background: 'var(--pn-surface-alt)', borderRadius: 6, padding: '1px 5px' }}>v{log._version}</span>}
+        <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>{formatTime(log.timestamp)}</span>
         </div>
         <div style={{ fontSize: 12, color: isErr ? '#c00' : '#555' }}>
           {log.email || 'anonymous'}{log.details ? <span style={{ color: isErr ? '#c00' : '#888' }}> — {log.details}</span> : ''}
@@ -1354,8 +1354,8 @@ function LogRow({ log }) {
           {log._context && <div><strong>Context:</strong> {log._context}</div>}
           {log.fileType  && <div><strong>File type:</strong> {log.fileType}</div>}
           {log.fileSize  && <div><strong>File size:</strong> {(log.fileSize / 1024).toFixed(0)} KB</div>}
-          {log._ua       && <div style={{ marginTop: 4, color: '#aaa' }}><strong>UA:</strong> {log._ua}</div>}
-          {log._stack    && <div style={{ marginTop: 4, color: '#aaa' }}><strong>Stack:</strong>{'\n'}{log._stack}</div>}
+          {log._ua       && <div style={{ marginTop: 4, color: 'var(--pn-text-faint)' }}><strong>UA:</strong> {log._ua}</div>}
+          {log._stack    && <div style={{ marginTop: 4, color: 'var(--pn-text-faint)' }}><strong>Stack:</strong>{'\n'}{log._stack}</div>}
         </div>
       )}
     </div>
@@ -1367,7 +1367,7 @@ function PendingRow({ req, employees, onGrant }) {
   const [techName,  setTechName]  = useState('');
   const [newName,   setNewName]   = useState(req.displayName || '');
   const [saving,    setSaving]    = useState(false);
-  const sel = { fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit' };
+  const sel = { fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' };
 
   const isNew = techName === '__new__';
   const resolvedName = isNew ? newName.trim() : techName;
@@ -1440,13 +1440,13 @@ function OnboardingTab({ onOpenWizard }) {
   return (
     <div style={{ padding: 24, maxWidth: 720 }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>🎯 Onboarding</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)', margin: 0 }}>🎯 Onboarding</h2>
         <span style={{ fontSize: 12, color: done ? '#10b981' : '#92400e', fontWeight: 700 }}>
           {done ? '✓ Complete' : `${completed}/${ONBOARDING_PHASES.length} complete`}
         </span>
       </div>
 
-      <div style={{ fontSize: 13, color: '#666', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         {done
           ? 'Your salon is launched. You can still revisit any phase below to tweak settings — re-opening the wizard never resets data.'
           : 'You haven\'t finished the onboarding wizard. Continue where you left off, or jump to a specific phase.'}
@@ -1457,7 +1457,7 @@ function OnboardingTab({ onOpenWizard }) {
           const s = phaseStatus(onboarding, p.key);
           const icon  = s === 'done' ? '✓' : s === 'skipped' ? '○' : '⚠';
           const color = s === 'done' ? '#10b981' : s === 'skipped' ? '#9ca3af' : '#f59e0b';
-          const bg    = s === 'done' ? '#ecfdf5' : s === 'skipped' ? '#f8f9fa' : '#fffbeb';
+          const bg    = s === 'done' ? '#ecfdf5' : s === 'skipped' ? 'var(--pn-bg)' : '#fffbeb';
           const label = s === 'done' ? 'Complete' : s === 'skipped' ? 'Skipped' : 'Pending';
           return (
             <button
@@ -1474,11 +1474,11 @@ function OnboardingTab({ onOpenWizard }) {
               }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = `${color}88`; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = `${color}33`; }}>
-              <span style={{ width: 24, fontSize: 11, color: '#888', textAlign: 'right' }}>{i + 1}.</span>
+              <span style={{ width: 24, fontSize: 11, color: 'var(--pn-text-muted)', textAlign: 'right' }}>{i + 1}.</span>
               <span style={{ width: 20, textAlign: 'center', fontSize: 14, color, fontWeight: 700 }}>{icon}</span>
-              <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{p.label}</span>
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--pn-text)' }}>{p.label}</span>
               <span style={{ fontSize: 11, color, fontWeight: 600 }}>{label}</span>
-              <span style={{ fontSize: 12, color: '#888' }}>›</span>
+              <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>›</span>
             </button>
           );
         })}
@@ -1546,32 +1546,32 @@ function FeedbackTab({ items, onStatus, onRefresh }) {
 
   const pillStyle = (active) => ({
     fontSize: 11, padding: '4px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
-    border: `1px solid ${active ? '#3D95CE' : '#e0e0e0'}`,
-    background: active ? '#EBF4FB' : '#fff',
-    color: active ? '#1a5f8a' : '#666',
+    border: `1px solid ${active ? '#3D95CE' : 'var(--pn-border)'}`,
+    background: active ? '#EBF4FB' : 'var(--pn-surface)',
+    color: active ? '#1a5f8a' : 'var(--pn-text-muted)',
     fontWeight: active ? 600 : 400,
   });
 
   return (
     <div>
       {/* Toolbar */}
-      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
         {/* Status filter */}
-        <div style={{ display: 'flex', gap: 6, padding: '10px 14px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Status</span>
+        <div style={{ display: 'flex', gap: 6, padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Status</span>
           {STATUS_FILTERS.map(f => (
             <button key={f.id} onClick={() => setStatusFilter(f.id)} style={pillStyle(statusFilter === f.id)}>{f.label}</button>
           ))}
         </div>
         {/* Type filter + sort + actions */}
         <div style={{ display: 'flex', gap: 6, padding: '10px 14px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#aaa', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Type</span>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Type</span>
           {TYPE_FILTERS.map(f => (
             <button key={f.id} onClick={() => setTypeFilter(f.id)} style={pillStyle(typeFilter === f.id)}>{f.label}</button>
           ))}
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
             <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', color: '#555', fontFamily: 'inherit', cursor: 'pointer' }}>
+              style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontFamily: 'inherit', cursor: 'pointer' }}>
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="type">By type</option>
@@ -1600,7 +1600,7 @@ function FeedbackCard({ item, onStatus }) {
   const statusLabel  = { open: 'Open', resolved: 'Resolved', not_considered: 'Not considered' };
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: typeBg, color: typeFg, textTransform: 'uppercase', letterSpacing: '.04em' }}>
           {item.type === 'bug' ? '🐛 Bug' : '💡 Idea'}
@@ -1608,13 +1608,13 @@ function FeedbackCard({ item, onStatus }) {
         <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: `${statusColors[item.status]}22`, color: statusColors[item.status], textTransform: 'uppercase', letterSpacing: '.04em' }}>
           {statusLabel[item.status] || item.status}
         </span>
-        <span style={{ fontSize: 11, color: '#bbb', marginLeft: 'auto' }}>{date}</span>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>{date}</span>
       </div>
 
-      <p style={{ fontSize: 13, color: '#333', lineHeight: 1.55, margin: '0 0 8px' }}>{item.text}</p>
+      <p style={{ fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.55, margin: '0 0 8px' }}>{item.text}</p>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 11, color: '#bbb', flex: 1 }}>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flex: 1 }}>
           {item.submittedBy?.name || item.submittedBy?.email || 'Anonymous'}
         </span>
         {item.status !== 'resolved' && (
@@ -1633,7 +1633,7 @@ function FeedbackCard({ item, onStatus }) {
 
 function CountBadge({ label, count, color }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#555' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--pn-text-muted)' }}>
       <span style={{ display: 'inline-block', width: 18, height: 18, borderRadius: '50%', background: `${color}22`, color, fontSize: 10, fontWeight: 700, lineHeight: '18px', textAlign: 'center' }}>{count}</span>
       {label}
     </div>
@@ -1642,7 +1642,7 @@ function CountBadge({ label, count, color }) {
 
 function RoleBadge({ role }) {
   const colors = { admin: ['rgba(61,149,206,.15)', '#3D95CE'], readonly: ['rgba(34,197,94,.15)', '#16a34a'], tech: ['rgba(245,158,11,.15)', '#d97706'], scheduler: ['rgba(139,92,246,.15)', '#7c3aed'], pending: ['rgba(245,158,11,.15)', '#d97706'], denied: ['rgba(239,68,68,.15)', '#ef4444'] };
-  const [bg, fg] = colors[role] || ['#eee', '#888'];
+  const [bg, fg] = colors[role] || ['var(--pn-surface-alt)', 'var(--pn-text-muted)'];
   return <span style={{ display: 'inline-block', fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 20, letterSpacing: '.04em', textTransform: 'uppercase', background: bg, color: fg }}>{role}</span>;
 }
 
@@ -1651,10 +1651,10 @@ function RoleBadge({ role }) {
 // can sit between other rows without a wrapper.
 function TcToggle({ value, onChange, label, hint, border = false }) {
   return (
-    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: border ? '1px solid #f0f0f0' : 'none' }}>
+    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: border ? '1px solid var(--pn-border)' : 'none' }}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, color: '#333' }}>{label}</div>
-        {hint && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{hint}</div>}
+        <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>{label}</div>
+        {hint && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>{hint}</div>}
       </div>
       <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, cursor: 'pointer', flexShrink: 0 }}>
         <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -1677,7 +1677,7 @@ function Btn({ onClick, color, children, disabled, savedLabel }) {
   const [phase, setPhase] = useState('idle');
   const busy  = !!savedLabel && phase !== 'idle';
   const label = phase === 'saving' ? 'Saving…' : phase === 'saved' ? savedLabel : children;
-  const bg    = phase === 'saved' ? '#10B981' : (color || '#e8e8e8');
+  const bg    = phase === 'saved' ? '#10B981' : (color || 'var(--pn-surface-alt)');
   const fg    = (phase === 'saved' || color) ? '#fff' : '#666';
 
   const handleClick = async (e) => {
@@ -1710,7 +1710,7 @@ function Btn({ onClick, color, children, disabled, savedLabel }) {
 }
 
 function Empty({ children }) {
-  return <div style={{ padding: 16, textAlign: 'center', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ padding: 16, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
 function BackupRestoreSection() {
@@ -1818,22 +1818,22 @@ function BackupRestoreSection() {
             ⬇ Download Everything (CSV + JSON + photos)
           </button>
           <button onClick={handleJsonOnly} disabled={busy}
-            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fafafa', fontSize: 12, color: '#666', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 12, color: 'var(--pn-text-muted)', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             JSON only
           </button>
-          <label style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? '#fafafa' : '#fff1f1', fontSize: 12, color: busy ? '#aaa' : '#ef4444', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+          <label style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? 'var(--pn-bg)' : '#fff1f1', fontSize: 12, color: busy ? 'var(--pn-text-faint)' : '#ef4444', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             ⬆ Restore from ZIP or JSON
             <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={handleRestore} disabled={busy} />
           </label>
         </div>
 
-        <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
           The full export is a ZIP with: <code style={{ background: '#f5f3fa', padding: '0 4px', borderRadius: 3 }}>everything.json</code> (full snapshot for re-import),
           one CSV per data table (Excel/Sheets-friendly), every photo as a real image file, all settings, and a plain-English README.
         </div>
 
         {status && (
-          <div style={{ marginTop: 12, fontSize: 12, color: '#444' }}>{status}</div>
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--pn-text-muted)' }}>{status}</div>
         )}
       </div>
     </Section>
@@ -1918,7 +1918,7 @@ function DemoSeedSection() {
   return (
     <Section title="🧪 Demo Data">
       <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 12, color: '#555', marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10 }}>
           One-click populate every module with realistic sample data: clients, appointments, receipts, products, promo codes, memberships, time off, Google reviews, HR bonuses, walk-in queue, and marketing campaigns. Use this to show the platform off without exposing real customer data.
         </div>
         {interrupted && (
@@ -2129,7 +2129,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
   }
 
   const webUrl = window.location.origin;
-  const inp = { fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 10px', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' };
+  const inp = { fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, outline: 'none', width: '100%', boxSizing: 'border-box' };
   const TA  = { ...inp, resize: 'vertical', minHeight: 80 };
 
   return (
@@ -2137,7 +2137,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       {/* Preview URL */}
       <Section title="🌐 Public Website">
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ flex: 1, fontSize: 12, color: '#555', background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '7px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{webUrl}</div>
+          <div style={{ flex: 1, fontSize: 12, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '7px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{webUrl}</div>
           <button onClick={() => window.open(webUrl, '_blank')} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #3D95CE', background: '#EBF4FB', color: '#1a5f8a', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
             Open ↗
           </button>
@@ -2149,7 +2149,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
             ['showTeam',       'Show Team'],
             ['showReviews',    'Show Reviews'],
           ].map(([key, label]) => (
-            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: '#333', cursor: 'pointer' }}>
+            <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer' }}>
               <input type="checkbox" checked={!!cfg[key]} onChange={e => patch(key, e.target.checked)} style={{ width: 15, height: 15, cursor: 'pointer' }} />
               {label}
             </label>
@@ -2161,11 +2161,11 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       <Section title="✏️ Hero Text">
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>Tagline</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>Tagline</div>
             <input value={cfg.tagline || ''} onChange={e => patch('tagline', e.target.value)} placeholder="Where nails become art." style={inp} />
           </div>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>About / Our Story paragraph</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>About / Our Story paragraph</div>
             <textarea value={cfg.about || ''} onChange={e => patch('about', e.target.value)} placeholder="Welcome to Meraki Nail Studio…" style={TA} />
           </div>
         </div>
@@ -2177,27 +2177,27 @@ function WebfrontTab({ cfg, setCfg, employees }) {
           doc; component reads live, no redeploy needed. */}
       {cfg.layout === 'merakiSite' && (
         <Section title="✨ Editorial Layout Copy">
-          <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#888' }}>
+          <div style={{ padding: '8px 16px 4px', fontSize: 11, color: 'var(--pn-text-muted)' }}>
             Per-section prose for the Editorial homepage. Leave a field blank to fall back to the default. Changes go live on the next page load — no redeploy.
           </div>
 
           {/* Live Google rating block — the homepage's ⭐ rating and review count
               pull from the googleReviews cache (refreshed below in the Google
               Reviews section), so there's no manual field here. */}
-          <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em' }}>Live from Google</div>
-            <div style={{ fontSize: 14, color: '#1a1a1a' }}>
+          <div style={{ margin: '8px 16px 0', padding: '10px 14px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Live from Google</div>
+            <div style={{ fontSize: 14, color: 'var(--pn-text)' }}>
               {gReviews?.rating != null ? (
                 <>
                   <strong>{Number(gReviews.rating).toFixed(1)}★</strong>
-                  <span style={{ color: '#666' }}> · {gReviews.userRatingCount ?? 0} reviews</span>
+                  <span style={{ color: 'var(--pn-text-muted)' }}> · {gReviews.userRatingCount ?? 0} reviews</span>
                 </>
               ) : (
-                <span style={{ color: '#aaa' }}>Not yet fetched — set the Place ID below and click Refresh.</span>
+                <span style={{ color: 'var(--pn-text-faint)' }}>Not yet fetched — set the Place ID below and click Refresh.</span>
               )}
             </div>
             {gReviews?.refreshedAt && (
-              <span style={{ fontSize: 11, color: '#aaa' }}>Refreshed {new Date(gReviews.refreshedAt).toLocaleString()}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>Refreshed {new Date(gReviews.refreshedAt).toLocaleString()}</span>
             )}
             <a href="#google-reviews"
               onClick={(e) => { e.preventDefault(); document.querySelector('[data-anchor="google-reviews"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
@@ -2219,7 +2219,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
               ['established',    'Established (year)',       '2019',                                                                 false],
             ].map(([key, label, ph, multiline]) => (
               <div key={key}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
                 {multiline
                   ? <textarea value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={TA} />
                   : <input    value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={inp} />}
@@ -2228,7 +2228,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
 
             {/* Team photo shape — applies to all tech avatars in the Team section. */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>
                 Team photo shape
               </div>
               <select value={cfg.teamPhotoShape || 'rectangle'} onChange={e => patch('teamPhotoShape', e.target.value)} style={inp}>
@@ -2237,7 +2237,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
                 <option value="circle">Circle</option>
                 <option value="asymmetric">Asymmetric blob (organic, each tech unique)</option>
               </select>
-              <div style={{ fontSize: 11, color: '#aaa', marginTop: 4, lineHeight: 1.45 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4, lineHeight: 1.45 }}>
                 Asymmetric gives each tech a hand-tuned organic outline that varies by position — feels editorial, less stamped-out.
               </div>
             </div>
@@ -2260,7 +2260,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
             ['mapsUrl',     'Google Maps URL', 'https://maps.google.com/…'],
           ].map(([key, label, ph]) => (
             <div key={key}>
-              <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
               {key === 'address' ? (
                 <AddressAutocomplete
                   value={cfg.address || ''}
@@ -2282,11 +2282,11 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {DAY_LABELS.map(([key, label]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: '#555', width: 90, flexShrink: 0 }}>{label}</span>
+              <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', width: 90, flexShrink: 0 }}>{label}</span>
               <input value={cfg.hours?.[key] || ''} onChange={e => patchHour(key, e.target.value)} placeholder="Closed" style={{ ...inp, flex: 1 }} />
             </div>
           ))}
-          <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>Format: "10:00 AM – 7:00 PM" or "Closed"</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>Format: "10:00 AM – 7:00 PM" or "Closed"</div>
         </div>
       </Section>
 
@@ -2300,7 +2300,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
             ['googleReviewUrl', 'Google Review URL','https://g.page/r/…/review'],
           ].map(([key, label, ph]) => (
             <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span style={{ fontSize: 13, color: '#555', width: 120, flexShrink: 0 }}>{label}</span>
+              <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', width: 120, flexShrink: 0 }}>{label}</span>
               <input value={cfg[key] || ''} onChange={e => patch(key, e.target.value)} placeholder={ph} style={{ ...inp, flex: 1 }} />
             </div>
           ))}
@@ -2312,7 +2312,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       <Section title="⭐ Google Reviews">
         <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>Google Place ID</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '.05em' }}>Google Place ID</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
               <input value={cfg.googlePlaceId || ''} onChange={e => patch('googlePlaceId', e.target.value)} placeholder="ChIJ…" style={{ ...inp, flex: 1 }} />
               <button type="button" onClick={handleDetectPlaceId} disabled={detecting || !cfg.address?.trim()}
@@ -2325,19 +2325,19 @@ function WebfrontTab({ cfg, setCfg, employees }) {
               <div style={{ fontSize: 12, color: detectMsg.startsWith('✓') ? '#2D7A5F' : '#ef4444', fontWeight: 500, marginTop: 6 }}>{detectMsg}</div>
             )}
             {candidates && candidates.length > 1 && (
-              <div style={{ marginTop: 8, border: '1px solid #e0e0e0', borderRadius: 8, overflow: 'hidden' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 10px', background: '#fafafa', borderBottom: '1px solid #f0f0f0' }}>Other candidates — click to switch</div>
+              <div style={{ marginTop: 8, border: '1px solid var(--pn-border)', borderRadius: 8, overflow: 'hidden' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', padding: '6px 10px', background: 'var(--pn-bg)', borderBottom: '1px solid var(--pn-border)' }}>Other candidates — click to switch</div>
                 {candidates.map(c => (
                   <button key={c.placeId} type="button"
                     onClick={() => { patch('googlePlaceId', c.placeId); if (c.mapsUrl) patch('mapsUrl', c.mapsUrl); setDetectMsg(`✓ Switched to ${c.name}${c.mapsUrl ? ' + Maps URL' : ''}`); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: cfg.googlePlaceId === c.placeId ? '#f0fdf4' : '#fff', border: 'none', borderBottom: '1px solid #f5f5f5', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    <div style={{ fontSize: 12, fontWeight: 500, color: '#1a1a1a' }}>{c.name}</div>
-                    <div style={{ fontSize: 11, color: '#888' }}>{c.address}</div>
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: cfg.googlePlaceId === c.placeId ? '#f0fdf4' : 'var(--pn-surface)', border: 'none', borderBottom: '1px solid var(--pn-border)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--pn-text)' }}>{c.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{c.address}</div>
                   </button>
                 ))}
               </div>
             )}
-            <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>
               Or paste manually from <span style={{ color: '#3D95CE' }}>developers.google.com/maps/documentation/places/web-service/place-id</span>
             </div>
           </div>
@@ -2347,22 +2347,22 @@ function WebfrontTab({ cfg, setCfg, employees }) {
               {refreshing ? 'Fetching…' : '↻ Refresh from Google'}
             </button>
             {cfg.googleReviewsRefreshedAt && !refreshMsg && (
-              <span style={{ fontSize: 11, color: '#aaa' }}>Last updated: {new Date(cfg.googleReviewsRefreshedAt).toLocaleString()}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>Last updated: {new Date(cfg.googleReviewsRefreshedAt).toLocaleString()}</span>
             )}
             {refreshMsg && (
               <span style={{ fontSize: 12, color: refreshMsg.startsWith('✓') ? '#2D7A5F' : '#ef4444', fontWeight: 500 }}>{refreshMsg}</span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: '#aaa', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', lineHeight: 1.5 }}>
             Reviews are cached in Firestore and displayed on the public webfront. Refresh periodically to pull the latest from Google.
           </div>
 
           {/* Google Business Profile OAuth — pulls ALL reviews, not just 5 */}
-          <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px dashed #e8e8e8' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px dashed var(--pn-border)' }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>
               📈 Full review history via Google Business Profile
             </div>
-            <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5, marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
               The "Refresh from Google" button above uses the public Places API, which caps at <strong>5 reviews</strong>. To pull every review (174+ for Meraki), connect the Business Profile that owns the listing — this lets you OAuth in as the verified salon owner and authorizes us to read the full history. Reviews sync nightly thereafter.
             </div>
 
@@ -2393,7 +2393,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
                       {gbpSyncing ? 'Syncing…' : '↻ Sync now'}
                     </button>
                     <button onClick={handleDisconnectGbp}
-                      style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#666', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
                       Disconnect
                     </button>
                   </div>
@@ -2404,8 +2404,8 @@ function WebfrontTab({ cfg, setCfg, employees }) {
             {gbpMsg && (
               <div style={{ fontSize: 12, color: gbpMsg.startsWith('✓') ? '#2D7A5F' : '#b91c1c', fontWeight: 500, marginTop: 8 }}>{gbpMsg}</div>
             )}
-            <div style={{ fontSize: 10, color: '#bbb', marginTop: 8, lineHeight: 1.5 }}>
-              Requires GCP setup (see <code style={{ fontFamily: 'ui-monospace, Menlo, monospace', background: '#fafafa', padding: '0 4px', borderRadius: 3 }}>docs/GOOGLE_BUSINESS_PROFILE_SETUP.md</code>). Refresh token is encrypted at rest via Cloud KMS.
+            <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 8, lineHeight: 1.5 }}>
+              Requires GCP setup (see <code style={{ fontFamily: 'ui-monospace, Menlo, monospace', background: 'var(--pn-bg)', padding: '0 4px', borderRadius: 3 }}>docs/GOOGLE_BUSINESS_PROFILE_SETUP.md</code>). Refresh token is encrypted at rest via Cloud KMS.
             </div>
           </div>
         </div>
@@ -2418,15 +2418,15 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         {testimonials.length > 0 && (
           <div style={{ padding: '8px 16px 0' }}>
             {testimonials.map((t, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid #f0f0f0' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 0', borderBottom: '1px solid var(--pn-border)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#333' }}>{t.name || 'Anonymous'}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{t.name || 'Anonymous'}</span>
                     <span style={{ fontSize: 11, color: '#f59e0b' }}>{'★'.repeat(t.rating || 5)}</span>
                     {t.techName && <span style={{ fontSize: 11, color: '#2D7A5F' }}>· {t.techName}</span>}
-                    {t.date && <span style={{ fontSize: 11, color: '#bbb' }}>· {t.date}</span>}
+                    {t.date && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>· {t.date}</span>}
                   </div>
-                  {t.text && <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>"{t.text}"</div>}
+                  {t.text && <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>"{t.text}"</div>}
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                   <Btn onClick={() => openEdit(i)}>Edit</Btn>
@@ -2439,8 +2439,8 @@ function WebfrontTab({ cfg, setCfg, employees }) {
 
         {/* Edit / Add form */}
         {editIdx !== null && draft && (
-          <div style={{ margin: '10px 16px', background: '#f8f9fa', borderRadius: 10, padding: '14px', border: '1px solid #e0e0e0' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>{editIdx === -1 ? 'Add Testimonial' : 'Edit Testimonial'}</div>
+          <div style={{ margin: '10px 16px', background: 'var(--pn-bg)', borderRadius: 10, padding: '14px', border: '1px solid var(--pn-border)' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 10 }}>{editIdx === -1 ? 'Add Testimonial' : 'Edit Testimonial'}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ display: 'flex', gap: 8 }}>
                 <input value={draft.name} onChange={e => setDraft(d => ({ ...d, name: e.target.value }))} placeholder="Client name (e.g. Sarah K.)" style={{ ...inp, flex: 2 }} />
@@ -2472,19 +2472,19 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         {/* Promote from recorded reviews */}
         {reviews && reviews.length > 0 && (
           <>
-            <div style={{ padding: '0 16px 8px', fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            <div style={{ padding: '0 16px 8px', fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
               Promote from recorded reviews
             </div>
-            <div style={{ maxHeight: 220, overflowY: 'auto', borderTop: '1px solid #f0f0f0' }}>
+            <div style={{ maxHeight: 220, overflowY: 'auto', borderTop: '1px solid var(--pn-border)' }}>
               {reviews.filter(r => r.text).map(r => (
-                <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 16px', borderBottom: '1px solid #f5f5f5' }}>
+                <div key={r.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 16px', borderBottom: '1px solid var(--pn-border)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 2 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: '#333' }}>{r.clientName || '—'}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.clientName || '—'}</span>
                       <span style={{ fontSize: 11, color: '#f59e0b' }}>{'★'.repeat(r.rating || 5)}</span>
                       {r.techName && <span style={{ fontSize: 11, color: '#2D7A5F' }}>· {r.techName}</span>}
                     </div>
-                    <div style={{ fontSize: 12, color: '#777', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{r.text}"</div>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>"{r.text}"</div>
                   </div>
                   <Btn color="#3D95CE" onClick={() => promoteReview(r)}>Feature</Btn>
                 </div>
@@ -2498,7 +2498,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       <Section title="🎨 Appearance">
         {/* Layout picker */}
         <div style={{ padding: '12px 16px 0' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#bbb', letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 10 }}>Layout</div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.07em', textTransform: 'uppercase', marginBottom: 10 }}>Layout</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginBottom: 14 }}>
             {[
               { id: 'classic',    icon: '🌑', name: 'Classic',   desc: 'Dark hero, bold & dramatic' },
@@ -2507,15 +2507,15 @@ function WebfrontTab({ cfg, setCfg, employees }) {
               { id: 'merakiSite', icon: '✦',  name: 'Editorial', desc: 'Full magazine-style homepage' },
             ].map(l => (
               <button key={l.id} onClick={() => patch('layout', l.id)} style={{
-                border: `2px solid ${(cfg.layout || 'classic') === l.id ? '#3D95CE' : '#e8e8e8'}`,
-                borderRadius: 10, padding: '10px 8px', cursor: 'pointer', background: '#fff',
+                border: `2px solid ${(cfg.layout || 'classic') === l.id ? '#3D95CE' : 'var(--pn-border)'}`,
+                borderRadius: 10, padding: '10px 8px', cursor: 'pointer', background: 'var(--pn-surface)',
                 boxShadow: (cfg.layout || 'classic') === l.id ? '0 0 0 3px rgba(61,149,206,.18)' : 'none',
                 fontFamily: 'inherit', textAlign: 'center', transition: 'border-color .15s',
                 position: 'relative',
               }}>
                 <div style={{ fontSize: 20, marginBottom: 4 }}>{l.icon}</div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a' }}>{l.name}</div>
-                <div style={{ fontSize: 10, color: '#aaa', marginTop: 2, lineHeight: 1.3 }}>{l.desc}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text)' }}>{l.name}</div>
+                <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2, lineHeight: 1.3 }}>{l.desc}</div>
                 {(cfg.layout || 'classic') === l.id && (
                   <div style={{ position: 'absolute', top: 4, right: 6, fontSize: 10, color: '#3D95CE', fontWeight: 700 }}>✓</div>
                 )}
@@ -2525,10 +2525,10 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         </div>
 
         {/* Theme picker — auto-seasonal toggle */}
-        <div style={{ padding: '10px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+        <div style={{ padding: '10px 16px', borderTop: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, color: '#333' }}>Auto-seasonal themes</div>
-            <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+            <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Auto-seasonal themes</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
               {cfg.autoTheme && detectAutoTheme() ? `Active now: ${detectAutoTheme().icon} ${detectAutoTheme().name}` : 'Switches to holiday themes by date'}
             </div>
           </div>
@@ -2541,8 +2541,8 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         </div>
 
         {/* Core palettes */}
-        <div style={{ padding: '0 12px 14px', borderTop: '1px solid #f0f0f0' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#bbb', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
+        <div style={{ padding: '0 12px 14px', borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
             {cfg.autoTheme ? 'Default palette (when no holiday active)' : 'Core palettes'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -2555,8 +2555,8 @@ function WebfrontTab({ cfg, setCfg, employees }) {
         </div>
 
         {/* Holidays & seasonal */}
-        <div style={{ padding: '0 12px 14px', borderTop: '1px solid #f0f0f0' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#bbb', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
+        <div style={{ padding: '0 12px 14px', borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.07em', textTransform: 'uppercase', padding: '10px 4px 8px' }}>
             Holidays &amp; seasons{cfg.autoTheme ? ' — auto-activate by date' : ' — select to pin'}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -2572,7 +2572,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       {/* Save */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 4, marginBottom: 16 }}>
         <button onClick={() => window.open(webUrl, '_blank')}
-          style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fafafa', fontSize: 13, color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ padding: '9px 20px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', fontSize: 13, color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
           Preview
         </button>
         <button onClick={save} disabled={saving}
@@ -2719,17 +2719,17 @@ function PortfolioGridEditor({ cfg, patch }) {
     if (fileRef.current) fileRef.current.value = '';  // allow re-picking same file
   }
 
-  const inp = { fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 6px', fontSize: 12, background: '#fff', cursor: 'pointer' };
+  const inp = { fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 12, background: 'var(--pn-surface)', cursor: 'pointer' };
 
   return (
     <Section title={`🖼 Portfolio Grid${selected.length ? ` · ${selected.length} photos` : ' · using default 16'}`}>
-      <div style={{ padding: '8px 16px 4px', fontSize: 11, color: '#888' }}>
+      <div style={{ padding: '8px 16px 4px', fontSize: 11, color: 'var(--pn-text-muted)' }}>
         Curate which photos appear in the "Recent Work" section of the editorial homepage. Pick a style preset for instant magazine-rhythm, or hand-tune per-tile sizes below.
       </div>
 
       {/* Style presets */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--pn-border)' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
           Tile Style
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
@@ -2745,19 +2745,19 @@ function PortfolioGridEditor({ cfg, patch }) {
       </div>
 
       {/* Selected list */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--pn-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase' }}>
             Selected ({selected.length})
           </div>
           {selected.length > 0 && (
-            <button onClick={resetToDefaults} style={{ ...inp, color: '#a00', borderColor: '#fecaca', background: '#fff' }}>
+            <button onClick={resetToDefaults} style={{ ...inp, color: '#a00', borderColor: '#fecaca', background: 'var(--pn-surface)' }}>
               Reset to default
             </button>
           )}
         </div>
         {selected.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#bbb', padding: '14px 8px', textAlign: 'center', background: '#fafafa', borderRadius: 6 }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', padding: '14px 8px', textAlign: 'center', background: 'var(--pn-bg)', borderRadius: 6 }}>
             No custom selection — the site shows the built-in 16-photo default. Click any photo below to start curating.
           </div>
         ) : (
@@ -2765,7 +2765,7 @@ function PortfolioGridEditor({ cfg, patch }) {
             {selected.map((p, i) => {
               const n = srcToNum(p.src);
               return (
-                <div key={`${p.src}-${i}`} style={{ border: '1px solid #e8e8e8', borderRadius: 8, padding: 8, background: '#fff', position: 'relative' }}>
+                <div key={`${p.src}-${i}`} style={{ border: '1px solid var(--pn-border)', borderRadius: 8, padding: 8, background: 'var(--pn-surface)', position: 'relative' }}>
                   <div style={{ position: 'relative', aspectRatio: '1', borderRadius: 4, overflow: 'hidden', background: '#f5f0e7', marginBottom: 6 }}>
                     <img src={photoThumb(n)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
                     <div style={{ position: 'absolute', top: 4, left: 4, background: 'rgba(0,0,0,.6)', color: '#fff', fontSize: 10, padding: '2px 6px', borderRadius: 4, fontWeight: 600 }}>{i + 1}</div>
@@ -2786,13 +2786,13 @@ function PortfolioGridEditor({ cfg, patch }) {
       </div>
 
       {/* Your uploads */}
-      <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--pn-border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase' }}>
             Your Uploads ({uploads.length})
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {uploading && <span style={{ fontSize: 11, color: '#888' }}>Uploading…</span>}
+            {uploading && <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Uploading…</span>}
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} disabled={uploading} style={{ display: 'none' }} id="portfolio-upload" />
             <label htmlFor="portfolio-upload" style={{
               ...inp, padding: '6px 14px', borderColor: '#c19a4a', color: '#c19a4a', background: '#fffbf2',
@@ -2804,7 +2804,7 @@ function PortfolioGridEditor({ cfg, patch }) {
         </div>
         {uploadErr && <div style={{ fontSize: 11, color: '#a00', marginBottom: 8 }}>⚠ {uploadErr}</div>}
         {uploads.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#bbb', padding: '14px 8px', textAlign: 'center', background: '#fafafa', borderRadius: 6 }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', padding: '14px 8px', textAlign: 'center', background: 'var(--pn-bg)', borderRadius: 6 }}>
             No uploads yet — click "Upload photos" to add your own. They'll appear here and become selectable below.
           </div>
         ) : (
@@ -2812,7 +2812,7 @@ function PortfolioGridEditor({ cfg, patch }) {
             {uploads.map(url => {
               const used = selectedSrcs.has(url);
               return (
-                <div key={url} style={{ position: 'relative', aspectRatio: '1', border: used ? '2px solid #c19a4a' : '1px solid #e8e8e8', borderRadius: 6, overflow: 'hidden', background: '#f5f0e7' }}>
+                <div key={url} style={{ position: 'relative', aspectRatio: '1', border: used ? '2px solid #c19a4a' : '1px solid var(--pn-border)', borderRadius: 6, overflow: 'hidden', background: '#f5f0e7' }}>
                   <button
                     onClick={() => !used && addSrc(url)}
                     disabled={used}
@@ -2836,7 +2836,7 @@ function PortfolioGridEditor({ cfg, patch }) {
 
       {/* Bundled photo pool */}
       <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>
           Bundled Library ({PORTFOLIO_TOTAL} photos)
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: 6 }}>
@@ -2851,7 +2851,7 @@ function PortfolioGridEditor({ cfg, patch }) {
                 style={{
                   position: 'relative',
                   aspectRatio: '1',
-                  border: used ? '2px solid #c19a4a' : '1px solid #e8e8e8',
+                  border: used ? '2px solid #c19a4a' : '1px solid var(--pn-border)',
                   borderRadius: 6, padding: 0, background: '#f5f0e7',
                   cursor: used ? 'default' : 'pointer',
                   overflow: 'hidden',
@@ -2882,7 +2882,7 @@ function PortfolioGridEditor({ cfg, patch }) {
 function PortfolioPresetCard({ preset, active, onApply }) {
   const [hover, setHover] = useState(false);
   const tiles = preset.pattern.slice(0, 6).map(c => PREVIEW_SPANS[c] || PREVIEW_SPANS['t-sq']);
-  const showAccent = active ? preset.accent : (hover ? preset.accent : '#e8e8e8');
+  const showAccent = active ? preset.accent : (hover ? preset.accent : 'var(--pn-border)');
   return (
     <button
       onClick={onApply}
@@ -2892,7 +2892,7 @@ function PortfolioPresetCard({ preset, active, onApply }) {
         padding: 10,
         border: `2px solid ${showAccent}`,
         borderRadius: 10,
-        background: active ? `${preset.accent}0d` : '#fff',
+        background: active ? `${preset.accent}0d` : 'var(--pn-surface)',
         cursor: 'pointer',
         fontFamily: 'inherit',
         textAlign: 'left',
@@ -2921,10 +2921,10 @@ function PortfolioPresetCard({ preset, active, onApply }) {
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{preset.name}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>{preset.name}</div>
         {active && <span style={{ fontSize: 10, fontWeight: 700, color: preset.accent, background: `${preset.accent}1f`, padding: '2px 6px', borderRadius: 3, letterSpacing: '.04em' }}>ACTIVE</span>}
       </div>
-      <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{preset.desc}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.4 }}>{preset.desc}</div>
     </button>
   );
 }
@@ -2970,9 +2970,9 @@ function ReviewsTab({ data, onRefresh, onMarkReceived }) {
           { label: `Clicked (${clickPct}%)`, value: clicked, accent: '#f59e0b' },
           { label: `Reviewed (${convPct}%)`, value: recvd,   accent: '#2D7A5F' },
         ].map(({ label, value, accent }) => (
-          <div key={label} style={{ background: '#fff', border: '1px solid #ebebeb', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
+          <div key={label} style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: accent }}>{value}</div>
-            <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{label}</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>{label}</div>
           </div>
         ))}
       </div>
@@ -2981,11 +2981,11 @@ function ReviewsTab({ data, onRefresh, onMarkReceived }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', flexWrap: 'wrap' }}>
         {[['all','All'],['pending','Not clicked'],['clicked','Clicked'],['received','Reviewed']].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)}
-            style={{ padding: '5px 12px', borderRadius: 20, border: `1px solid ${filter === id ? '#2D7A5F' : '#e0e0e0'}`, background: filter === id ? '#f0faf6' : '#fff', color: filter === id ? '#2D7A5F' : '#555', fontSize: 12, fontWeight: filter === id ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '5px 12px', borderRadius: 20, border: `1px solid ${filter === id ? '#2D7A5F' : 'var(--pn-border)'}`, background: filter === id ? '#f0faf6' : 'var(--pn-surface)', color: filter === id ? '#2D7A5F' : 'var(--pn-text-muted)', fontSize: 12, fontWeight: filter === id ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
             {label}
           </button>
         ))}
-        <button onClick={onRefresh} style={{ marginLeft: 'auto', padding: '5px 12px', borderRadius: 20, border: '1px solid #e0e0e0', background: '#fafafa', color: '#555', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+        <button onClick={onRefresh} style={{ marginLeft: 'auto', padding: '5px 12px', borderRadius: 20, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
           ↻ Refresh
         </button>
       </div>
@@ -2997,19 +2997,19 @@ function ReviewsTab({ data, onRefresh, onMarkReceived }) {
             const isReceived = receivedIds.has(req.clientId);
             const wasClicked = !!req.clickedAt;
             return (
-              <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid #f5f5f5', background: '#fff' }}>
+              <div key={req.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 16px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-surface)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{req.clientName || 'Client'}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{req.clientName || 'Client'}</span>
                     {req.techName && <span style={{ fontSize: 11, color: '#2D7A5F' }}>· {req.techName}</span>}
                     {isReceived
                       ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>✓ Reviewed</span>
                       : wasClicked
                         ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>Clicked</span>
-                        : <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#f8f9fa', color: '#aaa', border: '1px solid #e8e8e8' }}>Sent</span>
+                        : <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: 'var(--pn-bg)', color: 'var(--pn-text-faint)', border: '1px solid var(--pn-border)' }}>Sent</span>
                     }
                   </div>
-                  <div style={{ fontSize: 11, color: '#bbb', marginTop: 3 }}>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 3 }}>
                     Sent {fmtDate(req.createdAt)}
                     {req.clickedAt ? ` · Clicked ${fmtDate(req.clickedAt)}` : ''}
                   </div>
@@ -3042,7 +3042,7 @@ const NOTIF_META = {
 function statusBadge(item) {
   if (item.error)   return { label: item.error === 'no_email' ? 'No email' : 'Failed', bg: '#fef2f2', color: '#ef4444', border: '#fca5a5' };
   if (item.sent)    return { label: 'Sent',    bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
-  return               { label: 'Pending', bg: '#f8f9fa', color: '#888',    border: '#e0e0e0' };
+  return               { label: 'Pending', bg: 'var(--pn-bg)', color: 'var(--pn-text-muted)',    border: 'var(--pn-border)' };
 }
 
 function NotifsTab({ items, onRefresh }) {
@@ -3077,29 +3077,29 @@ function NotifsTab({ items, onRefresh }) {
     <>
       {/* Summary KPIs */}
       {items && items.length > 0 && (
-        <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--pn-border)', flexWrap: 'wrap' }}>
           {[
-            { label: 'Total',   val: items.length,  bg: '#f8f9fa',  color: '#333'    },
+            { label: 'Total',   val: items.length,  bg: 'var(--pn-bg)',  color: 'var(--pn-text)'    },
             { label: 'Sent',    val: sent,           bg: '#f0fdf4',  color: '#16a34a' },
             { label: 'Failed',  val: failed,         bg: '#fef2f2',  color: '#ef4444' },
             { label: 'Pending', val: pending,        bg: '#fffbeb',  color: '#b45309' },
           ].map(k => (
             <div key={k.label} style={{ background: k.bg, borderRadius: 8, padding: '6px 14px', textAlign: 'center', minWidth: 60 }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: k.color }}>{k.val}</div>
-              <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>{k.label}</div>
+              <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginTop: 1 }}>{k.label}</div>
             </div>
           ))}
         </div>
       )}
 
       {/* Filter pills + refresh */}
-      <div style={{ display: 'flex', gap: 6, padding: '10px 16px', borderBottom: '1px solid #f0f0f0', flexWrap: 'wrap', alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 6, padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', flexWrap: 'wrap', alignItems: 'center' }}>
         {filters.map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)} style={{
             fontSize: 11, padding: '4px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
-            border: `1px solid ${filter === f.id ? '#3D95CE' : '#e0e0e0'}`,
-            background: filter === f.id ? '#EBF4FB' : '#fff',
-            color: filter === f.id ? '#1a5f8a' : '#666',
+            border: `1px solid ${filter === f.id ? '#3D95CE' : 'var(--pn-border)'}`,
+            background: filter === f.id ? '#EBF4FB' : 'var(--pn-surface)',
+            color: filter === f.id ? '#1a5f8a' : 'var(--pn-text-muted)',
             fontWeight: filter === f.id ? 600 : 400,
           }}>{f.label}{f.id === 'failed' && failed > 0 ? ` (${failed})` : ''}</button>
         ))}
@@ -3124,7 +3124,7 @@ function NotifRow({ item, last }) {
   const isOnlineBooking = item.changeType === 'online_booking';
   const meta      = isReceipt       ? NOTIF_META.receipt
                   : isReview        ? NOTIF_META.review_request
-                  : (NOTIF_META[item.changeType] || { icon: '📧', label: item.changeType, color: '#888' });
+                  : (NOTIF_META[item.changeType] || { icon: '📧', label: item.changeType, color: 'var(--pn-text-muted)' });
   const badge     = statusBadge(item);
 
   const recipient = (isReceipt || isReview || isOnlineBooking)
@@ -3139,7 +3139,7 @@ function NotifRow({ item, last }) {
   const timeStr = ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—';
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid #f5f5f5' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid var(--pn-border)' }}>
       {/* Type icon */}
       <div style={{ width: 32, height: 32, borderRadius: 8, background: meta.color + '18', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, flexShrink: 0 }}>
         {meta.icon}
@@ -3153,10 +3153,10 @@ function NotifRow({ item, last }) {
             {badge.label}
           </span>
         </div>
-        <div style={{ fontSize: 12, color: '#333', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {recipient}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {description}
         </div>
         {item.error && item.error !== 'no_email' && (
@@ -3165,7 +3165,7 @@ function NotifRow({ item, last }) {
       </div>
 
       {/* Time */}
-      <div style={{ fontSize: 10, color: '#bbb', flexShrink: 0, textAlign: 'right', paddingTop: 2 }}>{timeStr}</div>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', flexShrink: 0, textAlign: 'right', paddingTop: 2 }}>{timeStr}</div>
     </div>
   );
 }
@@ -3196,15 +3196,15 @@ function TechRemindersSection({ settings, updateSettings }) {
   return (
     <Section title="🔔 Tech Appointment Reminders">
       <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Sends each tech a heads-up before every scheduled appointment. Each tech sets their own lead time and notification channel (email / SMS / push) on their <strong>employee record → Profile → Notifications</strong>. Defaults: 15 min before, email. Runs every 5 minutes server-side; per-appt dedupe.
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer' }}>
           <input type="checkbox" checked={enabled}
             onChange={e => { setEnabled(e.target.checked); save(e.target.checked); }} disabled={saving} />
-          <span style={{ fontSize: 13, color: '#444', fontWeight: 600 }}>Enabled</span>
-          <span style={{ fontSize: 12, color: '#888' }}>· tenant-wide on/off switch</span>
+          <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>Enabled</span>
+          <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>· tenant-wide on/off switch</span>
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto' }}>✓ Saved</span>}
         </label>
       </div>
@@ -3250,19 +3250,19 @@ function CancellationPolicySection({ settings, updateSettings }) {
   return (
     <Section title="🚫 Cancellation Policy">
       <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           After this many cancellations within the window, the booking page will require the client to have a card on file before they can book again. Clients who already have a card on file aren't affected. Admins can override per-client in the client modal.
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', marginBottom: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
           <input type="checkbox" checked={enabled}
             onChange={e => { setEnabled(e.target.checked); save({ enabled: e.target.checked }); }} disabled={saving} />
-          <span style={{ fontSize: 13, color: '#444', fontWeight: 600 }}>Enable policy</span>
+          <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>Enable policy</span>
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto' }}>✓ Saved</span>}
         </label>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' }}>
-          <label style={{ fontSize: 12, color: '#444', display: 'block' }}>
+          <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'block' }}>
             <div style={{ marginBottom: 4, fontWeight: 600 }}>Threshold</div>
             <input
               type="number" min={1} step={1}
@@ -3270,11 +3270,11 @@ function CancellationPolicySection({ settings, updateSettings }) {
               onChange={e => setThresholdCount(e.target.value)}
               onBlur={() => save({ thresholdCount: Math.max(1, Math.floor(Number(thresholdCount) || 3)) })}
               disabled={saving}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0', fontSize: 13, fontFamily: 'inherit' }}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)', fontSize: 13, fontFamily: 'inherit' }}
             />
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>cancellations</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>cancellations</div>
           </label>
-          <label style={{ fontSize: 12, color: '#444', display: 'block' }}>
+          <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'block' }}>
             <div style={{ marginBottom: 4, fontWeight: 600 }}>Window</div>
             <input
               type="number" min={1} step={1}
@@ -3282,19 +3282,19 @@ function CancellationPolicySection({ settings, updateSettings }) {
               onChange={e => setWindowDays(e.target.value)}
               onBlur={() => save({ windowDays: Math.max(1, Math.floor(Number(windowDays) || 90)) })}
               disabled={saving}
-              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #e0e0e0', fontSize: 13, fontFamily: 'inherit' }}
+              style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)', fontSize: 13, fontFamily: 'inherit' }}
             />
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>days back</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>days back</div>
           </label>
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginTop: 10, fontSize: 12, color: '#555', cursor: 'pointer', opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', marginTop: 10, fontSize: 12, color: 'var(--pn-text-muted)', cursor: 'pointer', opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' }}>
           <input type="checkbox" checked={countNoShows}
             onChange={e => { setCountNoShows(e.target.checked); save({ countNoShows: e.target.checked }); }} disabled={saving} />
           Also count <strong style={{ margin: '0 2px' }}>no-shows</strong> toward the threshold (recommended)
         </label>
 
-        <div style={{ fontSize: 11, color: '#aaa', marginTop: 12, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
           Salon-initiated cancellations (e.g. tech called in sick) don't count against the client.
         </div>
       </div>
@@ -3365,7 +3365,7 @@ function PauseSection({ settings, updateSettings }) {
   return (
     <Section title="⏸️ Pause / Vacation Mode">
       <div style={{ padding: '12px 16px' }}>
-        <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Temporarily close the salon (vacation, slow season, renovation, etc.). While paused, inbound texts get an auto-reply that says when you reopen — or, if you opt in, get forwarded to your personal phone so you stay reachable for emergencies.
         </div>
 
@@ -3381,27 +3381,27 @@ function PauseSection({ settings, updateSettings }) {
             </div>
             <button onClick={clearPause} style={{
               padding: '6px 12px', fontSize: 12, fontWeight: 600,
-              background: '#fff', color: '#92400e',
+              background: 'var(--pn-surface)', color: '#92400e',
               border: '1px solid #fcd34d', borderRadius: 6, cursor: 'pointer',
             }}>Resume now</button>
           </div>
         )}
 
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>Closed through (last day closed)</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 4 }}>Closed through (last day closed)</div>
           <input type="date" value={until} min={today} onChange={e => setUntil(e.target.value)}
-            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none' }} />
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Leave blank to disable pause. Salon reopens the day after this date.</div>
+            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', outline: 'none' }} />
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>Leave blank to disable pause. Salon reopens the day after this date.</div>
         </div>
 
         <div style={{ marginBottom: 12 }}>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
-            Custom auto-reply <span style={{ color: '#bbb' }}>· optional · use {'{date}'} for the resume date</span>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 4 }}>
+            Custom auto-reply <span style={{ color: 'var(--pn-text-faint)' }}>· optional · use {'{date}'} for the resume date</span>
           </div>
           <textarea value={customMessage} onChange={e => setCustomMessage(e.target.value)}
             placeholder={defaultPreview}
             rows={3} maxLength={1500}
-            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none', resize: 'vertical', lineHeight: 1.5 }} />
+            style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', outline: 'none', resize: 'vertical', lineHeight: 1.5 }} />
         </div>
 
         {/* Forward toggle */}
@@ -3410,32 +3410,32 @@ function PauseSection({ settings, updateSettings }) {
             ⚙️ Forward inbound to my personal phone instead (emergencies)
           </summary>
           <div style={{ paddingTop: 8 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 6, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 6, lineHeight: 1.5 }}>
               When set, inbound texts during pause are forwarded to this number instead of getting an auto-reply. Costs ~$0.008/text via Twilio. Leave blank to use the auto-reply (default).
             </div>
             <input type="tel" value={forwardPhone} onChange={e => setForwardPhone(e.target.value)}
               placeholder="+16145551234"
-              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none' }} />
+              style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', outline: 'none' }} />
           </div>
         </details>
 
         {/* Live preview */}
         {until && !forwardPhone && (
           <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>Auto-reply preview</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em' }}>Auto-reply preview</div>
             <div style={{
               maxWidth: 320,
               padding: '10px 14px',
-              background: '#fff',
-              border: '1px solid #e8e8e8',
+              background: 'var(--pn-surface)',
+              border: '1px solid var(--pn-border)',
               borderRadius: '14px 14px 14px 4px',
-              fontSize: 13, color: '#222', lineHeight: 1.5,
+              fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.5,
             }}>{livePreview}</div>
           </div>
         )}
         {until && forwardPhone && (
           <div style={{ marginBottom: 14, padding: '8px 12px', background: '#f0f7ff', border: '1px solid #c7dff7', borderRadius: 8, fontSize: 12, color: '#1f6ea3' }}>
-            ➤ Inbound texts will forward to <code style={{ background: '#fff', padding: '1px 5px', borderRadius: 3 }}>{forwardPhone}</code>. The client gets no auto-reply.
+            ➤ Inbound texts will forward to <code style={{ background: 'var(--pn-surface)', padding: '1px 5px', borderRadius: 3 }}>{forwardPhone}</code>. The client gets no auto-reply.
           </div>
         )}
 
@@ -3473,7 +3473,7 @@ function TileVisibilitySection({ settings, updateSettings }) {
   return (
     <Section title="🧩 Home Tiles · what shows up on the dashboard">
       <div style={{ padding: '10px 16px 14px' }}>
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
           Toggle off tiles you don't use to keep the dashboard simple.
           You can turn them back on any time. Greyed-out tiles are part of a
           higher plan — upgrade to unlock.
@@ -3488,8 +3488,8 @@ function TileVisibilitySection({ settings, updateSettings }) {
                 style={{
                   display: 'flex', alignItems: 'flex-start', gap: 10,
                   padding: '10px 12px', borderRadius: 10,
-                  border: `1px solid ${!available ? '#e5e7eb' : isHidden ? '#e5e7eb' : '#bfdbfe'}`,
-                  background: !available ? '#f9fafb' : isHidden ? '#fff' : '#eff6ff',
+                  border: `1px solid ${!available ? 'var(--pn-border)' : isHidden ? 'var(--pn-border)' : '#bfdbfe'}`,
+                  background: !available ? 'var(--pn-bg)' : isHidden ? 'var(--pn-surface)' : '#eff6ff',
                   cursor: available ? 'pointer' : 'not-allowed',
                   opacity: available ? 1 : 0.6,
                 }}>
@@ -3499,7 +3499,7 @@ function TileVisibilitySection({ settings, updateSettings }) {
                   onChange={() => available && toggle(m.id)}
                   style={{ width: 16, height: 16, cursor: available ? 'pointer' : 'not-allowed', accentColor: '#3D95CE', flexShrink: 0, marginTop: 2 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: available ? '#1a1a1a' : '#9ca3af', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: available ? 'var(--pn-text)' : 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     {m.label}
                     {!available && (
                       <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase' }}>
@@ -3507,12 +3507,12 @@ function TileVisibilitySection({ settings, updateSettings }) {
                       </span>
                     )}
                     {m.adminOnly && (
-                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', letterSpacing: '.04em', textTransform: 'uppercase' }}>
                         Admin only
                       </span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.4 }}>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.4 }}>
                     {lockedReason || m.desc}
                   </div>
                 </div>
@@ -3522,7 +3522,7 @@ function TileVisibilitySection({ settings, updateSettings }) {
         </div>
         {hidden.size > 0 && (
           <button onClick={() => updateSettings({ ...settings, hiddenTiles: [] })}
-            style={{ marginTop: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ marginTop: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
             Show all tiles ({hidden.size} hidden)
           </button>
         )}
@@ -3556,7 +3556,7 @@ function ModulesSection() {
   return (
     <Section title="🧩 Modules · turn features on or off">
       <div style={{ padding: '10px 16px 14px' }}>
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 12, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
           Turn off features you don't use. Some need cleanup first — Memberships
           can't be turned off while clients still have active subscriptions.
         </div>
@@ -3566,7 +3566,7 @@ function ModulesSection() {
             return (
               <div key={m.id} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10,
-                border: `1px solid ${enabled ? '#bfdbfe' : '#e5e7eb'}`, background: enabled ? '#eff6ff' : '#fff',
+                border: `1px solid ${enabled ? '#bfdbfe' : 'var(--pn-border)'}`, background: enabled ? '#eff6ff' : 'var(--pn-surface)',
               }}>
                 <button onClick={() => toggle(m, !enabled)} disabled={busy === m.id}
                   style={{
@@ -3578,13 +3578,13 @@ function ModulesSection() {
                   {busy === m.id ? '…' : enabled ? 'On' : 'Off'}
                 </button>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     {m.label}
                     {m.adminOnly && (
-                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: '#f3f4f6', color: '#6b7280', letterSpacing: '.04em', textTransform: 'uppercase' }}>Admin only</span>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', letterSpacing: '.04em', textTransform: 'uppercase' }}>Admin only</span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.4 }}>{m.desc}</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.4 }}>{m.desc}</div>
                 </div>
               </div>
             );
@@ -3608,7 +3608,7 @@ function NotesPreferenceSection({ settings, updateSettings }) {
   return (
     <Section title="📋 Notes preferences">
       <div style={{ padding: '10px 16px 14px' }}>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${enabled ? '#c7d2fe' : '#e5e7eb'}`, background: enabled ? '#eef2ff' : '#fafafa', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${enabled ? '#c7d2fe' : 'var(--pn-border)'}`, background: enabled ? '#eef2ff' : 'var(--pn-bg)', cursor: 'pointer' }}>
           <input type="checkbox" checked={enabled}
             onChange={e => updateSettings({ ...settings, clinicalNotes: e.target.checked })}
             style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4338ca', flexShrink: 0, marginTop: 2 }} />
@@ -3616,7 +3616,7 @@ function NotesPreferenceSection({ settings, updateSettings }) {
             <div style={{ fontSize: 13, fontWeight: 700, color: enabled ? '#3730a3' : '#374151' }}>
               Enable clinical (SOAP) notes
             </div>
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
               Adds a "+ SOAP note" button alongside "+ Add note" inside appointment + client modals. SOAP splits an entry into <strong>Subjective</strong> / <strong>Objective</strong> / <strong>Assessment</strong> / <strong>Plan</strong> — common in med spas, lash, brow, and any treatment-heavy practice. Free-form notes work the same regardless.
             </div>
           </div>
@@ -3663,7 +3663,7 @@ function DisputesSection() {
         )}
         {closed.length > 0 && (
           <div>
-            <div style={{ fontSize: 11, color: '#666', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>History</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>History</div>
             {closed.map(d => <DisputeRow key={d.id} d={d} variant="closed" />)}
           </div>
         )}
@@ -3681,10 +3681,10 @@ function DisputeRow({ d, variant }) {
 
   const border = variant === 'open'
     ? (urgent ? '2px solid #ef4444' : '1px solid #fed7aa')
-    : '1px solid #e5e7eb';
+    : '1px solid var(--pn-border)';
   const bg = variant === 'open'
     ? (urgent ? '#fef2f2' : '#fff7ed')
-    : (wonOrLost === 'won' ? '#f0fdf4' : wonOrLost === 'lost' ? '#fef2f2' : '#fafafa');
+    : (wonOrLost === 'won' ? '#f0fdf4' : wonOrLost === 'lost' ? '#fef2f2' : 'var(--pn-bg)');
   const statusColor = wonOrLost === 'won' ? '#15803d' : wonOrLost === 'lost' ? '#991b1b' : (urgent ? '#991b1b' : '#9a3412');
 
   const stripeUrl = `https://dashboard.stripe.com/disputes/${d.disputeId}`;
@@ -3693,7 +3693,7 @@ function DisputeRow({ d, variant }) {
     <div style={{ border, background: bg, borderRadius: 10, padding: '12px 14px', marginBottom: 8, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>${amount} {(d.currency || 'usd').toUpperCase()}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)' }}>${amount} {(d.currency || 'usd').toUpperCase()}</span>
           <span style={{ fontSize: 11, color: statusColor, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
             {wonOrLost === 'won' && '✓ Won'}
             {wonOrLost === 'lost' && '✗ Lost'}
@@ -3704,7 +3704,7 @@ function DisputeRow({ d, variant }) {
             <span style={{ fontSize: 10, background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.5 }}>MEMBER</span>
           )}
         </div>
-        <div style={{ fontSize: 12, color: '#666', marginTop: 4, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
           <strong>Reason:</strong> {d.reason || 'not provided'}
           {d.isMembership && d.clientName && <> · <strong>Client:</strong> {d.clientName}</>}
         </div>
@@ -3714,7 +3714,7 @@ function DisputeRow({ d, variant }) {
           </div>
         )}
         {variant === 'closed' && d.updatedAt && (
-          <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
             Closed {new Date(d.updatedAt).toLocaleDateString('en-US', { dateStyle: 'medium' })}
           </div>
         )}
@@ -3722,9 +3722,9 @@ function DisputeRow({ d, variant }) {
       <a href={stripeUrl} target="_blank" rel="noreferrer"
         style={{
           flexShrink: 0,
-          background: variant === 'open' ? '#ef4444' : '#fff',
-          color: variant === 'open' ? '#fff' : '#666',
-          border: variant === 'open' ? 'none' : '1px solid #e5e7eb',
+          background: variant === 'open' ? '#ef4444' : 'var(--pn-surface)',
+          color: variant === 'open' ? '#fff' : 'var(--pn-text-muted)',
+          border: variant === 'open' ? 'none' : '1px solid var(--pn-border)',
           borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600,
           textDecoration: 'none', whiteSpace: 'nowrap',
         }}>
@@ -3811,7 +3811,7 @@ function StripeConnectSection({ onOpenWizard }) {
   const live      = !!(sc?.chargesEnabled && sc?.payoutsEnabled);
   const dueCount  = sc?.requirementsCurrentlyDue?.length || 0;
   const needsMore = connected && (!live || dueCount > 0 || !sc?.detailsSubmitted);
-  const badge = !connected ? { t: 'Not set up',      bg: '#f5f5f5', fg: '#888' }
+  const badge = !connected ? { t: 'Not set up',      bg: 'var(--pn-surface-alt)', fg: 'var(--pn-text-muted)' }
               : live       ? { t: 'Active',          bg: '#f0fdf4', fg: '#166534' }
               :              { t: 'Setup incomplete', bg: '#fff7ed', fg: '#9a3412' };
 
@@ -3821,9 +3821,9 @@ function StripeConnectSection({ onOpenWizard }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 6, background: badge.bg, color: badge.fg, textTransform: 'uppercase', letterSpacing: '.04em' }}>{badge.t}</span>
-            {refreshing && <span style={{ fontSize: 11, color: '#aaa' }}>checking…</span>}
+            {refreshing && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>checking…</span>}
           </div>
-          <div style={{ fontSize: 12, color: '#666', marginTop: 6, lineHeight: 1.5, maxWidth: 440 }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 6, lineHeight: 1.5, maxWidth: 440 }}>
             {!connected
               ? 'Connect a Stripe account so card payments settle to your bank — required before you can take cards at checkout.'
               : live
@@ -3898,12 +3898,12 @@ function UpgradeSection({ settings, gUser }) {
         {/* Current plan + trial banner */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div>
-            <div style={{ fontSize: 13, color: '#333' }}>Current plan</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Current plan</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: currentTier.color, marginTop: 2 }}>{currentTier.label}</div>
           </div>
           {hasPaidSubscription && (
             <button onClick={handleManageBilling} disabled={loading === 'portal'}
-              style={{ background: '#fff', color: '#3D95CE', border: '1px solid #d4e5f3', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: loading === 'portal' ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+              style={{ background: 'var(--pn-surface)', color: '#3D95CE', border: '1px solid #d4e5f3', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 600, cursor: loading === 'portal' ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
               {loading === 'portal' ? 'Loading…' : 'Manage billing →'}
             </button>
           )}
@@ -3943,8 +3943,8 @@ function UpgradeSection({ settings, gUser }) {
             return (
               <div key={tier.id}
                 style={{
-                  border: isCurrent ? `2px solid ${tier.color}` : '1px solid #e5e7eb',
-                  borderRadius: 12, padding: 12, background: isCurrent ? '#fafdff' : '#fff',
+                  border: isCurrent ? `2px solid ${tier.color}` : '1px solid var(--pn-border)',
+                  borderRadius: 12, padding: 12, background: isCurrent ? '#fafdff' : 'var(--pn-surface)',
                   display: 'flex', flexDirection: 'column', gap: 8, position: 'relative',
                 }}>
                 {isCurrent && (
@@ -3953,8 +3953,8 @@ function UpgradeSection({ settings, gUser }) {
                   </div>
                 )}
                 <div style={{ fontSize: 14, fontWeight: 700, color: tier.color }}>{tier.label}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>{tier.price}</div>
-                <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0', fontSize: 11, color: '#555', lineHeight: 1.7, flex: 1 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)' }}>{tier.price}</div>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '4px 0', fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.7, flex: 1 }}>
                   {tier.features.map(f => <li key={f}>✓ {f}</li>)}
                 </ul>
                 {action && (
@@ -3964,9 +3964,9 @@ function UpgradeSection({ settings, gUser }) {
                                  : setDowngradeTarget(tier)}
                     disabled={isLoading}
                     style={{
-                      background: isLoading ? '#ccc' : action === 'downgrade' ? '#fff' : tier.color,
-                      color: action === 'downgrade' ? '#6b7280' : '#fff',
-                      border: action === 'downgrade' ? '1px solid #d1d5db' : 'none',
+                      background: isLoading ? '#ccc' : action === 'downgrade' ? 'var(--pn-surface)' : tier.color,
+                      color: action === 'downgrade' ? 'var(--pn-text-muted)' : '#fff',
+                      border: action === 'downgrade' ? '1px solid var(--pn-border-strong)' : 'none',
                       borderRadius: 8, padding: '8px 12px', fontSize: 12, fontWeight: 600,
                       cursor: isLoading ? 'wait' : 'pointer', fontFamily: 'inherit', marginTop: 4 }}>
                     {isLoading ? 'Working…'
@@ -4052,16 +4052,16 @@ function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, maxWidth: 520, width: '100%', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee' }}>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}>Downgrade to {tier.label}</div>
-          <div style={{ fontSize: 12, color: '#888', marginTop: 3 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--pn-surface)', borderRadius: 14, maxWidth: 520, width: '100%', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--pn-text)' }}>Downgrade to {tier.label}</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 3 }}>
             These features aren't on {tier.label}. Turn them off — and cancel any active memberships — before downgrading. Data stays saved and returns if you upgrade again.
           </div>
         </div>
         <div style={{ padding: 18 }}>
           {blockers === null ? (
-            <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13 }}>Checking…</div>
+            <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>Checking…</div>
           ) : ready ? (
             <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#166534' }}>
               ✓ Everything's clear. You can downgrade to {tier.label} now.
@@ -4073,12 +4073,12 @@ function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#991b1b', marginBottom: 6 }}>
                     Memberships — {memBlocker.count} still billing
                   </div>
-                  <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>Cancel each client's subscription. This stops their recurring charge in Stripe.</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 8 }}>Cancel each client's subscription. This stops their recurring charge in Stripe.</div>
                   {members.map(m => (
                     <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', border: '1px solid #fee2e2', borderRadius: 8, marginBottom: 6 }}>
                       <div style={{ fontSize: 12 }}>
-                        <div style={{ fontWeight: 600, color: '#1a1a1a' }}>{m.clientName || 'Member'}</div>
-                        <div style={{ color: '#999', fontSize: 11 }}>{m.planName} · ${Number(m.price || 0).toFixed(0)}/{m.billingPeriod === 'yearly' ? 'yr' : 'mo'}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--pn-text)' }}>{m.clientName || 'Member'}</div>
+                        <div style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>{m.planName} · ${Number(m.price || 0).toFixed(0)}/{m.billingPeriod === 'yearly' ? 'yr' : 'mo'}</div>
                       </div>
                       <button onClick={() => cancelMember(m.id)} disabled={!!busy}
                         style={{ background: busy === m.id ? '#ccc' : '#ef4444', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
@@ -4089,10 +4089,10 @@ function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
                 </div>
               )}
               {moduleBlockers.map(b => (
-                <div key={b.moduleId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid #e5e7eb', borderRadius: 8, marginBottom: 8 }}>
+                <div key={b.moduleId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', border: '1px solid var(--pn-border)', borderRadius: 8, marginBottom: 8 }}>
                   <div style={{ fontSize: 13 }}>
-                    <div style={{ fontWeight: 600, color: '#1a1a1a' }}>{b.label}</div>
-                    <div style={{ color: '#999', fontSize: 11 }}>{b.reason}</div>
+                    <div style={{ fontWeight: 600, color: 'var(--pn-text)' }}>{b.label}</div>
+                    <div style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>{b.reason}</div>
                   </div>
                   <button onClick={() => turnOff(b.moduleId)} disabled={!!busy}
                     style={{ background: busy === b.moduleId ? '#ccc' : '#6b7280', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
@@ -4104,8 +4104,8 @@ function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
           )}
           {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 10 }}>{error}</div>}
         </div>
-        <div style={{ padding: '14px 18px', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #d1d5db', background: '#fff', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+        <div style={{ padding: '14px 18px', borderTop: '1px solid var(--pn-border)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
           <button onClick={confirmDowngrade} disabled={!ready || busy === 'confirm'}
             style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: ready ? tier.color : '#d1d5db', color: '#fff', fontSize: 13, fontWeight: 700, cursor: ready && busy !== 'confirm' ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
             {busy === 'confirm' ? 'Downgrading…' : `Downgrade to ${tier.label}`}
@@ -4143,7 +4143,7 @@ function IntegrityBadge({ onJumpToTrash }) {
     green:  { bg: '#f0fdf4', fg: '#16a34a', label: '✓' },
     yellow: { bg: '#fffbeb', fg: '#b45309', label: '⚠' },
     red:    { bg: '#fef2f2', fg: '#dc2626', label: '⚠' },
-    gray:   { bg: '#f5f5f5', fg: '#888',    label: '?' },
+    gray:   { bg: 'var(--pn-surface-alt)', fg: 'var(--pn-text-muted)',    label: '?' },
   };
   const c = colors[overall] || colors.gray;
   const title = report
@@ -4169,12 +4169,12 @@ function IntegrityReportModal({ report, onClose, onJumpToTrash }) {
       <div onClick={onClose}
         style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
         <div onClick={e => e.stopPropagation()}
-          style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 480, padding: 24 }}>
+          style={{ background: 'var(--pn-surface)', borderRadius: 14, width: '100%', maxWidth: 480, padding: 24 }}>
           <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Integrity report</div>
-          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
             No scan has run yet. The <code>runIntegrityScan</code> cron runs nightly at 4am ET and writes a report doc the next morning.
           </div>
-          <button onClick={onClose} style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
+          <button onClick={onClose} style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: 'pointer', fontFamily: 'inherit' }}>Close</button>
         </div>
       </div>
     );
@@ -4184,13 +4184,13 @@ function IntegrityReportModal({ report, onClose, onJumpToTrash }) {
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '85vh', overflow: 'auto' }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #eee', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        style={{ background: 'var(--pn-surface)', borderRadius: 14, width: '100%', maxWidth: 600, maxHeight: '85vh', overflow: 'auto' }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Integrity report — {report.overall?.toUpperCase()}</div>
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Scanned {new Date(report.ranAt).toLocaleString()}</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>Scanned {new Date(report.ranAt).toLocaleString()}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#888' }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--pn-text-muted)' }}>×</button>
         </div>
         <div style={{ padding: '12px 20px' }}>
           <IntegrityCheckRow name="data/usersFull sync" check={checks.usersFullSync} renderDetail={c => `${c.staffEmails} staff in slim projection, ${c.usersFullStaff} in rich array`} />
@@ -4198,7 +4198,7 @@ function IntegrityReportModal({ report, onClose, onJumpToTrash }) {
           <IntegrityCheckRow name="Orphaned receipts" check={checks.orphanedReceipts} renderDetail={c => `${c.orphaned}/${c.total} (${c.pct}%) reference missing appointments`} sampleKey="receiptId" />
           <IntegrityCheckRow name="Employees without comp" check={checks.employeesWithoutComp} renderDetail={c => `${c.missing}/${c.total} (${c.pct}%) active employees missing tax/payroll info`} sampleKey="name" />
           <IntegrityCheckRow name="Stale tombstones" check={checks.staleTombstones} renderDetail={c => c.total === 0 ? 'All purged on schedule' : `${c.total} tombstones older than 35 days — purge cron may not be running`} />
-          <div style={{ marginTop: 16, padding: 10, fontSize: 11, color: '#666', background: '#fafafa', borderRadius: 8, lineHeight: 1.55 }}>
+          <div style={{ marginTop: 16, padding: 10, fontSize: 11, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', borderRadius: 8, lineHeight: 1.55 }}>
             For specific deleted records, use the <button onClick={() => { onClose(); onJumpToTrash?.(); }} style={{ background: 'none', border: 'none', color: '#3D95CE', cursor: 'pointer', padding: 0, font: 'inherit' }}>Trash tab</button> or each detail view's ⏳ History button. Scanner runs nightly at 4am ET.
           </div>
         </div>
@@ -4218,14 +4218,14 @@ function IntegrityCheckRow({ name, check, renderDetail, sampleKey }) {
   return (
     <div style={{ padding: '10px 12px', marginBottom: 8, background: c.bg, borderRadius: 8, border: `1px solid ${c.fg}33` }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{name}</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{name}</div>
         <div style={{ fontSize: 11, fontWeight: 700, color: c.fg, textTransform: 'uppercase' }}>{check.status}</div>
       </div>
-      <div style={{ fontSize: 11, color: '#555', marginTop: 4 }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
         {check.error ? `Error: ${check.error}` : (renderDetail ? renderDetail(check) : JSON.stringify(check))}
       </div>
       {check.sample && check.sample.length > 0 && (
-        <div style={{ fontSize: 10, color: '#888', marginTop: 4, fontFamily: 'monospace' }}>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginTop: 4, fontFamily: 'monospace' }}>
           Sample: {check.sample.slice(0, 5).map(s => sampleKey ? s[sampleKey] : s.apptId || s.receiptId || s.empId || s.name).filter(Boolean).join(', ')}
         </div>
       )}
@@ -4235,7 +4235,7 @@ function IntegrityCheckRow({ name, check, renderDetail, sampleKey }) {
 
 function PlanBadge({ p }) {
   const colors = { starter: ['#f0fdf4','#16a34a'], pro: ['#eff6ff','#2563eb'], enterprise: ['#faf5ff','#7c3aed'] };
-  const [bg, c] = colors[p] || ['#f5f5f5','#888'];
+  const [bg, c] = colors[p] || ['var(--pn-surface-alt)','var(--pn-text-muted)'];
   return <span style={{ background: bg, color: c, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase' }}>{p}</span>;
 }
 

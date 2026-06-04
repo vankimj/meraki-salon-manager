@@ -52,7 +52,7 @@ function MigratePath({ onboarding, onAdvance, saving }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         Bring your existing clients, appointment history, and revenue records in via CSV.
         Pick where you're migrating from — we'll show the right importer.
       </div>
@@ -67,14 +67,14 @@ function MigratePath({ onboarding, onAdvance, saving }) {
 
       {picked?.supported && (
         <Section title="GlossGenius import">
-          <div style={{ padding: 14, borderRadius: 10, background: '#f8f9fa', border: '1px solid #e8e8e8', fontSize: 13, color: '#555', lineHeight: 1.55, marginBottom: 14 }}>
+          <div style={{ padding: 14, borderRadius: 10, background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 14 }}>
             <strong>Export steps (open GlossGenius in another tab):</strong>
             <ol style={{ margin: '6px 0 0 18px', padding: 0 }}>
               <li>Reports → Exports → download <strong>Clients</strong> CSV</li>
               <li>Reports → Exports → download <strong>Payment Details</strong> CSV</li>
               <li>Reports → Exports → download <strong>Checkout Line Items</strong> CSV</li>
             </ol>
-            <div style={{ marginTop: 8, fontSize: 12, color: '#888' }}>
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--pn-text-faint)' }}>
               The importer dedupes by name (clients) and by GlossGenius Transaction ID (receipts),
               so re-running it is safe.
             </div>
@@ -127,12 +127,12 @@ function SourceCard({ src, selected, onClick }) {
     <button onClick={onClick} type="button"
       style={{
         textAlign: 'left', padding: '10px 12px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : '#e5e5e5'}`,
-        borderRadius: 10, background: selected ? '#f5efff' : '#fff', cursor: 'pointer',
+        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        borderRadius: 10, background: selected ? '#f5efff' : 'var(--pn-surface)', cursor: 'pointer',
         fontFamily: 'inherit', position: 'relative',
       }}>
       <div style={{ fontSize: 18 }}>{src.icon}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginTop: 2 }}>{src.label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginTop: 2 }}>{src.label}</div>
       {!src.supported && (
         <div style={{ position: 'absolute', top: 6, right: 8, fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fde68a', padding: '1px 6px', borderRadius: 6, letterSpacing: '.06em' }}>
           SOON
@@ -197,7 +197,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         We'll seed a starter service menu so you have something to book against. Edit or delete
         any of it anytime from <strong>Services</strong>.
       </div>
@@ -209,7 +209,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
               onClick={() => t.supported && setTemplateId(t.id)} />
           ))}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8 }}>
           Hair / Brows / Massage templates are placeholders today — you'll likely want to customize heavily.
         </div>
       </Section>
@@ -221,7 +221,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
               ✓ {importedCount} services imported. You can re-run if you picked a different template.
             </div>
           ) : (
-            <div style={{ padding: 12, borderRadius: 8, background: '#f8f9fa', border: '1px solid #e8e8e8', fontSize: 13, color: '#555' }}>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', fontSize: 13, color: 'var(--pn-text-muted)' }}>
               Click <strong>Seed services</strong> below to import the template. Existing services aren't deleted — new ones are added on top.
             </div>
           )}
@@ -252,15 +252,15 @@ function TemplateCard({ t, selected, onClick }) {
     <button onClick={onClick} type="button" disabled={!t.supported}
       style={{
         textAlign: 'left', padding: '12px 14px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : '#e5e5e5'}`,
-        borderRadius: 10, background: selected ? '#f5efff' : '#fff',
+        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        borderRadius: 10, background: selected ? '#f5efff' : 'var(--pn-surface)',
         cursor: t.supported ? 'pointer' : 'not-allowed',
         opacity: t.supported ? 1 : 0.55,
         fontFamily: 'inherit', position: 'relative',
       }}>
       <div style={{ fontSize: 18 }}>{t.icon}</div>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginTop: 2 }}>{t.label}</div>
-      <div style={{ fontSize: 11, color: '#666', marginTop: 2, lineHeight: 1.4 }}>{t.desc}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginTop: 2 }}>{t.label}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.4 }}>{t.desc}</div>
       {!t.supported && (
         <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fde68a', padding: '1px 6px', borderRadius: 6, letterSpacing: '.06em' }}>
           SOON
@@ -280,4 +280,4 @@ function Section({ title, children }) {
 }
 
 const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

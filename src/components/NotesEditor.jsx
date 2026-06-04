@@ -69,7 +69,7 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
     } catch { return iso; }
   }
 
-  const inp = { width: '100%', boxSizing: 'border-box', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.5 };
+  const inp = { width: '100%', boxSizing: 'border-box', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '7px 10px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.5 };
 
   return (
     <div>
@@ -94,7 +94,7 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
               Save note
             </button>
           </div>
-          <div style={{ fontSize: 10, color: '#888', marginTop: 4, textAlign: 'right' }}>⌘↵ to save · esc to cancel</div>
+          <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginTop: 4, textAlign: 'right' }}>⌘↵ to save · esc to cancel</div>
         </div>
       )}
 
@@ -129,13 +129,13 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
       )}
 
       {list.length === 0 && !hasLegacy && (
-        <div style={{ padding: '8px 10px', fontSize: 12, color: '#aaa', textAlign: 'center', fontStyle: 'italic' }}>
+        <div style={{ padding: '8px 10px', fontSize: 12, color: 'var(--pn-text-faint)', textAlign: 'center', fontStyle: 'italic' }}>
           No notes yet.
         </div>
       )}
 
       {list.map((e, i) => (
-        <div key={i} style={{ marginBottom: 6, padding: '8px 10px', borderRadius: 8, background: e.soap ? '#fafaff' : '#fafafa', border: `1px solid ${e.soap ? '#e0e7ff' : '#f0f0f0'}` }}>
+        <div key={i} style={{ marginBottom: 6, padding: '8px 10px', borderRadius: 8, background: e.soap ? '#fafaff' : 'var(--pn-bg)', border: `1px solid ${e.soap ? '#e0e7ff' : 'var(--pn-border)'}` }}>
           {e.soap ? (
             <div>
               <div style={{ fontSize: 9, fontWeight: 700, color: '#4338ca', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 4 }}>SOAP</div>
@@ -147,16 +147,16 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
               ) : null)}
             </div>
           ) : (
-            <div style={{ fontSize: 13, color: '#1a1a1a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{e.text}</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{e.text}</div>
           )}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: '#999' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4, fontSize: 10, color: 'var(--pn-text-faint)' }}>
             <span>
               {e.createdAt ? fmt(e.createdAt) : ''}
               {e.author ? ` · ${e.author}` : ''}
             </span>
             {!viewOnly && (
               <button onClick={() => deleteEntry(i)} title="Delete note"
-                style={{ border: 'none', background: 'none', color: '#aaa', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 4px' }}>
+                style={{ border: 'none', background: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 4px' }}>
                 ×
               </button>
             )}
@@ -166,7 +166,7 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
 
       {hasLegacy && (
         <div style={{ marginBottom: 6, padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px dashed #fde68a' }}>
-          <div style={{ fontSize: 13, color: '#1a1a1a', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{legacy}</div>
+          <div style={{ fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{legacy}</div>
           <div style={{ marginTop: 4, fontSize: 10, color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 700 }}>Older note · pre-log</div>
         </div>
       )}
@@ -184,11 +184,11 @@ function SoapField({ label, hint, value, onChange, autoFocus }) {
         onChange={e => onChange(e.target.value)}
         rows={2}
         placeholder={hint}
-        style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d8d8d8', borderRadius: 6, padding: '6px 9px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.4, resize: 'vertical' }}
+        style={{ width: '100%', boxSizing: 'border-box', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '6px 9px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.4, resize: 'vertical' }}
       />
     </div>
   );
 }
 
-const btnSecondary = { fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 };
+const btnSecondary = { fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 };
 const btnPrimary   = { fontSize: 12, padding: '6px 12px', borderRadius: 6, border: 'none', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 };
