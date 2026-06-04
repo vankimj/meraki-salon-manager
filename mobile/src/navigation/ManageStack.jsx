@@ -41,7 +41,7 @@ export default function ManageStack() {
       screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: '#2D7A5F' }}
     >
       <Stack.Screen name="ManageGrid"  component={ManageGridScreen}
-        options={{ headerTitle: () => <HeaderTitle title="Manage" /> }} />
+        options={{ title: 'Manage', headerTitle: () => <HeaderTitle title="Manage" /> }} />
 
       <Stack.Screen name="Services"    component={ServicesScreen}
         options={{ headerTitle: () => <HeaderTitle title="Services" /> }} />
@@ -78,7 +78,7 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />
 
       <Stack.Screen name="AdminHome" component={AdminHomeScreen}
-        options={{ headerTitle: () => <HeaderTitle title="Admin" /> }} />
+        options={{ title: 'Admin', headerTitle: () => <HeaderTitle title="Admin" /> }} />
       <Stack.Screen name="AdminLogs" component={AdminLogsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Activity Log" /> }} />
       <Stack.Screen name="AdminSettings" component={AdminSettingsScreen}

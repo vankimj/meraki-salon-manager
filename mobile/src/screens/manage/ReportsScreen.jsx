@@ -1,44 +1,77 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform } from 'react-native';
+import Svg, { Rect } from 'react-native-svg';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../../lib/firestore';
-import { buildTransactions, computeMetrics } from '../../lib/metrics';
+import { buildTransactions, computeMetrics, computeCancellations } from '../../lib/metrics';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useTrashHeader from '../../hooks/useTrashHeader';
 
-const GREEN = '#2D7A5F';
+const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 const PERIODS = [{ days: 0, label: 'Today' }, { days: 7, label: '7d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }];
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+const isoDay = (d) => d.toISOString().slice(0, 10);
 
-function rangeFor(days) {
-  const end = new Date();
-  const start = new Date();
+function presetRange(days) {
+  const end = new Date(), start = new Date();
   start.setDate(start.getDate() - days);
-  const iso = (d) => d.toISOString().slice(0, 10);
-  return { startDate: iso(start), endDate: iso(end) };
+  return { startDate: isoDay(start), endDate: isoDay(end) };
 }
 
-// Read-only revenue dashboard. Reuses the web's pure metrics (computeMetrics
-// / buildTransactions, copied verbatim to mobile/src/lib/metrics.js). The AI
-// assistant + PDF export stay web-only for now.
+// Revenue-by-day bar chart (react-native-svg — already a dep, no native add).
+function RevenueChart({ byDay }) {
+  const entries = Object.entries(byDay || {}).sort((a, b) => a[0].localeCompare(b[0]));
+  if (entries.length === 0) return null;
+  const max = Math.max(...entries.map(e => e[1]), 1);
+  const W = Dimensions.get('window').width - 60;
+  const H = 120, gap = entries.length > 40 ? 1 : 2;
+  const bw = Math.max(2, (W - gap * (entries.length - 1)) / entries.length);
+  return (
+    <View style={styles.chartCard}>
+      <Svg width={W} height={H}>
+        {entries.map(([date, rev], i) => {
+          const h = Math.max(1, (rev / max) * (H - 6));
+          return <Rect key={date} x={i * (bw + gap)} y={H - h} width={bw} height={h} rx={1} fill={GREEN} />;
+        })}
+      </Svg>
+      <View style={styles.chartAxis}>
+        <Text style={styles.axisText}>{entries[0][0].slice(5)}</Text>
+        <Text style={styles.axisText}>peak {money(max)}/day</Text>
+        <Text style={styles.axisText}>{entries[entries.length - 1][0].slice(5)}</Text>
+      </View>
+    </View>
+  );
+}
+
+// Read-only revenue dashboard. Reuses the web's pure metrics. AI assistant +
+// PDF/1099 export stay web-only.
 export default function ReportsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
   useTrashHeader(navigation, ['receipts'], isAdmin);
   const [days, setDays]       = useState(30);
+  const [custom, setCustom]   = useState(false);
+  const [cStart, setCStart]   = useState(presetRange(30).startDate);
+  const [cEnd, setCEnd]       = useState(presetRange(0).endDate);
+  const [picker, setPicker]   = useState(null); // 'start' | 'end' | null
   const [metrics, setMetrics] = useState(null);
+  const [cancels, setCancels] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { startDate, endDate } = rangeFor(days);
+      const { startDate, endDate } = range;
       const [receipts, appts] = await Promise.all([
         fetchReceiptsByRange(startDate, endDate).catch(() => []),
         fetchAppointmentsByRange(startDate, endDate).catch(() => []),
       ]);
       setMetrics(computeMetrics(buildTransactions(receipts, appts)));
-    } catch { setMetrics(null); }
+      setCancels(computeCancellations(appts, receipts));
+    } catch { setMetrics(null); setCancels(null); }
     finally { setLoading(false); }
-  }, [days]);
+  }, [custom, days, cStart, cEnd]);
   useEffect(() => { load(); }, [load]);
 
   const techs = metrics ? Object.entries(metrics.byTech).map(([name, t]) => ({ name, ...t })).sort((a, b) => b.revenue - a.revenue) : [];
@@ -49,11 +82,34 @@ export default function ReportsScreen({ navigation }) {
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}>
       <View style={styles.tabs}>
         {PERIODS.map(p => (
-          <TouchableOpacity key={p.label} onPress={() => setDays(p.days)} style={[styles.tab, days === p.days && styles.tabOn]}>
-            <Text style={[styles.tabText, days === p.days && styles.tabTextOn]}>{p.label}</Text>
+          <TouchableOpacity key={p.label} onPress={() => { setCustom(false); setDays(p.days); }} style={[styles.tab, !custom && days === p.days && styles.tabOn]}>
+            <Text style={[styles.tabText, !custom && days === p.days && styles.tabTextOn]}>{p.label}</Text>
           </TouchableOpacity>
         ))}
+        <TouchableOpacity onPress={() => setCustom(true)} style={[styles.tab, custom && styles.tabOn]}>
+          <Text style={[styles.tabText, custom && styles.tabTextOn]}>Custom</Text>
+        </TouchableOpacity>
       </View>
+
+      {custom && (
+        <View style={styles.rangeRow}>
+          <TouchableOpacity style={styles.dateBtn} onPress={() => setPicker('start')}><Text style={styles.dateText}>{cStart}</Text></TouchableOpacity>
+          <Text style={styles.dash}>→</Text>
+          <TouchableOpacity style={styles.dateBtn} onPress={() => setPicker('end')}><Text style={styles.dateText}>{cEnd}</Text></TouchableOpacity>
+        </View>
+      )}
+      {picker && (
+        <DateTimePicker
+          value={new Date((picker === 'start' ? cStart : cEnd) + 'T12:00:00')}
+          mode="date"
+          maximumDate={new Date()}
+          onChange={(e, d) => {
+            if (Platform.OS !== 'ios') setPicker(null);
+            if (d) { picker === 'start' ? setCStart(isoDay(d)) : setCEnd(isoDay(d)); }
+            if (Platform.OS === 'ios' && e.type === 'set') setPicker(null);
+          }}
+        />
+      )}
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={GREEN} /></View>
@@ -67,6 +123,21 @@ export default function ReportsScreen({ navigation }) {
             <Kpi label="Avg ticket" value={money(metrics.avgTicket)} />
             <Kpi label="Tips" value={money(metrics.tipTotal)} />
           </View>
+
+          <Text style={styles.section}>Revenue per day</Text>
+          <RevenueChart byDay={metrics.byDay} />
+
+          {!!cancels && (cancels.cancelCount > 0 || cancels.lostRevenue > 0) && (
+            <>
+              <Text style={styles.section}>Cancellations</Text>
+              <View style={styles.kpis}>
+                <Kpi label="Cancelled" value={cancels.cancelCount || 0} />
+                <Kpi label="Cancel rate" value={`${Math.round((cancels.cancelRate || 0) * 100)}%`} />
+                <Kpi label="Lost revenue" value={money(cancels.lostRevenue)} />
+                <Kpi label="No-shows" value={cancels.noShowCount || 0} />
+              </View>
+            </>
+          )}
 
           <Text style={styles.section}>Tech leaderboard</Text>
           {techs.map((t, i) => (
@@ -83,10 +154,7 @@ export default function ReportsScreen({ navigation }) {
           <Text style={styles.section}>Top services</Text>
           {services.map(s => (
             <View key={s.name} style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{s.name}</Text>
-                <Text style={styles.sub}>{s.count}×</Text>
-              </View>
+              <View style={{ flex: 1 }}><Text style={styles.name}>{s.name}</Text><Text style={styles.sub}>{s.count}×</Text></View>
               <Text style={styles.amount}>{money(s.revenue)}</Text>
             </View>
           ))}
@@ -99,7 +167,7 @@ export default function ReportsScreen({ navigation }) {
               <Text style={[styles.amount, { marginLeft: 10 }]}>{money(metrics.byMethod[m].total)}</Text>
             </View>
           ))}
-          <Text style={styles.note}>Full Reports (filters, AI assistant, PDF/1099 export) are on the web app.</Text>
+          <Text style={styles.note}>AI assistant + PDF/1099 export are on the web app.</Text>
         </>
       )}
     </ScrollView>
@@ -119,11 +187,18 @@ const styles = StyleSheet.create({
   wrap:     { flex: 1, backgroundColor: '#f5f7fa' },
   center:   { paddingVertical: 60, alignItems: 'center' },
   empty:    { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
-  tabs:     { flexDirection: 'row', gap: 6, marginBottom: 14 },
+  tabs:     { flexDirection: 'row', gap: 6, marginBottom: 12 },
   tab:      { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#ececec' },
   tabOn:    { backgroundColor: '#eef5f2', borderColor: GREEN },
-  tabText:  { fontSize: 13, fontWeight: '700', color: '#888' },
+  tabText:  { fontSize: 12.5, fontWeight: '700', color: '#888' },
   tabTextOn:{ color: GREEN },
+  rangeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 },
+  dateBtn:  { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d8d8d8', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9 },
+  dateText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
+  dash:     { color: '#888', fontSize: 15 },
+  chartCard:{ backgroundColor: '#fff', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#ececec' },
+  chartAxis:{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  axisText: { fontSize: 10.5, color: '#aaa' },
   kpis:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
   kpi:      { width: '48%', backgroundColor: '#fff', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#ececec' },
   kpiBig:   { backgroundColor: '#eef5f2', borderColor: GREEN },
