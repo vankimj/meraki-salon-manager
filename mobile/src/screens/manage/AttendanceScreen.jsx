@@ -55,6 +55,12 @@ export default function AttendanceScreen() {
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
 
+  const entries   = Object.values(byEmp);
+  const present   = entries.filter(e => e.clockInAt).length;
+  const stillIn   = entries.filter(e => e.clockInAt && !e.clockOutAt).length;
+  const workedHrs = entries.reduce((s, e) => s + (Number(hoursWorked(e)) || 0), 0);
+  const absent    = Math.max(0, emps.length - present);
+
   return (
     <View style={styles.wrap}>
       <View style={styles.dateBar}>
@@ -64,6 +70,13 @@ export default function AttendanceScreen() {
           {dateKey === todayKey() ? '  · Today' : ''}
         </Text>
         <TouchableOpacity onPress={() => setDateKey(k => shiftKey(k, 1))} style={styles.navBtn}><Text style={styles.navText}>›</Text></TouchableOpacity>
+      </View>
+
+      <View style={styles.kpiBar}>
+        <Kpi value={workedHrs.toFixed(1)} label="Worked hrs" />
+        <Kpi value={present} label="Present" />
+        <Kpi value={stillIn} label="Clocked in" />
+        <Kpi value={absent} label="Absent" />
       </View>
 
       <FlatList
@@ -100,8 +113,21 @@ export default function AttendanceScreen() {
   );
 }
 
+function Kpi({ value, label }) {
+  return (
+    <View style={styles.kpiCell}>
+      <Text style={styles.kpiVal}>{value}</Text>
+      <Text style={styles.kpiLab}>{label}</Text>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   wrap:    { flex: 1, backgroundColor: '#f5f7fa' },
+  kpiBar:  { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ececec', paddingVertical: 12 },
+  kpiCell: { flex: 1, alignItems: 'center' },
+  kpiVal:  { fontSize: 19, fontWeight: '800', color: '#2D7A5F' },
+  kpiLab:  { fontSize: 10.5, color: '#999', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
   dateBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#ececec' },
   navBtn:  { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f3f5' },
