@@ -11,6 +11,7 @@ import GiftCardsScreen     from '../screens/manage/GiftCardsScreen';
 import MembershipsScreen   from '../screens/manage/MembershipsScreen';
 import EmployeesScreen     from '../screens/manage/EmployeesScreen';
 import MeetingsScreen      from '../screens/manage/MeetingsScreen';
+import WalkinScreen        from '../screens/manage/WalkinScreen';
 import TrashScreen         from '../screens/manage/TrashScreen';
 import AdminHomeScreen     from '../screens/admin/AdminHomeScreen';
 import AdminLogsScreen     from '../screens/admin/AdminLogsScreen';
@@ -18,6 +19,9 @@ import AdminSettingsScreen from '../screens/admin/AdminSettingsScreen';
 import AdminUsersScreen    from '../screens/admin/AdminUsersScreen';
 import AdminFeedbackScreen from '../screens/admin/AdminFeedbackScreen';
 import AdminIntegrityScreen from '../screens/admin/AdminIntegrityScreen';
+import AdminNotifsScreen   from '../screens/admin/AdminNotifsScreen';
+import AdminReviewsScreen  from '../screens/admin/AdminReviewsScreen';
+import AdminOnboardingScreen from '../screens/admin/AdminOnboardingScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -46,6 +50,8 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Employees" /> }} />
       <Stack.Screen name="Meetings" component={MeetingsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Meetings" /> }} />
+      <Stack.Screen name="Walkin" component={WalkinScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Walk-in Kiosk" /> }} />
 
       <Stack.Screen name="ManageChat"  component={ChatScreen}
         options={{ headerTitle: () => <HeaderTitle title="Messages" /> }} />
@@ -70,6 +76,12 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Feedback" /> }} />
       <Stack.Screen name="AdminIntegrity" component={AdminIntegrityScreen}
         options={{ headerTitle: () => <HeaderTitle title="Data Integrity" /> }} />
+      <Stack.Screen name="AdminNotifs" component={AdminNotifsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Notifications" /> }} />
+      <Stack.Screen name="AdminReviews" component={AdminReviewsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Reviews" /> }} />
+      <Stack.Screen name="AdminOnboarding" component={AdminOnboardingScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Onboarding" /> }} />
     </Stack.Navigator>
   );
 }

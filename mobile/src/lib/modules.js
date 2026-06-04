@@ -79,7 +79,7 @@ export const MOBILE_MODULE_META = {
   giftcards:   { icon: 'gift',      screen: 'GiftCards' },
   memberships: { icon: 'star',      screen: 'Memberships' },
   employees:   { icon: 'idcard',    screen: 'Employees' },
-  walkin:      { icon: 'walk',      screen: null },
+  walkin:      { icon: 'walk',      screen: 'Walkin' },
   meetings:    { icon: 'users',     screen: 'Meetings' },
   reports:     { icon: 'chart',     screen: null },
   marketing:   { icon: 'megaphone', screen: null },
