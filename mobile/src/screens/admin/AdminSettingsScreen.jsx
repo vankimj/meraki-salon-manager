@@ -1,45 +1,56 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Switch, Alert } from 'react-native';
 import { fetchSettings, updateSettings } from '../../lib/firestore';
 
-const GREEN = '#2D7A5F';
-const BLUE  = '#3D95CE';
+const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 const RECEIPT_MODES = [
-  { value: 'auto',  label: 'Auto' }, { value: 'email', label: 'Email' },
-  { value: 'sms',   label: 'SMS' },  { value: 'both',  label: 'Both' },
+  { value: 'auto', label: 'Auto' }, { value: 'email', label: 'Email' },
+  { value: 'sms',  label: 'SMS' },  { value: 'both',  label: 'Both' },
 ];
 
-// Wave-1 mobile Settings: the most-used editable settings (auto-logout,
-// sales tax, receipt delivery) + read-only plan/salon. The web Settings
-// tab's 40+ sections come to mobile in later waves.
+// Field-driven settings editor — the most-used editable settings. The full
+// web Settings catalog (booking flow, themes, geo check-in, Stripe, demo
+// data, etc.) stays on web; these are the day-to-day ones.
+const FIELDS = [
+  { key: 'timeoutMin',     label: 'Auto sign-out (minutes)', type: 'number', def: 5 },
+  { key: 'taxRate',        label: 'Sales tax rate (%)',      type: 'number', def: 0 },
+  { key: 'ccFeePct',       label: 'Card fee (%)',            type: 'number', def: 0 },
+  { key: 'ccFeeFlat',      label: 'Card fee (flat $)',       type: 'number', def: 0 },
+  { key: 'removalPrice',   label: 'Removal service price ($)', type: 'number', def: 0 },
+  { key: 'noCardTips',     label: 'Disable tips on card',    type: 'bool' },
+  { key: 'googleReviewUrl',label: 'Google review URL',       type: 'text' },
+  { key: 'ein',            label: 'Business EIN',            type: 'text' },
+];
+
 export default function AdminSettingsScreen() {
   const [settings, setSettings] = useState(null);
-  const [timeoutMin, setTimeoutMin] = useState('');
-  const [taxRate,    setTaxRate]    = useState('');
-  const [receipt,    setReceipt]    = useState('auto');
-  const [saving,     setSaving]     = useState(false);
+  const [draft,    setDraft]    = useState({});
+  const [receipt,  setReceipt]  = useState('auto');
+  const [saving,   setSaving]   = useState(false);
 
   const load = useCallback(async () => {
-    const s = await fetchSettings().catch(() => ({}));
-    setSettings(s || {});
-    setTimeoutMin(String(s?.timeoutMin ?? 5));
-    setTaxRate(String(s?.taxRate ?? 0));
-    setReceipt(s?.receiptDelivery || 'auto');
+    const s = await fetchSettings().catch(() => ({})) || {};
+    setSettings(s);
+    const d = {};
+    FIELDS.forEach(f => { d[f.key] = f.type === 'bool' ? !!s[f.key] : (s[f.key] ?? f.def ?? ''); });
+    setDraft(d);
+    setReceipt(s.receiptDelivery || 'auto');
   }, []);
   useEffect(() => { load(); }, [load]);
 
   async function save() {
     setSaving(true);
     try {
-      await updateSettings({
-        timeoutMin: Number(timeoutMin) || 5,
-        taxRate: Number(taxRate) || 0,
-        receiptDelivery: receipt,
+      const payload = { receiptDelivery: receipt };
+      FIELDS.forEach(f => {
+        if (f.type === 'number') payload[f.key] = Number(draft[f.key]) || 0;
+        else if (f.type === 'bool') payload[f.key] = !!draft[f.key];
+        else payload[f.key] = draft[f.key] || '';
       });
+      await updateSettings(payload);
       Alert.alert('Saved', 'Settings updated.');
-    } catch (e) {
-      Alert.alert('Couldn\'t save', e?.message || 'Please try again.');
-    } finally { setSaving(false); }
+    } catch (e) { Alert.alert('Couldn\'t save', e?.message || 'Please try again.'); }
+    finally { setSaving(false); }
   }
 
   if (settings === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
@@ -54,12 +65,22 @@ export default function AdminSettingsScreen() {
       </View>
 
       <Text style={styles.section}>Editable</Text>
-
-      <Text style={styles.fieldLabel}>Auto sign-out (minutes)</Text>
-      <TextInput style={styles.input} value={timeoutMin} onChangeText={setTimeoutMin} keyboardType="number-pad" />
-
-      <Text style={styles.fieldLabel}>Sales tax rate (%)</Text>
-      <TextInput style={styles.input} value={taxRate} onChangeText={setTaxRate} keyboardType="decimal-pad" />
+      {FIELDS.map(f => (
+        <View key={f.key}>
+          <Text style={styles.fieldLabel}>{f.label}</Text>
+          {f.type === 'bool' ? (
+            <Switch value={!!draft[f.key]} onValueChange={v => setDraft({ ...draft, [f.key]: v })} trackColor={{ true: GREEN }} />
+          ) : (
+            <TextInput
+              style={styles.input}
+              value={String(draft[f.key] ?? '')}
+              onChangeText={v => setDraft({ ...draft, [f.key]: v })}
+              keyboardType={f.type === 'number' ? 'decimal-pad' : 'default'}
+              autoCapitalize="none"
+            />
+          )}
+        </View>
+      ))}
 
       <Text style={styles.fieldLabel}>Receipt delivery</Text>
       <View style={styles.chips}>
@@ -76,6 +97,7 @@ export default function AdminSettingsScreen() {
       <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save settings'}</Text>
       </TouchableOpacity>
+      <Text style={styles.note}>Booking flow, themes, geo check-in, payments & demo data are on the web app.</Text>
     </ScrollView>
   );
 }
@@ -96,4 +118,5 @@ const styles = StyleSheet.create({
   chipTextOn:{ color: GREEN, fontWeight: '800' },
   saveBtn:   { marginTop: 24, backgroundColor: BLUE, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   saveText:  { color: '#fff', fontWeight: '800', fontSize: 15 },
+  note:      { fontSize: 12, color: '#aaa', marginTop: 14, lineHeight: 17 },
 });
