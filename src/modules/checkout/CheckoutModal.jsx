@@ -49,6 +49,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const ccFeePct   = Number(settings.ccFeePct ?? 0);
   const ccFeeFlat  = Number(settings.ccFeeFlat ?? 0);
   const noCardTips = !!settings.noCardTips;
+  // Cards can only be taken once the salon's Stripe Connect account can accept
+  // charges (createPaymentIntent routes funds there and refuses otherwise).
+  const connectReady = !!settings?.stripeConnect?.chargesEnabled;
   // Backward-compat: if a single `appt` prop is passed, normalize to an array.
   const appts = apptsProp || (appt ? [appt] : []);
   const isWalkInRetail = appts.length === 0;
@@ -104,7 +107,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [tip,          setTip]          = useState('');     // dollar amount when customTip is on
   const [tipPct,       setTipPct]       = useState(null);    // selected percentage (null = none)
   const [customTip,    setCustomTip]    = useState(false);
-  const [method,       setMethod]       = useState(() => (typeof navigator !== 'undefined' && !navigator.onLine) ? 'cash' : 'card');
+  const [method,       setMethod]       = useState(() => {
+    const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+    return (offline || !settings?.stripeConnect?.chargesEnabled) ? 'cash' : 'card';
+  });
   const [cartItems,    setCartItems]    = useState(() => Array.isArray(initialProducts) ? initialProducts : []);
   const [allProducts,  setAllProducts]  = useState(null);
   const [showPicker,   setShowPicker]   = useState(false);
@@ -837,18 +843,27 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             )}
             <div style={{ display: 'flex', gap: 8, marginBottom: method === 'card' && stripePromise ? 10 : 0 }}>
               {PAYMENT_METHODS.map(m => {
-                const isCardOffline = !isOnline && m.id === 'card';
+                const isCardOffline   = !isOnline && m.id === 'card';
+                const isCardNotSetUp  = m.id === 'card' && isOnline && !connectReady;
+                const isCardDisabled  = isCardOffline || isCardNotSetUp;
                 return (
-                  <button key={m.id} onClick={() => { if (!isCardOffline) { setMethod(m.id); setCardError(''); } }}
-                    disabled={isCardOffline}
-                    title={isCardOffline ? 'Card requires a live network — try cash or store credit' : undefined}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : '#e0e0e0'}`, background: isCardOffline ? '#f5f5f5' : (method === m.id ? '#EBF4FB' : '#fafafa'), cursor: isCardOffline ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardOffline ? .5 : 1 }}>
+                  <button key={m.id} onClick={() => { if (!isCardDisabled) { setMethod(m.id); setCardError(''); } }}
+                    disabled={isCardDisabled}
+                    title={isCardOffline ? 'Card requires a live network — try cash or store credit'
+                         : isCardNotSetUp ? 'Set up payments first: Admin → Settings → Payments'
+                         : undefined}
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : '#e0e0e0'}`, background: isCardDisabled ? '#f5f5f5' : (method === m.id ? '#EBF4FB' : '#fafafa'), cursor: isCardDisabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardDisabled ? .5 : 1 }}>
                     <span style={{ fontSize: 20 }}>{m.icon}</span>
                     <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? '#1a5f8a' : '#888' }}>{m.label}</span>
                   </button>
                 );
               })}
             </div>
+            {isOnline && !connectReady && (
+              <div style={{ fontSize: 11, color: '#9a3412', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>
+                Card payments are off until Stripe is set up — <strong>Admin → Settings → Payments</strong>. Cash & other methods still work.
+              </div>
+            )}
             {method === 'card' && stripePromise && charged > 0 && (
               <div>
                 <div style={{ border: '1px solid #d8d8d8', borderRadius: 10, padding: '11px 12px', background: '#fafafa' }}>

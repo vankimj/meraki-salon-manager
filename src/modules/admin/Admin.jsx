@@ -761,6 +761,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
             <ModulesSection />
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
+            <StripeConnectSection onOpenWizard={onOpenWizard} />
             <UpgradeSection settings={settings} gUser={gUser} />
             <DisputesSection />
             <BackupRestoreSection />
@@ -3773,6 +3774,70 @@ const PLAN_TIERS = [
     features:['Everything in Studio', 'SMS + email comms', 'Marketing campaigns', 'HR & payroll (Gusto)', 'Membership subscriptions', 'AI chatbot on webfront'],
   },
 ];
+
+// Stripe Connect status + onboarding entry point for the Settings tab. The
+// full onboarding flow (Express/Standard picker + embedded form) lives in the
+// wizard's Money phase; this surfaces live status and deep-links there, so a
+// salon can set up / manage payments without hunting for the wizard. Card
+// checkout is gated on chargesEnabled, so this is the place that unblocks it.
+function StripeConnectSection({ onOpenWizard }) {
+  const { settings, updateSettings } = useApp();
+  const sc = settings?.stripeConnect || null;
+  const [refreshing, setRefreshing] = useState(false);
+
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const data = await callFn('getStripeConnectStatus', { tenantId: TENANT_ID });
+      if (data?.status) {
+        const s = data.status;
+        await updateSettings({ ...settings, stripeConnect: {
+          accountId: s.accountId, accountType: s.accountType,
+          chargesEnabled: s.chargesEnabled, payoutsEnabled: s.payoutsEnabled,
+          detailsSubmitted: s.detailsSubmitted, businessName: s.businessName,
+          statementDescriptor: s.statementDescriptor,
+          requirementsCurrentlyDue: s.requirementsCurrentlyDue, updatedAt: s.updatedAt,
+        } });
+      } else if (data && data.connected === false && sc) {
+        const next = { ...settings }; delete next.stripeConnect; await updateSettings(next);
+      }
+    } catch { /* keep cached status */ }
+    finally { setRefreshing(false); }
+  }
+  useEffect(() => { refresh(); /* eslint-disable-next-line */ }, []);
+
+  const connected = !!sc?.accountId;
+  const live      = !!(sc?.chargesEnabled && sc?.payoutsEnabled);
+  const dueCount  = sc?.requirementsCurrentlyDue?.length || 0;
+  const needsMore = connected && (!live || dueCount > 0 || !sc?.detailsSubmitted);
+  const badge = !connected ? { t: 'Not set up',      bg: '#f5f5f5', fg: '#888' }
+              : live       ? { t: 'Active',          bg: '#f0fdf4', fg: '#166534' }
+              :              { t: 'Setup incomplete', bg: '#fff7ed', fg: '#9a3412' };
+
+  return (
+    <Section title="💸 Payments · Stripe Connect">
+      <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 6, background: badge.bg, color: badge.fg, textTransform: 'uppercase', letterSpacing: '.04em' }}>{badge.t}</span>
+            {refreshing && <span style={{ fontSize: 11, color: '#aaa' }}>checking…</span>}
+          </div>
+          <div style={{ fontSize: 12, color: '#666', marginTop: 6, lineHeight: 1.5, maxWidth: 440 }}>
+            {!connected
+              ? 'Connect a Stripe account so card payments settle to your bank — required before you can take cards at checkout.'
+              : live
+              ? `Accepting card payments${sc.accountType ? ` · ${sc.accountType} account` : ''}. Funds settle to your Stripe.`
+              : `Your Stripe account needs a few more details before it can accept cards${dueCount ? ` (${dueCount} item${dueCount === 1 ? '' : 's'} due)` : ''}.`}
+          </div>
+        </div>
+        <button onClick={() => onOpenWizard?.('money')}
+          style={{ background: live ? '#fff' : '#635bff', color: live ? '#635bff' : '#fff', border: live ? '1px solid #d8d0f0' : 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          {!connected ? 'Set up payments →' : needsMore ? 'Finish setup →' : 'Manage →'}
+        </button>
+      </div>
+    </Section>
+  );
+}
 
 function UpgradeSection({ settings, gUser }) {
   const [loading, setLoading] = useState('');   // plan id currently loading
