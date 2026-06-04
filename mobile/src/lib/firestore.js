@@ -493,3 +493,52 @@ export async function fetchUsersFull() {
   const snap = await getDoc(tenantDoc('usersFull'));
   return snap.exists() ? (snap.data().users || []) : [];
 }
+
+// Integrity report (nightly scanner). Read-only.
+export async function fetchIntegrityReport() {
+  try { const snap = await getDoc(tenantDoc('integrityReport')); return snap.exists() ? snap.data() : null; }
+  catch { return null; }
+}
+
+// In-app feedback (bug/idea) submitted by staff. Admin triage.
+export async function fetchFeedback() {
+  const snap = await getDocs(query(tenantCol('feedback'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+export async function updateFeedbackStatus(id, status) {
+  await updateDoc(doc(tenantCol('feedback'), id), { status, updatedAt: new Date().toISOString() });
+}
+
+// ── Employees — PUBLIC fields only on mobile ───────────
+// Comp/payroll lives in employees/{id}/private/comp and is written via a
+// writeBatch split on web (data-integrity). Mobile intentionally edits
+// only the public doc (name/contact/social/active) — never comp.
+export async function createEmployee(data) {
+  const ref = await addDoc(tenantCol('employees'), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function deleteEmployee(id) {
+  await softDelete(doc(tenantCol('employees'), id));
+}
+
+// ── Meetings (Studio, admin) ───────────────────────────
+export async function fetchMeetings() {
+  const snap = await getDocs(tenantCol('meetings'));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (b.startTimestamp || b.createdAt || '').localeCompare(a.startTimestamp || a.createdAt || ''));
+}
+export async function createMeeting(data) {
+  const ref = await addDoc(tenantCol('meetings'), {
+    ...data, reminders: { sent60: false, sent15: false },
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function updateMeeting(id, data) {
+  await updateDoc(doc(tenantCol('meetings'), id), { ...data, updatedAt: new Date().toISOString() });
+}
+export async function deleteMeeting(id) {
+  await softDelete(doc(tenantCol('meetings'), id));
+}

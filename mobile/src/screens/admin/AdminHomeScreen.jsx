@@ -7,10 +7,12 @@ import useTenantAccess from '../../hooks/useTenantAccess';
 // Trash. Heavier web Admin tabs (Webfront, SMS, Onboarding, Demo Data,
 // Integrity) are coming to mobile in later waves.
 const ROWS = [
-  { key: 'AdminUsers',    icon: 'people',    label: 'Users & Roles', desc: 'Who has access and their role' },
-  { key: 'AdminSettings', icon: 'briefcase', label: 'Settings',      desc: 'Salon settings & preferences' },
-  { key: 'AdminLogs',     icon: 'clock',     label: 'Activity Log',  desc: 'Recent admin actions' },
-  { key: 'Trash',         icon: 'trash',     label: 'Trash',         desc: 'Restore anything deleted (all modules)' },
+  { key: 'AdminUsers',     icon: 'people',    label: 'Users & Roles',  desc: 'Who has access and their role' },
+  { key: 'AdminSettings',  icon: 'briefcase', label: 'Settings',       desc: 'Salon settings & preferences' },
+  { key: 'AdminLogs',      icon: 'clock',     label: 'Activity Log',   desc: 'Recent admin actions' },
+  { key: 'AdminFeedback',  icon: 'chat',      label: 'Feedback',       desc: 'Bug reports & ideas from staff' },
+  { key: 'AdminIntegrity', icon: 'check',     label: 'Data Integrity', desc: 'Nightly data-health scan' },
+  { key: 'Trash',          icon: 'trash',     label: 'Trash',          desc: 'Restore anything deleted (all modules)' },
 ];
 
 export default function AdminHomeScreen({ navigation }) {
@@ -36,7 +38,7 @@ export default function AdminHomeScreen({ navigation }) {
         </TouchableOpacity>
       ))}
       <Text style={styles.note}>
-        More admin tools (Webfront, SMS, Onboarding, Demo Data, Integrity) live on the web app and are coming to mobile.
+        More admin tools (Webfront, SMS, Onboarding, Demo Data, full Settings, role editing) live on the web app and are coming to mobile.
       </Text>
     </ScrollView>
   );
