@@ -662,6 +662,57 @@ export async function fetchSmsStatus() {
   return { sms, sandboxMode: ten.sandboxMode !== false, tfn: ten.tfn || sms?.tfn || null };
 }
 
+// ── OAuth connect (mobile) ─────────────────────────────
+// Reuses the EXISTING server-side flows: the callable mints a tenant-scoped
+// auth URL (server nonce), the web-hosted callback stores the tokens, and we
+// re-read the status afterward. No new Cloud Functions / redirect URIs.
+export async function getGoogleBusinessAuthUrl() {
+  const res = await callFn('startGoogleBusinessAuth')({ tenantId: getCurrentTenant() });
+  return res?.data?.authUrl || null;
+}
+export async function fetchGoogleBusinessAuth() {
+  const snap = await getDoc(tenantDoc('googleBusinessAuth'));
+  return snap.exists() ? snap.data() : null;
+}
+export async function getGustoAuthUrl() {
+  const res = await callFn('gustoGetAuthUrl')({ tenantId: getCurrentTenant() });
+  return res?.data?.url || null;
+}
+// Gusto connection status lives in settings.gusto (settings.gusto.accessToken).
+
+// ── Marketing SEND (opt-in gated) ──────────────────────
+// Build the recipient list with the SAME channel opt-in gating as web
+// (marketingOptOut master switch + commPreferences.marketingSms/Email;
+// legacy clients without prefs default opted-in). TCPA-sensitive — never
+// send to a client who opted out.
+export async function buildMarketingRecipients(channel) {
+  const clients = await fetchClients();
+  const channelOk = (c) => {
+    if (c.marketingOptOut) return false;
+    const cp = c.commPreferences;
+    if (!cp) return true;
+    return channel === 'sms' ? cp.marketingSms !== false : cp.marketingEmail !== false;
+  };
+  return clients
+    .filter(c => (channel === 'sms' ? c.phone : c.email) && channelOk(c))
+    .map(c => ({ clientId: c.id, name: c.name, email: c.email || null, phone: c.phone || null }));
+}
+// Create a 'pending' campaign doc → the sendSMSCampaign / sendMarketingCampaign
+// onDocumentCreated trigger delivers it. Segment is 'all' (opted-in only).
+export async function sendCampaignNow({ name, channel, smsBody, subject, body, recipients }) {
+  await addDoc(tenantCol('campaigns'), {
+    name, channel,
+    smsBody: channel === 'sms'   ? (smsBody || '') : null,
+    subject: channel === 'email' ? (subject || '') : null,
+    body:    channel === 'email' ? (body || '')    : null,
+    segmentType: 'all', segmentParams: {},
+    recipients, recipientCount: recipients.length,
+    status: 'pending', scheduleAt: null,
+    sentCount: 0, failCount: 0,
+    createdAt: new Date().toISOString(),
+  });
+}
+
 // ── Role editing — FAITHFUL port of web saveUsers (writeBatch) ──
 // Atomically writes data/usersFull (rich array) + data/users (projections)
 // in ONE batch — identical to web src/lib/firestore.js saveUsers. This is
