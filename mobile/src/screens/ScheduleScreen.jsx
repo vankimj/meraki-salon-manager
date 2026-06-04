@@ -159,6 +159,7 @@ function colorsForAppt(appt, allTechs) {
 export default function ScheduleScreen({ navigation }) {
   const { employee, techName, loading: empLoading } = useCurrentEmployee();
   const { isAdmin, canEditSchedule, email } = useTenantAccess();
+  const { isTablet } = useResponsive();
   useTrashHeader(navigation, ['appointments', 'timeOff'], isAdmin);
   const [date,    setDate]    = useState(todayStr());
   const [appts,   setAppts]   = useState([]);
@@ -354,6 +355,16 @@ export default function ScheduleScreen({ navigation }) {
       {view === 'day' && (
         (empLoading || loading) ? (
           <ActivityIndicator style={{ marginTop: 40 }} color="#3D95CE" />
+        ) : (isTablet && showAll) ? (
+          <DayGridView
+            appts={filtered}
+            allTechs={allTechs}
+            clientsById={clientsById}
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 600); }}
+            onTapAppt={(a) => setDetail(a)}
+            onTapEmpty={(startTime, tech) => setCreatePrefill({ date, startTime, techName: tech ?? '' })}
+          />
         ) : (
           <DayTimelineView
             appts={filtered}
@@ -507,6 +518,137 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
           </TouchableOpacity>
         );
       })}
+    </ScrollView>
+  );
+}
+
+// ── Day grid view (tablet · all techs) ─────────────────
+// One column per tech, web-style. Each column is an absolutely-positioned
+// timeline: free slots are tappable "+" zones, appt blocks float on top
+// sized to their duration. Time axis is fixed on the left (outside the
+// horizontal scroll) so it stays put while you scroll across techs; the
+// whole thing scrolls vertically through the 9 AM–8 PM day. Tablet-only —
+// the phone keeps the single-column DayTimelineView.
+const GRID_HEADER_H = 42;
+const GRID_COL_W    = 156;
+
+function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+  const GRID_H = SLOT_COUNT * SLOT_PX;
+  // Show every active tech as a column; fall back to whoever has appts.
+  const techs = (allTechs && allTechs.length)
+    ? allTechs
+    : Array.from(new Set(appts.map(a => a.techName).filter(Boolean)));
+
+  // Per-tech occupancy: which slot each appt starts in, and which slots
+  // it covers (so we don't draw a "+" under a booked block).
+  const byTech = useMemo(() => {
+    const m = {};
+    techs.forEach(t => { m[t] = { starts: {}, covered: {} }; });
+    appts.forEach(a => {
+      const t = a.techName || '';
+      if (!m[t]) return;
+      const startMin = hhmmToMin(a.startTime);
+      if (startMin < DAY_START_MIN || startMin >= DAY_END_MIN) return;
+      const startIdx = Math.floor((startMin - DAY_START_MIN) / SLOT_MINUTES);
+      const span = Math.max(1, Math.ceil((Number(a.duration) || 30) / SLOT_MINUTES));
+      m[t].starts[startIdx] = a;
+      for (let k = 0; k < span && startIdx + k < SLOT_COUNT; k++) m[t].covered[startIdx + k] = true;
+    });
+    return m;
+  }, [appts, techs.join('|')]);
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: '#fff' }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D95CE" />}
+    >
+      <View style={{ flexDirection: 'row' }}>
+        {/* Fixed time axis */}
+        <View style={{ width: 52 }}>
+          <View style={{ height: GRID_HEADER_H }} />
+          <View style={{ height: GRID_H }}>
+            {Array.from({ length: SLOT_COUNT }).map((_, idx) => {
+              const slotMin = DAY_START_MIN + idx * SLOT_MINUTES;
+              if (slotMin % 60 !== 0) return null;
+              return (
+                <Text key={idx} style={[styles.gridTimeLabel, { top: idx * SLOT_PX - 7 }]}>
+                  {fmtTime(minToHHMM(slotMin))}
+                </Text>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Horizontally-scrollable tech columns */}
+        <ScrollView horizontal showsHorizontalScrollIndicator>
+          <View>
+            <View style={{ flexDirection: 'row', height: GRID_HEADER_H }}>
+              {techs.map(t => (
+                <View key={t} style={[styles.gridHeadCell, { width: GRID_COL_W }]}>
+                  <View style={[styles.gridHeadDot, { backgroundColor: getTechColor(t, allTechs).solid }]} />
+                  <Text style={styles.gridHeadText} numberOfLines={1}>{t}</Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={{ flexDirection: 'row', height: GRID_H }}>
+              {techs.map(t => {
+                const occ = byTech[t] || { starts: {}, covered: {} };
+                return (
+                  <View key={t} style={[styles.gridCol, { width: GRID_COL_W, height: GRID_H }]}>
+                    {Array.from({ length: SLOT_COUNT }).map((_, idx) => {
+                      const slotMin = DAY_START_MIN + idx * SLOT_MINUTES;
+                      const isHour  = slotMin % 60 === 0;
+                      const free    = !occ.covered[idx];
+                      return (
+                        <TouchableOpacity
+                          key={idx}
+                          activeOpacity={free ? 0.5 : 1}
+                          disabled={!free}
+                          onPress={() => onTapEmpty(minToHHMM(slotMin), t)}
+                          style={[styles.gridSlot, { top: idx * SLOT_PX, height: SLOT_PX, width: GRID_COL_W }, isHour && styles.gridSlotHour]}
+                        >
+                          {free && <Text style={styles.gridPlus}>＋</Text>}
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {Object.entries(occ.starts).map(([idxStr, a]) => {
+                      const idx  = Number(idxStr);
+                      const span = Math.max(1, Math.ceil((Number(a.duration) || 30) / SLOT_MINUTES));
+                      const c    = colorsForAppt(a, allTechs);
+                      return (
+                        <TouchableOpacity
+                          key={a.id}
+                          activeOpacity={0.75}
+                          onPress={() => onTapAppt(a)}
+                          style={[styles.gridBlock, {
+                            top: idx * SLOT_PX + 2,
+                            height: span * SLOT_PX - 4,
+                            width: GRID_COL_W - 7,
+                            backgroundColor: c.bg,
+                            borderLeftColor: c.border,
+                            opacity: c.faded ? 0.7 : 1,
+                          }]}
+                        >
+                          <Text style={[styles.gridBlockClient, { color: c.text }]} numberOfLines={1}>
+                            {a.techRequestType === 'specific' && <Text style={styles.requestStar}>★ </Text>}
+                            {!!clientsById?.[a.clientId]?.allergies && <Text style={styles.allergyWarn}>⚠ </Text>}
+                            {a.clientName || 'Walk-in'}
+                          </Text>
+                          <Text style={[styles.gridBlockMeta, { color: c.text }]} numberOfLines={span > 1 ? 2 : 1}>
+                            {(a.services || []).map(s => s.name).filter(Boolean).join(', ')}
+                          </Text>
+                          <Text style={[styles.gridBlockTime, { color: c.text }]}>{fmtTime(a.startTime)}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        </ScrollView>
+      </View>
     </ScrollView>
   );
 }
@@ -1601,6 +1743,18 @@ const styles = StyleSheet.create({
   dayApptClient:      { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
   dayApptMeta:        { fontSize: 11, color: '#666', marginTop: 2 },
   dayEmptyHint:       { fontSize: 14, color: '#dadcdf', textAlign: 'center', lineHeight: 18 },
+  gridTimeLabel:      { position: 'absolute', right: 6, fontSize: 11, color: '#888', fontWeight: '600' },
+  gridHeadCell:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#ececec', borderLeftWidth: 1, borderLeftColor: '#f0f0f0', backgroundColor: '#fafbfc' },
+  gridHeadDot:        { width: 8, height: 8, borderRadius: 4 },
+  gridHeadText:       { fontSize: 12.5, fontWeight: '800', color: '#1a1a1a', flexShrink: 1 },
+  gridCol:            { borderLeftWidth: 1, borderLeftColor: '#f0f0f0' },
+  gridSlot:           { position: 'absolute', left: 0, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: '#f5f6f7' },
+  gridSlotHour:       { borderBottomColor: '#e6e8ea' },
+  gridPlus:           { fontSize: 13, color: '#e2e4e7', fontWeight: '700' },
+  gridBlock:          { position: 'absolute', left: 3, borderLeftWidth: 3, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, overflow: 'hidden' },
+  gridBlockClient:    { fontSize: 12.5, fontWeight: '800' },
+  gridBlockMeta:      { fontSize: 10.5, marginTop: 1, opacity: 0.8 },
+  gridBlockTime:      { fontSize: 10, marginTop: 2, opacity: 0.7, fontWeight: '600' },
   dayOffState:        { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingHorizontal: 32, backgroundColor: '#fff' },
   dayOffEmoji:        { fontSize: 56, marginBottom: 12 },
   dayOffTitle:        { fontSize: 18, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
