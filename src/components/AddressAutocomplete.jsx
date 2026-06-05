@@ -81,17 +81,17 @@ export default function AddressAutocomplete({ value, onChange, onPlaceSelected, 
       {open && (loading || predictions.length > 0) && (
         <div style={{
           position: 'absolute', top: 'calc(100% + 2px)', left: 0, right: 0,
-          background: '#fff', border: '1px solid #d8d8d8', borderRadius: 8,
+          background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8,
           zIndex: 250, maxHeight: 240, overflowY: 'auto',
           boxShadow: '0 6px 20px rgba(0,0,0,.12)', fontFamily: 'inherit',
         }}>
           {loading && predictions.length === 0 ? (
-            <div style={{ padding: '10px 12px', fontSize: 12, color: '#888' }}>Searching…</div>
+            <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--pn-text-muted)' }}>Searching…</div>
           ) : predictions.map(p => (
             <div
               key={p.placeId}
               onMouseDown={() => pickPrediction(p)}
-              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid #f5f5f5', color: '#1a1a1a' }}
+              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid var(--pn-border)', color: 'var(--pn-text)' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
               onMouseLeave={e => e.currentTarget.style.background = ''}
             >

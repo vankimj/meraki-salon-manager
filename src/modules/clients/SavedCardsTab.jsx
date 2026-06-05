@@ -37,20 +37,20 @@ function CardRow({ pm, isDefault, onMakeDefault, onDelete, busy }) {
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
-      background: '#fff', borderRadius: 10, border: '1px solid #e8e8e8',
+      background: 'var(--pn-surface)', borderRadius: 10, border: '1px solid var(--pn-border)',
       padding: '12px 14px', marginBottom: 8,
     }}>
       <div style={{
         width: 40, height: 28, borderRadius: 6, background: '#f0f4f8',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 9, fontWeight: 700, color: '#555', letterSpacing: 0.5,
+        fontSize: 9, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: 0.5,
         textTransform: 'uppercase', flexShrink: 0,
       }}>
         {BRAND_ICONS[pm.brand] || 'card'}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
             {brandLabel(pm.brand)} •••• {pm.last4}
           </span>
           {isDefault && (
@@ -68,7 +68,7 @@ function CardRow({ pm, isDefault, onMakeDefault, onDelete, busy }) {
             }} title="International card — Stripe charges +1.5% surcharge">Intl +1.5%</span>
           )}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>
           Expires {String(pm.expMonth).padStart(2, '0')}/{String(pm.expYear).slice(-2)}
           {pm.funding && pm.funding !== 'unknown' ? ` · ${pm.funding}` : ''}
         </div>
@@ -133,19 +133,19 @@ function AddCardForm({ clientId, onAdded, onCancel }) {
 
   return (
     <form onSubmit={handleSubmit} style={{
-      background: '#f8fafc', border: '1px solid #e8e8e8', borderRadius: 10,
+      background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10,
       padding: '16px 14px', marginBottom: 12,
     }}>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 10 }}>
         Add a new card
       </div>
       <div style={{
-        background: '#fff', border: '1px solid #d1d5db', borderRadius: 8,
+        background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8,
         padding: '12px 14px', marginBottom: 10,
       }}>
         <CardElement options={{
           style: {
-            base: { fontSize: '14px', color: '#1a1a1a', fontFamily: 'inherit', '::placeholder': { color: '#9ca3af' } },
+            base: { fontSize: '14px', color: 'var(--pn-text)', fontFamily: 'inherit', '::placeholder': { color: '#9ca3af' } },
             invalid: { color: '#dc2626' },
           },
         }} />
@@ -157,19 +157,19 @@ function AddCardForm({ clientId, onAdded, onCancel }) {
         <button type="button" onClick={onCancel} disabled={submitting}
           style={{
             fontSize: 12, padding: '8px 14px', borderRadius: 6,
-            border: '1px solid #d1d5db', background: '#fff', color: '#555',
+            border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)',
             cursor: submitting ? 'wait' : 'pointer', fontFamily: 'inherit',
           }}>Cancel</button>
         <button type="submit" disabled={submitting || !stripe}
           style={{
             fontSize: 12, fontWeight: 600, padding: '8px 14px', borderRadius: 6,
-            border: 'none', background: submitting ? '#ccc' : '#2D7A5F', color: '#fff',
+            border: 'none', background: submitting ? 'var(--pn-border-strong)' : '#2D7A5F', color: '#fff',
             cursor: submitting ? 'wait' : 'pointer', fontFamily: 'inherit',
           }}>
           {submitting ? 'Saving…' : 'Save card'}
         </button>
       </div>
-      <div style={{ fontSize: 10, color: '#888', marginTop: 10, textAlign: 'center' }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginTop: 10, textAlign: 'center' }}>
         Cards are stored by Stripe. We only ever see the brand + last 4 digits.
       </div>
     </form>
@@ -193,7 +193,7 @@ function PolicyBanner({ verdict, busy, onOverride }) {
   } else if (cancellationCount > 0) {
     bg = '#fff7ed'; border = '#fed7aa'; fg = '#7c2d12'; headlineColor = '#9a3412';
   } else {
-    bg = '#f8fafc'; border = '#e8e8e8'; fg = '#475569'; headlineColor = '#334155';
+    bg = 'var(--pn-bg)'; border = 'var(--pn-border)'; fg = 'var(--pn-text-muted)'; headlineColor = 'var(--pn-text)';
   }
 
   let headline;
@@ -233,7 +233,7 @@ function PolicyBanner({ verdict, busy, onOverride }) {
             disabled={busy}
             style={{
               fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6,
-              border: '1px solid #bbf7d0', background: '#fff', color: '#15803d',
+              border: '1px solid #bbf7d0', background: 'var(--pn-surface)', color: '#15803d',
               cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
             }}>
             Exempt this client
@@ -244,7 +244,7 @@ function PolicyBanner({ verdict, busy, onOverride }) {
             disabled={busy}
             style={{
               fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6,
-              border: '1px solid #fecaca', background: '#fff', color: '#991b1b',
+              border: '1px solid #fecaca', background: 'var(--pn-surface)', color: '#991b1b',
               cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
             }}>
             Force card required
@@ -255,7 +255,7 @@ function PolicyBanner({ verdict, busy, onOverride }) {
             disabled={busy}
             style={{
               fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6,
-              border: '1px solid #e8e8e8', background: '#fff', color: '#555',
+              border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)',
               cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit',
             }}>
             Clear override
@@ -313,7 +313,7 @@ export default function SavedCardsTab({ client, onChange, onReload }) {
   // Card-on-file is admin-only — taking money is a privileged action.
   if (!isAdmin) {
     return (
-      <div style={{ fontSize: 13, color: '#888', padding: '24px 0', textAlign: 'center' }}>
+      <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', padding: '24px 0', textAlign: 'center' }}>
         Saved cards are visible to admins only.
       </div>
     );
@@ -329,7 +329,7 @@ export default function SavedCardsTab({ client, onChange, onReload }) {
 
   if (!client.id) {
     return (
-      <div style={{ fontSize: 13, color: '#888', padding: '24px 0', textAlign: 'center' }}>
+      <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', padding: '24px 0', textAlign: 'center' }}>
         Save this client first before adding a card on file.
       </div>
     );
@@ -398,14 +398,14 @@ export default function SavedCardsTab({ client, onChange, onReload }) {
           <PolicyBanner verdict={policyVerdict} busy={overrideBusy} onOverride={handleOverride} />
         )}
 
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
           Saved cards
         </div>
 
         {paymentMethods.length === 0 && !adding && (
           <div style={{
-            fontSize: 13, color: '#888', textAlign: 'center',
-            background: '#f8fafc', borderRadius: 10, border: '1px dashed #d1d5db',
+            fontSize: 13, color: 'var(--pn-text-muted)', textAlign: 'center',
+            background: 'var(--pn-bg)', borderRadius: 10, border: '1px dashed var(--pn-border-strong)',
             padding: '24px 16px', marginBottom: 12,
           }}>
             No cards on file. Add one to charge no-show fees, deposits, or repeat checkouts.
@@ -432,14 +432,14 @@ export default function SavedCardsTab({ client, onChange, onReload }) {
           <button onClick={() => setAdding(true)}
             style={{
               width: '100%', fontSize: 13, fontWeight: 600, color: '#3D95CE',
-              background: '#fff', border: '1px dashed #93c5fd', borderRadius: 10,
+              background: 'var(--pn-surface)', border: '1px dashed #93c5fd', borderRadius: 10,
               padding: '12px', cursor: 'pointer', fontFamily: 'inherit',
             }}>
             + Add a card on file
           </button>
         )}
 
-        <div style={{ fontSize: 10, color: '#aaa', marginTop: 14, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 14, lineHeight: 1.6 }}>
           Cards are stored by Stripe (PCI Level 1 vault). We see brand + last 4 only — never the full
           card number. To charge a stored card the salon must complete Stripe Connect onboarding first.
         </div>

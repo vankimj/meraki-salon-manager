@@ -136,7 +136,7 @@ export default function GiftCardsAdmin() {
     } catch (e) { showToast('Failed: ' + e.message, 3000); }
   }
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
+  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading…</div>;
 
   const activeGC      = (giftCards || []).filter(g => !g.voided && g.balance > 0);
   const depletedGC    = (giftCards || []).filter(g => !g.voided && g.balance <= 0);
@@ -149,7 +149,7 @@ export default function GiftCardsAdmin() {
     <div style={{ maxWidth: 900, margin: '0 auto', paddingBottom: 32 }}>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid #e8e8e8' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 24, borderBottom: '1px solid var(--pn-border)' }}>
         {[
           { id: 'gift',  label: `Gift Cards`, badge: activeGC.length },
           { id: 'promo', label: `Promo Codes`, badge: activePromos.length },
@@ -157,7 +157,7 @@ export default function GiftCardsAdmin() {
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
             background: 'none', border: 'none', cursor: 'pointer',
-            color: tab === t.id ? '#1a1a1a' : '#888',
+            color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-muted)',
             borderBottom: tab === t.id ? '2px solid #2D7A5F' : '2px solid transparent',
             marginBottom: -1, display: 'flex', alignItems: 'center', gap: 6,
           }}>
@@ -255,7 +255,7 @@ function GiftCardRow({ gc, onClick }) {
   const statusColor = { active: '#2D7A5F', depleted: '#aaa', voided: '#ef4444' }[status];
 
   return (
-    <div onClick={onClick} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow .15s' }}
+    <div onClick={onClick} style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px', cursor: 'pointer', transition: 'box-shadow .15s' }}
       onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 16px rgba(0,0,0,.08)'}
       onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -266,17 +266,17 @@ function GiftCardRow({ gc, onClick }) {
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', fontFamily: 'monospace', letterSpacing: '.03em' }}>{gc.code}</span>
-            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: status === 'active' ? '#e8f4ee' : status === 'voided' ? '#fef2f2' : '#f5f5f5', color: statusColor, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', fontFamily: 'monospace', letterSpacing: '.03em' }}>{gc.code}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: status === 'active' ? '#e8f4ee' : status === 'voided' ? '#fef2f2' : 'var(--pn-surface-alt)', color: statusColor, textTransform: 'uppercase', letterSpacing: '.05em' }}>
               {status}
             </span>
             <EmailStatusBadge gc={gc} />
           </div>
-          {gc.recipientName && <div style={{ fontSize: 11, color: '#888' }}>To: {gc.recipientName}{gc.recipientEmail ? ` · ${gc.recipientEmail}` : ''}</div>}
-          {gc.issuedTo && <div style={{ fontSize: 11, color: '#888' }}>Issued to: {gc.issuedTo}</div>}
-          {gc.note     && <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>{gc.note}</div>}
+          {gc.recipientName && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>To: {gc.recipientName}{gc.recipientEmail ? ` · ${gc.recipientEmail}` : ''}</div>}
+          {gc.issuedTo && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Issued to: {gc.issuedTo}</div>}
+          {gc.note     && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>{gc.note}</div>}
           {status === 'active' && gc.initialBalance && (
-            <div style={{ marginTop: 5, height: 4, background: '#f0f0f0', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ marginTop: 5, height: 4, background: 'var(--pn-surface-alt)', borderRadius: 2, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${pct}%`, background: pct > 50 ? '#2D7A5F' : pct > 20 ? '#f59e0b' : '#ef4444', borderRadius: 2, transition: 'width .4s' }} />
             </div>
           )}
@@ -287,9 +287,9 @@ function GiftCardRow({ gc, onClick }) {
             {fmt$(gc.balance)}
           </div>
           {gc.initialBalance && gc.initialBalance !== gc.balance && (
-            <div style={{ fontSize: 10, color: '#bbb' }}>of {fmt$(gc.initialBalance)}</div>
+            <div style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>of {fmt$(gc.initialBalance)}</div>
           )}
-          <div style={{ fontSize: 10, color: '#ccc', marginTop: 2 }}>{fmtDate(gc.createdAt)}</div>
+          <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2 }}>{fmtDate(gc.createdAt)}</div>
         </div>
       </div>
     </div>
@@ -341,14 +341,14 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
   const reason = promoReason(promo);
   return (
     <>
-      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 40, height: 28, borderRadius: 6, background: promo.active ? 'linear-gradient(135deg,#f59e0b,#f97316)' : '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>
           🏷
         </div>
 
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', fontFamily: 'monospace', letterSpacing: '.05em' }}>{promo.code}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', fontFamily: 'monospace', letterSpacing: '.05em' }}>{promo.code}</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b' }}>
               {promo.type === 'percent' ? `${promo.value}% off` : `$${promo.value} off`}
             </span>
@@ -366,7 +366,7 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
               </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: '#aaa' }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>
             Created {fmtDate(promo.createdAt)}
             {(promo.startDate || promo.endDate) && (
               <span style={{ marginLeft: 10 }}>
@@ -379,10 +379,10 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
 
         {isAdmin && (
           <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-            <button onClick={() => setEditing(true)} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fafafa', color: '#555', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setEditing(true)} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               Edit
             </button>
-            <button onClick={onToggle} style={{ padding: '5px 12px', borderRadius: 8, border: `1px solid ${promo.active ? '#e0e0e0' : '#2D7A5F'}`, background: promo.active ? '#fafafa' : '#e8f4ee', color: promo.active ? '#888' : '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={onToggle} style={{ padding: '5px 12px', borderRadius: 8, border: `1px solid ${promo.active ? 'var(--pn-border)' : '#2D7A5F'}`, background: promo.active ? 'var(--pn-bg)' : '#e8f4ee', color: promo.active ? 'var(--pn-text-muted)' : '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               {promo.active ? 'Deactivate' : 'Activate'}
             </button>
             <button onClick={onDelete} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -423,32 +423,32 @@ function PromoEditModal({ promo, onSave, onClose }) {
     <Overlay onClose={onClose}>
       <ModalBox title={`Edit "${promo.code}"`} onClose={onClose}>
         {/* Read-only summary */}
-        <div style={{ background: '#fafafa', border: '1px solid #ebebeb', borderRadius: 10, padding: '10px 14px', marginBottom: 18, fontSize: 12 }}>
+        <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px', marginBottom: 18, fontSize: 12 }}>
           <div style={{ display: 'flex', gap: 16 }}>
-            <span style={{ color: '#aaa' }}>Code</span>
-            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#1a1a1a', letterSpacing: '.05em' }}>{promo.code}</span>
+            <span style={{ color: 'var(--pn-text-faint)' }}>Code</span>
+            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--pn-text)', letterSpacing: '.05em' }}>{promo.code}</span>
           </div>
           <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
-            <span style={{ color: '#aaa' }}>Discount</span>
+            <span style={{ color: 'var(--pn-text-faint)' }}>Discount</span>
             <span style={{ fontWeight: 600, color: '#f59e0b' }}>
               {promo.type === 'percent' ? `${promo.value}% off` : `$${promo.value} off`}
             </span>
           </div>
           {promo.usedCount > 0 && (
             <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
-              <span style={{ color: '#aaa' }}>Redemptions</span>
-              <span style={{ color: '#333' }}>{promo.usedCount}{promo.maxUses ? ` / ${promo.maxUses}` : ''}</span>
+              <span style={{ color: 'var(--pn-text-faint)' }}>Redemptions</span>
+              <span style={{ color: 'var(--pn-text)' }}>{promo.usedCount}{promo.maxUses ? ` / ${promo.maxUses}` : ''}</span>
             </div>
           )}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Valid from</label>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Valid from</label>
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Expires</label>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Expires</label>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
           </div>
         </div>
@@ -464,7 +464,7 @@ function PromoEditModal({ promo, onSave, onClose }) {
         </Field>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-          <button onClick={onClose} style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fff', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
             Cancel
           </button>
           <div style={{ flex: 2 }}>
@@ -529,7 +529,7 @@ function GiftCardModal({ onSave, onClose }) {
             <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
               style={{ ...inputStyle, fontFamily: 'monospace', letterSpacing: '.06em', flex: 1 }} />
             <button onClick={() => setCode(genCode())}
-              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', fontSize: 11, color: '#555', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 11, color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
               Generate
             </button>
           </div>
@@ -544,8 +544,8 @@ function GiftCardModal({ onSave, onClose }) {
         <Field label="Recipient email *">
           <input value={recipientEmail} onChange={e => setRecipientEmail(e.target.value)}
             placeholder="recipient@example.com" inputMode="email"
-            style={{ ...inputStyle, borderColor: recipientEmail && !validEmail ? '#ef4444' : '#d8d8d8' }} />
-          <div style={{ fontSize: 11, color: recipientEmail && !validEmail ? '#ef4444' : '#888', marginTop: 4 }}>
+            style={{ ...inputStyle, borderColor: recipientEmail && !validEmail ? '#ef4444' : 'var(--pn-border-strong)' }} />
+          <div style={{ fontSize: 11, color: recipientEmail && !validEmail ? '#ef4444' : 'var(--pn-text-muted)', marginTop: 4 }}>
             {recipientEmail && !validEmail
               ? "Enter a valid email — we'll send the code here."
               : "We'll email the code + balance to this address."}
@@ -560,9 +560,9 @@ function GiftCardModal({ onSave, onClose }) {
 
         <div style={{ marginTop: 8, padding: '12px 16px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
           <div style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>Gift card summary</div>
-          <div style={{ fontSize: 13, color: '#1a1a1a', marginTop: 4 }}>
+          <div style={{ fontSize: 13, color: 'var(--pn-text)', marginTop: 4 }}>
             {code || '—'} · {amount ? fmt$(amount) : '$—'}
-            {recipientName && <span style={{ color: '#555' }}> · {recipientName}</span>}
+            {recipientName && <span style={{ color: 'var(--pn-text-muted)' }}> · {recipientName}</span>}
           </div>
           {validEmail && (
             <div style={{ fontSize: 11, color: '#166534', marginTop: 3 }}>📧 Code will be emailed to {recipientEmail}</div>
@@ -621,7 +621,7 @@ function PromoModal({ onSave, onClose }) {
           <div style={{ display: 'flex', gap: 8 }}>
             {[{ id: 'percent', label: '% off' }, { id: 'fixed', label: '$ off' }].map(t => (
               <button key={t.id} onClick={() => setType(t.id)}
-                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${type === t.id ? '#3D95CE' : '#e0e0e0'}`, background: type === t.id ? '#EBF4FB' : '#fafafa', color: type === t.id ? '#1a5f8a' : '#888', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${type === t.id ? '#3D95CE' : 'var(--pn-border)'}`, background: type === t.id ? '#EBF4FB' : 'var(--pn-bg)', color: type === t.id ? '#1a5f8a' : 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 {t.label}
               </button>
             ))}
@@ -630,21 +630,21 @@ function PromoModal({ onSave, onClose }) {
 
         <Field label={type === 'percent' ? 'Percentage (0–100)' : 'Dollar amount off'}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {type === 'fixed' && <span style={{ fontSize: 13, color: '#aaa' }}>$</span>}
+            {type === 'fixed' && <span style={{ fontSize: 13, color: 'var(--pn-text-faint)' }}>$</span>}
             <input type="number" min={0} max={type === 'percent' ? 100 : undefined} value={value} onChange={e => setValue(e.target.value)}
               placeholder={type === 'percent' ? '20' : '10.00'}
               style={{ ...inputStyle, flex: 1 }} />
-            {type === 'percent' && <span style={{ fontSize: 13, color: '#aaa' }}>%</span>}
+            {type === 'percent' && <span style={{ fontSize: 13, color: 'var(--pn-text-faint)' }}>%</span>}
           </div>
         </Field>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Valid from (optional)</label>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Valid from (optional)</label>
             <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} />
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Expires (optional)</label>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>Expires (optional)</label>
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} />
           </div>
         </div>
@@ -654,7 +654,7 @@ function PromoModal({ onSave, onClose }) {
             placeholder="e.g. 50" style={inputStyle} />
         </Field>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 16 }}>
           <input type="checkbox" checked={singleUse} onChange={e => setSingleUse(e.target.checked)} />
           Single-use (deactivates after first redemption)
         </label>
@@ -662,7 +662,7 @@ function PromoModal({ onSave, onClose }) {
         {code && value && (
           <div style={{ marginBottom: 8, padding: '12px 16px', background: '#fff7ed', borderRadius: 10, border: '1px solid #fed7aa' }}>
             <div style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>Preview</div>
-            <div style={{ fontSize: 13, color: '#1a1a1a', marginTop: 4 }}>
+            <div style={{ fontSize: 13, color: 'var(--pn-text)', marginTop: 4 }}>
               Code <strong>{code}</strong> gives {type === 'percent' ? `${value}%` : fmt$(value)} off
               {singleUse && ' · single-use'}
               {maxUses && ` · max ${maxUses} uses`}
@@ -691,9 +691,9 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
         {/* Code badge */}
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
           <div style={{ width: 64, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: 24 }}>🎁</div>
-          <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '.08em', color: '#1a1a1a' }}>{gc.code}</div>
+          <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '.08em', color: 'var(--pn-text)' }}>{gc.code}</div>
           <div style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: status === 'active' ? '#e8f4ee' : status === 'voided' ? '#fef2f2' : '#f5f5f5', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? '#ef4444' : '#aaa', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: status === 'active' ? '#e8f4ee' : status === 'voided' ? '#fef2f2' : 'var(--pn-surface-alt)', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? '#ef4444' : 'var(--pn-text-faint)', textTransform: 'uppercase' }}>
               {status}
             </span>
           </div>
@@ -702,15 +702,15 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
         {/* Balance bar */}
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 12 }}>
-            <span style={{ color: '#888' }}>Balance remaining</span>
+            <span style={{ color: 'var(--pn-text-muted)' }}>Balance remaining</span>
             <span style={{ fontWeight: 700, color: '#2D7A5F', fontSize: 18 }}>{fmt$(gc.balance)}</span>
           </div>
           {gc.initialBalance && (
             <>
-              <div style={{ height: 8, background: '#f0f0f0', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ height: 8, background: 'var(--pn-surface-alt)', borderRadius: 4, overflow: 'hidden' }}>
                 <div style={{ height: '100%', width: `${pct}%`, background: Number(pct) > 50 ? '#2D7A5F' : Number(pct) > 20 ? '#f59e0b' : '#ef4444', borderRadius: 4 }} />
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11, color: '#bbb' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11, color: 'var(--pn-text-faint)' }}>
                 <span>Redeemed: {fmt$(redeemed)}</span>
                 <span>Original: {fmt$(gc.initialBalance)}</span>
               </div>
@@ -719,7 +719,7 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
         </div>
 
         {/* Details */}
-        <div style={{ background: '#fafafa', borderRadius: 10, padding: '12px 14px', marginBottom: 20, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ background: 'var(--pn-bg)', borderRadius: 10, padding: '12px 14px', marginBottom: 20, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {gc.issuedTo && <DetailRow label="Issued to"  value={gc.issuedTo} />}
           {gc.note     && <DetailRow label="Note"       value={gc.note} />}
           <DetailRow label="Created" value={fmtDate(gc.createdAt)} />
@@ -740,8 +740,8 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
 function DetailRow({ label, value }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-      <span style={{ color: '#aaa' }}>{label}</span>
-      <span style={{ color: '#333', fontWeight: 500 }}>{value}</span>
+      <span style={{ color: 'var(--pn-text-faint)' }}>{label}</span>
+      <span style={{ color: 'var(--pn-text)', fontWeight: 500 }}>{value}</span>
     </div>
   );
 }
@@ -749,23 +749,23 @@ function DetailRow({ label, value }) {
 // ── Shared primitives ────────────────────────────────────
 function StatCard({ label, value, accent }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: accent || '#1a1a1a' }}>{value}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: accent || 'var(--pn-text)' }}>{value}</div>
     </div>
   );
 }
 
 function PillBtn({ active, onClick, children }) {
   return (
-    <button onClick={onClick} style={{ padding: '5px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#555', border: `1px solid ${active ? '#1a1a1a' : '#d8d8d8'}`, cursor: 'pointer' }}>
+    <button onClick={onClick} style={{ padding: '5px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? 'var(--pn-text)' : 'var(--pn-surface)', color: active ? '#fff' : 'var(--pn-text-muted)', border: `1px solid ${active ? 'var(--pn-text)' : 'var(--pn-border-strong)'}`, cursor: 'pointer' }}>
       {children}
     </button>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
 function Overlay({ children, onClose }) {
@@ -779,10 +779,10 @@ function Overlay({ children, onClose }) {
 
 function ModalBox({ title, children, onClose }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 420, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: '#1a1a1a' }}>{title}</span>
-        <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 420, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
+        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--pn-text)' }}>{title}</span>
+        <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 16, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
         {children}
@@ -794,7 +794,7 @@ function ModalBox({ title, children, onClose }) {
 function Field({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>
+      <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>
       {children}
     </div>
   );
@@ -803,7 +803,7 @@ function Field({ label, children }) {
 function SaveBtn({ onClick, saving, disabled, children }) {
   return (
     <button onClick={onClick} disabled={saving || disabled}
-      style={{ width: '100%', marginTop: 8, padding: '12px', borderRadius: 10, border: 'none', background: saving || disabled ? '#d0d0d0' : '#2D7A5F', color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving || disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+      style={{ width: '100%', marginTop: 8, padding: '12px', borderRadius: 10, border: 'none', background: saving || disabled ? 'var(--pn-border-strong)' : '#2D7A5F', color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving || disabled ? 'default' : 'pointer', fontFamily: 'inherit' }}>
       {saving ? 'Saving…' : children}
     </button>
   );
@@ -811,8 +811,8 @@ function SaveBtn({ onClick, saving, disabled, children }) {
 
 const inputStyle = {
   width: '100%', boxSizing: 'border-box', fontFamily: 'inherit',
-  border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px',
-  fontSize: 13, background: '#fafafa', outline: 'none',
+  border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '9px 12px',
+  fontSize: 13, background: 'var(--pn-bg)', outline: 'none',
 };
 
 // Live-status badge for gift card recipient emails. Subscribes to the

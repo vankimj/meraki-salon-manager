@@ -1,6 +1,7 @@
 import { StrictMode, Component, useEffect, useState, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './lib/colorMode'   // applies data-theme before first paint (no flash)
 import TenantNotFound from './components/TenantNotFound.jsx'
 import { resolveTenant, getTenantResolveState, TENANT_ID } from './lib/tenant'
 import { doc, getDoc } from 'firebase/firestore'

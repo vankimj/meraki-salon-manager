@@ -210,11 +210,11 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
         <input
           value={search} onChange={e => handleSearch(e.target.value)}
           placeholder="Search by name, phone, or email…"
-          style={{ flex: 1, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 12px', fontSize: 13, outline: 'none', background: '#fafafa' }}
+          style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 12px', fontSize: 13, outline: 'none', background: 'var(--pn-bg)' }}
         />
         {undoStack.length > 0 && <Btn onClick={handleUndo}>↩ Undo</Btn>}
         {redoStack.length > 0 && <Btn onClick={handleRedo}>↪ Redo</Btn>}
-        <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>{clients.length} clients</span>
+        <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', whiteSpace: 'nowrap' }}>{clients.length} clients</span>
         <Btn onClick={exportCSV}>⬇ CSV</Btn>
         <TrashButton collections={['clients']} scope="Clients" />
         <Btn color="#3D95CE" onClick={() => setModal({ client: blankClient(), mode: 'edit' })}>+ Add Client</Btn>
@@ -237,7 +237,7 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
           ))
         : (
           <>
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', overflow: 'hidden' }}>
+            <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', overflow: 'hidden' }}>
               {pageSlice.map((c, i) => (
                 <ClientRow
                   key={c.id}
@@ -256,21 +256,21 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, padding: '0 2px' }}>
                 <button
                   onClick={() => setPage(p => p - 1)} disabled={page === 0}
-                  style={{ fontSize: 12, padding: '5px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: page === 0 ? '#ccc' : '#333', cursor: page === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  style={{ fontSize: 12, padding: '5px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: page === 0 ? 'var(--pn-text-faint)' : 'var(--pn-text)', cursor: page === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
                   ← Prev
                 </button>
-                <span style={{ fontSize: 12, color: '#888' }}>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>
                   {rangeStart}–{rangeEnd} of {visible.length} clients
                 </span>
                 <button
                   onClick={() => setPage(p => p + 1)} disabled={page >= totalPages - 1}
-                  style={{ fontSize: 12, padding: '5px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', color: page >= totalPages - 1 ? '#ccc' : '#333', cursor: page >= totalPages - 1 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  style={{ fontSize: 12, padding: '5px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: page >= totalPages - 1 ? 'var(--pn-text-faint)' : 'var(--pn-text)', cursor: page >= totalPages - 1 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
                   Next →
                 </button>
               </div>
             )}
             {totalPages <= 1 && visible.length > 0 && (
-              <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 8 }}>
                 {visible.length} client{visible.length !== 1 ? 's' : ''}
               </div>
             )}
@@ -303,23 +303,23 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
 function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
   const lastVisit = client.visits?.slice(-1)[0];
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid #f0f0f0' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid var(--pn-border)' }}>
       <div onClick={onView} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, cursor: 'pointer' }}>
         <Avatar picture={client.picture} name={client.name} size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{client.name || '—'}</span>
+            <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{client.name || '—'}</span>
             {referralCount > 0 && (
               <span style={{ fontSize: 10, background: '#e8f4ee', color: '#2D7A5F', borderRadius: 10, padding: '1px 7px', fontWeight: 600, flexShrink: 0 }}>
                 ↗ {referralCount} referred
               </span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
             {[client.phone, client.email].filter(Boolean).join(' · ') || 'No contact info'}
           </div>
           {lastVisit && (
-            <div style={{ fontSize: 10, color: '#bbb', marginTop: 1 }}>Last visit: {formatDate(lastVisit.date)}</div>
+            <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 1 }}>Last visit: {formatDate(lastVisit.date)}</div>
           )}
         </div>
       </div>
@@ -446,25 +446,25 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 460, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 460, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 15, fontWeight: 600 }}>
               {isNew ? 'New Client' : isView ? client.name || 'Client' : 'Edit Client'}
             </span>
             {isView && !isNew && (
-              <span style={{ fontSize: 10, background: '#f0f0f0', color: '#888', borderRadius: 20, padding: '2px 8px', fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }}>view</span>
+              <span style={{ fontSize: 10, background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', borderRadius: 20, padding: '2px 8px', fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase' }}>view</span>
             )}
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #e8e8e8', flexShrink: 0 }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           {TABS.map(t => (
-            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '9px 0', fontSize: 12, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#3D95CE' : '#888', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid #3D95CE' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
+            <button key={t} onClick={() => setTab(t)} style={{ flex: 1, padding: '9px 0', fontSize: 12, fontWeight: tab === t ? 600 : 400, color: tab === t ? '#3D95CE' : 'var(--pn-text-muted)', background: 'none', border: 'none', borderBottom: tab === t ? '2px solid #3D95CE' : '2px solid transparent', cursor: 'pointer', fontFamily: 'inherit', textTransform: 'capitalize' }}>
               {t}{t === 'visits' && client.visits?.length ? ` (${client.visits.length})` : ''}
             </button>
           ))}
@@ -481,7 +481,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                 <div style={{ flexShrink: 0 }}>
                   <div
                     onClick={isView ? undefined : () => fileRef.current?.click()}
-                    style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: '#f0f0f0', cursor: isView ? 'default' : 'pointer', border: '2px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: 'var(--pn-surface-muted)', cursor: isView ? 'default' : 'pointer', border: '2px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                   >
                     {client.picture
                       ? <img src={client.picture} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -490,7 +490,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                   </div>
                   {!isView && (
                     <>
-                      <div style={{ fontSize: 10, color: '#aaa', textAlign: 'center', marginTop: 3, cursor: 'pointer' }} onClick={() => fileRef.current?.click()}>photo</div>
+                      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 3, cursor: 'pointer' }} onClick={() => fileRef.current?.click()}>photo</div>
                       <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" style={{ display: 'none' }} onChange={handlePhoto} />
                     </>
                   )}
@@ -577,7 +577,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               <Field label="Banned">
                 {isView
                   ? <ViewVal style={{ color: client.banned ? '#b91c1c' : undefined, fontWeight: client.banned ? 600 : undefined }}>{client.banned ? '🚫 Banned — do not accept bookings' : '—'}</ViewVal>
-                  : <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#333' }}>
+                  : <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--pn-text)' }}>
                       <input type="checkbox" checked={!!client.banned} onChange={e => onChange({ banned: e.target.checked })} />
                       Do not accept bookings from this client
                     </label>
@@ -586,7 +586,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               <Field label="Test subject">
                 {isView
                   ? <ViewVal style={{ color: client.testSubject ? '#1d4ed8' : undefined, fontWeight: client.testSubject ? 600 : undefined }}>{client.testSubject ? '🧪 Test subject (marketing)' : '—'}</ViewVal>
-                  : <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: '#333' }}>
+                  : <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, color: 'var(--pn-text)' }}>
                       <input type="checkbox" checked={!!client.testSubject} onChange={e => onChange({ testSubject: e.target.checked })} />
                       Include in "Test subjects" marketing audience
                     </label>
@@ -598,24 +598,24 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                   const setCp = (patch) => onChange({ commPreferences: { ...cp, ...patch } });
                   const Row = ({ label, smsKey, emailKey, voiceKey, hint }) => (
                     <div style={{ marginBottom: 8 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#444', marginBottom: 4 }}>{label}</div>
-                      {hint && <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>{hint}</div>}
-                      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#333', flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 4 }}>{label}</div>
+                      {hint && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 6 }}>{hint}</div>}
+                      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: 'var(--pn-text)', flexWrap: 'wrap' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer' }}>
                           <input type="checkbox" disabled={isView} checked={!!cp[smsKey]} onChange={e => setCp({ [smsKey]: e.target.checked })} /> SMS
                         </label>
                         <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer' }}>
                           <input type="checkbox" disabled={isView} checked={!!cp[emailKey]} onChange={e => setCp({ [emailKey]: e.target.checked })} /> Email
                         </label>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer', color: '#aaa' }}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 5, cursor: isView ? 'default' : 'pointer', color: 'var(--pn-text-faint)' }}
                           title="Voice channel coming in a future release.">
-                          <input type="checkbox" disabled={isView} checked={!!cp[voiceKey]} onChange={e => setCp({ [voiceKey]: e.target.checked })} /> Voice <span style={{ fontSize: 10, color: '#bbb' }}>(soon)</span>
+                          <input type="checkbox" disabled={isView} checked={!!cp[voiceKey]} onChange={e => setCp({ [voiceKey]: e.target.checked })} /> Voice <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>(soon)</span>
                         </label>
                       </div>
                     </div>
                   );
                   return (
-                    <div style={{ background: isView ? '#fafafa' : '#fff', border: '1px solid #ececec', borderRadius: 8, padding: '10px 12px' }}>
+                    <div style={{ background: isView ? 'var(--pn-bg)' : 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '10px 12px' }}>
                       <Row label="Appointment messages" smsKey="appointmentSms" emailKey="appointmentEmail" voiceKey="appointmentVoice"
                         hint="Confirmations, reminders, reschedule notices, receipts." />
                       <Row label="Marketing messages" smsKey="marketingSms" emailKey="marketingEmail" voiceKey="marketingVoice"
@@ -644,7 +644,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                     </ViewVal>
                   )
                   : (
-                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: '#333' }}>
+                    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 14, color: 'var(--pn-text)' }}>
                       <input type="checkbox" checked={!!client.marketingOptOut}
                         onChange={e => {
                           const opted = e.target.checked;
@@ -656,7 +656,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                         }} />
                       <span>
                         Exclude from marketing campaigns
-                        <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Email and SMS audiences automatically skip opted-out clients. Transactional messages (receipts, reminders) still send.</div>
+                        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>Email and SMS audiences automatically skip opted-out clients. Transactional messages (receipts, reminders) still send.</div>
                       </span>
                     </label>
                   )
@@ -694,7 +694,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               {/* Review request — view mode only, admin only, existing clients with email */}
               {isView && client.id && client.email && isAdmin && (
                 <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
-                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 6 }}>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 6 }}>
                     GOOGLE REVIEW
                     {client.reviewRequestedAt && (
                       <span style={{ marginLeft: 8, fontWeight: 400 }}>
@@ -709,11 +709,11 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                     onClick={handleRequestReview}
                     disabled={requestingReview || !settings?.googleReviewUrl}
                     title={!settings?.googleReviewUrl ? 'Set Google Review URL in Admin → Settings first' : ''}
-                    style={{ width: '100%', padding: '8px', borderRadius: 8, border: `1px solid ${settings?.googleReviewUrl ? '#f59e0b' : '#e0e0e0'}`, background: settings?.googleReviewUrl ? '#fffbeb' : '#fafafa', color: requestingReview ? '#aaa' : settings?.googleReviewUrl ? '#92400e' : '#bbb', fontSize: 12, fontWeight: 600, cursor: settings?.googleReviewUrl && !requestingReview ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                    style={{ width: '100%', padding: '8px', borderRadius: 8, border: `1px solid ${settings?.googleReviewUrl ? '#f59e0b' : 'var(--pn-border)'}`, background: settings?.googleReviewUrl ? '#fffbeb' : 'var(--pn-bg)', color: requestingReview ? 'var(--pn-text-faint)' : settings?.googleReviewUrl ? '#92400e' : 'var(--pn-text-faint)', fontSize: 12, fontWeight: 600, cursor: settings?.googleReviewUrl && !requestingReview ? 'pointer' : 'default', fontFamily: 'inherit' }}>
                     {requestingReview ? 'Sending…' : '⭐ Request Google Review'}
                   </button>
                   {!settings?.googleReviewUrl && (
-                    <div style={{ fontSize: 10, color: '#bbb', textAlign: 'center', marginTop: 4 }}>
+                    <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 4 }}>
                       Set Google Review URL in Admin → Settings to enable
                     </div>
                   )}
@@ -730,7 +730,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                         <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                           {[1,2,3,4,5].map(n => (
                             <button key={n} onClick={() => setReviewForm(f => ({ ...f, rating: n }))}
-                              style={{ flex: 1, padding: '6px 0', border: `1px solid ${reviewForm.rating >= n ? '#f59e0b' : '#e0e0e0'}`, borderRadius: 6, background: reviewForm.rating >= n ? '#fffbeb' : '#fff', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              style={{ flex: 1, padding: '6px 0', border: `1px solid ${reviewForm.rating >= n ? '#f59e0b' : 'var(--pn-border)'}`, borderRadius: 6, background: reviewForm.rating >= n ? '#fffbeb' : 'var(--pn-surface)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
                               ★
                             </button>
                           ))}
@@ -745,7 +745,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                           style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d0d0d0', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={() => setRecordingReview(false)}
-                            style={{ flex: 1, padding: '6px', border: '1px solid #d0d0d0', borderRadius: 6, background: '#fff', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
+                            style={{ flex: 1, padding: '6px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
                             Cancel
                           </button>
                           <button onClick={handleRecordReview}
@@ -787,17 +787,17 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               {/* Instagram tags */}
               <SectionHeader icon="🏷️" title="Instagram Posts Tagged In" />
               {(client.instagramTags || []).length === 0 && isView && (
-                <div style={{ fontSize: 12, color: '#bbb', marginBottom: 8 }}>None recorded.</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8 }}>None recorded.</div>
               )}
               {(client.instagramTags || []).map((tag, i) => (
-                <div key={i} style={{ background: '#f8f9fa', borderRadius: 8, border: '1px solid #e8e8e8', padding: 10, marginBottom: 8 }}>
+                <div key={i} style={{ background: 'var(--pn-bg)', borderRadius: 8, border: '1px solid var(--pn-border)', padding: 10, marginBottom: 8 }}>
                   {isView ? (
                     <>
                       {tag.url
                         ? <a href={tag.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#3D95CE', wordBreak: 'break-all', display: 'block', marginBottom: tag.note ? 4 : 0 }}>{tag.url}</a>
-                        : <div style={{ fontSize: 12, color: '#bbb' }}>No URL</div>
+                        : <div style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>No URL</div>
                       }
-                      {tag.note && <div style={{ fontSize: 11, color: '#888' }}>{tag.note}</div>}
+                      {tag.note && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{tag.note}</div>}
                     </>
                   ) : (
                     <>
@@ -830,18 +830,18 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               {/* Google reviews */}
               <SectionHeader icon="⭐" title="Google Reviews" />
               {(client.googleReviews || []).length === 0 && isView && (
-                <div style={{ fontSize: 12, color: '#bbb', marginBottom: 8 }}>None recorded.</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8 }}>None recorded.</div>
               )}
               {(client.googleReviews || []).map((rev, i) => (
-                <div key={i} style={{ background: '#f8f9fa', borderRadius: 8, border: '1px solid #e8e8e8', padding: 10, marginBottom: 8 }}>
+                <div key={i} style={{ background: 'var(--pn-bg)', borderRadius: 8, border: '1px solid var(--pn-border)', padding: 10, marginBottom: 8 }}>
                   {isView ? (
                     <>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: rev.text ? 6 : 0 }}>
                         <span style={{ fontSize: 13, color: '#f59e0b' }}>{'★'.repeat(rev.rating)}</span>
-                        <span style={{ fontSize: 11, color: '#888' }}>{formatDate(rev.date)}</span>
+                        <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{formatDate(rev.date)}</span>
                         {rev.url && <a href={rev.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: '#3D95CE', marginLeft: 'auto' }}>link</a>}
                       </div>
-                      {rev.text && <div style={{ fontSize: 12, color: '#555', lineHeight: 1.5 }}>{rev.text}</div>}
+                      {rev.text && <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>{rev.text}</div>}
                     </>
                   ) : (
                     <>
@@ -891,63 +891,63 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               {/* Appointment history from scheduling system */}
               {client.id && (
                 <div style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
                     Appointment history
                   </div>
                   {apptHistory === null ? (
-                    <div style={{ fontSize: 12, color: '#bbb', padding: '8px 0' }}>Loading…</div>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', padding: '8px 0' }}>Loading…</div>
                   ) : apptHistory.length === 0 ? (
-                    <div style={{ fontSize: 12, color: '#bbb', padding: '8px 0' }}>No appointments on record.</div>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', padding: '8px 0' }}>No appointments on record.</div>
                   ) : (
                     apptHistory.map(a => {
                       const photoCount = (a.photosBefore?.length || 0) + (a.photosAfter?.length || 0);
                       const isExpanded = expandedApptId === a.id;
                       return (
-                        <div key={a.id} style={{ background: '#fff', borderRadius: 8, border: '1px solid #e8e8e8', marginBottom: 6, overflow: 'hidden' }}>
+                        <div key={a.id} style={{ background: 'var(--pn-surface)', borderRadius: 8, border: '1px solid var(--pn-border)', marginBottom: 6, overflow: 'hidden' }}>
                           <div onClick={() => setExpandedApptId(isExpanded ? null : a.id)}
                             style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', cursor: photoCount > 0 ? 'pointer' : 'default' }}>
                             <div>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{formatDate(a.date)}</span>
+                                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{formatDate(a.date)}</span>
                                 {photoCount > 0 && (
                                   <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: '#f0f4ff', color: '#3D95CE', border: '1px solid #c7dff7' }}>
                                     📸 {photoCount}
                                   </span>
                                 )}
                               </div>
-                              <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+                              <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
                                 {a.techName} · {(a.services || []).map(s => s.name).filter(Boolean).join(', ') || '—'}
                               </div>
                             </div>
                             <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>
                                 ${(a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0).toFixed(2)}
                               </div>
-                              <div style={{ fontSize: 10, color: a.status === 'done' ? '#16a34a' : a.status === 'cancelled' ? '#ef4444' : '#888', marginTop: 1, textTransform: 'capitalize' }}>
+                              <div style={{ fontSize: 10, color: a.status === 'done' ? '#16a34a' : a.status === 'cancelled' ? '#ef4444' : 'var(--pn-text-muted)', marginTop: 1, textTransform: 'capitalize' }}>
                                 {a.status}
                               </div>
                             </div>
                           </div>
                           {isExpanded && photoCount > 0 && (
-                            <div style={{ borderTop: '1px solid #f5f5f5', padding: '10px 12px', background: '#fafafa' }}>
+                            <div style={{ borderTop: '1px solid var(--pn-border)', padding: '10px 12px', background: 'var(--pn-bg)' }}>
                               {(a.photosBefore || []).length > 0 && (
                                 <div style={{ marginBottom: 8 }}>
-                                  <div style={{ fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Before</div>
+                                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>Before</div>
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {(a.photosBefore || []).map((src, i) => (
                                       <img key={i} src={src} alt="" onClick={() => setClientLightbox({ src, label: 'Before' })}
-                                        style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid #e8e8e8', cursor: 'pointer' }} />
+                                        style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--pn-border)', cursor: 'pointer' }} />
                                     ))}
                                   </div>
                                 </div>
                               )}
                               {(a.photosAfter || []).length > 0 && (
                                 <div>
-                                  <div style={{ fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>After</div>
+                                  <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 5 }}>After</div>
                                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                                     {(a.photosAfter || []).map((src, i) => (
                                       <img key={i} src={src} alt="" onClick={() => setClientLightbox({ src, label: 'After' })}
-                                        style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid #e8e8e8', cursor: 'pointer' }} />
+                                        style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--pn-border)', cursor: 'pointer' }} />
                                     ))}
                                   </div>
                                 </div>
@@ -963,7 +963,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
 
               {/* Manual visit notes */}
               {(client.visits || []).length > 0 && (
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
                   Manual notes
                 </div>
               )}
@@ -976,8 +976,8 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
 
               {!isView && (
                 addingVisit ? (
-                  <div style={{ background: '#f8f9fa', borderRadius: 10, border: '1px solid #e8e8e8', padding: 14, marginTop: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 10 }}>New Visit</div>
+                  <div style={{ background: 'var(--pn-bg)', borderRadius: 10, border: '1px solid var(--pn-border)', padding: 14, marginTop: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 10 }}>New Visit</div>
 
                     <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                       <Field label="Date" style={{ flex: 1 }}>
@@ -988,9 +988,9 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                       </Field>
                     </div>
 
-                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>Services</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 6 }}>Services</div>
                     {newVisit.services.map((svc, i) => (
-                      <div key={i} style={{ background: '#fff', borderRadius: 8, border: '1px solid #e8e8e8', padding: 10, marginBottom: 8 }}>
+                      <div key={i} style={{ background: 'var(--pn-surface)', borderRadius: 8, border: '1px solid var(--pn-border)', padding: 10, marginBottom: 8 }}>
                         <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
                           <select value={svc.name} onChange={e => patchNewVisitService(i, { name: e.target.value })} style={{ ...inp, flex: 2 }}>
                             <option value="">Pick service…</option>
@@ -1049,14 +1049,14 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 20px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8, flexShrink: 0 }}>
+        <div style={{ padding: '12px 20px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8, flexShrink: 0 }}>
           {isView ? (
             <>
               <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Close</button>
               {!isNew && isAdmin && (
                 <button onClick={() => setRestoreOpen(true)}
                   title="Restore an earlier version of this client from the BigQuery mirror"
-                  style={{ ...btnBase, padding: '8px 12px', fontSize: 12, color: '#666' }}>
+                  style={{ ...btnBase, padding: '8px 12px', fontSize: 12, color: 'var(--pn-text-muted)' }}>
                   ⏳ History
                 </button>
               )}
@@ -1115,30 +1115,30 @@ function VisitCard({ visit, onRemove, readOnly }) {
   const [open, setOpen] = useState(false);
   const total = visit.services?.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
   return (
-    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e8e8', marginBottom: 8, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 10, border: '1px solid var(--pn-border)', marginBottom: 8, overflow: 'hidden' }}>
       <div onClick={() => setOpen(o => !o)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', userSelect: 'none' }}>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{formatDate(visit.date)}</div>
-          <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{formatDate(visit.date)}</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
             {visit.tech && `${visit.tech} · `}
             {visit.services?.map(s => s.name === '__custom__' ? s.customName : s.name).filter(Boolean).join(', ') || 'No services'}
             {total > 0 && ` · $${total}`}
           </div>
         </div>
-        <span style={{ fontSize: 11, color: '#bbb' }}>{open ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{open ? '▲' : '▼'}</span>
       </div>
       {open && (
-        <div style={{ borderTop: '1px solid #f0f0f0', padding: '10px 12px' }}>
+        <div style={{ borderTop: '1px solid var(--pn-border)', padding: '10px 12px' }}>
           {visit.services?.map((s, i) => (
             <div key={i} style={{ marginBottom: 8 }}>
-              <div style={{ fontSize: 12, fontWeight: 500, color: '#333' }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--pn-text)' }}>
                 {s.name === '__custom__' ? s.customName : s.name}
-                {s.price ? <span style={{ color: '#888', fontWeight: 400 }}> · ${s.price}</span> : ''}
+                {s.price ? <span style={{ color: 'var(--pn-text-muted)', fontWeight: 400 }}> · ${s.price}</span> : ''}
               </div>
-              {s.notes && <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>{s.notes}</div>}
+              {s.notes && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>{s.notes}</div>}
             </div>
           ))}
-          {visit.notes && <div style={{ fontSize: 11, color: '#888', borderTop: '1px solid #f5f5f5', paddingTop: 8, marginTop: 4 }}>{visit.notes}</div>}
+          {visit.notes && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', borderTop: '1px solid var(--pn-border)', paddingTop: 8, marginTop: 4 }}>{visit.notes}</div>}
           {!readOnly && (
             <button onClick={onRemove} style={{ marginTop: 8, fontSize: 11, color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Remove visit</button>
           )}
@@ -1172,7 +1172,7 @@ function formatDate(str) {
 function Field({ label, children, style }) {
   return (
     <div style={{ marginBottom: 10, ...style }}>
-      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>{label}</label>
+      <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>{label}</label>
       {children}
     </div>
   );
@@ -1180,7 +1180,7 @@ function Field({ label, children, style }) {
 
 function ViewVal({ children, style }) {
   return (
-    <div style={{ fontSize: 13, color: '#1a1a1a', padding: '6px 0', minHeight: 28, lineHeight: 1.5, ...style }}>
+    <div style={{ fontSize: 13, color: 'var(--pn-text)', padding: '6px 0', minHeight: 28, lineHeight: 1.5, ...style }}>
       {children}
     </div>
   );
@@ -1192,7 +1192,7 @@ function CopyBtn({ value }) {
     navigator.clipboard?.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
   }
   return (
-    <button onClick={copy} title="Copy" style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, border: '1px solid #d8d8d8', background: '#fafafa', color: copied ? '#2D7A5F' : '#888', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, height: 28 }}>
+    <button onClick={copy} title="Copy" style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: copied ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, height: 28 }}>
       {copied ? '✓' : 'Copy'}
     </button>
   );
@@ -1218,7 +1218,7 @@ function CopyVal({ value }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
       <ViewVal style={{ flex: 1, padding: '6px 0' }}>{value}</ViewVal>
-      <button onClick={copy} title="Copy" style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, border: '1px solid #d8d8d8', background: '#fafafa', color: copied ? '#2D7A5F' : '#888', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+      <button onClick={copy} title="Copy" style={{ fontSize: 11, padding: '2px 7px', borderRadius: 5, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: copied ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
         {copied ? '✓' : 'Copy'}
       </button>
     </div>
@@ -1227,22 +1227,22 @@ function CopyVal({ value }) {
 
 function Btn({ onClick, color, children }) {
   return (
-    <button onClick={onClick} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: color || '#e8e8e8', color: color ? '#fff' : '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+    <button onClick={onClick} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: color || 'var(--pn-surface-muted)', color: color ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
       {children}
     </button>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ padding: 20, textAlign: 'center', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
 function Divider() {
-  return <div style={{ borderTop: '1px solid #f0f0f0', margin: '14px 0' }} />;
+  return <div style={{ borderTop: '1px solid var(--pn-border)', margin: '14px 0' }} />;
 }
 
 function SectionHeader({ icon, title }) {
-  return <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 8 }}>{icon} {title}</div>;
+  return <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 8 }}>{icon} {title}</div>;
 }
 
 function AddRowBtn({ onClick, label }) {
@@ -1253,5 +1253,5 @@ function AddRowBtn({ onClick, label }) {
   );
 }
 
-const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 11px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };
-const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, padding: '8px 14px', color: '#333' };
+const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 11px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
+const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 14px', color: 'var(--pn-text)' };

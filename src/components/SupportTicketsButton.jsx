@@ -25,8 +25,8 @@ import {
 // modes because those don't mount ModuleShell.
 
 const C = {
-  ink: '#0f1923', text: '#1a1f2e', muted: '#5e6776', mutedSoft: '#8b94a3',
-  rule: '#e3e6ed', ruleSoft: '#eef0f4', bg: '#f5f6f9', card: '#fff',
+  ink: 'var(--pn-text)', text: 'var(--pn-text)', muted: 'var(--pn-text-muted)', mutedSoft: 'var(--pn-text-faint)',
+  rule: 'var(--pn-border)', ruleSoft: 'var(--pn-surface-alt)', bg: 'var(--pn-bg)', card: 'var(--pn-surface)',
   plum: '#5b3b8c', plumDeep: '#3f2767',
   blue: '#3d95ce', blueDeep: '#1f6ea3',
   success: '#16a34a', successSoft: '#dcfce7',
@@ -75,7 +75,7 @@ function Modal({ onClose }) {
       zIndex: 10000, padding: 20,
     }} onClick={onClose}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: '#fff', borderRadius: 14,
+        background: 'var(--pn-surface)', borderRadius: 14,
         width: mode === 'pick' ? 480 : 620, maxWidth: '100%',
         maxHeight: '92vh', display: 'flex', flexDirection: 'column',
         boxShadow: '0 20px 60px rgba(0,0,0,.35)', overflow: 'hidden',
@@ -159,7 +159,7 @@ function PickerCard({ accent, title, sub, cta, onClick }) {
     <button onClick={onClick} style={{
       display: 'block', width: '100%', textAlign: 'left',
       padding: 18, borderRadius: 12,
-      background: '#fff', border: `2px solid ${accent}`,
+      background: 'var(--pn-surface)', border: `2px solid ${accent}`,
       cursor: 'pointer', fontFamily: 'inherit',
       boxShadow: '0 1px 4px rgba(15,25,35,.04)',
     }}>
@@ -261,7 +261,7 @@ function PrioPill({ active, onClick, color, children }) {
   return (
     <button type="button" onClick={onClick} style={{
       flex: 1, padding: '8px 12px', fontSize: 12, fontWeight: 600,
-      background: active ? color : '#fff',
+      background: active ? color : 'var(--pn-surface)',
       color: active ? '#fff' : color,
       border: `1px solid ${color}`, borderRadius: 8,
       cursor: 'pointer', fontFamily: 'inherit',
@@ -291,7 +291,7 @@ function TicketsList({ onOpen }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       {rows.map(t => (
         <button key={t.id} onClick={() => onOpen(t.id)} style={{
-          textAlign: 'left', background: '#fff', border: `1px solid ${C.rule}`,
+          textAlign: 'left', background: 'var(--pn-surface)', border: `1px solid ${C.rule}`,
           borderRadius: 10, padding: 12, cursor: 'pointer', fontFamily: 'inherit',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 12 }}>
@@ -353,7 +353,7 @@ function TicketThread({ ticketId, onBack }) {
         ))}
       </div>
       {ticket.status !== 'closed' && (
-        <div style={{ padding: 16, borderTop: `1px solid ${C.rule}`, background: '#fff' }}>
+        <div style={{ padding: 16, borderTop: `1px solid ${C.rule}`, background: 'var(--pn-surface)' }}>
           <textarea
             value={body}
             onChange={e => setBody(e.target.value)}
@@ -455,7 +455,7 @@ function AskAiChat({ onClose }) {
           }}>{error}</div>
         )}
       </div>
-      <div style={{ padding: 14, borderTop: `1px solid ${C.rule}`, background: '#fff' }}>
+      <div style={{ padding: 14, borderTop: `1px solid ${C.rule}`, background: 'var(--pn-surface)' }}>
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
@@ -622,5 +622,5 @@ const lbl   = { display: 'block', fontSize: 11, fontWeight: 700, color: C.muted,
 const input = {
   width: '100%', boxSizing: 'border-box', padding: '9px 12px', fontSize: 13,
   border: `1px solid ${C.rule}`, borderRadius: 8, marginBottom: 14,
-  background: '#fff', fontFamily: 'inherit', outline: 'none', color: C.text,
+  background: 'var(--pn-surface)', fontFamily: 'inherit', outline: 'none', color: C.text,
 };

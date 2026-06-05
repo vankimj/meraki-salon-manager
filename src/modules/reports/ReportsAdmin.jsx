@@ -162,9 +162,9 @@ export default function ReportsAdmin() {
 
   if (isTech || isScheduler) {
     return (
-      <div style={{ textAlign: 'center', padding: '64px 20px', color: '#aaa', fontSize: 14 }}>
+      <div style={{ textAlign: 'center', padding: '64px 20px', color: 'var(--pn-text-faint)', fontSize: 14 }}>
         <div style={{ fontSize: 32, marginBottom: 16 }}>🔒</div>
-        <div style={{ fontWeight: 600, color: '#555', marginBottom: 8 }}>Access Restricted</div>
+        <div style={{ fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 8 }}>Access Restricted</div>
         <div>Reports are available to admin and management staff only.</div>
       </div>
     );
@@ -277,12 +277,12 @@ export default function ReportsAdmin() {
 
       {/* Tab bar — horizontal-scroll on narrow viewports so labels stay
           single-line and the user can swipe through tabs. */}
-      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #e8e8e8', paddingBottom: 0 }}>
+      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--pn-border)', paddingBottom: 0 }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={{
             padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: activeTab === t.id ? 600 : 400,
             background: 'none', border: 'none', cursor: 'pointer',
-            color: activeTab === t.id ? '#1a1a1a' : '#888',
+            color: activeTab === t.id ? 'var(--pn-text)' : 'var(--pn-text-muted)',
             borderBottom: activeTab === t.id ? '2px solid #2D7A5F' : '2px solid transparent',
             marginBottom: -1, transition: 'color .15s', whiteSpace: 'nowrap', flexShrink: 0,
           }}>
@@ -329,10 +329,10 @@ export default function ReportsAdmin() {
               {isCustom && (
                 <>
                   <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
-                  <span style={{ color: '#888', fontSize: 12 }}>→</span>
+                    style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
+                  <span style={{ color: 'var(--pn-text-muted)', fontSize: 12 }}>→</span>
                   <input type="date" value={customEnd} min={customStart} max={todayStr()} onChange={e => setCustomEnd(e.target.value)}
-                    style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+                    style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
                 </>
               )}
             </div>
@@ -353,9 +353,9 @@ export default function ReportsAdmin() {
           />
 
           {loading ? (
-            <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>
+            <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading…</div>
           ) : !metrics?.totalAppts ? (
-            <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>
+            <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>
               {activeFilterCount > 0 ? 'No transactions match the current filters.' : 'No completed appointments in this period.'}
             </div>
           ) : (
@@ -457,9 +457,9 @@ function WalkInVsScheduled({ metrics }) {
       {rows.map(r => (
         <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, paddingLeft: r.sub ? 16 : 0 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-          <span style={{ fontSize: r.sub ? 12 : 13, color: r.sub ? '#888' : '#333', flex: 1 }}>{r.label}</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12 }}>{r.count}</span>
-          <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+          <span style={{ fontSize: r.sub ? 12 : 13, color: r.sub ? 'var(--pn-text-muted)' : 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
         </div>
       ))}
     </div>
@@ -504,16 +504,16 @@ function PaymentMethodsBreakdown({ metrics }) {
           <div key={r.id} style={{ marginBottom: 4 }}>
             <button onClick={() => setExpanded(isOpen ? null : r.id)}
               style={{ display: 'flex', alignItems: 'center', width: '100%', padding: '6px 0', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-              <span style={{ display: 'inline-block', width: 10, color: '#bbb', fontSize: 9, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', marginRight: 4 }}>▶</span>
+              <span style={{ display: 'inline-block', width: 10, color: 'var(--pn-text-faint)', fontSize: 9, transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', marginRight: 4 }}>▶</span>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
-              <span style={{ fontSize: 11, color: '#aaa', marginRight: 16, minWidth: 60, textAlign: 'right' }}>{r.count.toLocaleString()} txn{r.count !== 1 ? 's' : ''}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12, minWidth: 80, textAlign: 'right' }}>{fmt$(r.total)}</span>
-              <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginRight: 16, minWidth: 60, textAlign: 'right' }}>{r.count.toLocaleString()} txn{r.count !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12, minWidth: 80, textAlign: 'right' }}>{fmt$(r.total)}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
             </button>
             {isOpen && (
-              <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 22px', fontSize: 12 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>What makes up this total</div>
+              <div style={{ background: 'var(--pn-surface-alt)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '8px 12px', margin: '4px 0 8px 22px', fontSize: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>What makes up this total</div>
                 {[
                   { label: 'Service revenue', val: r.svcRev },
                   { label: 'Retail revenue', val: r.retail },
@@ -521,17 +521,17 @@ function PaymentMethodsBreakdown({ metrics }) {
                   { label: 'Tip',            val: r.tip    },
                 ].map(c => (
                   <div key={c.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0' }}>
-                    <span style={{ color: '#666' }}>{c.label}</span>
-                    <span style={{ fontWeight: 500, color: '#333' }}>{fmt$(c.val)}</span>
+                    <span style={{ color: 'var(--pn-text-muted)' }}>{c.label}</span>
+                    <span style={{ fontWeight: 500, color: 'var(--pn-text)' }}>{fmt$(c.val)}</span>
                   </div>
                 ))}
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0', marginTop: 6, borderTop: '1px solid #e8e8e8' }}>
-                  <span style={{ fontWeight: 600, color: '#333' }}>Sum of components</span>
-                  <span style={{ fontWeight: 600, color: '#333' }}>{fmt$(r.svcRev + r.retail + r.tax + r.tip)}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0 0', marginTop: 6, borderTop: '1px solid var(--pn-border)' }}>
+                  <span style={{ fontWeight: 600, color: 'var(--pn-text)' }}>Sum of components</span>
+                  <span style={{ fontWeight: 600, color: 'var(--pn-text)' }}>{fmt$(r.svcRev + r.retail + r.tax + r.tip)}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0 0' }}>
-                  <span style={{ fontWeight: 600, color: '#333' }}>payment.total reported</span>
-                  <span style={{ fontWeight: 600, color: '#333' }}>{fmt$(r.total)}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--pn-text)' }}>payment.total reported</span>
+                  <span style={{ fontWeight: 600, color: 'var(--pn-text)' }}>{fmt$(r.total)}</span>
                 </div>
                 {Math.abs(r.svcRev + r.retail + r.tax + r.tip - r.total) > 1 && (
                   <div style={{ marginTop: 6, fontSize: 11, color: '#9a3412' }}>
@@ -543,11 +543,11 @@ function PaymentMethodsBreakdown({ metrics }) {
           </div>
         );
       })}
-      <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid #f0f0f0', display: 'flex', alignItems: 'center' }}>
-        <span style={{ fontSize: 12, color: '#888', flex: 1 }}>Total collected</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{fmt$(methodTotal)}</span>
+      <div style={{ marginTop: 6, paddingTop: 8, borderTop: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', flex: 1 }}>Total collected</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>{fmt$(methodTotal)}</span>
       </div>
-      <div style={{ fontSize: 10, color: '#bbb', marginTop: 6, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 6, lineHeight: 1.5 }}>
         Sums <code>payment.total</code> per transaction (includes tax + tip on top of service revenue). Click a row to see the breakdown.
       </div>
     </div>
@@ -571,7 +571,7 @@ function ProcessingFeesBreakdown({ metrics }) {
         <KpiTile label="Avg fee per txn" big={fmt$(avgFee)} sub={`${(effectiveRate * 100).toFixed(2)}% effective`} color="#F59E0B" />
         <KpiTile label="Net card revenue" big={fmt$(netCardRevenue)} sub={`${fmt$(cardRevenue)} gross`} color="#2D7A5F" />
       </div>
-      <div style={{ fontSize: 10, color: '#bbb', lineHeight: 1.5 }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', lineHeight: 1.5 }}>
         Fees are summed from <code>payment.ccFee</code> on each card transaction (Stripe-style: percentage + flat per swipe). Refunds subtract.
       </div>
     </div>
@@ -611,31 +611,31 @@ function GratuityBreakdown({ metrics }) {
 
       {methodRows.length > 0 && (
         <>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>By payment method</div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>By payment method</div>
           {methodRows.map(r => (
             <div key={r.id} style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12, minWidth: 80, textAlign: 'right' }}>{fmt$(r.amt)}</span>
-              <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{methodPct(r.amt)}%</span>
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12, minWidth: 80, textAlign: 'right' }}>{fmt$(r.amt)}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{methodPct(r.amt)}%</span>
             </div>
           ))}
         </>
       )}
 
       {topTechs.length > 0 && (
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Top earners</div>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Top earners</div>
           {topTechs.map(([name, amt]) => (
             <div key={name} style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{name}</span>
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{name}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: '#16a34a' }}>{fmt$(amt)}</span>
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ fontSize: 10, color: '#bbb', marginTop: 10, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 10, lineHeight: 1.5 }}>
         Tips come from <code>payment.tip</code> at checkout. Multi-tech bookings split via <code>tipShare</code>. Refunds subtract.
       </div>
     </div>
@@ -645,10 +645,10 @@ function GratuityBreakdown({ metrics }) {
 // ── KPI tile (shared) ─────────────────────────────────
 function KpiTile({ label, big, sub, color }) {
   return (
-    <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 10, padding: '10px 12px' }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: color || '#1a1a1a', lineHeight: 1.1 }}>{big}</div>
-      {sub && <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{sub}</div>}
+    <div style={{ background: 'var(--pn-surface-alt)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 12px' }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: color || 'var(--pn-text)', lineHeight: 1.1 }}>{big}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -711,9 +711,9 @@ function CancellationsBreakdown({ stats }) {
       {rows.map(r => (
         <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-          <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12 }}>{r.count.toLocaleString()}</span>
-          <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+          <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count.toLocaleString()}</span>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
         </div>
       ))}
 
@@ -721,8 +721,8 @@ function CancellationsBreakdown({ stats }) {
           "Transaction Type") — shown as a sub-section since they live in
           the receipts collection, not appointments. */}
       {ggBlocked > 0 && (
-        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             From GG transactions (Payment Details · Transaction Type)
           </div>
           {[
@@ -732,8 +732,8 @@ function CancellationsBreakdown({ stats }) {
           ].filter(r => r.count > 0).map(r => (
             <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 6 }}>
               <div style={{ width: 8, height: 8, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-              <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
-              <span style={{ fontSize: 12, color: '#aaa', marginRight: 12 }}>{r.count.toLocaleString()} txn{r.count !== 1 ? 's' : ''}</span>
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginRight: 12 }}>{r.count.toLocaleString()} txn{r.count !== 1 ? 's' : ''}</span>
               <span style={{ fontSize: 13, fontWeight: 600, color: r.color }}>{fmt$(r.lost)}</span>
             </div>
           ))}
@@ -742,20 +742,20 @@ function CancellationsBreakdown({ stats }) {
 
       {/* Lost revenue + top affected techs in a compact footer block */}
       {(cancelCount > 0 || noShowCount > 0 || ggBlocked > 0) && (
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #f0f0f0' }}>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--pn-border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: topByTech.length > 0 ? 10 : 0 }}>
-            <span style={{ fontSize: 12, color: '#888', flex: 1 }}>Total lost revenue (all sources)</span>
+            <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', flex: 1 }}>Total lost revenue (all sources)</span>
             <span style={{ fontSize: 13, fontWeight: 700, color: '#9333EA' }}>{fmt$(lostRevenue)}</span>
           </div>
           {topByTech.length > 0 && (
             <>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
                 Most affected techs
               </div>
               {topByTech.map(([name, d]) => (
                 <div key={name} style={{ display: 'flex', alignItems: 'center', padding: '4px 0', fontSize: 12 }}>
-                  <span style={{ color: '#333', flex: 1 }}>{name}</span>
-                  <span style={{ color: '#aaa', marginRight: 12 }}>{d.cancelled} cxl · {d.noShow} no-show</span>
+                  <span style={{ color: 'var(--pn-text)', flex: 1 }}>{name}</span>
+                  <span style={{ color: 'var(--pn-text-faint)', marginRight: 12 }}>{d.cancelled} cxl · {d.noShow} no-show</span>
                   <span style={{ color: '#9333EA', fontWeight: 600 }}>{fmt$(d.lostRevenue)}</span>
                 </div>
               ))}
@@ -807,12 +807,12 @@ function NewVsReturning({ retention }) {
       {rows.map(r => (
         <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-          <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{r.label}</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginRight: 12 }}>{r.count}</span>
-          <span style={{ fontSize: 11, color: '#bbb', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+          <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
         </div>
       ))}
-      <div style={{ fontSize: 11, color: '#bbb', marginTop: 8 }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8 }}>
         "New" = first-ever visit was in this period (no prior history at the salon)
       </div>
     </div>
@@ -855,7 +855,7 @@ function RevenueChart({ byDay, startDate, endDate }) {
     <div>
       <svg viewBox={`0 0 600 ${H}`} style={{ width: '100%', display: 'block', overflow: 'visible' }}>
         {[0.25, 0.5, 0.75, 1].map(f => (
-          <line key={f} x1="0" y1={H - f * H} x2="600" y2={H - f * H} stroke="#f0f0f0" strokeWidth="1" />
+          <line key={f} x1="0" y1={H - f * H} x2="600" y2={H - f * H} stroke="var(--pn-border)" strokeWidth="1" />
         ))}
         {bars.map((b, i) => {
           const slotW = 600 / bars.length;
@@ -868,7 +868,7 @@ function RevenueChart({ byDay, startDate, endDate }) {
               onMouseLeave={() => setTooltip(null)}>
               <rect x={i * slotW} y={0} width={slotW} height={H} fill="transparent" />
               <rect x={x} y={H - barH} width={barW} height={Math.max(barH, 1)}
-                fill={tooltip?.i === i ? '#2A7AB5' : b.value > 0 ? '#3D95CE' : '#f0f0f0'}
+                fill={tooltip?.i === i ? '#2A7AB5' : b.value > 0 ? '#3D95CE' : 'var(--pn-border)'}
                 rx="2" opacity={b.value > 0 ? 1 : 0.4} />
             </g>
           );
@@ -888,12 +888,12 @@ function RevenueChart({ byDay, startDate, endDate }) {
             </g>
           );
         })()}
-        <line x1="0" y1={H} x2="600" y2={H} stroke="#e0e0e0" strokeWidth="1" />
+        <line x1="0" y1={H} x2="600" y2={H} stroke="var(--pn-border)" strokeWidth="1" />
       </svg>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#bbb', marginTop: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 4 }}>
         <span>{new Date(startDate + 'T12:00:00').toLocaleDateString('en-US',
           longRange ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' })}</span>
-        <span style={{ fontWeight: 500, color: '#888' }}>{aggregate ? 'weekly' : 'daily'} · max {fmt$(barMax)}</span>
+        <span style={{ fontWeight: 500, color: 'var(--pn-text-muted)' }}>{aggregate ? 'weekly' : 'daily'} · max {fmt$(barMax)}</span>
         <span>{new Date(endDate + 'T12:00:00').toLocaleDateString('en-US',
           longRange ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric' })}</span>
       </div>
@@ -935,37 +935,37 @@ function Leaderboard({ byTech }) {
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', background: isOpen ? '#f0f7ff' : 'transparent', transition: 'background .15s' }}
             >
               <div style={{ width: 22, fontSize: 16, textAlign: 'center', flexShrink: 0 }}>
-                {MEDALS[i] || <span style={{ fontSize: 12, color: '#bbb', fontWeight: 600 }}>#{i + 1}</span>}
+                {MEDALS[i] || <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', fontWeight: 600 }}>#{i + 1}</span>}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{name}</span>
                   <span style={{ fontSize: 14, fontWeight: 700, color: '#2D7A5F', flexShrink: 0, marginLeft: 8 }}>{fmt$(d.revenue)}</span>
                 </div>
-                <div style={{ height: 5, background: '#f0f0f0', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
+                <div style={{ height: 5, background: 'var(--pn-border)', borderRadius: 3, overflow: 'hidden', marginBottom: 4 }}>
                   <div style={{ height: '100%', width: `${(d.revenue / maxRev) * 100}%`, background: i === 0 ? 'linear-gradient(90deg,#f59e0b,#f97316)' : 'linear-gradient(90deg,#2D7A5F,#3D95CE)', borderRadius: 3, transition: 'width .4s' }} />
                 </div>
-                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#888' }}>
+                <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--pn-text-muted)' }}>
                   <span>{d.count} appts</span>
                   <span>avg {fmt$(avgTicket)}</span>
                   <span>{d.clientCount} client{d.clientCount !== 1 ? 's' : ''}</span>
                 </div>
               </div>
-              <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>
             </div>
 
             {/* Drill-down: service history */}
             {isOpen && (
-              <div style={{ margin: '0 0 8px 32px', background: '#fafafa', borderRadius: 8, border: '1px solid #e8e8e8', padding: '10px 14px' }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Service breakdown</div>
+              <div style={{ margin: '0 0 8px 32px', background: 'var(--pn-surface-alt)', borderRadius: 8, border: '1px solid var(--pn-border)', padding: '10px 14px' }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Service breakdown</div>
                 {topServices.length === 0
                   ? <Empty>No service data</Empty>
                   : topServices.map(([svcName, s], si) => (
-                    <div key={svcName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: si < topServices.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
-                      <span style={{ fontSize: 12, color: '#333' }}>{svcName}</span>
+                    <div key={svcName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: si < topServices.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+                      <span style={{ fontSize: 12, color: 'var(--pn-text)' }}>{svcName}</span>
                       <div style={{ display: 'flex', gap: 12, flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, color: '#aaa' }}>{s.count}×</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{fmt$(s.revenue)}</span>
+                        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{s.count}×</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{fmt$(s.revenue)}</span>
                       </div>
                     </div>
                   ))
@@ -976,9 +976,9 @@ function Leaderboard({ byTech }) {
         );
       })}
       {unassigned && unassigned.count > 0 && (
-        <div style={{ marginTop: 10, padding: '8px 10px', background: '#fafafa', border: '1px solid #ececec', borderRadius: 8, fontSize: 11, color: '#888', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginTop: 10, padding: '8px 10px', background: 'var(--pn-surface-alt)', border: '1px solid var(--pn-border)', borderRadius: 8, fontSize: 11, color: 'var(--pn-text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>+ {unassigned.count.toLocaleString()} transaction{unassigned.count !== 1 ? 's' : ''} with no tech assigned (retail, gift cards, imports without a Provider)</span>
-          <span style={{ color: '#aaa' }}>{fmt$(unassigned.revenue)}</span>
+          <span style={{ color: 'var(--pn-text-faint)' }}>{fmt$(unassigned.revenue)}</span>
         </div>
       )}
     </div>
@@ -995,11 +995,11 @@ function ServiceTable({ byService }) {
   return (
     <div>
       {sorted.map(([name, d], i) => (
-        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: i < sorted.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
-          <span style={{ fontSize: 13, color: '#333' }}>{name}</span>
+        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: i < sorted.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+          <span style={{ fontSize: 13, color: 'var(--pn-text)' }}>{name}</span>
           <div style={{ textAlign: 'right', flexShrink: 0, marginLeft: 12 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{fmt$(d.revenue)}</span>
-            <span style={{ fontSize: 11, color: '#bbb', marginLeft: 6 }}>{d.count}×</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{fmt$(d.revenue)}</span>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 6 }}>{d.count}×</span>
           </div>
         </div>
       ))}
@@ -1037,14 +1037,14 @@ function TopClients({ byClient }) {
           style={{
             width: '100%', boxSizing: 'border-box',
             padding: '7px 30px 7px 32px', fontSize: 12, fontFamily: 'inherit',
-            border: '1px solid #e0e0e0', borderRadius: 8, background: '#fafafa',
-            color: '#333', outline: 'none',
+            border: '1px solid var(--pn-border)', borderRadius: 8, background: 'var(--pn-surface-alt)',
+            color: 'var(--pn-text)', outline: 'none',
           }}
         />
-        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#aaa', pointerEvents: 'none' }}>🔍</span>
+        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--pn-text-faint)', pointerEvents: 'none' }}>🔍</span>
         {q && (
           <button onClick={() => setQ('')} aria-label="Clear"
-            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: '#bbb', padding: '2px 6px', fontFamily: 'inherit' }}>
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, color: 'var(--pn-text-faint)', padding: '2px 6px', fontFamily: 'inherit' }}>
             ×
           </button>
         )}
@@ -1064,26 +1064,26 @@ function TopClients({ byClient }) {
                   onClick={() => setSelected({ id: clientId, name: d.name })}
                   style={{
                     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                    padding: '7px 6px', borderBottom: '1px solid #f5f5f5', minWidth: 0,
-                    background: 'none', border: 'none', borderBottomColor: '#f5f5f5',
+                    padding: '7px 6px', borderBottom: '1px solid var(--pn-border)', minWidth: 0,
+                    background: 'none', border: 'none', borderBottomColor: 'var(--pn-border)',
                     fontFamily: 'inherit', textAlign: 'left', cursor: 'pointer', width: '100%',
                     transition: 'background .12s',
                   }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                   onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0, flex: 1 }}>
-                    <span style={{ fontSize: 10, color: '#bbb', fontWeight: 600, flexShrink: 0, width: 26 }}>#{overallRank}</span>
+                    <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', fontWeight: 600, flexShrink: 0, width: 26 }}>#{overallRank}</span>
                     <span style={{ fontSize: 13, color: 'var(--tm-accent, #3D95CE)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.name}</span>
-                    <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{d.count} visit{d.count !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0 }}>{d.count} visit{d.count !== 1 ? 's' : ''}</span>
                   </div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', flexShrink: 0, marginLeft: 12 }}>{fmt$(d.revenue)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', flexShrink: 0, marginLeft: 12 }}>{fmt$(d.revenue)}</span>
                 </button>
               );
             })}
           </div>
         )}
       </div>
-      <div style={{ padding: '8px 0 4px', textAlign: 'center', fontSize: 10, color: '#bbb' }}>
+      <div style={{ padding: '8px 0 4px', textAlign: 'center', fontSize: 10, color: 'var(--pn-text-faint)' }}>
         {q
           ? `${filtered.length} of ${sorted.length} client${sorted.length !== 1 ? 's' : ''}`
           : `${sorted.length} client${sorted.length !== 1 ? 's' : ''}`}
@@ -1127,8 +1127,8 @@ function ClientVisitsModal({ clientId, clientName, onClose }) {
   return (
     <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
-      <div style={{ background: '#fff', borderRadius: 14, width: '94%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)', overflow: 'hidden' }}>
-        <div style={{ padding: '14px 18px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 14, width: '94%', maxWidth: 640, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)', overflow: 'hidden' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff' }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 11, opacity: .8, textTransform: 'uppercase', letterSpacing: '.06em' }}>Client visit history</div>
             <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{clientName}</div>
@@ -1141,28 +1141,28 @@ function ClientVisitsModal({ clientId, clientName, onClose }) {
           {err ? (
             <div style={{ padding: 30, textAlign: 'center', color: '#ef4444', fontSize: 13 }}>Error: {err}</div>
           ) : visits == null ? (
-            <div style={{ padding: 30, textAlign: 'center', color: '#bbb', fontSize: 13 }}>Loading…</div>
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
           ) : visits.length === 0 ? (
             <Empty>No visits on record for this client.</Empty>
           ) : (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#666', padding: '6px 0 12px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--pn-text-muted)', padding: '6px 0 12px' }}>
                 <span>{visits.length} visit{visits.length !== 1 ? 's' : ''}</span>
-                <span>Total: <strong style={{ color: '#1a1a1a' }}>{fmt$(totalRevenue)}</strong></span>
+                <span>Total: <strong style={{ color: 'var(--pn-text)' }}>{fmt$(totalRevenue)}</strong></span>
               </div>
               {visits.map(v => {
                 const services = (v.services || []).map(s => s.name).filter(Boolean).join(' + ') || '—';
                 const cancelled = v.status === 'cancelled';
                 return (
-                  <div key={v.source + ':' + v.id} style={{ padding: '10px 0', borderBottom: '1px solid #f5f5f5', opacity: cancelled ? .55 : 1 }}>
+                  <div key={v.source + ':' + v.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--pn-border)', opacity: cancelled ? .55 : 1 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
                         {v.date}{v.startTime ? ` · ${v.startTime}` : ''}
                       </span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: '#2D7A5F' }}>{fmt$(v.revenue || 0)}</span>
                     </div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 2 }}>{services}</div>
-                    <div style={{ display: 'flex', gap: 8, fontSize: 11, color: '#888' }}>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 2 }}>{services}</div>
+                    <div style={{ display: 'flex', gap: 8, fontSize: 11, color: 'var(--pn-text-muted)' }}>
                       {v.techName && <span>👩‍💼 {v.techName}</span>}
                       <span style={{ textTransform: 'capitalize' }}>· {v.status || 'scheduled'}</span>
                     </div>
@@ -1185,7 +1185,7 @@ function ReferralLeaderboard() {
     fetchClients().then(setClients).catch(() => setClients([]));
   }, []);
 
-  if (!clients) return <div style={{ fontSize: 13, color: '#bbb', padding: '12px 0' }}>Loading…</div>;
+  if (!clients) return <div style={{ fontSize: 13, color: 'var(--pn-text-faint)', padding: '12px 0' }}>Loading…</div>;
 
   const referralMap = {};
   clients.forEach(c => {
@@ -1202,13 +1202,13 @@ function ReferralLeaderboard() {
   return (
     <div>
       {sorted.map((r, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < sorted.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
-          <div style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? '#fbbf24' : i === 1 ? '#9ca3af' : i === 2 ? '#d97706' : '#f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 3 ? '#fff' : '#aaa', flexShrink: 0 }}>
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < sorted.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+          <div style={{ width: 24, height: 24, borderRadius: '50%', background: i === 0 ? '#fbbf24' : i === 1 ? '#9ca3af' : i === 2 ? '#d97706' : 'var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i < 3 ? '#fff' : 'var(--pn-text-faint)', flexShrink: 0 }}>
             {i + 1}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{r.name}</div>
-            <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referrals.join(', ')}</div>
+            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{r.name}</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.referrals.join(', ')}</div>
           </div>
           <div style={{ fontSize: 14, fontWeight: 700, color: '#2D7A5F', flexShrink: 0 }}>
             {r.count} {r.count === 1 ? 'referral' : 'referrals'}
@@ -1405,15 +1405,15 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
           {isCustom && (
             <>
               <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
-                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
-              <span style={{ color: '#888', fontSize: 12 }}>→</span>
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
+              <span style={{ color: 'var(--pn-text-muted)', fontSize: 12 }}>→</span>
               <input type="date" value={customEnd} min={customStart} max={todayStr()} onChange={e => setCustomEnd(e.target.value)}
-                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
             </>
           )}
         </div>
         <button onClick={exportCSV} disabled={!filtered.length}
-          style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #2D7A5F', background: filtered.length ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+          style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #2D7A5F', background: filtered.length ? '#2D7A5F' : 'var(--pn-border-strong)', color: '#fff', fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default', fontFamily: 'inherit' }}>
           Export CSV
         </button>
       </div>
@@ -1434,7 +1434,7 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
         ]} />
         {allTechs.length > 0 && (
           <select value={techFilter} onChange={e => setTechFilter(e.target.value)}
-            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', fontFamily: 'inherit', color: '#333' }}>
+            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', fontFamily: 'inherit', color: 'var(--pn-text)' }}>
             <option value="all">All techs</option>
             {allTechs.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
@@ -1442,9 +1442,9 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading…</div>
       ) : !filtered.length ? (
-        <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>No transactions match these filters.</div>
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>No transactions match these filters.</div>
       ) : (
         <>
           {/* KPI summary band — salon-level totals reflecting the active filter */}
@@ -1475,14 +1475,14 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
 
 function FilterRow({ label, value, onChange, options }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 4px', background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8 }}>
-      <span style={{ fontSize: 11, color: '#888', fontWeight: 600, marginLeft: 6 }}>{label}:</span>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '3px 4px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8 }}>
+      <span style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 600, marginLeft: 6 }}>{label}:</span>
       {options.map(o => (
         <button key={o.id} onClick={() => onChange(o.id)}
           style={{
             fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none',
             background: value === o.id ? '#2D7A5F' : 'transparent',
-            color: value === o.id ? '#fff' : '#666',
+            color: value === o.id ? '#fff' : 'var(--pn-text-muted)',
             fontWeight: value === o.id ? 700 : 500,
             cursor: 'pointer', fontFamily: 'inherit',
           }}>
@@ -1498,7 +1498,7 @@ function PerTechTable({ rows }) {
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
         <thead>
-          <tr style={{ background: '#fafafa', textAlign: 'left' }}>
+          <tr style={{ background: 'var(--pn-bg)', textAlign: 'left' }}>
             <Th>Tech</Th>
             <Th>Appts</Th>
             <Th>Sales</Th>
@@ -1511,7 +1511,7 @@ function PerTechTable({ rows }) {
         </thead>
         <tbody>
           {rows.map(([name, d]) => (
-            <tr key={name} style={{ borderTop: '1px solid #f0f0f0' }}>
+            <tr key={name} style={{ borderTop: '1px solid var(--pn-border)' }}>
               <Td bold>{name}</Td>
               <Td>{Math.round(d.appts)}</Td>
               <Td green>{fmt$(d.sales)}</Td>
@@ -1536,7 +1536,7 @@ function TransactionList({ receipts }) {
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isAdmin ? 920 : 880 }}>
         <thead>
-          <tr style={{ background: '#fafafa', textAlign: 'left' }}>
+          <tr style={{ background: 'var(--pn-bg)', textAlign: 'left' }}>
             <Th>Date</Th>
             <Th>Client</Th>
             <Th>Tech(s)</Th>
@@ -1565,7 +1565,7 @@ function TransactionList({ receipts }) {
             if ((r.retailProducts || []).length) types.push('Retail');
             if ((r.giftCardsSold || []).length || (p.gcSalesTotal || 0) > 0) types.push('GC sale');
             return (
-              <tr key={r.id} style={{ borderTop: '1px solid #f0f0f0' }}>
+              <tr key={r.id} style={{ borderTop: '1px solid var(--pn-border)' }}>
                 <Td muted>{dt}</Td>
                 <Td>{r.clientName || '—'}</Td>
                 <Td>{techs}</Td>
@@ -1582,7 +1582,7 @@ function TransactionList({ receipts }) {
                     <button
                       onClick={() => { setRestoreId(r.id); setRestoreLabel(`${r.clientName || '—'} · ${dt}`); }}
                       title="Restore an earlier version of this receipt from the BigQuery mirror"
-                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid #d0d0d0', background: '#fafafa', color: '#666', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       ⏳
                     </button>
                   </Td>
@@ -1721,29 +1721,29 @@ function RatingsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays
           {isCustom && (
             <>
               <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
-                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
               <input type="date" value={customEnd} min={customStart} onChange={e => setCustomEnd(e.target.value)}
-                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fafafa', color: '#555', outline: 'none' }} />
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
             </>
           )}
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {allTechs.length > 0 && (
             <select value={techFilter} onChange={e => setTechFilter(e.target.value)}
-              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #d8d8d8', fontFamily: 'inherit', background: '#fff', color: '#333' }}>
+              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-surface)', color: 'var(--pn-text)' }}>
               <option value="all">All techs</option>
               {allTechs.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           )}
           <button onClick={downloadCsv} disabled={loading || filtered.length === 0}
-            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', cursor: filtered.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: '#555' }}>
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: filtered.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
             ⤓ Export CSV
           </button>
         </div>
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 64, color: '#aaa', fontSize: 13 }}>Loading ratings…</div>
+        <div style={{ textAlign: 'center', padding: 64, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading ratings…</div>
       ) : filtered.length === 0 ? (
         <EmptyRatings techFilter={techFilter} />
       ) : (
@@ -1761,12 +1761,12 @@ function RatingsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays
 
 function EmptyRatings({ techFilter }) {
   return (
-    <div style={{ textAlign: 'center', padding: 64, color: '#888' }}>
+    <div style={{ textAlign: 'center', padding: 64, color: 'var(--pn-text-muted)' }}>
       <div style={{ fontSize: 36, marginBottom: 12 }}>⭐</div>
-      <div style={{ fontSize: 15, fontWeight: 600, color: '#333', marginBottom: 6 }}>
+      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 6 }}>
         {techFilter === 'all' ? 'No ratings yet in this period' : `No ratings for ${techFilter} in this period`}
       </div>
-      <div style={{ fontSize: 12, color: '#aaa', maxWidth: 360, margin: '0 auto', lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', maxWidth: 360, margin: '0 auto', lineHeight: 1.5 }}>
         Ratings come in when clients tap the stars on their email or SMS receipt. They'll start appearing here automatically.
       </div>
     </div>
@@ -1781,17 +1781,17 @@ function SummaryCards({ stats }) {
       <Stat label="Total ratings"     value={stats.count.toLocaleString()} />
       <Stat label="Average"           value={stats.avg.toFixed(2) + ' ★'} accent="#f5b400" />
       <Stat label="4–5★ share"        value={highPct + '%'} sub={`${high} of ${stats.count}`} />
-      <Stat label="Needs attention"   value={stats.lowFeedback.length.toString()} sub="≤ 3★" accent={stats.lowFeedback.length > 0 ? '#ef4444' : '#888'} />
+      <Stat label="Needs attention"   value={stats.lowFeedback.length.toString()} sub="≤ 3★" accent={stats.lowFeedback.length > 0 ? '#ef4444' : 'var(--pn-text-muted)'} />
     </div>
   );
 }
 
 function Stat({ label, value, sub, accent }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: accent || '#1a1a1a', marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{sub}</div>}
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 10, padding: '14px 16px', boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: accent || 'var(--pn-text)', marginTop: 4 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
@@ -1799,18 +1799,18 @@ function Stat({ label, value, sub, accent }) {
 function DistributionCard({ stats }) {
   const max = Math.max(1, ...Object.values(stats.distribution));
   return (
-    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>Rating distribution</div>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 12 }}>Rating distribution</div>
       {[5, 4, 3, 2, 1].map(n => {
         const count = stats.distribution[n] || 0;
         const pct   = stats.count ? Math.round((count / stats.count) * 100) : 0;
         return (
           <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <div style={{ width: 36, fontSize: 12, color: '#555', fontWeight: 600 }}>{n} ★</div>
-            <div style={{ flex: 1, height: 14, background: '#f4f5f7', borderRadius: 4, overflow: 'hidden' }}>
+            <div style={{ width: 36, fontSize: 12, color: 'var(--pn-text-muted)', fontWeight: 600 }}>{n} ★</div>
+            <div style={{ flex: 1, height: 14, background: 'var(--pn-surface-alt)', borderRadius: 4, overflow: 'hidden' }}>
               <div style={{ width: `${(count / max) * 100}%`, height: '100%', background: n >= 4 ? '#2D7A5F' : n === 3 ? '#f5b400' : '#ef4444', transition: 'width .2s' }} />
             </div>
-            <div style={{ width: 72, fontSize: 11, color: '#888', textAlign: 'right' }}>{count} · {pct}%</div>
+            <div style={{ width: 72, fontSize: 11, color: 'var(--pn-text-muted)', textAlign: 'right' }}>{count} · {pct}%</div>
           </div>
         );
       })}
@@ -1824,34 +1824,34 @@ function TechLeaderboard({ perTech }) {
     .sort((a, b) => (b.avg - a.avg) || (b.count - a.count));
   if (rows.length === 0) return null;
   return (
-    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>Tech leaderboard</div>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 12 }}>Tech leaderboard</div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid #e8e8e8' }}>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Tech</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Avg</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Ratings</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>1★</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>2★</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>3★</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>4★</th>
-            <th style={{ textAlign: 'right', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>5★</th>
+          <tr style={{ borderBottom: '1px solid var(--pn-border)' }}>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Tech</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Avg</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Ratings</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>1★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>2★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>3★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>4★</th>
+            <th style={{ textAlign: 'right', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>5★</th>
           </tr>
         </thead>
         <tbody>
           {rows.map(r => (
-            <tr key={r.tech} style={{ borderBottom: '1px solid #f5f5f5' }}>
-              <td style={{ padding: '8px', fontSize: 13, color: '#333' }}>{r.tech}</td>
-              <td style={{ padding: '8px', fontSize: 13, color: '#1a1a1a', textAlign: 'right', fontWeight: 600 }}>
+            <tr key={r.tech} style={{ borderBottom: '1px solid var(--pn-border)' }}>
+              <td style={{ padding: '8px', fontSize: 13, color: 'var(--pn-text)' }}>{r.tech}</td>
+              <td style={{ padding: '8px', fontSize: 13, color: 'var(--pn-text)', textAlign: 'right', fontWeight: 600 }}>
                 {r.avg.toFixed(2)} <span style={{ color: '#f5b400' }}>★</span>
               </td>
-              <td style={{ padding: '8px', fontSize: 12, color: '#888', textAlign: 'right' }}>{r.count}</td>
-              <td style={{ padding: '8px', fontSize: 12, color: r.dist[1] ? '#ef4444' : '#ddd', textAlign: 'right' }}>{r.dist[1] || 0}</td>
-              <td style={{ padding: '8px', fontSize: 12, color: r.dist[2] ? '#ef4444' : '#ddd', textAlign: 'right' }}>{r.dist[2] || 0}</td>
-              <td style={{ padding: '8px', fontSize: 12, color: r.dist[3] ? '#f5b400' : '#ddd', textAlign: 'right' }}>{r.dist[3] || 0}</td>
-              <td style={{ padding: '8px', fontSize: 12, color: r.dist[4] ? '#2D7A5F' : '#ddd', textAlign: 'right' }}>{r.dist[4] || 0}</td>
-              <td style={{ padding: '8px', fontSize: 12, color: r.dist[5] ? '#2D7A5F' : '#ddd', textAlign: 'right' }}>{r.dist[5] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: 'var(--pn-text-muted)', textAlign: 'right' }}>{r.count}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[1] ? '#ef4444' : 'var(--pn-text-faint)', textAlign: 'right' }}>{r.dist[1] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[2] ? '#ef4444' : 'var(--pn-text-faint)', textAlign: 'right' }}>{r.dist[2] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[3] ? '#f5b400' : 'var(--pn-text-faint)', textAlign: 'right' }}>{r.dist[3] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[4] ? '#2D7A5F' : 'var(--pn-text-faint)', textAlign: 'right' }}>{r.dist[4] || 0}</td>
+              <td style={{ padding: '8px', fontSize: 12, color: r.dist[5] ? '#2D7A5F' : 'var(--pn-text-faint)', textAlign: 'right' }}>{r.dist[5] || 0}</td>
             </tr>
           ))}
         </tbody>
@@ -1863,30 +1863,30 @@ function TechLeaderboard({ perTech }) {
 function RecentFeedback({ lowFeedback }) {
   if (lowFeedback.length === 0) return null;
   return (
-    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 4 }}>Needs attention</div>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 12 }}>Ratings of 3★ or below — review these first.</div>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 4 }}>Needs attention</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 12 }}>Ratings of 3★ or below — review these first.</div>
       {lowFeedback.slice(0, 20).map(r => (
-        <div key={r.id} style={{ padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+        <div key={r.id} style={{ padding: '10px 0', borderBottom: '1px solid var(--pn-border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
             <span style={{ fontSize: 14, color: r.rating <= 2 ? '#ef4444' : '#f5b400', fontWeight: 700 }}>
               {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
             </span>
-            <span style={{ fontSize: 12, color: '#333', fontWeight: 600 }}>{r.techName || '—'}</span>
-            <span style={{ fontSize: 11, color: '#888' }}>· {r.clientName || 'anonymous'}</span>
-            <span style={{ fontSize: 11, color: '#aaa', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 12, color: 'var(--pn-text)', fontWeight: 600 }}>{r.techName || '—'}</span>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>· {r.clientName || 'anonymous'}</span>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>
               {r.submittedAt ? new Date(r.submittedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
             </span>
           </div>
           {r.comment && (
-            <div style={{ fontSize: 12, color: '#555', background: '#fafafa', padding: '8px 10px', borderRadius: 6, marginTop: 4, lineHeight: 1.5 }}>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', padding: '8px 10px', borderRadius: 6, marginTop: 4, lineHeight: 1.5 }}>
               "{r.comment}"
             </div>
           )}
         </div>
       ))}
       {lowFeedback.length > 20 && (
-        <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', paddingTop: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'center', paddingTop: 10 }}>
           +{lowFeedback.length - 20} more — export CSV for the full list.
         </div>
       )}
@@ -1897,36 +1897,36 @@ function RecentFeedback({ lowFeedback }) {
 function RecentAllRatings({ ratings }) {
   const recent = ratings.slice(0, 30);
   return (
-    <div style={{ background: '#fff', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid #f0f0f0' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>Recent ratings ({ratings.length} total)</div>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 10, padding: '16px 20px', marginBottom: 20, boxShadow: '0 1px 3px rgba(0,0,0,.04)', border: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 12 }}>Recent ratings ({ratings.length} total)</div>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
-          <tr style={{ borderBottom: '1px solid #e8e8e8' }}>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>When</th>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Tech</th>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Client</th>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Rating</th>
-            <th style={{ textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Source</th>
+          <tr style={{ borderBottom: '1px solid var(--pn-border)' }}>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>When</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Tech</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Client</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Rating</th>
+            <th style={{ textAlign: 'left', padding: '6px 8px', color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 10 }}>Source</th>
           </tr>
         </thead>
         <tbody>
           {recent.map(r => (
-            <tr key={r.id} style={{ borderBottom: '1px solid #f5f5f5' }}>
-              <td style={{ padding: '6px 8px', color: '#888', fontSize: 11, whiteSpace: 'nowrap' }}>
+            <tr key={r.id} style={{ borderBottom: '1px solid var(--pn-border)' }}>
+              <td style={{ padding: '6px 8px', color: 'var(--pn-text-muted)', fontSize: 11, whiteSpace: 'nowrap' }}>
                 {r.submittedAt ? new Date(r.submittedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}
               </td>
-              <td style={{ padding: '6px 8px', color: '#333' }}>{r.techName || '—'}</td>
-              <td style={{ padding: '6px 8px', color: '#555' }}>{r.clientName || 'anonymous'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--pn-text)' }}>{r.techName || '—'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--pn-text-muted)' }}>{r.clientName || 'anonymous'}</td>
               <td style={{ padding: '6px 8px', color: r.rating >= 4 ? '#2D7A5F' : r.rating === 3 ? '#f5b400' : '#ef4444', fontWeight: 600 }}>
                 {r.rating}★
               </td>
-              <td style={{ padding: '6px 8px', color: '#aaa', fontSize: 11, textTransform: 'capitalize' }}>{r.source || '—'}</td>
+              <td style={{ padding: '6px 8px', color: 'var(--pn-text-faint)', fontSize: 11, textTransform: 'capitalize' }}>{r.source || '—'}</td>
             </tr>
           ))}
         </tbody>
       </table>
       {ratings.length > 30 && (
-        <div style={{ fontSize: 11, color: '#aaa', textAlign: 'center', paddingTop: 10 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'center', paddingTop: 10 }}>
           +{ratings.length - 30} more — export CSV for the full list.
         </div>
       )}
@@ -2151,7 +2151,7 @@ function TaxReport() {
           ))}
         </div>
 
-        <div style={{ width: 1, height: 24, background: '#e0e0e0', flexShrink: 0 }} />
+        <div style={{ width: 1, height: 24, background: 'var(--pn-border)', flexShrink: 0 }} />
 
         {/* Quarter */}
         <select value={quarter} onChange={e => setQuarter(e.target.value)} style={filterSelectStyle}>
@@ -2178,9 +2178,9 @@ function TaxReport() {
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading {year}…</div>
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading {year}…</div>
       ) : !appts?.length ? (
-        <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>No completed appointments for {year}.</div>
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>No completed appointments for {year}.</div>
       ) : (
         <>
           {/* KPI row */}
@@ -2199,15 +2199,15 @@ function TaxReport() {
                 const isActive = quarter === String(q);
                 return (
                   <div key={q} onClick={() => setQuarter(isActive ? 'all' : String(q))}
-                    style={{ background: isActive ? '#e8f4ee' : '#fafafa', border: `1px solid ${isActive ? '#2D7A5F' : '#e8e8e8'}`, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', transition: 'all .15s' }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#2D7A5F' : '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Q{q}</div>
-                    <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', lineHeight: 1 }}>{fmt$(d.revenue)}</div>
-                    <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{d.count} appts</div>
+                    style={{ background: isActive ? '#e8f4ee' : 'var(--pn-bg)', border: `1px solid ${isActive ? '#2D7A5F' : 'var(--pn-border)'}`, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', transition: 'all .15s' }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#2D7A5F' : 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Q{q}</div>
+                    <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1 }}>{fmt$(d.revenue)}</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>{d.count} appts</div>
                   </div>
                 );
               })}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, fontSize: 13, color: '#555', fontWeight: 600 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>
               Year total: {fmt$(Object.values(quarterTotals).reduce((s, d) => s + d.revenue, 0))}
             </div>
           </Card>
@@ -2220,7 +2220,7 @@ function TaxReport() {
               <div style={{ overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
-                    <tr style={{ borderBottom: '2px solid #e8e8e8' }}>
+                    <tr style={{ borderBottom: '2px solid var(--pn-border)' }}>
                       <Th left>Month</Th>
                       <Th>Revenue</Th>
                       <Th>Appts</Th>
@@ -2233,8 +2233,8 @@ function TaxReport() {
                       const [yr, mo] = m.split('-');
                       const label = new Date(Number(yr), Number(mo) - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
                       return (
-                        <tr key={m} style={{ borderBottom: '1px solid #f5f5f5', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                          <td style={{ padding: '8px 4px', fontSize: 12, color: '#333', fontWeight: 500 }}>{label}</td>
+                        <tr key={m} style={{ borderBottom: '1px solid var(--pn-border)', background: i % 2 === 0 ? 'var(--pn-surface)' : 'var(--pn-bg)' }}>
+                          <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text)', fontWeight: 500 }}>{label}</td>
                           <Td bold green>{fmt$(d.revenue)}</Td>
                           <Td>{d.count}</Td>
                           <Td>{d.count ? fmt$(d.revenue / d.count) : '—'}</Td>
@@ -2249,11 +2249,11 @@ function TaxReport() {
                         </tr>
                       );
                     })}
-                    <tr style={{ borderTop: '2px solid #e8e8e8', fontWeight: 700 }}>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#555' }}>TOTAL</td>
+                    <tr style={{ borderTop: '2px solid var(--pn-border)', fontWeight: 700 }}>
+                      <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text-muted)' }}>TOTAL</td>
                       <td style={{ padding: '8px 4px', fontSize: 12, color: '#2D7A5F', textAlign: 'right', fontWeight: 700 }}>{fmt$(totalRev)}</td>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#333', textAlign: 'right' }}>{totalCount}</td>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#888', textAlign: 'right' }}>{totalCount ? fmt$(totalRev / totalCount) : '—'}</td>
+                      <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text)', textAlign: 'right' }}>{totalCount}</td>
+                      <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text-muted)', textAlign: 'right' }}>{totalCount ? fmt$(totalRev / totalCount) : '—'}</td>
                       {showMethodCols && (
                         <>
                           <Td bold>{fmt$(monthlyRows.reduce((s,[,d]) => s + d.cash,  0))}</Td>
@@ -2275,12 +2275,12 @@ function TaxReport() {
               <Empty>No data for selected filters.</Empty>
             ) : (
               <>
-                <div style={{ fontSize: 11, color: '#aaa', marginBottom: 12 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 12 }}>
                   Contractors paid ≥ $600 in {year} must receive a 1099-NEC. Thresholds based on service revenue attributed to each tech.
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                   <thead>
-                    <tr style={{ borderBottom: '2px solid #e8e8e8' }}>
+                    <tr style={{ borderBottom: '2px solid var(--pn-border)' }}>
                       <Th left>Contractor</Th>
                       <Th>Revenue</Th>
                       <Th>Appts</Th>
@@ -2293,8 +2293,8 @@ function TaxReport() {
                     {tech1099.map(([name, d], i) => {
                       const needs1099 = d.revenue >= 600;
                       return (
-                        <tr key={name} style={{ borderBottom: '1px solid #f5f5f5', background: i % 2 === 0 ? '#fff' : '#fafafa' }}>
-                          <td style={{ padding: '8px 4px', fontSize: 12, color: '#333', fontWeight: 500 }}>{name}</td>
+                        <tr key={name} style={{ borderBottom: '1px solid var(--pn-border)', background: i % 2 === 0 ? 'var(--pn-surface)' : 'var(--pn-bg)' }}>
+                          <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text)', fontWeight: 500 }}>{name}</td>
                           <Td bold green>{fmt$(d.revenue)}</Td>
                           <Td>{d.count}</Td>
                           <Td>{d.count ? fmt$(d.revenue / d.count) : '—'}</Td>
@@ -2306,22 +2306,22 @@ function TaxReport() {
                           <td style={{ padding: '8px 4px', textAlign: 'right' }}>
                             <button onClick={() => downloadPdfFor(name, d.revenue)}
                               title={`Download 1099-NEC summary PDF for ${name}`}
-                              style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #2D7A5F', background: '#fff', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                              style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 6, border: '1px solid #2D7A5F', background: 'var(--pn-surface)', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
                               📄 PDF
                             </button>
                           </td>
                         </tr>
                       );
                     })}
-                    <tr style={{ borderTop: '2px solid #e8e8e8' }}>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#555', fontWeight: 700 }}>TOTAL</td>
+                    <tr style={{ borderTop: '2px solid var(--pn-border)' }}>
+                      <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text-muted)', fontWeight: 700 }}>TOTAL</td>
                       <td style={{ padding: '8px 4px', fontSize: 12, color: '#2D7A5F', textAlign: 'right', fontWeight: 700 }}>
                         {fmt$(tech1099.reduce((s, [, d]) => s + d.revenue, 0))}
                       </td>
-                      <td style={{ padding: '8px 4px', fontSize: 12, color: '#333', textAlign: 'right', fontWeight: 700 }}>
+                      <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text)', textAlign: 'right', fontWeight: 700 }}>
                         {tech1099.reduce((s, [, d]) => s + d.count, 0)}
                       </td>
-                      <td colSpan={3} style={{ padding: '8px 4px', fontSize: 11, color: '#aaa', textAlign: 'right' }}>
+                      <td colSpan={3} style={{ padding: '8px 4px', fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'right' }}>
                         {tech1099.filter(([, d]) => d.revenue >= 600).length} of {tech1099.length} techs require 1099
                       </td>
                     </tr>
@@ -2338,7 +2338,7 @@ function TaxReport() {
 
 const filterSelectStyle = {
   fontFamily: 'inherit', fontSize: 12, padding: '6px 10px', borderRadius: 8,
-  border: '1px solid #d8d8d8', background: '#fff', color: '#444', cursor: 'pointer',
+  border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer',
 };
 
 // ── Filters panel ──────────────────────────────────────
@@ -2360,9 +2360,9 @@ function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, s
           style={{
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '6px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
-            border: `1.5px solid ${activeCount > 0 ? '#2D7A5F' : '#d8d8d8'}`,
-            background: activeCount > 0 ? '#EDFAF3' : '#fff',
-            color: activeCount > 0 ? '#166534' : '#555', cursor: 'pointer',
+            border: `1.5px solid ${activeCount > 0 ? '#2D7A5F' : 'var(--pn-border-strong)'}`,
+            background: activeCount > 0 ? '#EDFAF3' : 'var(--pn-surface)',
+            color: activeCount > 0 ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer',
           }}>
           <span>⚲</span>
           <span>Filters{activeCount > 0 ? ` (${activeCount})` : ''}</span>
@@ -2370,11 +2370,11 @@ function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, s
         </button>
         {activeCount > 0 && (
           <>
-            <span style={{ fontSize: 11, color: '#888' }}>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
               Showing {shownCount.toLocaleString()} of {totalCount.toLocaleString()} transactions
             </span>
             <button onClick={clearAll}
-              style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, fontFamily: 'inherit', fontSize: 11, background: 'none', border: '1px solid #e0e0e0', color: '#888', cursor: 'pointer' }}>
+              style={{ marginLeft: 'auto', padding: '4px 10px', borderRadius: 6, fontFamily: 'inherit', fontSize: 11, background: 'none', border: '1px solid var(--pn-border)', color: 'var(--pn-text-muted)', cursor: 'pointer' }}>
               Clear all
             </button>
           </>
@@ -2382,7 +2382,7 @@ function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, s
       </div>
 
       {open && (
-        <div style={{ marginTop: 10, background: '#fafafa', border: '1px solid #ececec', borderRadius: 12, padding: 14 }}>
+        <div style={{ marginTop: 10, background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: 14 }}>
           <FilterSection label="Techs" empty="No techs in current data">
             {options.techs.map(name => (
               <FilterChip key={name} active={filters.techs.includes(name)} onClick={() => toggleMulti('techs', name)}>{name || '(no tech)'}</FilterChip>
@@ -2420,10 +2420,10 @@ function FilterSection({ label, children, empty }) {
   const arr = Array.isArray(children) ? children.filter(Boolean) : [children];
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         {arr.length === 0
-          ? <span style={{ fontSize: 11, color: '#bbb', fontStyle: 'italic' }}>{empty || 'No options'}</span>
+          ? <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', fontStyle: 'italic' }}>{empty || 'No options'}</span>
           : children}
       </div>
     </div>
@@ -2435,9 +2435,9 @@ function FilterChip({ active, onClick, children, radio }) {
     <button onClick={onClick}
       style={{
         padding: '5px 11px', borderRadius: 14, fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
-        border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`,
-        background: active ? '#EDFAF3' : '#fff',
-        color: active ? '#166534' : '#555', cursor: 'pointer', whiteSpace: 'nowrap',
+        border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`,
+        background: active ? '#EDFAF3' : 'var(--pn-surface)',
+        color: active ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', whiteSpace: 'nowrap',
       }}>
       {!radio && active ? '✓ ' : ''}{children}
     </button>
@@ -2446,7 +2446,7 @@ function FilterChip({ active, onClick, children, radio }) {
 
 function Th({ children, left, color }) {
   return (
-    <th style={{ padding: '6px 4px', textAlign: left ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: color || '#aaa', textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap' }}>
+    <th style={{ padding: '6px 4px', textAlign: left ? 'left' : 'right', fontSize: 11, fontWeight: 600, color: color || 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', whiteSpace: 'nowrap' }}>
       {children}
     </th>
   );
@@ -2454,7 +2454,7 @@ function Th({ children, left, color }) {
 
 function Td({ children, bold, green, muted }) {
   return (
-    <td style={{ padding: '8px 4px', textAlign: 'right', fontSize: 12, fontWeight: bold ? 700 : 400, color: green ? '#2D7A5F' : muted ? '#ccc' : '#333' }}>
+    <td style={{ padding: '8px 4px', textAlign: 'right', fontSize: 12, fontWeight: bold ? 700 : 400, color: green ? '#2D7A5F' : muted ? 'var(--pn-text-faint)' : 'var(--pn-text)' }}>
       {children}
     </td>
   );
@@ -2463,8 +2463,8 @@ function Td({ children, bold, green, muted }) {
 // ── shared primitives ──────────────────────────────────
 function Card({ title, children, style }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', padding: '16px 20px', ...style }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 14 }}>{title}</div>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '16px 20px', ...style }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 14 }}>{title}</div>
       {children}
     </div>
   );
@@ -2481,17 +2481,17 @@ function KPICard({ label, value, sub, accent, current, prev }) {
     }
   }
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', padding: '16px 20px' }}>
-      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{label}</div>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '16px 20px' }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 28, fontWeight: 700, color: accent || '#1a1a1a', lineHeight: 1 }}>{value}</div>
+        <div style={{ fontSize: 28, fontWeight: 700, color: accent || 'var(--pn-text)', lineHeight: 1 }}>{value}</div>
         {delta && (
           <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: delta.up ? '#f0fdf4' : '#fef2f2', color: delta.up ? '#16a34a' : '#ef4444', flexShrink: 0 }}>
             {delta.up ? '↑' : '↓'} {delta.pct}%
           </span>
         )}
       </div>
-      {sub && <div style={{ fontSize: 11, color: '#bbb', marginTop: 4 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>{sub}</div>}
     </div>
   );
 }
@@ -2501,9 +2501,9 @@ function PillBtn({ active, onClick, children }) {
     <button onClick={onClick} style={{
       padding: '6px 16px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12,
       fontWeight: active ? 600 : 400,
-      background: active ? '#1a1a1a' : '#fff',
-      color: active ? '#fff' : '#555',
-      border: `1px solid ${active ? '#1a1a1a' : '#d8d8d8'}`,
+      background: active ? 'var(--pn-text)' : 'var(--pn-surface)',
+      color: active ? 'var(--pn-bg)' : 'var(--pn-text-muted)',
+      border: `1px solid ${active ? 'var(--pn-text)' : 'var(--pn-border-strong)'}`,
       cursor: 'pointer',
     }}>
       {children}
@@ -2512,7 +2512,7 @@ function PillBtn({ active, onClick, children }) {
 }
 
 function Empty({ children }) {
-  return <div style={{ fontSize: 13, color: '#bbb', padding: '8px 0' }}>{children}</div>;
+  return <div style={{ fontSize: 13, color: 'var(--pn-text-faint)', padding: '8px 0' }}>{children}</div>;
 }
 
 // ── Export menu ────────────────────────────────────────
@@ -2662,25 +2662,25 @@ function ExportMenu({ appts, metrics, startDate, endDate, filtersActive }) {
     <div style={{ position: 'relative' }}>
       <button
         onClick={() => !disabled && setOpen(o => !o)}
-        style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', border: '1px solid #d8d8d8', background: '#fff', cursor: disabled ? 'default' : 'pointer', color: disabled ? '#ccc' : '#555', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}
+        style={{ padding: '6px 14px', borderRadius: 8, fontSize: 12, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: disabled ? 'default' : 'pointer', color: disabled ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)', fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5 }}
       >
         ↓ Export <span style={{ fontSize: 10, opacity: .7 }}>▾</span>
       </button>
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 99 }} />
-          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,.1)', zIndex: 100, minWidth: 230, overflow: 'hidden' }}>
-            <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.07em', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ position: 'absolute', right: 0, top: '100%', marginTop: 4, background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, boxShadow: '0 6px 24px rgba(0,0,0,.1)', zIndex: 100, minWidth: 230, overflow: 'hidden' }}>
+            <div style={{ padding: '8px 14px 6px', fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.07em', borderBottom: '1px solid var(--pn-border)' }}>
               Download as CSV
             </div>
             {OPTS.map(opt => (
               <button key={opt.label} onClick={opt.fn}
                 style={{ display: 'block', width: '100%', padding: '10px 16px', background: 'none', border: 'none', borderBottom: '1px solid #f5f5f5', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
-                onMouseEnter={e => e.currentTarget.style.background = '#f8f9fa'}
+                onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
-                <div style={{ fontSize: 13, color: '#222', fontWeight: 500 }}>{opt.label}</div>
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>{opt.sub}</div>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)', fontWeight: 500 }}>{opt.label}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>{opt.sub}</div>
               </button>
             ))}
           </div>
@@ -2791,28 +2791,28 @@ function MarkdownLite({ text }) {
         if (b.type === 'h') {
           const sz = b.level === 1 ? 17 : b.level === 2 ? 15 : 14;
           return (
-            <div key={k} style={{ fontSize: sz, fontWeight: 700, color: '#1a1a1a', margin: bi === 0 ? '0 0 6px' : '12px 0 6px' }}>
+            <div key={k} style={{ fontSize: sz, fontWeight: 700, color: 'var(--pn-text)', margin: bi === 0 ? '0 0 6px' : '12px 0 6px' }}>
               {renderInline(b.text, k)}
             </div>
           );
         }
         if (b.type === 'p') {
           return (
-            <p key={k} style={{ margin: bi === 0 ? '0 0 8px' : '8px 0', color: '#222' }}>
+            <p key={k} style={{ margin: bi === 0 ? '0 0 8px' : '8px 0', color: 'var(--pn-text)' }}>
               {renderInline(b.text, k)}
             </p>
           );
         }
         if (b.type === 'ul') {
           return (
-            <ul key={k} style={{ margin: '6px 0 8px', paddingLeft: 22, color: '#222' }}>
+            <ul key={k} style={{ margin: '6px 0 8px', paddingLeft: 22, color: 'var(--pn-text)' }}>
               {b.items.map((it, ii) => <li key={ii} style={{ marginBottom: 3 }}>{renderInline(it, `${k}i${ii}`)}</li>)}
             </ul>
           );
         }
         if (b.type === 'ol') {
           return (
-            <ol key={k} style={{ margin: '6px 0 8px', paddingLeft: 22, color: '#222' }}>
+            <ol key={k} style={{ margin: '6px 0 8px', paddingLeft: 22, color: 'var(--pn-text)' }}>
               {b.items.map((it, ii) => <li key={ii} style={{ marginBottom: 3 }}>{renderInline(it, `${k}i${ii}`)}</li>)}
             </ol>
           );
@@ -2832,9 +2832,9 @@ function MarkdownLite({ text }) {
                 </thead>
                 <tbody>
                   {b.rows.map((row, ri) => (
-                    <tr key={ri} style={{ background: ri % 2 === 0 ? '#fff' : '#fafafa' }}>
+                    <tr key={ri} style={{ background: ri % 2 === 0 ? 'var(--pn-surface)' : 'var(--pn-bg)' }}>
                       {row.map((cell, ci) => (
-                        <td key={ci} style={{ padding: '8px 12px', borderBottom: '1px solid #f0f0f0', color: '#222' }}>
+                        <td key={ci} style={{ padding: '8px 12px', borderBottom: '1px solid var(--pn-border)', color: 'var(--pn-text)' }}>
                           {renderInline(cell, `${k}r${ri}c${ci}`)}
                         </td>
                       ))}
@@ -2898,11 +2898,11 @@ function AskAI() {
 
       {messages.length === 0 && (
         <div>
-          <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Try asking</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Try asking</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {SUGGESTED.map(s => (
               <button key={s} onClick={() => send(s)} disabled={busy}
-                style={{ textAlign: 'left', fontFamily: 'inherit', fontSize: 13, color: '#444', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10, padding: '10px 14px', cursor: busy ? 'default' : 'pointer' }}>
+                style={{ textAlign: 'left', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text-muted)', background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px', cursor: busy ? 'default' : 'pointer' }}>
                 {s}
               </button>
             ))}
@@ -2915,8 +2915,8 @@ function AskAI() {
           <div key={i} style={{
             alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start',
             maxWidth: m.role === 'user' ? '85%' : '95%',
-            background: m.role === 'user' ? '#3D95CE' : '#fff',
-            color: m.role === 'user' ? '#fff' : '#222',
+            background: m.role === 'user' ? '#3D95CE' : 'var(--pn-surface)',
+            color: m.role === 'user' ? '#fff' : 'var(--pn-text)',
             padding: m.role === 'user' ? '10px 14px' : '14px 18px',
             borderRadius: 14,
             border: m.role === 'user' ? 'none' : '1px solid #e8e4f0',
@@ -2931,7 +2931,7 @@ function AskAI() {
           </div>
         ))}
         {busy && (
-          <div style={{ alignSelf: 'flex-start', fontSize: 12, color: '#888', padding: '6px 10px' }}>
+          <div style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--pn-text-muted)', padding: '6px 10px' }}>
             Thinking…
           </div>
         )}
@@ -2948,7 +2948,7 @@ function AskAI() {
           onChange={e => setInput(e.target.value)}
           placeholder="Ask a question about your data…"
           disabled={busy}
-          style={{ flex: 1, fontFamily: 'inherit', fontSize: 14, padding: '10px 14px', borderRadius: 10, border: '1px solid #d8d8d8', outline: 'none', background: '#fff', color: '#222' }}
+          style={{ flex: 1, fontFamily: 'inherit', fontSize: 14, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', outline: 'none', background: 'var(--pn-surface)', color: 'var(--pn-text)' }}
         />
         <button type="submit" disabled={busy || !input.trim()}
           style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, padding: '10px 18px', borderRadius: 10, border: 'none', background: busy || !input.trim() ? '#cbb6e0' : '#5b3b8c', color: '#fff', cursor: busy || !input.trim() ? 'default' : 'pointer' }}>
@@ -2956,7 +2956,7 @@ function AskAI() {
         </button>
         {messages.length > 0 && (
           <button type="button" onClick={() => { setMessages([]); setError(''); }} disabled={busy}
-            style={{ fontFamily: 'inherit', fontSize: 13, padding: '10px 14px', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer' }}>
+            style={{ fontFamily: 'inherit', fontSize: 13, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer' }}>
             Reset
           </button>
         )}

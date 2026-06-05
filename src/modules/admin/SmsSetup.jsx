@@ -159,7 +159,7 @@ export default function SmsSetup() {
   }, [settings, webCfg, sms]);
 
   if (!isAdmin) {
-    return <div style={{ padding: 24, color: '#888', fontSize: 14 }}>SMS setup is admin-only.</div>;
+    return <div style={{ padding: 24, color: 'var(--pn-text-faint)', fontSize: 14 }}>SMS setup is admin-only.</div>;
   }
 
   const status = sms?.status || 'draft';
@@ -207,7 +207,7 @@ export default function SmsSetup() {
   return (
     <div style={{ padding: '20px 24px', maxWidth: 760 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>📱 SMS Setup</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)', margin: 0 }}>📱 SMS Setup</h2>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: stat.color }} />
           <span style={{ color: stat.color, fontWeight: 600 }}>{stat.label}</span>
@@ -215,10 +215,10 @@ export default function SmsSetup() {
       </div>
 
       {/* Status card — always visible */}
-      <div style={{ padding: 14, borderRadius: 10, background: '#f8f9fa', border: '1px solid #e8e8e8', marginBottom: 18, fontSize: 13 }}>
-        <div style={{ color: '#555' }}>{stat.desc}</div>
+      <div style={{ padding: 14, borderRadius: 10, background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', marginBottom: 18, fontSize: 13 }}>
+        <div style={{ color: 'var(--pn-text-muted)' }}>{stat.desc}</div>
         {sms?.tfnNumber && (
-          <div style={{ marginTop: 6, fontSize: 12, color: '#666' }}>
+          <div style={{ marginTop: 6, fontSize: 12, color: 'var(--pn-text-muted)' }}>
             <strong>Your TFN:</strong> {sms.tfnNumber}
             {sms.approvedAt && <span style={{ marginLeft: 12, color: '#10b981' }}>· Approved {new Date(sms.approvedAt).toLocaleDateString()}</span>}
           </div>
@@ -236,7 +236,7 @@ export default function SmsSetup() {
         {sms?.tfnNumber && status !== 'released' && (
           <div style={{ marginTop: 10 }}>
             <button onClick={doRelease} disabled={releaseBusy}
-              style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6, border: '1px solid #d0d0d0', background: '#fff', color: '#7f1d1d', cursor: releaseBusy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: '#7f1d1d', cursor: releaseBusy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
               {releaseBusy ? 'Releasing…' : '✕ Release this TFN'}
             </button>
           </div>
@@ -256,7 +256,7 @@ export default function SmsSetup() {
             {[1, 2, 3].map(n => (
               <div key={n} style={{
                 flex: 1, height: 4, borderRadius: 2,
-                background: step >= n ? '#5b3b8c' : '#e5e5e5',
+                background: step >= n ? '#5b3b8c' : 'var(--pn-surface-alt)',
                 transition: 'background .2s',
               }} />
             ))}
@@ -369,7 +369,7 @@ export default function SmsSetup() {
                 <input type="number" min={1} max={2000} value={form.estimatedDailyVolume}
                   onChange={e => patch('estimatedDailyVolume', Number(e.target.value) || 0)}
                   style={{ ...inp, width: 120 }} />
-                <span style={{ marginLeft: 8, fontSize: 11, color: '#888' }}>segments/day (TFN cap ~2,000/day)</span>
+                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--pn-text-faint)' }}>segments/day (TFN cap ~2,000/day)</span>
               </Row>
               <NavRow>
                 <button onClick={() => setStep(1)} style={btnSecondary}>← Back</button>
@@ -384,7 +384,7 @@ export default function SmsSetup() {
                 <select value={areaCode} onChange={e => setAreaCode(e.target.value)} style={inp}>
                   {TFN_AREA_CODES.map(a => <option key={a} value={a}>+1 ({a}) xxx-xxxx</option>)}
                 </select>
-                <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>
                   We'll buy the first available number in this area code ($2/mo).
                 </div>
               </Row>
@@ -421,7 +421,7 @@ export default function SmsSetup() {
 
 function Step({ title, children }) {
   return (
-    <div style={{ padding: 18, background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12 }}>
+    <div style={{ padding: 18, background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: '#5b3b8c', marginBottom: 14, letterSpacing: '.04em', textTransform: 'uppercase' }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
     </div>
@@ -431,10 +431,10 @@ function Step({ title, children }) {
 function Row({ label, children, err, hint }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: err ? '#b91c1c' : '#555', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: err ? '#b91c1c' : 'var(--pn-text-muted)', marginBottom: 5 }}>{label}</div>
       {children}
       {err  && <Err msg={err} />}
-      {!err && hint && <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{hint}</div>}
+      {!err && hint && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>{hint}</div>}
     </div>
   );
 }
@@ -450,11 +450,11 @@ function inpStyle(err) {
     width: '100%', boxSizing: 'border-box',
     padding: '9px 11px',
     fontSize: 13,
-    border: `1px solid ${err ? '#fca5a5' : '#d8d8d8'}`,
+    border: `1px solid ${err ? '#fca5a5' : 'var(--pn-border-strong)'}`,
     borderRadius: 8,
     fontFamily: 'inherit',
     outline: 'none',
-    background: err ? '#fef2f2' : '#fff',
+    background: err ? '#fef2f2' : 'var(--pn-surface)',
   };
 }
 
@@ -468,11 +468,11 @@ const inp = {
   width: '100%', boxSizing: 'border-box',
   padding: '9px 11px',
   fontSize: 13,
-  border: '1px solid #d8d8d8',
+  border: '1px solid var(--pn-border-strong)',
   borderRadius: 8,
   fontFamily: 'inherit',
   outline: 'none',
-  background: '#fff',
+  background: 'var(--pn-surface)',
 };
 
 const btnPrimary = {
@@ -492,9 +492,9 @@ const btnSecondary = {
   fontSize: 13,
   fontWeight: 600,
   borderRadius: 8,
-  border: '1px solid #d0d0d0',
-  background: '#fff',
-  color: '#555',
+  border: '1px solid var(--pn-border-strong)',
+  background: 'var(--pn-surface)',
+  color: 'var(--pn-text-muted)',
   cursor: 'pointer',
   fontFamily: 'inherit',
 };

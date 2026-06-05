@@ -1,10 +1,53 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ── Light/dark semantic tokens (staff/management app) ──────────────────
+   Components reference these via var(--pn-*) so the management surface
+   flips with the data-theme attribute on <html> (set by lib/colorMode.js).
+   Brand colors stay on the separate --tm-* vars from ThemeProvider. */
+:root {
+  --pn-bg:          #f8f9fa;
+  --pn-surface:     #ffffff;
+  --pn-surface-alt: #f5f7fa;
+  --pn-surface-muted:#f1f3f5;
+  --pn-text:        #1a1a1a;
+  --pn-text-muted:  #666666;
+  --pn-text-faint:  #aaaaaa;
+  --pn-border:      #e8e8e8;
+  --pn-border-strong:#d8d8d8;
+  --pn-danger:      #c0392b;
+  --pn-danger-bg:   #fdecea;
+  --pn-success:     #16a34a;
+  --pn-warning:     #c47d2e;
+  --pn-warning-bg:  #fdf2e6;
+  --pn-overlay:     rgba(0,0,0,0.4);
+  --pn-shadow:      rgba(0,0,0,0.08);
+  --pn-frame:       #1a1a1a;   /* desktop body frame behind the card */
+}
+:root[data-theme="dark"] {
+  --pn-bg:          #0f1419;
+  --pn-surface:     #1a2027;
+  --pn-surface-alt: #232b34;
+  --pn-surface-muted:#2a323c;
+  --pn-text:        #f1f3f5;
+  --pn-text-muted:  #9aa3ad;
+  --pn-text-faint:  #6b7480;
+  --pn-border:      #2a323c;
+  --pn-border-strong:#3a434e;
+  --pn-danger:      #ef5350;
+  --pn-danger-bg:   #3a1f1d;
+  --pn-success:     #34d27e;
+  --pn-warning:     #e0a64a;
+  --pn-warning-bg:  #3a2c18;
+  --pn-overlay:     rgba(0,0,0,0.6);
+  --pn-shadow:      rgba(0,0,0,0.5);
+  --pn-frame:       #05080b;
+}
+
 html, body { overflow-x: hidden; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #1a1a1a;
+  background: var(--pn-frame);
   min-height: 100dvh;
   display: flex;
   align-items: center;
@@ -24,7 +67,7 @@ body {
 @media (max-width: 768px) {
   body {
     padding: 0;
-    background: #f8f9fa;
+    background: var(--pn-bg);
     align-items: flex-start;
     justify-content: flex-start;
   }

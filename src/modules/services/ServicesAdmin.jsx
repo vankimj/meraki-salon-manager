@@ -264,12 +264,12 @@ export default function ServicesAdmin() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 8 }}>
         {!isTech && (
-          <button onClick={handleReseed} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #d0d0d0', background: '#fafafa', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={handleReseed} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
             ↺ Reset to defaults
           </button>
         )}
         <div style={{ display: 'flex', gap: 8, marginLeft: 'auto', alignItems: 'center' }}>
-          <span style={{ fontSize: 12, color: '#aaa' }}>{services.length} total · {activeCount} active</span>
+          <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>{services.length} total · {activeCount} active</span>
           {undoStack.length > 0 && <Btn onClick={handleUndo}>↩ Undo</Btn>}
           {redoStack.length > 0 && <Btn onClick={handleRedo}>↪ Redo</Btn>}
           <TrashButton collections={['services']} scope="Services" />
@@ -287,25 +287,25 @@ export default function ServicesAdmin() {
       )}
 
       {groups.map(({ category, services: svcs }) => (
-        <div key={category} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', marginBottom: 14, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 16px', borderBottom: '1px solid #e8e8e8', fontSize: 12, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div key={category} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', marginBottom: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <span>{category}</span>
-            <span style={{ fontSize: 11, fontWeight: 500, color: '#bbb', letterSpacing: 0, textTransform: 'none' }}>{svcs.length}</span>
+            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--pn-text-faint)', letterSpacing: 0, textTransform: 'none' }}>{svcs.length}</span>
           </div>
           {svcs.map(svc => (
             <div key={svc.id}
               onClick={() => { setEditing({ ...svc }); setErrors({}); }}
-              style={{ padding: '10px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', gap: 12, opacity: svc.active ? 1 : .45, cursor: 'pointer', transition: 'background .12s' }}
-              onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
+              style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', gap: 12, opacity: svc.active ? 1 : .45, cursor: 'pointer', transition: 'background .12s' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--pn-bg)'; }}
               onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
               <ServiceThumb image={svc.image} name={svc.name} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{svc.name}</div>
-                <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{svc.name}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>
                   {formatPrice(svc.basePrice, svc.priceFrom)} · {formatDuration(svc.duration, svc.durationMin)}
                 </div>
                 {svc.description && (
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{svc.description}</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{svc.description}</div>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
@@ -346,7 +346,7 @@ function ServiceThumb({ image, name }) {
       <img
         src={image} alt={name}
         onError={() => setErr(true)}
-        style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: '#f0f0f0' }}
+        style={{ width: 48, height: 48, borderRadius: 8, objectFit: 'cover', flexShrink: 0, background: 'var(--pn-surface-alt)' }}
       />
     );
   }
@@ -377,17 +377,17 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '92%', maxWidth: 440, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, padding: 24, width: '92%', maxWidth: 440, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <span style={{ fontSize: 15, fontWeight: 600 }}>{isNew ? 'Add Service' : 'Edit Service'}</span>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>×</button>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>×</button>
         </div>
 
         {/* Image preview + controls */}
         <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 6 }}>Service photo</label>
+          <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6 }}>Service photo</label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <div style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden', background: '#f0f0f0', flexShrink: 0, border: '1px solid #e8e8e8' }}>
+            <div style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden', background: 'var(--pn-surface-alt)', flexShrink: 0, border: '1px solid var(--pn-border)' }}>
               {svc.image && !imgErr
                 ? <img src={svc.image} alt="" onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>💅</div>
@@ -400,7 +400,7 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
                 placeholder="Paste image URL…"
                 style={{ ...inputStyle, fontSize: 11 }}
               />
-              <button onClick={() => fileRef.current?.click()} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, border: '1px solid #d0d0d0', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', color: '#555', textAlign: 'left' }}>
+              <button onClick={() => fileRef.current?.click()} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)', textAlign: 'left' }}>
                 ↑ Upload photo…
               </button>
               <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
@@ -432,11 +432,11 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
         </div>
 
         <div style={{ display: 'flex', gap: 20, marginBottom: 12 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--pn-text-muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={svc.priceFrom} onChange={e => onChange({ priceFrom: e.target.checked })} />
             Price is "starting from" ($X+)
           </label>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#555', cursor: 'pointer' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--pn-text-muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={svc.durationMin} onChange={e => onChange({ durationMin: e.target.checked })} />
             Duration is minimum (Xmin+)
           </label>
@@ -454,33 +454,33 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           />
         </Field>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10 }}>
           <input type="checkbox" checked={svc.active} onChange={e => onChange({ active: e.target.checked })} />
           Active (visible to clients)
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10 }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={svc.taxable !== false} onChange={e => onChange({ taxable: e.target.checked })} />
           <span>
             Subject to sales tax
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
               On for regular services. Turn off for cancellation fees, no-show fees, or any non-service charges where Ohio sales tax doesn't apply.
             </div>
           </span>
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 14 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14 }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.canRequireRemoval} onChange={e => onChange({ canRequireRemoval: e.target.checked })} />
           <span>
             Can require removal
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
               When booking online, customers will be asked if they need an existing set removed first. The fee is set in <strong>Admin → 💰 Financial</strong>.
             </div>
           </span>
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 14 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14 }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.categoryExclusive} onChange={e => onChange({ categoryExclusive: e.target.checked })} />
           <span>
             Exclusive in category
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
               Block adding this service when another exclusive service from <strong>{svc.category || 'the same category'}</strong> is already in the cart. Use for "one set of hands / one set of feet" rules — set this on every Manicure and every Pedicure so customers can only pick one of each per visit. Leave OFF for add-ons (Nail Art, Removal, etc.).
             </div>
           </span>
@@ -501,21 +501,21 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
         {/* Tier 7: per-service flow overrides. These override the
             corresponding global Booking Flow settings (Admin → Settings →
             🧭 Booking Flow) ONLY when this service is in the cart. */}
-        <div style={{ background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 8 }}>
+        <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 8 }}>
             Booking-flow overrides for this service
           </div>
-          <div style={{ fontSize: 11, color: '#888', lineHeight: 1.5, marginBottom: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
             When this service is in the cart, these win over the global Booking Flow settings. Leave blank to inherit.
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 12 }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 12 }}>
             <input type="checkbox" style={{ marginTop: 3 }}
               checked={!!svc.flowOverrides?.requireSignIn}
               onChange={e => onChange({ flowOverrides: { ...(svc.flowOverrides || {}), requireSignIn: e.target.checked || undefined } })} />
             <span>
               Require sign-in to book this service
-              <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.45 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
                 Useful for VIP services, services with a deposit, or anything you want auditable to a specific account.
               </div>
             </span>
@@ -563,18 +563,18 @@ function ServiceOptionsEditor({ options, onChange }) {
   }
 
   return (
-    <div style={{ background: '#fafafa', border: '1px solid #ececec', borderRadius: 10, padding: 10 }}>
+    <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: 10 }}>
       {options.length === 0 && (
-        <div style={{ fontSize: 11, color: '#aaa', padding: '6px 4px 10px', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', padding: '6px 4px 10px', lineHeight: 1.5 }}>
           No options yet. Use options to offer variants like Short/Medium/Long or add-ons (Nail Art, Removal). Each option has its own price and duration.
         </div>
       )}
       {options.length > 0 && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, paddingLeft: 2 }}>
-          <div style={{ flex: 2, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Name</div>
-          <div style={{ width: 64, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Price ($)</div>
-          <div style={{ width: 56, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase' }}>Min</div>
-          <div style={{ width: 28, fontSize: 10, fontWeight: 600, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', textAlign: 'center' }} title='Display price as "starts at" (e.g. $15+). Useful when the final price varies — like Nail Art.'>$+?</div>
+          <div style={{ flex: 2, fontSize: 10, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Name</div>
+          <div style={{ width: 64, fontSize: 10, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Price ($)</div>
+          <div style={{ width: 56, fontSize: 10, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase' }}>Min</div>
+          <div style={{ width: 28, fontSize: 10, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', textAlign: 'center' }} title='Display price as "starts at" (e.g. $15+). Useful when the final price varies — like Nail Art.'>$+?</div>
           <div style={{ width: 28 }} />
         </div>
       )}
@@ -582,15 +582,15 @@ function ServiceOptionsEditor({ options, onChange }) {
         <div key={opt.id || i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
           <input value={opt.name || ''} onChange={e => patch(i, { name: e.target.value })}
             placeholder="Option name (e.g. Gel-X with removal)"
-            style={{ flex: 2, minWidth: 0, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
+            style={{ flex: 2, minWidth: 0, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: 'var(--pn-surface)' }} />
           <input type="number" value={opt.price ?? 0} onChange={e => patch(i, { price: Number(e.target.value) })}
             title="Price ($)" placeholder="$"
-            style={{ width: 64, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
+            style={{ width: 64, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: 'var(--pn-surface)' }} />
           <input type="number" value={opt.duration ?? 0} onChange={e => patch(i, { duration: Number(e.target.value) })}
             title="Duration (min)" placeholder="min"
-            style={{ width: 56, fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: '#fff' }} />
+            style={{ width: 56, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: 'var(--pn-surface)' }} />
           <label title='Display price as "starts at" (e.g. $15+). Use for variable-price options like Nail Art.'
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, fontSize: 11, color: '#555', cursor: 'pointer', userSelect: 'none' }}>
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, fontSize: 11, color: 'var(--pn-text-muted)', cursor: 'pointer', userSelect: 'none' }}>
             <input type="checkbox" checked={!!opt.priceFrom} onChange={e => patch(i, { priceFrom: e.target.checked })} />
           </label>
           <button onClick={() => remove(i)} title="Remove option"
@@ -598,11 +598,11 @@ function ServiceOptionsEditor({ options, onChange }) {
         </div>
       ))}
       <button onClick={add}
-        style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px dashed #c0c0c0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+        style={{ fontSize: 11, padding: '6px 12px', borderRadius: 6, border: '1px dashed var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
         + Add option
       </button>
       {options.length > 0 && (
-        <div style={{ fontSize: 10, color: '#aaa', marginTop: 8, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 8, lineHeight: 1.5 }}>
           Each option's price + duration overrides the base service. Check the <strong>$+?</strong> box to display the price as <strong>"$X+"</strong> instead of <strong>"$X"</strong> — useful for options whose final cost varies (Nail Art, Air Brush, etc.).
         </div>
       )}
@@ -612,7 +612,7 @@ function ServiceOptionsEditor({ options, onChange }) {
 
 function Toggle({ active, onChange }) {
   return (
-    <div onClick={onChange} style={{ width: 34, height: 20, borderRadius: 10, background: active ? '#22c55e' : '#d0d0d0', position: 'relative', cursor: 'pointer', flexShrink: 0, transition: 'background .2s' }}>
+    <div onClick={onChange} style={{ width: 34, height: 20, borderRadius: 10, background: active ? '#22c55e' : 'var(--pn-surface-muted)', position: 'relative', cursor: 'pointer', flexShrink: 0, transition: 'background .2s' }}>
       <div style={{ width: 16, height: 16, borderRadius: '50%', background: '#fff', position: 'absolute', top: 2, left: active ? 16 : 2, transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
     </div>
   );
@@ -621,9 +621,9 @@ function Toggle({ active, onChange }) {
 function Field({ label, error, hint, children, style }) {
   return (
     <div style={{ marginBottom: 12, ...style }}>
-      <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>{label}</label>
+      <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 4 }}>{label}</label>
       {children}
-      {hint && !error && <div style={{ fontSize: 11, color: '#aaa', marginTop: 3, lineHeight: 1.45 }}>{hint}</div>}
+      {hint && !error && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 3, lineHeight: 1.45 }}>{hint}</div>}
       {error && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 3 }}>{error}</div>}
     </div>
   );
@@ -631,15 +631,15 @@ function Field({ label, error, hint, children, style }) {
 
 function Btn({ onClick, color, children }) {
   return (
-    <button onClick={onClick} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: 'none', background: color || '#e8e8e8', color: color ? '#fff' : '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+    <button onClick={onClick} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: 'none', background: color || 'var(--pn-surface-muted)', color: color ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
       {children}
     </button>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ padding: 16, textAlign: 'center', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ padding: 16, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
-const inputStyle = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };
-const btnBase    = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, padding: '8px 14px', color: '#333' };
+const inputStyle = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 12px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
+const btnBase    = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 14px', color: 'var(--pn-text)' };

@@ -22,7 +22,7 @@ export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         Welcome to Plume Nexus 👋 — let's get your salon set up. This takes ~20 minutes
         and you can skip any step. Your progress saves automatically as you go.
       </div>
@@ -57,7 +57,7 @@ export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
             />
           ))}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 8 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 8 }}>
           The nail-salon template has full polish today; other industries seed a starter list you'll likely customize.
         </div>
       </Section>
@@ -91,9 +91,9 @@ function Card({ selected, onClick, icon, title, desc, compact }) {
       style={{
         textAlign: 'left',
         padding: compact ? '10px 14px' : '14px 16px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : '#e5e5e5'}`,
+        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
         borderRadius: 10,
-        background: selected ? '#f5efff' : '#fff',
+        background: selected ? '#f5efff' : 'var(--pn-surface)',
         cursor: 'pointer',
         fontFamily: 'inherit',
         display: 'flex',
@@ -103,8 +103,8 @@ function Card({ selected, onClick, icon, title, desc, compact }) {
       }}>
       {icon && <span style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{icon}</span>}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 3 }}>{title}</div>
-        <div style={{ fontSize: 12, color: '#666', lineHeight: 1.5 }}>{desc}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 3 }}>{title}</div>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>{desc}</div>
       </div>
       {selected && <span style={{ fontSize: 16, color: '#5b3b8c', marginTop: 2 }}>✓</span>}
     </button>

@@ -44,7 +44,7 @@ export default function ChatAdmin() {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', letterSpacing: '.06em', textTransform: 'uppercase' }}>
           Client Messages
         </div>
         {totalUnread > 0 && (
@@ -68,12 +68,12 @@ export default function ChatAdmin() {
       )}
 
       {threads === null ? (
-        <div style={{ textAlign: 'center', padding: 48, color: '#bbb', fontSize: 13 }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: 48, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
       ) : threads.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 48 }}>
           <div style={{ fontSize: 40, marginBottom: 10 }}>💬</div>
-          <div style={{ fontSize: 13, color: '#aaa' }}>No messages yet.</div>
-          <div style={{ fontSize: 12, color: '#bbb', marginTop: 4 }}>Clients can send messages from their portal.</div>
+          <div style={{ fontSize: 13, color: 'var(--pn-text-faint)' }}>No messages yet.</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 4 }}>Clients can send messages from their portal.</div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -91,7 +91,7 @@ function ThreadRow({ thread, onClick }) {
   return (
     <button onClick={onClick} style={{
       display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
-      background: '#fff', border: '1px solid #f0f0f0', borderRadius: 12,
+      background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12,
       cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit', width: '100%',
     }}>
       <div style={{
@@ -104,14 +104,14 @@ function ThreadRow({ thread, onClick }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
-          <span style={{ fontSize: 13, fontWeight: unread ? 700 : 600, color: '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>
+          <span style={{ fontSize: 13, fontWeight: unread ? 700 : 600, color: 'var(--pn-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 180 }}>
             {thread.clientName}
           </span>
-          <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0, marginLeft: 8 }}>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0, marginLeft: 8 }}>
             {fmtTime(thread.lastAt)}
           </span>
         </div>
-        <div style={{ fontSize: 12, color: unread ? '#555' : '#aaa', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: unread ? 600 : 400 }}>
+        <div style={{ fontSize: 12, color: unread ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: unread ? 600 : 400 }}>
           {thread.lastMessage || 'No messages yet'}
         </div>
       </div>
@@ -190,7 +190,7 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100dvh - 84px)' }}>
       {/* Thread header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 0 12px', borderBottom: '1px solid #f0f0f0', marginBottom: 12, flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 0 12px', borderBottom: '1px solid var(--pn-border)', marginBottom: 12, flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#3D95CE', fontSize: 13, fontWeight: 500, fontFamily: 'inherit', padding: '6px 0', display: 'flex', alignItems: 'center', gap: 4 }}>
           ‹ Back
         </button>
@@ -198,15 +198,15 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
           {initials(thread?.clientName || '?')}
         </div>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{thread?.clientName || 'Client'}</div>
-          {thread?.clientEmail && <div style={{ fontSize: 11, color: '#aaa' }}>{thread.clientEmail}</div>}
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>{thread?.clientName || 'Client'}</div>
+          {thread?.clientEmail && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{thread.clientEmail}</div>}
         </div>
       </div>
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 8 }}>
         {messages.length === 0 && (
-          <div style={{ textAlign: 'center', padding: 32, color: '#bbb', fontSize: 13 }}>No messages yet.</div>
+          <div style={{ textAlign: 'center', padding: 32, color: 'var(--pn-text-faint)', fontSize: 13 }}>No messages yet.</div>
         )}
         {messages.map((m, i) => (
           <MessageBubble key={i} msg={m} isStaff={m.from === 'staff'} />
@@ -215,21 +215,21 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
       </div>
 
       {/* Input */}
-      <div style={{ paddingTop: 10, borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+      <div style={{ paddingTop: 10, borderTop: '1px solid var(--pn-border)', flexShrink: 0 }}>
         {/* Channel selector — buttons disable when contact info isn't on file */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           <button onClick={() => setChannel('app')}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'app' ? '#f0faf6' : '#fafafa', color: channel === 'app' ? '#2D7A5F' : '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'app' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'app' ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             💬 In-app chat
           </button>
           <button onClick={() => setChannel('sms')} disabled={!thread?.clientPhone}
             title={thread?.clientPhone ? `Sends an SMS to ${thread.clientPhone}` : 'No phone on file'}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'sms' ? '#f0faf6' : '#fafafa', color: channel === 'sms' ? '#2D7A5F' : (thread?.clientPhone ? '#666' : '#bbb'), cursor: thread?.clientPhone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'sms' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'sms' ? '#2D7A5F' : (thread?.clientPhone ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: thread?.clientPhone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
             📱 SMS
           </button>
           <button onClick={() => setChannel('email')} disabled={!thread?.clientEmail}
             title={thread?.clientEmail ? `Sends an email to ${thread.clientEmail}` : 'No email on file'}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'email' ? '#f0faf6' : '#fafafa', color: channel === 'email' ? '#2D7A5F' : (thread?.clientEmail ? '#666' : '#bbb'), cursor: thread?.clientEmail ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'email' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'email' ? '#2D7A5F' : (thread?.clientEmail ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: thread?.clientEmail ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
             ✉️ Email
           </button>
         </div>
@@ -238,7 +238,7 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
             value={subject}
             onChange={e => setSubject(e.target.value)}
             placeholder="Subject"
-            style={{ width: '100%', fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', background: '#fff', marginBottom: 6, boxSizing: 'border-box' }}
+            style={{ width: '100%', fontFamily: 'inherit', border: '1.5px solid var(--pn-border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', background: 'var(--pn-surface)', marginBottom: 6, boxSizing: 'border-box' }}
           />
         )}
         {sendError && (
@@ -250,10 +250,10 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
             onChange={e => setText(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
             placeholder={channel === 'sms' ? 'Send SMS to client…' : channel === 'email' ? 'Email body…' : 'Reply to client…'}
-            style={{ flex: 1, fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 22, padding: '9px 16px', fontSize: 13, outline: 'none', background: '#fafafa' }}
+            style={{ flex: 1, fontFamily: 'inherit', border: '1.5px solid var(--pn-border)', borderRadius: 22, padding: '9px 16px', fontSize: 13, outline: 'none', background: 'var(--pn-surface-alt)' }}
           />
           <button onClick={handleSend} disabled={!text.trim() || sending}
-            style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: text.trim() && !sending ? '#2D7A5F' : '#e0e0e0', color: '#fff', fontSize: 18, cursor: text.trim() && !sending ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }}>
+            style={{ width: 42, height: 42, borderRadius: '50%', border: 'none', background: text.trim() && !sending ? '#2D7A5F' : 'var(--pn-surface-alt)', color: '#fff', fontSize: 18, cursor: text.trim() && !sending ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontFamily: 'inherit' }}>
             ↑
           </button>
         </div>
@@ -272,8 +272,8 @@ function MessageBubble({ msg, isStaff }) {
   const staffBg = isSms ? '#1d4ed8' : isEmail ? '#7c3aed' : '#2D7A5F';
   const bubbleStyle = {
     maxWidth: '75%',
-    background: isStaff ? staffBg : '#f0f0f0',
-    color:      isStaff ? '#fff' : '#1a1a1a',
+    background: isStaff ? staffBg : 'var(--pn-surface-alt)',
+    color:      isStaff ? '#fff' : 'var(--pn-text)',
     borderRadius: isStaff ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
     padding: '9px 14px',
   };
@@ -281,7 +281,7 @@ function MessageBubble({ msg, isStaff }) {
     <div style={{ display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start' }}>
       <div style={bubbleStyle}>
         {(channelBadge || (!isStaff && msg.senderName)) && (
-          <div style={{ fontSize: 10, fontWeight: 700, color: isStaff ? 'rgba(255,255,255,.7)' : '#888', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: isStaff ? 'rgba(255,255,255,.7)' : 'var(--pn-text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.04em', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {!isStaff && msg.senderName && <span>{msg.senderName}</span>}
             {channelBadge && <span>{channelBadge}</span>}
           </div>
@@ -290,7 +290,7 @@ function MessageBubble({ msg, isStaff }) {
           <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4, opacity: .9 }}>{msg.subject}</div>
         )}
         <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{msg.text}</div>
-        <div style={{ fontSize: 10, color: isStaff ? 'rgba(255,255,255,.6)' : '#bbb', marginTop: 4, textAlign: isStaff ? 'right' : 'left', display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start', gap: 6 }}>
+        <div style={{ fontSize: 10, color: isStaff ? 'rgba(255,255,255,.6)' : 'var(--pn-text-faint)', marginTop: 4, textAlign: isStaff ? 'right' : 'left', display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start', gap: 6 }}>
           <span>{fmtTime(msg.sentAt || msg.at)}</span>
           {isSms && msg.twilioStatus && msg.twilioStatus !== 'sent' && msg.twilioStatus !== 'delivered' && msg.twilioStatus !== 'queued' && (
             <span style={{ color: '#fca5a5' }}>· {msg.twilioStatus}</span>
@@ -369,32 +369,32 @@ function ComposeModal({ senderName, onClose, onSent }) {
   return (
     <div onClick={e => e.target === e.currentTarget && onClose()}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div style={{ background: '#fff', borderRadius: 14, padding: 18, width: '100%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 14, padding: 18, width: '100%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>New conversation</div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e0e0e0', background: '#fff', cursor: 'pointer', fontSize: 14 }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 14 }}>×</button>
         </div>
 
         {!picked ? (
           <>
             <input value={search} onChange={e => setSearch(e.target.value)}
               placeholder="Search clients by name, phone, or email…" autoFocus
-              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 10, padding: '10px 14px', fontSize: 13, outline: 'none', marginBottom: 10 }} />
-            <div style={{ overflowY: 'auto', flex: 1, border: '1px solid #ececec', borderRadius: 10 }}>
+              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, outline: 'none', marginBottom: 10 }} />
+            <div style={{ overflowY: 'auto', flex: 1, border: '1px solid var(--pn-border)', borderRadius: 10 }}>
               {allClients === null ? (
-                <div style={{ padding: 20, textAlign: 'center', color: '#aaa', fontSize: 12 }}>Loading…</div>
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12 }}>Loading…</div>
               ) : filtered.length === 0 ? (
-                <div style={{ padding: 20, textAlign: 'center', color: '#aaa', fontSize: 12 }}>No clients match "{search}"</div>
+                <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12 }}>No clients match "{search}"</div>
               ) : filtered.map(c => (
                 <div key={c.id} onClick={() => setPicked(c)}
-                  style={{ padding: '10px 12px', borderBottom: '1px solid #f5f5f5', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#fafafa'}
+                  style={{ padding: '10px 12px', borderBottom: '1px solid var(--pn-border)', cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 1 }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-muted)'}
                   onMouseLeave={e => e.currentTarget.style.background = ''}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{c.name || '(no name)'}</div>
-                  <div style={{ fontSize: 11, color: '#888', display: 'flex', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{c.name || '(no name)'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'flex', gap: 10 }}>
                     {c.phone && <span>📱 {c.phone}</span>}
                     {c.email && <span>✉️ {c.email}</span>}
-                    {!c.phone && !c.email && <span style={{ color: '#bbb' }}>no contact info</span>}
+                    {!c.phone && !c.email && <span style={{ color: 'var(--pn-text-faint)' }}>no contact info</span>}
                   </div>
                 </div>
               ))}
@@ -402,10 +402,10 @@ function ComposeModal({ senderName, onClose, onSent }) {
           </>
         ) : (
           <>
-            <div style={{ background: '#fafafa', borderRadius: 10, padding: '8px 12px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ background: 'var(--pn-surface-alt)', borderRadius: 10, padding: '8px 12px', marginBottom: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <div style={{ fontSize: 13, fontWeight: 600 }}>{picked.name}</div>
-                <div style={{ fontSize: 11, color: '#888' }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
                   {channel === 'sms' && picked.phone}
                   {channel === 'email' && picked.email}
                   {channel === 'app' && 'In-app chat'}
@@ -415,25 +415,25 @@ function ComposeModal({ senderName, onClose, onSent }) {
             </div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
               <button onClick={() => setChannel('sms')} disabled={!picked.phone}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'sms' ? '#f0faf6' : '#fafafa', color: channel === 'sms' ? '#2D7A5F' : (picked.phone ? '#666' : '#bbb'), cursor: picked.phone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>📱 SMS</button>
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'sms' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'sms' ? '#2D7A5F' : (picked.phone ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: picked.phone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>📱 SMS</button>
               <button onClick={() => setChannel('email')} disabled={!picked.email}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'email' ? '#f0faf6' : '#fafafa', color: channel === 'email' ? '#2D7A5F' : (picked.email ? '#666' : '#bbb'), cursor: picked.email ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>✉️ Email</button>
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'email' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'email' ? '#2D7A5F' : (picked.email ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: picked.email ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>✉️ Email</button>
               <button onClick={() => setChannel('app')}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : '#d8d8d8'}`, background: channel === 'app' ? '#f0faf6' : '#fafafa', color: channel === 'app' ? '#2D7A5F' : '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>💬 In-app</button>
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'app' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'app' ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>💬 In-app</button>
             </div>
             {channel === 'email' && (
               <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject"
-                style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', marginBottom: 8 }} />
+                style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid var(--pn-border)', borderRadius: 10, padding: '8px 12px', fontSize: 13, outline: 'none', marginBottom: 8 }} />
             )}
             <textarea value={body} onChange={e => setBody(e.target.value)}
               placeholder={channel === 'sms' ? `Send an SMS to ${picked.name}…` : channel === 'email' ? `Email body…` : `Message ${picked.name}…`}
               rows={5}
-              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid #e0e0e0', borderRadius: 10, padding: '10px 14px', fontSize: 13, outline: 'none', resize: 'vertical', lineHeight: 1.5 }} />
+              style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, outline: 'none', resize: 'vertical', lineHeight: 1.5 }} />
             {error && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6, padding: '4px 8px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', color: '#555', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={send} disabled={!canSend}
-                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: canSend ? 'pointer' : 'default' }}>
+                style={{ flex: 2, padding: '10px', borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : 'var(--pn-surface-alt)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: canSend ? 'pointer' : 'default' }}>
                 {sending ? 'Sending…' : `Send ${channel === 'sms' ? 'SMS' : channel === 'email' ? 'email' : 'message'}`}
               </button>
             </div>

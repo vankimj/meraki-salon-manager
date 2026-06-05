@@ -253,7 +253,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           width: 420,
           maxWidth: 'calc(100vw - 40px)',
           maxHeight: 'calc(100vh - 120px)',
-          background: '#fff',
+          background: 'var(--pn-surface)',
           border: '1px solid #e6e0ee',
           borderRadius: 16,
           boxShadow: '0 16px 40px rgba(91,59,140,.18)',
@@ -286,16 +286,16 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                         transition: 'all .15s',
                       }}
                     >{listening ? '⏹' : '🎙️'}</button>
-                    <div style={{ fontSize: 12, color: '#888', marginTop: 10 }}>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 10 }}>
                       {listening ? 'Listening… tap to stop' : 'Tap to speak'}
                     </div>
                   </>
                 )}
 
                 {(transcript || interimText) && (
-                  <div style={{ marginTop: 14, padding: 10, background: '#f5f3fa', borderRadius: 10, fontSize: 13, color: '#222', textAlign: 'left' }}>
+                  <div style={{ marginTop: 14, padding: 10, background: '#f5f3fa', borderRadius: 10, fontSize: 13, color: 'var(--pn-text)', textAlign: 'left' }}>
                     {transcript}
-                    {interimText && <span style={{ color: '#999' }}>{interimText}</span>}
+                    {interimText && <span style={{ color: 'var(--pn-text-faint)' }}>{interimText}</span>}
                   </div>
                 )}
 
@@ -306,7 +306,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                     value={typedInput}
                     onChange={e => setTypedInput(e.target.value)}
                     placeholder={speechSupported.current ? 'or type a command…' : 'Type a command…'}
-                    style={{ flex: 1, fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid #d8d8d8', outline: 'none' }}
+                    style={{ flex: 1, fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', outline: 'none' }}
                   />
                   <button type="submit" disabled={!typedInput.trim()}
                     style={{ padding: '8px 12px', borderRadius: 10, border: 'none', background: typedInput.trim() ? '#5b3b8c' : '#cbb6e0', color: '#fff', fontSize: 13, cursor: typedInput.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
@@ -317,11 +317,11 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
             )}
 
             {thinking && (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: '#888' }}>
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--pn-text-muted)' }}>
                 <div style={{ fontSize: 28, marginBottom: 8 }}>🤔</div>
                 <div style={{ fontSize: 13 }}>Thinking…</div>
                 {transcript && (
-                  <div style={{ marginTop: 12, padding: 8, background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: '#666' }}>
+                  <div style={{ marginTop: 12, padding: 8, background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: 'var(--pn-text-muted)' }}>
                     "{transcript}"
                   </div>
                 )}
@@ -351,8 +351,8 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           </div>
 
           {!proposal && !thinking && !listening && (
-            <div style={{ borderTop: '1px solid #f0ecf5', padding: '10px 14px', background: '#fafafa' }}>
-              <div style={{ fontSize: 10, color: '#999', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Try saying</div>
+            <div style={{ borderTop: '1px solid #f0ecf5', padding: '10px 14px', background: 'var(--pn-bg)' }}>
+              <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Try saying</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[
                   'Book Sarah Johnson with Tess tomorrow at 2pm for a gel manicure',
@@ -360,7 +360,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                   'Cancel Mary\'s appointment tomorrow',
                   'Sarah just walked in',
                 ].map((s, i) => (
-                  <div key={i} style={{ fontSize: 11, color: '#666', fontStyle: 'italic' }}>"{s}"</div>
+                  <div key={i} style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontStyle: 'italic' }}>"{s}"</div>
                 ))}
               </div>
             </div>
@@ -397,19 +397,19 @@ function ProposalView({ proposal, executing, listening, clients, services, techs
     };
     return (
       <div>
-        <div style={{ fontSize: 14, color: '#222', marginBottom: 10, fontWeight: 600 }}>{naturalReply || summary}</div>
+        <div style={{ fontSize: 14, color: 'var(--pn-text)', marginBottom: 10, fontWeight: 600 }}>{naturalReply || summary}</div>
         {items.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {items.map((it, i) => (
-              <div key={i} style={{ padding: '8px 10px', background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: '#222' }}>
+              <div key={i} style={{ padding: '8px 10px', background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: 'var(--pn-text)' }}>
                 {renderItem(it)}
               </div>
             ))}
           </div>
         ) : (
-          <div style={{ fontSize: 12, color: '#888' }}>{payload?.description || summary || 'No details available.'}</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>{payload?.description || summary || 'No details available.'}</div>
         )}
-        <button onClick={onCancel} style={{ marginTop: 12, width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Done</button>
+        <button onClick={onCancel} style={{ marginTop: 12, width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Done</button>
       </div>
     );
   }
@@ -417,9 +417,9 @@ function ProposalView({ proposal, executing, listening, clients, services, techs
   if (actionType === 'unsupported') {
     return (
       <div>
-        <div style={{ fontSize: 14, color: '#1a1a1a', marginBottom: 6, fontWeight: 600 }}>{naturalReply || 'Could not process.'}</div>
-        <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>{summary}</div>
-        <button onClick={onCancel} style={{ width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Try again</button>
+        <div style={{ fontSize: 14, color: 'var(--pn-text)', marginBottom: 6, fontWeight: 600 }}>{naturalReply || 'Could not process.'}</div>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12 }}>{summary}</div>
+        <button onClick={onCancel} style={{ width: '100%', padding: '9px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Try again</button>
       </div>
     );
   }
@@ -469,7 +469,7 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
 
   return (
     <div>
-      {naturalReply && <div style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>{naturalReply}</div>}
+      {naturalReply && <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 8 }}>{naturalReply}</div>}
 
       <div style={{ background: accent.bg, border: `1px solid ${accent.border}`, borderRadius: 10, padding: 12, marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -478,12 +478,12 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
           </div>
           {(actionType === 'book' || actionType === 'reschedule') && (
             <button onClick={() => setEditing(e => !e)}
-              style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit' }}>
               {editing ? 'Done' : '✎ Edit'}
             </button>
           )}
         </div>
-        <div style={{ fontSize: 14, color: '#1a1a1a', lineHeight: 1.4, fontWeight: 600, marginBottom: editing ? 10 : 0 }}>{summary}</div>
+        <div style={{ fontSize: 14, color: 'var(--pn-text)', lineHeight: 1.4, fontWeight: 600, marginBottom: editing ? 10 : 0 }}>{summary}</div>
 
         {/* Editable view */}
         {editing && actionType === 'book' && (
@@ -497,11 +497,11 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
               />
             </FieldRow>
             {showDisambig && ambiguousClientMatches.length > 1 && (
-              <div style={{ marginLeft: 70, padding: 6, background: '#fff', border: '1px solid #e8e8e8', borderRadius: 6 }}>
-                <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>Pick one</div>
+              <div style={{ marginLeft: 70, padding: 6, background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 6 }}>
+                <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginBottom: 4 }}>Pick one</div>
                 {ambiguousClientMatches.map(c => (
                   <button key={c.id} onClick={() => { onUpdate({ clientId: c.id, clientName: c.name }); setClientSearch(c.name); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 4, border: 'none', background: payload.clientId === c.id ? '#EDFAF3' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#222' }}>
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 4, border: 'none', background: payload.clientId === c.id ? '#EDFAF3' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--pn-text)' }}>
                     {c.name}{c.phone ? ` · ${c.phone}` : ''}
                   </button>
                 ))}
@@ -553,7 +553,7 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
 
         {/* Read-only details when not editing */}
         {!editing && actionType === 'book' && (
-          <div style={{ marginTop: 8, fontSize: 12, color: '#444', display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <div style={{ marginTop: 8, fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
             {payload.clientName && <div>👤 {payload.clientName}{!payload.clientId && <span style={{ color: '#b91c1c', marginLeft: 6 }}>(no exact match)</span>}</div>}
             {payload.techName  && <div>💅 {payload.techName}</div>}
             {payload.date      && <div>📅 {payload.date}{payload.startTime ? ` at ${payload.startTime}` : ''}</div>}
@@ -576,7 +576,7 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
           {executing ? 'Working…' : 'Confirm'}
         </button>
         <button onClick={onCancel} disabled={executing}
-          style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+          style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
           Cancel
         </button>
       </div>
@@ -596,16 +596,16 @@ const inputStyle = {
   fontFamily: 'inherit',
   fontSize: 12,
   padding: '5px 8px',
-  border: '1px solid #d8d8d8',
+  border: '1px solid var(--pn-border-strong)',
   borderRadius: 6,
-  background: '#fff',
+  background: 'var(--pn-surface)',
   outline: 'none',
 };
 
 function FieldRow({ label, children }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <div style={{ fontSize: 11, color: '#666', width: 62, flexShrink: 0 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', width: 62, flexShrink: 0 }}>{label}</div>
       <div style={{ flex: 1 }}>{children}</div>
     </div>
   );

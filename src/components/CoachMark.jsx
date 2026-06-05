@@ -40,7 +40,7 @@ export default function CoachMark({ id, title, body, icon = '💡', delay = 800 
         position: 'fixed',
         right: 20, bottom: 20,
         maxWidth: 360, width: 'calc(100% - 40px)',
-        background: '#fff',
+        background: 'var(--pn-surface)',
         border: '1px solid #bfdbfe',
         borderLeft: '4px solid #3D95CE',
         borderRadius: 12,
@@ -55,12 +55,12 @@ export default function CoachMark({ id, title, body, icon = '💡', delay = 800 
         <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }}>{icon}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           {title && (
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 4, lineHeight: 1.35 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4, lineHeight: 1.35 }}>
               {title}
             </div>
           )}
           {body && (
-            <div style={{ fontSize: 12, color: '#555', lineHeight: 1.55 }}>{body}</div>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55 }}>{body}</div>
           )}
           <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
             <button onClick={dismiss}
@@ -77,7 +77,7 @@ export default function CoachMark({ id, title, body, icon = '💡', delay = 800 
         <button onClick={dismiss} aria-label="Dismiss tip"
           style={{
             border: 'none', background: 'none',
-            color: '#aaa', cursor: 'pointer',
+            color: 'var(--pn-text-faint)', cursor: 'pointer',
             fontSize: 18, lineHeight: 1, padding: 0,
             flexShrink: 0,
           }}>×</button>
