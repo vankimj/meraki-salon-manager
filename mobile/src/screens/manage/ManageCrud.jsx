@@ -142,6 +142,23 @@ export default function ManageCrud({
                         );
                       })}
                     </View>
+                  ) : f.type === 'multiselect' ? (
+                    <View style={styles.selectRow}>
+                      {(f.options || []).length === 0 && <Text style={styles.multiEmpty}>{f.emptyLabel || 'Nothing to choose from.'}</Text>}
+                      {(f.options || []).map(opt => {
+                        const val = typeof opt === 'string' ? opt : opt.value;
+                        const lbl = typeof opt === 'string' ? opt : opt.label;
+                        const arr = Array.isArray(editing[f.key]) ? editing[f.key] : [];
+                        const on = arr.includes(val);
+                        return (
+                          <TouchableOpacity key={val}
+                            onPress={() => setEditing({ ...editing, [f.key]: on ? arr.filter(x => x !== val) : [...arr, val] })}
+                            style={[styles.chip, on && styles.chipOn]}>
+                            <Text style={[styles.chipText, on && styles.chipTextOn]}>{on ? '✓ ' : ''}{lbl}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   ) : (
                     <TextInput
                       style={styles.input}
@@ -187,6 +204,7 @@ const makeStyles = (t) => StyleSheet.create({
   fieldLabel:{ fontSize: 12, fontWeight: '700', color: t.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
   input:    { backgroundColor: t.surfaceAlt, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   selectRow:{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  multiEmpty:{ fontSize: 13, color: t.textFaint, fontStyle: 'italic' },
   chip:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: t.surfaceMuted, borderWidth: 1, borderColor: t.border },
   chipOn:   { backgroundColor: t.greenSoft, borderColor: t.green },
   chipText: { fontSize: 13, color: t.textMuted, fontWeight: '600' },
