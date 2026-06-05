@@ -14,6 +14,7 @@ import useTenantAccess from '../hooks/useTenantAccess';
 import useResponsive from '../hooks/useResponsive';
 import useTrashHeader from '../hooks/useTrashHeader';
 import Icon from '../components/Icon';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 // Salon hours + slot grid. Matches the web SLOT_H=40 / 9am-8pm convention
 // from CLAUDE.md so the day view feels familiar across devices.
@@ -122,12 +123,14 @@ function fmtTime(t) {
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
-const STATUS_META = {
-  scheduled: { label: 'Scheduled', color: '#3D95CE', bg: '#EBF4FB' },
-  done:      { label: 'Done',      color: '#16a34a', bg: '#f0fdf4' },
-  cancelled: { label: 'Cancelled', color: '#ef4444', bg: '#fef2f2' },
-  no_show:   { label: 'No-show',   color: '#92400e', bg: '#fef3c7' },
-};
+function statusMeta(t) {
+  return {
+    scheduled: { label: 'Scheduled', color: t.blue,    bg: t.blueSoft  },
+    done:      { label: 'Done',      color: t.success, bg: t.greenSoft },
+    cancelled: { label: 'Cancelled', color: t.danger,  bg: t.dangerBg  },
+    no_show:   { label: 'No-show',   color: t.warning, bg: t.warningBg },
+  };
+}
 
 // Per-tech color palette + helpers — mirrors the web ScheduleAdmin so
 // appt blocks look consistent across web and mobile. 10 distinct hues
@@ -149,14 +152,16 @@ function getTechColor(techName, allTechs) {
   const idx = (allTechs || []).indexOf(techName);
   return TECH_PALETTE[idx >= 0 ? idx % TECH_PALETTE.length : 0];
 }
-function colorsForAppt(appt, allTechs) {
+function colorsForAppt(appt, allTechs, t) {
   const col = getTechColor(appt.techName, allTechs);
-  if (appt.status === 'cancelled') return { bg: '#fef2f2', border: '#EF4444', text: '#991b1b', faded: true };
-  if (appt.status === 'done')      return { bg: '#f3f4f6', border: '#9ca3af', text: '#6b7280', faded: false };
+  if (appt.status === 'cancelled') return { bg: t.dangerBg, border: t.danger, text: t.danger, faded: true };
+  if (appt.status === 'done')      return { bg: t.surfaceMuted, border: t.borderStrong, text: t.textMuted, faded: false };
   return { bg: col.bg, border: col.solid, text: col.text, faded: false };
 }
 
 export default function ScheduleScreen({ navigation }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { employee, techName, loading: empLoading } = useCurrentEmployee();
   const { isAdmin, canEditSchedule, email } = useTenantAccess();
   const { isTablet } = useResponsive();
@@ -286,13 +291,14 @@ export default function ScheduleScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Tab / cart pill — only when something's been staged */}
+      {/* Tab / cart bar — only when something's been staged */}
       {tabSnap.appts.length + tabSnap.products.length > 0 && (
-        <TouchableOpacity style={styles.cartPill} onPress={() => setTabOpen(true)} activeOpacity={0.8}>
-          <Text style={styles.cartPillText}>
-            🛒 Tab · {tabSnap.appts.length} appt{tabSnap.appts.length !== 1 ? 's' : ''}
-            {' · $'}{tabTotal().toFixed(2)}
-          </Text>
+        <TouchableOpacity style={styles.cartBar} onPress={() => setTabOpen(true)} activeOpacity={0.85}>
+          <View style={styles.cartBadge}>
+            <Text style={styles.cartBadgeText}>{tabSnap.appts.length + tabSnap.products.length}</Text>
+          </View>
+          <Text style={styles.cartBarText}>🛒  Tab · ${tabTotal().toFixed(2)}</Text>
+          <Text style={styles.cartBarCta}>Check out ›</Text>
         </TouchableOpacity>
       )}
 
@@ -354,7 +360,7 @@ export default function ScheduleScreen({ navigation }) {
 
       {view === 'day' && (
         (empLoading || loading) ? (
-          <ActivityIndicator style={{ marginTop: 40 }} color="#3D95CE" />
+          <ActivityIndicator style={{ marginTop: 40 }} color={theme.blue} />
         ) : (isTablet && showAll) ? (
           <DayGridView
             appts={filtered}
@@ -423,6 +429,8 @@ export default function ScheduleScreen({ navigation }) {
 // duration (1 SLOT_PX per 30 min). Multi-tech overlaps are stacked
 // horizontally; "Just me" mode never overlaps so most days are clean.
 function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays, timeOff, techName, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { contentMaxWidth } = useResponsive();
   // Working-window awareness — same rules as WeekView's gap calc.
   // Only meaningful when scoped to a single tech (showAll=false).
@@ -460,9 +468,9 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#fff' }}
+      style={{ flex: 1, backgroundColor: theme.surface }}
       contentContainerStyle={{ paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D95CE" />}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.blue} />}
     >
       {Array.from({ length: SLOT_COUNT }).map((_, idx) => {
         const slotMin = DAY_START_MIN + idx * SLOT_MINUTES;
@@ -480,11 +488,11 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
             style={[styles.dayTimelineRow, { height: SLOT_PX }, !inWorkWindow && styles.dayTimelineRowOff]}
           >
             <View style={styles.dayTimeLabel}>
-              {isHourMark && <Text style={[styles.dayTimeLabelText, !inWorkWindow && { color: '#cbd0d6' }]}>{fmtTime(startTime)}</Text>}
+              {isHourMark && <Text style={[styles.dayTimeLabelText, !inWorkWindow && { color: theme.textFaint }]}>{fmtTime(startTime)}</Text>}
             </View>
             <View style={[styles.dayTimelineSlot, isHourMark && styles.dayTimelineSlotHour]}>
               {slotAppt ? (() => {
-                const c = colorsForAppt(slotAppt, allTechs);
+                const c = colorsForAppt(slotAppt, allTechs, theme);
                 return (
                   <View style={[
                     styles.dayApptBlock,
@@ -533,6 +541,8 @@ const GRID_HEADER_H = 42;
 const GRID_COL_W    = 156;
 
 function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const GRID_H = SLOT_COUNT * SLOT_PX;
   // Show every active tech as a column; fall back to whoever has appts.
   const techs = (allTechs && allTechs.length)
@@ -559,8 +569,8 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
 
   return (
     <ScrollView
-      style={{ flex: 1, backgroundColor: '#fff' }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3D95CE" />}
+      style={{ flex: 1, backgroundColor: theme.surface }}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.blue} />}
     >
       <View style={{ flexDirection: 'row' }}>
         {/* Fixed time axis */}
@@ -615,7 +625,7 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
                     {Object.entries(occ.starts).map(([idxStr, a]) => {
                       const idx  = Number(idxStr);
                       const span = Math.max(1, Math.ceil((Number(a.duration) || 30) / SLOT_MINUTES));
-                      const c    = colorsForAppt(a, allTechs);
+                      const c    = colorsForAppt(a, allTechs, theme);
                       return (
                         <TouchableOpacity
                           key={a.id}
@@ -661,6 +671,8 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
 const WEEK_DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, timeOff, onTapAppt, onTapEmpty, onPickDay }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { contentMaxWidth } = useResponsive();
   const [byDay, setByDay] = useState({});  // 'YYYY-MM-DD' → appts[]
   const [loading, setLoading] = useState(true);
@@ -700,8 +712,8 @@ function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, ti
   const today = todayStr();
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: '#f5f7fa' }} contentContainerStyle={{ padding: 8, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}>
-      {loading && <ActivityIndicator style={{ marginTop: 12 }} color="#3D95CE" />}
+    <ScrollView style={{ flex: 1, backgroundColor: theme.bg }} contentContainerStyle={{ padding: 8, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}>
+      {loading && <ActivityIndicator style={{ marginTop: 12 }} color={theme.blue} />}
       {days.map(d => {
         const appts = byDay[d.iso] || [];
         const isToday = d.iso === today;
@@ -790,7 +802,7 @@ function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, ti
                       );
                     }
                     const a = row.appt;
-                    const c = colorsForAppt(a, allTechs);
+                    const c = colorsForAppt(a, allTechs, theme);
                     return (
                       <TouchableOpacity
                         key={row.key}
@@ -842,6 +854,8 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   // CRITICAL: every hook below runs on every render regardless of
   // open state. Conditional rendering is INSIDE the JSX, never via
   // an early return between hook calls.
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [clients, setClients] = useState([]);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1036,7 +1050,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
           </View>
 
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 30 }} color="#3D95CE" />
+            <ActivityIndicator style={{ marginTop: 30 }} color={theme.blue} />
           ) : (
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
               {isEdit && (
@@ -1045,7 +1059,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                   <TextInput
                     style={[styles.searchInput, { marginBottom: 16 }]}
                     placeholder="14:30"
-                    placeholderTextColor="#bbb"
+                    placeholderTextColor={theme.placeholder}
                     value={editStartTime}
                     onChangeText={setEditStartTime}
                     keyboardType="numbers-and-punctuation"
@@ -1064,7 +1078,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                   <TextInput
                     style={styles.searchInput}
                     placeholder="Search clients by name…"
-                    placeholderTextColor="#bbb"
+                    placeholderTextColor={theme.placeholder}
                     value={clientQuery}
                     onChangeText={setClientQuery}
                   />
@@ -1079,7 +1093,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                         <TextInput
                           style={styles.newClientInput}
                           placeholder="Full name *"
-                          placeholderTextColor="#bbb"
+                          placeholderTextColor={theme.placeholder}
                           value={newClientName}
                           onChangeText={setNewClientName}
                           autoFocus
@@ -1087,7 +1101,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                         <TextInput
                           style={styles.newClientInput}
                           placeholder="Phone *  US: (614) 555-0123  ·  Intl: +44 20 7946 0958"
-                          placeholderTextColor="#bbb"
+                          placeholderTextColor={theme.placeholder}
                           value={newClientPhone}
                           onChangeText={t => setNewClientPhone(formatPhoneInput(t))}
                           keyboardType="phone-pad"
@@ -1207,6 +1221,8 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 function MonthView({ date, techName, showAll, onPickDay }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { contentMaxWidth } = useResponsive();
   const [byDay, setByDay] = useState({});      // 'YYYY-MM-DD' → count
   const [loading, setLoading] = useState(true);
@@ -1254,7 +1270,7 @@ function MonthView({ date, techName, showAll, onPickDay }) {
           <Text key={i} style={styles.monthWeekdayLabel}>{w}</Text>
         ))}
       </View>
-      {loading && <ActivityIndicator style={{ marginTop: 20 }} color="#3D95CE" />}
+      {loading && <ActivityIndicator style={{ marginTop: 20 }} color={theme.blue} />}
       <View style={styles.monthGrid}>
         {cells.map((day, idx) => {
           if (day === null) return <View key={idx} style={styles.monthCell} />;
@@ -1308,6 +1324,7 @@ const SOCIAL_EMOJI = { instagram: '📸', facebook: '👥', tiktok: '🎵', venm
 // interaction is documented in the UI but the code path doesn't
 // silently do nothing.
 function TabModal({ open, tab, onClose, onCheckout }) {
+  const styles = useThemedStyles(makeStyles);
   if (!open) return null;
   const total = tab.appts.reduce((s, a) => {
     const svcSum = (a.services || []).reduce((ss, sv) => ss + (Number(sv.price) || 0), 0);
@@ -1397,6 +1414,8 @@ function TabModal({ open, tab, onClose, onCheckout }) {
 
 // ── Detail modal (status, check-in, notes, client snapshot) ─────────────
 function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, onAddToTab, onDelete }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [notes,   setNotes]   = useState('');
   const [working, setWorking] = useState(false);
   const [tab,     setTab]     = useState('actions');
@@ -1573,7 +1592,7 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
             )}
             {canDelete && (
               <TouchableOpacity onPress={confirmDelete} disabled={working} style={styles.modalDeleteBtn}>
-                <Icon name="trash" size={16} color="#c0392b" />
+                <Icon name="trash" size={16} color={theme.danger} />
               </TouchableOpacity>
             )}
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
@@ -1637,7 +1656,7 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
                 {/* Status */}
                 <Text style={[styles.sectionLabel, { marginTop: 22 }]}>Appointment status</Text>
                 <View style={styles.statusGrid}>
-                  {Object.entries(STATUS_META).map(([id, meta]) => {
+                  {Object.entries(statusMeta(theme)).map(([id, meta]) => {
                     const active = appt.status === id;
                     return (
                       <TouchableOpacity
@@ -1680,7 +1699,7 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
                   value={notes}
                   onChangeText={setNotes}
                   placeholder="Anything the next stylist should know — preferred shape, allergies, last polish, vibe..."
-                  placeholderTextColor="#bbb"
+                  placeholderTextColor={theme.placeholder}
                   textAlignVertical="top"
                 />
                 <TouchableOpacity
@@ -1699,253 +1718,255 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.bg },
   dateRow: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: t.surface,
     paddingVertical: 12, paddingHorizontal: 8,
-    borderBottomWidth: 1, borderBottomColor: '#ebebeb',
+    borderBottomWidth: 1, borderBottomColor: t.border,
   },
   navBtn: { width: 56, height: 48, alignItems: 'center', justifyContent: 'center' },
-  navBtnText: { fontSize: 32, color: '#3D95CE', lineHeight: 36, fontWeight: '300' },
+  navBtnText: { fontSize: 32, color: t.blue, lineHeight: 36, fontWeight: '300' },
   dateCenter: { flex: 1, alignItems: 'center' },
-  dateText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
-  apptCount: { fontSize: 11, color: '#888', marginTop: 2 },
+  dateText: { fontSize: 14, fontWeight: '700', color: t.text },
+  apptCount: { fontSize: 11, color: t.textMuted, marginTop: 2 },
   toggleRow: {
     flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 10,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#ebebeb',
+    backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border,
     alignItems: 'center', flexWrap: 'wrap',
   },
   // Tap targets bumped to ≥44pt (Apple HIG) — techs with long nails
   // were missing the 12pt-padded chips. minHeight is the key win;
   // fontSize bumps for legibility too.
   chip: { paddingHorizontal: 16, paddingVertical: 10, minHeight: 44, borderRadius: 22, borderWidth: 1, justifyContent: 'center' },
-  chipBlue: { backgroundColor: '#EBF4FB', borderColor: '#3D95CE' },
-  chipBlueText: { color: '#1a5f8a', fontSize: 14, fontWeight: '600' },
-  chipMuted: { backgroundColor: '#fff', borderColor: '#e0e0e0' },
-  chipMutedText: { color: '#555', fontSize: 14, fontWeight: '500' },
+  chipBlue: { backgroundColor: t.blueSoft, borderColor: t.blue },
+  chipBlueText: { color: t.blue, fontSize: 14, fontWeight: '600' },
+  chipMuted: { backgroundColor: t.surface, borderColor: t.borderStrong },
+  chipMutedText: { color: t.textMuted, fontSize: 14, fontWeight: '500' },
 
-  viewSwitch:           { flexDirection: 'row', backgroundColor: '#f0f0f0', borderRadius: 10, padding: 3, marginRight: 4 },
+  viewSwitch:           { flexDirection: 'row', backgroundColor: t.surfaceMuted, borderRadius: 10, padding: 3, marginRight: 4 },
   viewSwitchBtn:        { paddingHorizontal: 16, paddingVertical: 10, minHeight: 38, minWidth: 60, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  viewSwitchBtnActive:  { backgroundColor: '#fff', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.10, shadowRadius: 2, elevation: 2 },
-  viewSwitchText:       { fontSize: 14, color: '#666', fontWeight: '500' },
-  viewSwitchTextActive: { color: '#1a1a1a', fontWeight: '700' },
+  viewSwitchBtnActive:  { backgroundColor: t.surface, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.10, shadowRadius: 2, elevation: 2 },
+  viewSwitchText:       { fontSize: 14, color: t.textMuted, fontWeight: '500' },
+  viewSwitchTextActive: { color: t.text, fontWeight: '700' },
 
   // Day timeline
-  dayTimelineRow:     { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: '#f0f0f0' },
-  dayTimelineRowOff:  { backgroundColor: '#fafbfc' },  // out-of-hours rows are visually muted
+  dayTimelineRow:     { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: t.border },
+  dayTimelineRowOff:  { backgroundColor: t.surfaceAlt },  // out-of-hours rows are visually muted
   dayTimeLabel:       { width: 56, paddingLeft: 8, paddingTop: 2 },
-  dayTimeLabelText:   { fontSize: 11, color: '#888', fontWeight: '600' },
+  dayTimeLabelText:   { fontSize: 11, color: t.textMuted, fontWeight: '600' },
   dayTimelineSlot:    { flex: 1, paddingVertical: 2, paddingRight: 8, justifyContent: 'flex-start', alignItems: 'stretch' },
-  dayTimelineSlotHour:{ borderTopWidth: 0.5, borderTopColor: '#dadcdf' },
-  dayApptBlock:       { backgroundColor: '#EBF4FB', borderLeftWidth: 3, borderLeftColor: '#3D95CE', borderRadius: 6, padding: 8, justifyContent: 'center' },
-  dayApptClient:      { fontSize: 13, fontWeight: '700', color: '#1a1a1a' },
-  dayApptMeta:        { fontSize: 11, color: '#666', marginTop: 2 },
-  dayEmptyHint:       { fontSize: 14, color: '#dadcdf', textAlign: 'center', lineHeight: 18 },
-  gridTimeLabel:      { position: 'absolute', right: 6, fontSize: 11, color: '#888', fontWeight: '600' },
-  gridHeadCell:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: '#ececec', borderLeftWidth: 1, borderLeftColor: '#f0f0f0', backgroundColor: '#fafbfc' },
+  dayTimelineSlotHour:{ borderTopWidth: 0.5, borderTopColor: t.borderStrong },
+  dayApptBlock:       { backgroundColor: t.blueSoft, borderLeftWidth: 3, borderLeftColor: t.blue, borderRadius: 6, padding: 8, justifyContent: 'center' },
+  dayApptClient:      { fontSize: 13, fontWeight: '700', color: t.text },
+  dayApptMeta:        { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  dayEmptyHint:       { fontSize: 14, color: t.borderStrong, textAlign: 'center', lineHeight: 18 },
+  gridTimeLabel:      { position: 'absolute', right: 6, fontSize: 11, color: t.textMuted, fontWeight: '600' },
+  gridHeadCell:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: t.border, borderLeftWidth: 1, borderLeftColor: t.border, backgroundColor: t.surfaceAlt },
   gridHeadDot:        { width: 8, height: 8, borderRadius: 4 },
-  gridHeadText:       { fontSize: 12.5, fontWeight: '800', color: '#1a1a1a', flexShrink: 1 },
-  gridCol:            { borderLeftWidth: 1, borderLeftColor: '#f0f0f0' },
-  gridSlot:           { position: 'absolute', left: 0, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: '#f5f6f7' },
-  gridSlotHour:       { borderBottomColor: '#e6e8ea' },
-  gridPlus:           { fontSize: 13, color: '#e2e4e7', fontWeight: '700' },
+  gridHeadText:       { fontSize: 12.5, fontWeight: '800', color: t.text, flexShrink: 1 },
+  gridCol:            { borderLeftWidth: 1, borderLeftColor: t.border },
+  gridSlot:           { position: 'absolute', left: 0, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: t.border },
+  gridSlotHour:       { borderBottomColor: t.borderStrong },
+  gridPlus:           { fontSize: 13, color: t.borderStrong, fontWeight: '700' },
   gridBlock:          { position: 'absolute', left: 3, borderLeftWidth: 3, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, overflow: 'hidden' },
   gridBlockClient:    { fontSize: 12.5, fontWeight: '800' },
   gridBlockMeta:      { fontSize: 10.5, marginTop: 1, opacity: 0.8 },
   gridBlockTime:      { fontSize: 10, marginTop: 2, opacity: 0.7, fontWeight: '600' },
-  dayOffState:        { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingHorizontal: 32, backgroundColor: '#fff' },
+  dayOffState:        { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingHorizontal: 32, backgroundColor: t.surface },
   dayOffEmoji:        { fontSize: 56, marginBottom: 12 },
-  dayOffTitle:        { fontSize: 18, fontWeight: '700', color: '#1a1a1a', marginBottom: 8, textAlign: 'center' },
-  dayOffBody:         { fontSize: 13, color: '#888', textAlign: 'center', lineHeight: 19 },
+  dayOffTitle:        { fontSize: 18, fontWeight: '700', color: t.text, marginBottom: 8, textAlign: 'center' },
+  dayOffBody:         { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 19 },
 
   // Week strip
-  weekDayCard:        { backgroundColor: '#fff', borderRadius: 12, marginBottom: 8, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
-  weekDayCardToday:   { borderWidth: 1.5, borderColor: '#3D95CE' },
-  weekDayHeader:      { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fafafa', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  weekDayDow:         { fontSize: 12, fontWeight: '700', color: '#888', letterSpacing: 0.4, textTransform: 'uppercase' },
-  weekDayDowToday:    { color: '#1a5f8a' },
-  weekDayNum:         { fontSize: 20, fontWeight: '700', color: '#1a1a1a' },
-  weekDayNumToday:    { color: '#1a5f8a' },
-  weekDayCount:       { fontSize: 11, color: '#aaa', marginLeft: 'auto' },
-  weekDayEmpty:       { padding: 14, alignItems: 'center', borderRadius: 8, backgroundColor: '#f7f8fa', marginHorizontal: 8, marginBottom: 8, marginTop: 8 },
-  weekDayEmptyText:   { fontSize: 12, color: '#888', fontWeight: '500' },
+  weekDayCard:        { backgroundColor: t.surface, borderRadius: 12, marginBottom: 8, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
+  weekDayCardToday:   { borderWidth: 1.5, borderColor: t.blue },
+  weekDayHeader:      { flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: t.surfaceAlt, borderBottomWidth: 1, borderBottomColor: t.border },
+  weekDayDow:         { fontSize: 12, fontWeight: '700', color: t.textMuted, letterSpacing: 0.4, textTransform: 'uppercase' },
+  weekDayDowToday:    { color: t.blue },
+  weekDayNum:         { fontSize: 20, fontWeight: '700', color: t.text },
+  weekDayNumToday:    { color: t.blue },
+  weekDayCount:       { fontSize: 11, color: t.textFaint, marginLeft: 'auto' },
+  weekDayEmpty:       { padding: 14, alignItems: 'center', borderRadius: 8, backgroundColor: t.surfaceAlt, marginHorizontal: 8, marginBottom: 8, marginTop: 8 },
+  weekDayEmptyText:   { fontSize: 12, color: t.textMuted, fontWeight: '500' },
   weekGapRow:         { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, gap: 8 },
-  weekGapLine:        { flex: 1, height: 1, backgroundColor: '#e8eaee' },
-  weekGapText:        { fontSize: 11, color: '#888', fontWeight: '500' },
-  weekDayOffPill:     { alignSelf: 'flex-start', marginHorizontal: 12, marginVertical: 10, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e0e0e0' },
-  weekDayOffPillText: { fontSize: 11, fontWeight: '700', color: '#6b7280', textTransform: 'uppercase', letterSpacing: 0.5 },
-  weekApptBlock:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: '#f7fbfd', borderLeftWidth: 3, borderLeftColor: '#3D95CE', borderRadius: 6, marginTop: 6 },
-  weekApptTime:       { fontSize: 11, fontWeight: '700', color: '#3D95CE', minWidth: 56 },
-  weekApptClient:     { fontSize: 13, fontWeight: '600', color: '#1a1a1a' },
-  weekApptMeta:       { fontSize: 11, color: '#888', marginTop: 1 },
+  weekGapLine:        { flex: 1, height: 1, backgroundColor: t.border },
+  weekGapText:        { fontSize: 11, color: t.textMuted, fontWeight: '500' },
+  weekDayOffPill:     { alignSelf: 'flex-start', marginHorizontal: 12, marginVertical: 10, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: t.surfaceMuted, borderWidth: 1, borderColor: t.borderStrong },
+  weekDayOffPillText: { fontSize: 11, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  weekApptBlock:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: t.blueSoft, borderLeftWidth: 3, borderLeftColor: t.blue, borderRadius: 6, marginTop: 6 },
+  weekApptTime:       { fontSize: 11, fontWeight: '700', color: t.blue, minWidth: 56 },
+  weekApptClient:     { fontSize: 13, fontWeight: '600', color: t.text },
+  weekApptMeta:       { fontSize: 11, color: t.textMuted, marginTop: 1 },
 
   // Create appt modal
-  searchInput:        { backgroundColor: '#fafafa', borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, fontSize: 14, color: '#1a1a1a' },
+  searchInput:        { backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 8, paddingVertical: 10, paddingHorizontal: 12, fontSize: 14, color: t.text },
   // Both inner lists are bounded ScrollViews so the user can scroll
   // through the full client + service catalog without the modal's
   // outer ScrollView interfering. nestedScrollEnabled is required for
   // Android; iOS handles nested scrolling natively.
-  clientList:         { marginTop: 8, backgroundColor: '#fafafa', borderRadius: 8, height: 240 },
-  clientRow:          { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, borderBottomColor: '#eee' },
-  clientRowNew:       { backgroundColor: '#f0faf6', borderBottomColor: '#d1ead8' },
-  clientRowNewText:   { fontSize: 14, color: '#2D7A5F', fontWeight: '700' },
-  clientRowName:      { fontSize: 14, color: '#1a1a1a' },
-  clientRowMeta:      { fontSize: 11, color: '#888', marginTop: 2 },
-  newClientForm:      { padding: 12, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e5e7eb', gap: 8 },
-  newClientLabel:     { fontSize: 11, fontWeight: '700', color: '#2D7A5F', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
-  newClientInput:     { borderWidth: 1, borderColor: '#d1d5db', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: '#1a1a1a', backgroundColor: '#fff' },
+  clientList:         { marginTop: 8, backgroundColor: t.surfaceAlt, borderRadius: 8, height: 240 },
+  clientRow:          { paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 0.5, borderBottomColor: t.border },
+  clientRowNew:       { backgroundColor: t.greenSoft, borderBottomColor: t.green },
+  clientRowNewText:   { fontSize: 14, color: t.green, fontWeight: '700' },
+  clientRowName:      { fontSize: 14, color: t.text },
+  clientRowMeta:      { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  newClientForm:      { padding: 12, backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border, gap: 8 },
+  newClientLabel:     { fontSize: 11, fontWeight: '700', color: t.green, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
+  newClientInput:     { borderWidth: 1, borderColor: t.borderStrong, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: t.text, backgroundColor: t.surface },
   newClientBtn:       { flex: 1, paddingVertical: 10, borderRadius: 8, alignItems: 'center' },
-  newClientBtnPrimary:    { backgroundColor: '#2D7A5F' },
+  newClientBtnPrimary:    { backgroundColor: t.green },
   newClientBtnPrimaryText:{ color: '#fff', fontWeight: '700', fontSize: 13 },
-  newClientBtnGhost:      { backgroundColor: '#f3f4f6', borderWidth: 1, borderColor: '#e5e7eb' },
-  newClientBtnGhostText:  { color: '#666', fontWeight: '600', fontSize: 13 },
-  pickedChip:         { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EBF4FB', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, alignSelf: 'flex-start' },
-  pickedChipText:     { fontSize: 13, color: '#1a5f8a', fontWeight: '600' },
-  pickedChipX:        { fontSize: 18, color: '#1a5f8a', marginLeft: 8, lineHeight: 18 },
+  newClientBtnGhost:      { backgroundColor: t.surfaceMuted, borderWidth: 1, borderColor: t.border },
+  newClientBtnGhostText:  { color: t.textMuted, fontWeight: '600', fontSize: 13 },
+  pickedChip:         { flexDirection: 'row', alignItems: 'center', backgroundColor: t.blueSoft, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, alignSelf: 'flex-start' },
+  pickedChipText:     { fontSize: 13, color: t.blue, fontWeight: '600' },
+  pickedChipX:        { fontSize: 18, color: t.blue, marginLeft: 8, lineHeight: 18 },
   serviceGridScroll:  { marginTop: 4, height: 220 },
   serviceGrid:        { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingBottom: 4 },
-  serviceChip:        { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: '#fff', minWidth: '47%' },
-  serviceChipActive:  { borderColor: '#3D95CE', backgroundColor: '#EBF4FB' },
-  serviceChipName:    { fontSize: 12, fontWeight: '600', color: '#1a1a1a' },
-  serviceChipNameActive: { color: '#1a5f8a' },
-  serviceChipMeta:    { fontSize: 10, color: '#888', marginTop: 2 },
-  serviceChipMetaActive: { color: '#3D95CE' },
+  serviceChip:        { borderWidth: 1, borderColor: t.borderStrong, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: t.surface, minWidth: '47%' },
+  serviceChipActive:  { borderColor: t.blue, backgroundColor: t.blueSoft },
+  serviceChipName:    { fontSize: 12, fontWeight: '600', color: t.text },
+  serviceChipNameActive: { color: t.blue },
+  serviceChipMeta:    { fontSize: 10, color: t.textMuted, marginTop: 2 },
+  serviceChipMetaActive: { color: t.blue },
 
-  monthScroll:        { flex: 1, backgroundColor: '#f5f7fa' },
-  monthWeekdayRow:    { flexDirection: 'row', backgroundColor: '#fff', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#ebebeb' },
-  monthWeekdayLabel:  { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: '#888', letterSpacing: 0.5 },
-  monthGrid:          { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: '#fff' },
-  monthCell:          { width: `${100 / 7}%`, aspectRatio: 1, padding: 4, borderWidth: 0.5, borderColor: '#f0f0f0', alignItems: 'center', justifyContent: 'flex-start' },
-  monthCellToday:     { backgroundColor: '#EBF4FB' },
-  monthCellDay:       { fontSize: 13, color: '#1a1a1a', fontWeight: '500', marginTop: 2 },
-  monthCellDayToday:  { color: '#1a5f8a', fontWeight: '700' },
-  monthCellBadge:     { marginTop: 4, backgroundColor: '#3D95CE', borderRadius: 9, minWidth: 18, paddingHorizontal: 5, paddingVertical: 1, alignItems: 'center' },
+  monthScroll:        { flex: 1, backgroundColor: t.bg },
+  monthWeekdayRow:    { flexDirection: 'row', backgroundColor: t.surface, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: t.border },
+  monthWeekdayLabel:  { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: t.textMuted, letterSpacing: 0.5 },
+  monthGrid:          { flexDirection: 'row', flexWrap: 'wrap', backgroundColor: t.surface },
+  monthCell:          { width: `${100 / 7}%`, aspectRatio: 1, padding: 4, borderWidth: 0.5, borderColor: t.border, alignItems: 'center', justifyContent: 'flex-start' },
+  monthCellToday:     { backgroundColor: t.blueSoft },
+  monthCellDay:       { fontSize: 13, color: t.text, fontWeight: '500', marginTop: 2 },
+  monthCellDayToday:  { color: t.blue, fontWeight: '700' },
+  monthCellBadge:     { marginTop: 4, backgroundColor: t.blue, borderRadius: 9, minWidth: 18, paddingHorizontal: 5, paddingVertical: 1, alignItems: 'center' },
   monthCellBadgeText: { fontSize: 10, color: '#fff', fontWeight: '700' },
 
   emptyState: { alignItems: 'center', paddingTop: 60, paddingHorizontal: 40 },
   emptyIcon: { fontSize: 44, marginBottom: 12 },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
-  emptyBody: { fontSize: 13, color: '#888', textAlign: 'center', lineHeight: 19 },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: t.text, marginBottom: 6 },
+  emptyBody: { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 19 },
 
   apptCard: {
-    backgroundColor: '#fff', borderRadius: 12, padding: 12,
+    backgroundColor: t.surface, borderRadius: 12, padding: 12,
     flexDirection: 'row', alignItems: 'center', gap: 10,
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05, shadowRadius: 4, elevation: 1,
   },
   apptTime: { width: 56, alignItems: 'center' },
-  apptTimeText: { fontSize: 12, fontWeight: '700', color: '#3D95CE' },
-  apptDuration: { fontSize: 10, color: '#aaa', marginTop: 2 },
+  apptTimeText: { fontSize: 12, fontWeight: '700', color: t.blue },
+  apptDuration: { fontSize: 10, color: t.textFaint, marginTop: 2 },
   apptInfo: { flex: 1, minWidth: 0 },
-  clientName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  techService: { fontSize: 11, color: '#888', marginTop: 2 },
+  clientName: { fontSize: 14, fontWeight: '600', color: t.text },
+  techService: { fontSize: 11, color: t.textMuted, marginTop: 2 },
   apptRight: { alignItems: 'flex-end', gap: 4 },
-  checkedInBadge: { backgroundColor: '#f0fdf4', borderRadius: 8, paddingVertical: 2, paddingHorizontal: 6 },
-  checkedInText: { fontSize: 11, fontWeight: '700', color: '#16a34a' },
+  checkedInBadge: { backgroundColor: t.greenSoft, borderRadius: 8, paddingVertical: 2, paddingHorizontal: 6 },
+  checkedInText: { fontSize: 11, fontWeight: '700', color: t.success },
   statusPill: { paddingVertical: 2, paddingHorizontal: 8, borderRadius: 10 },
   statusPillText: { fontSize: 10, fontWeight: '600' },
 
   // Modal
-  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,.55)' },
+  modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: t.overlay },
   // Use height (not maxHeight) so the inner ScrollView's flex:1 has
   // bounded space to fill. Without this the sheet collapses to header
   // + tab row only because the ScrollView body resolves to 0px.
-  modalSheet: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '85%', paddingBottom: 20 },
+  modalSheet: { backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '85%', paddingBottom: 20 },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     paddingHorizontal: 18, paddingTop: 14, paddingBottom: 10,
-    borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
+    borderBottomWidth: 1, borderBottomColor: t.border,
   },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#1a1a1a' },
-  modalSubtitle: { fontSize: 12, color: '#888', marginTop: 2 },
-  modalClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f5f5' },
-  modalCloseText: { fontSize: 22, color: '#666', lineHeight: 24 },
-  modalEditBtn:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: '#EBF4FB', borderWidth: 1, borderColor: '#3D95CE', marginRight: 8 },
-  modalEditBtnText: { fontSize: 13, fontWeight: '700', color: '#1a5f8a' },
-  modalDeleteBtn:   { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fdecea', borderWidth: 1, borderColor: '#e7b4ad', marginRight: 8 },
+  modalTitle: { fontSize: 16, fontWeight: '700', color: t.text },
+  modalSubtitle: { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  modalClose: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surfaceMuted },
+  modalCloseText: { fontSize: 22, color: t.textMuted, lineHeight: 24 },
+  modalEditBtn:     { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: t.blueSoft, borderWidth: 1, borderColor: t.blue, marginRight: 8 },
+  modalEditBtnText: { fontSize: 13, fontWeight: '700', color: t.blue },
+  modalDeleteBtn:   { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: t.dangerBg, borderWidth: 1, borderColor: t.danger, marginRight: 8 },
   modalAvatar:         { width: 48, height: 48, borderRadius: 24 },
-  modalAvatarFallback: { backgroundColor: '#e8eaee', alignItems: 'center', justifyContent: 'center' },
-  modalAvatarInitial:  { fontSize: 20, fontWeight: '700', color: '#888' },
+  modalAvatarFallback: { backgroundColor: t.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  modalAvatarInitial:  { fontSize: 20, fontWeight: '700', color: t.textMuted },
   modalSocialsRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-  modalSocialChip:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: '#f0f4f8', borderWidth: 1, borderColor: '#dbe3eb' },
-  modalSocialChipText: { fontSize: 11, color: '#3a4a5a', fontWeight: '600' },
+  modalSocialChip:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.borderStrong },
+  modalSocialChipText: { fontSize: 11, color: t.text, fontWeight: '600' },
   // Red ★ next to the client name on appt blocks + detail modal —
   // matches web ScheduleAdmin's "client requested this tech by name"
   // signal so the visual cue is consistent across surfaces.
-  requestStar:        { color: '#ef4444', fontWeight: '700' },
-  requestBadge:       { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fca5a5' },
-  requestBadgeText:   { fontSize: 11, color: '#991b1b', fontWeight: '700' },
+  requestStar:        { color: t.danger, fontWeight: '700' },
+  requestBadge:       { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: t.dangerBg, borderWidth: 1, borderColor: t.danger },
+  requestBadgeText:   { fontSize: 11, color: t.danger, fontWeight: '700' },
   // Allergy ⚠ on appt blocks + a prominent red banner in the detail
   // modal. Same color family as requestBadge for visual consistency,
   // but the banner spans full-width to make sure the tech sees it
   // before they start the appointment.
-  allergyWarn:        { color: '#b45309', fontWeight: '700' },
-  allergyBadge:       { alignSelf: 'stretch', marginTop: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#fef3c7', borderWidth: 1, borderColor: '#f59e0b' },
-  allergyBadgeText:   { fontSize: 12, color: '#92400e', fontWeight: '700' },
+  allergyWarn:        { color: t.warning, fontWeight: '700' },
+  allergyBadge:       { alignSelf: 'stretch', marginTop: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: t.warningBg, borderWidth: 1, borderColor: t.warning },
+  allergyBadgeText:   { fontSize: 12, color: t.warning, fontWeight: '700' },
 
   modalContactRow:     { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 6 },
-  modalPhoneText:      { fontSize: 12, color: '#1a1a1a', fontWeight: '600', marginRight: 4 },
-  modalContactBtn:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: '#EBF4FB', borderWidth: 1, borderColor: '#3D95CE' },
-  modalContactBtnText: { fontSize: 12, fontWeight: '700', color: '#1a5f8a' },
+  modalPhoneText:      { fontSize: 12, color: t.text, fontWeight: '600', marginRight: 4 },
+  modalContactBtn:     { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, backgroundColor: t.blueSoft, borderWidth: 1, borderColor: t.blue },
+  modalContactBtnText: { fontSize: 12, fontWeight: '700', color: t.blue },
 
   // Cart / tab pill in the date-row header
-  cartPill:        { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#fde68a' },
-  cartPillText:    { fontSize: 13, color: '#92400e', fontWeight: '700' },
+  cartBar:         { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: t.green, marginHorizontal: 12, marginTop: 8, marginBottom: 4, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, shadowColor: '#000', shadowOpacity: 0.18, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 3 },
+  cartBadge:       { minWidth: 26, height: 26, borderRadius: 13, backgroundColor: 'rgba(255,255,255,0.28)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 7 },
+  cartBadgeText:   { color: '#fff', fontWeight: '800', fontSize: 14 },
+  cartBarText:     { flex: 1, color: '#fff', fontWeight: '800', fontSize: 16 },
+  cartBarCta:      { color: '#fff', fontWeight: '800', fontSize: 15, opacity: 0.95 },
 
   // Add-to-tab button on detail modal
-  tabAddBtn:           { backgroundColor: '#fffbeb', borderWidth: 1.5, borderColor: '#fde68a', paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
-  tabAddBtnActive:     { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
-  tabAddBtnText:       { fontSize: 14, fontWeight: '700', color: '#92400e' },
-  tabAddBtnTextActive: { color: '#16a34a' },
+  tabAddBtn:           { backgroundColor: t.warningBg, borderWidth: 1.5, borderColor: t.warning, paddingVertical: 12, borderRadius: 10, alignItems: 'center', marginTop: 10 },
+  tabAddBtnActive:     { backgroundColor: t.greenSoft, borderColor: t.green },
+  tabAddBtnText:       { fontSize: 14, fontWeight: '700', color: t.warning },
+  tabAddBtnTextActive: { color: t.success },
 
-  // TabModal rows + summary
-  tabRow:            { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  tabRowClient:      { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
-  tabRowMeta:        { fontSize: 11, color: '#888', marginTop: 2 },
-  tabRowPrice:       { fontSize: 14, fontWeight: '700', color: '#1a5f8a' },
-  tabRowRemove:      { width: 28, height: 28, borderRadius: 14, backgroundColor: '#fef2f2', alignItems: 'center', justifyContent: 'center' },
-  tabRowRemoveText:  { fontSize: 18, color: '#ef4444', lineHeight: 20 },
-  tabTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14, marginTop: 4, borderTopWidth: 2, borderTopColor: '#1a1a1a' },
-  tabTotalLabel:     { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  tabTotalValue:     { fontSize: 18, fontWeight: '800', color: '#1a1a1a' },
-  tabFootnote:       { fontSize: 11, color: '#888', marginTop: 8, lineHeight: 16, textAlign: 'center' },
-  tabClearBtn:       { marginTop: 14, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 14, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb' },
-  tabClearBtnText:   { fontSize: 12, color: '#888', fontWeight: '600' },
+  // TabModal rows + summary (tabRow is also used for the Actions/Notes tab bar in ApptDetailModal)
+  tabRow:            { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: t.border },
+  tabRowClient:      { fontSize: 14, fontWeight: '700', color: t.text },
+  tabRowMeta:        { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  tabRowPrice:       { fontSize: 14, fontWeight: '700', color: t.blue },
+  tabRowRemove:      { width: 28, height: 28, borderRadius: 14, backgroundColor: t.dangerBg, alignItems: 'center', justifyContent: 'center' },
+  tabRowRemoveText:  { fontSize: 18, color: t.danger, lineHeight: 20 },
+  tabTotalRow:       { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 14, marginTop: 4, borderTopWidth: 2, borderTopColor: t.text },
+  tabTotalLabel:     { fontSize: 15, fontWeight: '700', color: t.text },
+  tabTotalValue:     { fontSize: 18, fontWeight: '800', color: t.text },
+  tabFootnote:       { fontSize: 11, color: t.textMuted, marginTop: 8, lineHeight: 16, textAlign: 'center' },
+  tabClearBtn:       { marginTop: 14, alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 18, borderRadius: 14, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  tabClearBtnText:   { fontSize: 12, color: t.textMuted, fontWeight: '600' },
 
-  tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
   tabBtn: { flex: 1, paddingVertical: 10, alignItems: 'center' },
-  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: '#3D95CE' },
-  tabBtnText: { fontSize: 13, color: '#888', fontWeight: '500' },
-  tabBtnTextActive: { color: '#1a5f8a', fontWeight: '700' },
+  tabBtnActive: { borderBottomWidth: 2, borderBottomColor: t.blue },
+  tabBtnText: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
+  tabBtnTextActive: { color: t.blue, fontWeight: '700' },
 
-  sectionLabel: { fontSize: 11, fontWeight: '700', color: '#aaa', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
-  repeatLabel:     { fontSize: 12, fontWeight: '700', color: '#888', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 8 },
+  sectionLabel: { fontSize: 11, fontWeight: '700', color: t.textFaint, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  repeatLabel:     { fontSize: 12, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 8 },
   repeatRow:       { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  repeatChip:      { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e0e0e0' },
-  repeatChipOn:    { backgroundColor: '#eef5f2', borderColor: '#2D7A5F' },
-  repeatChipText:  { fontSize: 13, color: '#666', fontWeight: '600' },
-  repeatChipTextOn:{ color: '#2D7A5F', fontWeight: '800' },
+  repeatChip:      { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 16, backgroundColor: t.surface, borderWidth: 1, borderColor: t.borderStrong },
+  repeatChipOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
+  repeatChipText:  { fontSize: 13, color: t.textMuted, fontWeight: '600' },
+  repeatChipTextOn:{ color: t.green, fontWeight: '800' },
   repeatCountRow:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
-  repeatCountLabel:{ fontSize: 13, color: '#555', fontWeight: '600' },
-  repeatCountInput:{ width: 70, backgroundColor: '#fff', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, borderWidth: 1, borderColor: '#ececec', textAlign: 'center' },
-  primaryBtn: { backgroundColor: '#2D7A5F', borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
+  repeatCountLabel:{ fontSize: 13, color: t.textMuted, fontWeight: '600' },
+  repeatCountInput:{ width: 70, backgroundColor: t.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, borderWidth: 1, borderColor: t.border, textAlign: 'center' },
+  primaryBtn: { backgroundColor: t.green, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
-  checkedInPill: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0', borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
-  checkedInPillText: { color: '#16a34a', fontSize: 13, fontWeight: '600' },
+  checkedInPill: { backgroundColor: t.greenSoft, borderColor: t.green, borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  checkedInPillText: { color: t.success, fontSize: 13, fontWeight: '600' },
 
   statusGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   statusBtn: {
     paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10,
-    borderWidth: 1.5, borderColor: '#e0e0e0', backgroundColor: '#fff', flexGrow: 1, alignItems: 'center', minWidth: '47%',
+    borderWidth: 1.5, borderColor: t.borderStrong, backgroundColor: t.surface, flexGrow: 1, alignItems: 'center', minWidth: '47%',
   },
-  statusBtnText: { fontSize: 13, color: '#666' },
+  statusBtnText: { fontSize: 13, color: t.textMuted },
 
-  contactLine: { fontSize: 14, color: '#1a1a1a', marginBottom: 6 },
+  contactLine: { fontSize: 14, color: t.text, marginBottom: 6 },
   notesInput: {
     minHeight: 140, padding: 12, borderRadius: 10,
-    borderWidth: 1, borderColor: '#e0e0e0', backgroundColor: '#fafafa',
-    fontSize: 14, color: '#1a1a1a',
+    borderWidth: 1, borderColor: t.borderStrong, backgroundColor: t.surfaceAlt,
+    fontSize: 14, color: t.text,
   },
 });

@@ -5,13 +5,14 @@ import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
   fetchEmployees,
 } from '../../lib/firestore';
-
-const GREEN = '#2D7A5F';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // Walk-in kiosk: today's turn rotation (next tech up = fewest turns) +
 // a waitlist. Front-desk tool — any staff can operate it.
 export default function WalkinScreen() {
   const { canEditSchedule, isAdmin } = useTenantAccess();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const canEdit = isAdmin || canEditSchedule;
   const [roster,  setRoster]  = useState(null);
   const [waitlist, setWaitlist] = useState([]);
@@ -56,7 +57,7 @@ export default function WalkinScreen() {
     try { await removeWaitlistEntry(id); await load(); } catch {}
   }
 
-  if (roster === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
+  if (roster === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   const sorted = [...roster].sort((a, b) => (a.turnsTaken || 0) - (b.turnsTaken || 0) || (a.clockInAt || '').localeCompare(b.clockInAt || ''));
   const waiting = waitlist.filter(w => w.status !== 'seated');
@@ -68,7 +69,7 @@ export default function WalkinScreen() {
       data={sorted}
       keyExtractor={(t) => t.techId}
       contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
       ListHeaderComponent={<Text style={styles.section}>Rotation — next up first</Text>}
       ListEmptyComponent={<Text style={styles.empty}>No techs clocked in. Add one below.</Text>}
       renderItem={({ item, index }) => (
@@ -103,7 +104,7 @@ export default function WalkinScreen() {
           <Text style={styles.section}>Waitlist ({waiting.length})</Text>
           {canEdit && (
             <View style={styles.addRow}>
-              <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Walk-in name" placeholderTextColor="#bbb" onSubmitEditing={addWaiter} returnKeyType="done" />
+              <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Walk-in name" placeholderTextColor={theme.placeholder} onSubmitEditing={addWaiter} returnKeyType="done" />
               <TouchableOpacity style={styles.addBtn} onPress={addWaiter}><Text style={styles.addText}>Add</Text></TouchableOpacity>
             </View>
           )}
@@ -129,25 +130,25 @@ export default function WalkinScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:       { flex: 1, backgroundColor: '#f5f7fa' },
-  center:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  section:    { fontSize: 14, fontWeight: '800', color: '#1a1a1a', marginTop: 18, marginBottom: 8 },
-  subSection: { fontSize: 12, fontWeight: '700', color: '#888', marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
-  empty:      { color: '#999', fontSize: 13, paddingVertical: 14 },
-  row:        { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ececec', gap: 8 },
-  nextRow:    { borderColor: GREEN, backgroundColor: '#f3faf7' },
-  name:       { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  sub:        { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
-  turnBtn:    { backgroundColor: '#eef5f2', borderWidth: 1, borderColor: GREEN, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
-  turnText:   { color: GREEN, fontWeight: '800', fontSize: 12 },
-  xBtn:       { width: 30, height: 30, borderRadius: 15, backgroundColor: '#f5f5f5', alignItems: 'center', justifyContent: 'center' },
-  xText:      { color: '#999', fontSize: 14, fontWeight: '700' },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:       { flex: 1, backgroundColor: t.bg },
+  center:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  section:    { fontSize: 14, fontWeight: '800', color: t.text, marginTop: 18, marginBottom: 8 },
+  subSection: { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
+  empty:      { color: t.textFaint, fontSize: 13, paddingVertical: 14 },
+  row:        { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: t.border, gap: 8 },
+  nextRow:    { borderColor: t.green, backgroundColor: t.greenSoft },
+  name:       { fontSize: 15, fontWeight: '700', color: t.text },
+  sub:        { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  turnBtn:    { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
+  turnText:   { color: t.green, fontWeight: '800', fontSize: 12 },
+  xBtn:       { width: 30, height: 30, borderRadius: 15, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
+  xText:      { color: t.textFaint, fontSize: 14, fontWeight: '700' },
   chipWrap:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:       { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d8d8d8', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
-  chipText:   { fontSize: 13, color: '#555', fontWeight: '600' },
+  chip:       { backgroundColor: t.surface, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
+  chipText:   { fontSize: 13, color: t.textMuted, fontWeight: '600' },
   addRow:     { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  input:      { flex: 1, backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, borderWidth: 1, borderColor: '#ececec' },
-  addBtn:     { backgroundColor: GREEN, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
+  input:      { flex: 1, backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, borderWidth: 1, borderColor: t.border },
+  addBtn:     { backgroundColor: t.green, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
   addText:    { color: '#fff', fontWeight: '800', fontSize: 14 },
 });

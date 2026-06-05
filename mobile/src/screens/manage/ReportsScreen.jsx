@@ -7,8 +7,8 @@ import { buildTransactions, computeMetrics, computeCancellations } from '../../l
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import useTrashHeader from '../../hooks/useTrashHeader';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
-const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 const PERIODS = [{ days: 0, label: 'Today' }, { days: 7, label: '7d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }];
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 const isoDay = (d) => d.toISOString().slice(0, 10);
@@ -22,6 +22,8 @@ function presetRange(days) {
 // Revenue-by-day bar chart (react-native-svg — already a dep, no native add).
 // `width` is the inner card width; falls back to the phone window width.
 function RevenueChart({ byDay, width }) {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const entries = Object.entries(byDay || {}).sort((a, b) => a[0].localeCompare(b[0]));
   if (entries.length === 0) return null;
   const max = Math.max(...entries.map(e => e[1]), 1);
@@ -33,7 +35,7 @@ function RevenueChart({ byDay, width }) {
       <Svg width={W} height={H}>
         {entries.map(([date, rev], i) => {
           const h = Math.max(1, (rev / max) * (H - 6));
-          return <Rect key={date} x={i * (bw + gap)} y={H - h} width={bw} height={h} rx={1} fill={GREEN} />;
+          return <Rect key={date} x={i * (bw + gap)} y={H - h} width={bw} height={h} rx={1} fill={theme.green} />;
         })}
       </Svg>
       <View style={styles.chartAxis}>
@@ -51,6 +53,8 @@ export default function ReportsScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
   const { isTablet, contentMaxWidth, width: winW } = useResponsive();
   useTrashHeader(navigation, ['receipts'], isAdmin);
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const [days, setDays]       = useState(30);
   const [custom, setCustom]   = useState(false);
   const [cStart, setCStart]   = useState(presetRange(30).startDate);
@@ -95,7 +99,7 @@ export default function ReportsScreen({ navigation }) {
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 14, paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={GREEN} />}>
+      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}>
       <View style={styles.tabs}>
         {PERIODS.map(p => (
           <TouchableOpacity key={p.label} onPress={() => { setCustom(false); setDays(p.days); }} style={[styles.tab, !custom && days === p.days && styles.tabOn]}>
@@ -128,7 +132,7 @@ export default function ReportsScreen({ navigation }) {
       )}
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator color={GREEN} /></View>
+        <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
       ) : !metrics || metrics.totalAppts === 0 ? (
         <Text style={styles.empty}>No completed transactions in this period.</Text>
       ) : (
@@ -197,6 +201,8 @@ function pctDelta(cur, prev) {
 }
 
 function Kpi({ label, value, big, delta, colW }) {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const up = delta != null && delta >= 0;
   return (
     <View style={[styles.kpi, big && styles.kpiBig, colW && { width: colW }]}>
@@ -204,43 +210,43 @@ function Kpi({ label, value, big, delta, colW }) {
       <View style={styles.kpiBottom}>
         <Text style={styles.kpiLabel}>{label}</Text>
         {delta != null && (
-          <Text style={[styles.kpiDelta, { color: up ? '#16a34a' : '#c0392b' }]}>{up ? '▲' : '▼'} {Math.abs(delta)}%</Text>
+          <Text style={[styles.kpiDelta, { color: up ? theme.success : theme.danger }]}>{up ? '▲' : '▼'} {Math.abs(delta)}%</Text>
         )}
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:     { flex: 1, backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:     { flex: 1, backgroundColor: t.bg },
   center:   { paddingVertical: 60, alignItems: 'center' },
-  empty:    { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
+  empty:    { textAlign: 'center', color: t.textFaint, marginTop: 50, fontSize: 13 },
   tabs:     { flexDirection: 'row', gap: 6, marginBottom: 12 },
-  tab:      { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#ececec' },
-  tabOn:    { backgroundColor: '#eef5f2', borderColor: GREEN },
-  tabText:  { fontSize: 12.5, fontWeight: '700', color: '#888' },
-  tabTextOn:{ color: GREEN },
+  tab:      { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  tabOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
+  tabText:  { fontSize: 12.5, fontWeight: '700', color: t.textMuted },
+  tabTextOn:{ color: t.green },
   rangeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 },
-  dateBtn:  { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d8d8d8', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9 },
-  dateText: { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
-  dash:     { color: '#888', fontSize: 15 },
-  chartCard:{ backgroundColor: '#fff', borderRadius: 14, padding: 12, borderWidth: 1, borderColor: '#ececec' },
+  dateBtn:  { backgroundColor: t.surface, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9 },
+  dateText: { fontSize: 14, fontWeight: '700', color: t.text },
+  dash:     { color: t.textMuted, fontSize: 15 },
+  chartCard:{ backgroundColor: t.surface, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: t.border },
   chartAxis:{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
-  axisText: { fontSize: 10.5, color: '#aaa' },
+  axisText: { fontSize: 10.5, color: t.textFaint },
   kpis:     { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 },
-  kpi:      { width: '48%', backgroundColor: '#fff', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#ececec' },
-  kpiBig:   { backgroundColor: '#eef5f2', borderColor: GREEN },
-  kpiValue: { fontSize: 20, fontWeight: '800', color: '#1a1a1a' },
-  kpiValueBig:{ fontSize: 26, color: GREEN },
-  kpiLabel: { fontSize: 11, color: '#888', marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.3 },
+  kpi:      { width: '48%', backgroundColor: t.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: t.border },
+  kpiBig:   { backgroundColor: t.greenSoft, borderColor: t.green },
+  kpiValue: { fontSize: 20, fontWeight: '800', color: t.text },
+  kpiValueBig:{ fontSize: 26, color: t.green },
+  kpiLabel: { fontSize: 11, color: t.textMuted, marginTop: 3, textTransform: 'uppercase', letterSpacing: 0.3 },
   kpiBottom:{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 3 },
   kpiDelta: { fontSize: 11, fontWeight: '800' },
-  deltaNote:{ fontSize: 11, color: '#aaa', marginTop: 2, marginBottom: 4 },
-  section:  { fontSize: 14, fontWeight: '800', color: '#1a1a1a', marginTop: 22, marginBottom: 8 },
-  row:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: '#ececec', gap: 10 },
-  rank:     { fontSize: 14, fontWeight: '800', color: '#bbb', width: 18, textAlign: 'center' },
-  name:     { fontSize: 14.5, fontWeight: '700', color: '#1a1a1a' },
-  sub:      { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
-  amount:   { fontSize: 15, fontWeight: '800', color: GREEN },
-  note:     { fontSize: 12, color: '#aaa', marginTop: 16, lineHeight: 17 },
+  deltaNote:{ fontSize: 11, color: t.textFaint, marginTop: 2, marginBottom: 4 },
+  section:  { fontSize: 14, fontWeight: '800', color: t.text, marginTop: 22, marginBottom: 8 },
+  row:      { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: t.border, gap: 10 },
+  rank:     { fontSize: 14, fontWeight: '800', color: t.textFaint, width: 18, textAlign: 'center' },
+  name:     { fontSize: 14.5, fontWeight: '700', color: t.text },
+  sub:      { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  amount:   { fontSize: 15, fontWeight: '800', color: t.green },
+  note:     { fontSize: 12, color: t.textFaint, marginTop: 16, lineHeight: 17 },
 });

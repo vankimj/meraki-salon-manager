@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Switch, Alert } from 'react-native';
 import { fetchSettings, updateSettings } from '../../lib/firestore';
-
-const GREEN = '#2D7A5F', BLUE = '#3D95CE';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 const RECEIPT_MODES = [
   { value: 'auto', label: 'Auto' }, { value: 'email', label: 'Email' },
   { value: 'sms',  label: 'SMS' },  { value: 'both',  label: 'Both' },
@@ -18,11 +17,14 @@ const FIELDS = [
   { key: 'ccFeeFlat',      label: 'Card fee (flat $)',       type: 'number', def: 0 },
   { key: 'removalPrice',   label: 'Removal service price ($)', type: 'number', def: 0 },
   { key: 'noCardTips',     label: 'Disable tips on card',    type: 'bool' },
+  { key: 'terminalLocationId', label: 'Stripe Terminal Location ID (tml_…)', type: 'text' },
   { key: 'googleReviewUrl',label: 'Google review URL',       type: 'text' },
   { key: 'ein',            label: 'Business EIN',            type: 'text' },
 ];
 
 export default function AdminSettingsScreen() {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [settings, setSettings] = useState(null);
   const [draft,    setDraft]    = useState({});
   const [receipt,  setReceipt]  = useState('auto');
@@ -53,7 +55,7 @@ export default function AdminSettingsScreen() {
     finally { setSaving(false); }
   }
 
-  if (settings === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
+  if (settings === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16 }}>
@@ -69,7 +71,7 @@ export default function AdminSettingsScreen() {
         <View key={f.key}>
           <Text style={styles.fieldLabel}>{f.label}</Text>
           {f.type === 'bool' ? (
-            <Switch value={!!draft[f.key]} onValueChange={v => setDraft({ ...draft, [f.key]: v })} trackColor={{ true: GREEN }} />
+            <Switch value={!!draft[f.key]} onValueChange={v => setDraft({ ...draft, [f.key]: v })} trackColor={{ true: theme.green }} />
           ) : (
             <TextInput
               style={styles.input}
@@ -102,21 +104,21 @@ export default function AdminSettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:      { flex: 1, backgroundColor: '#f5f7fa' },
-  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  card:      { backgroundColor: '#fff', borderRadius: 14, padding: 16, borderWidth: 1, borderColor: '#ececec' },
-  readLabel: { fontSize: 11, fontWeight: '700', color: '#999', textTransform: 'uppercase', letterSpacing: 0.3 },
-  readValue: { fontSize: 16, fontWeight: '600', color: '#1a1a1a', marginTop: 3, textTransform: 'capitalize' },
-  section:   { fontSize: 13, fontWeight: '800', color: '#1a1a1a', marginTop: 22, marginBottom: 4 },
-  fieldLabel:{ fontSize: 12, fontWeight: '700', color: '#888', marginTop: 14, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
-  input:     { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#1a1a1a', borderWidth: 1, borderColor: '#ececec' },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:      { flex: 1, backgroundColor: t.bg },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  card:      { backgroundColor: t.surface, borderRadius: 14, padding: 16, borderWidth: 1, borderColor: t.border },
+  readLabel: { fontSize: 11, fontWeight: '700', color: t.textFaint, textTransform: 'uppercase', letterSpacing: 0.3 },
+  readValue: { fontSize: 16, fontWeight: '600', color: t.text, marginTop: 3, textTransform: 'capitalize' },
+  section:   { fontSize: 13, fontWeight: '800', color: t.text, marginTop: 22, marginBottom: 4 },
+  fieldLabel:{ fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 14, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
+  input:     { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   chips:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip:      { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e3e6e8' },
-  chipOn:    { backgroundColor: '#eef5f2', borderColor: GREEN },
-  chipText:  { fontSize: 13, color: '#666', fontWeight: '600' },
-  chipTextOn:{ color: GREEN, fontWeight: '800' },
-  saveBtn:   { marginTop: 24, backgroundColor: BLUE, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
+  chip:      { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 16, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  chipOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
+  chipText:  { fontSize: 13, color: t.textMuted, fontWeight: '600' },
+  chipTextOn:{ color: t.green, fontWeight: '800' },
+  saveBtn:   { marginTop: 24, backgroundColor: t.blue, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   saveText:  { color: '#fff', fontWeight: '800', fontSize: 15 },
-  note:      { fontSize: 12, color: '#aaa', marginTop: 14, lineHeight: 17 },
+  note:      { fontSize: 12, color: t.textFaint, marginTop: 14, lineHeight: 17 },
 });

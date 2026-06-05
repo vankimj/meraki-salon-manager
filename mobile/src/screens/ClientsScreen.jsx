@@ -4,8 +4,11 @@ import { useFocusEffect } from '@react-navigation/native';
 import { fetchClients } from '../lib/firestore';
 import useTenantAccess from '../hooks/useTenantAccess';
 import useTrashHeader from '../hooks/useTrashHeader';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 export default function ClientsScreen({ navigation }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { isAdmin } = useTenantAccess();
   useTrashHeader(navigation, ['clients'], isAdmin);
   const [clients, setClients] = useState([]);
@@ -46,14 +49,14 @@ export default function ClientsScreen({ navigation }) {
           value={query}
           onChangeText={setQuery}
           placeholder="Search clients…"
-          placeholderTextColor="#bbb"
+          placeholderTextColor={theme.placeholder}
           style={styles.searchInput}
           clearButtonMode="while-editing"
         />
       </View>
 
       {loading
-        ? <ActivityIndicator style={{ marginTop: 40 }} color="#3D95CE" />
+        ? <ActivityIndicator style={{ marginTop: 40 }} color={theme.blue} />
         : (
           <FlatList
             data={filtered}
@@ -68,7 +71,7 @@ export default function ClientsScreen({ navigation }) {
                   await load();
                   setRefreshing(false);
                 }}
-                tintColor="#3D95CE"
+                tintColor={theme.blue}
               />
             }
             renderItem={({ item: c }) => (
@@ -101,38 +104,38 @@ export default function ClientsScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.bg },
   searchRow: {
     padding: 12,
-    backgroundColor: '#fff',
+    backgroundColor: t.surface,
     borderBottomWidth: 1,
-    borderBottomColor: '#ebebeb',
+    borderBottomColor: t.border,
   },
   searchInput: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: t.surfaceAlt,
     borderRadius: 10,
     paddingVertical: 9,
     paddingHorizontal: 14,
     fontSize: 14,
-    color: '#1a1a1a',
+    color: t.text,
   },
-  empty: { textAlign: 'center', color: '#aaa', marginTop: 60, fontSize: 14 },
+  empty: { textAlign: 'center', color: t.textFaint, marginTop: 60, fontSize: 14 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: t.surface,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#f5f5f5',
+    borderBottomColor: t.border,
     gap: 12,
   },
   avatar: { width: 42, height: 42, borderRadius: 21 },
-  avatarFallback: { backgroundColor: '#e8f4f0', alignItems: 'center', justifyContent: 'center' },
-  avatarInitial: { fontSize: 16, fontWeight: '700', color: '#2D7A5F' },
+  avatarFallback: { backgroundColor: t.greenSoft, alignItems: 'center', justifyContent: 'center' },
+  avatarInitial: { fontSize: 16, fontWeight: '700', color: t.green },
   info: { flex: 1 },
-  clientName: { fontSize: 14, fontWeight: '600', color: '#1a1a1a' },
-  clientSub: { fontSize: 11, color: '#888', marginTop: 2 },
-  visitCount: { fontSize: 11, color: '#3D95CE', fontWeight: '600' },
+  clientName: { fontSize: 14, fontWeight: '600', color: t.text },
+  clientSub: { fontSize: 11, color: t.textMuted, marginTop: 2 },
+  visitCount: { fontSize: 11, color: t.blue, fontWeight: '600' },
 });

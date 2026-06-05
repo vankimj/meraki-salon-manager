@@ -8,10 +8,11 @@ import {
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient,
 } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken } from '../../lib/checkout';
+import { isTerminalAvailable } from '../../lib/terminal';
+import CardPayButton from './CardPayButton';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
-
-const GREEN = '#2D7A5F', BLUE = '#3D95CE';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const TIP_PCTS = [15, 18, 20, 25];
 
@@ -21,6 +22,8 @@ const TIP_PCTS = [15, 18, 20, 25];
 export default function CheckoutScreen({ navigation }) {
   const { email } = useTenantAccess();
   const { isTablet } = useResponsive();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const pageMax = isTablet ? 920 : undefined;
   const [settings, setSettings] = useState(null);
   const [tab] = useState(() => getCurrentTab());
@@ -86,6 +89,22 @@ export default function CheckoutScreen({ navigation }) {
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
   }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
 
+  // Card total can differ from cash when the salon passes the card fee to the
+  // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
+  // button must charge this amount, not the cash total.
+  const cardTotals = useMemo(() => computeTotals({
+    lines, productsTotal,
+    discount: discType === 'none' ? null : { isPercent: discType === 'percent', value: Number(discVal) || 0 },
+    promo: normalizePromo(promo),
+    taxRate: Number(settings?.taxRate) || 0,
+    ccFeePct: Number(settings?.ccFeePct) || 0,
+    ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
+    method: 'card',
+    noCardTips: !!settings?.noCardTips,
+    tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
+    giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
+
   const split = buildTechSplit(lines, totals.tipAmt);
 
   async function applyPromo() {
@@ -105,14 +124,16 @@ export default function CheckoutScreen({ navigation }) {
     if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
     Alert.alert('Take cash payment?', `Total ${money(totals.total)} in cash.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: `Charge ${money(totals.total)}`, onPress: complete },
+      { text: `Charge ${money(totals.total)}`, onPress: () => complete({ method: 'cash' }) },
     ]);
   }
 
-  async function complete() {
+  async function complete({ method = 'cash', stripePaymentIntentId = null } = {}) {
     setSaving(true);
     try {
-      const t = totals;
+      const card = method === 'card';
+      const t = card ? cardTotals : totals;
+      const sp = buildTechSplit(lines, t.tipAmt);
       const retailProducts = products.length > 0
         ? products.map(it => ({ id: it.product.id, name: it.product.name, price: it.product.price, qty: it.qty }))
         : null;
@@ -128,9 +149,10 @@ export default function CheckoutScreen({ navigation }) {
         giftCard: giftCard && t.gcApply > 0 ? { code: giftCard.code, id: giftCard.id, applied: t.gcApply } : null,
         creditApplied: t.creditApply,
         charged: t.charged, tip: t.tipAmt, total: t.total,
-        method: 'cash', ccFee: t.ccFee,
+        method, ccFee: t.ccFee,
         ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
-        techSplit: split,
+        stripePaymentIntentId: stripePaymentIntentId || null,
+        techSplit: sp,
         apptIds: (tab.appts || []).map(a => a.id),
         paidAt: new Date().toISOString(), paidBy: email || null,
       };
@@ -173,7 +195,7 @@ export default function CheckoutScreen({ navigation }) {
         clientPhone: primaryAppt?.clientPhone || null,
         clientEmail,
         viewToken:   genReceiptToken(22),
-        techName:    split ? split.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
+        techName:    sp ? sp.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
         date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
         startTime:   primaryAppt?.startTime || '',
         services:    allServices,
@@ -183,13 +205,13 @@ export default function CheckoutScreen({ navigation }) {
       });
 
       await clearTab();
-      Alert.alert('Paid', `${money(t.total)} collected (cash).`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+      Alert.alert('Paid', `${money(t.total)} collected (${card ? 'card' : 'cash'}).`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
       Alert.alert('Checkout failed', e?.message || 'Please try again.');
     } finally { setSaving(false); }
   }
 
-  if (settings === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
+  if (settings === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16, paddingBottom: 40, maxWidth: pageMax, width: '100%', alignSelf: 'center' }}>
@@ -218,7 +240,7 @@ export default function CheckoutScreen({ navigation }) {
             <Text style={styles.lineTech}>{money(it.product.price)} ea</Text>
           </View>
           <Text style={styles.lineName}>{money(it.product.price * it.qty)}</Text>
-          <TouchableOpacity onPress={() => removeProduct(it.product.id)} style={{ marginLeft: 10 }}><Text style={{ color: '#c0392b', fontSize: 16, fontWeight: '700' }}>✕</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => removeProduct(it.product.id)} style={{ marginLeft: 10 }}><Text style={{ color: theme.danger, fontSize: 16, fontWeight: '700' }}>✕</Text></TouchableOpacity>
         </View>
       ))}
       <TouchableOpacity style={styles.addProdBtn} onPress={openPicker}><Text style={styles.addProdText}>＋ Add product</Text></TouchableOpacity>
@@ -231,13 +253,13 @@ export default function CheckoutScreen({ navigation }) {
           </TouchableOpacity>
         ))}
         {discType !== 'none' && (
-          <TextInput style={styles.smallInput} value={discVal} onChangeText={setDiscVal} keyboardType="decimal-pad" placeholder={discType === 'percent' ? '10' : '5'} placeholderTextColor="#bbb" />
+          <TextInput style={styles.smallInput} value={discVal} onChangeText={setDiscVal} keyboardType="decimal-pad" placeholder={discType === 'percent' ? '10' : '5'} placeholderTextColor={theme.placeholder} />
         )}
       </View>
 
       <Text style={styles.section}>Promo code</Text>
       <View style={styles.applyRow}>
-        <TextInput style={[styles.input, { flex: 1 }]} value={promoCode} onChangeText={setPromoCode} autoCapitalize="characters" placeholder="PROMO" placeholderTextColor="#bbb" editable={!promo} />
+        <TextInput style={[styles.input, { flex: 1 }]} value={promoCode} onChangeText={setPromoCode} autoCapitalize="characters" placeholder="PROMO" placeholderTextColor={theme.placeholder} editable={!promo} />
         {promo
           ? <TouchableOpacity onPress={() => { setPromo(null); setPromoCode(''); }} style={styles.clearBtn}><Text style={styles.clearText}>✕ {money(totals.promoAmount)}</Text></TouchableOpacity>
           : <TouchableOpacity onPress={applyPromo} style={styles.applyBtn}><Text style={styles.applyText}>Apply</Text></TouchableOpacity>}
@@ -245,7 +267,7 @@ export default function CheckoutScreen({ navigation }) {
 
       <Text style={styles.section}>Gift card</Text>
       <View style={styles.applyRow}>
-        <TextInput style={[styles.input, { flex: 1 }]} value={gcCode} onChangeText={setGcCode} autoCapitalize="characters" placeholder="GC-XXXX" placeholderTextColor="#bbb" editable={!giftCard} />
+        <TextInput style={[styles.input, { flex: 1 }]} value={gcCode} onChangeText={setGcCode} autoCapitalize="characters" placeholder="GC-XXXX" placeholderTextColor={theme.placeholder} editable={!giftCard} />
         {giftCard
           ? <TouchableOpacity onPress={() => { setGiftCard(null); setGcCode(''); }} style={styles.clearBtn}><Text style={styles.clearText}>✕ -{money(totals.gcApply)}</Text></TouchableOpacity>
           : <TouchableOpacity onPress={applyGiftCard} style={styles.applyBtn}><Text style={styles.applyText}>Apply</Text></TouchableOpacity>}
@@ -260,7 +282,7 @@ export default function CheckoutScreen({ navigation }) {
           </TouchableOpacity>
         ))}
         <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.chip, tipMode === 'custom' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'custom' && styles.chipTextOn]}>$</Text></TouchableOpacity>
-        {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor="#bbb" />}
+        {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />}
       </View>
 
       </View>
@@ -287,7 +309,20 @@ export default function CheckoutScreen({ navigation }) {
       <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
         <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
       </TouchableOpacity>
-      <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
+      {isTerminalAvailable() ? (
+        <CardPayButton
+          amountCents={Math.round((cardTotals.total || 0) * 100)}
+          description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
+          locationId={settings?.terminalLocationId || null}
+          onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
+          merchantName={settings?.salonName || settings?.name || 'Salon'}
+          preferReader={isTablet}
+          disabled={saving || (lines.length === 0 && products.length === 0)}
+          onPaid={(piId) => complete({ method: 'card', stripePaymentIntentId: piId })}
+        />
+      ) : (
+        <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
+      )}
       </View>
       </View>
 
@@ -307,7 +342,7 @@ export default function CheckoutScreen({ navigation }) {
                 </TouchableOpacity>
               )}
             />
-            <TouchableOpacity onPress={() => setShowPicker(false)} style={{ alignItems: 'center', paddingVertical: 12 }}><Text style={{ color: '#888', fontWeight: '600' }}>Close</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowPicker(false)} style={{ alignItems: 'center', paddingVertical: 12 }}><Text style={{ color: theme.textMuted, fontWeight: '600' }}>Close</Text></TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -316,6 +351,7 @@ export default function CheckoutScreen({ navigation }) {
 }
 
 function Row({ label, value, big }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.totRow}>
       <Text style={[styles.totLabel, big && styles.totLabelBig]}>{label}</Text>
@@ -324,53 +360,53 @@ function Row({ label, value, big }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:      { flex: 1, backgroundColor: '#f5f7fa' },
-  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:      { flex: 1, backgroundColor: t.bg },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
   twoCol:    { flexDirection: 'row', gap: 22, alignItems: 'flex-start' },
   colLeft:   { flex: 1.5 },
   colRight:  { flex: 1 },
   colFull:   { width: '100%' },
-  section:   { fontSize: 13, fontWeight: '800', color: '#1a1a1a', marginTop: 20, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
-  muted:     { color: '#999', fontSize: 13 },
-  lineRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#ececec' },
-  lineName:  { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  lineTech:  { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
-  priceWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f6f7f9', borderRadius: 8, paddingHorizontal: 8, borderWidth: 1, borderColor: '#ececec' },
-  dollar:    { fontSize: 15, color: '#888' },
-  priceInput:{ width: 64, fontSize: 15, fontWeight: '700', color: '#1a1a1a', paddingVertical: 8, textAlign: 'right' },
+  section:   { fontSize: 13, fontWeight: '800', color: t.text, marginTop: 20, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
+  muted:     { color: t.textFaint, fontSize: 13 },
+  lineRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.border },
+  lineName:  { fontSize: 15, fontWeight: '700', color: t.text },
+  lineTech:  { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  priceWrap: { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 8, paddingHorizontal: 8, borderWidth: 1, borderColor: t.border },
+  dollar:    { fontSize: 15, color: t.textMuted },
+  priceInput:{ width: 64, fontSize: 15, fontWeight: '700', color: t.text, paddingVertical: 8, textAlign: 'right' },
   chips:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
-  chip:      { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e3e6e8' },
-  chipOn:    { backgroundColor: '#eef5f2', borderColor: GREEN },
-  chipText:  { fontSize: 13, color: '#666', fontWeight: '700' },
-  chipTextOn:{ color: GREEN },
-  smallInput:{ backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, borderWidth: 1, borderColor: '#ececec', minWidth: 70 },
+  chip:      { paddingHorizontal: 14, paddingVertical: 9, borderRadius: 16, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  chipOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
+  chipText:  { fontSize: 13, color: t.textMuted, fontWeight: '700' },
+  chipTextOn:{ color: t.green },
+  smallInput:{ backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, borderWidth: 1, borderColor: t.border, minWidth: 70 },
   applyRow:  { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  input:     { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#1a1a1a', borderWidth: 1, borderColor: '#ececec' },
-  applyBtn:  { backgroundColor: BLUE, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
+  input:     { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
+  applyBtn:  { backgroundColor: t.blue, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
   applyText: { color: '#fff', fontWeight: '800', fontSize: 14 },
-  clearBtn:  { backgroundColor: '#eef5f2', borderWidth: 1, borderColor: GREEN, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
-  clearText: { color: GREEN, fontWeight: '800', fontSize: 13 },
-  totals:    { backgroundColor: '#fff', borderRadius: 14, padding: 16, marginTop: 22, borderWidth: 1, borderColor: '#ececec' },
+  clearBtn:  { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
+  clearText: { color: t.green, fontWeight: '800', fontSize: 13 },
+  totals:    { backgroundColor: t.surface, borderRadius: 14, padding: 16, marginTop: 22, borderWidth: 1, borderColor: t.border },
   totRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
-  totLabel:  { fontSize: 14, color: '#666' },
-  totValue:  { fontSize: 14, fontWeight: '700', color: '#1a1a1a' },
-  totLabelBig:{ fontSize: 17, fontWeight: '800', color: '#1a1a1a' },
-  totValueBig:{ fontSize: 20, fontWeight: '800', color: GREEN },
-  divider:   { height: 1, backgroundColor: '#eee', marginVertical: 8 },
-  splitBox:  { backgroundColor: '#fff', borderRadius: 12, padding: 14, marginTop: 12, borderWidth: 1, borderColor: '#ececec' },
-  splitTitle:{ fontSize: 12, fontWeight: '800', color: '#888', textTransform: 'uppercase', marginBottom: 6 },
-  splitRow:  { fontSize: 13.5, color: '#1a1a1a', marginTop: 3 },
-  payBtn:    { marginTop: 22, backgroundColor: GREEN, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
+  totLabel:  { fontSize: 14, color: t.textMuted },
+  totValue:  { fontSize: 14, fontWeight: '700', color: t.text },
+  totLabelBig:{ fontSize: 17, fontWeight: '800', color: t.text },
+  totValueBig:{ fontSize: 20, fontWeight: '800', color: t.green },
+  divider:   { height: 1, backgroundColor: t.border, marginVertical: 8 },
+  splitBox:  { backgroundColor: t.surface, borderRadius: 12, padding: 14, marginTop: 12, borderWidth: 1, borderColor: t.border },
+  splitTitle:{ fontSize: 12, fontWeight: '800', color: t.textMuted, textTransform: 'uppercase', marginBottom: 6 },
+  splitRow:  { fontSize: 13.5, color: t.text, marginTop: 3 },
+  payBtn:    { marginTop: 22, backgroundColor: t.green, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   payText:   { color: '#fff', fontWeight: '800', fontSize: 16 },
-  cardBtn:   { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: '#e3e6e8', backgroundColor: '#fafafa' },
-  cardText:  { color: '#aaa', fontWeight: '700', fontSize: 13 },
-  addProdBtn:{ borderWidth: 1, borderColor: '#d8d8d8', borderStyle: 'dashed', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  addProdText:{ color: '#666', fontWeight: '700', fontSize: 14 },
-  backdrop:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  sheet:     { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
-  sheetTitle:{ fontSize: 18, fontWeight: '800', color: '#1a1a1a', marginBottom: 10 },
-  pickRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
-  pickName:  { fontSize: 15, fontWeight: '600', color: '#1a1a1a' },
-  pickPrice: { fontSize: 13, color: '#888' },
+  cardBtn:   { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt },
+  cardText:  { color: t.textFaint, fontWeight: '700', fontSize: 13 },
+  addProdBtn:{ borderWidth: 1, borderColor: t.borderStrong, borderStyle: 'dashed', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  addProdText:{ color: t.textMuted, fontWeight: '700', fontSize: 14 },
+  backdrop:  { flex: 1, backgroundColor: t.overlay, justifyContent: 'flex-end' },
+  sheet:     { backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
+  sheetTitle:{ fontSize: 18, fontWeight: '800', color: t.text, marginBottom: 10 },
+  pickRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.border },
+  pickName:  { fontSize: 15, fontWeight: '600', color: t.text },
+  pickPrice: { fontSize: 13, color: t.textMuted },
 });

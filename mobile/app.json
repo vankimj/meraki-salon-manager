@@ -59,7 +59,16 @@
       "expo-asset",
       "expo-web-browser",
       "@react-native-google-signin/google-signin",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "@stripe/stripe-terminal-react-native",
+        {
+          "bluetoothBackgroundMode": true,
+          "locationWhenInUsePermission": "Location is used to accept in-person card payments.",
+          "bluetoothPeripheralPermission": "Bluetooth is used to connect to a card reader.",
+          "bluetoothAlwaysUsagePermission": "Bluetooth is used to connect to a card reader."
+        }
+      ]
     ],
     "extra": {
       "eas": {

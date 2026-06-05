@@ -1,6 +1,7 @@
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import Icon from '../../components/Icon';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // Mobile Admin home — the entry behind the Manage → Admin tile. Wave 1
 // exposes Users (read), Settings (core), Activity Log, and the global
@@ -22,6 +23,8 @@ const ROWS = [
 ];
 
 export default function AdminHomeScreen({ navigation }) {
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { isAdmin, loading } = useTenantAccess();
   if (!loading && !isAdmin) {
     return <View style={styles.center}><Text style={styles.denied}>Admins only.</Text></View>;
@@ -35,7 +38,7 @@ export default function AdminHomeScreen({ navigation }) {
           activeOpacity={0.7}
           onPress={() => navigation.navigate(r.key, r.key === 'Trash' ? { collections: null } : undefined)}
         >
-          <View style={styles.iconWrap}><Icon name={r.icon} size={22} color="#2D7A5F" /></View>
+          <View style={styles.iconWrap}><Icon name={r.icon} size={22} color={theme.green} /></View>
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>{r.label}</Text>
             <Text style={styles.desc}>{r.desc}</Text>
@@ -50,14 +53,14 @@ export default function AdminHomeScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:     { flex: 1, backgroundColor: '#f5f7fa' },
-  center:   { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  denied:   { color: '#999', fontSize: 14 },
-  row:      { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: '#ececec' },
-  iconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#eef5f2', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  label:    { fontSize: 15.5, fontWeight: '700', color: '#1a1a1a' },
-  desc:     { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
-  chev:     { fontSize: 24, color: '#ccc', marginLeft: 6 },
-  note:     { fontSize: 12, color: '#aaa', marginTop: 14, lineHeight: 17, paddingHorizontal: 4 },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:     { flex: 1, backgroundColor: t.bg },
+  center:   { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  denied:   { color: t.textFaint, fontSize: 14 },
+  row:      { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 14, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+  iconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: t.greenSoft, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+  label:    { fontSize: 15.5, fontWeight: '700', color: t.text },
+  desc:     { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  chev:     { fontSize: 24, color: t.textFaint, marginLeft: 6 },
+  note:     { fontSize: 12, color: t.textFaint, marginTop: 14, lineHeight: 17, paddingHorizontal: 4 },
 });

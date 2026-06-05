@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { seedDemoData, clearDemoData } from '../../lib/firestore';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // LEAN mobile demo seeder — 15 demo clients + ~2 appts each, all tagged
 // _demo:true. NOT the web's 600-client batch (that stays on web, where it
@@ -8,6 +9,8 @@ import { seedDemoData, clearDemoData } from '../../lib/firestore';
 export default function AdminDemoScreen() {
   const [running, setRunning] = useState(false);
   const [status,  setStatus]  = useState('');
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
 
   function confirmSeed() {
     Alert.alert('Seed demo data?', 'Adds 15 demo clients + sample appointments (tagged _demo) to THIS salon. Use only in a test/demo tenant.', [
@@ -37,19 +40,19 @@ export default function AdminDemoScreen() {
       <TouchableOpacity style={[styles.btn, styles.clear, running && { opacity: 0.6 }]} onPress={confirmClear} disabled={running}>
         <Text style={styles.clearText}>🗑 Clear demo data</Text>
       </TouchableOpacity>
-      {running && <ActivityIndicator color="#2D7A5F" style={{ marginTop: 16 }} />}
+      {running && <ActivityIndicator color={theme.green} style={{ marginTop: 16 }} />}
       {!!status && <Text style={styles.status}>{status}</Text>}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:     { flex: 1, backgroundColor: '#f5f7fa', padding: 16 },
-  note:     { fontSize: 13, color: '#666', lineHeight: 19, marginBottom: 18 },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:     { flex: 1, backgroundColor: t.bg, padding: 16 },
+  note:     { fontSize: 13, color: t.textMuted, lineHeight: 19, marginBottom: 18 },
   btn:      { borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 12, borderWidth: 1 },
-  seed:     { backgroundColor: '#eef5f2', borderColor: '#2D7A5F' },
-  seedText: { color: '#2D7A5F', fontWeight: '800', fontSize: 15 },
-  clear:    { backgroundColor: '#fdecea', borderColor: '#e7b4ad' },
-  clearText:{ color: '#c0392b', fontWeight: '800', fontSize: 15 },
-  status:   { fontSize: 12.5, color: '#888', marginTop: 16, textAlign: 'center' },
+  seed:     { backgroundColor: t.greenSoft, borderColor: t.green },
+  seedText: { color: t.green, fontWeight: '800', fontSize: 15 },
+  clear:    { backgroundColor: t.dangerBg, borderColor: t.danger },
+  clearText:{ color: t.danger, fontWeight: '800', fontSize: 15 },
+  status:   { fontSize: 12.5, color: t.textMuted, marginTop: 16, textAlign: 'center' },
 });
