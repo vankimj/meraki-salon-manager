@@ -1,10 +1,11 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
   fetchEmployees,
 } from '../../lib/firestore';
+import { playChime } from '../../lib/chime';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // Walk-in kiosk: today's turn rotation (next tech up = fewest turns) +
@@ -26,6 +27,22 @@ export default function WalkinScreen() {
     setEmps(e.filter(x => x.active !== false));
   }, []);
   useEffect(() => { load(); }, [load]);
+
+  // Chime when the waitlist grows (a new walk-in arrived). First render
+  // initializes the ref silently so a fresh open doesn't ding.
+  const prevWaitingRef = useRef(null);
+  useEffect(() => {
+    const n = waitlist.filter(w => w.status !== 'seated').length;
+    if (prevWaitingRef.current !== null && n > prevWaitingRef.current) playChime();
+    prevWaitingRef.current = n;
+  }, [waitlist]);
+
+  // Light polling so a front-desk kiosk picks up walk-ins added on another
+  // device (and chimes) without a full live subscription.
+  useEffect(() => {
+    const id = setInterval(() => { load(); }, 15000);
+    return () => clearInterval(id);
+  }, [load]);
 
   async function persistRoster(next) {
     setRoster(next);

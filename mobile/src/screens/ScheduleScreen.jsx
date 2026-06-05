@@ -371,6 +371,11 @@ export default function ScheduleScreen({ navigation }) {
             onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 600); }}
             onTapAppt={(a) => setDetail(a)}
             onTapEmpty={(startTime, tech) => setCreatePrefill({ date, startTime, techName: tech ?? '' })}
+            onReschedule={async (a, patch) => {
+              setAppts(prev => prev.map(x => x.id === a.id ? { ...x, ...patch } : x));
+              try { await updateAppointment(a.id, patch); }
+              catch (e) { Alert.alert('Couldn\'t move', e?.message || 'Try again.'); setAppts(prev => prev.map(x => x.id === a.id ? { ...x, startTime: a.startTime, techName: a.techName } : x)); }
+            }}
           />
         ) : (
           <DayTimelineView
@@ -547,9 +552,10 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
 const GRID_HEADER_H = 42;
 const GRID_COL_W    = 156;
 
-function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTapAppt, onTapEmpty, onReschedule }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const [moving, setMoving] = useState(null);   // appt picked up to reschedule
   const GRID_H = SLOT_COUNT * SLOT_PX;
   // Show every active tech as a column; fall back to whoever has appts.
   const techs = (allTechs && allTechs.length)
@@ -575,6 +581,13 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
   }, [appts, techs.join('|')]);
 
   return (
+   <View style={{ flex: 1 }}>
+    {moving && (
+      <View style={styles.moveBanner}>
+        <Text style={styles.moveBannerText} numberOfLines={1}>Moving {moving.clientName || 'Walk-in'} — tap a new slot</Text>
+        <TouchableOpacity onPress={() => setMoving(null)} style={styles.moveCancel}><Text style={styles.moveCancelText}>✕ Cancel</Text></TouchableOpacity>
+      </View>
+    )}
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.surface }}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.blue} />}
@@ -638,14 +651,16 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
                           key={a.id}
                           activeOpacity={0.75}
                           onPress={() => onTapAppt(a)}
+                          onLongPress={() => { if (onReschedule) setMoving(a); }}
+                          delayLongPress={300}
                           style={[styles.gridBlock, {
                             top: idx * SLOT_PX + 2,
                             height: span * SLOT_PX - 4,
                             width: GRID_COL_W - 7,
                             backgroundColor: c.bg,
                             borderLeftColor: c.border,
-                            opacity: c.faded ? 0.7 : 1,
-                          }]}
+                            opacity: moving?.id === a.id ? 0.4 : (c.faded ? 0.7 : 1),
+                          }, moving?.id === a.id && styles.gridBlockMoving]}
                         >
                           <Text style={[styles.gridBlockClient, { color: c.text }]} numberOfLines={1}>
                             {a.techRequestType === 'specific' && <Text style={styles.requestStar}>★ </Text>}
@@ -659,6 +674,15 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
                         </TouchableOpacity>
                       );
                     })}
+                    {/* While moving an appt, the whole column becomes drop targets. */}
+                    {moving && Array.from({ length: SLOT_COUNT }).map((_, didx) => (
+                      <TouchableOpacity
+                        key={`drop-${didx}`}
+                        activeOpacity={0.4}
+                        onPress={() => { onReschedule(moving, { startTime: minToHHMM(DAY_START_MIN + didx * SLOT_MINUTES), techName: t }); setMoving(null); }}
+                        style={[styles.gridDrop, { top: didx * SLOT_PX, height: SLOT_PX, width: GRID_COL_W }]}
+                      />
+                    ))}
                   </View>
                 );
               })}
@@ -667,6 +691,7 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
         </ScrollView>
       </View>
     </ScrollView>
+   </View>
   );
 }
 
@@ -865,6 +890,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   const styles = useThemedStyles(makeStyles);
   const [clients, setClients] = useState([]);
   const [services, setServices] = useState([]);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [pickedClient, setPickedClient] = useState(null);
@@ -887,12 +913,13 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   useEffect(() => {
     if (!open) return;
     setLoading(true);
-    Promise.all([fetchClients(), fetchServices()])
-      .then(([cs, svc]) => {
+    Promise.all([fetchClients(), fetchServices(), fetchEmployees()])
+      .then(([cs, svc, emps]) => {
         setClients(cs || []);
         setServices(svc || []);
+        setEmployees(emps || []);
       })
-      .catch(() => { setClients([]); setServices([]); })
+      .catch(() => { setClients([]); setServices([]); setEmployees([]); })
       .finally(() => setLoading(false));
     setNewClientOpen(false);
     setNewClientName('');
@@ -916,6 +943,21 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   }, [prefill?.date, prefill?.startTime, editAppt?.id]);
 
   const totalDuration = pickedServices.reduce((s, sv) => s + (Number(sv.duration) || 30), 0) || 30;
+
+  // Surface the services THIS tech performs first (employee.serviceIds, same
+  // field the web edits). Soft sort + a ★ marker — never hides a service, so
+  // an off-menu booking is still possible.
+  const apptTechName = (isEdit ? editAppt?.techName : prefill?.techName) || '';
+  const assignedIds = useMemo(() => {
+    const emp = employees.find(e => (e.name || '') === apptTechName);
+    return new Set(Array.isArray(emp?.serviceIds) ? emp.serviceIds : []);
+  }, [employees, apptTechName]);
+  const sortedServices = useMemo(() => {
+    if (assignedIds.size === 0) return services;
+    const yes = [], no = [];
+    services.forEach(s => (assignedIds.has(s.id) ? yes : no).push(s));
+    return [...yes, ...no];
+  }, [services, assignedIds]);
   // Full client catalog flows into a bounded inner ScrollView so the
   // user can scroll through everyone without hijacking the outer
   // modal scroll. Cap at 200 visible rows for perf — anyone past
@@ -1161,8 +1203,9 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
               >
-                {services.map(svc => {
+                {sortedServices.map(svc => {
                   const active = pickedServices.some(s => s.id === svc.id);
+                  const performs = assignedIds.has(svc.id);
                   return (
                     <TouchableOpacity
                       key={svc.id}
@@ -1170,7 +1213,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                       style={[styles.serviceChip, active && styles.serviceChipActive]}
                     >
                       <Text style={[styles.serviceChipName, active && styles.serviceChipNameActive]}>
-                        {svc.name}
+                        {performs ? '★ ' : ''}{svc.name}
                       </Text>
                       <Text style={[styles.serviceChipMeta, active && styles.serviceChipMetaActive]}>
                         {svc.duration || 30}m · ${Number(svc.price) || 0}
@@ -1797,6 +1840,12 @@ const makeStyles = (t) => StyleSheet.create({
   gridBlockClient:    { fontSize: 12.5, fontWeight: '800' },
   gridBlockMeta:      { fontSize: 10.5, marginTop: 1, opacity: 0.8 },
   gridBlockTime:      { fontSize: 10, marginTop: 2, opacity: 0.7, fontWeight: '600' },
+  gridBlockMoving:    { borderWidth: 2, borderColor: t.blue, borderStyle: 'dashed' },
+  gridDrop:           { position: 'absolute', left: 0, borderWidth: 1, borderColor: t.blue, borderStyle: 'dashed', backgroundColor: t.blueSoft, opacity: 0.5 },
+  moveBanner:         { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: t.blue, paddingHorizontal: 14, paddingVertical: 10 },
+  moveBannerText:     { flex: 1, color: '#fff', fontWeight: '800', fontSize: 14 },
+  moveCancel:         { backgroundColor: 'rgba(255,255,255,0.25)', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  moveCancelText:     { color: '#fff', fontWeight: '800', fontSize: 13 },
   dayOffState:        { flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 60, paddingHorizontal: 32, backgroundColor: t.surface },
   dayOffEmoji:        { fontSize: 56, marginBottom: 12 },
   dayOffTitle:        { fontSize: 18, fontWeight: '700', color: t.text, marginBottom: 8, textAlign: 'center' },
