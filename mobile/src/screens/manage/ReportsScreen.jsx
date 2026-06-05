@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../../lib/firestore';
@@ -64,6 +64,7 @@ export default function ReportsScreen({ navigation }) {
   const [cancels, setCancels] = useState(null);
   const [prev, setPrev]       = useState(null);
   const [loading, setLoading] = useState(true);
+  const [techFilter, setTechFilter] = useState('');   // '' = all techs
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
   // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
@@ -96,6 +97,23 @@ export default function ReportsScreen({ navigation }) {
 
   const techs = metrics ? Object.entries(metrics.byTech).map(([name, t]) => ({ name, ...t })).sort((a, b) => b.revenue - a.revenue) : [];
   const services = metrics ? Object.entries(metrics.byService).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 8) : [];
+
+  // Per-tech drill-down — driven off the already-split byTech / tipsByTech
+  // aggregates so multi-tech bookings attribute correctly (no re-query).
+  const tb        = techFilter ? (metrics?.byTech?.[techFilter] || { revenue: 0, count: 0, services: {}, clientCount: 0 }) : null;
+  const tbPrev    = techFilter ? (prev?.byTech?.[techFilter] || null) : null;
+  const ptTips    = techFilter ? (metrics?.tipsByTech?.[techFilter] || 0) : 0;
+  const ptTipsPrev= techFilter ? (prev?.tipsByTech?.[techFilter] ?? null) : null;
+  const ptAvg     = tb && tb.count ? tb.revenue / tb.count : 0;
+  const ptAvgPrev = tbPrev && tbPrev.count ? tbPrev.revenue / tbPrev.count : null;
+  const ptServices= tb ? Object.entries(tb.services).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 12) : [];
+  const ptCancel  = techFilter ? (cancels?.byTech?.[techFilter] || null) : null;
+
+  async function shareSummary() {
+    try {
+      await Share.share({ message: buildSummary({ custom, days, range, techFilter, metrics, tb, ptTips, ptAvg, ptServices, techs, services }) });
+    } catch {}
+  }
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 14, paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
@@ -137,6 +155,52 @@ export default function ReportsScreen({ navigation }) {
         <Text style={styles.empty}>No completed transactions in this period.</Text>
       ) : (
         <>
+          {techs.filter(t => t.name).length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }} contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
+              <TouchableOpacity onPress={() => setTechFilter('')} style={[styles.tFilter, !techFilter && styles.tFilterOn]}>
+                <Text style={[styles.tFilterText, !techFilter && styles.tFilterTextOn]}>All techs</Text>
+              </TouchableOpacity>
+              {techs.filter(t => t.name).map(t => (
+                <TouchableOpacity key={t.name} onPress={() => setTechFilter(t.name)} style={[styles.tFilter, techFilter === t.name && styles.tFilterOn]}>
+                  <Text style={[styles.tFilterText, techFilter === t.name && styles.tFilterTextOn]} numberOfLines={1}>{t.name || '(unassigned)'}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          {techFilter ? (
+          <>
+          <View style={styles.kpis}>
+            <Kpi label="Revenue" value={money(tb.revenue)} big colW={colW} delta={pctDelta(tb.revenue, tbPrev?.revenue)} />
+            <Kpi label="Appts" value={tb.count} colW={colW} delta={pctDelta(tb.count, tbPrev?.count)} />
+            <Kpi label="Avg ticket" value={money(ptAvg)} colW={colW} delta={pctDelta(ptAvg, ptAvgPrev)} />
+            <Kpi label="Tips" value={money(ptTips)} colW={colW} delta={pctDelta(ptTips, ptTipsPrev)} />
+          </View>
+          <Text style={styles.deltaNote}>{techFilter || '(unassigned)'} · {tb.clientCount} client{tb.clientCount === 1 ? '' : 's'} · ▲▼ vs previous {custom ? 'period' : (days === 0 ? 'day' : `${days} days`)}</Text>
+
+          {!!ptCancel && (ptCancel.cancelled > 0 || ptCancel.noShow > 0) && (
+            <>
+              <Text style={styles.section}>Cancellations</Text>
+              <View style={styles.kpis}>
+                <Kpi label="Cancelled" value={ptCancel.cancelled || 0} colW={colW} />
+                <Kpi label="No-shows" value={ptCancel.noShow || 0} colW={colW} />
+                <Kpi label="Lost revenue" value={money(ptCancel.lostRevenue)} colW={colW} />
+                <Kpi label="Clients" value={tb.clientCount} colW={colW} />
+              </View>
+            </>
+          )}
+
+          <Text style={styles.section}>{techFilter || '(unassigned)'}'s services</Text>
+          {ptServices.length === 0 && <Text style={styles.empty}>No services in this period.</Text>}
+          {ptServices.map(s => (
+            <View key={s.name} style={styles.row}>
+              <View style={{ flex: 1 }}><Text style={styles.name}>{s.name}</Text><Text style={styles.sub}>{s.count}×</Text></View>
+              <Text style={styles.amount}>{money(s.revenue)}</Text>
+            </View>
+          ))}
+          </>
+          ) : (
+          <>
           <View style={styles.kpis}>
             <Kpi label="Revenue" value={money(metrics.totalRevenue)} big colW={colW} delta={pctDelta(metrics.totalRevenue, prev?.totalRevenue)} />
             <Kpi label="Appts" value={metrics.totalAppts} colW={colW} delta={pctDelta(metrics.totalAppts, prev?.totalAppts)} />
@@ -188,6 +252,11 @@ export default function ReportsScreen({ navigation }) {
               <Text style={[styles.amount, { marginLeft: 10 }]}>{money(metrics.byMethod[m].total)}</Text>
             </View>
           ))}
+          </>
+          )}
+          <TouchableOpacity onPress={shareSummary} style={styles.shareBtn} activeOpacity={0.85}>
+            <Text style={styles.shareBtnText}>⤴  Share summary</Text>
+          </TouchableOpacity>
           <Text style={styles.note}>AI assistant + PDF/1099 export are on the web app.</Text>
         </>
       )}
@@ -198,6 +267,35 @@ export default function ReportsScreen({ navigation }) {
 function pctDelta(cur, prev) {
   if (prev == null || prev === 0) return null;
   return Math.round(((cur - prev) / Math.abs(prev)) * 100);
+}
+
+function periodLabel(custom, days, range) {
+  if (custom) return `${range.startDate} → ${range.endDate}`;
+  return days === 0 ? 'Today' : `Last ${days} days`;
+}
+
+// Plain-text report summary for the native Share sheet (text/SMS/email/etc).
+function buildSummary({ custom, days, range, techFilter, metrics, tb, ptTips, ptAvg, ptServices, techs, services }) {
+  const L = [`Plume Nexus — ${periodLabel(custom, days, range)}`];
+  if (techFilter) {
+    L.push(`Tech: ${techFilter}`);
+    L.push(`Revenue ${money(tb.revenue)} · ${tb.count} appts · avg ${money(ptAvg)} · tips ${money(ptTips)}`);
+    if (ptServices.length) {
+      L.push('Top services:');
+      ptServices.slice(0, 5).forEach(s => L.push(`  • ${s.name} — ${s.count}× ${money(s.revenue)}`));
+    }
+  } else {
+    L.push(`Revenue ${money(metrics.totalRevenue)} · ${metrics.totalAppts} appts · avg ${money(metrics.avgTicket)} · tips ${money(metrics.tipTotal)}`);
+    if (techs.length) {
+      L.push('Top techs:');
+      techs.slice(0, 5).forEach((t, i) => L.push(`  ${i + 1}. ${t.name || '(unassigned)'} — ${money(t.revenue)} (${t.count})`));
+    }
+    if (services.length) {
+      L.push('Top services:');
+      services.slice(0, 5).forEach(s => L.push(`  • ${s.name} — ${s.count}× ${money(s.revenue)}`));
+    }
+  }
+  return L.join('\n');
 }
 
 function Kpi({ label, value, big, delta, colW }) {
@@ -226,6 +324,10 @@ const makeStyles = (t) => StyleSheet.create({
   tabOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
   tabText:  { fontSize: 12.5, fontWeight: '700', color: t.textMuted },
   tabTextOn:{ color: t.green },
+  tFilter:  { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 14, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, maxWidth: 150 },
+  tFilterOn:{ backgroundColor: t.green, borderColor: t.green },
+  tFilterText:  { fontSize: 12.5, fontWeight: '700', color: t.textMuted },
+  tFilterTextOn:{ color: '#fff' },
   rangeRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, marginBottom: 12 },
   dateBtn:  { backgroundColor: t.surface, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 9 },
   dateText: { fontSize: 14, fontWeight: '700', color: t.text },
@@ -249,4 +351,6 @@ const makeStyles = (t) => StyleSheet.create({
   sub:      { fontSize: 12, color: t.textMuted, marginTop: 2 },
   amount:   { fontSize: 15, fontWeight: '800', color: t.green },
   note:     { fontSize: 12, color: t.textFaint, marginTop: 16, lineHeight: 17 },
+  shareBtn: { marginTop: 22, borderRadius: 12, paddingVertical: 13, alignItems: 'center', backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green },
+  shareBtnText: { color: t.green, fontWeight: '800', fontSize: 14 },
 });

@@ -7,6 +7,7 @@ import {
   subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes,
   fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
   fetchTimeOff, createClient, updateAppointment, fetchClient, softDeleteAppointment,
+  softDeleteRecurringSeries,
 } from '../lib/firestore';
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
@@ -400,6 +401,12 @@ export default function ScheduleScreen({ navigation }) {
           await softDeleteAppointment(a.id, email);
           removeApptFromTab(a.id);
           setAppts(prev => prev.filter(x => x.id !== a.id));
+          setDetail(null);
+        }}
+        onDeleteSeries={async (a) => {
+          const ids = await softDeleteRecurringSeries(a.recurringGroupId, email, { fromDate: todayStr() });
+          ids.forEach(id => removeApptFromTab(id));
+          setAppts(prev => prev.filter(x => !ids.includes(x.id)));
           setDetail(null);
         }}
         onUpdate={(patch) => {
@@ -1413,7 +1420,7 @@ function TabModal({ open, tab, onClose, onCheckout }) {
 }
 
 // ── Detail modal (status, check-in, notes, client snapshot) ─────────────
-function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, onAddToTab, onDelete }) {
+function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, onAddToTab, onDelete, onDeleteSeries }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [notes,   setNotes]   = useState('');
@@ -1480,23 +1487,34 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
 
   function confirmDelete() {
     if (working) return;
+    const who = `${appt.clientName || 'This appointment'}${appt.startTime ? ` at ${fmtTime(appt.startTime)}` : ''}`;
+    const restoreNote = 'An admin can restore from the web Trash within 30 days.';
+    const runDelete = (fn) => async () => {
+      setWorking(true);
+      try { await fn?.(appt); }
+      catch (e) { Alert.alert('Couldn\'t delete', e?.message || 'Please try again.'); setWorking(false); }
+    };
+
+    // Recurring appointment → offer this-one vs the whole upcoming series.
+    if (appt.recurringGroupId) {
+      Alert.alert(
+        'Delete recurring appointment',
+        `${who} is part of a repeating series. ${restoreNote}`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'This one only', style: 'destructive', onPress: runDelete(onDelete) },
+          { text: 'This & all upcoming', style: 'destructive', onPress: runDelete(onDeleteSeries) },
+        ],
+      );
+      return;
+    }
+
     Alert.alert(
       'Delete appointment?',
-      `${appt.clientName || 'This appointment'}${appt.startTime ? ` at ${fmtTime(appt.startTime)}` : ''} will be removed. An admin can restore it from the web Trash within 30 days.`,
+      `${who} will be removed. ${restoreNote}`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete', style: 'destructive',
-          onPress: async () => {
-            setWorking(true);
-            try {
-              await onDelete?.(appt);
-            } catch (e) {
-              Alert.alert('Couldn\'t delete', e?.message || 'Please try again.');
-              setWorking(false);
-            }
-          },
-        },
+        { text: 'Delete', style: 'destructive', onPress: runDelete(onDelete) },
       ],
     );
   }
@@ -1534,6 +1552,11 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
               {appt.techRequestType === 'specific' && (
                 <View style={styles.requestBadge}>
                   <Text style={styles.requestBadgeText}>★ Client requested this tech</Text>
+                </View>
+              )}
+              {!!appt.recurringGroupId && (
+                <View style={styles.repeatBadge}>
+                  <Text style={styles.repeatBadgeText}>🔁 Repeating appointment</Text>
                 </View>
               )}
               {!!client?.allergies && (
@@ -1896,6 +1919,8 @@ const makeStyles = (t) => StyleSheet.create({
   requestStar:        { color: t.danger, fontWeight: '700' },
   requestBadge:       { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: t.dangerBg, borderWidth: 1, borderColor: t.danger },
   requestBadgeText:   { fontSize: 11, color: t.danger, fontWeight: '700' },
+  repeatBadge:        { alignSelf: 'flex-start', marginTop: 6, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, backgroundColor: t.blueSoft, borderWidth: 1, borderColor: t.blue },
+  repeatBadgeText:    { fontSize: 11, color: t.blue, fontWeight: '700' },
   // Allergy ⚠ on appt blocks + a prominent red banner in the detail
   // modal. Same color family as requestBadge for visual consistency,
   // but the banner spans full-width to make sure the tech sees it

@@ -102,6 +102,27 @@ export async function deleteAppointment(id, by) {
   return softDeleteAppointment(id, by);
 }
 
+// Soft-delete every appointment in a recurring series. Defaults to only
+// this-and-future members (date >= fromDate) so already-completed past
+// visits in the series are never tombstoned. Returns the deleted ids so
+// the caller can reconcile local state / the cart tab.
+export async function softDeleteRecurringSeries(groupId, by, { fromDate = null } = {}) {
+  if (!groupId) return [];
+  const snap = await getDocs(query(tenantCol('appointments'), where('recurringGroupId', '==', groupId)));
+  const targets = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
+    .filter(a => !fromDate || (a.date || '') >= fromDate);
+  const stamp = new Date().toISOString();
+  const actor = by || auth?.currentUser?.email || null;
+  await Promise.all(targets.map(a =>
+    updateDoc(doc(tenantCol('appointments'), a.id), {
+      _deleted: true, _deletedAt: stamp, _deletedBy: actor, updatedAt: stamp,
+    })
+  ));
+  return targets.map(a => a.id);
+}
+
 // ── Clients ────────────────────────────────────────────
 export async function fetchClients() {
   const snap = await getDocs(query(tenantCol('clients'), orderBy('name')));
