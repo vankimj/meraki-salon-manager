@@ -27,8 +27,8 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
         {PHASES.map(p => {
           const s = phaseStatus(onboarding, p.key);
           const icon  = s === 'done'    ? '✓' : s === 'skipped' ? '○' : '⚠';
-          const color = s === 'done'    ? '#10b981' : s === 'skipped' ? '#9ca3af' : '#f59e0b';
-          const bg    = s === 'done'    ? '#ecfdf5' : s === 'skipped' ? 'var(--pn-bg)' : '#fffbeb';
+          const color = s === 'done'    ? 'var(--pn-success)' : s === 'skipped' ? '#9ca3af' : 'var(--pn-warning)';
+          const bg    = s === 'done'    ? 'var(--pn-success-bg)' : s === 'skipped' ? 'var(--pn-bg)' : 'var(--pn-warning-bg)';
           const label = s === 'done'    ? 'Complete' : s === 'skipped' ? 'Skipped' : 'Pending';
           return (
             <button key={p.key} onClick={() => p.key !== 'launch' && onJump?.(p.key)}
@@ -49,7 +49,7 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
       </div>
 
       {remaining.length > 0 && remaining.some(r => r.key !== 'launch') && (
-        <div style={{ padding: 12, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 12, marginBottom: 14, lineHeight: 1.55 }}>
+        <div style={{ padding: 12, borderRadius: 8, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', color: 'var(--pn-warning)', fontSize: 12, marginBottom: 14, lineHeight: 1.55 }}>
           <strong>{remaining.filter(r => r.key !== 'launch').length} step{remaining.filter(r => r.key !== 'launch').length === 1 ? '' : 's'} still pending.</strong> You can finish them anytime — or launch now and circle back later.
         </div>
       )}

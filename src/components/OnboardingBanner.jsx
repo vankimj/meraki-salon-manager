@@ -15,17 +15,17 @@ export default function OnboardingBanner({ onboarding, onOpen }) {
       style={{
         display: 'flex', alignItems: 'center', gap: 10,
         width: '100%', padding: '8px 16px',
-        background: 'linear-gradient(90deg, #fef3c7 0%, #fde68a 100%)',
+        background: 'var(--pn-warning-bg)',
         border: 'none', borderBottom: '1px solid #fbbf24',
         cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
-        color: '#78350f', fontSize: 12, fontWeight: 600,
+        color: 'var(--pn-warning)', fontSize: 12, fontWeight: 600,
       }}>
       <span style={{ fontSize: 14 }}>🎯</span>
       <span style={{ flex: 1 }}>
         Onboarding {done}/{total} complete — finish setup
       </span>
       <div style={{ width: 80, height: 4, borderRadius: 2, background: 'rgba(120, 53, 15, 0.18)', overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: '#78350f', transition: 'width .3s' }} />
+        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--pn-warning)', transition: 'width .3s' }} />
       </div>
       <span style={{ fontSize: 11, opacity: 0.7 }}>→</span>
     </button>

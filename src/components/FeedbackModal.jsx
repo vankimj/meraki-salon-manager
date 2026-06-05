@@ -53,8 +53,8 @@ export default function FeedbackModal({ onClose }) {
                   <button key={val} onClick={() => setType(val)} style={{
                     flex: 1, padding: '8px 0', borderRadius: 8, fontSize: 13, fontWeight: type === val ? 600 : 400,
                     border: `1px solid ${type === val ? '#3D95CE' : 'var(--pn-border-strong)'}`,
-                    background: type === val ? '#EBF5FF' : 'var(--pn-bg)',
-                    color: type === val ? '#1a5f8a' : 'var(--pn-text-muted)',
+                    background: type === val ? 'var(--pn-info-bg)' : 'var(--pn-bg)',
+                    color: type === val ? 'var(--pn-info)' : 'var(--pn-text-muted)',
                     cursor: 'pointer', fontFamily: 'inherit',
                   }}>
                     {label}

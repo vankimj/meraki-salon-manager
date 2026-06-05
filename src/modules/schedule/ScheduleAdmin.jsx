@@ -54,10 +54,10 @@ function fmtDate(dateStr) {
 }
 
 const STATUS_COLORS = {
-  scheduled:     { bg: '#DBEAFE', border: '#3B82F6', text: '#1e40af' },
-  'in-progress': { bg: '#FEF3C7', border: '#F59E0B', text: '#78350f' },
-  done:          { bg: '#D1FAE5', border: '#10B981', text: '#065f46' },
-  cancelled:     { bg: '#FEE2E2', border: '#EF4444', text: '#991b1b' },
+  scheduled:     { bg: 'var(--pn-info-bg)',    border: '#3B82F6', text: 'var(--pn-info)' },
+  'in-progress': { bg: 'var(--pn-warning-bg)', border: '#F59E0B', text: 'var(--pn-warning)' },
+  done:          { bg: 'var(--pn-success-bg)', border: '#10B981', text: 'var(--pn-success)' },
+  cancelled:     { bg: 'var(--pn-danger-bg)',  border: '#EF4444', text: 'var(--pn-danger)' },
   no_show:       { bg: '#F3F4F6', border: '#6B7280', text: '#374151' },
 };
 
@@ -1003,19 +1003,19 @@ function openNew(techName, slotMins) {
 
       {/* Store closed banner — day view only */}
       {viewMode === 'day' && isStoreClosed && (
-        <div style={{ background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ background: 'var(--pn-danger-bg)', border: '1px solid #FECACA', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 14 }}>🚫</span>
-          <span style={{ fontSize: 12, color: '#991b1b', fontWeight: 500 }}>Salon is closed today — appointments can still be booked manually</span>
+          <span style={{ fontSize: 12, color: 'var(--pn-danger)', fontWeight: 500 }}>Salon is closed today — appointments can still be booked manually</span>
         </div>
       )}
 
       {/* Client birthdays banner — day view only */}
       {viewMode === 'day' && birthdayClients.length > 0 && (
-        <div style={{ background: '#FFF7ED', border: '1px solid #FED7AA', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+        <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #FED7AA', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
           <span style={{ fontSize: 16 }}>🎂</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#9A3412' }}>Client birthdays today:</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-warning)' }}>Client birthdays today:</span>
           {birthdayClients.map(c => (
-            <span key={c.id} style={{ fontSize: 12, color: '#7C2D12', background: '#FFEDD5', borderRadius: 20, padding: '2px 10px', border: '1px solid #FED7AA' }}>
+            <span key={c.id} style={{ fontSize: 12, color: 'var(--pn-warning)', background: '#FFEDD5', borderRadius: 20, padding: '2px 10px', border: '1px solid #FED7AA' }}>
               {c.name}
             </span>
           ))}
@@ -1024,11 +1024,11 @@ function openNew(techName, slotMins) {
 
       {/* Staff birthdays banner — day view only */}
       {viewMode === 'day' && birthdayEmployees.length > 0 && (
-        <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
+        <div style={{ background: 'var(--pn-success-bg)', border: '1px solid #BBF7D0', borderRadius: 8, padding: '7px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', flexShrink: 0 }}>
           <span style={{ fontSize: 16 }}>🎊</span>
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#14532D' }}>Staff birthdays today:</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-success)' }}>Staff birthdays today:</span>
           {birthdayEmployees.map(e => (
-            <span key={e.id} style={{ fontSize: 12, color: '#166534', background: '#DCFCE7', borderRadius: 20, padding: '2px 10px', border: '1px solid #BBF7D0' }}>
+            <span key={e.id} style={{ fontSize: 12, color: 'var(--pn-success)', background: '#DCFCE7', borderRadius: 20, padding: '2px 10px', border: '1px solid #BBF7D0' }}>
               {e.name}
             </span>
           ))}
@@ -1337,7 +1337,7 @@ function QueuePanel({ entries, turnRoster, onAutoSeatNext, onSeat, onRemove, onD
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{entry.clientName}</span>
-                    {entry.hasAppointment && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: '#EBF4FB', color: '#1a5f8a', border: '1px solid #93C5FD' }}>Has appt</span>}
+                    {entry.hasAppointment && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', border: '1px solid #93C5FD' }}>Has appt</span>}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>
                     {entry.serviceName || '—'}
@@ -1455,9 +1455,9 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
                       const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
                       const isCancelled = appt.status === 'cancelled';
                       const isDone      = appt.status === 'done';
-                      const blockBg     = isCancelled ? '#fef2f2' : isDone ? '#f3f4f6' : col.bg;
+                      const blockBg     = isCancelled ? 'var(--pn-danger-bg)' : isDone ? '#f3f4f6' : col.bg;
                       const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
-                      const blockText   = isCancelled ? '#991b1b' : isDone ? '#6b7280' : col.text;
+                      const blockText   = isCancelled ? 'var(--pn-danger)' : isDone ? '#6b7280' : col.text;
                       // Allergy lookup — surfaces a ⚠ on the block so the
                       // tech sees it before opening the appt. Falls back
                       // to no-op for walk-ins / unlinked appts.
@@ -1829,9 +1829,9 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
           const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
           const isCancelled = appt.status === 'cancelled';
           const isDone      = appt.status === 'done';
-          const blockBg     = isCancelled ? '#fef2f2' : isDone ? '#f3f4f6' : col.bg;
+          const blockBg     = isCancelled ? 'var(--pn-danger-bg)' : isDone ? '#f3f4f6' : col.bg;
           const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
-          const blockText   = isCancelled ? '#991b1b' : isDone ? '#6b7280' : col.text;
+          const blockText   = isCancelled ? 'var(--pn-danger)' : isDone ? '#6b7280' : col.text;
 
           // Done/cancelled appts shouldn't be reschedulable — they represent
           // historical state. Active scheduled appts are draggable.
@@ -2267,12 +2267,12 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               marginBottom: 12,
               padding: '10px 12px',
               borderRadius: 10,
-              background: blockers.length > 0 ? '#fef2f2' : '#fffbeb',
+              background: blockers.length > 0 ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)',
               border: `1px solid ${blockers.length > 0 ? '#fca5a5' : '#fde68a'}`,
             }}>
               <div style={{
                 fontSize: 10, fontWeight: 700,
-                color: blockers.length > 0 ? '#991b1b' : '#92400e',
+                color: blockers.length > 0 ? 'var(--pn-danger)' : 'var(--pn-warning)',
                 textTransform: 'uppercase', letterSpacing: '.05em',
                 marginBottom: 6,
               }}>
@@ -2281,13 +2281,13 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                   : `Heads up (${warnings.length})`}
               </div>
               {blockers.map((b, i) => (
-                <div key={`b${i}`} style={{ display: 'flex', gap: 8, fontSize: 12, color: '#991b1b', lineHeight: 1.45, padding: '2px 0' }}>
+                <div key={`b${i}`} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--pn-danger)', lineHeight: 1.45, padding: '2px 0' }}>
                   <span style={{ flexShrink: 0 }}>{b.icon}</span>
                   <span>{b.label}</span>
                 </div>
               ))}
               {warnings.map((w, i) => (
-                <div key={`w${i}`} style={{ display: 'flex', gap: 8, fontSize: 12, color: '#92400e', lineHeight: 1.45, padding: '2px 0' }}>
+                <div key={`w${i}`} style={{ display: 'flex', gap: 8, fontSize: 12, color: 'var(--pn-warning)', lineHeight: 1.45, padding: '2px 0' }}>
                   <span style={{ flexShrink: 0 }}>{w.icon}</span>
                   <span>{w.label}</span>
                 </div>
@@ -2301,7 +2301,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <StatusChip status={appt.status} />
                 {appt.checkedInAt && (
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#dcfce7', color: '#166534', border: '1px solid #bbf7d0' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: 'var(--pn-success-bg)', color: 'var(--pn-success)', border: '1px solid #bbf7d0' }}>
                     ✓ Checked in
                   </span>
                 )}
@@ -2356,23 +2356,23 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             <div style={{
               marginBottom: 12,
               padding: '12px 14px',
-              background: '#fef2f2',
+              background: 'var(--pn-danger-bg)',
               border: '1.5px solid #fca5a5',
               borderRadius: 10,
-              fontSize: 13, color: '#991b1b', lineHeight: 1.5,
+              fontSize: 13, color: 'var(--pn-danger)', lineHeight: 1.5,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <span style={{ fontSize: 18 }}>🚫</span>
                 <strong style={{ fontSize: 14 }}>This client is banned</strong>
               </div>
-              <div style={{ marginBottom: 10, color: '#b91c1c' }}>
+              <div style={{ marginBottom: 10, color: 'var(--pn-danger)' }}>
                 <strong>{linkedClient?.name}</strong> is flagged as banned in the client profile — bookings should not be accepted.
               </div>
               <label style={{
                 display: 'flex', alignItems: 'flex-start', gap: 9,
                 padding: '8px 10px', background: 'var(--pn-surface)',
                 border: '1px solid #fca5a5', borderRadius: 8,
-                cursor: 'pointer', fontSize: 12, color: '#991b1b',
+                cursor: 'pointer', fontSize: 12, color: 'var(--pn-danger)',
               }}>
                 <input type="checkbox" checked={banOverrideAck} onChange={e => setBanOverrideAck(e.target.checked)} style={{ marginTop: 1 }} />
                 <span>I understand this client is banned and want to book them anyway. <strong>This action will be logged.</strong></span>
@@ -2393,14 +2393,14 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             </div>
           )}
           {!isView && !appt.clientId && newClientOpen && dupeCandidates && (
-            <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: '#fff7ed', border: '1px solid #fdba74' }}>
+            <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fdba74' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: '#9a3412', fontWeight: 700 }}>
+                <div style={{ fontSize: 12, color: 'var(--pn-warning)', fontWeight: 700 }}>
                   Possible duplicate{dupeCandidates.length > 1 ? 's' : ''} found ({dupeCandidates.length})
                 </div>
-                <button onClick={() => setDupeCandidates(null)} style={{ border: 'none', background: 'none', color: '#9a3412', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+                <button onClick={() => setDupeCandidates(null)} style={{ border: 'none', background: 'none', color: 'var(--pn-warning)', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
               </div>
-              <div style={{ fontSize: 11, color: '#9a3412', opacity: .85, marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-warning)', opacity: .85, marginBottom: 8 }}>
                 A client with that {dupeCandidates[0].matchKind} is already on file. Pick which one to use for this appointment, or create a new record anyway.
               </div>
               <div style={{ background: 'var(--pn-surface)', borderRadius: 8, border: '1px solid #fed7aa', overflow: 'hidden', marginBottom: 8 }}>
@@ -2413,7 +2413,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                       <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {displayPhone(client.phone) || '—'}{client.email ? ' · ' + client.email : ''}
                       </div>
-                      <div style={{ fontSize: 10, color: '#9a3412', fontWeight: 600, marginTop: 2 }}>
+                      <div style={{ fontSize: 10, color: 'var(--pn-warning)', fontWeight: 600, marginTop: 2 }}>
                         Matched on {matchKind}
                       </div>
                     </div>
@@ -2441,10 +2441,10 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             </div>
           )}
           {!isView && !appt.clientId && newClientOpen && !dupeCandidates && (
-            <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+            <div style={{ marginBottom: 10, padding: '12px', borderRadius: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: '#92400e', fontWeight: 700 }}>New client profile</div>
-                <button onClick={() => setNewClientOpen(false)} style={{ border: 'none', background: 'none', color: '#92400e', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+                <div style={{ fontSize: 12, color: 'var(--pn-warning)', fontWeight: 700 }}>New client profile</div>
+                <button onClick={() => setNewClientOpen(false)} style={{ border: 'none', background: 'none', color: 'var(--pn-warning)', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
               </div>
               <input placeholder="Full name *" value={newClient.name}
                 onChange={e => setNewClient(p => ({ ...p, name: e.target.value }))}
@@ -2476,7 +2476,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                 </div>
               </div>
               {showEmailErr && (
-                <div style={{ fontSize: 11, color: '#b91c1c', marginBottom: 6, marginTop: -2 }}>That email address looks invalid.</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-danger)', marginBottom: 6, marginTop: -2 }}>That email address looks invalid.</div>
               )}
               <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                 <input type="date" placeholder="Birthday" value={newClient.birthday}
@@ -2486,7 +2486,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               <textarea placeholder="Notes (optional)" rows={2} value={newClient.notes}
                 onChange={e => setNewClient(p => ({ ...p, notes: e.target.value }))}
                 style={{ ...inp, resize: 'vertical', marginBottom: 8 }} />
-              <div style={{ fontSize: 10, color: '#92400e', opacity: .7, marginBottom: 8 }}>Phone or email required.</div>
+              <div style={{ fontSize: 10, color: 'var(--pn-warning)', opacity: .7, marginBottom: 8 }}>Phone or email required.</div>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button onClick={() => setNewClientOpen(false)} disabled={newClientSaving}
                   style={{ flex: 1, padding: '8px 10px', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>
@@ -2620,12 +2620,12 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                     const total = pay.total ?? raw.total ?? v.revenue ?? null;
                     const isExpanded = expandedVisitId === v.id;
                     const STATUS_STYLE = {
-                      scheduled:   { bg: '#dbeafe', fg: '#1e40af', label: 'Scheduled' },
-                      'in-progress':{ bg: '#fef3c7', fg: '#92400e', label: 'In progress' },
-                      done:        { bg: '#dcfce7', fg: '#166534', label: 'Done' },
-                      cancelled:   { bg: '#fee2e2', fg: '#991b1b', label: 'Cancelled' },
-                      no_show:     { bg: '#fef3c7', fg: '#92400e', label: 'No-show' },
-                      refunded:    { bg: '#ffedd5', fg: '#9a3412', label: 'Refunded' },
+                      scheduled:   { bg: 'var(--pn-info-bg)',    fg: 'var(--pn-info)',    label: 'Scheduled' },
+                      'in-progress':{ bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)', label: 'In progress' },
+                      done:        { bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)', label: 'Done' },
+                      cancelled:   { bg: 'var(--pn-danger-bg)',  fg: 'var(--pn-danger)',  label: 'Cancelled' },
+                      no_show:     { bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)', label: 'No-show' },
+                      refunded:    { bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)', label: 'Refunded' },
                     };
                     const sStyle = STATUS_STYLE[v.status] || { bg: '#e5e7eb', fg: '#374151', label: v.status || '—' };
                     return (
@@ -2678,7 +2678,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                               <span style={{ color: 'var(--pn-text-muted)' }}>{sourceLabel}</span>
                               {totalDur > 0 && <span style={{ color: 'var(--pn-text-muted)' }}>· {totalDur} min total{endStr ? ` (ends ${endStr})` : ''}</span>}
                               {raw.techRequestType === 'specific' && (
-                                <span style={{ background: '#fef2f2', color: '#991b1b', border: '1px solid #fca5a5', borderRadius: 4, padding: '0 6px', fontWeight: 700 }}>★ Requested {v.techName}</span>
+                                <span style={{ background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', border: '1px solid #fca5a5', borderRadius: 4, padding: '0 6px', fontWeight: 700 }}>★ Requested {v.techName}</span>
                               )}
                               {raw.recurringGroupId && (
                                 <span style={{ background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: 4, padding: '0 6px', fontWeight: 600 }}>
@@ -2717,7 +2717,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                               </div>
                             )}
                             {raw.refund && (
-                              <div style={{ marginBottom: 8, padding: '6px 10px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, color: '#991b1b' }}>
+                              <div style={{ marginBottom: 8, padding: '6px 10px', background: 'var(--pn-danger-bg)', border: '1px solid #fecaca', borderRadius: 6, color: 'var(--pn-danger)' }}>
                                 <div style={{ fontWeight: 700, fontSize: 11, marginBottom: 2 }}>Refunded ${Number(raw.refund.amount || 0).toFixed(2)}</div>
                                 {raw.refund.reason && <div style={{ fontSize: 11 }}>{raw.refund.reason}</div>}
                                 {raw.refund.refundedAt && <div style={{ fontSize: 10, opacity: .8, marginTop: 2 }}>{fmtDateTime(raw.refund.refundedAt)}</div>}
@@ -2927,10 +2927,10 @@ function RepeatSection({ recurrence, date, onChange }) {
         </button>
       </div>
       {enabled && (
-        <div style={{ background: '#f0f7ff', borderRadius: 10, border: '1px solid #c7dff7', padding: '10px 12px' }}>
+        <div style={{ background: 'var(--pn-info-bg)', borderRadius: 10, border: '1px solid #c7dff7', padding: '10px 12px' }}>
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#5a8fba', fontWeight: 600, marginBottom: 4 }}>Frequency</div>
+              <div style={{ fontSize: 10, color: 'var(--pn-info)', fontWeight: 600, marginBottom: 4 }}>Frequency</div>
               <select value={weeks} onChange={e => patch({ weeks: Number(e.target.value) })} style={{ ...inp, fontSize: 12, padding: '5px 8px' }}>
                 <option value={1}>Every week</option>
                 <option value={2}>Every 2 weeks</option>
@@ -2939,7 +2939,7 @@ function RepeatSection({ recurrence, date, onChange }) {
               </select>
             </div>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 10, color: '#5a8fba', fontWeight: 600, marginBottom: 4 }}>Occurrences</div>
+              <div style={{ fontSize: 10, color: 'var(--pn-info)', fontWeight: 600, marginBottom: 4 }}>Occurrences</div>
               <select value={count} onChange={e => patch({ count: Number(e.target.value) })} style={{ ...inp, fontSize: 12, padding: '5px 8px' }}>
                 {[2,3,4,5,6,8,10,12,16,24,52].map(n => (
                   <option key={n} value={n}>{n} appointments</option>
@@ -2947,7 +2947,7 @@ function RepeatSection({ recurrence, date, onChange }) {
               </select>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: '#1a5f8a', fontWeight: 500 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-info)', fontWeight: 500 }}>
             Creates {count} appointments {freqLabel}, through {endLabel}
           </div>
         </div>
@@ -2999,12 +2999,12 @@ function SeriesConflictDialog({ dates, onSkip, onForce, onCancel }) {
           {dates.map((d, i) => {
             const human = new Date(d.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderBottom: i < dates.length - 1 ? '1px solid var(--pn-border)' : 'none', background: d.ok ? 'transparent' : '#fef2f2' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 12px', borderBottom: i < dates.length - 1 ? '1px solid var(--pn-border)' : 'none', background: d.ok ? 'transparent' : 'var(--pn-danger-bg)' }}>
                 <span style={{ fontSize: 14, lineHeight: 1.3, flexShrink: 0, color: d.ok ? '#22c55e' : '#ef4444' }}>{d.ok ? '✓' : '✕'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: d.ok ? 'var(--pn-text)' : '#991b1b' }}>{human}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: d.ok ? 'var(--pn-text)' : 'var(--pn-danger)' }}>{human}</div>
                   {!d.ok && (
-                    <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 2 }}>{d.reasons.join(' · ')}</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-danger)', marginTop: 2 }}>{d.reasons.join(' · ')}</div>
                   )}
                 </div>
               </div>
@@ -3013,11 +3013,11 @@ function SeriesConflictDialog({ dates, onSkip, onForce, onCancel }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <button onClick={onSkip} disabled={okCount === 0}
-            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #2D7A5F', background: okCount === 0 ? 'var(--pn-surface-alt)' : '#EDFAF3', fontSize: 14, fontWeight: 600, cursor: okCount === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: okCount === 0 ? 'var(--pn-text-faint)' : '#166634', textAlign: 'left' }}>
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #2D7A5F', background: okCount === 0 ? 'var(--pn-surface-alt)' : 'var(--pn-success-bg)', fontSize: 14, fontWeight: 600, cursor: okCount === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: okCount === 0 ? 'var(--pn-text-faint)' : 'var(--pn-success)', textAlign: 'left' }}>
             Skip the {conflictCount} conflicts — book {okCount} clear date{okCount === 1 ? '' : 's'}
           </button>
           <button onClick={onForce}
-            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #f59e0b', background: '#fffbeb', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#92400e', textAlign: 'left' }}>
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #f59e0b', background: 'var(--pn-warning-bg)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-warning)', textAlign: 'left' }}>
             Book all {dates.length} anyway (overlap allowed)
           </button>
           <button onClick={onCancel}
@@ -3666,7 +3666,7 @@ function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmi
       </div>
 
       {err && (
-        <div style={{ fontSize: 12, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', padding: '6px 10px', borderRadius: 8, marginBottom: 10 }}>{err}</div>
+        <div style={{ fontSize: 12, color: 'var(--pn-danger)', background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', padding: '6px 10px', borderRadius: 8, marginBottom: 10 }}>{err}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8 }}>
@@ -3789,8 +3789,8 @@ function TimeOffConflictView({ affected, draftEntry, techs, employees, services,
         <button onClick={onCancel} disabled={saving} style={{ ...btnBase, padding: '5px 10px', fontSize: 12 }}>← Back</button>
       </div>
 
-      <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: '#92400e', lineHeight: 1.5 }}>
+      <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-warning)', lineHeight: 1.5 }}>
           <strong>It's up to you (or {draftEntry.techName}) to contact these clients</strong> to reschedule, or to find another tech to cover. The system <em>will not</em> auto-cancel or auto-notify the client. For appointments where the client did not specifically request {draftEntry.techName}, you can pick a coverage tech below — that change will be applied when you save.
           {specificCount > 0 && (
             <> {specificCount} appointment{specificCount === 1 ? '' : 's'} ⭐ specifically requested {draftEntry.techName}; we recommend reaching out to the client first before reassigning. You can override and auto-find another tech if needed.</>
@@ -3815,7 +3815,7 @@ function TimeOffConflictView({ affected, draftEntry, techs, employees, services,
           const blocked = isSpecific && !pick.overrideSpecific;
           const availSuggestions = sugg.filter(s => s.ok);
           return (
-            <div key={a.id} style={{ border: `1px solid ${isSpecific ? '#fca5a5' : 'var(--pn-border)'}`, borderRadius: 10, padding: 10, background: isSpecific ? '#fef2f2' : 'var(--pn-surface)' }}>
+            <div key={a.id} style={{ border: `1px solid ${isSpecific ? '#fca5a5' : 'var(--pn-border)'}`, borderRadius: 10, padding: 10, background: isSpecific ? 'var(--pn-danger-bg)' : 'var(--pn-surface)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                 {isSpecific && <span title="Client asked for this tech" style={{ color: '#ef4444', fontWeight: 700, fontSize: 14 }}>⭐</span>}
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', flex: 1 }}>
@@ -3826,7 +3826,7 @@ function TimeOffConflictView({ affected, draftEntry, techs, employees, services,
               <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 8 }}>{services}</div>
 
               {isSpecific && (
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#991b1b', marginBottom: 8, cursor: 'pointer' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: 'var(--pn-danger)', marginBottom: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={!!pick.overrideSpecific}
                     onChange={e => patch(a.id, { overrideSpecific: e.target.checked, newTech: e.target.checked ? pick.newTech : '' })} />
                   Override — let me reassign anyway (I'll contact the client)
@@ -3853,7 +3853,7 @@ function TimeOffConflictView({ affected, draftEntry, techs, employees, services,
               </div>
 
               {!blocked && availSuggestions.length === 0 && (
-                <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-danger)', marginTop: 6 }}>
                   No available tech can cover this — you'll need to reschedule with the client.
                 </div>
               )}
@@ -3981,7 +3981,7 @@ function ConflictMessagesPanel({ affected, draftEntry, reassignmentsByApptId, on
       )}
 
       {error && (
-        <div style={{ background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#b91c1c', marginBottom: 12 }}>
+        <div style={{ background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: 'var(--pn-danger)', marginBottom: 12 }}>
           {error}
         </div>
       )}
@@ -4159,9 +4159,9 @@ function HoursModal({ settings, updateSettings, onClose }) {
           })}
 
           {/* Extended appt hours */}
-          <div style={{ marginTop: 16, padding: '12px', background: '#f0f7ff', borderRadius: 10, border: '1px solid #c7dff7' }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#1a5f8a', marginBottom: 8 }}>Extended appointment hours</div>
-            <div style={{ fontSize: 11, color: '#5a8fba', marginBottom: 10 }}>Appointment-only slots outside published store hours. Set same as store open/close to disable.</div>
+          <div style={{ marginTop: 16, padding: '12px', background: 'var(--pn-info-bg)', borderRadius: 10, border: '1px solid #c7dff7' }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-info)', marginBottom: 8 }}>Extended appointment hours</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-info)', marginBottom: 10 }}>Appointment-only slots outside published store hours. Set same as store open/close to disable.</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="time" value={apptOpen}  onChange={e => setApptOpen(e.target.value)}
                 style={{ fontFamily: 'inherit', border: '1px solid #c7dff7', borderRadius: 8, padding: '6px 8px', fontSize: 12, flex: 1 }} />

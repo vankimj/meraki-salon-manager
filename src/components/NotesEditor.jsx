@@ -165,9 +165,9 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
       ))}
 
       {hasLegacy && (
-        <div style={{ marginBottom: 6, padding: '8px 10px', borderRadius: 8, background: '#fffbeb', border: '1px dashed #fde68a' }}>
+        <div style={{ marginBottom: 6, padding: '8px 10px', borderRadius: 8, background: 'var(--pn-warning-bg)', border: '1px dashed #fde68a' }}>
           <div style={{ fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.45, whiteSpace: 'pre-wrap' }}>{legacy}</div>
-          <div style={{ marginTop: 4, fontSize: 10, color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 700 }}>Older note · pre-log</div>
+          <div style={{ marginTop: 4, fontSize: 10, color: 'var(--pn-warning)', letterSpacing: '.04em', textTransform: 'uppercase', fontWeight: 700 }}>Older note · pre-log</div>
         </div>
       )}
     </div>

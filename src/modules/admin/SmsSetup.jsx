@@ -224,12 +224,12 @@ export default function SmsSetup() {
           </div>
         )}
         {status === 'rejected' && sms?.rejectionReason && (
-          <div style={{ marginTop: 8, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>
+          <div style={{ marginTop: 8, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>
             <strong>Carrier feedback:</strong> {sms.rejectionReason}
           </div>
         )}
         {status === 'error' && sms?.lastError && (
-          <div style={{ marginTop: 8, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>
+          <div style={{ marginTop: 8, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>
             {sms.lastError}
           </div>
         )}
@@ -244,7 +244,7 @@ export default function SmsSetup() {
       </div>
 
       {!showWizard && (
-        <div style={{ padding: 14, color: '#555', fontSize: 13, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10 }}>
+        <div style={{ padding: 14, color: 'var(--pn-warning)', fontSize: 13, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10 }}>
           SMS is in flight. We'll email you when the status changes. Nothing further is needed from you right now.
         </div>
       )}
@@ -389,7 +389,7 @@ export default function SmsSetup() {
                 </div>
               </Row>
 
-              <div style={{ padding: 14, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, marginTop: 14, fontSize: 13, color: '#92400e' }}>
+              <div style={{ padding: 14, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10, marginTop: 14, fontSize: 13, color: 'var(--pn-warning)' }}>
                 <strong>What happens when you submit:</strong>
                 <ol style={{ margin: '8px 0 0 18px', padding: 0, lineHeight: 1.6 }}>
                   <li>We buy a Toll-Free number — <strong>$2/mo billing starts immediately</strong>.</li>
@@ -400,7 +400,7 @@ export default function SmsSetup() {
               </div>
 
               {error && (
-                <div style={{ marginTop: 14, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>
+                <div style={{ marginTop: 14, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>
                   {error}
                 </div>
               )}

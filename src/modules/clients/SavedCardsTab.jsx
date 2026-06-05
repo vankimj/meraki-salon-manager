@@ -56,14 +56,14 @@ function CardRow({ pm, isDefault, onMakeDefault, onDelete, busy }) {
           {isDefault && (
             <span style={{
               fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              padding: '2px 6px', borderRadius: 4, background: '#ecfdf5', color: '#15803d',
+              padding: '2px 6px', borderRadius: 4, background: 'var(--pn-success-bg)', color: 'var(--pn-success)',
               textTransform: 'uppercase',
             }}>Default</span>
           )}
           {pm.country && pm.country !== 'US' && (
             <span style={{
               fontSize: 9, fontWeight: 700, letterSpacing: 0.5,
-              padding: '2px 6px', borderRadius: 4, background: '#fff7ed', color: '#9a3412',
+              padding: '2px 6px', borderRadius: 4, background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)',
               textTransform: 'uppercase',
             }} title="International card — Stripe charges +1.5% surcharge">Intl +1.5%</span>
           )}
@@ -185,13 +185,13 @@ function PolicyBanner({ verdict, busy, onOverride }) {
   // Pick palette
   let bg, border, fg, headlineColor;
   if (required) {
-    bg = '#fef2f2'; border = '#fecaca'; fg = '#7f1d1d'; headlineColor = '#991b1b';
+    bg = 'var(--pn-danger-bg)'; border = '#fecaca'; fg = 'var(--pn-danger)'; headlineColor = 'var(--pn-danger)';
   } else if (overrideApplied === 'exempt') {
-    bg = '#ecfdf5'; border = '#bbf7d0'; fg = '#14532d'; headlineColor = '#15803d';
+    bg = 'var(--pn-success-bg)'; border = '#bbf7d0'; fg = 'var(--pn-success)'; headlineColor = 'var(--pn-success)';
   } else if (cancellationCount >= thresholdCount && hasCard) {
-    bg = '#ecfdf5'; border = '#bbf7d0'; fg = '#14532d'; headlineColor = '#15803d';
+    bg = 'var(--pn-success-bg)'; border = '#bbf7d0'; fg = 'var(--pn-success)'; headlineColor = 'var(--pn-success)';
   } else if (cancellationCount > 0) {
-    bg = '#fff7ed'; border = '#fed7aa'; fg = '#7c2d12'; headlineColor = '#9a3412';
+    bg = 'var(--pn-warning-bg)'; border = '#fed7aa'; fg = 'var(--pn-warning)'; headlineColor = 'var(--pn-warning)';
   } else {
     bg = 'var(--pn-bg)'; border = 'var(--pn-border)'; fg = 'var(--pn-text-muted)'; headlineColor = 'var(--pn-text)';
   }
@@ -321,7 +321,7 @@ export default function SavedCardsTab({ client, onChange, onReload }) {
 
   if (!stripePromise) {
     return (
-      <div style={{ fontSize: 13, color: '#9a3412', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '12px 14px' }}>
+      <div style={{ fontSize: 13, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fed7aa', borderRadius: 8, padding: '12px 14px' }}>
         Stripe publishable key not configured. Set <code>VITE_STRIPE_PUBLISHABLE_KEY</code> in the root <code>.env</code> file.
       </div>
     );

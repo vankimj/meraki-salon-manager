@@ -137,7 +137,7 @@ export default function CompetitorRankingPanel() {
           </div>
         )}
         {needsRefresh && data && (
-          <div style={{ fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 10px', marginTop: 8 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 10px', marginTop: 8 }}>
             Selected radius ({radius} mi) is wider than the cached scan ({cachedRadius} mi). Click <strong>Refresh from Google</strong> to pull salons in the extended ring.
           </div>
         )}
@@ -160,13 +160,13 @@ export default function CompetitorRankingPanel() {
           </div>
 
           {!meraki && ownPlaceId && (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--pn-warning)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <span>Meraki's Google Place ID is set but didn't appear in Google's nail-salon results for this radius. Try a wider radius, or verify the Place ID.</span>
               <ConfigureReviewsLink />
             </div>
           )}
           {!ownPlaceId && (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: 'var(--pn-warning)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
               <span>Set Meraki's Google Place ID to highlight your row in the ranking.</span>
               <ConfigureReviewsLink />
             </div>

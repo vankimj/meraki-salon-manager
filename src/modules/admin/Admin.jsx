@@ -194,7 +194,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: { syncing: '#f59e0b', ok: '#22c55e', err: '#ef4444', idle: '#ddd' }[syncState] || '#ddd', transition: 'background .3s', animation: syncState === 'syncing' ? 'pulse .8s infinite' : 'none', marginRight: 2 }} />
           {isAdmin && <IntegrityBadge onJumpToTrash={() => setTab('trash')} />}
           <button onClick={() => setShowFeedback(true)}
-            style={{ height: 40, borderRadius: 20, border: 'none', background: '#EBF5FF', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 600, color: '#1a5f8a', fontFamily: 'inherit' }}>
+            style={{ height: 40, borderRadius: 20, border: 'none', background: 'var(--pn-info-bg)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 600, color: 'var(--pn-info)', fontFamily: 'inherit' }}>
             <span style={{ fontSize: 15 }}>💬</span> Feedback
           </button>
           <NotificationsBell />
@@ -905,7 +905,7 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
               style={{ flex: 1, minWidth: 110, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 12, outline: 'none' }}
             />
             <button onClick={detectLocation} disabled={geoLocating || !navigator.geolocation}
-              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #3D95CE', background: '#EBF4FB', color: '#1a5f8a', fontSize: 12, fontWeight: 600, cursor: geoLocating ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+              style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid #3D95CE', background: 'var(--pn-info-bg)', color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, cursor: geoLocating ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
               {geoLocating ? '…' : '📍 Use my location'}
             </button>
           </div>
@@ -1312,7 +1312,7 @@ function UserRow({ user, children }) {
           {user.name || user.email}
           {' '}<RoleBadge role={user.role} />
           {user.emailPending && (
-            <span title="Placeholder email — edit this user once you have their real address" style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: 8, letterSpacing: '.04em' }}>
+            <span title="Placeholder email — edit this user once you have their real address" style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', padding: '1px 6px', borderRadius: 8, letterSpacing: '.04em' }}>
               EMAIL NEEDED
             </span>
           )}
@@ -1456,8 +1456,8 @@ function OnboardingTab({ onOpenWizard }) {
         {ONBOARDING_PHASES.map((p, i) => {
           const s = phaseStatus(onboarding, p.key);
           const icon  = s === 'done' ? '✓' : s === 'skipped' ? '○' : '⚠';
-          const color = s === 'done' ? '#10b981' : s === 'skipped' ? '#9ca3af' : '#f59e0b';
-          const bg    = s === 'done' ? '#ecfdf5' : s === 'skipped' ? 'var(--pn-bg)' : '#fffbeb';
+          const color = s === 'done' ? 'var(--pn-success)' : s === 'skipped' ? '#9ca3af' : 'var(--pn-warning)';
+          const bg    = s === 'done' ? 'var(--pn-success-bg)' : s === 'skipped' ? 'var(--pn-bg)' : 'var(--pn-warning-bg)';
           const label = s === 'done' ? 'Complete' : s === 'skipped' ? 'Skipped' : 'Pending';
           return (
             <button
@@ -1594,8 +1594,8 @@ function FeedbackTab({ items, onStatus, onRefresh }) {
 function FeedbackCard({ item, onStatus }) {
   const isOpen = item.status === 'open';
   const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const typeBg    = item.type === 'bug' ? '#FEE2E2' : '#FEF3C7';
-  const typeFg    = item.type === 'bug' ? '#991b1b'  : '#78350f';
+  const typeBg    = item.type === 'bug' ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)';
+  const typeFg    = item.type === 'bug' ? 'var(--pn-danger)'   : 'var(--pn-warning)';
   const statusColors = { open: '#3B82F6', resolved: '#10B981', not_considered: '#9ca3af' };
   const statusLabel  = { open: 'Open', resolved: 'Resolved', not_considered: 'Not considered' };
 
@@ -1821,7 +1821,7 @@ function BackupRestoreSection() {
             style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 12, color: 'var(--pn-text-muted)', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             JSON only
           </button>
-          <label style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? 'var(--pn-bg)' : '#fff1f1', fontSize: 12, color: busy ? 'var(--pn-text-faint)' : '#ef4444', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+          <label style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #fca5a5', background: busy ? 'var(--pn-bg)' : 'var(--pn-danger-bg)', fontSize: 12, color: busy ? 'var(--pn-text-faint)' : 'var(--pn-danger)', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             ⬆ Restore from ZIP or JSON
             <input type="file" accept=".zip,.json,application/zip,application/json" style={{ display: 'none' }} onChange={handleRestore} disabled={busy} />
           </label>
@@ -1922,12 +1922,12 @@ function DemoSeedSection() {
           One-click populate every module with realistic sample data: clients, appointments, receipts, products, promo codes, memberships, time off, Google reviews, HR bonuses, walk-in queue, and marketing campaigns. Use this to show the platform off without exposing real customer data.
         </div>
         {interrupted && (
-          <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 12px', marginBottom: 10, fontSize: 12, color: '#92400e' }}>
+          <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 12px', marginBottom: 10, fontSize: 12, color: 'var(--pn-warning)' }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>
               ⚠ Previous seed was interrupted at step {completedCount + 1}/11{seedState?.currentStep ? ` (${seedState.currentStep})` : ''}
             </div>
             <div>Started by {seedState?.startedBy || 'unknown'} at {seedState?.startedAt ? new Date(seedState.startedAt).toLocaleString() : '—'}. {seedState?.lastError ? `Error: ${seedState.lastError}` : ''}</div>
-            <div style={{ marginTop: 4, color: '#78350f' }}>Resume below — already-completed steps will be skipped.</div>
+            <div style={{ marginTop: 4, color: 'var(--pn-warning)' }}>Resume below — already-completed steps will be skipped.</div>
           </div>
         )}
         {status && (
@@ -2138,7 +2138,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
       <Section title="🌐 Public Website">
         <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, fontSize: 12, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '7px 12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{webUrl}</div>
-          <button onClick={() => window.open(webUrl, '_blank')} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #3D95CE', background: '#EBF4FB', color: '#1a5f8a', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+          <button onClick={() => window.open(webUrl, '_blank')} style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #3D95CE', background: 'var(--pn-info-bg)', color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
             Open ↗
           </button>
         </div>
@@ -2372,13 +2372,13 @@ function WebfrontTab({ cfg, setCfg, employees }) {
                 {gbpConnecting ? 'Opening Google…' : '🔗 Connect Google Business Profile'}
               </button>
             ) : (
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px' }}>
+              <div style={{ background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <div style={{ flex: 1, minWidth: 220 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#14532d' }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-success)' }}>
                       ✓ Connected · {gbpAuth.locationTitle || gbpAuth.locationName}
                     </div>
-                    <div style={{ fontSize: 11, color: '#15803d', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--pn-success)', marginTop: 2 }}>
                       {gbpAuth.lastSyncAt ? `Last synced ${new Date(gbpAuth.lastSyncAt).toLocaleString()} · ${gbpAuth.lastSyncCount || 0} reviews` : 'Not synced yet — click "Sync now"'}
                     </div>
                     {gbpAuth.lastSyncError && (
@@ -3003,9 +3003,9 @@ function ReviewsTab({ data, onRefresh, onMarkReceived }) {
                     <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{req.clientName || 'Client'}</span>
                     {req.techName && <span style={{ fontSize: 11, color: '#2D7A5F' }}>· {req.techName}</span>}
                     {isReceived
-                      ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>✓ Reviewed</span>
+                      ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: 'var(--pn-success-bg)', color: 'var(--pn-success)', border: '1px solid #bbf7d0' }}>✓ Reviewed</span>
                       : wasClicked
-                        ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' }}>Clicked</span>
+                        ? <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)', border: '1px solid #fde68a' }}>Clicked</span>
                         : <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 20, background: 'var(--pn-bg)', color: 'var(--pn-text-faint)', border: '1px solid var(--pn-border)' }}>Sent</span>
                     }
                   </div>
@@ -3040,8 +3040,8 @@ const NOTIF_META = {
 };
 
 function statusBadge(item) {
-  if (item.error)   return { label: item.error === 'no_email' ? 'No email' : 'Failed', bg: '#fef2f2', color: '#ef4444', border: '#fca5a5' };
-  if (item.sent)    return { label: 'Sent',    bg: '#f0fdf4', color: '#16a34a', border: '#bbf7d0' };
+  if (item.error)   return { label: item.error === 'no_email' ? 'No email' : 'Failed', bg: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', border: '#fca5a5' };
+  if (item.sent)    return { label: 'Sent',    bg: 'var(--pn-success-bg)', color: 'var(--pn-success)', border: '#bbf7d0' };
   return               { label: 'Pending', bg: 'var(--pn-bg)', color: 'var(--pn-text-muted)',    border: 'var(--pn-border)' };
 }
 
@@ -3080,9 +3080,9 @@ function NotifsTab({ items, onRefresh }) {
         <div style={{ display: 'flex', gap: 8, padding: '12px 16px', borderBottom: '1px solid var(--pn-border)', flexWrap: 'wrap' }}>
           {[
             { label: 'Total',   val: items.length,  bg: 'var(--pn-bg)',  color: 'var(--pn-text)'    },
-            { label: 'Sent',    val: sent,           bg: '#f0fdf4',  color: '#16a34a' },
-            { label: 'Failed',  val: failed,         bg: '#fef2f2',  color: '#ef4444' },
-            { label: 'Pending', val: pending,        bg: '#fffbeb',  color: '#b45309' },
+            { label: 'Sent',    val: sent,           bg: 'var(--pn-success-bg)',  color: 'var(--pn-success)' },
+            { label: 'Failed',  val: failed,         bg: 'var(--pn-danger-bg)',   color: 'var(--pn-danger)'  },
+            { label: 'Pending', val: pending,        bg: 'var(--pn-warning-bg)',  color: 'var(--pn-warning)' },
           ].map(k => (
             <div key={k.label} style={{ background: k.bg, borderRadius: 8, padding: '6px 14px', textAlign: 'center', minWidth: 60 }}>
               <div style={{ fontSize: 18, fontWeight: 700, color: k.color }}>{k.val}</div>
@@ -3372,8 +3372,8 @@ function PauseSection({ settings, updateSettings }) {
         {isActive && (
           <div style={{
             padding: '10px 12px', marginBottom: 14,
-            background: '#fef3c7', border: '1px solid #fcd34d',
-            borderRadius: 8, fontSize: 13, color: '#92400e',
+            background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d',
+            borderRadius: 8, fontSize: 13, color: 'var(--pn-warning)',
             display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
           }}>
             <div>
@@ -3381,7 +3381,7 @@ function PauseSection({ settings, updateSettings }) {
             </div>
             <button onClick={clearPause} style={{
               padding: '6px 12px', fontSize: 12, fontWeight: 600,
-              background: 'var(--pn-surface)', color: '#92400e',
+              background: 'var(--pn-surface)', color: 'var(--pn-warning)',
               border: '1px solid #fcd34d', borderRadius: 6, cursor: 'pointer',
             }}>Resume now</button>
           </div>
@@ -3434,7 +3434,7 @@ function PauseSection({ settings, updateSettings }) {
           </div>
         )}
         {until && forwardPhone && (
-          <div style={{ marginBottom: 14, padding: '8px 12px', background: '#f0f7ff', border: '1px solid #c7dff7', borderRadius: 8, fontSize: 12, color: '#1f6ea3' }}>
+          <div style={{ marginBottom: 14, padding: '8px 12px', background: 'var(--pn-info-bg)', border: '1px solid #c7dff7', borderRadius: 8, fontSize: 12, color: 'var(--pn-info)' }}>
             ➤ Inbound texts will forward to <code style={{ background: 'var(--pn-surface)', padding: '1px 5px', borderRadius: 3 }}>{forwardPhone}</code>. The client gets no auto-reply.
           </div>
         )}
@@ -3502,7 +3502,7 @@ function TileVisibilitySection({ settings, updateSettings }) {
                   <div style={{ fontSize: 13, fontWeight: 600, color: available ? 'var(--pn-text)' : 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', gap: 6 }}>
                     {m.label}
                     {!available && (
-                      <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)', letterSpacing: '.04em', textTransform: 'uppercase' }}>
                         🔒 {PLAN_LABEL[m.plan]}
                       </span>
                     )}
@@ -3683,9 +3683,9 @@ function DisputeRow({ d, variant }) {
     ? (urgent ? '2px solid #ef4444' : '1px solid #fed7aa')
     : '1px solid var(--pn-border)';
   const bg = variant === 'open'
-    ? (urgent ? '#fef2f2' : '#fff7ed')
-    : (wonOrLost === 'won' ? '#f0fdf4' : wonOrLost === 'lost' ? '#fef2f2' : 'var(--pn-bg)');
-  const statusColor = wonOrLost === 'won' ? '#15803d' : wonOrLost === 'lost' ? '#991b1b' : (urgent ? '#991b1b' : '#9a3412');
+    ? (urgent ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)')
+    : (wonOrLost === 'won' ? 'var(--pn-success-bg)' : wonOrLost === 'lost' ? 'var(--pn-danger-bg)' : 'var(--pn-bg)');
+  const statusColor = wonOrLost === 'won' ? 'var(--pn-success)' : wonOrLost === 'lost' ? 'var(--pn-danger)' : (urgent ? 'var(--pn-danger)' : 'var(--pn-warning)');
 
   const stripeUrl = `https://dashboard.stripe.com/disputes/${d.disputeId}`;
 
@@ -3812,8 +3812,8 @@ function StripeConnectSection({ onOpenWizard }) {
   const dueCount  = sc?.requirementsCurrentlyDue?.length || 0;
   const needsMore = connected && (!live || dueCount > 0 || !sc?.detailsSubmitted);
   const badge = !connected ? { t: 'Not set up',      bg: 'var(--pn-surface-alt)', fg: 'var(--pn-text-muted)' }
-              : live       ? { t: 'Active',          bg: '#f0fdf4', fg: '#166534' }
-              :              { t: 'Setup incomplete', bg: '#fff7ed', fg: '#9a3412' };
+              : live       ? { t: 'Active',          bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)' }
+              :              { t: 'Setup incomplete', bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)' };
 
   return (
     <Section title="💸 Payments · Stripe Connect">
@@ -3910,19 +3910,19 @@ function UpgradeSection({ settings, gUser }) {
         </div>
 
         {inTrial && (
-          <div style={{ background: '#fff8e1', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#92400e' }}>
+          <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--pn-warning)' }}>
             <strong>{trialDays} {trialDays === 1 ? 'day' : 'days'} left</strong> in your Pro trial. Pick a plan below to continue uninterrupted — no charge until the trial ends.
           </div>
         )}
 
         {settings.cancelAtPeriodEnd && settings.currentPeriodEnd && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#991b1b' }}>
+          <div style={{ background: 'var(--pn-danger-bg)', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--pn-danger)' }}>
             <strong>Your subscription is set to cancel on {new Date(settings.currentPeriodEnd).toLocaleDateString()}.</strong> Click <em>Manage billing</em> above to keep it active.
           </div>
         )}
 
         {settings.subscriptionStatus === 'past_due' && (
-          <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: '#9a3412' }}>
+          <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fed7aa', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--pn-warning)' }}>
             <strong>Payment past due.</strong> Update your card via <em>Manage billing</em> to avoid losing access.
           </div>
         )}
@@ -4063,7 +4063,7 @@ function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
           {blockers === null ? (
             <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>Checking…</div>
           ) : ready ? (
-            <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: '#166534' }}>
+            <div style={{ background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', fontSize: 13, color: 'var(--pn-success)' }}>
               ✓ Everything's clear. You can downgrade to {tier.label} now.
             </div>
           ) : (
@@ -4140,9 +4140,9 @@ function IntegrityBadge({ onJumpToTrash }) {
 
   const overall = report?.overall || 'gray';
   const colors = {
-    green:  { bg: '#f0fdf4', fg: '#16a34a', label: '✓' },
-    yellow: { bg: '#fffbeb', fg: '#b45309', label: '⚠' },
-    red:    { bg: '#fef2f2', fg: '#dc2626', label: '⚠' },
+    green:  { bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)', label: '✓' },
+    yellow: { bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)', label: '⚠' },
+    red:    { bg: 'var(--pn-danger-bg)',  fg: 'var(--pn-danger)',  label: '⚠' },
     gray:   { bg: 'var(--pn-surface-alt)', fg: 'var(--pn-text-muted)',    label: '?' },
   };
   const c = colors[overall] || colors.gray;
@@ -4210,9 +4210,9 @@ function IntegrityReportModal({ report, onClose, onJumpToTrash }) {
 function IntegrityCheckRow({ name, check, renderDetail, sampleKey }) {
   if (!check) return null;
   const colors = {
-    green:  { bg: '#f0fdf4', fg: '#16a34a' },
-    yellow: { bg: '#fffbeb', fg: '#b45309' },
-    red:    { bg: '#fef2f2', fg: '#dc2626' },
+    green:  { bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)' },
+    yellow: { bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)' },
+    red:    { bg: 'var(--pn-danger-bg)',  fg: 'var(--pn-danger)'  },
   };
   const c = colors[check.status] || colors.green;
   return (
@@ -4234,7 +4234,7 @@ function IntegrityCheckRow({ name, check, renderDetail, sampleKey }) {
 }
 
 function PlanBadge({ p }) {
-  const colors = { starter: ['#f0fdf4','#16a34a'], pro: ['#eff6ff','#2563eb'], enterprise: ['#faf5ff','#7c3aed'] };
+  const colors = { starter: ['var(--pn-success-bg)','var(--pn-success)'], pro: ['var(--pn-info-bg)','var(--pn-info)'], enterprise: ['#faf5ff','#7c3aed'] };
   const [bg, c] = colors[p] || ['var(--pn-surface-alt)','var(--pn-text-muted)'];
   return <span style={{ background: bg, color: c, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase' }}>{p}</span>;
 }

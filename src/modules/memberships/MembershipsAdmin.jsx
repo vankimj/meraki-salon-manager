@@ -290,8 +290,8 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
             </thead>
             <tbody>
               {filtered.map(m => {
-                const statusColor = m.status === 'active' ? '#166534' : m.status === 'paused' ? '#92400e' : 'var(--pn-text-muted)';
-                const statusBg    = m.status === 'active' ? '#f0fdf4' : m.status === 'paused' ? '#fffbeb' : 'var(--pn-surface-alt)';
+                const statusColor = m.status === 'active' ? 'var(--pn-success)' : m.status === 'paused' ? 'var(--pn-warning)' : 'var(--pn-text-muted)';
+                const statusBg    = m.status === 'active' ? 'var(--pn-success-bg)' : m.status === 'paused' ? 'var(--pn-warning-bg)' : 'var(--pn-surface-alt)';
                 const hasStripe = !!m.stripeSubscriptionId;
                 const linkSent  = !!m.paymentLinkSentAt;
                 const busyAction = busyMember?.id === m.id ? busyMember.action : null;

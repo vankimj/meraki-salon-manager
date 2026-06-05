@@ -173,9 +173,9 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
 
       {/* Preview-as banner */}
       {realIsAdmin && viewAs && (
-        <div style={{ background: '#fef3c7', borderBottom: '1px solid #fcd34d', padding: '6px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, fontSize: 12, color: '#92400e', width: '100%', boxSizing: 'border-box' }}>
+        <div style={{ background: 'var(--pn-warning-bg)', borderBottom: '1px solid #fcd34d', padding: '6px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, fontSize: 12, color: 'var(--pn-warning)', width: '100%', boxSizing: 'border-box' }}>
           <span>👤 Previewing as: <strong>{previewLabel(viewAs)}</strong> — changes are real; only the UI is restricted</span>
-          <button onClick={() => setViewAs(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, color: '#92400e', fontFamily: 'inherit', fontSize: 12, padding: '0 4px' }}>✕ Exit</button>
+          <button onClick={() => setViewAs(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, color: 'var(--pn-warning)', fontFamily: 'inherit', fontSize: 12, padding: '0 4px' }}>✕ Exit</button>
         </div>
       )}
 

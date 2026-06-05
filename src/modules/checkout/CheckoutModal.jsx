@@ -709,7 +709,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             <div style={{ display: 'flex', gap: 6, marginBottom: discountType ? 10 : 0 }}>
               {DISCOUNT_TYPES.map(d => (
                 <button key={String(d.id)} onClick={() => pickDiscount(d.id)}
-                  style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${discountType === d.id ? '#3D95CE' : 'var(--pn-border)'}`, background: discountType === d.id ? '#EBF4FB' : 'var(--pn-bg)', color: discountType === d.id ? '#1a5f8a' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${discountType === d.id ? '#3D95CE' : 'var(--pn-border)'}`, background: discountType === d.id ? 'var(--pn-info-bg)' : 'var(--pn-bg)', color: discountType === d.id ? 'var(--pn-info)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                   {d.label}
                 </button>
               ))}
@@ -729,10 +729,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {/* Promo code */}
           <Section title="Promo Code">
             {promo ? (
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', padding: '8px 12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--pn-success-bg)', borderRadius: 8, border: '1px solid #bbf7d0', padding: '8px 12px' }}>
                 <div>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#166534' }}>{promo.code}</span>
-                  <span style={{ fontSize: 11, color: '#16a34a', marginLeft: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-success)' }}>{promo.code}</span>
+                  <span style={{ fontSize: 11, color: 'var(--pn-success)', marginLeft: 8 }}>
                     {promo.type === 'percent' ? `${promo.value}% off` : `$${promo.value} off`}
                     {promoAmount > 0 && ` · −$${promoAmount.toFixed(2)}`}
                   </span>
@@ -758,11 +758,11 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {/* Gift card */}
           <Section title="Gift Card">
             {giftCard ? (
-              <div style={{ background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', padding: '8px 12px' }}>
+              <div style={{ background: 'var(--pn-success-bg)', borderRadius: 8, border: '1px solid #bbf7d0', padding: '8px 12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: gcApply > 0 ? 6 : 0 }}>
                   <div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: '#166534' }}>{giftCard.code}</span>
-                    <span style={{ fontSize: 11, color: '#16a34a', marginLeft: 8 }}>Balance: ${giftCard.balance.toFixed(2)}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-success)' }}>{giftCard.code}</span>
+                    <span style={{ fontSize: 11, color: 'var(--pn-success)', marginLeft: 8 }}>Balance: ${giftCard.balance.toFixed(2)}</span>
                   </div>
                   <button onClick={() => { setGiftCard(null); setGcInput(''); }} style={{ fontSize: 16, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pn-text-faint)', padding: '0 4px' }}>×</button>
                 </div>
@@ -809,14 +809,14 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                   const amt    = subtotal * pct / 100;
                   return (
                     <button key={pct} onClick={() => pickTipPct(pct)}
-                      style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`, background: active ? '#EDFAF3' : 'var(--pn-bg)', color: active ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                      style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`, background: active ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: active ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{pct}%</span>
                       <span style={{ fontSize: 10, opacity: .7 }}>${amt.toFixed(2)}</span>
                     </button>
                   );
                 })}
                 <button onClick={pickCustomTip}
-                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : 'var(--pn-border)'}`, background: customTip ? '#EDFAF3' : 'var(--pn-bg)', color: customTip ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : 'var(--pn-border)'}`, background: customTip ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: customTip ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>Other</span>
                   <span style={{ fontSize: 10, opacity: .7 }}>custom $</span>
                 </button>
@@ -837,7 +837,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {/* Payment method */}
           <Section title="Payment Method">
             {!isOnline && (
-              <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#92400e', marginBottom: 10, lineHeight: 1.4 }}>
+              <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: 'var(--pn-warning)', marginBottom: 10, lineHeight: 1.4 }}>
                 <strong>Offline mode.</strong> Card payments need a live connection. Take cash or store credit now — receipt will sync when you're back online.
               </div>
             )}
@@ -852,15 +852,15 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                     title={isCardOffline ? 'Card requires a live network — try cash or store credit'
                          : isCardNotSetUp ? 'Set up payments first: Admin → Settings → Payments'
                          : undefined}
-                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : 'var(--pn-border)'}`, background: isCardDisabled ? 'var(--pn-surface-alt)' : (method === m.id ? '#EBF4FB' : 'var(--pn-bg)'), cursor: isCardDisabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardDisabled ? .5 : 1 }}>
+                    style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, padding: '10px 6px', borderRadius: 10, border: `1.5px solid ${method === m.id ? '#3D95CE' : 'var(--pn-border)'}`, background: isCardDisabled ? 'var(--pn-surface-alt)' : (method === m.id ? 'var(--pn-info-bg)' : 'var(--pn-bg)'), cursor: isCardDisabled ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: isCardDisabled ? .5 : 1 }}>
                     <span style={{ fontSize: 20 }}>{m.icon}</span>
-                    <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? '#1a5f8a' : 'var(--pn-text-muted)' }}>{m.label}</span>
+                    <span style={{ fontSize: 10, fontWeight: 600, color: method === m.id ? 'var(--pn-info)' : 'var(--pn-text-muted)' }}>{m.label}</span>
                   </button>
                 );
               })}
             </div>
             {isOnline && !connectReady && (
-              <div style={{ fontSize: 11, color: '#9a3412', background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>
                 Card payments are off until Stripe is set up — <strong>Admin → Settings → Payments</strong>. Cash & other methods still work.
               </div>
             )}
@@ -1123,13 +1123,13 @@ function ReceiptScreen({ receipt, onDone }) {
             <button onClick={!smsSent && !smsSending ? (smsPhoneEdit ? sendTextReceipt : sendTextReceipt) : undefined}
               onContextMenu={(e) => { e.preventDefault(); setSmsPhoneEdit(v => !v); }}
               title="Long-press or right-click to send to a different number"
-              style={{ flex: 1, minWidth: 80, padding: '10px 0', borderRadius: 10, border: `1px solid ${smsSent ? '#bbf7d0' : '#bfdbfe'}`, background: smsSent ? '#f0fdf4' : '#eff6ff', fontSize: 12, fontWeight: 600, cursor: smsSent || smsSending ? 'default' : 'pointer', fontFamily: 'inherit', color: smsSent ? '#16a34a' : '#1e40af' }}>
+              style={{ flex: 1, minWidth: 80, padding: '10px 0', borderRadius: 10, border: `1px solid ${smsSent ? '#bbf7d0' : '#bfdbfe'}`, background: smsSent ? 'var(--pn-success-bg)' : 'var(--pn-info-bg)', fontSize: 12, fontWeight: 600, cursor: smsSent || smsSending ? 'default' : 'pointer', fontFamily: 'inherit', color: smsSent ? 'var(--pn-success)' : 'var(--pn-info)' }}>
               {smsSent ? '✓ Texted!' : smsSending ? 'Sending…' : '💬 Text receipt'}
             </button>
           )}
           {canReview && (
             <button onClick={!reviewSent && !reviewSending ? sendReviewRequest : undefined}
-              style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: `1px solid ${reviewSent ? '#bbf7d0' : '#fde68a'}`, background: reviewSent ? '#f0fdf4' : '#fffbeb', fontSize: 12, fontWeight: 600, cursor: reviewSent || reviewSending ? 'default' : 'pointer', fontFamily: 'inherit', color: reviewSent ? '#16a34a' : '#92400e' }}>
+              style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: `1px solid ${reviewSent ? '#bbf7d0' : '#fde68a'}`, background: reviewSent ? 'var(--pn-success-bg)' : 'var(--pn-warning-bg)', fontSize: 12, fontWeight: 600, cursor: reviewSent || reviewSending ? 'default' : 'pointer', fontFamily: 'inherit', color: reviewSent ? 'var(--pn-success)' : 'var(--pn-warning)' }}>
               {reviewSent ? '✓ Sent!' : reviewSending ? 'Sending…' : '⭐ Review'}
             </button>
           )}

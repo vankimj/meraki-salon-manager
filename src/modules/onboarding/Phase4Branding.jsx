@@ -123,7 +123,7 @@ export default function Phase4Branding({ onboarding, onAdvance, saving }) {
       </Section>
 
       {err && (
-        <div style={{ padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12, marginBottom: 12 }}>{err}</div>
+        <div style={{ padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12, marginBottom: 12 }}>{err}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>

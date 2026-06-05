@@ -17,8 +17,11 @@
   --pn-danger:      #c0392b;
   --pn-danger-bg:   #fdecea;
   --pn-success:     #16a34a;
+  --pn-success-bg:  #ecfdf3;
   --pn-warning:     #c47d2e;
   --pn-warning-bg:  #fdf2e6;
+  --pn-info:        #2563eb;
+  --pn-info-bg:     #eff6ff;
   --pn-overlay:     rgba(0,0,0,0.4);
   --pn-shadow:      rgba(0,0,0,0.08);
   --pn-frame:       #1a1a1a;   /* desktop body frame behind the card */
@@ -36,8 +39,11 @@
   --pn-danger:      #ef5350;
   --pn-danger-bg:   #3a1f1d;
   --pn-success:     #34d27e;
+  --pn-success-bg:  #16301f;
   --pn-warning:     #e0a64a;
   --pn-warning-bg:  #3a2c18;
+  --pn-info:        #5BAEE0;
+  --pn-info-bg:     #15273c;
   --pn-overlay:     rgba(0,0,0,0.6);
   --pn-shadow:      rgba(0,0,0,0.5);
   --pn-frame:       #05080b;

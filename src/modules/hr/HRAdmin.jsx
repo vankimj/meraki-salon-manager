@@ -685,7 +685,7 @@ function HistoryTab({ runs, onMarkPaid }) {
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: allPaid ? '#EDFAF3' : '#FEF9EC', color: allPaid ? '#166534' : '#92400e', border: `1px solid ${allPaid ? '#86efac' : '#fcd34d'}` }}>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: allPaid ? 'var(--pn-success-bg)' : 'var(--pn-warning-bg)', color: allPaid ? 'var(--pn-success)' : 'var(--pn-warning)', border: `1px solid ${allPaid ? '#86efac' : '#fcd34d'}` }}>
                   {allPaid ? '✓ All paid' : `${paidCount}/${totalCount} paid`}
                 </span>
                 <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--pn-text)' }}>{fmt$(run.grandTotal)}</span>
@@ -720,7 +720,7 @@ function HistoryTab({ runs, onMarkPaid }) {
                       <button
                         onClick={() => markPaid(run.id, t.techName)}
                         disabled={marking === `${run.id}-${t.techName}`}
-                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #86efac', background: '#EDFAF3', color: '#166534', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0 }}>
+                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #86efac', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0 }}>
                         {marking === `${run.id}-${t.techName}` ? '…' : 'Mark Paid'}
                       </button>
                     )}
@@ -790,7 +790,7 @@ function BonusesTab({ bonuses, employees, onAdd, onDelete }) {
               <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0 }}>{fmtDateFull(b.createdAt)}</div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#22c55e', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>{fmt$(b.amount)}</div>
               <button onClick={() => onDelete(b.id)}
-                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                 Del
               </button>
             </div>
@@ -905,8 +905,8 @@ function ReviewsTab({ reviews, employees, onNew, onEdit, onDelete }) {
                                   {fmtDateShort(rev.periodStart)} – {fmtDateShort(rev.periodEnd)}
                                 </span>
                                 <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
-                                  background: rev.status === 'final' ? '#EDFAF3' : '#FEF9EC',
-                                  color:      rev.status === 'final' ? '#166534' : '#92400e',
+                                  background: rev.status === 'final' ? 'var(--pn-success-bg)' : 'var(--pn-warning-bg)',
+                                  color:      rev.status === 'final' ? 'var(--pn-success)' : 'var(--pn-warning)',
                                   border: `1px solid ${rev.status === 'final' ? '#86efac' : '#fcd34d'}` }}>
                                   {rev.status === 'final' ? 'Final' : 'Draft'}
                                 </span>
@@ -930,7 +930,7 @@ function ReviewsTab({ reviews, employees, onNew, onEdit, onDelete }) {
                                 Edit
                               </button>
                               <button onClick={() => onDelete(rev.id)}
-                                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
                                 Del
                               </button>
                             </div>
@@ -1168,11 +1168,11 @@ function HandbookTab({ employees }) {
             <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 2 }}>Version {doc.version}{doc.publishedAt ? ` · Published ${fmtDateFull(doc.publishedAt)}` : ''}</div>
           </div>
           {mySig ? (
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#16a34a', padding: '4px 12px', borderRadius: 20, background: '#EDFAF3', border: '1px solid #86efac', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-success)', padding: '4px 12px', borderRadius: 20, background: 'var(--pn-success-bg)', border: '1px solid #86efac', flexShrink: 0 }}>
               ✓ Signed {fmtDateFull(mySig.signedAt)}
             </span>
           ) : (
-            <span style={{ fontSize: 12, color: '#f59e0b', padding: '4px 12px', borderRadius: 20, background: '#FEF9EC', border: '1px solid #fcd34d', flexShrink: 0 }}>
+            <span style={{ fontSize: 12, color: 'var(--pn-warning)', padding: '4px 12px', borderRadius: 20, background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', flexShrink: 0 }}>
               Pending signature
             </span>
           )}
@@ -1317,7 +1317,7 @@ function HandbookTab({ employees }) {
                 ) : null}
               </div>
               {signed ? (
-                <span style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', padding: '3px 10px', borderRadius: 20, background: '#EDFAF3', border: '1px solid #86efac', flexShrink: 0 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-success)', padding: '3px 10px', borderRadius: 20, background: 'var(--pn-success-bg)', border: '1px solid #86efac', flexShrink: 0 }}>
                   ✓ Signed
                 </span>
               ) : (
@@ -1325,7 +1325,7 @@ function HandbookTab({ employees }) {
                   onClick={() => sendReminder(emp)}
                   disabled={!!sending || !emp.email || !doc.publishedAt}
                   title={!emp.email ? 'No email on file' : !doc.publishedAt ? 'Publish handbook first' : ''}
-                  style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fcd34d', background: '#FEF9EC', color: !!sending || !emp.email || !doc.publishedAt ? 'var(--pn-text-faint)' : '#92400e', cursor: !!sending || !emp.email || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                  style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fcd34d', background: 'var(--pn-warning-bg)', color: !!sending || !emp.email || !doc.publishedAt ? 'var(--pn-text-faint)' : 'var(--pn-warning)', cursor: !!sending || !emp.email || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                   {sending === emp.name ? '…' : '📧 Remind'}
                 </button>
               )}
@@ -1520,7 +1520,7 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
           </>
         )}
         {isTech && isDisabled && (
-          <div style={{ fontSize: 12, color: '#f59e0b', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 12px' }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, padding: '6px 12px' }}>
             Inactive contractors may access forms from the past 3 years.
           </div>
         )}
@@ -1678,7 +1678,7 @@ function GustoTab({ employees, payrollRuns }) {
         </div>
 
         {syncResult && (
-          <div style={{ marginTop: 14, padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: '#166534' }}>
+          <div style={{ marginTop: 14, padding: '10px 14px', background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 8, fontSize: 12, color: 'var(--pn-success)' }}>
             Sync complete — {syncResult.matched} employees matched, {syncResult.updated} updated with Gusto IDs.
           </div>
         )}
@@ -1696,7 +1696,7 @@ function GustoTab({ employees, payrollRuns }) {
               <EmpAvatar emp={e} size={28} />
               <span style={{ flex: 1, fontSize: 13, color: 'var(--pn-text)' }}>{e.name}</span>
               {e.gustoId ? (
-                <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '2px 8px' }}>✓ Linked</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 6, padding: '2px 8px' }}>✓ Linked</span>
               ) : (
                 <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', background: 'var(--pn-surface-muted)', borderRadius: 6, padding: '2px 8px' }}>Not matched</span>
               )}

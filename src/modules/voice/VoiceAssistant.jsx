@@ -344,7 +344,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
             )}
 
             {error && (
-              <div style={{ marginTop: 12, padding: '8px 10px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 12, color: '#b91c1c' }}>
+              <div style={{ marginTop: 12, padding: '8px 10px', background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, fontSize: 12, color: 'var(--pn-danger)' }}>
                 {error}
               </div>
             )}
@@ -447,10 +447,10 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
   const [clientSearch, setClientSearch] = useState('');
 
   const accent =
-    actionType === 'cancel'    ? { bg: '#fef2f2', border: '#fca5a5', accent: '#ef4444', label: 'Cancel appointment' }
-    : actionType === 'reschedule' ? { bg: '#fffbeb', border: '#fcd34d', accent: '#92400e', label: 'Reschedule' }
-    : actionType === 'checkIn'   ? { bg: '#f0fdf4', border: '#bbf7d0', accent: '#166534', label: 'Check in' }
-    :                              { bg: '#f0f7ff', border: '#c7dff7', accent: '#1a5f8a', label: 'Book appointment' };
+    actionType === 'cancel'    ? { bg: 'var(--pn-danger-bg)', border: '#fca5a5', accent: 'var(--pn-danger)', label: 'Cancel appointment' }
+    : actionType === 'reschedule' ? { bg: 'var(--pn-warning-bg)', border: '#fcd34d', accent: 'var(--pn-warning)', label: 'Reschedule' }
+    : actionType === 'checkIn'   ? { bg: 'var(--pn-success-bg)', border: '#bbf7d0', accent: 'var(--pn-success)', label: 'Check in' }
+    :                              { bg: 'var(--pn-info-bg)', border: '#c7dff7', accent: 'var(--pn-info)', label: 'Book appointment' };
 
   // Filtered client matches for disambiguation. If the model picked a clientId
   // but the spoken-name has multiple matches in our DB, surface them.
@@ -554,7 +554,7 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
         {/* Read-only details when not editing */}
         {!editing && actionType === 'book' && (
           <div style={{ marginTop: 8, fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', flexDirection: 'column', gap: 2 }}>
-            {payload.clientName && <div>👤 {payload.clientName}{!payload.clientId && <span style={{ color: '#b91c1c', marginLeft: 6 }}>(no exact match)</span>}</div>}
+            {payload.clientName && <div>👤 {payload.clientName}{!payload.clientId && <span style={{ color: 'var(--pn-danger)', marginLeft: 6 }}>(no exact match)</span>}</div>}
             {payload.techName  && <div>💅 {payload.techName}</div>}
             {payload.date      && <div>📅 {payload.date}{payload.startTime ? ` at ${payload.startTime}` : ''}</div>}
             {Array.isArray(payload.services) && payload.services.length > 0 && (

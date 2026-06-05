@@ -428,7 +428,7 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
               <div key={q.id} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '10px 12px',
-                background: fullscreen ? (urgent ? 'rgba(239,68,68,.15)' : 'rgba(255,255,255,.06)') : (urgent ? '#fef2f2' : 'var(--pn-bg)'),
+                background: fullscreen ? (urgent ? 'rgba(239,68,68,.15)' : 'rgba(255,255,255,.06)') : (urgent ? 'var(--pn-danger-bg)' : 'var(--pn-bg)'),
                 border: fullscreen ? '1px solid rgba(255,255,255,.1)' : `1px solid ${urgent ? '#fca5a5' : 'var(--pn-border)'}`,
                 borderRadius: 10,
               }}>
@@ -436,7 +436,7 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
                     <span style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>{i === 0 ? '👉 ' : ''}{q.clientName || 'Walk-in'}</span>
                     {q.techName && q.techName !== 'Any' && (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444' }}>★ {q.techName}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-danger)' }}>★ {q.techName}</span>
                     )}
                   </div>
                   <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)' }}>
@@ -621,17 +621,17 @@ function AddWalkinModal({ services, employees, clients, onClose, onAdded }) {
 
           {!newOpen && !clientId && (
             <button onClick={() => { setNewOpen(true); setNewName(''); setNewPhone(''); }}
-              style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 700, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ alignSelf: 'flex-start', fontSize: 12, fontWeight: 700, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
               + New client
             </button>
           )}
 
           {newOpen && (
-            <div style={{ padding: 12, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a' }}>
+            <div style={{ padding: 12, borderRadius: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ fontSize: 12, color: '#92400e', fontWeight: 700 }}>New client profile</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-warning)', fontWeight: 700 }}>New client profile</div>
                 <button onClick={() => setNewOpen(false)}
-                  style={{ border: 'none', background: 'none', color: '#92400e', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
+                  style={{ border: 'none', background: 'none', color: 'var(--pn-warning)', cursor: 'pointer', fontSize: 16, padding: 0, lineHeight: 1 }}>×</button>
               </div>
               <input autoFocus value={newName} onChange={e => setNewName(e.target.value)}
                 placeholder="Full name *" style={{ ...kioskInput, marginBottom: 6 }} />

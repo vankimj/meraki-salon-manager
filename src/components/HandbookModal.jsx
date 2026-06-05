@@ -50,7 +50,7 @@ export default function HandbookModal() {
               </div>
             </div>
           </div>
-          <div style={{ fontSize: 12, color: '#92400e', marginTop: 10, padding: '8px 12px', background: '#FEF9EC', borderRadius: 8, border: '1px solid #fcd34d' }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-warning)', marginTop: 10, padding: '8px 12px', background: 'var(--pn-warning-bg)', borderRadius: 8, border: '1px solid #fcd34d' }}>
             Please read the full handbook and scroll to the bottom to sign.
           </div>
         </div>

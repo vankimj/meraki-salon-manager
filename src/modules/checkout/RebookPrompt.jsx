@@ -124,11 +124,11 @@ export default function RebookPrompt({
   // Already booked confirmation
   if (bookedAt) {
     return (
-      <div style={{ ...cardStyle, borderColor: '#2D7A5F', background: '#EDFAF3' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#166534' }}>
+      <div style={{ ...cardStyle, borderColor: '#2D7A5F', background: 'var(--pn-success-bg)' }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-success)' }}>
           ✓ Rebooked
         </div>
-        <div style={{ fontSize: 12, color: '#1a6040', marginTop: 4 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-success)', marginTop: 4 }}>
           {fmtDate(bookedAt.date)} at {minsToStr(bookedAt.slot)} with {tech?.name || techName}
         </div>
       </div>
@@ -266,8 +266,8 @@ export default function RebookPrompt({
                 style={{
                   padding: '8px 4px', fontSize: 11, fontWeight: 600, borderRadius: 6, fontFamily: 'inherit',
                   border: `1.5px solid ${sel ? '#2D7A5F' : free ? '#c3e6d8' : 'var(--pn-border)'}`,
-                  background: sel ? '#2D7A5F' : free ? '#f0f9f5' : 'var(--pn-bg)',
-                  color: sel ? '#fff' : free ? '#1a6040' : 'var(--pn-text-faint)',
+                  background: sel ? '#2D7A5F' : free ? 'var(--pn-success-bg)' : 'var(--pn-bg)',
+                  color: sel ? '#fff' : free ? 'var(--pn-success)' : 'var(--pn-text-faint)',
                   cursor: free ? 'pointer' : 'default',
                 }}>
                 {minsToStr(m)}

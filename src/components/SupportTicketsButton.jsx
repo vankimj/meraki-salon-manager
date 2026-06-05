@@ -29,9 +29,9 @@ const C = {
   rule: 'var(--pn-border)', ruleSoft: 'var(--pn-surface-alt)', bg: 'var(--pn-bg)', card: 'var(--pn-surface)',
   plum: '#5b3b8c', plumDeep: '#3f2767',
   blue: '#3d95ce', blueDeep: '#1f6ea3',
-  success: '#16a34a', successSoft: '#dcfce7',
-  warning: '#f59e0b', warningSoft: '#fef3c7',
-  danger: '#ef4444', dangerSoft: '#fee2e2',
+  success: 'var(--pn-success)', successSoft: 'var(--pn-success-bg)',
+  warning: 'var(--pn-warning)', warningSoft: 'var(--pn-warning-bg)',
+  danger: 'var(--pn-danger)', dangerSoft: 'var(--pn-danger-bg)',
 };
 
 export default function SupportTicketsButton() {
@@ -588,7 +588,7 @@ function MessageBubble({ from, body, at, authorName }) {
 function StatusChip({ status, priority }) {
   const meta = {
     open:           { label: 'Open',       bg: C.warningSoft, color: C.warning },
-    pending_owner:  { label: 'Awaiting you', bg: '#eff6ff',   color: '#1e40af' },
+    pending_owner:  { label: 'Awaiting you', bg: 'var(--pn-info-bg)', color: 'var(--pn-info)' },
     resolved:       { label: 'Resolved',   bg: C.successSoft, color: C.success },
     closed:         { label: 'Closed',     bg: C.ruleSoft,   color: C.muted },
   }[status] || { label: status || '—', bg: C.ruleSoft, color: C.muted };
