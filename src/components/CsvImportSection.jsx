@@ -457,7 +457,7 @@ export default function CsvImportSection({ onBusyChange }) {
 
         {skipped && <SkippedPanel skipped={skipped} onClose={() => setSkipped(null)} />}
 
-        <div style={{ marginTop: 12, padding: 10, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: '#78350f', lineHeight: 1.5 }}>
+        <div style={{ marginTop: 12, padding: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: 'var(--pn-warning)', lineHeight: 1.5 }}>
           <strong>How to export from GlossGenius:</strong> Open <strong>Insights → Reports</strong>, download <strong>Clients</strong>, <strong>Payment Details</strong>, and <strong>Checkout Line Items</strong> (choose your date range for the last two).
         </div>
 
@@ -525,7 +525,7 @@ function ProgressBar({ current, total, label, onCancel, cancelling }) {
 }
 
 function Result({ children }) {
-  return <div style={{ fontSize: 12, color: '#166534', background: '#f0fdf4', padding: '8px 10px', borderRadius: 6, marginTop: 8 }}>{children}</div>;
+  return <div style={{ fontSize: 12, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', padding: '8px 10px', borderRadius: 6, marginTop: 8 }}>{children}</div>;
 }
 
 const FilePickerRow = ({ ref_, onChange, disabled, file, expectedLabel }) => (
@@ -540,7 +540,7 @@ const FilePickerRow = ({ ref_, onChange, disabled, file, expectedLabel }) => (
     />
     {!file && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>Pick the {expectedLabel}</span>}
     {file && (
-      <span style={{ fontSize: 11, color: '#166534', background: '#f0fdf4', padding: '3px 10px', borderRadius: 12, fontWeight: 600 }}>
+      <span style={{ fontSize: 11, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', padding: '3px 10px', borderRadius: 12, fontWeight: 600 }}>
         ✓ {file.fileName} ({file.records.length.toLocaleString()} rows)
       </span>
     )}
@@ -550,7 +550,7 @@ const FilePickerRow = ({ ref_, onChange, disabled, file, expectedLabel }) => (
 function PreviewBlock({ file, type, rows, joinedSummary }) {
   if (!rows || rows.length === 0) {
     return (
-      <div style={{ marginTop: 10, padding: 12, fontSize: 11, color: '#ef4444', textAlign: 'center', background: '#fef2f2', borderRadius: 6 }}>
+      <div style={{ marginTop: 10, padding: 12, fontSize: 11, color: 'var(--pn-danger)', textAlign: 'center', background: 'var(--pn-danger-bg)', borderRadius: 6 }}>
         No mappable rows. Check that the CSV has the expected columns.
       </div>
     );
@@ -609,9 +609,9 @@ function SkippedPanel({ skipped, onClose }) {
   }
 
   return (
-    <div style={{ marginTop: 12, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: 12 }}>
+    <div style={{ marginTop: 12, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10, padding: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#78350f' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-warning)' }}>
           ⚠ Skipped {rows.length.toLocaleString()} duplicate{rows.length !== 1 ? 's' : ''} from {fileName}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -626,15 +626,15 @@ function SkippedPanel({ skipped, onClose }) {
         </div>
       </div>
       {tooMany && (
-        <div style={{ fontSize: 11, color: '#92400e', marginBottom: 8, padding: '6px 8px', background: '#fef3c7', borderRadius: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-warning)', marginBottom: 8, padding: '6px 8px', background: 'var(--pn-warning-bg)', borderRadius: 6 }}>
           Showing the first {MAX_INLINE_SKIPPED.toLocaleString()} of {rows.length.toLocaleString()} skipped rows below. Use <strong>Download CSV</strong> to see all.
         </div>
       )}
       <div style={{ background: 'var(--pn-surface)', border: '1px solid #fde68a', borderRadius: 6, overflowX: 'auto', maxHeight: 320, overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-          <thead><tr style={{ background: '#fefce8', position: 'sticky', top: 0 }}>
+          <thead><tr style={{ background: 'var(--pn-warning-bg)', position: 'sticky', top: 0 }}>
             {headersForType(type).map(h => (
-              <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: '#78350f', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #fde68a' }}>{h}</th>
+              <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontSize: 10, fontWeight: 700, color: 'var(--pn-warning)', textTransform: 'uppercase', letterSpacing: '.04em', borderBottom: '1px solid #fde68a' }}>{h}</th>
             ))}
           </tr></thead>
           <tbody>{visible.map((row, i) => (

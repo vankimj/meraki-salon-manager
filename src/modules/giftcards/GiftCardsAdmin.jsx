@@ -30,7 +30,7 @@ function promoReason(p) {
   if (p.active) return null;
   const today = new Date().toISOString().slice(0, 10);
   if (p.endDate && today > p.endDate)
-    return { label: 'Expired', color: '#b45309', bg: '#fef3c7', border: '#fde68a' };
+    return { label: 'Expired', color: 'var(--pn-warning)', bg: 'var(--pn-warning-bg)', border: '#fde68a' };
   if (p.maxUses && (p.usedCount || 0) >= p.maxUses)
     return { label: 'Maxed out', color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' };
   if (p.singleUse && p.usedAt)
@@ -267,7 +267,7 @@ function GiftCardRow({ gc, onClick }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', fontFamily: 'monospace', letterSpacing: '.03em' }}>{gc.code}</span>
-            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: status === 'active' ? '#e8f4ee' : status === 'voided' ? '#fef2f2' : 'var(--pn-surface-alt)', color: statusColor, textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: status === 'active' ? 'var(--pn-success-bg)' : status === 'voided' ? 'var(--pn-danger-bg)' : 'var(--pn-surface-alt)', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? 'var(--pn-danger)' : '#aaa', textTransform: 'uppercase', letterSpacing: '.05em' }}>
               {status}
             </span>
             <EmailStatusBadge gc={gc} />
@@ -361,7 +361,7 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
               <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#f0f4ff', color: '#6366f1', fontWeight: 600 }}>Single-use</span>
             )}
             {promo.maxUses && (
-              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#fef9ec', color: '#92400e', fontWeight: 600 }}>
+              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)', fontWeight: 600 }}>
                 {promo.usedCount || 0}/{promo.maxUses} uses
               </span>
             )}
@@ -385,7 +385,7 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
             <button onClick={onToggle} style={{ padding: '5px 12px', borderRadius: 8, border: `1px solid ${promo.active ? 'var(--pn-border)' : '#2D7A5F'}`, background: promo.active ? 'var(--pn-bg)' : '#e8f4ee', color: promo.active ? 'var(--pn-text-muted)' : '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               {promo.active ? 'Deactivate' : 'Activate'}
             </button>
-            <button onClick={onDelete} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <button onClick={onDelete} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #fee2e2', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               ×
             </button>
           </div>
@@ -558,14 +558,14 @@ function GiftCardModal({ onSave, onClose }) {
             style={inputStyle} />
         </Field>
 
-        <div style={{ marginTop: 8, padding: '12px 16px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
-          <div style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>Gift card summary</div>
+        <div style={{ marginTop: 8, padding: '12px 16px', background: 'var(--pn-success-bg)', borderRadius: 10, border: '1px solid #bbf7d0' }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-success)', fontWeight: 600 }}>Gift card summary</div>
           <div style={{ fontSize: 13, color: 'var(--pn-text)', marginTop: 4 }}>
             {code || '—'} · {amount ? fmt$(amount) : '$—'}
             {recipientName && <span style={{ color: 'var(--pn-text-muted)' }}> · {recipientName}</span>}
           </div>
           {validEmail && (
-            <div style={{ fontSize: 11, color: '#166534', marginTop: 3 }}>📧 Code will be emailed to {recipientEmail}</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-success)', marginTop: 3 }}>📧 Code will be emailed to {recipientEmail}</div>
           )}
         </div>
 
@@ -660,8 +660,8 @@ function PromoModal({ onSave, onClose }) {
         </label>
 
         {code && value && (
-          <div style={{ marginBottom: 8, padding: '12px 16px', background: '#fff7ed', borderRadius: 10, border: '1px solid #fed7aa' }}>
-            <div style={{ fontSize: 12, color: '#92400e', fontWeight: 600 }}>Preview</div>
+          <div style={{ marginBottom: 8, padding: '12px 16px', background: 'var(--pn-warning-bg)', borderRadius: 10, border: '1px solid #fed7aa' }}>
+            <div style={{ fontSize: 12, color: 'var(--pn-warning)', fontWeight: 600 }}>Preview</div>
             <div style={{ fontSize: 13, color: 'var(--pn-text)', marginTop: 4 }}>
               Code <strong>{code}</strong> gives {type === 'percent' ? `${value}%` : fmt$(value)} off
               {singleUse && ' · single-use'}
@@ -693,7 +693,7 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
           <div style={{ width: 64, height: 44, borderRadius: 10, background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 10px', fontSize: 24 }}>🎁</div>
           <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'monospace', letterSpacing: '.08em', color: 'var(--pn-text)' }}>{gc.code}</div>
           <div style={{ marginTop: 6 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: status === 'active' ? '#e8f4ee' : status === 'voided' ? '#fef2f2' : 'var(--pn-surface-alt)', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? '#ef4444' : 'var(--pn-text-faint)', textTransform: 'uppercase' }}>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 12, background: status === 'active' ? 'var(--pn-success-bg)' : status === 'voided' ? 'var(--pn-danger-bg)' : 'var(--pn-surface-alt)', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? 'var(--pn-danger)' : 'var(--pn-text-faint)', textTransform: 'uppercase' }}>
               {status}
             </span>
           </div>
@@ -728,7 +728,7 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
 
         {isAdmin && !gc.voided && gc.balance > 0 && (
           <button onClick={() => onVoid(gc)}
-            style={{ width: '100%', padding: '10px', borderRadius: 10, border: '1px solid #fecaca', background: '#fef2f2', color: '#ef4444', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ width: '100%', padding: '10px', borderRadius: 10, border: '1px solid #fecaca', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Void Gift Card
           </button>
         )}
@@ -830,14 +830,14 @@ function EmailStatusBadge({ gc }) {
 
   const status = live?.emailStatus;
   if (!status && !live?.recipientEmail) return null; // no email on file → nothing to show
-  if (!status) return <Pill bg="#fffbeb" fg="#92400e" border="#fde68a">📧 Email queued</Pill>;
-  if (status === 'sending') return <Pill bg="#eff6ff" fg="#1d4ed8" border="#bfdbfe">📧 Emailing…</Pill>;
-  if (status === 'sent')    return <Pill bg="#f0fdf4" fg="#16a34a" border="#86efac" title={live.emailSentAt ? `Sent ${new Date(live.emailSentAt).toLocaleString()}` : ''}>📧 Email sent</Pill>;
+  if (!status) return <Pill bg="var(--pn-warning-bg)" fg="var(--pn-warning)" border="#fde68a">📧 Email queued</Pill>;
+  if (status === 'sending') return <Pill bg="var(--pn-info-bg)" fg="var(--pn-info)" border="#bfdbfe">📧 Emailing…</Pill>;
+  if (status === 'sent')    return <Pill bg="var(--pn-success-bg)" fg="var(--pn-success)" border="#86efac" title={live.emailSentAt ? `Sent ${new Date(live.emailSentAt).toLocaleString()}` : ''}>📧 Email sent</Pill>;
   if (status === 'skipped') return <Pill bg="#f5f5f5" fg="#6b7280" border="#e5e7eb" title={live.emailErrorReason || 'No email on file'}>📧 No email</Pill>;
   if (status === 'failed') {
     return (
       <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
-        <Pill bg="#fef2f2" fg="#b91c1c" border="#fca5a5" title={`${live.emailErrorCode || 'ERROR'}: ${live.emailErrorReason || 'Send failed'}`}>📧 Email failed</Pill>
+        <Pill bg="var(--pn-danger-bg)" fg="var(--pn-danger)" border="#fca5a5" title={`${live.emailErrorCode || 'ERROR'}: ${live.emailErrorReason || 'Send failed'}`}>📧 Email failed</Pill>
         <button onClick={async (e) => {
           e.stopPropagation();
           setRetrying(true); setErr('');

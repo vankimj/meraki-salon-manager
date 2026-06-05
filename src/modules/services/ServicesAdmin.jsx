@@ -594,7 +594,7 @@ function ServiceOptionsEditor({ options, onChange }) {
             <input type="checkbox" checked={!!opt.priceFrom} onChange={e => patch(i, { priceFrom: e.target.checked })} />
           </label>
           <button onClick={() => remove(i)} title="Remove option"
-            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', flexShrink: 0 }}>×</button>
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', flexShrink: 0 }}>×</button>
         </div>
       ))}
       <button onClick={add}

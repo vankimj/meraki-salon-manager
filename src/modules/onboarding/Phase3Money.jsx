@@ -98,7 +98,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
       </Section>
 
       {err && (
-        <div style={{ marginTop: 12, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>{err}</div>
+        <div style={{ marginTop: 12, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>{err}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', marginTop: 18 }}>
@@ -155,7 +155,7 @@ function ToggleRow({ checked, onChange, label, desc }) {
 
 function CheckRow({ checked, onChange, label, desc }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: 'pointer', background: checked ? '#ecfdf5' : 'var(--pn-surface)' }}>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: 'pointer', background: checked ? 'var(--pn-success-bg)' : 'var(--pn-surface)' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
         style={{ marginTop: 2, accentColor: '#10b981' }} />
       <div style={{ flex: 1 }}>
@@ -234,7 +234,7 @@ function ConnectComparisonTable() {
           <thead>
             <tr>
               <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#5b3b8c', background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)', width: '32%' }}></th>
-              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#065f46', background: '#f0fdf4', borderBottom: '2px solid #6ee7b7' }}>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', borderBottom: '2px solid #6ee7b7' }}>
                 ✓ Your own Stripe (Standard)
               </th>
               <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: 'var(--pn-text)', background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)' }}>
@@ -508,9 +508,9 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
 
     body = (
       <div style={{ padding: 12, borderRadius: 8,
-        background: isLive ? '#ecfdf5' : needsMore ? '#fff7ed' : '#fffbeb',
+        background: isLive ? 'var(--pn-success-bg)' : 'var(--pn-warning-bg)',
         border: `1px solid ${isLive ? '#6ee7b7' : needsMore ? '#fed7aa' : '#fde68a'}`,
-        fontSize: 13, color: isLive ? '#065f46' : needsMore ? '#7c2d12' : '#92400e',
+        fontSize: 13, color: isLive ? 'var(--pn-success)' : 'var(--pn-warning)',
       }}>
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>
           {isLive ? '✓ Payments are live' : needsMore ? 'More info needed' : 'Stripe reviewing your account'}
@@ -526,7 +526,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
           KYC submitted: {detailsSubmitted ? '✓' : '✗'}
         </div>
 
-        <RateCard accountType={accountType} color={isLive ? '#065f46' : needsMore ? '#7c2d12' : '#92400e'} />
+        <RateCard accountType={accountType} color={isLive ? 'var(--pn-success)' : 'var(--pn-warning)'} />
         {friendlyItems.length > 0 && (
           <div style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.6 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>Still needed:</div>
@@ -534,7 +534,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
               {friendlyItems.map((i, idx) => (
                 <li key={idx}>
                   {i.label}
-                  {i.where && <span style={{ color: '#92400e', opacity: 0.7, fontSize: 11 }}> — {i.where}</span>}
+                  {i.where && <span style={{ color: 'var(--pn-warning)', opacity: 0.7, fontSize: 11 }}> — {i.where}</span>}
                 </li>
               ))}
             </ul>
@@ -558,7 +558,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             </a>
           )}
           <button onClick={deleteAccount} disabled={busy} type="button"
-            style={{ background: 'none', border: 'none', color: '#a16207', fontSize: 11, fontWeight: 600, cursor: busy ? 'default' : 'pointer', textDecoration: 'underline', padding: 6 }}>
+            style={{ background: 'none', border: 'none', color: 'var(--pn-warning)', fontSize: 11, fontWeight: 600, cursor: busy ? 'default' : 'pointer', textDecoration: 'underline', padding: 6 }}>
             {accountType === 'standard' ? 'Disconnect' : (isLive ? 'Delete account' : 'Start over')}
           </button>
         </div>
@@ -568,21 +568,21 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             the target account so the owner knows which identity to log
             in as, plus a one-click sign-out-and-retry path. */}
         {accountType === 'standard' && needsStripeSide && (
-          <div style={{ fontSize: 11, color: '#92400e', opacity: 0.85, marginTop: 10, paddingTop: 8, borderTop: '1px dashed #fed7aa', lineHeight: 1.55 }}>
-            Connecting to <code style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, background: '#fff7ed', padding: '1px 4px', borderRadius: 3 }}>{stripeConnect.accountId}</code>
+          <div style={{ fontSize: 11, color: 'var(--pn-warning)', opacity: 0.85, marginTop: 10, paddingTop: 8, borderTop: '1px dashed #fed7aa', lineHeight: 1.55 }}>
+            Connecting to <code style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, background: 'var(--pn-warning-bg)', padding: '1px 4px', borderRadius: 3 }}>{stripeConnect.accountId}</code>
             {businessName && <> ({businessName})</>}.
             <br />
             Wrong account on stripe.com?{' '}
             <a
               href={`https://dashboard.stripe.com/logout?redirect=${encodeURIComponent(stripeDashUrl.replace('https://dashboard.stripe.com', ''))}`}
               target="_blank" rel="noopener noreferrer"
-              style={{ color: '#7c2d12', textDecoration: 'underline', fontWeight: 600 }}
+              style={{ color: 'var(--pn-warning)', textDecoration: 'underline', fontWeight: 600 }}
             >
               Sign out + sign back in as the salon owner
             </a>.
           </div>
         )}
-        {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
+        {err && <div style={{ fontSize: 12, color: 'var(--pn-danger)', marginTop: 8 }}>{err}</div>}
       </div>
     );
   } else {
@@ -599,13 +599,13 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
         {/* Standard card — now recommended */}
-        <div style={{ border: '2px solid #6ee7b7', borderRadius: 10, padding: 14, background: '#f0fdf4', position: 'relative' }}>
+        <div style={{ border: '2px solid #6ee7b7', borderRadius: 10, padding: 14, background: 'var(--pn-success-bg)', position: 'relative' }}>
           <div style={{ position: 'absolute', top: -10, right: 12,
             background: '#065f46', color: '#fff', fontSize: 9, fontWeight: 700,
             padding: '3px 8px', borderRadius: 8, letterSpacing: 0.5 }}>
             RECOMMENDED
           </div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#065f46', marginBottom: 4 }}>✓ Your own Stripe account</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-success)', marginBottom: 4 }}>✓ Your own Stripe account</div>
           <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
             Connect (or create) a Stripe account in your salon's name. You own it,
             you keep it if you ever leave Plume, and there's no per-payout fee.
@@ -616,7 +616,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
             <li>No per-payout fee</li>
             <li>Stripe handles your disputes directly</li>
           </ul>
-          <RateCard accountType="standard" color="#065f46" borderColor="#a7f3d0" background="rgba(255,255,255,0.7)" />
+          <RateCard accountType="standard" color="var(--pn-success)" borderColor="#a7f3d0" background="rgba(255,255,255,0.7)" />
           <button onClick={startStandard} disabled={busy} style={btnPrimary(busy)} type="button">
             {busy ? 'Loading…' : 'Connect Stripe account'}
           </button>
@@ -647,7 +647,7 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
         work without Stripe. Connect before your first paid appointment.
       </div>
 
-      {err && <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{err}</div>}
+      {err && <div style={{ fontSize: 12, color: 'var(--pn-danger)', marginTop: 8 }}>{err}</div>}
     </div>
     );
   }

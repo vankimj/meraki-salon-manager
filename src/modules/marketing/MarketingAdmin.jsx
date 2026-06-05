@@ -393,11 +393,11 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
       {/* Status banner */}
       <div style={{
         padding: '14px 16px', marginBottom: 18,
-        background: effective ? '#fef3c7' : '#f0fdf4',
+        background: effective ? 'var(--pn-warning-bg)' : 'var(--pn-success-bg)',
         border: `1px solid ${effective ? '#fcd34d' : '#bbf7d0'}`,
         borderRadius: 10,
       }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: effective ? '#92400e' : '#166534', marginBottom: 4 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: effective ? 'var(--pn-warning)' : 'var(--pn-success)', marginBottom: 4 }}>
           {effective ? '🧪 SMS Test Mode is ON' : '✓ SMS is in Production'}
         </div>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55 }}>
@@ -406,7 +406,7 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
             : 'SMS sends use real Twilio. TFN purchase $2/mo, ~$0.008 per SMS segment. Flip the toggle below to preview campaigns without spending.'}
         </div>
         {platformSandbox && (
-          <div style={{ fontSize: 11, color: '#92400e', marginTop: 6, fontStyle: 'italic' }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-warning)', marginTop: 6, fontStyle: 'italic' }}>
             ⓘ This tenant is in platform-level sandbox (set by Plume Nexus). Test mode is forced ON regardless of the toggle below — contact your account rep to switch to production.
           </div>
         )}
@@ -478,12 +478,12 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
 
 function SandboxLogRow({ row }) {
   const kindBadge = {
-    campaign:       { label: 'Campaign',        color: '#1d4ed8', bg: '#eff6ff' },
+    campaign:       { label: 'Campaign',        color: 'var(--pn-info)', bg: 'var(--pn-info-bg)' },
     direct:         { label: 'Direct message',  color: '#0e7490', bg: '#ecfeff' },
-    tech_reminder:  { label: 'Tech reminder',   color: '#a16207', bg: '#fefce8' },
+    tech_reminder:  { label: 'Tech reminder',   color: 'var(--pn-warning)', bg: 'var(--pn-warning-bg)' },
     pause_forward:  { label: 'Pause forward',   color: '#7c3aed', bg: '#f5f3ff' },
-    booking_confirm:{ label: 'Booking confirm', color: '#15803d', bg: '#f0fdf4' },
-    otp:            { label: 'OTP',             color: '#be123c', bg: '#fff1f2' },
+    booking_confirm:{ label: 'Booking confirm', color: 'var(--pn-success)', bg: 'var(--pn-success-bg)' },
+    otp:            { label: 'OTP',             color: 'var(--pn-danger)', bg: 'var(--pn-danger-bg)' },
   }[row.kind] || { label: row.kind || 'sms', color: '#525252', bg: '#f5f5f5' };
   const when = row.at ? new Date(row.at).toLocaleString() : '—';
   return (
@@ -586,11 +586,11 @@ function AutomationsPanel({ settings, updateSettings, isAdmin, showToast }) {
 function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }) {
   const [expanded, setExpanded] = useState(false);
   const STATUS = {
-    pending:   { bg: '#fffbeb', fg: '#92400e', label: 'Queued'    },
+    pending:   { bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)', label: 'Queued'    },
     scheduled: { bg: '#fdf4ff', fg: '#86198f', label: 'Scheduled' },
-    sending:   { bg: '#eff6ff', fg: '#1d4ed8', label: 'Sending'   },
-    done:      { bg: '#f0fdf4', fg: '#16a34a', label: 'Sent'      },
-    failed:    { bg: '#fef2f2', fg: '#ef4444', label: 'Failed'    },
+    sending:   { bg: 'var(--pn-info-bg)', fg: 'var(--pn-info)', label: 'Sending'   },
+    done:      { bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)', label: 'Sent'      },
+    failed:    { bg: 'var(--pn-danger-bg)', fg: 'var(--pn-danger)', label: 'Failed'    },
     cancelled: { bg: '#f5f5f5', fg: '#6b7280', label: 'Cancelled' },
   };
   // 'sending' / 'pending' / 'scheduled' all support cancel. Scheduled
@@ -612,13 +612,13 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{c.name}</span>
             {c.channel === 'sms' && (
-              <span style={{ fontSize: 10, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>SMS</span>
+              <span style={{ fontSize: 10, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>SMS</span>
             )}
             {c.promoCode && (
               <span style={{ fontSize: 10, background: '#f0faf6', color: '#2D7A5F', border: '1px solid #c6e8d5', borderRadius: 6, padding: '1px 7px', fontWeight: 700, fontFamily: 'monospace' }}>{c.promoCode}</span>
             )}
             {c.ctaUrl && (
-              <span style={{ fontSize: 10, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>CTA</span>
+              <span style={{ fontSize: 10, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>CTA</span>
             )}
           </div>
           <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
@@ -667,15 +667,15 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
           {/* Legacy failures panel — only for campaigns from before the
               activity-log change (no attempts array). */}
           {!Array.isArray(c.attempts) && Array.isArray(c.failures) && c.failures.length > 0 && (
-            <div style={{ marginBottom: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 10px' }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: '#7f1d1d', marginBottom: 6 }}>
+            <div style={{ marginBottom: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 6, padding: '8px 10px' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-danger)', marginBottom: 6 }}>
                 ⚠ {c.failures.length} delivery {c.failures.length === 1 ? 'failure' : 'failures'}{c.failCount > c.failures.length ? ` (showing first ${c.failures.length} of ${c.failCount})` : ''}
               </div>
-              <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 11, color: '#7f1d1d' }}>
+              <div style={{ maxHeight: 160, overflowY: 'auto', fontSize: 11, color: 'var(--pn-danger)' }}>
                 {c.failures.map((f, i) => (
                   <div key={i} style={{ padding: '3px 0', borderTop: i > 0 ? '1px solid #fecaca' : 'none' }}>
-                    <div style={{ fontWeight: 600 }}>{f.name} · <code style={{ background: '#fee2e2', padding: '0 4px', borderRadius: 3 }}>{f.code}</code></div>
-                    <div style={{ color: '#9a3412', marginTop: 1 }}>{f.phone || f.email || '—'} — {f.reason}</div>
+                    <div style={{ fontWeight: 600 }}>{f.name} · <code style={{ background: 'var(--pn-danger-bg)', padding: '0 4px', borderRadius: 3 }}>{f.code}</code></div>
+                    <div style={{ color: 'var(--pn-danger)', marginTop: 1 }}>{f.phone || f.email || '—'} — {f.reason}</div>
                   </div>
                 ))}
               </div>
@@ -684,7 +684,7 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {isActive && (
               <button onClick={e => { e.stopPropagation(); onCancel(); }} disabled={cancelInFlight}
-                style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #f59e0b', background: cancelInFlight ? '#fef3c7' : '#fffbeb', color: '#92400e', cursor: cancelInFlight ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #f59e0b', background: cancelInFlight ? 'var(--pn-warning-bg)' : 'var(--pn-warning-bg)', color: 'var(--pn-warning)', cursor: cancelInFlight ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                 {cancelInFlight ? '⏳ Cancelling…' : c.status === 'scheduled' ? '⏹ Cancel scheduled' : '⏹ Cancel send'}
               </button>
             )}
@@ -699,7 +699,7 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
               ⧉ Duplicate
             </button>
             <button onClick={e => { e.stopPropagation(); onDelete(); }}
-              style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+              style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
               🗑 Delete
             </button>
           </div>
@@ -770,7 +770,7 @@ function CampaignDiagnostics({ c }) {
       </div>
 
       {(stuck || stalled) && (
-        <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: 11, color: '#78350f' }}>
+        <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 6, padding: '6px 10px', marginBottom: 8, fontSize: 11, color: 'var(--pn-warning)' }}>
           ⚠ {stuck ? `Campaign hasn't started after 30s — Cloud Function may not be picking it up. Check \`firebase functions:log --only ${fnName}\`.`
                     : `No progress in 30s — function may be slow, throttled by ${isSms ? 'Twilio' : 'AWS SES'}, or about to hit its timeout.`}
         </div>
@@ -807,9 +807,9 @@ function CampaignDiagnostics({ c }) {
                   </div>
                   <div style={{ fontSize: 10, color: isFail ? '#9a3412' : 'var(--pn-text-muted)', marginTop: 1 }}>
                     {a.phone || a.email || '—'}
-                    {isFail && a.code && <> · <code style={{ background: '#fee2e2', padding: '0 4px', borderRadius: 3, color: '#7f1d1d' }}>{a.code}</code></>}
+                    {isFail && a.code && <> · <code style={{ background: 'var(--pn-danger-bg)', padding: '0 4px', borderRadius: 3, color: 'var(--pn-danger)' }}>{a.code}</code></>}
                     {isFail && a.reason && <> — {a.reason}</>}
-                    {a.promoCode && <> · <code style={{ background: '#f0faf6', padding: '0 4px', borderRadius: 3, color: '#15803d', fontFamily: 'monospace' }}>{a.promoCode}</code></>}
+                    {a.promoCode && <> · <code style={{ background: 'var(--pn-success-bg)', padding: '0 4px', borderRadius: 3, color: 'var(--pn-success)', fontFamily: 'monospace' }}>{a.promoCode}</code></>}
                   </div>
                 </div>
               </div>
@@ -1312,7 +1312,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
           {segType === 'appts_today_remaining' && (
             <F label="Today's remaining">
-              <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 12, color: 'var(--pn-warning)', padding: '8px 12px', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 6, lineHeight: 1.55 }}>
                 Resolves at send time: clients with appointments today (<strong>{apptDateDefault}</strong>) starting at the current time or later. Useful for "running 15 min behind" or "we're closing early today" alerts.
               </div>
             </F>
@@ -1343,7 +1343,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           {/* Audience preview */}
           <div style={{ marginBottom: 14 }}>
             <div style={{
-              background: (loading || needsSelection) ? '#f8f9fa' : recipients?.length ? '#f0faf6' : '#fef2f2',
+              background: (loading || needsSelection) ? '#f8f9fa' : recipients?.length ? 'var(--pn-success-bg)' : 'var(--pn-danger-bg)',
               border: `1px solid ${(loading || needsSelection) ? '#e8e8e8' : recipients?.length ? '#c6e8d5' : '#fca5a5'}`,
               borderRadius: showRecipients ? '8px 8px 0 0' : 8, padding: '10px 14px',
               display: 'flex', alignItems: 'center', gap: 10,
@@ -1355,7 +1355,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                   {segType === 'tech' ? 'Select a tech to preview audience.' : 'Select a service to preview audience.'}
                 </span>
               ) : !recipients?.length ? (
-                <span style={{ fontSize: 12, color: '#ef4444' }}>No matching clients with an email address.</span>
+                <span style={{ fontSize: 12, color: 'var(--pn-danger)' }}>No matching clients with an email address.</span>
               ) : (
                 <>
                   <span style={{ fontSize: 22 }}>👥</span>
@@ -1495,7 +1495,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                   <span style={{ color: 'var(--pn-text-faint)' }}> · {smsInfo.segments} × {recipientCount} × ${SMS_RATE_PER_SEGMENT.toFixed(4)}/segment</span>
                 </div>
               )}
-              <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
+              <div style={{ marginTop: 8, padding: '8px 12px', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, color: 'var(--pn-warning)' }}>
                 Requires Twilio configured. Clients must have a phone number on file. Add an opt-out clause (e.g. "Reply STOP to opt out") for TCPA compliance.
               </div>
             </F>
@@ -1534,8 +1534,8 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                     style={{ ...inp, width: 70 }} />
                   <span>day{Number(persExpDays) === 1 ? '' : 's'}</span>
                 </div>
-                <div style={{ marginTop: 10, fontSize: 11, color: '#15803d', padding: '6px 10px', background: '#f0fdf4', border: '1px dashed #86efac', borderRadius: 6 }}>
-                  Use <code style={{ fontFamily: 'monospace', background: '#dcfce7', padding: '0 4px', borderRadius: 3 }}>{'{promoCode}'}</code> in the {channel === 'sms' ? 'SMS body' : 'email body'} to insert the recipient's unique code. Example: <code style={{ fontFamily: 'monospace', background: '#fff', padding: '0 4px', borderRadius: 3 }}>{persPrefix || 'MERAKI'}-A3F7K9P2</code>
+                <div style={{ marginTop: 10, fontSize: 11, color: 'var(--pn-success)', padding: '6px 10px', background: 'var(--pn-success-bg)', border: '1px dashed #86efac', borderRadius: 6 }}>
+                  Use <code style={{ fontFamily: 'monospace', background: 'var(--pn-success-bg)', padding: '0 4px', borderRadius: 3 }}>{'{promoCode}'}</code> in the {channel === 'sms' ? 'SMS body' : 'email body'} to insert the recipient's unique code. Example: <code style={{ fontFamily: 'monospace', background: '#fff', padding: '0 4px', borderRadius: 3 }}>{persPrefix || 'MERAKI'}-A3F7K9P2</code>
                 </div>
               </div>
             )}

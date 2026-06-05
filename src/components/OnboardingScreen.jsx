@@ -169,7 +169,7 @@ export default function OnboardingScreen() {
                 ))}
               </div>
 
-              {error && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#dc2626', marginBottom: 16 }}>{error}</div>}
+              {error && <div style={{ background: 'var(--pn-danger-bg)', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: 'var(--pn-danger)', marginBottom: 16 }}>{error}</div>}
 
               <button
                 onClick={handleSubmit}
@@ -194,8 +194,8 @@ export default function OnboardingScreen() {
                 <div style={{ fontSize: 13, color: 'var(--pn-text-muted)' }}>Check your email for setup instructions.</div>
               </div>
 
-              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'center' }}>
-                <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Your TipFlow URL</div>
+              <div style={{ background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-success)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Your TipFlow URL</div>
                 <a href={result.url} style={{ fontSize: 18, color: '#2D7A5F', fontWeight: 700 }}>{result.url}</a>
               </div>
 

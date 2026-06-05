@@ -80,7 +80,7 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
         </div>
       </div>
 
-      <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55, background: '#fffbeb', borderBottom: '1px solid #fde68a' }}>
+      <div style={{ padding: '10px 16px', fontSize: 12, color: 'var(--pn-warning)', lineHeight: 1.55, background: 'var(--pn-warning-bg)', borderBottom: '1px solid #fde68a' }}>
         Tombstones from the last 30 days. After 30 days the <code>purgeOldTombstones</code> cron permanently deletes them — BigQuery keeps a copy for the 4 mirrored collections (clients, appointments, receipts, employees); other collections are gone forever past 30 days.
       </div>
 
@@ -93,7 +93,7 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
           items.map(item => (
             <div key={`${item.collection}-${item.id}`}
               style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 10, fontWeight: 700, color: '#7f1d1d', background: '#fef2f2', padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase', flexShrink: 0, minWidth: 86, textAlign: 'center' }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-danger)', background: 'var(--pn-danger-bg)', padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase', flexShrink: 0, minWidth: 86, textAlign: 'center' }}>
                 {item.collection}
               </span>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -107,7 +107,7 @@ export default function TrashPanel({ collections = null, title = '🗑 Recently 
                 </div>
               </div>
               <button onClick={() => handleRestore(item)} disabled={busy}
-                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #16a34a', background: busy ? '#f0fdf4' : 'var(--pn-surface)', color: '#16a34a', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, flexShrink: 0 }}>
+                style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #16a34a', background: busy ? 'var(--pn-success-bg)' : 'var(--pn-surface)', color: 'var(--pn-success)', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, flexShrink: 0 }}>
                 {busy ? '…' : '↩ Restore'}
               </button>
             </div>

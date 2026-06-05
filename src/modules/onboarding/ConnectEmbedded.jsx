@@ -73,7 +73,7 @@ function ConnectShell({ components, children, onError }) {
 
   if (err) {
     return (
-      <div style={{ padding: 14, borderRadius: 8, background: '#fef2f2', border: '1px solid #fecaca', color: '#7f1d1d', fontSize: 13 }}>
+      <div style={{ padding: 14, borderRadius: 8, background: 'var(--pn-danger-bg)', border: '1px solid #fecaca', color: 'var(--pn-danger)', fontSize: 13 }}>
         {err}
       </div>
     );

@@ -242,7 +242,7 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
           />
         )}
         {sendError && (
-          <div style={{ fontSize: 11, color: '#ef4444', marginBottom: 6, padding: '4px 8px', background: '#fef2f2', borderRadius: 6, border: '1px solid #fca5a5' }}>{sendError}</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-danger)', marginBottom: 6, padding: '4px 8px', background: 'var(--pn-danger-bg)', borderRadius: 6, border: '1px solid #fca5a5' }}>{sendError}</div>
         )}
         <div style={{ display: 'flex', gap: 8 }}>
           <input
@@ -429,7 +429,7 @@ function ComposeModal({ senderName, onClose, onSent }) {
               placeholder={channel === 'sms' ? `Send an SMS to ${picked.name}…` : channel === 'email' ? `Email body…` : `Message ${picked.name}…`}
               rows={5}
               style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px', fontSize: 13, outline: 'none', resize: 'vertical', lineHeight: 1.5 }} />
-            {error && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 6, padding: '4px 8px', background: '#fef2f2', borderRadius: 6 }}>{error}</div>}
+            {error && <div style={{ fontSize: 11, color: 'var(--pn-danger)', marginTop: 6, padding: '4px 8px', background: 'var(--pn-danger-bg)', borderRadius: 6 }}>{error}</div>}
             <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
               <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={send} disabled={!canSend}

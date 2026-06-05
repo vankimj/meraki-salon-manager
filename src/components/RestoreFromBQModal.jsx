@@ -85,7 +85,7 @@ export default function RestoreFromBQModal({ collection, docId, label, onClose, 
             <div style={{ padding: 20, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>Loading snapshot history from BigQuery…</div>
           )}
           {loadErr && (
-            <div style={{ padding: 20, color: '#b91c1c', fontSize: 13, background: '#fef2f2', margin: 16, borderRadius: 8 }}>
+            <div style={{ padding: 20, color: 'var(--pn-danger)', fontSize: 13, background: 'var(--pn-danger-bg)', margin: 16, borderRadius: 8 }}>
               {loadErr}
             </div>
           )}
@@ -96,7 +96,7 @@ export default function RestoreFromBQModal({ collection, docId, label, onClose, 
           )}
           {snapshots && snapshots.length > 0 && snapshots.map(s => (
             <label key={s.timestamp}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 20px', cursor: 'pointer', borderBottom: '1px solid var(--pn-border)', background: chosen?.timestamp === s.timestamp ? '#f0faf6' : 'transparent' }}>
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 20px', cursor: 'pointer', borderBottom: '1px solid var(--pn-border)', background: chosen?.timestamp === s.timestamp ? 'var(--pn-success-bg)' : 'transparent' }}>
               <input
                 type="radio"
                 name="snapshot"

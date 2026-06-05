@@ -675,7 +675,7 @@ function CancellationsBreakdown({ stats }) {
   // clear message instead of a bar of all zeros.
   if (total === 0 && ggBlocked === 0) {
     return (
-      <div style={{ padding: 14, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#78350f', lineHeight: 1.6 }}>
+      <div style={{ padding: 14, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: 'var(--pn-warning)', lineHeight: 1.6 }}>
         <strong>No appointments loaded for this period.</strong>
         <div style={{ marginTop: 6 }}>
           Cancellations live in the <strong>appointments</strong> collection (GG sales imports populate <strong>receipts</strong> only). To see cancellation history:
@@ -765,17 +765,17 @@ function CancellationsBreakdown({ stats }) {
       )}
 
       {noCancelData && (
-        <div style={{ marginTop: 12, padding: 10, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: '#78350f', lineHeight: 1.6 }}>
+        <div style={{ marginTop: 12, padding: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, fontSize: 11, color: 'var(--pn-warning)', lineHeight: 1.6 }}>
           <strong>No cancellations or no-shows in the appointments collection.</strong>
           <div style={{ marginTop: 4 }}>
             Status mix ({totalInPeriod.toLocaleString()} appointments):{' '}
-            <span style={{ color: '#9a3412' }}>
+            <span style={{ color: 'var(--pn-warning)' }}>
               {statusEntries.length === 0
                 ? '(none)'
                 : statusEntries.map(([s, n]) => `${s}: ${n.toLocaleString()}`).join(' · ')}
             </span>
           </div>
-          <div style={{ marginTop: 6, fontSize: 11, color: '#78350f' }}>
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--pn-warning)' }}>
             If you expected cancellations, double-check your GG Appointments CSV included statuses like "Cancelled" or "No Show" — the importer normalizes case + spacing.
           </div>
         </div>
@@ -2299,7 +2299,7 @@ function TaxReport() {
                           <Td>{d.count}</Td>
                           <Td>{d.count ? fmt$(d.revenue / d.count) : '—'}</Td>
                           <td style={{ padding: '8px 4px', textAlign: 'right' }}>
-                            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: needs1099 ? '#fef2f2' : '#f0fdf4', color: needs1099 ? '#ef4444' : '#22c55e' }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: needs1099 ? 'var(--pn-danger-bg)' : 'var(--pn-success-bg)', color: needs1099 ? 'var(--pn-danger)' : 'var(--pn-success)' }}>
                               {needs1099 ? 'Required' : 'Not required'}
                             </span>
                           </td>
@@ -2486,7 +2486,7 @@ function KPICard({ label, value, sub, accent, current, prev }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
         <div style={{ fontSize: 28, fontWeight: 700, color: accent || 'var(--pn-text)', lineHeight: 1 }}>{value}</div>
         {delta && (
-          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: delta.up ? '#f0fdf4' : '#fef2f2', color: delta.up ? '#16a34a' : '#ef4444', flexShrink: 0 }}>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 7px', borderRadius: 6, background: delta.up ? 'var(--pn-success-bg)' : 'var(--pn-danger-bg)', color: delta.up ? 'var(--pn-success)' : 'var(--pn-danger)', flexShrink: 0 }}>
             {delta.up ? '↑' : '↓'} {delta.pct}%
           </span>
         )}
@@ -2936,7 +2936,7 @@ function AskAI() {
           </div>
         )}
         {error && (
-          <div style={{ alignSelf: 'flex-start', fontSize: 12, color: '#b91c1c', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, padding: '6px 10px' }}>
+          <div style={{ alignSelf: 'flex-start', fontSize: 12, color: 'var(--pn-danger)', background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, padding: '6px 10px' }}>
             {error}
           </div>
         )}

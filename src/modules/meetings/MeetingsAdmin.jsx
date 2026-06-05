@@ -259,7 +259,7 @@ export default function MeetingsAdmin() {
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < Math.min(4, stats.myActions.length - 1) ? '1px solid #fef3c7' : 'none' }}>
               <span style={{ fontSize: 13, flex: 1, color: 'var(--pn-text)' }}>{a.text}</span>
               {a.dueDate && (
-                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: a.overdue ? '#fee2e2' : '#fef3c7', color: a.overdue ? '#991b1b' : '#92400e' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: a.overdue ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)', color: a.overdue ? 'var(--pn-danger)' : 'var(--pn-warning)' }}>
                   {a.overdue ? 'OVERDUE · ' : ''}{a.dueDate}
                 </span>
               )}
@@ -455,7 +455,7 @@ function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDay
                 borderRight: i % 7 === 6 ? 'none' : '1px solid var(--pn-border)',
                 borderBottom: i < 35 ? '1px solid var(--pn-border)' : 'none',
                 padding: '4px 6px',
-                background: isToday ? '#eff6ff' : isWeekend && inMonth ? 'var(--pn-bg)' : 'var(--pn-surface)',
+                background: isToday ? 'var(--pn-info-bg)' : isWeekend && inMonth ? 'var(--pn-bg)' : 'var(--pn-surface)',
                 opacity: inMonth ? 1 : 0.45,
                 position: 'relative', minHeight: 96, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', gap: 2,
@@ -463,7 +463,7 @@ function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDay
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
                 <span style={{
                   fontSize: 11, fontWeight: isToday ? 800 : 600,
-                  color: isToday ? '#1e40af' : inMonth ? 'var(--pn-text)' : 'var(--pn-text-faint)',
+                  color: isToday ? 'var(--pn-info)' : inMonth ? 'var(--pn-text)' : 'var(--pn-text-faint)',
                   background: isToday ? '#3D95CE' : 'transparent',
                   WebkitBackgroundClip: isToday ? 'text' : 'unset',
                   padding: isToday ? '0 4px' : 0, borderRadius: 4,
@@ -638,7 +638,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
                 </span>
                 {meeting.private && (
                   <span title="Private — only the creator and listed participants can see this meeting's contents"
-                    style={{ fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: '#fef2f2', color: '#991b1b', letterSpacing: '.04em', textTransform: 'uppercase', border: '1px solid #fecaca' }}>
+                    style={{ fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', letterSpacing: '.04em', textTransform: 'uppercase', border: '1px solid #fecaca' }}>
                     🔒 Private
                   </span>
                 )}
@@ -658,7 +658,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
                     </span>
                   )}
                   {actionItems.length > 0 && (
-                    <span style={{ background: openItems > 0 ? '#fef3c7' : '#dcfce7', borderRadius: 4, padding: '1px 7px', color: openItems > 0 ? '#92400e' : '#166534' }}>
+                    <span style={{ background: openItems > 0 ? 'var(--pn-warning-bg)' : 'var(--pn-success-bg)', borderRadius: 4, padding: '1px 7px', color: openItems > 0 ? 'var(--pn-warning)' : 'var(--pn-success)' }}>
                       ⚡ {openItems > 0 ? `${openItems} open` : 'all done'} action item{actionItems.length === 1 ? '' : 's'}
                     </span>
                   )}
@@ -731,7 +731,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
               <button onClick={() => window.open(googleCalendarUrl(meeting), '_blank')} title="Add to Google Calendar" style={btnStyle}>📅 GCal</button>
               {onDuplicate && <button onClick={onDuplicate} title="Duplicate (next week)" style={btnStyle}>⎘ Repeat</button>}
               <button onClick={onEdit} style={btnStyle}>{past ? 'Notes' : 'Edit'}</button>
-              <button onClick={onDelete} style={{ ...btnStyle, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444' }}>✕</button>
+              <button onClick={onDelete} style={{ ...btnStyle, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)' }}>✕</button>
             </div>
           </div>
         </div>
@@ -741,9 +741,9 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
 }
 
 const ATT_STYLE = {
-  present: { color: '#166534', bg: '#dcfce7', label: 'PRESENT' },
-  late:    { color: '#92400e', bg: '#fef3c7', label: 'LATE' },
-  absent:  { color: '#991b1b', bg: '#fee2e2', label: 'ABSENT' },
+  present: { color: 'var(--pn-success)', bg: 'var(--pn-success-bg)', label: 'PRESENT' },
+  late:    { color: 'var(--pn-warning)', bg: 'var(--pn-warning-bg)', label: 'LATE' },
+  absent:  { color: 'var(--pn-danger)',  bg: 'var(--pn-danger-bg)',  label: 'ABSENT' },
   excused: { color: '#3730a3', bg: '#eef2ff', label: 'EXCUSED' },
 };
 function AttBadge({ value }) {
@@ -915,14 +915,14 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                 </div>
               </div>
 
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${isPrivate ? '#fca5a5' : 'var(--pn-border)'}`, background: isPrivate ? '#fef2f2' : 'var(--pn-bg)', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${isPrivate ? '#fca5a5' : 'var(--pn-border)'}`, background: isPrivate ? 'var(--pn-danger-bg)' : 'var(--pn-bg)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
                   style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#991b1b', flexShrink: 0, marginTop: 2 }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: isPrivate ? '#991b1b' : 'var(--pn-text)' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: isPrivate ? 'var(--pn-danger)' : 'var(--pn-text)' }}>
                     🔒 Private meeting
                   </div>
-                  <div style={{ fontSize: 11, color: isPrivate ? '#7f1d1d' : 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 11, color: isPrivate ? 'var(--pn-danger)' : 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
                     {isPrivate
                       ? 'Only you (the organizer) and listed participants can see the title, agenda, minutes, and action items. Other staff won\'t see this meeting in their list.'
                       : 'Visible to all tenant staff. Recommended for team meetings, training, daily huddles.'}
@@ -995,10 +995,10 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                     {selected.filter(k => !empKeys.includes(k)).map(k => {
                       const email = k.split('||')[1];
                       return (
-                        <div key={k} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: '#EBF5FF', color: '#1a5f8a', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <div key={k} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 20, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', display: 'flex', alignItems: 'center', gap: 4 }}>
                           {email}
                           <button onClick={() => setSelected(s => s.filter(x => x !== k))}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1a5f8a', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--pn-info)', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
                         </div>
                       );
                     })}
@@ -1082,7 +1082,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                   <div style={{ padding: '18px', textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12, border: '1px dashed var(--pn-border)', borderRadius: 8 }}>No action items yet.</div>
                 )}
                 {actionItems.map((a, i) => (
-                  <div key={a.id} style={{ marginBottom: 8, padding: 10, background: a.status === 'done' ? 'var(--pn-bg)' : '#fffbeb', border: `1px solid ${a.status === 'done' ? 'var(--pn-border)' : '#fde68a'}`, borderRadius: 8, opacity: a.status === 'done' ? 0.7 : 1 }}>
+                  <div key={a.id} style={{ marginBottom: 8, padding: 10, background: a.status === 'done' ? 'var(--pn-bg)' : 'var(--pn-warning-bg)', border: `1px solid ${a.status === 'done' ? 'var(--pn-border)' : '#fde68a'}`, borderRadius: 8, opacity: a.status === 'done' ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                       <input type="checkbox" checked={a.status === 'done'}
                         onChange={e => patchAction(i, { status: e.target.checked ? 'done' : 'open', completedAt: e.target.checked ? new Date().toISOString() : '' })}

@@ -202,18 +202,18 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
 
       {/* Tech-view impersonation banner */}
       {realIsAdmin && viewAs && (
-        <div style={{ background: '#fef3c7', borderBottom: '1px solid #fcd34d', padding: '6px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, fontSize: 12, color: '#92400e' }}>
+        <div style={{ background: 'var(--pn-warning-bg)', borderBottom: '1px solid #fcd34d', padding: '6px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, fontSize: 12, color: 'var(--pn-warning)' }}>
           <span>👤 Previewing as: <strong>{previewLabel(viewAs)}</strong> — changes are real; only the UI is restricted</span>
-          <button onClick={() => setViewAs(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, color: '#92400e', fontFamily: 'inherit', fontSize: 12, padding: '0 4px' }}>✕ Exit</button>
+          <button onClick={() => setViewAs(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, color: 'var(--pn-warning)', fontFamily: 'inherit', fontSize: 12, padding: '0 4px' }}>✕ Exit</button>
         </div>
       )}
 
       {/* Content — safe-area padding at bottom for iPhone home indicator */}
       {!isOnline && (
         <div style={{
-          background: '#fef3c7',
+          background: 'var(--pn-warning-bg)',
           borderBottom: '1px solid #fcd34d',
-          color: '#92400e',
+          color: 'var(--pn-warning)',
           padding: '8px 16px',
           fontSize: 13,
           fontWeight: 600,

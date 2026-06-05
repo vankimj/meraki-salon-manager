@@ -173,7 +173,7 @@ function ProductRow({ product: p, last, isAdmin, onEdit, onDelete, onAdjust }) {
             Edit
           </button>
           <button onClick={onDelete}
-            style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #fee2e2', background: '#fef2f2', color: '#ef4444', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #fee2e2', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             ×
           </button>
         </div>

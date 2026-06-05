@@ -559,7 +559,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               <Field label={<span style={{ color: client.allergies ? '#991b1b' : undefined, fontWeight: client.allergies ? 700 : undefined }}>{client.allergies ? '⚠ Allergies' : 'Allergies'}</span>}>
                 {isView
                   ? (client.allergies
-                      ? <span style={{ color: '#991b1b', fontWeight: 700, background: '#fef2f2', border: '1px solid #fca5a5', padding: '4px 10px', borderRadius: 8, display: 'inline-block', fontSize: 13 }}>⚠ {client.allergies}</span>
+                      ? <span style={{ color: 'var(--pn-danger)', fontWeight: 700, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', padding: '4px 10px', borderRadius: 8, display: 'inline-block', fontSize: 13 }}>⚠ {client.allergies}</span>
                       : <ViewVal>—</ViewVal>)
                   : <input value={client.allergies || ''} onChange={e => onChange({ allergies: e.target.value })} placeholder="e.g. Latex, acetone, gel" style={{ ...inp, borderColor: client.allergies ? '#f59e0b' : undefined, background: client.allergies ? '#fffbeb' : undefined }} />
                 }
@@ -632,9 +632,9 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                         <>
                           🔕 Opted out of marketing
                           {(client.marketingOptOutAt || client.marketingOptOutVia) && (
-                            <div style={{ fontSize: 11, fontWeight: 400, color: '#a16207', marginTop: 3 }}>
+                            <div style={{ fontSize: 11, fontWeight: 400, color: 'var(--pn-warning)', marginTop: 3 }}>
                               {client.marketingOptOutAt ? `Opted out: ${new Date(client.marketingOptOutAt).toLocaleString()}` : ''}
-                              {client.marketingOptOutVia ? <> · via <code style={{ background: '#fef3c7', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>{client.marketingOptOutVia}</code></> : ''}
+                              {client.marketingOptOutVia ? <> · via <code style={{ background: 'var(--pn-warning-bg)', padding: '0 4px', borderRadius: 3, fontSize: 10 }}>{client.marketingOptOutVia}</code></> : ''}
                             </div>
                           )}
                         </>
@@ -721,12 +721,12 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                     {!recordingReview ? (
                       <button
                         onClick={() => setRecordingReview(true)}
-                        style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #bbf7d0', background: '#f0fdf4', color: '#16a34a', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px solid #bbf7d0', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                         📥 Record review received
                       </button>
                     ) : (
-                      <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: 10 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: '#16a34a', marginBottom: 8 }}>Record Google Review</div>
+                      <div style={{ background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 8, padding: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-success)', marginBottom: 8 }}>Record Google Review</div>
                         <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                           {[1,2,3,4,5].map(n => (
                             <button key={n} onClick={() => setReviewForm(f => ({ ...f, rating: n }))}
@@ -1200,7 +1200,7 @@ function CopyBtn({ value }) {
 
 function DupWarn({ name }) {
   return (
-    <div style={{ fontSize: 11, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 9px', marginTop: 4 }}>
+    <div style={{ fontSize: 11, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 9px', marginTop: 4 }}>
       ⚠ Already used by <strong>{name}</strong>
     </div>
   );

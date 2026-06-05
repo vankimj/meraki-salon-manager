@@ -182,7 +182,7 @@ export default function Phase5Team({ onboarding, onAdvance, saving }) {
       </Section>
 
       {err && (
-        <div style={{ padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12, marginBottom: 12 }}>{err}</div>
+        <div style={{ padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12, marginBottom: 12 }}>{err}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
@@ -216,7 +216,7 @@ function TechRow({ emp, checked, onToggle }) {
         </div>
       </div>
       {invited && (
-        <span style={{ fontSize: 10, fontWeight: 700, color: '#065f46', background: '#d1fae5', padding: '3px 8px', borderRadius: 10, letterSpacing: '.04em' }}>
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', padding: '3px 8px', borderRadius: 10, letterSpacing: '.04em' }}>
           ✓ Invited
         </span>
       )}

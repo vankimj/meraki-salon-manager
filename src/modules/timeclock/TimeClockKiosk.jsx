@@ -54,11 +54,11 @@ function chipForState(state, events) {
   const mins = Math.max(0, Math.floor(sinceMs / 60000));
   if (state === 'on_break') {
     const color = mins >= 60 ? '#b91c1c' : mins >= 30 ? '#b45309' : '#7c5400';
-    return { label: `☕ Break ${mins}m`, bg: mins >= 60 ? '#fee2e2' : '#fff7ed', fg: color };
+    return { label: `☕ Break ${mins}m`, bg: mins >= 60 ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)', fg: mins >= 60 ? 'var(--pn-danger)' : 'var(--pn-warning)' };
   }
   if (state === 'in') {
     const since = fmtClock(new Date(last.at));
-    return { label: `🟢 In since ${since}`, bg: '#ecfdf5', fg: '#166534' };
+    return { label: `🟢 In since ${since}`, bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)' };
   }
   return null;
 }

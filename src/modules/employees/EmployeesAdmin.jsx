@@ -222,7 +222,7 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
           {!emp.active && <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginLeft: 6, fontWeight: 400 }}>inactive</span>}
           {totalServices > 0 && (
             <span title={svcConfigured ? `Performs ${svcCount} of ${totalServices} services` : 'No services configured — defaults to all services'}
-              style={{ fontSize: 10, marginLeft: 8, padding: '1px 7px', borderRadius: 10, fontWeight: 600, background: svcConfigured ? '#EBF4FB' : '#fef3c7', color: svcConfigured ? '#1a5f8a' : '#92400e', border: `1px solid ${svcConfigured ? '#bfdbfe' : '#fde68a'}` }}>
+              style={{ fontSize: 10, marginLeft: 8, padding: '1px 7px', borderRadius: 10, fontWeight: 600, background: svcConfigured ? 'var(--pn-info-bg)' : 'var(--pn-warning-bg)', color: svcConfigured ? 'var(--pn-info)' : 'var(--pn-warning)', border: `1px solid ${svcConfigured ? '#bfdbfe' : '#fde68a'}` }}>
               {svcConfigured ? `${svcCount} svc` : 'all svc (default)'}
             </span>
           )}
@@ -244,7 +244,7 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
             {emp.inviteSentAt ? '↻ Resend' : '📨 Invite'}
           </button>
         )}
-        <button onClick={onToggleActive} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: emp.active ? '#f0fdf4' : 'var(--pn-surface-muted)', color: emp.active ? '#16a34a' : 'var(--pn-text-faint)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+        <button onClick={onToggleActive} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: emp.active ? 'var(--pn-success-bg)' : 'var(--pn-surface-muted)', color: emp.active ? 'var(--pn-success)' : 'var(--pn-text-faint)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
           {emp.active ? 'Active' : 'Inactive'}
         </button>
         <Btn onClick={onEdit}>Edit</Btn>
@@ -543,7 +543,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[['commission', 'Commission'], ['hourly', 'Hourly'], ['both', 'Both']].map(([v, l]) => (
                     <button key={v} onClick={() => onChange({ rateType: v })}
-                      style={{ flex: 1, padding: '7px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.rateType === v ? '#3D95CE' : 'var(--pn-border)'}`, background: emp.rateType === v ? '#EBF4FB' : 'var(--pn-bg)', color: emp.rateType === v ? '#1a5f8a' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ flex: 1, padding: '7px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.rateType === v ? '#3D95CE' : 'var(--pn-border)'}`, background: emp.rateType === v ? 'var(--pn-info-bg)' : 'var(--pn-bg)', color: emp.rateType === v ? 'var(--pn-info)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {l}
                     </button>
                   ))}
@@ -566,7 +566,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[['cash', 'Cash'], ['check', 'Check'], ['direct_deposit', 'Direct Deposit']].map(([v, l]) => (
                     <button key={v} onClick={() => onChange({ paymentPref: v })}
-                      style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.paymentPref === v ? '#2D7A5F' : 'var(--pn-border)'}`, background: emp.paymentPref === v ? '#EDFAF3' : 'var(--pn-bg)', color: emp.paymentPref === v ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ flex: 1, padding: '7px 4px', fontSize: 11, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${emp.paymentPref === v ? '#2D7A5F' : 'var(--pn-border)'}`, background: emp.paymentPref === v ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: emp.paymentPref === v ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       {l}
                     </button>
                   ))}
@@ -712,10 +712,10 @@ function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDur
               const canDo   = isAll || checked;
               const override = durations[s.id];
               return (
-                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 8, border: `1px solid ${checked ? '#3D95CE' : 'var(--pn-border)'}`, background: checked ? '#EBF4FB' : 'var(--pn-bg)' }}>
+                <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 9px', borderRadius: 8, border: `1px solid ${checked ? '#3D95CE' : 'var(--pn-border)'}`, background: checked ? 'var(--pn-info-bg)' : 'var(--pn-bg)' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontFamily: 'inherit', flex: 1, minWidth: 0 }}>
                     <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} style={{ flexShrink: 0 }} />
-                    <span style={{ fontSize: 12, color: checked ? '#1a5f8a' : 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
+                    <span style={{ fontSize: 12, color: checked ? 'var(--pn-info)' : 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
                   </label>
                   {canDo && (
                     <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>

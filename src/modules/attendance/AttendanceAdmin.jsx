@@ -218,7 +218,7 @@ export default function AttendanceAdmin() {
                   </button>
                   {e && isAdmin && (
                     <button onClick={() => { if (window.confirm(`Clear ${emp.name}'s entry for ${date}?`)) clearEntry(emp.id); }}
-                      style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       ✕
                     </button>
                   )}
@@ -352,12 +352,12 @@ function chipForState(state, events) {
   const last = events[events.length - 1];
   const mins = Math.max(0, Math.floor((Date.now() - new Date(last.at).getTime()) / 60000));
   if (state === 'on_break') {
-    const fg = mins >= 60 ? '#b91c1c' : mins >= 30 ? '#b45309' : '#7c5400';
-    const bg = mins >= 60 ? '#fee2e2' : mins >= 30 ? '#fff7ed' : '#fef9c3';
+    const fg = mins >= 60 ? 'var(--pn-danger)' : 'var(--pn-warning)';
+    const bg = mins >= 60 ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)';
     return { label: `☕ Break ${mins}m`, bg, fg };
   }
   if (state === 'in') {
-    return { label: `🟢 In since ${fmtTime(last.at)}`, bg: '#ecfdf5', fg: '#166534' };
+    return { label: `🟢 In since ${fmtTime(last.at)}`, bg: 'var(--pn-success-bg)', fg: 'var(--pn-success)' };
   }
   return null;
 }
@@ -408,7 +408,7 @@ function LiveNowGrid({ employees, entryByEmpId, isAdmin, showToast }) {
               style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
                 padding: '14px 8px 12px',
-                background: state === 'out' ? 'var(--pn-bg)' : state === 'on_break' ? '#fffbeb' : '#f0fdf4',
+                background: state === 'out' ? 'var(--pn-bg)' : state === 'on_break' ? 'var(--pn-warning-bg)' : 'var(--pn-success-bg)',
                 border: `1px solid ${state === 'out' ? 'var(--pn-border)' : state === 'on_break' ? '#fde68a' : '#bbf7d0'}`,
                 borderRadius: 10,
                 cursor: isAdmin ? 'pointer' : 'not-allowed',

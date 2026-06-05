@@ -75,7 +75,7 @@ export default function GoogleReviewsPanel() {
             <div style={{ fontSize: 13, color: 'var(--pn-text-faint)', textAlign: 'center', padding: '20px 0' }}>No reviews yet</div>
           ) : stats.leaderboard.map((t, i) => (
             <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: i < stats.leaderboard.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
-              <div style={{ width: 22, height: 22, borderRadius: '50%', background: i === 0 ? '#fef9c3' : 'var(--pn-surface-alt)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i === 0 ? '#a16207' : 'var(--pn-text-muted)', flexShrink: 0 }}>
+              <div style={{ width: 22, height: 22, borderRadius: '50%', background: i === 0 ? 'var(--pn-warning-bg)' : 'var(--pn-surface-alt)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-warning)' : 'var(--pn-text-muted)', flexShrink: 0 }}>
                 {i === 0 ? '🥇' : i + 1}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -127,7 +127,7 @@ export default function GoogleReviewsPanel() {
                     <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{fmtDate(r.sentAt || r.createdAt)}</div>
                   </div>
                   <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, letterSpacing: '.04em', textTransform: 'uppercase', flexShrink: 0,
-                    background: gotReview ? '#f0fdf4' : 'var(--pn-surface-muted)', color: gotReview ? '#16a34a' : 'var(--pn-text-faint)' }}>
+                    background: gotReview ? 'var(--pn-success-bg)' : 'var(--pn-surface-muted)', color: gotReview ? 'var(--pn-success)' : 'var(--pn-text-faint)' }}>
                     {gotReview ? '✓ Reviewed' : 'Pending'}
                   </span>
                 </div>

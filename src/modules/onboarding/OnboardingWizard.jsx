@@ -196,7 +196,7 @@ export default function OnboardingWizard({ onDismiss, initialPhase }) {
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 22px' }}>
           {phaseNode}
           {error && (
-            <div style={{ marginTop: 14, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>
+            <div style={{ marginTop: 14, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>
               {error}
             </div>
           )}
@@ -228,7 +228,7 @@ function Overlay({ children }) {
 function ComingSoonPhase({ title, onAdvance, saving }) {
   return (
     <div>
-      <div style={{ padding: 18, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13, lineHeight: 1.55 }}>
+      <div style={{ padding: 18, borderRadius: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', color: 'var(--pn-warning)', fontSize: 13, lineHeight: 1.55 }}>
         <strong>{title}</strong> — this step is part of the wizard and ships in a later sprint. For now, you can skip it and configure {title.toLowerCase()} from the regular Admin sections.
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>

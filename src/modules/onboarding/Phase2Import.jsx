@@ -90,10 +90,10 @@ function MigratePath({ onboarding, onAdvance, saving }) {
 
       {picked && !picked.supported && (
         <Section title={`${picked.label} import`}>
-          <div style={{ padding: 14, borderRadius: 10, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 13, color: '#92400e', lineHeight: 1.55 }}>
+          <div style={{ padding: 14, borderRadius: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', fontSize: 13, color: 'var(--pn-warning)', lineHeight: 1.55 }}>
             <strong>{picked.label} importer — coming soon.</strong>
             <div style={{ marginTop: 6 }}>
-              We're building per-source parsers as tenants need them. For now, email <a href="mailto:hello@plumenexus.com" style={{ color: '#92400e', fontWeight: 600 }}>hello@plumenexus.com</a> with
+              We're building per-source parsers as tenants need them. For now, email <a href="mailto:hello@plumenexus.com" style={{ color: 'var(--pn-warning)', fontWeight: 600 }}>hello@plumenexus.com</a> with
               your {picked.label} export and we'll hand-import it for you within one business day.
             </div>
             <div style={{ marginTop: 6, fontSize: 12 }}>
@@ -134,7 +134,7 @@ function SourceCard({ src, selected, onClick }) {
       <div style={{ fontSize: 18 }}>{src.icon}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginTop: 2 }}>{src.label}</div>
       {!src.supported && (
-        <div style={{ position: 'absolute', top: 6, right: 8, fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fde68a', padding: '1px 6px', borderRadius: 6, letterSpacing: '.06em' }}>
+        <div style={{ position: 'absolute', top: 6, right: 8, fontSize: 9, fontWeight: 700, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', padding: '1px 6px', borderRadius: 6, letterSpacing: '.06em' }}>
           SOON
         </div>
       )}
@@ -217,7 +217,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
       {templateId !== 'none' && (
         <Section title="Ready to seed">
           {importedCount > 0 ? (
-            <div style={{ padding: 12, borderRadius: 8, background: '#ecfdf5', border: '1px solid #6ee7b7', color: '#065f46', fontSize: 13 }}>
+            <div style={{ padding: 12, borderRadius: 8, background: 'var(--pn-success-bg)', border: '1px solid #6ee7b7', color: 'var(--pn-success)', fontSize: 13 }}>
               ✓ {importedCount} services imported. You can re-run if you picked a different template.
             </div>
           ) : (
@@ -234,7 +234,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
       )}
 
       {error && (
-        <div style={{ marginTop: 12, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>{error}</div>
+        <div style={{ marginTop: 12, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>{error}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
@@ -262,7 +262,7 @@ function TemplateCard({ t, selected, onClick }) {
       <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginTop: 2 }}>{t.label}</div>
       <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.4 }}>{t.desc}</div>
       {!t.supported && (
-        <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 9, fontWeight: 700, color: '#92400e', background: '#fde68a', padding: '1px 6px', borderRadius: 6, letterSpacing: '.06em' }}>
+        <div style={{ position: 'absolute', top: 8, right: 10, fontSize: 9, fontWeight: 700, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', padding: '1px 6px', borderRadius: 6, letterSpacing: '.06em' }}>
           SOON
         </div>
       )}

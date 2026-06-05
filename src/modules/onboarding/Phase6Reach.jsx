@@ -140,7 +140,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
         </div>
         {tenantInfo?.sandboxMode ? (
           <div style={{
-            fontSize: 12, color: '#92400e', background: '#fef3c7',
+            fontSize: 12, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)',
             border: '1px solid #fcd34d', borderRadius: 8,
             padding: '10px 14px', marginBottom: 12, lineHeight: 1.55,
           }}>
@@ -168,7 +168,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
       </Section>
 
       {err && (
-        <div style={{ marginTop: 12, padding: 10, background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, color: '#7f1d1d', fontSize: 12 }}>{err}</div>
+        <div style={{ marginTop: 12, padding: 10, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', borderRadius: 8, color: 'var(--pn-danger)', fontSize: 12 }}>{err}</div>
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 18 }}>
