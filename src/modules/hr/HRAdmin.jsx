@@ -257,9 +257,9 @@ export default function HRAdmin() {
 
   if (isScheduler) {
     return (
-      <div style={{ textAlign: 'center', padding: '64px 20px', color: '#aaa', fontSize: 14 }}>
+      <div style={{ textAlign: 'center', padding: '64px 20px', color: 'var(--pn-text-faint)', fontSize: 14 }}>
         <div style={{ fontSize: 32, marginBottom: 16 }}>🔒</div>
-        <div style={{ fontWeight: 600, color: '#555', marginBottom: 8 }}>Access Restricted</div>
+        <div style={{ fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 8 }}>Access Restricted</div>
         <div>HR is available to admin staff only.</div>
       </div>
     );
@@ -269,7 +269,7 @@ export default function HRAdmin() {
     <div style={{ maxWidth: 960, margin: '0 auto', paddingBottom: 24 }}>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid #e8e8e8', marginBottom: 20, flexShrink: 0, overflowX: 'auto' }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--pn-border)', marginBottom: 20, flexShrink: 0, overflowX: 'auto' }}>
         {(isTech ? [
           { id: 'handbook', label: 'Handbook' },
           { id: '1099s',    label: '1099s'    },
@@ -283,10 +283,10 @@ export default function HRAdmin() {
           { id: 'gusto',    label: 'Gusto' },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '8px 20px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? '#1a1a1a' : '#aaa', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid #1a1a1a' : '2px solid transparent', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
+            style={{ padding: '8px 20px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-faint)', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid var(--pn-text)' : '2px solid transparent', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
             {t.label}
             {t.badge > 0 && (
-              <span style={{ marginLeft: 6, fontSize: 10, background: '#e8e8e8', color: '#555', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>
+              <span style={{ marginLeft: 6, fontSize: 10, background: 'var(--pn-border)', color: 'var(--pn-text-muted)', borderRadius: 10, padding: '1px 6px', fontWeight: 600 }}>
                 {t.badge}
               </span>
             )}
@@ -416,7 +416,7 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
           </PillBtn>
         ))}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 11, color: '#bbb' }}>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>
             {fmtDateShort(startDate)} – {fmtDateShort(endDate)}
           </span>
           {!loading && hasPayable && (
@@ -429,12 +429,12 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
       </div>
 
       {loading ? (
-        <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>Loading…</div>
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
       ) : (
-        <div className="scroll-x" style={{ borderRadius: 12, border: '1px solid #e8e8e8' }}>
-        <div style={{ background: '#fff', borderRadius: 12, minWidth: 560, overflow: 'hidden' }}>
+        <div className="scroll-x" style={{ borderRadius: 12, border: '1px solid var(--pn-border)' }}>
+        <div style={{ background: 'var(--pn-surface)', borderRadius: 12, minWidth: 560, overflow: 'hidden' }}>
           {/* Header */}
-          <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '8px 16px', background: '#fafafa', borderBottom: '1px solid #e8e8e8', fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '8px 16px', background: 'var(--pn-surface-muted)', borderBottom: '1px solid var(--pn-border)', fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em' }}>
             <span>Tech</span>
             <span style={{ textAlign: 'right' }}>Appts</span>
             <span style={{ textAlign: 'right' }}>Revenue</span>
@@ -450,10 +450,10 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
             const isExpanded = expanded[row.emp.name];
             return (
               <div key={row.emp.name}>
-                <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '10px 16px', borderBottom: isLast && !isExpanded ? 'none' : '1px solid #f5f5f5', alignItems: 'center' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '10px 16px', borderBottom: isLast && !isExpanded ? 'none' : '1px solid var(--pn-border)', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <EmpAvatar emp={row.emp} size={28} />
-                    <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{row.emp.name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{row.emp.name}</span>
                     {row.techAppts.length > 0 && (
                       <button onClick={() => setExpanded(e => ({ ...e, [row.emp.name]: !e[row.emp.name] }))}
                         style={{ fontSize: 10, color: '#3D95CE', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: 'inherit' }}>
@@ -461,36 +461,36 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
                       </button>
                     )}
                   </div>
-                  <span style={{ textAlign: 'right', fontSize: 13, color: '#555' }}>{row.techAppts.length}</span>
-                  <span style={{ textAlign: 'right', fontSize: 13, color: '#555' }}>{fmt$(row.serviceRevenue)}</span>
-                  <span style={{ textAlign: 'right', fontSize: 12, color: '#888' }}>
+                  <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--pn-text-muted)' }}>{row.techAppts.length}</span>
+                  <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--pn-text-muted)' }}>{fmt$(row.serviceRevenue)}</span>
+                  <span style={{ textAlign: 'right', fontSize: 12, color: 'var(--pn-text-muted)' }}>
                     {row.commissionPct ? `${row.commissionPct}%` : row.isHourly ? `$${row.emp.hourlyRate}/hr` : '—'}
                   </span>
-                  <span style={{ textAlign: 'right', fontSize: 13, color: '#333' }}>
+                  <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--pn-text)' }}>
                     {row.earned !== null
                       ? fmt$(row.earned)
-                      : <span style={{ color: '#bbb', fontSize: 11 }}>hourly</span>}
+                      : <span style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>hourly</span>}
                   </span>
                   <span style={{ textAlign: 'right', fontSize: 13, color: row.bonusTotal > 0 ? '#22c55e' : '#bbb' }}>
                     {row.bonusTotal > 0 ? fmt$(row.bonusTotal) : '—'}
                   </span>
-                  <span style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{fmt$(row.total)}</span>
+                  <span style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>{fmt$(row.total)}</span>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <button onClick={() => { setAddBonusFor(row.emp.name); setBonusAmt(''); setBonusNote(''); }}
-                      style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+                      style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
                       + Bonus
                     </button>
                   </div>
                 </div>
 
                 {isExpanded && (
-                  <div style={{ background: '#fafafa', borderBottom: isLast ? 'none' : '1px solid #f0f0f0', padding: '8px 16px 8px 52px' }}>
+                  <div style={{ background: 'var(--pn-surface-muted)', borderBottom: isLast ? 'none' : '1px solid var(--pn-border)', padding: '8px 16px 8px 52px' }}>
                     {row.techAppts.map(a => {
                       const rev = (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
                       return (
-                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', padding: '4px 0', fontSize: 12, color: '#555', borderBottom: '1px solid #f0f0f0' }}>
+                        <div key={a.id} style={{ display: 'flex', alignItems: 'center', padding: '4px 0', fontSize: 12, color: 'var(--pn-text-muted)', borderBottom: '1px solid var(--pn-border)' }}>
                           <span style={{ flex: 1 }}>{a.clientName || 'Walk-in'}</span>
-                          <span style={{ marginRight: 16, color: '#aaa' }}>{(a.services || []).map(s => s.name).filter(Boolean).join(', ') || '—'}</span>
+                          <span style={{ marginRight: 16, color: 'var(--pn-text-faint)' }}>{(a.services || []).map(s => s.name).filter(Boolean).join(', ') || '—'}</span>
                           <span style={{ width: 72, textAlign: 'right', fontWeight: 500 }}>{fmt$(rev)}</span>
                         </div>
                       );
@@ -508,17 +508,17 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
           })}
 
           {/* Grand total */}
-          <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '10px 16px', background: '#f8f9fa', borderTop: '2px solid #e8e8e8', alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Total ({rows.length} techs)</span>
+          <div style={{ display: 'grid', gridTemplateColumns: COL, padding: '10px 16px', background: 'var(--pn-bg)', borderTop: '2px solid var(--pn-border)', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)' }}>Total ({rows.length} techs)</span>
             <span />
-            <span style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#555' }}>
+            <span style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--pn-text-muted)' }}>
               {fmt$(rows.reduce((s, r) => s + r.serviceRevenue, 0))}
             </span>
             <span /><span />
             <span style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#22c55e' }}>
               {fmt$(rows.reduce((s, r) => s + r.bonusTotal, 0))}
             </span>
-            <span style={{ textAlign: 'right', fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{fmt$(grandTotal)}</span>
+            <span style={{ textAlign: 'right', fontSize: 16, fontWeight: 800, color: 'var(--pn-text)' }}>{fmt$(grandTotal)}</span>
             <span />
           </div>
         </div>
@@ -529,25 +529,25 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
       {addBonusFor && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
              onClick={e => { if (e.target === e.currentTarget) setAddBonusFor(null); }}>
-          <div style={{ background: '#fff', borderRadius: 14, width: 320, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+          <div style={{ background: 'var(--pn-surface)', borderRadius: 14, width: 320, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>Add Bonus — {addBonusFor}</div>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Amount ($) *</label>
+              <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Amount ($) *</label>
               <input type="number" min={0} value={bonusAmt} onChange={e => setBonusAmt(e.target.value)}
                 placeholder="e.g. 50" autoFocus style={inp} />
             </div>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Notes (optional)</label>
+              <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Notes (optional)</label>
               <input value={bonusNote} onChange={e => setBonusNote(e.target.value)}
                 placeholder="Holiday, performance, etc." style={inp} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setAddBonusFor(null)}
-                style={{ flex: 1, padding: '9px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+                style={{ flex: 1, padding: '9px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
                 Cancel
               </button>
               <button onClick={submitBonus} disabled={saving || !bonusAmt}
-                style={{ flex: 2, padding: '9px', borderRadius: 8, border: 'none', background: saving || !bonusAmt ? '#d0d0d0' : '#22c55e', color: '#fff', cursor: saving || !bonusAmt ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+                style={{ flex: 2, padding: '9px', borderRadius: 8, border: 'none', background: saving || !bonusAmt ? 'var(--pn-border-strong)' : '#22c55e', color: '#fff', cursor: saving || !bonusAmt ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
                 {saving ? 'Saving…' : 'Add Bonus'}
               </button>
             </div>
@@ -577,7 +577,7 @@ function RunPayrollModal({ rows, startDate, endDate, grandTotal, onConfirm, onCl
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Header */}
         <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
@@ -593,22 +593,22 @@ function RunPayrollModal({ rows, startDate, endDate, grandTotal, onConfirm, onCl
         {/* Body */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
           {payableRows.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 40, color: '#bbb', fontSize: 13 }}>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--pn-text-faint)', fontSize: 13 }}>
               No payable amounts in this period.
             </div>
           ) : (
             payableRows.map(row => (
-              <div key={row.emp.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
+              <div key={row.emp.name} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--pn-border)' }}>
                 <EmpAvatar emp={row.emp} size={32} />
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{row.emp.name}</div>
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{row.emp.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>
                     {row.techAppts.length} appts
                     {row.earned !== null && ` · ${fmt$(row.earned)} earned`}
                     {row.bonusTotal > 0 && ` · ${fmt$(row.bonusTotal)} bonus`}
                   </div>
                 </div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>
                   {fmt$(row.total)}
                 </div>
                 <select
@@ -625,13 +625,13 @@ function RunPayrollModal({ rows, startDate, endDate, grandTotal, onConfirm, onCl
 
         {/* Footer */}
         {payableRows.length > 0 && (
-          <div style={{ padding: '12px 18px', borderTop: '1px solid #f0f0f0', flexShrink: 0 }}>
+          <div style={{ padding: '12px 18px', borderTop: '1px solid var(--pn-border)', flexShrink: 0 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-              <span style={{ fontSize: 12, color: '#888' }}>Total payout</span>
-              <span style={{ fontSize: 20, fontWeight: 800, color: '#1a1a1a' }}>{fmt$(grandTotal)}</span>
+              <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Total payout</span>
+              <span style={{ fontSize: 20, fontWeight: 800, color: 'var(--pn-text)' }}>{fmt$(grandTotal)}</span>
             </div>
             <button onClick={submit} disabled={saving}
-              style={{ width: '100%', background: saving ? '#aaa' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', border: 'none', borderRadius: 12, padding: '13px', fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              style={{ width: '100%', background: saving ? 'var(--pn-text-faint)' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', border: 'none', borderRadius: 12, padding: '13px', fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
               {saving ? 'Recording…' : 'Record Payroll Run'}
             </button>
           </div>
@@ -655,7 +655,7 @@ function HistoryTab({ runs, onMarkPaid }) {
 
   if (!runs.length) {
     return (
-      <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>
+      <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>
         No payroll runs recorded yet. Use the Payroll tab to run payroll.
       </div>
     );
@@ -670,17 +670,17 @@ function HistoryTab({ runs, onMarkPaid }) {
         const isExpanded = expanded[run.id];
 
         return (
-          <div key={run.id} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', overflow: 'hidden' }}>
+          <div key={run.id} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', overflow: 'hidden' }}>
             {/* Run header row */}
             <div
               onClick={() => setExpanded(e => ({ ...e, [run.id]: !e[run.id] }))}
               style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
                   {fmtDateShort(run.startDate)} – {fmtDateShort(run.endDate)}
                 </div>
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                   Recorded {fmtDateFull(run.createdAt)} · {totalCount} tech{totalCount !== 1 ? 's' : ''}
                 </div>
               </div>
@@ -688,28 +688,28 @@ function HistoryTab({ runs, onMarkPaid }) {
                 <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: allPaid ? '#EDFAF3' : '#FEF9EC', color: allPaid ? '#166534' : '#92400e', border: `1px solid ${allPaid ? '#86efac' : '#fcd34d'}` }}>
                   {allPaid ? '✓ All paid' : `${paidCount}/${totalCount} paid`}
                 </span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{fmt$(run.grandTotal)}</span>
-                <span style={{ fontSize: 14, color: '#bbb' }}>{isExpanded ? '▲' : '▼'}</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: 'var(--pn-text)' }}>{fmt$(run.grandTotal)}</span>
+                <span style={{ fontSize: 14, color: 'var(--pn-text-faint)' }}>{isExpanded ? '▲' : '▼'}</span>
               </div>
             </div>
 
             {/* Expanded per-tech rows */}
             {isExpanded && (
-              <div style={{ borderTop: '1px solid #f0f0f0' }}>
+              <div style={{ borderTop: '1px solid var(--pn-border)' }}>
                 {run.techs.map((t, i) => (
-                  <div key={t.techName} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px 9px 28px', borderBottom: i < run.techs.length - 1 ? '1px solid #f8f8f8' : 'none', background: t.paidAt ? '#fafffe' : '#fff' }}>
+                  <div key={t.techName} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px 9px 28px', borderBottom: i < run.techs.length - 1 ? '1px solid var(--pn-border)' : 'none', background: t.paidAt ? '#fafffe' : 'var(--pn-surface)' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{t.techName}</span>
-                      <span style={{ fontSize: 11, color: '#bbb', marginLeft: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{t.techName}</span>
+                      <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 8 }}>
                         {t.apptCount} appts
                         {t.earned != null && ` · ${fmt$(t.earned)} earned`}
                         {t.bonusTotal > 0 && ` · ${fmt$(t.bonusTotal)} bonus`}
                       </span>
                     </div>
-                    <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>
+                    <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0 }}>
                       {METHODS.find(m => m.id === t.method)?.label || t.method}
                     </span>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>
                       {fmt$(t.total)}
                     </span>
                     {t.paidAt ? (
@@ -752,42 +752,42 @@ function BonusesTab({ bonuses, employees, onAdd, onDelete }) {
   return (
     <>
       {/* Add form */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', padding: '16px 20px', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Add Bonus</div>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '16px 20px', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 12 }}>Add Bonus</div>
         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
           <div style={{ flex: 2, minWidth: 140 }}>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Tech</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Tech</label>
             <select value={techName} onChange={e => setTechName(e.target.value)} style={inp}>
               <option value="">Select tech…</option>
               {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
             </select>
           </div>
           <div style={{ width: 100 }}>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Amount ($)</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Amount ($)</label>
             <input type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)} placeholder="0" style={inp} />
           </div>
           <div style={{ flex: 3, minWidth: 160 }}>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Notes</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Notes</label>
             <input value={notes} onChange={e => setNotes(e.target.value)} placeholder="Holiday, performance, etc." style={inp} />
           </div>
           <button onClick={submit} disabled={saving || !techName || !amount}
-            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: saving || !techName || !amount ? '#d0d0d0' : '#22c55e', color: '#fff', cursor: saving || !techName || !amount ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, flexShrink: 0, alignSelf: 'flex-end' }}>
+            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: saving || !techName || !amount ? 'var(--pn-border-strong)' : '#22c55e', color: '#fff', cursor: saving || !techName || !amount ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, flexShrink: 0, alignSelf: 'flex-end' }}>
             {saving ? 'Saving…' : 'Add'}
           </button>
         </div>
       </div>
 
       {bonuses.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#bbb', fontSize: 13 }}>No bonuses recorded yet.</div>
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--pn-text-faint)', fontSize: 13 }}>No bonuses recorded yet.</div>
       ) : (
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', overflow: 'hidden' }}>
+        <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', overflow: 'hidden' }}>
           {bonuses.map((b, i) => (
-            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < bonuses.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: i < bonuses.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{b.techName}</div>
-                {b.notes && <div style={{ fontSize: 11, color: '#888', marginTop: 1 }}>{b.notes}</div>}
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{b.techName}</div>
+                {b.notes && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>{b.notes}</div>}
               </div>
-              <div style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>{fmtDateFull(b.createdAt)}</div>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0 }}>{fmtDateFull(b.createdAt)}</div>
               <div style={{ fontSize: 15, fontWeight: 700, color: '#22c55e', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>{fmt$(b.amount)}</div>
               <button onClick={() => onDelete(b.id)}
                 style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
@@ -820,7 +820,7 @@ function Stars({ value, size = 13 }) {
   return (
     <span style={{ fontSize: size, letterSpacing: -1, lineHeight: 1 }}>
       {[1, 2, 3, 4, 5].map(n => (
-        <span key={n} style={{ color: n <= filled ? '#f59e0b' : '#e0e0e0' }}>★</span>
+        <span key={n} style={{ color: n <= filled ? '#f59e0b' : 'var(--pn-border)' }}>★</span>
       ))}
     </span>
   );
@@ -835,7 +835,7 @@ function StarPicker({ value, onChange }) {
           onClick={() => onChange(n)}
           onMouseEnter={() => setHover(n)}
           onMouseLeave={() => setHover(0)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: n <= (hover || value) ? '#f59e0b' : '#e0e0e0', padding: '0 1px', lineHeight: 1 }}>
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 22, color: n <= (hover || value) ? '#f59e0b' : 'var(--pn-border)', padding: '0 1px', lineHeight: 1 }}>
           ★
         </button>
       ))}
@@ -868,7 +868,7 @@ function ReviewsTab({ reviews, employees, onNew, onEdit, onDelete }) {
       </div>
 
       {reviews.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>
           No reviews yet. Create the first one.
         </div>
       ) : (
@@ -878,30 +878,30 @@ function ReviewsTab({ reviews, employees, onNew, onEdit, onDelete }) {
             const emp = employees.find(e => e.name === name);
             const isOpen = expanded[name];
             return (
-              <div key={name} style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', overflow: 'hidden' }}>
+              <div key={name} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', overflow: 'hidden' }}>
                 {/* Tech header */}
                 <div onClick={() => setExpanded(e => ({ ...e, [name]: !e[name] }))}
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer' }}>
                   {emp && <EmpAvatar emp={emp} size={32} />}
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a' }}>{name}</div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>{name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>
                       {empReviews.length} review{empReviews.length !== 1 ? 's' : ''}
                     </div>
                   </div>
-                  <span style={{ fontSize: 13, color: '#bbb' }}>{isOpen ? '▲' : '▼'}</span>
+                  <span style={{ fontSize: 13, color: 'var(--pn-text-faint)' }}>{isOpen ? '▲' : '▼'}</span>
                 </div>
 
                 {isOpen && (
-                  <div style={{ borderTop: '1px solid #f0f0f0' }}>
+                  <div style={{ borderTop: '1px solid var(--pn-border)' }}>
                     {empReviews.map((rev, i) => {
                       const avg = avgRating(rev.ratings);
                       return (
-                        <div key={rev.id} style={{ padding: '12px 16px 12px 28px', borderBottom: i < empReviews.length - 1 ? '1px solid #f8f8f8' : 'none' }}>
+                        <div key={rev.id} style={{ padding: '12px 16px 12px 28px', borderBottom: i < empReviews.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
                           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                                <span style={{ fontSize: 13, fontWeight: 600, color: '#333' }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
                                   {fmtDateShort(rev.periodStart)} – {fmtDateShort(rev.periodEnd)}
                                 </span>
                                 <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
@@ -912,21 +912,21 @@ function ReviewsTab({ reviews, employees, onNew, onEdit, onDelete }) {
                                 </span>
                                 {avg > 0 && <Stars value={avg} size={12} />}
                               </div>
-                              <div style={{ display: 'flex', gap: 14, fontSize: 11, color: '#aaa', marginTop: 4 }}>
+                              <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>
                                 {rev.metrics?.appointmentCount > 0 && (
                                   <span>{rev.metrics.appointmentCount} appts · {fmt$(rev.metrics.revenue)} · avg {fmt$(rev.metrics.avgTicket)}</span>
                                 )}
                                 <span>Reviewed {fmtDateShort(rev.reviewDate || rev.createdAt)}</span>
                               </div>
                               {rev.strengths && (
-                                <div style={{ fontSize: 12, color: '#555', marginTop: 6, lineHeight: 1.5 }}>
+                                <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 6, lineHeight: 1.5 }}>
                                   <span style={{ fontWeight: 500, color: '#2D7A5F' }}>Strengths: </span>{rev.strengths}
                                 </div>
                               )}
                             </div>
                             <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                               <button onClick={() => onEdit(rev)}
-                                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>
+                                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                                 Edit
                               </button>
                               <button onClick={() => onDelete(rev.id)}
@@ -1029,7 +1029,7 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 300, overflowY: 'auto', padding: '20px 0' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,.3)', marginTop: 0 }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,.3)', marginTop: 0 }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1044,7 +1044,7 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
 
           {/* Employee */}
           <div>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Employee</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Employee</label>
             <select value={empId} onChange={e => setEmpId(e.target.value)} style={inp}>
               <option value="">Select employee…</option>
               {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
@@ -1053,7 +1053,7 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
 
           {/* Period */}
           <div>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Review Period</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Review Period</label>
             <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
               {REVIEW_PERIODS.map(p => (
                 <PillBtn key={p.days} active={periodDays === p.days} onClick={() => applyPeriodDays(p.days)}>{p.label}</PillBtn>
@@ -1061,15 +1061,15 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setPeriodDays(0); }} style={{ ...inp, flex: 1 }} />
-              <span style={{ color: '#bbb', flexShrink: 0 }}>–</span>
+              <span style={{ color: 'var(--pn-text-faint)', flexShrink: 0 }}>–</span>
               <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setPeriodDays(0); }} style={{ ...inp, flex: 1 }} />
             </div>
           </div>
 
           {/* Metrics strip */}
-          <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '10px 14px', border: '1px solid #e8e8e8' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
-              Performance Metrics {metricsLoading && <span style={{ fontWeight: 400, color: '#bbb' }}>loading…</span>}
+          <div style={{ background: 'var(--pn-bg)', borderRadius: 10, padding: '10px 14px', border: '1px solid var(--pn-border)' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.07em', marginBottom: 8 }}>
+              Performance Metrics {metricsLoading && <span style={{ fontWeight: 400, color: 'var(--pn-text-faint)' }}>loading…</span>}
             </div>
             {metrics && !metricsLoading ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
@@ -1081,24 +1081,24 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
                 ].map(m => (
                   <div key={m.label} style={{ textAlign: 'center' }}>
                     <div style={{ fontSize: 16, fontWeight: 700, color: '#2D7A5F' }}>{m.value}</div>
-                    <div style={{ fontSize: 10, color: '#aaa', marginTop: 1 }}>{m.label}</div>
+                    <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 1 }}>{m.label}</div>
                   </div>
                 ))}
               </div>
             ) : !metricsLoading ? (
-              <div style={{ fontSize: 12, color: '#bbb' }}>Select an employee and period to load metrics.</div>
+              <div style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>Select an employee and period to load metrics.</div>
             ) : null}
           </div>
 
           {/* Ratings */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 10 }}>
               Ratings {avg > 0 && <span style={{ fontWeight: 400, color: '#f59e0b', marginLeft: 6 }}>avg {avg.toFixed(1)} ★</span>}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {RATING_FIELDS.map(f => (
                 <div key={f.key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, color: '#333' }}>{f.label}</span>
+                  <span style={{ fontSize: 13, color: 'var(--pn-text)' }}>{f.label}</span>
                   <StarPicker value={ratings[f.key] || 0} onChange={val => setRating(f.key, val)} />
                 </div>
               ))}
@@ -1113,7 +1113,7 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
             { key: 'notes',        label: 'Internal notes (admin only)', value: notes,      set: setNotes },
           ].map(s => (
             <div key={s.key}>
-              <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>{s.label}</label>
+              <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>{s.label}</label>
               <textarea value={s.value} onChange={e => s.set(e.target.value)}
                 rows={3} placeholder="Enter notes…"
                 style={{ ...inp, resize: 'vertical', lineHeight: 1.5 }} />
@@ -1123,13 +1123,13 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8 }}>
+        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8 }}>
           <button onClick={onClose}
-            style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+            style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
             Cancel
           </button>
           <button onClick={() => submit('draft')} disabled={saving || !empId}
-            style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d0d0d0', background: saving || !empId ? '#d0d0d0' : '#fafafa', color: saving || !empId ? '#fff' : '#555', cursor: saving || !empId ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+            style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: saving || !empId ? 'var(--pn-border-strong)' : 'var(--pn-surface-muted)', color: saving || !empId ? '#fff' : 'var(--pn-text-muted)', cursor: saving || !empId ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
             Save Draft
           </button>
           <button onClick={() => submit('final')} disabled={saving || !empId}
@@ -1161,11 +1161,11 @@ function HandbookTab({ employees }) {
   if (!loading && isTech) {
     const mySig = gUser?.email ? sigs.find(s => s.email === gUser.email && s.version === doc.version) : null;
     return (
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', padding: '20px 24px' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a' }}>{doc.title || 'Employee Handbook'}</div>
-            <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>Version {doc.version}{doc.publishedAt ? ` · Published ${fmtDateFull(doc.publishedAt)}` : ''}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)' }}>{doc.title || 'Employee Handbook'}</div>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 2 }}>Version {doc.version}{doc.publishedAt ? ` · Published ${fmtDateFull(doc.publishedAt)}` : ''}</div>
           </div>
           {mySig ? (
             <span style={{ fontSize: 12, fontWeight: 600, color: '#16a34a', padding: '4px 12px', borderRadius: 20, background: '#EDFAF3', border: '1px solid #86efac', flexShrink: 0 }}>
@@ -1178,11 +1178,11 @@ function HandbookTab({ employees }) {
           )}
         </div>
         {doc.content ? (
-          <div style={{ fontSize: 14, color: '#333', lineHeight: 1.75, whiteSpace: 'pre-wrap', borderTop: '1px solid #f0f0f0', paddingTop: 16 }}>
+          <div style={{ fontSize: 14, color: 'var(--pn-text)', lineHeight: 1.75, whiteSpace: 'pre-wrap', borderTop: '1px solid var(--pn-border)', paddingTop: 16 }}>
             {doc.content}
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#bbb', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--pn-text-faint)', fontSize: 13 }}>
             No handbook content published yet.
           </div>
         )}
@@ -1230,7 +1230,7 @@ function HandbookTab({ employees }) {
   }
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>Loading…</div>;
+    return <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>;
   }
 
   const sigByEmail = {};
@@ -1240,26 +1240,26 @@ function HandbookTab({ employees }) {
   return (
     <>
       {/* Editor */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', padding: '16px 20px', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 14 }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '16px 20px', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 14 }}>
           Handbook Editor
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
           <div style={{ flex: 3 }}>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Title</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Title</label>
             <input value={doc.title || ''} onChange={e => setDoc(d => ({ ...d, title: e.target.value }))}
               placeholder="Employee Handbook" style={inp} />
           </div>
           <div style={{ width: 90 }}>
-            <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Version</label>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Version</label>
             <input value={doc.version || ''} onChange={e => setDoc(d => ({ ...d, version: e.target.value }))}
               placeholder="1.0" style={inp} />
           </div>
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 3 }}>Content</label>
+          <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Content</label>
           <textarea
             value={doc.content || ''}
             onChange={e => setDoc(d => ({ ...d, content: e.target.value }))}
@@ -1270,46 +1270,46 @@ function HandbookTab({ employees }) {
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#bbb' }}>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>
             {doc.publishedAt ? `Last published ${fmtDateFull(doc.publishedAt)}` : 'Not yet published'}
           </span>
           <button onClick={handlePublish} disabled={saving}
-            style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: saving ? '#d0d0d0' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+            style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: saving ? 'var(--pn-border-strong)' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
             {saving ? 'Saving…' : '⬆ Publish Handbook'}
           </button>
         </div>
       </div>
 
       {/* Signing roster */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #e8e8e8', padding: '16px 20px' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '16px 20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em' }}>
               Signing Roster
             </div>
-            <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 2 }}>
               {signedCount}/{employees.length} signed v{doc.version}
             </div>
           </div>
           <button onClick={sendAllReminders} disabled={!!sending || !doc.publishedAt}
             title={!doc.publishedAt ? 'Publish handbook first' : ''}
-            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', cursor: !!sending || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, color: !!sending || !doc.publishedAt ? '#bbb' : '#555' }}>
+            style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', cursor: !!sending || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, color: !!sending || !doc.publishedAt ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)' }}>
             {sending === 'all' ? 'Sending…' : '📧 Remind All Unsigned'}
           </button>
         </div>
 
         {employees.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 24, color: '#bbb', fontSize: 13 }}>No employees on record.</div>
+          <div style={{ textAlign: 'center', padding: 24, color: 'var(--pn-text-faint)', fontSize: 13 }}>No employees on record.</div>
         ) : employees.map((emp, i) => {
           const sig    = emp.email ? sigByEmail[emp.email] : null;
           const signed = sig?.version === doc.version;
           return (
-            <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < employees.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+            <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: i < employees.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
               <EmpAvatar emp={emp} size={28} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>{emp.name}</div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{emp.name}</div>
                 {signed ? (
-                  <div style={{ fontSize: 11, color: '#aaa', marginTop: 1 }}>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>
                     Signed v{sig.version} on {fmtDateFull(sig.signedAt)}
                   </div>
                 ) : !emp.email ? (
@@ -1325,7 +1325,7 @@ function HandbookTab({ employees }) {
                   onClick={() => sendReminder(emp)}
                   disabled={!!sending || !emp.email || !doc.publishedAt}
                   title={!emp.email ? 'No email on file' : !doc.publishedAt ? 'Publish handbook first' : ''}
-                  style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fcd34d', background: '#FEF9EC', color: !!sending || !emp.email || !doc.publishedAt ? '#bbb' : '#92400e', cursor: !!sending || !emp.email || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                  style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fcd34d', background: '#FEF9EC', color: !!sending || !emp.email || !doc.publishedAt ? 'var(--pn-text-faint)' : '#92400e', cursor: !!sending || !emp.email || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                   {sending === emp.name ? '…' : '📧 Remind'}
                 </button>
               )}
@@ -1509,11 +1509,11 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
         {isAdmin && (
           <>
             <select value={selectedYear} onChange={e => setSelectedYear(Number(e.target.value))}
-              style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 12px', fontSize: 13, background: '#fff' }}>
+              style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 12px', fontSize: 13, background: 'var(--pn-surface)' }}>
               {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
             </select>
             <button onClick={handleGenerate} disabled={generating}
-              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: generating ? '#d0d0d0' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: generating ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+              style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: generating ? 'var(--pn-border-strong)' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: generating ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
               {generating ? 'Generating…' : `Generate ${selectedYear} 1099s`}
             </button>
             {genMsg && <span style={{ fontSize: 12, color: genMsg.startsWith('✓') ? '#16a34a' : '#ef4444' }}>{genMsg}</span>}
@@ -1524,14 +1524,14 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
             Inactive contractors may access forms from the past 3 years.
           </div>
         )}
-        <div style={{ marginLeft: isAdmin ? 'auto' : 0, fontSize: 12, color: '#aaa' }}>
+        <div style={{ marginLeft: isAdmin ? 'auto' : 0, fontSize: 12, color: 'var(--pn-text-faint)' }}>
           {visibleForms.length} form{visibleForms.length !== 1 ? 's' : ''}
         </div>
       </div>
 
       {/* IRS $600 note */}
       {isAdmin && (
-        <div style={{ fontSize: 11, color: '#888', background: '#f8f9fa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '8px 12px', marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '8px 12px', marginBottom: 16 }}>
           IRS requirement: 1099-NEC must be issued for contractors paid $600 or more in a calendar year. Deadline: January 31.
           Auto-generation runs January 30 each year.
         </div>
@@ -1539,13 +1539,13 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
 
       {/* Forms list */}
       {visibleForms.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>
           {isAdmin ? `No 1099 forms for ${selectedYear}. Click "Generate" to create them from payroll data.` : 'No 1099 forms on file.'}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {/* Column headers */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px 120px 80px', gap: 8, padding: '0 14px', fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px 120px 80px', gap: 8, padding: '0 14px', fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
             <div>Contractor</div>
             <div style={{ textAlign: 'center' }}>Year</div>
             <div style={{ textAlign: 'right' }}>Box 1 (NEC)</div>
@@ -1556,16 +1556,16 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
             const emp = empMap[form.techName];
             const isInactive = emp && emp.active === false;
             return (
-              <div key={form.id} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px 120px 80px', gap: 8, alignItems: 'center', background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10, padding: '10px 14px' }}>
+              <div key={form.id} style={{ display: 'grid', gridTemplateColumns: '1fr 80px 140px 120px 80px', gap: 8, alignItems: 'center', background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                   {emp && <EmpAvatar emp={emp} size={30} />}
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: isInactive ? '#aaa' : '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.techName}</div>
-                    {form.techEmail && <div style={{ fontSize: 10, color: '#bbb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.techEmail}</div>}
+                    <div style={{ fontSize: 13, fontWeight: 600, color: isInactive ? 'var(--pn-text-faint)' : 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.techName}</div>
+                    {form.techEmail && <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{form.techEmail}</div>}
                   </div>
-                  {isInactive && <span style={{ fontSize: 10, color: '#bbb', background: '#f5f5f5', border: '1px solid #e0e0e0', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>inactive</span>}
+                  {isInactive && <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', background: 'var(--pn-surface-alt)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '1px 7px', flexShrink: 0 }}>inactive</span>}
                 </div>
-                <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: '#555' }}>{form.year}</div>
+                <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 600, color: 'var(--pn-text-muted)' }}>{form.year}</div>
                 <div style={{ textAlign: 'right' }}>
                   <span style={{ fontSize: 15, fontWeight: 700, color: Number(form.totalEarnings) >= 600 ? '#2D7A5F' : '#f59e0b' }}>
                     ${Number(form.totalEarnings || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -1574,7 +1574,7 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
                     <div style={{ fontSize: 9, color: '#f59e0b' }}>below $600 threshold</div>
                   )}
                 </div>
-                <div style={{ fontSize: 10, color: '#aaa' }}>
+                <div style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>
                   {form.generatedAt ? new Date(form.generatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'}
                 </div>
                 <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
@@ -1584,7 +1584,7 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
                   </button>
                   {isAdmin && (
                     <button onClick={() => { if (confirm('Delete this 1099?')) onDelete(form.id); }}
-                      style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fff', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-surface)', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
                       ×
                     </button>
                   )}
@@ -1650,28 +1650,28 @@ function GustoTab({ employees, payrollRuns }) {
   return (
     <div style={{ maxWidth: 560 }}>
       {/* Connection card */}
-      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '20px 20px', marginBottom: 16 }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '20px 20px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={{ width: 44, height: 44, borderRadius: 10, background: '#f9f4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🦖</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>Gusto Payroll</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>Gusto Payroll</div>
             {isConnected ? (
               <div style={{ fontSize: 12, color: '#16a34a', marginTop: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
                 <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: '#16a34a' }} />
                 Connected · {gusto.companyName || 'Company linked'}
               </div>
             ) : (
-              <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>Not connected</div>
+              <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 2 }}>Not connected</div>
             )}
           </div>
           {isConnected ? (
             <button onClick={handleSync} disabled={syncing}
-              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d0d0d0', background: syncing ? '#f0f0f0' : '#fafafa', color: '#555', fontSize: 12, fontWeight: 600, cursor: syncing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: syncing ? 'var(--pn-surface-alt)' : 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', fontSize: 12, fontWeight: 600, cursor: syncing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
               {syncing ? 'Syncing…' : '↺ Sync Employees'}
             </button>
           ) : (
             <button onClick={handleConnect} disabled={connecting}
-              style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: connecting ? '#ccc' : '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: connecting ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: connecting ? 'var(--pn-border-strong)' : '#7c3aed', color: '#fff', fontSize: 12, fontWeight: 700, cursor: connecting ? 'default' : 'pointer', fontFamily: 'inherit' }}>
               {connecting ? 'Opening…' : 'Connect Gusto'}
             </button>
           )}
@@ -1686,19 +1686,19 @@ function GustoTab({ employees, payrollRuns }) {
 
       {/* Synced employees */}
       {isConnected && (
-        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Employee sync status</span>
-            <span style={{ fontSize: 11, color: '#aaa' }}>{gustoMatchedEmps.length}/{employees.length} matched</span>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)' }}>Employee sync status</span>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{gustoMatchedEmps.length}/{employees.length} matched</span>
           </div>
           {employees.map((e, i) => (
-            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: i < employees.length - 1 ? '1px solid #f8f8f8' : 'none' }}>
+            <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 16px', borderBottom: i < employees.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
               <EmpAvatar emp={e} size={28} />
-              <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{e.name}</span>
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--pn-text)' }}>{e.name}</span>
               {e.gustoId ? (
                 <span style={{ fontSize: 10, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 6, padding: '2px 8px' }}>✓ Linked</span>
               ) : (
-                <span style={{ fontSize: 10, color: '#bbb', background: '#f8f8f8', borderRadius: 6, padding: '2px 8px' }}>Not matched</span>
+                <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', background: 'var(--pn-surface-muted)', borderRadius: 6, padding: '2px 8px' }}>Not matched</span>
               )}
             </div>
           ))}
@@ -1707,23 +1707,23 @@ function GustoTab({ employees, payrollRuns }) {
 
       {/* Payroll runs → submit to Gusto */}
       {isConnected && payrollRuns.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>Submit payroll runs</span>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--pn-border)' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)' }}>Submit payroll runs</span>
           </div>
           {payrollRuns.slice(0, 6).map((run, i) => (
-            <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: i < Math.min(payrollRuns.length, 6) - 1 ? '1px solid #f8f8f8' : 'none' }}>
+            <div key={run.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: i < Math.min(payrollRuns.length, 6) - 1 ? '1px solid var(--pn-border)' : 'none' }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a1a' }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>
                   {fmtDateShort(run.startDate)} – {fmtDateShort(run.endDate)}
                 </div>
-                <div style={{ fontSize: 11, color: '#aaa' }}>{run.techs.length} techs · {fmt$(run.grandTotal)}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{run.techs.length} techs · {fmt$(run.grandTotal)}</div>
               </div>
               {run.gustoPayrollId ? (
                 <span style={{ fontSize: 10, fontWeight: 600, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 6, padding: '2px 8px' }}>Submitted</span>
               ) : (
                 <button onClick={() => handleSubmitPayroll(run)} disabled={submitting === run.id}
-                  style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: 'none', background: submitting === run.id ? '#ccc' : '#7c3aed', color: '#fff', cursor: submitting === run.id ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                  style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: 'none', background: submitting === run.id ? 'var(--pn-border-strong)' : '#7c3aed', color: '#fff', cursor: submitting === run.id ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                   {submitting === run.id ? 'Submitting…' : 'Submit →'}
                 </button>
               )}
@@ -1733,7 +1733,7 @@ function GustoTab({ employees, payrollRuns }) {
       )}
 
       {!isConnected && (
-        <div style={{ textAlign: 'center', padding: '32px 0', color: '#bbb', fontSize: 13 }}>
+        <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--pn-text-faint)', fontSize: 13 }}>
           Connect Gusto above to sync employees and submit payroll runs automatically.
         </div>
       )}
@@ -1744,10 +1744,10 @@ function GustoTab({ employees, payrollRuns }) {
 // ── Shared primitives ──────────────────────────────────
 function PillBtn({ active, onClick, children }) {
   return (
-    <button onClick={onClick} style={{ padding: '6px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#555', border: `1px solid ${active ? '#1a1a1a' : '#d8d8d8'}`, cursor: 'pointer' }}>
+    <button onClick={onClick} style={{ padding: '6px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? 'var(--pn-text)' : 'var(--pn-surface)', color: active ? '#fff' : 'var(--pn-text-muted)', border: `1px solid ${active ? 'var(--pn-text)' : 'var(--pn-border-strong)'}`, cursor: 'pointer' }}>
       {children}
     </button>
   );
 }
 
-const inp = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };
+const inp = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-surface-muted)', boxSizing: 'border-box' };

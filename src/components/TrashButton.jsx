@@ -17,7 +17,7 @@ export default function TrashButton({ collections, scope }) {
       <button
         onClick={() => setOpen(true)}
         title="Recently deleted"
-        style={{ fontSize: 13, padding: '7px 12px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#6b7280', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}
+        style={{ fontSize: 13, padding: '7px 12px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}
       >
         🗑 Trash
       </button>

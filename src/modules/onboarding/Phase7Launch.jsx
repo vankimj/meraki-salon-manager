@@ -18,7 +18,7 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         Here's where everything stands. Anything pending below can be finished now or later —
         you can come back to this wizard from <strong>Admin → Onboarding</strong> any time.
       </div>
@@ -28,7 +28,7 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
           const s = phaseStatus(onboarding, p.key);
           const icon  = s === 'done'    ? '✓' : s === 'skipped' ? '○' : '⚠';
           const color = s === 'done'    ? '#10b981' : s === 'skipped' ? '#9ca3af' : '#f59e0b';
-          const bg    = s === 'done'    ? '#ecfdf5' : s === 'skipped' ? '#f8f9fa' : '#fffbeb';
+          const bg    = s === 'done'    ? '#ecfdf5' : s === 'skipped' ? 'var(--pn-bg)' : '#fffbeb';
           const label = s === 'done'    ? 'Complete' : s === 'skipped' ? 'Skipped' : 'Pending';
           return (
             <button key={p.key} onClick={() => p.key !== 'launch' && onJump?.(p.key)}
@@ -41,7 +41,7 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
                 fontFamily: 'inherit', textAlign: 'left',
               }}>
               <span style={{ width: 20, textAlign: 'center', fontSize: 14, color, fontWeight: 700 }}>{icon}</span>
-              <span style={{ flex: 1, fontSize: 13, color: '#1a1a1a' }}>{p.label}</span>
+              <span style={{ flex: 1, fontSize: 13, color: 'var(--pn-text)' }}>{p.label}</span>
               <span style={{ fontSize: 11, color, fontWeight: 600 }}>{label}</span>
             </button>
           );
@@ -79,4 +79,4 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
 }
 
 const btnPrimary   = { padding: '9px 22px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

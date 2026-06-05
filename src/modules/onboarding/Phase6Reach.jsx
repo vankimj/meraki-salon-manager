@@ -86,7 +86,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         Turn on the channels you want to reach clients through. Online booking is how new
         customers find you; SMS is how you remind everyone of their next appointment.
         Either can be enabled (or disabled) later from Admin.
@@ -94,7 +94,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
 
       <Section title="Online booking">
         {!bookingCfg ? (
-          <div style={{ padding: 14, color: '#888', fontSize: 13 }}>Loading…</div>
+          <div style={{ padding: 14, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
         ) : (
           <>
             <ToggleRow
@@ -109,7 +109,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
               <>
                 <Row label="Your public booking URL">
                   <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <code style={{ fontSize: 12, background: '#f3f4f6', padding: '5px 8px', borderRadius: 6, color: '#1a1a1a', wordBreak: 'break-all' }}>
+                    <code style={{ fontSize: 12, background: 'var(--pn-surface-alt)', padding: '5px 8px', borderRadius: 6, color: 'var(--pn-text)', wordBreak: 'break-all' }}>
                       {bookingUrl}
                     </code>
                     <button type="button" onClick={() => { navigator.clipboard?.writeText(bookingUrl); showToast('Copied to clipboard'); }}
@@ -134,7 +134,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
       </Section>
 
       <Section title={`SMS · ${smsStatusLabel}`}>
-        <div style={{ fontSize: 12, color: '#666', lineHeight: 1.55, marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 10 }}>
           We provision a verified toll-free number on your behalf. Setup runs through Twilio
           (3-step wizard below). Once approved you can send reminders + marketing campaigns.
         </div>
@@ -162,7 +162,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
             wizard now and circle back when they need to send reminders.
           </div>
         )}
-        <div style={{ border: '1px solid #e8e8e8', borderRadius: 10, overflow: 'hidden' }}>
+        <div style={{ border: '1px solid var(--pn-border)', borderRadius: 10, overflow: 'hidden' }}>
           <SmsSetup />
         </div>
       </Section>
@@ -193,30 +193,30 @@ function Section({ title, children }) {
 function Row({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5 }}>{label}</div>
       {children}
     </div>
   );
 }
 
 function Hint({ children }) {
-  return <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{children}</div>;
+  return <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>{children}</div>;
 }
 
 function ToggleRow({ checked, onChange, disabled, label, desc }) {
   return (
-    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid #e8e8e8', borderRadius: 8, cursor: disabled ? 'default' : 'pointer', background: '#fff', opacity: disabled ? 0.7 : 1 }}>
+    <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: disabled ? 'default' : 'pointer', background: 'var(--pn-surface)', opacity: disabled ? 0.7 : 1 }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} disabled={disabled}
         style={{ marginTop: 2, accentColor: '#5b3b8c' }} />
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{label}</div>
-        {desc && <div style={{ fontSize: 11, color: '#666', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{label}</div>
+        {desc && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
       </div>
     </label>
   );
 }
 
-const inp = { boxSizing: 'border-box', width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff' };
+const inp = { boxSizing: 'border-box', width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid var(--pn-border-strong)', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: 'var(--pn-surface)' };
 const btnPrimary   = { padding: '9px 16px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSmall     = { padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSmall     = { padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

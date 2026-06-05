@@ -70,7 +70,7 @@ export default function Phase4Branding({ onboarding, onAdvance, saving }) {
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         How you show up on the splash screen, the booking page, and every email. You can
         tweak any of this later from Admin → Settings → Branding.
       </div>
@@ -95,7 +95,7 @@ export default function Phase4Branding({ onboarding, onAdvance, saving }) {
       <Section title="Brand color">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <input type="color" value={brandColor} onChange={e => setBrandColor(e.target.value)}
-            style={{ width: 56, height: 40, border: '1px solid #d8d8d8', borderRadius: 8, cursor: 'pointer', padding: 2, background: '#fff' }} />
+            style={{ width: 56, height: 40, border: '1px solid var(--pn-border-strong)', borderRadius: 8, cursor: 'pointer', padding: 2, background: 'var(--pn-surface)' }} />
           <input type="text" value={brandColor} onChange={e => setBrandColor(e.target.value)}
             style={{ ...inp, width: 140 }} placeholder="#2D7A5F" />
           <div style={{ flex: 1, padding: '8px 14px', borderRadius: 8, background: brandColor, color: '#fff', fontSize: 13, fontWeight: 700 }}>
@@ -148,16 +148,16 @@ function Section({ title, children }) {
 function Row({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 5 }}>{label}</div>
       {children}
     </div>
   );
 }
 
 function Hint({ children }) {
-  return <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{children}</div>;
+  return <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>{children}</div>;
 }
 
-const inp = { boxSizing: 'border-box', width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff' };
+const inp = { boxSizing: 'border-box', width: '100%', padding: '8px 10px', fontSize: 13, border: '1px solid var(--pn-border-strong)', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: 'var(--pn-surface)' };
 const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

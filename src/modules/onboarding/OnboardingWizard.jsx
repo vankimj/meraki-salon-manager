@@ -113,7 +113,7 @@ export default function OnboardingWizard({ onDismiss, initialPhase }) {
   if (onboarding === undefined && !bootstrapped) {
     return (
       <Overlay>
-        <div style={{ padding: 40, textAlign: 'center', color: '#666' }}>Loading…</div>
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Loading…</div>
       </Overlay>
     );
   }
@@ -151,26 +151,26 @@ export default function OnboardingWizard({ onDismiss, initialPhase }) {
 
   return (
     <Overlay>
-      <div style={{ width: '94%', maxWidth: 820, maxHeight: '92vh', background: '#fff', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ width: '94%', maxWidth: 820, maxHeight: '92vh', background: 'var(--pn-surface)', borderRadius: 16, boxShadow: '0 20px 60px rgba(0,0,0,.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
-        <div style={{ padding: '14px 22px', borderBottom: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.18em', textTransform: 'uppercase' }}>
               Onboarding · Step {idx + 1} of {PHASES.length}
             </div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: '#1a1a1a', marginTop: 2 }}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)', marginTop: 2 }}>
               {curPhase.label}
             </div>
           </div>
           <button onClick={() => onDismiss?.()} disabled={saving}
             title="Close — your progress is saved"
-            style={{ background: 'none', border: 'none', fontSize: 22, color: '#999', cursor: 'pointer', padding: 4, lineHeight: 1 }}>
+            style={{ background: 'none', border: 'none', fontSize: 22, color: 'var(--pn-text-faint)', cursor: 'pointer', padding: 4, lineHeight: 1 }}>
             ×
           </button>
         </div>
 
         {/* Progress strip */}
-        <div style={{ padding: '12px 22px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+        <div style={{ padding: '12px 22px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
           <div style={{ display: 'flex', gap: 6 }}>
             {PHASES.map((p, i) => {
               const s = phaseStatus(onboarding, p.key);
@@ -203,12 +203,12 @@ export default function OnboardingWizard({ onDismiss, initialPhase }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 22px', borderTop: '1px solid #e8e8e8', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#fafafa' }}>
+        <div style={{ padding: '12px 22px', borderTop: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'var(--pn-bg)' }}>
           <button onClick={back} disabled={saving || idx === 0}
-            style={{ padding: '8px 14px', fontSize: 13, fontWeight: 600, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, color: idx === 0 ? '#bbb' : '#555', cursor: saving || idx === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '8px 14px', fontSize: 13, fontWeight: 600, background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, color: idx === 0 ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)', cursor: saving || idx === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             ← Back
           </button>
-          <div style={{ fontSize: 11, color: '#888' }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
             {done ? '✓ Onboarding complete' : 'Your progress is saved automatically.'}
           </div>
         </div>
@@ -233,7 +233,7 @@ function ComingSoonPhase({ title, onAdvance, saving }) {
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
         <button onClick={() => onAdvance({ skip: true })} disabled={saving}
-          style={{ padding: '9px 16px', fontSize: 13, fontWeight: 600, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, color: '#555', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+          style={{ padding: '9px 16px', fontSize: 13, fontWeight: 600, background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, color: 'var(--pn-text-muted)', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
           {saving ? 'Saving…' : 'Skip for now →'}
         </button>
       </div>

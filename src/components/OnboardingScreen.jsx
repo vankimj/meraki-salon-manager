@@ -69,10 +69,10 @@ export default function OnboardingScreen() {
         <div style={{ fontSize: 11, color: '#3D9E8A', letterSpacing: 6, marginTop: 4 }}>SALON MANAGEMENT</div>
       </div>
 
-      <div style={{ width: '100%', maxWidth: 480, background: '#fff', borderRadius: 20, overflow: 'hidden', boxShadow: '0 8px 48px rgba(0,0,0,.35)' }}>
+      <div style={{ width: '100%', maxWidth: 480, background: 'var(--pn-surface)', borderRadius: 20, overflow: 'hidden', boxShadow: '0 8px 48px rgba(0,0,0,.35)' }}>
         {/* Progress bar */}
         {step < 3 && (
-          <div style={{ height: 3, background: '#f0f0f0' }}>
+          <div style={{ height: 3, background: 'var(--pn-surface-alt)' }}>
             <div style={{ height: '100%', background: '#2D7A5F', width: step === 1 ? '33%' : '66%', transition: 'width .3s' }} />
           </div>
         )}
@@ -81,8 +81,8 @@ export default function OnboardingScreen() {
           {/* ── Step 1: Salon info ── */}
           {step === 1 && (
             <>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Set up your salon</div>
-              <div style={{ fontSize: 13, color: '#888', marginBottom: 28 }}>Takes 60 seconds. No credit card required.</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>Set up your salon</div>
+              <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 28 }}>Takes 60 seconds. No credit card required.</div>
 
               <Field label="Salon name" required>
                 <input
@@ -92,7 +92,7 @@ export default function OnboardingScreen() {
                   style={inputStyle}
                 />
                 {slug && (
-                  <div style={{ fontSize: 11, color: '#888', marginTop: 5 }}>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 5 }}>
                     Your URL: <span style={{ color: '#2D7A5F', fontWeight: 600 }}>{slug}.tipflow.app</span>
                   </div>
                 )}
@@ -113,7 +113,7 @@ export default function OnboardingScreen() {
                   placeholder="you@yoursalon.com"
                   style={inputStyle}
                 />
-                <div style={{ fontSize: 11, color: '#aaa', marginTop: 5 }}>You'll sign in with this email via Google.</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 5 }}>You'll sign in with this email via Google.</div>
               </Field>
 
               <button
@@ -130,8 +130,8 @@ export default function OnboardingScreen() {
           {step === 2 && (
             <>
               <button onClick={() => setStep(1)} style={backBtnStyle}>← Back</button>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Choose your plan</div>
-              <div style={{ fontSize: 13, color: '#888', marginBottom: 24 }}>Every signup includes a 14-day Pro trial — no credit card required. Switch plans any time.</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>Choose your plan</div>
+              <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 24 }}>Every signup includes a 14-day Pro trial — no credit card required. Switch plans any time.</div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
                 {PLANS.map(p => (
@@ -139,12 +139,12 @@ export default function OnboardingScreen() {
                     key={p.id}
                     onClick={() => setPlan(p.id)}
                     style={{
-                      border: `2px solid ${plan === p.id ? p.color : '#e8e8e8'}`,
+                      border: `2px solid ${plan === p.id ? p.color : 'var(--pn-border)'}`,
                       borderRadius: 12,
                       padding: '16px 18px',
                       cursor: 'pointer',
                       position: 'relative',
-                      background: plan === p.id ? `${p.color}08` : '#fff',
+                      background: plan === p.id ? `${p.color}08` : 'var(--pn-surface)',
                       transition: 'border-color .15s, background .15s',
                     }}
                   >
@@ -153,15 +153,15 @@ export default function OnboardingScreen() {
                     )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                       <div>
-                        <span style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{p.label}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)' }}>{p.label}</span>
                       </div>
                       <div style={{ fontSize: 13, fontWeight: 600, color: p.color }}>{p.price}</div>
                     </div>
-                    <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 12, color: '#555', lineHeight: 1.8 }}>
+                    <ul style={{ margin: 0, padding: '0 0 0 16px', fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.8 }}>
                       {p.features.map(f => <li key={f}>{f}</li>)}
                     </ul>
                     <div style={{ position: 'absolute', top: 16, right: 18 }}>
-                      <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${plan === p.id ? p.color : '#ddd'}`, background: plan === p.id ? p.color : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${plan === p.id ? p.color : 'var(--pn-border)'}`, background: plan === p.id ? p.color : 'var(--pn-surface)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         {plan === p.id && <div style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff' }} />}
                       </div>
                     </div>
@@ -179,7 +179,7 @@ export default function OnboardingScreen() {
                 {loading ? 'Creating your salon…' : 'Create my salon →'}
               </button>
 
-              <div style={{ fontSize: 11, color: '#bbb', textAlign: 'center', marginTop: 12 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 12 }}>
                 By continuing you agree to our Terms of Service and Privacy Policy.
               </div>
             </>
@@ -190,8 +190,8 @@ export default function OnboardingScreen() {
             <>
               <div style={{ textAlign: 'center', marginBottom: 24 }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
-                <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>{result.salonName} is live!</div>
-                <div style={{ fontSize: 13, color: '#888' }}>Check your email for setup instructions.</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>{result.salonName} is live!</div>
+                <div style={{ fontSize: 13, color: 'var(--pn-text-muted)' }}>Check your email for setup instructions.</div>
               </div>
 
               <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 12, padding: '16px 20px', marginBottom: 24, textAlign: 'center' }}>
@@ -200,7 +200,7 @@ export default function OnboardingScreen() {
               </div>
 
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', marginBottom: 10 }}>Getting started</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 10 }}>Getting started</div>
                 {[
                   ['1', 'Visit your URL and sign in with Google using ' + ownerEmail],
                   ['2', 'Add your employees under the Employees module'],
@@ -210,7 +210,7 @@ export default function OnboardingScreen() {
                 ].map(([n, text]) => (
                   <div key={n} style={{ display: 'flex', gap: 10, marginBottom: 8, alignItems: 'flex-start' }}>
                     <div style={{ width: 22, height: 22, borderRadius: '50%', background: '#2D7A5F', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{n}</div>
-                    <div style={{ fontSize: 13, color: '#555', lineHeight: 1.5 }}>{text}</div>
+                    <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>{text}</div>
                   </div>
                 ))}
               </div>
@@ -226,7 +226,7 @@ export default function OnboardingScreen() {
         </div>
       </div>
 
-      <div style={{ fontSize: 11, color: '#555', marginTop: 20 }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 20 }}>
         Already have an account?{' '}
         <a href="/" style={{ color: '#3D9E8A' }}>Sign in</a>
       </div>
@@ -237,7 +237,7 @@ export default function OnboardingScreen() {
 function Field({ label, required, children }) {
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ fontSize: 12, fontWeight: 600, color: '#555', display: 'block', marginBottom: 6 }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6 }}>
         {label}{required && <span style={{ color: '#ef4444', marginLeft: 2 }}>*</span>}
       </label>
       {children}
@@ -247,7 +247,7 @@ function Field({ label, required, children }) {
 
 const inputStyle = {
   width: '100%', boxSizing: 'border-box',
-  border: '1px solid #e0e0e0', borderRadius: 10,
+  border: '1px solid var(--pn-border)', borderRadius: 10,
   padding: '10px 12px', fontSize: 14,
   fontFamily: 'inherit', outline: 'none',
   transition: 'border-color .15s',
@@ -262,7 +262,7 @@ const btnStyle = {
 
 const backBtnStyle = {
   background: 'none', border: 'none',
-  color: '#888', fontSize: 13, cursor: 'pointer',
+  color: 'var(--pn-text-muted)', fontSize: 13, cursor: 'pointer',
   fontFamily: 'inherit', padding: '0 0 16px',
   display: 'block',
 };

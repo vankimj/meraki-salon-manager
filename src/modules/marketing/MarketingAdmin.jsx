@@ -261,7 +261,7 @@ export default function MarketingAdmin() {
   const thisMonth    = (campaigns || []).filter(c => c.createdAt?.slice(0, 7) === new Date().toISOString().slice(0, 7)).length;
   const autoActive   = [settings?.autoBirthday, settings?.autoLapsed].filter(Boolean).length;
 
-  if (!campaigns) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
+  if (!campaigns) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading…</div>;
 
   const TABS = [
     { id: 'campaigns',     label: 'Campaigns' },
@@ -275,12 +275,12 @@ export default function MarketingAdmin() {
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', paddingBottom: 32 }}>
 
-      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid #e8e8e8' }}>
+      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--pn-border)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400,
             background: 'none', border: 'none', cursor: 'pointer',
-            color: tab === t.id ? '#1a1a1a' : '#888',
+            color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-muted)',
             borderBottom: tab === t.id ? '2px solid #2D7A5F' : '2px solid transparent',
             marginBottom: -1, transition: 'color .15s', whiteSpace: 'nowrap', flexShrink: 0,
           }}>
@@ -305,7 +305,7 @@ export default function MarketingAdmin() {
             <StatCard label="Campaigns run"   value={campaigns.length}  accent="#2D7A5F" />
             <StatCard label="Messages sent"    value={fmtNum(totalSent)} accent="#3D95CE" />
             <StatCard label="This month"      value={thisMonth}         accent="#7c3aed" />
-            <StatCard label="Automations on"  value={`${autoActive} / 2`} accent={autoActive ? '#f59e0b' : '#ccc'}
+            <StatCard label="Automations on"  value={`${autoActive} / 2`} accent={autoActive ? '#f59e0b' : 'var(--pn-text-faint)'}
               sub={autoActive === 0 ? 'Enable in Automations tab' : autoActive === 1 ? '1 active' : 'Birthday + Lapsed'} />
           </div>
 
@@ -322,7 +322,7 @@ export default function MarketingAdmin() {
           {campaigns.length === 0
             ? <Empty>No campaigns yet. Click "New Campaign" to start reaching clients.</Empty>
             : (
-              <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+              <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden' }}>
                 {campaigns.map((c, i) => (
                   <CampaignRow key={c.id} campaign={c} last={i === campaigns.length - 1}
                     onDelete={() => handleDelete(c.id)}
@@ -400,7 +400,7 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
         <div style={{ fontSize: 13, fontWeight: 700, color: effective ? '#92400e' : '#166534', marginBottom: 4 }}>
           {effective ? '🧪 SMS Test Mode is ON' : '✓ SMS is in Production'}
         </div>
-        <div style={{ fontSize: 12, color: '#555', lineHeight: 1.55 }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55 }}>
           {effective
             ? 'All outbound SMS — campaigns, booking confirms, tech reminders, direct messages — route to the inbox below instead of Twilio. No charges, no real delivery.'
             : 'SMS sends use real Twilio. TFN purchase $2/mo, ~$0.008 per SMS segment. Flip the toggle below to preview campaigns without spending.'}
@@ -415,14 +415,14 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
       {/* Owner toggle */}
       <div style={{
         padding: 16, marginBottom: 18,
-        background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10,
+        background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10,
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>
               Owner-controlled test mode
             </div>
-            <div style={{ fontSize: 12, color: '#666', lineHeight: 1.55 }}>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55 }}>
               Preview the next campaign before it goes out. Send to your real client list — every message lands in the inbox below with the personalization filled in, so you can verify the wording, the promo code, the merge tags. Flip OFF to resume real Twilio delivery.
             </div>
           </div>
@@ -433,7 +433,7 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
               onChange={toggleTestMode}
               disabled={!isAdmin || busy || platformSandbox}
               style={{ accentColor: '#92400e', transform: 'scale(1.2)' }} />
-            <span style={{ fontSize: 12, fontWeight: 600, color: ownerTestMode ? '#92400e' : '#888' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: ownerTestMode ? '#92400e' : 'var(--pn-text-muted)' }}>
               {ownerTestMode ? 'ON' : 'OFF'}
             </span>
           </label>
@@ -442,7 +442,7 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
 
       {/* Inbox */}
       <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', margin: 0 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', margin: 0 }}>
           Sandbox inbox {log?.length ? `(${log.length})` : ''}
         </h3>
         {log?.length > 0 && (
@@ -458,9 +458,9 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
       </div>
 
       {log === null ? (
-        <div style={{ padding: 24, textAlign: 'center', color: '#bbb', fontSize: 13 }}>Loading…</div>
+        <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
       ) : log.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center', color: '#888', fontSize: 13, background: '#fafafa', borderRadius: 10, border: '1px dashed #d0d0d0' }}>
+        <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13, background: 'var(--pn-surface-alt)', borderRadius: 10, border: '1px dashed #d0d0d0' }}>
           {effective
             ? 'No fake sends yet. Run a campaign or trigger a booking to see messages here.'
             : 'No entries — test mode has never been on for this tenant.'}
@@ -487,26 +487,26 @@ function SandboxLogRow({ row }) {
   }[row.kind] || { label: row.kind || 'sms', color: '#525252', bg: '#f5f5f5' };
   const when = row.at ? new Date(row.at).toLocaleString() : '—';
   return (
-    <div style={{ padding: 12, background: '#fff', border: '1px solid #e8e8e8', borderRadius: 8 }}>
+    <div style={{ padding: 12, background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', background: kindBadge.bg, color: kindBadge.color, borderRadius: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>
             {kindBadge.label}
           </span>
           {row.recipientName && (
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#1a1a1a' }}>{row.recipientName}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{row.recipientName}</span>
           )}
           {row.to && (
-            <span style={{ fontSize: 11, color: '#888', fontFamily: 'monospace' }}>{row.to}</span>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontFamily: 'monospace' }}>{row.to}</span>
           )}
         </div>
-        <span style={{ fontSize: 11, color: '#888' }}>{when}</span>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{when}</span>
       </div>
-      <div style={{ fontSize: 12, color: '#333', lineHeight: 1.5, whiteSpace: 'pre-wrap', background: '#fafafa', padding: '8px 10px', borderRadius: 6, border: '1px solid #f0f0f0' }}>
+      <div style={{ fontSize: 12, color: 'var(--pn-text)', lineHeight: 1.5, whiteSpace: 'pre-wrap', background: 'var(--pn-surface-alt)', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)' }}>
         {row.body || '(no body)'}
       </div>
       {row.campaignName && (
-        <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>Campaign: {row.campaignName}</div>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginTop: 4 }}>Campaign: {row.campaignName}</div>
       )}
     </div>
   );
@@ -538,12 +538,12 @@ function AutomationsPanel({ settings, updateSettings, isAdmin, showToast }) {
   }
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden' }}>
       {rows.map((r, i) => (
-        <div key={r.key} style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: i === 0 ? 'none' : '1px solid #f0f0f0' }}>
+        <div key={r.key} style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: i === 0 ? 'none' : '1px solid var(--pn-border)' }}>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, color: '#333', fontWeight: 500 }}>{r.label}</div>
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2, lineHeight: 1.5 }}>{r.desc}</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text)', fontWeight: 500 }}>{r.label}</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{r.desc}</div>
           </div>
           <button onClick={() => isAdmin && r.set(v => !v)} disabled={!isAdmin}
             style={{
@@ -561,17 +561,17 @@ function AutomationsPanel({ settings, updateSettings, isAdmin, showToast }) {
         </div>
       ))}
       {autoLapsed && (
-        <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid #f0f0f0' }}>
-          <span style={{ fontSize: 12, color: '#555' }}>Lapse threshold:</span>
+        <div style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, borderTop: '1px solid var(--pn-border)' }}>
+          <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Lapse threshold:</span>
           <input type="number" min={14} max={365} value={autoLapsedDays}
             disabled={!isAdmin}
             onChange={e => setAutoLapsedDays(Math.max(14, Number(e.target.value)))}
-            style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '6px 10px', fontSize: 13 }} />
-          <span style={{ fontSize: 12, color: '#aaa' }}>days</span>
+            style={{ width: 80, textAlign: 'center', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '6px 10px', fontSize: 13 }} />
+          <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>days</span>
         </div>
       )}
       {isAdmin && (
-        <div style={{ padding: '10px 16px 14px', borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ padding: '10px 16px 14px', borderTop: '1px solid var(--pn-border)', display: 'flex', justifyContent: 'flex-end' }}>
           <button onClick={save} disabled={saving}
             style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: saving ? '#aaa' : '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Saving…' : 'Save Automations'}
@@ -604,13 +604,13 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
   const date     = new Date(c.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
-    <div style={{ borderBottom: last ? 'none' : '1px solid #f0f0f0' }}>
+    <div style={{ borderBottom: last ? 'none' : '1px solid var(--pn-border)' }}>
       <div onClick={() => setExpanded(x => !x)}
         style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', cursor: 'pointer', userSelect: 'none' }}>
         <div style={{ width: 36, height: 36, borderRadius: 8, background: '#e8f4ee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{c.channel === 'sms' ? '💬' : '📣'}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{c.name}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{c.name}</span>
             {c.channel === 'sms' && (
               <span style={{ fontSize: 10, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>SMS</span>
             )}
@@ -621,7 +621,7 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
               <span style={{ fontSize: 10, background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', borderRadius: 6, padding: '1px 7px', fontWeight: 600 }}>CTA</span>
             )}
           </div>
-          <div style={{ fontSize: 11, color: '#888' }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
             {segLabel}
             {c.segmentParams?.techName    ? ` · ${c.segmentParams.techName}`    : ''}
             {c.segmentParams?.serviceName ? ` · ${c.segmentParams.serviceName}` : ''}
@@ -633,7 +633,7 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
           <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: s.bg, color: s.fg, letterSpacing: '.04em', textTransform: 'uppercase' }}>{s.label}</span>
           {(c.status === 'sending' || c.status === 'done' || c.status === 'cancelled') && (
-            <div style={{ fontSize: 10, color: '#aaa', marginTop: 3 }}>
+            <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 3 }}>
               {c.status === 'done' ? '✓' : c.status === 'cancelled' ? '⏹' : '📨'} {c.sentCount || 0} sent{c.failCount > 0 ? ` · ${c.failCount} failed` : ''}
               {c.status === 'sending' && c.recipientCount ? ` · ${(c.recipientCount - (c.attemptedCount || 0))} queued` : ''}
             </div>
@@ -653,14 +653,14 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
               {c.error}
             </div>
           )}
-          <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{date}</div>
+          <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2 }}>{date}</div>
         </div>
-        <span style={{ fontSize: 10, color: '#bbb', marginLeft: 4 }}>{expanded ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginLeft: 4 }}>{expanded ? '▲' : '▼'}</span>
       </div>
       {expanded && (
-        <div style={{ padding: '0 16px 14px 64px', borderTop: '1px solid #f8f8f8' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: '#555', marginBottom: 6 }}>{c.subject}</div>
-          <div style={{ fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', background: '#f8f9fa', borderRadius: 6, padding: '8px 10px', marginBottom: 10 }}>{c.body}</div>
+        <div style={{ padding: '0 16px 14px 64px', borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 6 }}>{c.subject}</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', whiteSpace: 'pre-wrap', lineHeight: 1.6, maxHeight: 120, overflowY: 'auto', background: 'var(--pn-bg)', borderRadius: 6, padding: '8px 10px', marginBottom: 10 }}>{c.body}</div>
 
           <CampaignDiagnostics c={c} />
 
@@ -695,7 +695,7 @@ function CampaignRow({ campaign: c, last, onDelete, onCancel, onClone, onRetry }
               </button>
             )}
             <button onClick={e => { e.stopPropagation(); onClone(); }}
-              style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
+              style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
               ⧉ Duplicate
             </button>
             <button onClick={e => { e.stopPropagation(); onDelete(); }}
@@ -759,10 +759,10 @@ function CampaignDiagnostics({ c }) {
   if (!attempts && !isActive) return null;
 
   return (
-    <div style={{ marginBottom: 10, background: '#fafafa', border: '1px solid #e8e8e8', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ marginBottom: 10, background: 'var(--pn-surface-alt)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '10px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: '#333', textTransform: 'uppercase', letterSpacing: '.04em' }}>Activity log</div>
-        <div style={{ fontSize: 10, color: '#888' }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Activity log</div>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-muted)' }}>
           {c.status === 'pending' && queuedFor != null && <>queued {fmtElapsed(queuedFor)}</>}
           {c.status === 'sending' && sendingFor != null && <>sending {fmtElapsed(sendingFor)}{sinceLastUpdate != null ? ` · last update ${fmtElapsed(sinceLastUpdate)} ago` : ''}</>}
           {c.status === 'done' && sendingFor != null && <>completed in {fmtElapsed(sendingFor)}</>}
@@ -780,11 +780,11 @@ function CampaignDiagnostics({ c }) {
         <Stat label="Sent"    value={sent}      color="#16a34a" />
         <Stat label="Failed"  value={failed}    color={failed > 0 ? '#ef4444' : '#9ca3af'} />
         <Stat label="Queued"  value={queued}    color="#92400e" />
-        <Stat label="Total"   value={total}     color="#333" />
+        <Stat label="Total"   value={total}     color="var(--pn-text)" />
       </div>
 
       {total > 0 && (
-        <div style={{ height: 6, background: '#eee', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+        <div style={{ height: 6, background: 'var(--pn-surface-alt)', borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
           <div style={{ display: 'flex', height: '100%' }}>
             <div style={{ width: `${total > 0 ? (sent / total * 100) : 0}%`, background: '#16a34a' }} />
             <div style={{ width: `${total > 0 ? (failed / total * 100) : 0}%`, background: '#ef4444' }} />
@@ -793,19 +793,19 @@ function CampaignDiagnostics({ c }) {
       )}
 
       {orderedAttempts && orderedAttempts.length > 0 ? (
-        <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 6, maxHeight: 240, overflowY: 'auto', fontSize: 11 }}>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 6, maxHeight: 240, overflowY: 'auto', fontSize: 11 }}>
           {orderedAttempts.map((a, i) => {
             const isFail = a.status === 'failed';
             const time = a.at ? new Date(a.at).toLocaleTimeString('en-US', { hour12: false }) : '';
             return (
-              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 10px', borderBottom: i < orderedAttempts.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '5px 10px', borderBottom: i < orderedAttempts.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
                 <span style={{ fontSize: 12, lineHeight: '14px', color: isFail ? '#ef4444' : '#16a34a', flexShrink: 0 }}>{isFail ? '✗' : '✓'}</span>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                    <span style={{ fontWeight: 600, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name || '(unknown)'}</span>
-                    <span style={{ fontSize: 10, color: '#999', flexShrink: 0 }}>{time}</span>
+                    <span style={{ fontWeight: 600, color: 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name || '(unknown)'}</span>
+                    <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', flexShrink: 0 }}>{time}</span>
                   </div>
-                  <div style={{ fontSize: 10, color: isFail ? '#9a3412' : '#888', marginTop: 1 }}>
+                  <div style={{ fontSize: 10, color: isFail ? '#9a3412' : 'var(--pn-text-muted)', marginTop: 1 }}>
                     {a.phone || a.email || '—'}
                     {isFail && a.code && <> · <code style={{ background: '#fee2e2', padding: '0 4px', borderRadius: 3, color: '#7f1d1d' }}>{a.code}</code></>}
                     {isFail && a.reason && <> — {a.reason}</>}
@@ -817,13 +817,13 @@ function CampaignDiagnostics({ c }) {
           })}
         </div>
       ) : isActive ? (
-        <div style={{ fontSize: 11, color: '#888', padding: '8px 10px', textAlign: 'center', background: '#fff', border: '1px dashed #ddd', borderRadius: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', padding: '8px 10px', textAlign: 'center', background: 'var(--pn-surface)', border: '1px dashed var(--pn-border)', borderRadius: 6 }}>
           {c.status === 'pending' ? 'Waiting for the Cloud Function to pick this up…' : 'Reaching the first recipient…'}
         </div>
       ) : null}
 
       {c.attemptsTruncated && (
-        <div style={{ fontSize: 10, color: '#888', marginTop: 6, fontStyle: 'italic' }}>
+        <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginTop: 6, fontStyle: 'italic' }}>
           Log truncated to first 2,000 entries (full counters above are accurate).
         </div>
       )}
@@ -833,9 +833,9 @@ function CampaignDiagnostics({ c }) {
 
 function Stat({ label, value, color }) {
   return (
-    <div style={{ background: '#fff', borderRadius: 6, padding: '6px 8px', textAlign: 'center', border: '1px solid #ececec' }}>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 6, padding: '6px 8px', textAlign: 'center', border: '1px solid var(--pn-border)' }}>
       <div style={{ fontSize: 16, fontWeight: 700, color, lineHeight: 1.2 }}>{value}</div>
-      <div style={{ fontSize: 9, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 1 }}>{label}</div>
+      <div style={{ fontSize: 9, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginTop: 1 }}>{label}</div>
     </div>
   );
 }
@@ -1187,11 +1187,11 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 600 }}>New Campaign</span>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-surface-alt)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
@@ -1210,9 +1210,9 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
             const savedCount = channelTemplates.length - builtinCount;
             return (
               <div style={{ marginBottom: 18 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
                   Templates
-                  <span style={{ fontSize: 10, fontWeight: 400, color: '#ccc', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
+                  <span style={{ fontSize: 10, fontWeight: 400, color: 'var(--pn-text-faint)', marginLeft: 6, textTransform: 'none', letterSpacing: 0 }}>
                     {savedCount > 0 ? `${builtinCount} built-in · ${savedCount} saved` : `${builtinCount} built-in`}
                   </span>
                 </div>
@@ -1222,19 +1222,19 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                     const builtin = tpl.id.startsWith('_');
                     return (
                       <div key={tpl.id} onClick={() => applyTemplate(tpl)}
-                        style={{ flexShrink: 0, width: 110, padding: '10px 10px 8px', borderRadius: 10, border: `1.5px solid ${active ? '#2D7A5F' : '#e0e0e0'}`, background: active ? '#f0faf6' : '#fafafa', cursor: 'pointer', position: 'relative' }}>
+                        style={{ flexShrink: 0, width: 110, padding: '10px 10px 8px', borderRadius: 10, border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`, background: active ? '#f0faf6' : 'var(--pn-surface-alt)', cursor: 'pointer', position: 'relative' }}>
                         <div style={{ fontSize: 20, marginBottom: 4 }}>{tpl.icon || '📄'}</div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#2D7A5F' : '#333', lineHeight: 1.3 }}>{tpl.name}</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: active ? '#2D7A5F' : 'var(--pn-text)', lineHeight: 1.3 }}>{tpl.name}</div>
                         {!builtin && (
                           <button
                             onClick={e => handleDeleteTemplate(tpl, e)}
                             title="Delete template"
-                            style={{ position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.08)', color: '#aaa', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1 }}>
+                            style={{ position: 'absolute', top: 5, right: 5, width: 16, height: 16, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.08)', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, lineHeight: 1 }}>
                             ×
                           </button>
                         )}
                         {!builtin && (
-                          <div style={{ fontSize: 9, color: '#bbb', marginTop: 3 }}>saved</div>
+                          <div style={{ fontSize: 9, color: 'var(--pn-text-faint)', marginTop: 3 }}>saved</div>
                         )}
                       </div>
                     );
@@ -1248,7 +1248,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
             {[{ id: 'email', label: '✉️ Email' }, { id: 'sms', label: '💬 SMS' }].map(ch => (
               <button key={ch.id} onClick={() => setChannel(ch.id)}
-                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${channel === ch.id ? '#2D7A5F' : '#e0e0e0'}`, background: channel === ch.id ? '#f0faf6' : '#fafafa', color: channel === ch.id ? '#2D7A5F' : '#888', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${channel === ch.id ? '#2D7A5F' : 'var(--pn-border)'}`, background: channel === ch.id ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === ch.id ? '#2D7A5F' : 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s' }}>
                 {ch.label}
               </button>
             ))}
@@ -1261,11 +1261,11 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           <F label="Audience">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {SEGMENTS.map(s => (
-                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${segType === s.id ? '#2D7A5F' : '#e0e0e0'}`, background: segType === s.id ? '#f0faf6' : '#fff', cursor: 'pointer' }}>
+                <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 8, border: `1.5px solid ${segType === s.id ? '#2D7A5F' : 'var(--pn-border)'}`, background: segType === s.id ? '#f0faf6' : 'var(--pn-surface)', cursor: 'pointer' }}>
                   <input type="radio" name="seg" value={s.id} checked={segType === s.id} onChange={() => { setSegType(s.id); setTechSel(''); setServiceSel(''); setShowRecipients(false); }} style={{ accentColor: '#2D7A5F', flexShrink: 0 }} />
                   <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{s.label}</div>
-                    <div style={{ fontSize: 11, color: '#aaa' }}>{s.desc}</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{s.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{s.desc}</div>
                   </div>
                 </label>
               ))}
@@ -1278,7 +1278,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 <input type="number" min={1} max={730} value={lapDays}
                   onChange={e => setLapDays(Math.max(1, Number(e.target.value)))}
                   style={{ ...inp, width: 90 }} />
-                <span style={{ fontSize: 12, color: '#888' }}>days without a visit</span>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>days without a visit</span>
               </div>
             </F>
           )}
@@ -1304,7 +1304,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           {segType === 'appts_on_date' && (
             <F label="Date">
               <input type="date" value={apptDate} onChange={e => setApptDate(e.target.value)} style={inp} />
-              <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
                 Cancelled and no-show appointments are excluded.
               </div>
             </F>
@@ -1312,7 +1312,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
 
           {segType === 'appts_today_remaining' && (
             <F label="Today's remaining">
-              <div style={{ fontSize: 12, color: '#555', padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, lineHeight: 1.55 }}>
+              <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', padding: '8px 12px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, lineHeight: 1.55 }}>
                 Resolves at send time: clients with appointments today (<strong>{apptDateDefault}</strong>) starting at the current time or later. Useful for "running 15 min behind" or "we're closing early today" alerts.
               </div>
             </F>
@@ -1324,7 +1324,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 <input type="number" min={1} max={365} value={newDays}
                   onChange={e => setNewDays(Math.max(1, Number(e.target.value)))}
                   style={{ ...inp, width: 90 }} />
-                <span style={{ fontSize: 12, color: '#888' }}>days ago</span>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>days ago</span>
               </div>
             </F>
           )}
@@ -1335,7 +1335,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 <input type="number" min={1} max={100} value={minVisits}
                   onChange={e => setMinVisits(Math.max(1, Number(e.target.value)))}
                   style={{ ...inp, width: 90 }} />
-                <span style={{ fontSize: 12, color: '#888' }}>or more visits</span>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>or more visits</span>
               </div>
             </F>
           )}
@@ -1349,9 +1349,9 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
               display: 'flex', alignItems: 'center', gap: 10,
             }}>
               {loading ? (
-                <span style={{ fontSize: 12, color: '#aaa' }}>Computing audience…</span>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>Computing audience…</span>
               ) : needsSelection ? (
-                <span style={{ fontSize: 12, color: '#aaa' }}>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>
                   {segType === 'tech' ? 'Select a tech to preview audience.' : 'Select a service to preview audience.'}
                 </span>
               ) : !recipients?.length ? (
@@ -1362,10 +1362,10 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 13 }}>
                       <strong style={{ color: '#2D7A5F' }}>{recipients.length}</strong>
-                      <span style={{ color: '#555', marginLeft: 5 }}>recipients</span>
-                      {optedOutCount > 0 && <span style={{ color: '#bbb', fontSize: 11, marginLeft: 8 }}>· {optedOutCount} opted out</span>}
+                      <span style={{ color: 'var(--pn-text-muted)', marginLeft: 5 }}>recipients</span>
+                      {optedOutCount > 0 && <span style={{ color: 'var(--pn-text-faint)', fontSize: 11, marginLeft: 8 }}>· {optedOutCount} opted out</span>}
                     </div>
-                    <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                       {recipients.slice(0, 4).map(c => c.name?.split(' ')[0]).join(', ')}
                       {recipients.length > 4 ? ` +${recipients.length - 4} more` : ''}
                     </div>
@@ -1378,11 +1378,11 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
               )}
             </div>
             {showRecipients && recipients?.length > 0 && (
-              <div style={{ border: '1px solid #c6e8d5', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: 180, overflowY: 'auto', background: '#fff' }}>
+              <div style={{ border: '1px solid #c6e8d5', borderTop: 'none', borderRadius: '0 0 8px 8px', maxHeight: 180, overflowY: 'auto', background: 'var(--pn-surface)' }}>
                 {recipients.map((c, i) => (
-                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderBottom: i < recipients.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
-                    <span style={{ fontSize: 12, color: '#333', flex: 1 }}>{c.name}</span>
-                    <span style={{ fontSize: 11, color: '#bbb' }}>{channel === 'sms' ? (c.phone || '—') : (c.email || '—')}</span>
+                  <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderBottom: i < recipients.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+                    <span style={{ fontSize: 12, color: 'var(--pn-text)', flex: 1 }}>{c.name}</span>
+                    <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{channel === 'sms' ? (c.phone || '—') : (c.email || '—')}</span>
                   </div>
                 ))}
               </div>
@@ -1399,8 +1399,8 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 <textarea value={body} onChange={e => { setBody(e.target.value); setActiveTemplate(null); }} rows={7}
                   style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5 }}>
-                  <div style={{ fontSize: 10, color: '#aaa' }}>
-                    Use <code style={{ background: '#f0f0f0', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
+                  <div style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>
+                    Use <code style={{ background: 'var(--pn-surface-alt)', borderRadius: 3, padding: '1px 4px' }}>{'{firstName}'}</code> to personalize.
                   </div>
                   {!savingTpl ? (
                     <button onClick={() => { setSavingTpl(true); setTplName(name.trim()); }}
@@ -1422,7 +1422,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                         Save
                       </button>
                       <button onClick={() => setSavingTpl(false)}
-                        style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #e0e0e0', background: '#fafafa', color: '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border)', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                         Cancel
                       </button>
                     </div>
@@ -1455,7 +1455,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                     style={{ width: 36, height: 20, borderRadius: 10, background: addCta ? '#2D7A5F' : '#d1d5db', position: 'relative', transition: 'background .2s', flexShrink: 0, cursor: 'pointer' }}>
                     <div style={{ position: 'absolute', top: 2, left: addCta ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
                   </div>
-                  <span style={{ fontSize: 12, color: '#555' }}>Add a "Book Now" button to the email</span>
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Add a "Book Now" button to the email</span>
                 </label>
                 {addCta && (
                   <div style={{ display: 'flex', gap: 8 }}>
@@ -1476,23 +1476,23 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                 style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }} />
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 5, gap: 10, flexWrap: 'wrap' }}>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, color: '#aaa', marginRight: 4 }}>Insert:</span>
-                  <button type="button" onClick={() => insertVariable('{firstName}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>{'{firstName}'}</button>
-                  <button type="button" onClick={() => insertVariable('{lastName}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>{'{lastName}'}</button>
-                  <button type="button" onClick={() => { const link = (ctaUrl && ctaUrl.trim()) || defaultBookingUrl; setSmsBody(prev => prev + (prev && !prev.endsWith(' ') ? ' ' : '') + link); setActiveTemplate(null); }} title="Insert booking link" style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid #d8d8d8', background: '#fafafa', color: '#555', cursor: 'pointer', fontFamily: 'inherit' }}>🔗 Booking link</button>
+                  <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginRight: 4 }}>Insert:</span>
+                  <button type="button" onClick={() => insertVariable('{firstName}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>{'{firstName}'}</button>
+                  <button type="button" onClick={() => insertVariable('{lastName}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>{'{lastName}'}</button>
+                  <button type="button" onClick={() => { const link = (ctaUrl && ctaUrl.trim()) || defaultBookingUrl; setSmsBody(prev => prev + (prev && !prev.endsWith(' ') ? ' ' : '') + link); setActiveTemplate(null); }} title="Insert booking link" style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>🔗 Booking link</button>
                   {persPromo && (
                     <button type="button" onClick={() => insertVariable('{promoCode}')} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 4, border: '1px solid #2D7A5F', background: '#f0faf6', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>{'{promoCode}'}</button>
                   )}
                 </div>
-                <span style={{ fontSize: 10, color: smsInfo.segments > 1 ? '#f59e0b' : '#888' }}>
+                <span style={{ fontSize: 10, color: smsInfo.segments > 1 ? '#f59e0b' : 'var(--pn-text-muted)' }}>
                   {smsInfo.length} chars · {smsInfo.segments} segment{smsInfo.segments !== 1 ? 's' : ''} · {smsInfo.encoding}
                   {smsInfo.encoding === 'UCS-2' && smsInfo.segments > 1 ? ' (emoji halves capacity)' : ''}
                 </span>
               </div>
               {channel === 'sms' && recipientCount > 0 && smsInfo.segments > 0 && (
-                <div style={{ marginTop: 6, fontSize: 11, color: '#555' }}>
+                <div style={{ marginTop: 6, fontSize: 11, color: 'var(--pn-text-muted)' }}>
                   Estimated cost: <strong>${estCost.toFixed(2)}</strong>
-                  <span style={{ color: '#999' }}> · {smsInfo.segments} × {recipientCount} × ${SMS_RATE_PER_SEGMENT.toFixed(4)}/segment</span>
+                  <span style={{ color: 'var(--pn-text-faint)' }}> · {smsInfo.segments} × {recipientCount} × ${SMS_RATE_PER_SEGMENT.toFixed(4)}/segment</span>
                 </div>
               )}
               <div style={{ marginTop: 8, padding: '8px 12px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 11, color: '#92400e' }}>
@@ -1502,7 +1502,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           )}
 
           <F label="Personalized promo per recipient">
-            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: '#333' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13, color: 'var(--pn-text)' }}>
               <div onClick={() => setPersPromo(v => !v)}
                 style={{ width: 36, height: 20, borderRadius: 10, background: persPromo ? '#2D7A5F' : '#d1d5db', position: 'relative', transition: 'background .2s', flexShrink: 0, cursor: 'pointer' }}>
                 <div style={{ position: 'absolute', top: 2, left: persPromo ? 18 : 2, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'left .2s' }} />
@@ -1513,12 +1513,12 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
               <div style={{ marginTop: 10, padding: '12px 14px', background: '#f0faf6', border: '1px solid #c6e8d5', borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Code prefix</label>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Code prefix</label>
                     <input value={persPrefix} onChange={e => setPersPrefix(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10))}
                       placeholder="MERAKI" style={{ ...inp, fontFamily: 'monospace' }} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 3 }}>Discount</label>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Discount</label>
                     <div style={{ display: 'flex', gap: 6 }}>
                       <select value={persType} onChange={e => setPersType(e.target.value)} style={{ ...inp, flex: '0 0 90px' }}>
                         <option value="percent">% off</option>
@@ -1528,7 +1528,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#555' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--pn-text-muted)' }}>
                   <span>Expires after</span>
                   <input type="number" min="1" max="365" value={persExpDays} onChange={e => setPersExpDays(e.target.value)}
                     style={{ ...inp, width: 70 }} />
@@ -1544,11 +1544,11 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           <F label="Send schedule">
             <div style={{ display: 'flex', gap: 8, marginBottom: sendMode === 'later' ? 10 : 0 }}>
               <button type="button" onClick={() => setSendMode('now')}
-                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sendMode === 'now' ? '#2D7A5F' : '#d8d8d8'}`, background: sendMode === 'now' ? '#f0faf6' : '#fff', color: sendMode === 'now' ? '#2D7A5F' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sendMode === 'now' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: sendMode === 'now' ? '#f0faf6' : 'var(--pn-surface)', color: sendMode === 'now' ? '#2D7A5F' : 'var(--pn-text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 ⚡ Send immediately
               </button>
               <button type="button" onClick={() => setSendMode('later')}
-                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sendMode === 'later' ? '#2D7A5F' : '#d8d8d8'}`, background: sendMode === 'later' ? '#f0faf6' : '#fff', color: sendMode === 'later' ? '#2D7A5F' : '#555', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: `1px solid ${sendMode === 'later' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: sendMode === 'later' ? '#f0faf6' : 'var(--pn-surface)', color: sendMode === 'later' ? '#2D7A5F' : 'var(--pn-text-muted)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 🕒 Schedule for later
               </button>
             </div>
@@ -1560,9 +1560,9 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                     style={{ ...inp, width: 'auto' }} />
                   <input type="time" value={schedTime} onChange={e => setSchedTime(e.target.value)}
                     style={{ ...inp, width: 'auto' }} />
-                  <span style={{ fontSize: 10, color: '#888' }}>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+                  <span style={{ fontSize: 10, color: 'var(--pn-text-muted)' }}>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
                 </div>
-                <div style={{ fontSize: 11, color: scheduleInPast ? '#ef4444' : '#666', marginTop: 6 }}>
+                <div style={{ fontSize: 11, color: scheduleInPast ? '#ef4444' : 'var(--pn-text-muted)', marginTop: 6 }}>
                   {scheduleAt
                     ? scheduleInPast
                       ? '⚠ Pick a time in the future — this is in the past.'
@@ -1576,7 +1576,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           <div style={{ display: 'flex', gap: 8 }}>
             {channel === 'email' && (
               <button onClick={() => setShowPreview(true)} disabled={!subject.trim() && !body.trim()}
-                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #d0d0d0', background: '#fafafa', color: '#555', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #d0d0d0', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 👁 Preview
               </button>
             )}
@@ -1618,19 +1618,19 @@ function PreviewModal({ subject, body, promoCode, promoLabel, ctaText, ctaUrl, o
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 400 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 540, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 540, maxHeight: '92vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.35)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           <div>
             <div style={{ fontSize: 13, fontWeight: 600 }}>Email Preview</div>
-            {subject && <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Subject: {subject}</div>}
+            {subject && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>Subject: {subject}</div>}
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-surface-alt)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
-        <div style={{ flex: 1, overflowY: 'auto', background: '#f4f4f4' }}>
+        <div style={{ flex: 1, overflowY: 'auto', background: 'var(--pn-bg)' }}>
           <iframe title="Email preview" srcDoc={html} style={{ width: '100%', minHeight: 480, border: 'none', display: 'block' }} sandbox="allow-same-origin" />
         </div>
-        <div style={{ padding: '10px 18px', borderTop: '1px solid #f0f0f0', textAlign: 'center', flexShrink: 0 }}>
-          <span style={{ fontSize: 11, color: '#bbb' }}>"{'{firstName}'}" shown as "there" for preview</span>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--pn-border)', textAlign: 'center', flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>"{'{firstName}'}" shown as "there" for preview</span>
         </div>
       </div>
     </div>
@@ -1639,25 +1639,25 @@ function PreviewModal({ subject, body, promoCode, promoLabel, ctaText, ctaUrl, o
 
 function StatCard({ label, value, accent, sub }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: accent || '#1a1a1a' }}>{value}</div>
-      {sub && <div style={{ fontSize: 10, color: '#bbb', marginTop: 3 }}>{sub}</div>}
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: accent || 'var(--pn-text)' }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
 function F({ label, children }) {
   return (
     <div style={{ marginBottom: 14 }}>
-      <label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>
+      <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>
       {children}
     </div>
   );
 }
 
-const inp = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px', fontSize: 13, background: '#fafafa', outline: 'none' };
+const inp = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '9px 12px', fontSize: 13, background: 'var(--pn-surface-alt)', outline: 'none' };

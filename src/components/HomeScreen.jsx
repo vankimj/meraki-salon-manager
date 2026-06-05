@@ -115,7 +115,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', background: 'var(--tm-bg, #f8f9fa)', overflowY: 'auto' }}>
 
       {/* Top bar */}
-      <div style={{ background: '#fff', borderBottom: `1px solid var(--tm-border, #ebebeb)`, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%', boxSizing: 'border-box', gap: 8 }}>
+      <div style={{ background: 'var(--pn-surface)', borderBottom: `1px solid var(--tm-border, #ebebeb)`, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%', boxSizing: 'border-box', gap: 8 }}>
         <div className="ms-brand-block" style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.18)' }}>
             <span style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: 0, lineHeight: 1 }}>
@@ -145,14 +145,14 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           {realIsAdmin && !viewAs && myTechEmpName && (
             <button onClick={() => setViewAs({ role: 'tech', techName: myTechEmpName })}
               title={`See your day as ${myTechEmpName}`} className="ms-action-btn"
-              style={{ height: 40, borderRadius: 20, border: '1px solid #5b3b8c', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#5b3b8c', fontFamily: 'inherit' }}>
+              style={{ height: 40, borderRadius: 20, border: '1px solid #5b3b8c', background: 'var(--pn-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#5b3b8c', fontFamily: 'inherit' }}>
               👩‍💼 <span className="ms-action-label">My tech view</span>
             </button>
           )}
           {realIsAdmin && !viewAs && (
             <select value="" onChange={e => { const v = parsePreview(e.target.value); if (v) setViewAs(v); }}
               className="ms-preview-select"
-              style={{ height: 40, borderRadius: 20, border: '1px solid #e0e0e0', background: '#fafafa', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#888', fontFamily: 'inherit', padding: '0 12px', outline: 'none' }}>
+              style={{ height: 40, borderRadius: 20, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', fontFamily: 'inherit', padding: '0 12px', outline: 'none' }}>
               <option value="">👤 Preview as…</option>
               {techUsers.map(u => (
                 <option key={u.email} value={`tech:${u.techName}`}>👩‍💼 {u.techName}</option>
@@ -182,11 +182,11 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
       {/* Greeting */}
       {gUser && (
         <div style={{ padding: '24px 24px 8px', flexShrink: 0, maxWidth: 1040, width: '100%', alignSelf: 'center', boxSizing: 'border-box' }}>
-          <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.3px' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', letterSpacing: '-.3px' }}>
             {greeting()}, {(gUser.displayName || gUser.email).split(' ')[0]}
             <span style={{ marginLeft: 6 }}>👋</span>
           </div>
-          <div style={{ fontSize: 12, color: '#aaa', marginTop: 4, letterSpacing: '.02em' }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 4, letterSpacing: '.02em' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </div>
         </div>
@@ -237,7 +237,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             </div>
           </>
         ) : !gUser ? null : (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', fontSize: 13 }}>
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--pn-text-faint)', fontSize: 13 }}>
             Your access is pending admin approval.
           </div>
         )}
@@ -540,7 +540,7 @@ function HeroStacked({ greet, primary, script, onSignIn, heroBrand }) {
         <Greeting greet={greet} />
         <BoutiqueLockup primary={primary} script={script} size="sm" />
         <Tagline />
-        <div style={{ marginTop: 28, background: '#fff', border: '1px solid #eee7dc', borderRadius: 18, padding: '16px 24px', display: 'inline-flex', alignItems: 'center', gap: 18, boxShadow: '0 12px 28px rgba(58,44,26,.06)' }}>
+        <div style={{ marginTop: 28, background: 'var(--pn-surface)', border: '1px solid #eee7dc', borderRadius: 18, padding: '16px 24px', display: 'inline-flex', alignItems: 'center', gap: 18, boxShadow: '0 12px 28px rgba(58,44,26,.06)' }}>
           <div style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 10, letterSpacing: '.28em', textTransform: 'uppercase', color: '#a89776' }}>
             Ready when you are
           </div>
@@ -614,8 +614,8 @@ function ModuleTile({ id, label, desc, onClick, badge, locked }) {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
-        position: 'relative', background: locked ? '#fafafa' : '#fff',
-        border: `1px solid ${locked ? '#ececec' : hover ? 'var(--tm-accent, #3D95CE)' : '#ececec'}`,
+        position: 'relative', background: locked ? 'var(--pn-bg)' : 'var(--pn-surface)',
+        border: `1px solid ${locked ? 'var(--pn-border)' : hover ? 'var(--tm-accent, #3D95CE)' : 'var(--pn-border)'}`,
         borderRadius: 16, padding: '18px 16px', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
         transition: 'border-color .18s, box-shadow .18s, transform .18s',
         boxShadow: hover ? '0 8px 24px rgba(0,0,0,.10)' : '0 1px 3px rgba(0,0,0,.04)',
@@ -626,7 +626,7 @@ function ModuleTile({ id, label, desc, onClick, badge, locked }) {
       {locked && (
         <div style={{ position: 'absolute', top: 10, right: 10, background: 'linear-gradient(135deg,#7c3aed,#a855f7)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '3px 8px', borderRadius: 20, letterSpacing: '.06em', boxShadow: '0 2px 6px rgba(124,58,237,.3)' }}>PRO</div>
       )}
-      <div style={{ position: 'relative', width: 44, height: 44, borderRadius: 12, background: locked ? '#f0f0f0' : 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, boxShadow: locked ? 'none' : '0 4px 10px rgba(45,122,95,.18)', color: locked ? '#aaa' : '#fff' }}>
+      <div style={{ position: 'relative', width: 44, height: 44, borderRadius: 12, background: locked ? 'var(--pn-surface-alt)' : 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12, boxShadow: locked ? 'none' : '0 4px 10px rgba(45,122,95,.18)', color: locked ? 'var(--pn-text-faint)' : '#fff' }}>
         {Icon ? <Icon size={22} /> : <span style={{ fontSize: 22 }}>◆</span>}
         {badge > 0 && (
           <div style={{ position: 'absolute', top: -4, right: -4, background: '#ef4444', color: '#fff', borderRadius: 10, fontSize: 10, fontWeight: 700, padding: '1px 6px', minWidth: 18, textAlign: 'center', lineHeight: '14px', border: '2px solid #fff', boxShadow: '0 2px 4px rgba(0,0,0,.15)' }}>
@@ -634,8 +634,8 @@ function ModuleTile({ id, label, desc, onClick, badge, locked }) {
           </div>
         )}
       </div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: locked ? '#aaa' : '#1a1a1a', marginBottom: 3, letterSpacing: '-.1px' }}>{label}</div>
-      <div style={{ fontSize: 12, color: '#888', lineHeight: 1.45 }}>{desc}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: locked ? 'var(--pn-text-faint)' : 'var(--pn-text)', marginBottom: 3, letterSpacing: '-.1px' }}>{label}</div>
+      <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.45 }}>{desc}</div>
     </button>
   );
 }

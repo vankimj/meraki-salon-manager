@@ -4,6 +4,7 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 import { GoogleAuthProvider, signInWithCredential, signInAnonymously } from 'firebase/auth';
 import Constants from 'expo-constants';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
+import { useThemedStyles } from '../theme/ThemeContext';
 
 // EAS Dev Client / production native build: real Google Sign-In via the
 // native SDK. We pass BOTH the iOS-specific client ID (matches bundle id
@@ -29,6 +30,7 @@ if (!isExpoGo) {
 
 export default function AuthScreen() {
   const [loading, setLoading] = useState(false);
+  const styles = useThemedStyles(makeStyles);
 
   async function handleGoogleSignIn() {
     if (isExpoGo) {
@@ -110,14 +112,14 @@ export default function AuthScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0f1923', alignItems: 'center', justifyContent: 'center', padding: 24 },
+const makeStyles = (t) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.bg, alignItems: 'center', justifyContent: 'center', padding: 24 },
   card:      { width: '100%', maxWidth: 320, alignItems: 'center', gap: 8 },
-  brand:     { fontSize: 52, fontWeight: '400', color: '#fff', letterSpacing: 2 },
-  sub:       { fontSize: 14, fontWeight: '700', color: '#3D9E8A', letterSpacing: 6 },
-  tagline:   { fontSize: 12, color: '#888', letterSpacing: 3, marginBottom: 40, textTransform: 'uppercase' },
-  googleBtn: { width: '100%', backgroundColor: '#3D95CE', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
+  brand:     { fontSize: 52, fontWeight: '400', color: t.text, letterSpacing: 2 },
+  sub:       { fontSize: 14, fontWeight: '700', color: t.teal, letterSpacing: 6 },
+  tagline:   { fontSize: 12, color: t.textMuted, letterSpacing: 3, marginBottom: 40, textTransform: 'uppercase' },
+  googleBtn: { width: '100%', backgroundColor: t.blue, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   googleBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  devBtn:    { width: '100%', paddingVertical: 12, alignItems: 'center', marginTop: 14, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,.18)', borderStyle: 'dashed' },
-  devBtnText:{ color: 'rgba(255,255,255,.55)', fontSize: 12, fontWeight: '500', letterSpacing: 0.4 },
+  devBtn:    { width: '100%', paddingVertical: 12, alignItems: 'center', marginTop: 14, borderRadius: 12, borderWidth: 1, borderColor: t.border, borderStyle: 'dashed' },
+  devBtnText:{ color: t.textMuted, fontSize: 12, fontWeight: '500', letterSpacing: 0.4 },
 });

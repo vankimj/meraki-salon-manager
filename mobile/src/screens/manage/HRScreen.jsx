@@ -10,6 +10,7 @@ import {
   fetchEmployeesWithComp, fetchAppointmentsByRange, createPayrollRun, gustoSubmitPayroll,
 } from '../../lib/firestore';
 import OAuthConnect from '../../components/OAuthConnect';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 function lastNDays(n) {
   const end = new Date(), start = new Date();
@@ -56,6 +57,7 @@ export default function HRScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
   useTrashHeader(navigation, ['bonuses', 'reviews'], isAdmin);
   const [tab, setTab] = useState('bonuses');
+  const styles = useThemedStyles(makeStyles);
 
   return (
     <View style={styles.wrap}>
@@ -98,6 +100,8 @@ function PayrollList() {
   const [gusto, setGusto] = useState(null);
   const [busy, setBusy]   = useState(false);
   const { isAdmin } = useTenantAccess();
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
 
   const load = useCallback(async () => {
     try { setRuns(await fetchPayrollRuns()); } catch { setRuns([]); }
@@ -156,7 +160,7 @@ function PayrollList() {
     );
   }
 
-  if (runs === null) return <View style={styles.center}><ActivityIndicator color="#2D7A5F" /></View>;
+  if (runs === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
   return (
     <FlatList
       data={runs}
@@ -199,23 +203,23 @@ function PayrollList() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:      { flex: 1, backgroundColor: '#f5f7fa' },
-  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  tabs:      { flexDirection: 'row', backgroundColor: '#fff', padding: 6, gap: 6, borderBottomWidth: 1, borderBottomColor: '#ececec' },
-  tab:       { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: '#f1f3f5' },
-  tabOn:     { backgroundColor: '#eef5f2' },
-  tabText:   { fontSize: 13, fontWeight: '700', color: '#888' },
-  tabTextOn: { color: '#2D7A5F' },
-  empty:     { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
-  note:      { fontSize: 12, color: '#aaa', marginTop: 8 },
-  gustoLabel:{ fontSize: 13, fontWeight: '800', color: '#1a1a1a', marginBottom: 4 },
-  runBtn:    { marginTop: 12, backgroundColor: '#eef5f2', borderWidth: 1, borderColor: '#2D7A5F', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
-  runText:   { color: '#2D7A5F', fontWeight: '800', fontSize: 14 },
-  submitBtn: { marginLeft: 10, backgroundColor: '#1a1a1a', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:      { flex: 1, backgroundColor: t.bg },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  tabs:      { flexDirection: 'row', backgroundColor: t.surface, padding: 6, gap: 6, borderBottomWidth: 1, borderBottomColor: t.border },
+  tab:       { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: t.surfaceAlt },
+  tabOn:     { backgroundColor: t.greenSoft },
+  tabText:   { fontSize: 13, fontWeight: '700', color: t.textMuted },
+  tabTextOn: { color: t.green },
+  empty:     { textAlign: 'center', color: t.textFaint, marginTop: 50, fontSize: 13 },
+  note:      { fontSize: 12, color: t.textFaint, marginTop: 8 },
+  gustoLabel:{ fontSize: 13, fontWeight: '800', color: t.text, marginBottom: 4 },
+  runBtn:    { marginTop: 12, backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  runText:   { color: t.green, fontWeight: '800', fontSize: 14 },
+  submitBtn: { marginLeft: 10, backgroundColor: t.text, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 7 },
   submitText:{ color: '#fff', fontWeight: '800', fontSize: 12 },
-  row:       { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ececec', gap: 10 },
-  name:      { fontSize: 14.5, fontWeight: '700', color: '#1a1a1a' },
-  sub:       { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
-  amount:    { fontSize: 15, fontWeight: '800', color: '#2D7A5F' },
+  row:       { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: t.border, gap: 10 },
+  name:      { fontSize: 14.5, fontWeight: '700', color: t.text },
+  sub:       { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  amount:    { fontSize: 15, fontWeight: '800', color: t.green },
 });

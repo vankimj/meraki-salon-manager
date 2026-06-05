@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { useEffect, useState, useMemo } from 'react';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
@@ -10,13 +10,10 @@ import ManageStack    from './ManageStack';
 import ProfileScreen  from '../screens/ProfileScreen';
 import usePushRegistration from '../hooks/usePushRegistration';
 import { getCurrentTenant, subscribeTenant } from '../lib/currentTenant';
+import { useTheme } from '../theme/ThemeContext';
 import HeaderTitle from '../components/HeaderTitle';
 
 const Tab = createBottomTabNavigator();
-
-const BRAND_GREEN  = '#2D7A5F';
-const BRAND_BLUE   = '#3D95CE';
-const TAB_INACTIVE = '#9aa3ad';
 
 // Inline SVG icons — react-native-svg is already a transitive dep so
 // we don't need @expo/vector-icons (which had font-loading issues with
@@ -65,22 +62,30 @@ export default function RootNav() {
   const [tenantId, setTenantId] = useState(getCurrentTenant());
   useEffect(() => subscribeTenant(setTenantId), []);
 
+  const { theme, scheme } = useTheme();
+  // Drive React Navigation's own theme so headers, the tab bar, screen
+  // backgrounds and transitions all flip with light/dark in one place.
+  const navTheme = useMemo(() => {
+    const base = scheme === 'dark' ? DarkTheme : DefaultTheme;
+    return { ...base, colors: { ...base.colors, background: theme.bg, card: theme.navBar, text: theme.text, border: theme.border, primary: theme.blue } };
+  }, [scheme, theme]);
+
   return (
-    <NavigationContainer key={tenantId}>
+    <NavigationContainer key={tenantId} theme={navTheme}>
       <Tab.Navigator
         initialRouteName="Schedule"
         screenOptions={({ route }) => ({
-          headerStyle:     { backgroundColor: '#fff' },
-          headerTintColor: BRAND_GREEN,
+          headerStyle:     { backgroundColor: theme.headerBg },
+          headerTintColor: theme.green,
           // Custom 2-line title: screen name on top, current salon name
           // beneath, so multi-tenant users can never lose track of which
           // salon they're scoped to. Sourced from the per-screen options
           // `title` (or the route name as fallback).
           headerTitle: () => <HeaderTitle title={titleFor(route.name)} />,
-          tabBarActiveTintColor:   BRAND_BLUE,
-          tabBarInactiveTintColor: TAB_INACTIVE,
+          tabBarActiveTintColor:   theme.blue,
+          tabBarInactiveTintColor: theme.textMuted,
           tabBarLabelStyle:        { fontSize: 11, fontWeight: '600' },
-          tabBarStyle:             { backgroundColor: '#fff', borderTopColor: '#e8e8e8' },
+          tabBarStyle:             { backgroundColor: theme.navBar, borderTopColor: theme.border },
           tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
         })}
       >

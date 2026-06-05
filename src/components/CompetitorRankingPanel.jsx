@@ -108,17 +108,17 @@ export default function CompetitorRankingPanel() {
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '—';
   const stars = (n) => '★'.repeat(Math.round(n || 0)) + '☆'.repeat(5 - Math.round(n || 0));
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
+  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading…</div>;
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
 
-      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Search radius</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 }}>Search radius</div>
             <select value={radius} onChange={e => setRadius(Number(e.target.value))}
-              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' }}>
+              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', fontFamily: 'inherit', fontSize: 13, cursor: 'pointer' }}>
               {RADIUS_OPTIONS.map(r => <option key={r} value={r}>{r} miles</option>)}
             </select>
           </div>
@@ -131,8 +131,8 @@ export default function CompetitorRankingPanel() {
           )}
         </div>
         {data && (
-          <div style={{ fontSize: 11, color: '#aaa', marginTop: 10 }}>
-            Showing <strong style={{ color: '#444' }}>{ranked.length}</strong> of {data.resultCount} salons (within {radius} mi) · scan covered {cachedRadius} mi · last refreshed {fmtDate(data.fetchedAt)}
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 10 }}>
+            Showing <strong style={{ color: 'var(--pn-text-muted)' }}>{ranked.length}</strong> of {data.resultCount} salons (within {radius} mi) · scan covered {cachedRadius} mi · last refreshed {fmtDate(data.fetchedAt)}
             {cacheAgeDays >= 7 && <span style={{ color: '#f59e0b', marginLeft: 6 }}>· data is {cacheAgeDays} days old, consider refreshing</span>}
           </div>
         )}
@@ -145,7 +145,7 @@ export default function CompetitorRankingPanel() {
       </div>
 
       {!data && (
-        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: '#888', fontSize: 13 }}>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>
           No ranking data yet. {isAdmin ? 'Pick a radius and click "Run first scan".' : 'Ask an admin to run the first scan.'}
         </div>
       )}
@@ -173,20 +173,20 @@ export default function CompetitorRankingPanel() {
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>Sort by</span>
+            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Sort by</span>
             {SORT_OPTIONS.map(o => (
               <button key={o.id} onClick={() => setSort(o.id)}
                 style={{
-                  padding: '4px 10px', borderRadius: 12, border: '1px solid ' + (sort === o.id ? '#2D7A5F' : '#e0e0e0'),
-                  background: sort === o.id ? '#2D7A5F' : '#fff',
-                  color: sort === o.id ? '#fff' : '#666',
+                  padding: '4px 10px', borderRadius: 12, border: '1px solid ' + (sort === o.id ? '#2D7A5F' : 'var(--pn-border)'),
+                  background: sort === o.id ? '#2D7A5F' : 'var(--pn-surface)',
+                  color: sort === o.id ? '#fff' : 'var(--pn-text-muted)',
                   fontFamily: 'inherit', fontSize: 11, fontWeight: 500, cursor: 'pointer',
                 }}>{o.label}</button>
             ))}
           </div>
 
-          <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 70px 80px 70px 70px', padding: '10px 14px', fontSize: 10, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+          <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 70px 80px 70px 70px', padding: '10px 14px', fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
               <div>#</div>
               <div>Salon</div>
               <div style={{ textAlign: 'right' }}>Rating</div>
@@ -199,54 +199,54 @@ export default function CompetitorRankingPanel() {
                 style={{
                   display: 'grid', gridTemplateColumns: '40px 1fr 70px 80px 70px 70px',
                   padding: r.isMeraki ? '14px 14px' : '10px 14px', alignItems: 'center',
-                  borderBottom: i < ranked.length - 1 ? '1px solid #f5f5f5' : 'none',
+                  borderBottom: i < ranked.length - 1 ? '1px solid var(--pn-border)' : 'none',
                   background: r.isMeraki ? 'linear-gradient(90deg, #dcfce7 0%, #f0fdf4 60%, #f0fdf4 100%)' : 'transparent',
                   borderLeft:  r.isMeraki ? '4px solid #2D7A5F' : '4px solid transparent',
                   boxShadow: r.isMeraki ? 'inset 0 0 0 1px rgba(45,122,95,.18)' : 'none',
                   position: 'relative',
                 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: r.isMeraki ? '#2D7A5F' : (r.rank <= 3 ? '#a16207' : '#aaa') }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: r.isMeraki ? '#2D7A5F' : (r.rank <= 3 ? '#a16207' : 'var(--pn-text-faint)') }}>
                   {r.rank <= 3 ? ['🥇','🥈','🥉'][r.rank - 1] : r.rank}
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: r.isMeraki ? 14 : 13, fontWeight: r.isMeraki ? 700 : 500, color: r.isMeraki ? '#14532d' : '#1a1a1a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: r.isMeraki ? 14 : 13, fontWeight: r.isMeraki ? 700 : 500, color: r.isMeraki ? '#14532d' : 'var(--pn-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.isMeraki && <span aria-hidden style={{ marginRight: 6 }}>★</span>}
                     {r.name}
                     {r.isMeraki && <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', marginLeft: 8, padding: '2px 8px', borderRadius: 10, background: '#2D7A5F', letterSpacing: '.04em' }}>YOUR SALON</span>}
                   </div>
-                  <div style={{ fontSize: 10, color: r.isMeraki ? '#2D7A5F' : '#bbb', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ fontSize: 10, color: r.isMeraki ? '#2D7A5F' : 'var(--pn-text-faint)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {r.mapsUrl ? <a href={r.mapsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>{r.address}</a> : r.address}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: r.isMeraki ? '#14532d' : '#1a1a1a' }}>{r.rating ? r.rating.toFixed(1) : '—'}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: r.isMeraki ? '#14532d' : 'var(--pn-text)' }}>{r.rating ? r.rating.toFixed(1) : '—'}</div>
                   <div style={{ fontSize: 9, color: '#f59e0b', letterSpacing: 0.5 }}>{stars(r.rating)}</div>
                 </div>
-                <div style={{ textAlign: 'right', fontSize: 13, color: r.isMeraki ? '#14532d' : '#666', fontWeight: r.isMeraki ? 600 : 400 }}>{(r.userRatingCount || 0).toLocaleString()}</div>
-                <div style={{ textAlign: 'right', fontSize: 13, color: r.isMeraki ? '#14532d' : '#666', fontWeight: r.isMeraki ? 600 : 400 }}>{r.distanceMiles?.toFixed(1)} mi</div>
-                <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: r.isMeraki ? '#2D7A5F' : '#1a1a1a' }}>{(r.score || 0).toFixed(2)}</div>
+                <div style={{ textAlign: 'right', fontSize: 13, color: r.isMeraki ? '#14532d' : 'var(--pn-text-muted)', fontWeight: r.isMeraki ? 600 : 400 }}>{(r.userRatingCount || 0).toLocaleString()}</div>
+                <div style={{ textAlign: 'right', fontSize: 13, color: r.isMeraki ? '#14532d' : 'var(--pn-text-muted)', fontWeight: r.isMeraki ? 600 : 400 }}>{r.distanceMiles?.toFixed(1)} mi</div>
+                <div style={{ textAlign: 'right', fontSize: 13, fontWeight: 700, color: r.isMeraki ? '#2D7A5F' : 'var(--pn-text)' }}>{(r.score || 0).toFixed(2)}</div>
               </div>
             ))}
           </div>
 
-          <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 10, padding: '14px 16px', marginTop: 14, fontSize: 12, color: '#444', lineHeight: 1.55 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+          <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '14px 16px', marginTop: 14, fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
               How the weighted score works (Bayesian)
             </div>
             <div style={{ marginBottom: 8 }}>
-              <code style={{ background: '#fff', border: '1px solid #e0e0e0', borderRadius: 6, padding: '2px 8px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: '#2D7A5F', fontWeight: 600 }}>
+              <code style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 6, padding: '2px 8px', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, color: '#2D7A5F', fontWeight: 600 }}>
                 score = (v/(v+m)) · R + (m/(v+m)) · C
               </code>
             </div>
             <div style={{ marginBottom: 10 }}>
-              Same approach IMDb's Top 250 and Yelp's "Best of" use. Each salon's rating <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>R</code> with <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>v</code> reviews is blended with the area's overall average <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>C</code> (currently <strong>{areaAvg.toFixed(2)}★</strong>) using <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: '#fff', padding: '1px 5px', borderRadius: 4, border: '1px solid #e0e0e0' }}>m={BAYESIAN_M}</code> as the "established review count" threshold. Low-review shops get pulled toward the area average so a 5★ with 3 reviews can't outrank a 4.8 with 174. As a salon's review count grows past <em>m</em>, the score converges on its true rating.
+              Same approach IMDb's Top 250 and Yelp's "Best of" use. Each salon's rating <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: 'var(--pn-surface)', padding: '1px 5px', borderRadius: 4, border: '1px solid var(--pn-border)' }}>R</code> with <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: 'var(--pn-surface)', padding: '1px 5px', borderRadius: 4, border: '1px solid var(--pn-border)' }}>v</code> reviews is blended with the area's overall average <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: 'var(--pn-surface)', padding: '1px 5px', borderRadius: 4, border: '1px solid var(--pn-border)' }}>C</code> (currently <strong>{areaAvg.toFixed(2)}★</strong>) using <code style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 11, background: 'var(--pn-surface)', padding: '1px 5px', borderRadius: 4, border: '1px solid var(--pn-border)' }}>m={BAYESIAN_M}</code> as the "established review count" threshold. Low-review shops get pulled toward the area average so a 5★ with 3 reviews can't outrank a 4.8 with 174. As a salon's review count grows past <em>m</em>, the score converges on its true rating.
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 10 }}>
               <ScoreExample label="5.0 ★ · 3 reviews"     value={bayesianFmt(5.0,    3, areaAvg)}  note="rating pulled to area avg" />
               <ScoreExample label="4.8 ★ · 174 reviews"   value={bayesianFmt(4.8,  174, areaAvg)}  note="rating mostly trusted" />
               <ScoreExample label="4.1 ★ · 634 reviews"   value={bayesianFmt(4.1,  634, areaAvg)}  note="lots of reviews — rating dominates" />
             </div>
-            <div style={{ fontSize: 11, color: '#888', marginTop: 10 }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 10 }}>
               Want a different view? Use the <strong>Sort by</strong> chips above to re-rank by raw rating, review count, or distance — the underlying numbers don't change.
             </div>
           </div>
@@ -260,7 +260,7 @@ export function ConfigureReviewsLink({ label = '⚙ Google Reviews config' }) {
   return (
     <button
       onClick={() => window.dispatchEvent(new CustomEvent('open-admin', { detail: { tab: 'webfront', scrollTo: 'google-reviews' } }))}
-      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', color: '#3D95CE', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', color: '#3D95CE', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
       title="Open Admin → Settings → Google Reviews"
     >
       {label}
@@ -276,20 +276,20 @@ function bayesianFmt(R, v, C) {
 
 function ScoreExample({ label, value, note }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 8, padding: '8px 10px' }}>
-      <div style={{ fontSize: 11, color: '#555', fontWeight: 500 }}>{label}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '8px 10px' }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 500 }}>{label}</div>
       <div style={{ fontSize: 18, fontWeight: 700, color: '#2D7A5F', marginTop: 2 }}>{value}</div>
-      <div style={{ fontSize: 10, color: '#999', marginTop: 1 }}>{note}</div>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 1 }}>{note}</div>
     </div>
   );
 }
 
 function StatCard({ label, value, sub, accent }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 700, color: accent }}>{value}</div>
-      {sub && <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }

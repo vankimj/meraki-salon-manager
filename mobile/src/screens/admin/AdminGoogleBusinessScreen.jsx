@@ -5,8 +5,7 @@ import {
   fetchGoogleBusinessAuth, getGoogleBusinessAuthUrl, fetchWebfrontConfig, saveWebfrontConfig,
   findBusinessByAddress, syncGoogleBusinessReviews, disconnectGoogleBusiness,
 } from '../../lib/firestore';
-
-const GREEN = '#2D7A5F', BLUE = '#3D95CE';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 // Per-tenant Google Business setup wizard (owner-facing — NO platform
 // credentials here; those are Plume's one-time setup). Three steps:
@@ -14,6 +13,8 @@ const GREEN = '#2D7A5F', BLUE = '#3D95CE';
 //   2. Confirm listing — auto-detect by address (or paste a Place ID).
 //   3. Sync reviews.
 export default function AdminGoogleBusinessScreen() {
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
   const [auth, setAuth]   = useState(undefined);
   const [cfg, setCfg]     = useState(null);
   const [busy, setBusy]   = useState(false);
@@ -73,7 +74,7 @@ export default function AdminGoogleBusinessScreen() {
     ]);
   }
 
-  if (auth === undefined || cfg === null) return <View style={styles.center}><ActivityIndicator color={GREEN} /></View>;
+  if (auth === undefined || cfg === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16 }}>
@@ -102,7 +103,7 @@ export default function AdminGoogleBusinessScreen() {
       ))}
       <Text style={[styles.help, { marginTop: 14 }]}>Place ID</Text>
       <View style={styles.placeRow}>
-        <TextInput style={[styles.input, { flex: 1 }]} value={placeId} onChangeText={savePlaceId} onBlur={commitPlaceId} placeholder="ChIJ…" placeholderTextColor="#bbb" autoCapitalize="none" />
+        <TextInput style={[styles.input, { flex: 1 }]} value={placeId} onChangeText={savePlaceId} onBlur={commitPlaceId} placeholder="ChIJ…" placeholderTextColor={theme.placeholder} autoCapitalize="none" />
         {!!placeId && <Text style={styles.placeOk}>✓</Text>}
       </View>
 
@@ -126,21 +127,21 @@ export default function AdminGoogleBusinessScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:      { flex: 1, backgroundColor: '#f5f7fa' },
-  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  step:      { fontSize: 15, fontWeight: '800', color: '#1a1a1a', marginBottom: 6 },
-  help:      { fontSize: 12.5, color: '#888', marginBottom: 8, lineHeight: 17 },
-  btn:       { backgroundColor: '#fff', borderWidth: 1, borderColor: '#d8d8d8', borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
-  btnText:   { color: '#444', fontWeight: '700', fontSize: 14 },
-  candidate: { backgroundColor: '#fff', borderWidth: 1, borderColor: GREEN, borderRadius: 12, padding: 14, marginTop: 10 },
-  candName:  { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  candSub:   { fontSize: 12, color: '#888', marginTop: 2 },
-  candUse:   { fontSize: 12, fontWeight: '800', color: GREEN, marginTop: 6 },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:      { flex: 1, backgroundColor: t.bg },
+  center:    { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  step:      { fontSize: 15, fontWeight: '800', color: t.text, marginBottom: 6 },
+  help:      { fontSize: 12.5, color: t.textMuted, marginBottom: 8, lineHeight: 17 },
+  btn:       { backgroundColor: t.surface, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 12, paddingVertical: 13, alignItems: 'center', marginTop: 4 },
+  btnText:   { color: t.textMuted, fontWeight: '700', fontSize: 14 },
+  candidate: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.green, borderRadius: 12, padding: 14, marginTop: 10 },
+  candName:  { fontSize: 15, fontWeight: '700', color: t.text },
+  candSub:   { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  candUse:   { fontSize: 12, fontWeight: '800', color: t.green, marginTop: 6 },
   placeRow:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  input:     { backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: '#1a1a1a', borderWidth: 1, borderColor: '#ececec' },
-  placeOk:   { fontSize: 18, color: GREEN, fontWeight: '800' },
-  syncBtn:   { backgroundColor: BLUE, borderColor: BLUE },
+  input:     { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
+  placeOk:   { fontSize: 18, color: t.green, fontWeight: '800' },
+  syncBtn:   { backgroundColor: t.blue, borderColor: t.blue },
   syncText:  { color: '#fff', fontWeight: '800', fontSize: 14 },
-  disconnect:{ color: '#c0392b', fontWeight: '700', fontSize: 13 },
+  disconnect:{ color: t.danger, fontWeight: '700', fontSize: 13 },
 });

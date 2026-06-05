@@ -1,5 +1,6 @@
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HeaderTitle         from '../components/HeaderTitle';
+import { useTheme }        from '../theme/ThemeContext';
 import ManageGridScreen    from '../screens/manage/ManageGridScreen';
 import ModulePlaceholder   from '../screens/manage/ModulePlaceholder';
 import ChatScreen          from '../screens/ChatScreen';
@@ -36,9 +37,10 @@ const Stack = createNativeStackNavigator();
 // each built module pushes its own screen. Chat (Communications) now
 // lives here as a pushed screen instead of a dedicated bottom tab.
 export default function ManageStack() {
+  const { theme } = useTheme();
   return (
     <Stack.Navigator
-      screenOptions={{ headerStyle: { backgroundColor: '#fff' }, headerTintColor: '#2D7A5F' }}
+      screenOptions={{ headerStyle: { backgroundColor: theme.headerBg }, headerTintColor: theme.green, contentStyle: { backgroundColor: theme.bg } }}
     >
       <Stack.Screen name="ManageGrid"  component={ManageGridScreen}
         options={{ title: 'Manage', headerTitle: () => <HeaderTitle title="Manage" /> }} />

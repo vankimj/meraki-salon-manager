@@ -3,6 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, 
 import { fetchUsersFull, setUserRole } from '../../lib/firestore';
 import { auth } from '../../lib/firebase';
 import useTenantAccess from '../../hooks/useTenantAccess';
+import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 const ROLE_COLORS = {
   admin:     ['#eff6ff', '#2563eb'],
@@ -19,6 +20,8 @@ const ROLES = ['admin', 'scheduler', 'tech', 'readonly', 'denied'];
 // updates data/usersFull + the rules projections atomically.
 export default function AdminUsersScreen() {
   const { isAdmin } = useTenantAccess();
+  const { theme } = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [users, setUsers] = useState(null);
   const [busy, setBusy]   = useState(false);
   const me = (auth.currentUser?.email || '').toLowerCase();
@@ -51,7 +54,7 @@ export default function AdminUsersScreen() {
     } else apply();
   }
 
-  if (users === null) return <View style={styles.center}><ActivityIndicator color="#2D7A5F" /></View>;
+  if (users === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   return (
     <FlatList
@@ -59,7 +62,7 @@ export default function AdminUsersScreen() {
       data={users}
       keyExtractor={(u, i) => (u.email || String(i))}
       contentContainerStyle={{ padding: 14 }}
-      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor="#2D7A5F" />}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
       ListHeaderComponent={<Text style={styles.note}>{isAdmin ? 'Tap a user to change their role.' : 'View-only.'}</Text>}
       ListEmptyComponent={<Text style={styles.empty}>No users found (or you lack access to the rich user list).</Text>}
       renderItem={({ item }) => {
@@ -78,14 +81,14 @@ export default function AdminUsersScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  wrap:    { flex: 1, backgroundColor: '#f5f7fa' },
-  center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f5f7fa' },
-  note:    { fontSize: 12, color: '#999', marginBottom: 10, paddingHorizontal: 2 },
-  empty:   { textAlign: 'center', color: '#999', marginTop: 50, fontSize: 13 },
-  row:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: '#ececec', gap: 10 },
-  name:    { fontSize: 15, fontWeight: '700', color: '#1a1a1a' },
-  sub:     { fontSize: 12, color: '#8a8a8a', marginTop: 2 },
+const makeStyles = (t) => StyleSheet.create({
+  wrap:    { flex: 1, backgroundColor: t.bg },
+  center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
+  note:    { fontSize: 12, color: t.textFaint, marginBottom: 10, paddingHorizontal: 2 },
+  empty:   { textAlign: 'center', color: t.textFaint, marginTop: 50, fontSize: 13 },
+  row:     { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: t.border, gap: 10 },
+  name:    { fontSize: 15, fontWeight: '700', color: t.text },
+  sub:     { fontSize: 12, color: t.textMuted, marginTop: 2 },
   badge:   { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 4 },
   badgeText:{ fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
 });

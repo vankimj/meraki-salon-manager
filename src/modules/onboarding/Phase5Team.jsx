@@ -127,23 +127,23 @@ export default function Phase5Team({ onboarding, onAdvance, saving }) {
   }
 
   if (loading) {
-    return <div style={{ padding: 24, color: '#888', fontSize: 13, textAlign: 'center' }}>Loading team…</div>;
+    return <div style={{ padding: 24, color: 'var(--pn-text-muted)', fontSize: 13, textAlign: 'center' }}>Loading team…</div>;
   }
 
   return (
     <div>
-      <div style={{ fontSize: 14, color: '#555', lineHeight: 1.55, marginBottom: 18 }}>
+      <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
         Your team accesses Plume Nexus with their own account. Add each tech below, then
         send invites — they'll receive a sign-in email with a link to their schedule.
       </div>
 
       <Section title={`Your team (${employees.length})`}>
         {employees.length === 0 ? (
-          <div style={{ padding: 14, borderRadius: 8, background: '#f8f9fa', border: '1px dashed #d8d8d8', textAlign: 'center', color: '#888', fontSize: 13 }}>
+          <div style={{ padding: 14, borderRadius: 8, background: 'var(--pn-bg)', border: '1px dashed var(--pn-border-strong)', textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>
             No techs yet. Add your first one below — you can always invite more later.
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto', border: '1px solid #e8e8e8', borderRadius: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 240, overflowY: 'auto', border: '1px solid var(--pn-border)', borderRadius: 8 }}>
             {employees.map(e => (
               <TechRow
                 key={e.id}
@@ -165,7 +165,7 @@ export default function Phase5Team({ onboarding, onAdvance, saving }) {
             {adding ? 'Adding…' : '+ Add'}
           </button>
         </form>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 6 }}>
           Photos, services, schedule, and compensation can be set later from Admin → Employees.
         </div>
       </Section>
@@ -175,7 +175,7 @@ export default function Phase5Team({ onboarding, onAdvance, saving }) {
           <button onClick={sendInvites} disabled={sendingAll || selected.size === 0} style={btnPrimary}>
             {sendingAll ? `Sending ${sendCount}/${selected.size}…` : `Send invites (${selected.size} selected)`}
           </button>
-          <span style={{ fontSize: 11, color: '#888' }}>
+          <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
             Already-invited techs are unselected by default.
           </span>
         </div>
@@ -202,16 +202,16 @@ function TechRow({ emp, checked, onToggle }) {
     <label style={{
       display: 'flex', alignItems: 'center', gap: 10,
       padding: '8px 12px',
-      borderBottom: '1px solid #f5f5f5',
+      borderBottom: '1px solid var(--pn-border)',
       cursor: hasEmail ? 'pointer' : 'default',
-      background: '#fff',
+      background: 'var(--pn-surface)',
       opacity: hasEmail ? 1 : 0.6,
     }}>
       <input type="checkbox" checked={checked} disabled={!hasEmail || invited}
         onChange={onToggle} style={{ accentColor: '#5b3b8c' }} />
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{emp.name}</div>
-        <div style={{ fontSize: 11, color: '#888' }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{emp.name}</div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
           {emp.email || <em style={{ color: '#b91c1c' }}>no email — can't invite</em>}
         </div>
       </div>
@@ -233,6 +233,6 @@ function Section({ title, children }) {
   );
 }
 
-const inp = { boxSizing: 'border-box', width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid #d8d8d8', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: '#fff' };
+const inp = { boxSizing: 'border-box', width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid var(--pn-border-strong)', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: 'var(--pn-surface)' };
 const btnPrimary   = { padding: '9px 16px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

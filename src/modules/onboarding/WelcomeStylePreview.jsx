@@ -63,7 +63,7 @@ function PrimaryName({ primary, light, big }) {
       fontFamily: '"Cinzel", Georgia, serif',
       fontWeight: 600,
       fontSize: big ? 28 : 22,
-      color: light ? '#fff' : '#1a1a1a',
+      color: light ? '#fff' : 'var(--pn-text)',
       margin: '8px 0 0',
       letterSpacing: '-.005em',
       lineHeight: 1,
@@ -114,7 +114,7 @@ function Above({ above, light }) {
       fontFamily: '"Cinzel", Georgia, serif',
       fontSize: 9,
       fontWeight: 500,
-      color: light ? 'rgba(255,255,255,.7)' : '#888',
+      color: light ? 'rgba(255,255,255,.7)' : 'var(--pn-text-muted)',
       letterSpacing: '.18em',
       textTransform: 'uppercase',
       marginBottom: 4,
@@ -212,7 +212,7 @@ function Stacked({ greet, primary, script, above, brandColor, brandLogoUrl }) {
       alignItems: 'center', justifyContent: 'center', padding: 16,
     }}>
       <div style={{
-        background: '#fff', borderRadius: 16, padding: '20px 26px',
+        background: 'var(--pn-surface)', borderRadius: 16, padding: '20px 26px',
         boxShadow: '0 6px 24px rgba(91,59,140,.12)', textAlign: 'center',
         border: '1px solid #ead8b5',
       }}>
@@ -263,7 +263,7 @@ function PhotoSplit({ greet, primary, script, above, brandColor, brandLogoUrl })
         <LogoOrMark brandLogoUrl={brandLogoUrl} size={56} />
       </div>
       <div style={{
-        flex: 1, background: '#fff', display: 'flex', flexDirection: 'column',
+        flex: 1, background: 'var(--pn-surface)', display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center',
       }}>
         <Above above={above} />
@@ -302,10 +302,10 @@ const frameLabel = {
 };
 const frame = {
   width: '100%', maxWidth: 460,
-  border: '1px solid #d8d8d8',
+  border: '1px solid var(--pn-border-strong)',
   borderRadius: 12, overflow: 'hidden',
   boxShadow: '0 4px 14px rgba(91,59,140,.08)',
-  background: '#fff',
+  background: 'var(--pn-surface)',
 };
 const stage = {
   width: '100%', height: 240, display: 'flex',

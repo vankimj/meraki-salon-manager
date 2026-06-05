@@ -101,7 +101,7 @@ export default function WalkinKiosk() {
 
   if (!isAdmin && !isScheduler) {
     return (
-      <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>
+      <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>
         Walk-in kiosk requires admin or scheduler role.
       </div>
     );
@@ -228,10 +228,10 @@ export default function WalkinKiosk() {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <div>
-          <div style={{ fontSize: 13, color: fullscreen ? '#a99cc9' : '#888', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>
+          <div style={{ fontSize: 13, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.08em', fontWeight: 700 }}>
             Walk-in Kiosk
           </div>
-          <div style={{ fontSize: fullscreen ? 28 : 22, fontWeight: 700, color: fullscreen ? '#fff' : '#1a1a1a' }}>
+          <div style={{ fontSize: fullscreen ? 28 : 22, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>
             {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
           </div>
         </div>
@@ -258,13 +258,13 @@ export default function WalkinKiosk() {
               fullscreen={fullscreen}
             />
           ) : (
-            <div style={{ background: fullscreen ? 'rgba(255,255,255,.06)' : '#fff', border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid #e8e8e8', borderRadius: 18, padding: 36, textAlign: 'center', minHeight: 220 }}>
+            <div style={{ background: fullscreen ? 'rgba(255,255,255,.06)' : 'var(--pn-surface)', border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid var(--pn-border)', borderRadius: 18, padding: 36, textAlign: 'center', minHeight: 220 }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>👥</div>
-              <div style={{ fontSize: 18, color: fullscreen ? '#a99cc9' : '#666', marginBottom: 6, fontWeight: 600 }}>No techs in rotation today</div>
-              <div style={{ fontSize: 13, color: fullscreen ? '#7a6a9a' : '#999', marginBottom: 14, lineHeight: 1.5, maxWidth: 320, margin: '0 auto 14px' }}>
+              <div style={{ fontSize: 18, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)', marginBottom: 6, fontWeight: 600 }}>No techs in rotation today</div>
+              <div style={{ fontSize: 13, color: fullscreen ? '#7a6a9a' : 'var(--pn-text-faint)', marginBottom: 14, lineHeight: 1.5, maxWidth: 320, margin: '0 auto 14px' }}>
                 Open <strong>Schedule → Turn rotation</strong> from the side nav to clock techs in. This view updates live as soon as anyone joins the rotation from any device.
               </div>
-              <div style={{ fontSize: 11, color: fullscreen ? '#7a6a9a' : '#bbb' }}>
+              <div style={{ fontSize: 11, color: fullscreen ? '#7a6a9a' : 'var(--pn-text-faint)' }}>
                 💡 Leave this page open on an iPad — it auto-refreshes.
               </div>
             </div>
@@ -369,10 +369,10 @@ function NextUpHero({ next, hasWalkIn, onSeatNext, fullscreen }) {
       }}>
         {initialsOf(next.techName)}
       </div>
-      <div style={{ fontSize: fullscreen ? 44 : 34, fontWeight: 800, color: fullscreen ? '#fff' : '#1a1a1a', lineHeight: 1.1, marginBottom: 8 }}>
+      <div style={{ fontSize: fullscreen ? 44 : 34, fontWeight: 800, color: fullscreen ? '#fff' : 'var(--pn-text)', lineHeight: 1.1, marginBottom: 8 }}>
         {next.techName}
       </div>
-      <div style={{ fontSize: fullscreen ? 16 : 14, color: fullscreen ? '#d4c5ff' : '#666', marginBottom: 20 }}>
+      <div style={{ fontSize: fullscreen ? 16 : 14, color: fullscreen ? '#d4c5ff' : 'var(--pn-text-muted)', marginBottom: 20 }}>
         {next.turnsTaken || 0} turn{next.turnsTaken === 1 ? '' : 's'} today
       </div>
       <button onClick={onSeatNext}
@@ -382,8 +382,8 @@ function NextUpHero({ next, hasWalkIn, onSeatNext, fullscreen }) {
           fontWeight: 700,
           borderRadius: 14,
           border: 'none',
-          background: hasWalkIn ? '#22c55e' : (fullscreen ? 'rgba(255,255,255,.15)' : '#e8e8e8'),
-          color: hasWalkIn ? '#fff' : (fullscreen ? '#d4c5ff' : '#888'),
+          background: hasWalkIn ? '#22c55e' : (fullscreen ? 'rgba(255,255,255,.15)' : 'var(--pn-surface-alt)'),
+          color: hasWalkIn ? '#fff' : (fullscreen ? '#d4c5ff' : 'var(--pn-text-muted)'),
           cursor: 'pointer',
           fontFamily: 'inherit',
           boxShadow: hasWalkIn ? '0 6px 16px rgba(34,197,94,.3)' : 'none',
@@ -401,13 +401,13 @@ function NextUpHero({ next, hasWalkIn, onSeatNext, fullscreen }) {
 function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
   return (
     <div style={{
-      background: fullscreen ? 'rgba(255,255,255,.06)' : '#fff',
-      border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid #e8e8e8',
+      background: fullscreen ? 'rgba(255,255,255,.06)' : 'var(--pn-surface)',
+      border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid var(--pn-border)',
       borderRadius: 18, padding: 20, minHeight: 280,
       backdropFilter: fullscreen ? 'blur(20px)' : 'none',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <div style={{ fontSize: fullscreen ? 18 : 15, fontWeight: 700, color: fullscreen ? '#fff' : '#1a1a1a' }}>
+        <div style={{ fontSize: fullscreen ? 18 : 15, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>
           📝 Waitlist {waiting.length > 0 && <span style={{ color: '#ef4444' }}>({waiting.length})</span>}
         </div>
         <button onClick={onAdd}
@@ -416,7 +416,7 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
         </button>
       </div>
       {waiting.length === 0 ? (
-        <div style={{ padding: '40px 20px', textAlign: 'center', color: fullscreen ? '#7a6a9a' : '#bbb', fontSize: 14 }}>
+        <div style={{ padding: '40px 20px', textAlign: 'center', color: fullscreen ? '#7a6a9a' : 'var(--pn-text-faint)', fontSize: 14 }}>
           No one waiting
         </div>
       ) : (
@@ -428,18 +428,18 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
               <div key={q.id} style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '10px 12px',
-                background: fullscreen ? (urgent ? 'rgba(239,68,68,.15)' : 'rgba(255,255,255,.06)') : (urgent ? '#fef2f2' : '#fafafa'),
-                border: fullscreen ? '1px solid rgba(255,255,255,.1)' : `1px solid ${urgent ? '#fca5a5' : '#f0f0f0'}`,
+                background: fullscreen ? (urgent ? 'rgba(239,68,68,.15)' : 'rgba(255,255,255,.06)') : (urgent ? '#fef2f2' : 'var(--pn-bg)'),
+                border: fullscreen ? '1px solid rgba(255,255,255,.1)' : `1px solid ${urgent ? '#fca5a5' : 'var(--pn-border)'}`,
                 borderRadius: 10,
               }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : '#1a1a1a' }}>{i === 0 ? '👉 ' : ''}{q.clientName || 'Walk-in'}</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>{i === 0 ? '👉 ' : ''}{q.clientName || 'Walk-in'}</span>
                     {q.techName && q.techName !== 'Any' && (
                       <span style={{ fontSize: 10, fontWeight: 700, color: '#ef4444' }}>★ {q.techName}</span>
                     )}
                   </div>
-                  <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : '#888' }}>
+                  <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)' }}>
                     {q.serviceName || 'service'} · waiting {wait} min
                   </div>
                 </div>
@@ -449,7 +449,7 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
                     Seat
                   </button>
                   <button onClick={() => onRemove(q)}
-                    style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: fullscreen ? '1px solid rgba(255,255,255,.2)' : '1px solid #d8d8d8', background: 'transparent', color: fullscreen ? '#a99cc9' : '#888', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    style={{ fontSize: 11, padding: '5px 8px', borderRadius: 6, border: fullscreen ? '1px solid rgba(255,255,255,.2)' : '1px solid var(--pn-border-strong)', background: 'transparent', color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
                     ✕
                   </button>
                 </div>
@@ -471,12 +471,12 @@ function RotationPanel({ roster, fullscreen }) {
   });
   return (
     <div style={{
-      background: fullscreen ? 'rgba(255,255,255,.06)' : '#fff',
-      border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid #e8e8e8',
+      background: fullscreen ? 'rgba(255,255,255,.06)' : 'var(--pn-surface)',
+      border: fullscreen ? '1px solid rgba(255,255,255,.15)' : '1px solid var(--pn-border)',
       borderRadius: 18, padding: 20,
       backdropFilter: fullscreen ? 'blur(20px)' : 'none',
     }}>
-      <div style={{ fontSize: fullscreen ? 18 : 15, fontWeight: 700, color: fullscreen ? '#fff' : '#1a1a1a', marginBottom: 14 }}>
+      <div style={{ fontSize: fullscreen ? 18 : 15, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)', marginBottom: 14 }}>
         🔄 Rotation order
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
@@ -489,10 +489,10 @@ function RotationPanel({ roster, fullscreen }) {
               padding: 12,
               background: isNext
                 ? (fullscreen ? 'rgba(122, 74, 217, .35)' : 'linear-gradient(135deg, #f3eafc, #eaf3fc)')
-                : (fullscreen ? 'rgba(255,255,255,.04)' : '#fafafa'),
+                : (fullscreen ? 'rgba(255,255,255,.04)' : 'var(--pn-bg)'),
               border: fullscreen
                 ? `1px solid ${isNext ? 'rgba(212,197,255,.4)' : 'rgba(255,255,255,.08)'}`
-                : `1px solid ${isNext ? '#d8d0e8' : '#f0f0f0'}`,
+                : `1px solid ${isNext ? '#d8d0e8' : 'var(--pn-border)'}`,
               borderRadius: 12,
             }}>
               <div style={{
@@ -501,10 +501,10 @@ function RotationPanel({ roster, fullscreen }) {
                 fontSize: 14, fontWeight: 700, flexShrink: 0,
               }}>{initialsOf(r.techName)}</div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : '#1a1a1a' }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>
                   {isNext && '#1 '}{r.techName}
                 </div>
-                <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : '#888' }}>
+                <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)' }}>
                   {r.turnsTaken || 0} turn{r.turnsTaken === 1 ? '' : 's'}
                 </div>
               </div>
@@ -604,7 +604,7 @@ function AddWalkinModal({ services, employees, clients, onClose, onAdded }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 420, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 420, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Add walk-in</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
 
@@ -669,7 +669,7 @@ function AddWalkinModal({ services, employees, clients, onClose, onAdded }) {
             {saving ? 'Adding…' : 'Add to waitlist'}
           </button>
           <button onClick={onClose} disabled={saving}
-            style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
+            style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
             Cancel
           </button>
         </div>
@@ -696,9 +696,9 @@ function ClientPicker({ clients, clientId, onSelect, onClear }) {
   if (selected) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...kioskInput, paddingTop: 8, paddingBottom: 8, cursor: 'default' }}>
-        <span style={{ flex: 1, fontSize: 14, color: '#1a1a1a' }}>{selected.name}</span>
-        {selected.phone && <span style={{ fontSize: 11, color: '#aaa' }}>{selected.phone}</span>}
-        <button onClick={onClear} style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
+        <span style={{ flex: 1, fontSize: 14, color: 'var(--pn-text)' }}>{selected.name}</span>
+        {selected.phone && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{selected.phone}</span>}
+        <button onClick={onClear} style={{ border: 'none', background: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
       </div>
     );
   }
@@ -718,18 +718,18 @@ function ClientPicker({ clients, clientId, onSelect, onClear }) {
         style={kioskInput}
       />
       {open && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: '#fff', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 220, maxHeight: 260, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, zIndex: 220, maxHeight: 260, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
           {filtered.length === 0 ? (
-            <div style={{ padding: '12px', fontSize: 12, color: '#888', textAlign: 'center' }}>
+            <div style={{ padding: '12px', fontSize: 12, color: 'var(--pn-text-muted)', textAlign: 'center' }}>
               No matches{query ? ` for “${query}”` : ''}. Tap <strong style={{ color: '#92400e' }}>+ New client</strong> below.
             </div>
           ) : filtered.map(c => (
             <div key={c.id} onMouseDown={() => { onSelect(c); setQuery(''); setOpen(false); }}
-              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f5f5f5' }}
+              style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid var(--pn-border)' }}
               onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
               onMouseLeave={e => e.currentTarget.style.background = ''}>
               <span style={{ flex: 1 }}>{c.name}</span>
-              {c.phone && <span style={{ fontSize: 11, color: '#888' }}>{c.phone}</span>}
+              {c.phone && <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{c.phone}</span>}
             </div>
           ))}
         </div>
@@ -744,13 +744,13 @@ function SeatConfirmModal({ entry, defaultTech, roster, onConfirm, onCancel }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onCancel(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 400, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 400, padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Seat walk-in</div>
-        <div style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
+        <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 16 }}>
           <strong>{entry.clientName || 'Walk-in'}</strong>
           {entry.serviceName ? ` · ${entry.serviceName}` : ''}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>Pick tech</div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '.04em' }}>Pick tech</div>
         <select value={techName} onChange={e => setTechName(e.target.value)} style={{ ...kioskInput, marginBottom: 16 }}>
           <option value="">Pick a tech…</option>
           {sorted.map(r => (
@@ -765,7 +765,7 @@ function SeatConfirmModal({ entry, defaultTech, roster, onConfirm, onCancel }) {
             Seat with {techName || '…'}
           </button>
           <button onClick={onCancel}
-            style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
+            style={{ flex: 1, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
             Cancel
           </button>
         </div>
@@ -780,8 +780,8 @@ const kioskInput = {
   fontSize: 14,
   padding: '9px 12px',
   borderRadius: 10,
-  border: '1px solid #d8d8d8',
-  background: '#fafafa',
+  border: '1px solid var(--pn-border-strong)',
+  background: 'var(--pn-bg)',
   outline: 'none',
   boxSizing: 'border-box',
 };
@@ -789,7 +789,7 @@ const kioskInput = {
 function FieldRow({ label, children }) {
   return (
     <div>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
       {children}
     </div>
   );

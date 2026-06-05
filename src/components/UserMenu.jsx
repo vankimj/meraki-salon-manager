@@ -1,9 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { getColorMode, setColorMode, subscribeColorMode } from '../lib/colorMode';
 
 export default function UserMenu() {
   const { gUser, signOut, switchAccount } = useApp();
   const [open, setOpen] = useState(false);
+  const [colorMode, setMode] = useState(getColorMode());
+  useEffect(() => subscribeColorMode(setMode), []);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -57,6 +60,22 @@ export default function UserMenu() {
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
                 <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gUser.email}</div>
               </div>
+            </div>
+          </div>
+
+          {/* Appearance */}
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--pn-border)' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 7 }}>Appearance</div>
+            <div style={{ display: 'flex', gap: 4, background: 'var(--pn-surface-muted)', borderRadius: 9, padding: 3 }}>
+              {[['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']].map(([v, lbl]) => {
+                const on = colorMode === v;
+                return (
+                  <button key={v} onClick={() => setColorMode(v)}
+                    style={{ flex: 1, padding: '6px 0', fontSize: 12, fontWeight: on ? 700 : 500, fontFamily: 'inherit', cursor: 'pointer', border: 'none', borderRadius: 7, background: on ? 'var(--pn-surface)' : 'transparent', color: on ? 'var(--tm-primary, #2D7A5F)' : 'var(--pn-text-muted)', boxShadow: on ? '0 1px 3px var(--pn-shadow)' : 'none' }}>
+                    {lbl}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

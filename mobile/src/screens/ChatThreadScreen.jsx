@@ -6,6 +6,7 @@ import {
 import { auth } from '../lib/firebase';
 import { subscribeToChat, sendChatMessage, sendSmsToClient, sendEmailToClient, markChatRead } from '../lib/firestore';
 import Icon from '../components/Icon';
+import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 function fmtTime(iso) {
   if (!iso) return '';
@@ -72,13 +73,16 @@ export default function ChatThreadScreen({ route }) {
     }
   }, [draft, sending, channel, subject, clientId, clientName, clientEmail]);
 
+  const styles = useThemedStyles(makeStyles);
+  const { theme } = useTheme();
+
   if (loading) {
-    return <ActivityIndicator style={{ marginTop: 60 }} color="#3D95CE" />;
+    return <ActivityIndicator style={{ marginTop: 60 }} color={theme.blue} />;
   }
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#f5f7fa' }}
+      style={{ flex: 1, backgroundColor: theme.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
     >
@@ -89,7 +93,7 @@ export default function ChatThreadScreen({ route }) {
         contentContainerStyle={{ padding: 12, gap: 6 }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Icon name="chat" size={48} color="#cbd0d6" strokeWidth={1.5} />
+            <Icon name="chat" size={48} color={theme.textFaint} strokeWidth={1.5} />
             <Text style={[styles.emptyTitle, { marginTop: 12 }]}>No messages yet</Text>
             <Text style={styles.emptyBody}>Send the first message — clients see them in their portal and can reply.</Text>
           </View>
@@ -144,7 +148,7 @@ export default function ChatThreadScreen({ route }) {
             value={subject}
             onChangeText={setSubject}
             placeholder="Subject"
-            placeholderTextColor="#bbb"
+            placeholderTextColor={theme.placeholder}
             maxLength={200}
           />
         </View>
@@ -160,7 +164,7 @@ export default function ChatThreadScreen({ route }) {
             : channel === 'email' ? 'Email body…'
             : 'Type a message…'
           }
-          placeholderTextColor="#bbb"
+          placeholderTextColor={theme.placeholder}
           multiline
           maxLength={2000}
         />
@@ -176,42 +180,42 @@ export default function ChatThreadScreen({ route }) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t) => StyleSheet.create({
   emptyState:  { alignItems: 'center', paddingTop: 80, paddingHorizontal: 32 },
   emptyIcon:   { fontSize: 44, marginBottom: 10 },
-  emptyTitle:  { fontSize: 16, fontWeight: '700', color: '#1a1a1a', marginBottom: 6 },
-  emptyBody:   { fontSize: 13, color: '#888', textAlign: 'center', lineHeight: 19 },
+  emptyTitle:  { fontSize: 16, fontWeight: '700', color: t.text, marginBottom: 6 },
+  emptyBody:   { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 19 },
 
   bubbleRow:   { paddingHorizontal: 4 },
   bubble:      { maxWidth: '78%', paddingVertical: 9, paddingHorizontal: 12, borderRadius: 16 },
-  bubbleStaff: { backgroundColor: '#3D95CE' },
-  bubbleClient:{ backgroundColor: '#fff', borderWidth: 1, borderColor: '#ebebeb' },
-  bubbleText:  { fontSize: 14, color: '#1a1a1a', lineHeight: 19 },
+  bubbleStaff: { backgroundColor: t.blue },
+  bubbleClient:{ backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  bubbleText:  { fontSize: 14, color: t.text, lineHeight: 19 },
   bubbleTextStaff: { color: '#fff' },
-  bubbleTime:  { fontSize: 10, color: '#aaa', marginTop: 3, marginHorizontal: 6 },
+  bubbleTime:  { fontSize: 10, color: t.textFaint, marginTop: 3, marginHorizontal: 6 },
 
   channelRow: {
     flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingTop: 8, paddingBottom: 4,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#ebebeb',
+    backgroundColor: t.surface, borderTopWidth: 1, borderTopColor: t.border,
   },
-  channelChip:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#e5e7eb' },
-  channelChipActive:  { backgroundColor: '#EBF4FB', borderColor: '#3D95CE' },
+  channelChip:        { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: t.surfaceMuted, borderWidth: 1, borderColor: t.border },
+  channelChipActive:  { backgroundColor: t.blueSoft, borderColor: t.blue },
   channelChipDisabled:{ opacity: 0.4 },
-  channelChipText:        { fontSize: 12, fontWeight: '600', color: '#666' },
-  channelChipTextActive:  { color: '#1a5f8a', fontWeight: '700' },
-  channelChipTextDisabled:{ color: '#aaa' },
-  subjectWrap:  { paddingHorizontal: 10, paddingTop: 4, paddingBottom: 4, backgroundColor: '#fff' },
-  subjectInput: { borderWidth: 1, borderColor: '#e5e7eb', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: '#1a1a1a', backgroundColor: '#fafafa' },
+  channelChipText:        { fontSize: 12, fontWeight: '600', color: t.textMuted },
+  channelChipTextActive:  { color: t.blue, fontWeight: '700' },
+  channelChipTextDisabled:{ color: t.textFaint },
+  subjectWrap:  { paddingHorizontal: 10, paddingTop: 4, paddingBottom: 4, backgroundColor: t.surface },
+  subjectInput: { borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, color: t.text, backgroundColor: t.surfaceAlt },
   composer: {
     flexDirection: 'row', alignItems: 'flex-end', gap: 8,
     paddingHorizontal: 10, paddingVertical: 8, paddingBottom: Platform.OS === 'ios' ? 8 : 10,
-    backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#ebebeb',
+    backgroundColor: t.surface, borderTopWidth: 1, borderTopColor: t.border,
   },
   composerInput: {
-    flex: 1, backgroundColor: '#f5f5f5', borderRadius: 18,
-    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: '#1a1a1a',
+    flex: 1, backgroundColor: t.surfaceAlt, borderRadius: 18,
+    paddingHorizontal: 14, paddingVertical: 10, fontSize: 14, color: t.text,
     maxHeight: 110,
   },
-  sendBtn:     { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18, backgroundColor: '#2D7A5F' },
+  sendBtn:     { paddingHorizontal: 16, paddingVertical: 10, borderRadius: 18, backgroundColor: t.green },
   sendBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
 });

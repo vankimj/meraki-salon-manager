@@ -270,7 +270,7 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
           <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
             <input value={subdomain} onChange={e => setSubdomain(e.target.value.toLowerCase())} onBlur={() => touchTenant('subdomain')}
               placeholder="merakinails" style={{ ...inpStyle(tenantErr('subdomain')), flex: 1 }} />
-            <span style={{ alignSelf: 'center', fontSize: 12, color: '#666' }}>.plumenexus.com</span>
+            <span style={{ alignSelf: 'center', fontSize: 12, color: 'var(--pn-text-muted)' }}>.plumenexus.com</span>
             <button type="button" onClick={suggestSubdomain}
               style={btnGhost}>Suggest</button>
           </div>
@@ -284,7 +284,7 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
         </div>
 
         {locations.map((loc, i) => (
-          <div key={i} style={{ padding: 14, border: '1px solid #e8e8e8', borderRadius: 10, marginBottom: 10, background: '#fafafa' }}>
+          <div key={i} style={{ padding: 14, border: '1px solid var(--pn-border)', borderRadius: 10, marginBottom: 10, background: 'var(--pn-bg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.08em', textTransform: 'uppercase' }}>
                 {multi ? `Location ${i + 1}` : 'Your salon'}
@@ -340,7 +340,7 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
 
         {multi && (
           <button type="button" onClick={addLocation}
-            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: '#fff', border: '1px dashed #5b3b8c', borderRadius: 8, color: '#5b3b8c', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: 'var(--pn-surface)', border: '1px dashed #5b3b8c', borderRadius: 8, color: '#5b3b8c', cursor: 'pointer', fontFamily: 'inherit' }}>
             + Add another location
           </button>
         )}
@@ -374,10 +374,10 @@ function Section({ title, children }) {
 function Row({ label, children, err, hint }) {
   return (
     <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: err ? '#b91c1c' : '#555', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 600, color: err ? '#b91c1c' : 'var(--pn-text-muted)', marginBottom: 5 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>{children}</div>
       {err  && <Err msg={err} />}
-      {!err && hint && <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>{hint}</div>}
+      {!err && hint && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>{hint}</div>}
     </div>
   );
 }
@@ -391,12 +391,12 @@ function RadioCard({ selected, onClick, title, desc }) {
     <button onClick={onClick} type="button"
       style={{
         flex: 1, textAlign: 'left', padding: '12px 14px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : '#e5e5e5'}`,
-        borderRadius: 10, background: selected ? '#f5efff' : '#fff', cursor: 'pointer',
+        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        borderRadius: 10, background: selected ? '#f5efff' : 'var(--pn-surface)', cursor: 'pointer',
         fontFamily: 'inherit', transition: 'border-color .15s, background .15s',
       }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 2 }}>{title}</div>
-      <div style={{ fontSize: 11, color: '#666', lineHeight: 1.4 }}>{desc}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 2 }}>{title}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.4 }}>{desc}</div>
     </button>
   );
 }
@@ -406,15 +406,15 @@ function inpStyle(err) {
     width: '100%', boxSizing: 'border-box',
     padding: '8px 10px',
     fontSize: 13,
-    border: `1px solid ${err ? '#fca5a5' : '#d8d8d8'}`,
+    border: `1px solid ${err ? '#fca5a5' : 'var(--pn-border-strong)'}`,
     borderRadius: 8,
     fontFamily: 'inherit',
     outline: 'none',
-    background: err ? '#fef2f2' : '#fff',
+    background: err ? '#fef2f2' : 'var(--pn-surface)',
   };
 }
 
 const inp = inpStyle(null);
 const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
-const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
-const btnGhost     = { padding: '0 10px', fontSize: 11, fontWeight: 600, background: '#fff', border: '1px solid #d0d0d0', borderRadius: 8, color: '#555', cursor: 'pointer', fontFamily: 'inherit' };
+const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };
+const btnGhost     = { padding: '0 10px', fontSize: 11, fontWeight: 600, background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

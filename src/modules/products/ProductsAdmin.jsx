@@ -55,7 +55,7 @@ export default function ProductsAdmin() {
     } catch (e) { logError('product_stock', e); showToast('Failed: ' + e.message, 3000); }
   }
 
-  if (!products) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
+  if (!products) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>Loading…</div>;
 
   const active   = products.filter(p => p.active !== false);
   const inactive = products.filter(p => p.active === false);
@@ -93,7 +93,7 @@ export default function ProductsAdmin() {
 
       {shown.length === 0
         ? <Empty>No products in this view.</Empty>
-        : <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+        : <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden' }}>
             {shown.map((p, i) => (
               <ProductRow key={p.id} product={p} last={i === shown.length - 1} isAdmin={isAdmin}
                 onEdit={() => setModal(p)}
@@ -118,7 +118,7 @@ export default function ProductsAdmin() {
 function ProductThumb({ url, active }) {
   const [err, setErr] = useState(false);
   return (
-    <div style={{ width: 38, height: 38, borderRadius: 8, overflow: 'hidden', background: active !== false ? '#e8f4ee' : '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
+    <div style={{ width: 38, height: 38, borderRadius: 8, overflow: 'hidden', background: active !== false ? '#e8f4ee' : 'var(--pn-surface-alt)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 18 }}>
       {url && !err
         ? <img src={url} alt="" style={{ width: 38, height: 38, objectFit: 'cover' }} onError={() => setErr(true)} />
         : '🛍'}
@@ -129,21 +129,21 @@ function ProductThumb({ url, active }) {
 function ProductRow({ product: p, last, isAdmin, onEdit, onDelete, onAdjust }) {
   const low = (p.stock || 0) < 5;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: last ? 'none' : '1px solid #f0f0f0' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderBottom: last ? 'none' : '1px solid var(--pn-border)' }}>
       <ProductThumb url={p.image} active={p.active} />
 
       {/* Info */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: p.active !== false ? '#1a1a1a' : '#aaa' }}>{p.name}</span>
-          {p.brand && <span style={{ fontSize: 11, color: '#aaa' }}>{p.brand}</span>}
+          <span style={{ fontSize: 13, fontWeight: 600, color: p.active !== false ? 'var(--pn-text)' : 'var(--pn-text-faint)' }}>{p.name}</span>
+          {p.brand && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{p.brand}</span>}
           {p.category && <span style={{ fontSize: 10, background: '#f0f4ff', color: '#6366f1', borderRadius: 8, padding: '2px 7px', fontWeight: 600 }}>{p.category}</span>}
-          {p.active === false && <span style={{ fontSize: 10, background: '#f5f5f5', color: '#aaa', borderRadius: 8, padding: '2px 7px', fontWeight: 600 }}>Inactive</span>}
+          {p.active === false && <span style={{ fontSize: 10, background: 'var(--pn-surface-alt)', color: 'var(--pn-text-faint)', borderRadius: 8, padding: '2px 7px', fontWeight: 600 }}>Inactive</span>}
         </div>
-        <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>
           {p.sku && <span style={{ marginRight: 10, fontFamily: 'monospace' }}>#{p.sku}</span>}
           {fmt$(p.price)} retail
-          {isAdmin && p.cost ? <span style={{ color: '#bbb' }}> · {fmt$(p.cost)} cost</span> : null}
+          {isAdmin && p.cost ? <span style={{ color: 'var(--pn-text-faint)' }}> · {fmt$(p.cost)} cost</span> : null}
         </div>
       </div>
 
@@ -152,15 +152,15 @@ function ProductRow({ product: p, last, isAdmin, onEdit, onDelete, onAdjust }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {isAdmin && (
             <button onClick={() => onAdjust(-1)} disabled={!p.stock}
-              style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', cursor: p.stock ? 'pointer' : 'default', fontSize: 16, color: p.stock ? '#555' : '#ddd', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+              style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', cursor: p.stock ? 'pointer' : 'default', fontSize: 16, color: p.stock ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
           )}
           <div style={{ minWidth: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: low ? '#f59e0b' : '#1a1a1a' }}>{p.stock || 0}</div>
-            <div style={{ fontSize: 9, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.04em' }}>in stock</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: low ? '#f59e0b' : 'var(--pn-text)' }}>{p.stock || 0}</div>
+            <div style={{ fontSize: 9, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.04em' }}>in stock</div>
           </div>
           {isAdmin && (
             <button onClick={() => onAdjust(1)}
-              style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid #e0e0e0', background: '#fff', cursor: 'pointer', fontSize: 16, color: '#555', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              style={{ width: 26, height: 26, borderRadius: 6, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
           )}
         </div>
       </div>
@@ -169,7 +169,7 @@ function ProductRow({ product: p, last, isAdmin, onEdit, onDelete, onAdjust }) {
       {isAdmin && (
         <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
           <button onClick={onEdit}
-            style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fafafa', color: '#555', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             Edit
           </button>
           <button onClick={onDelete}
@@ -219,10 +219,10 @@ function ProductModal({ product, onSave, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 420, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #f0f0f0', flexShrink: 0 }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 420, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 20px 60px rgba(0,0,0,.25)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
           <span style={{ fontSize: 15, fontWeight: 600 }}>{editing ? 'Edit Product' : 'New Product'}</span>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontSize: 16, color: '#888', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 16, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           <F label="Product name (required)">
@@ -264,11 +264,11 @@ function ProductModal({ product, onSave, onClose }) {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input value={image} onChange={e => { setImage(e.target.value); setImgErr(false); }} placeholder="https://…" style={{ ...inp, flex: 1 }} />
               {image && !imgErr && (
-                <img src={image} alt="" style={{ width: 38, height: 38, borderRadius: 6, objectFit: 'cover', border: '1px solid #e0e0e0', flexShrink: 0 }} onError={() => setImgErr(true)} />
+                <img src={image} alt="" style={{ width: 38, height: 38, borderRadius: 6, objectFit: 'cover', border: '1px solid var(--pn-border)', flexShrink: 0 }} onError={() => setImgErr(true)} />
               )}
             </div>
           </F>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#333', cursor: 'pointer', marginBottom: 16 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 16 }}>
             <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
             Active (available for sale)
           </label>
@@ -284,27 +284,27 @@ function ProductModal({ product, onSave, onClose }) {
 
 function StatCard({ label, value, accent }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ fontSize: 11, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 24, fontWeight: 700, color: accent || '#1a1a1a' }}>{value}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color: accent || 'var(--pn-text)' }}>{value}</div>
     </div>
   );
 }
 
 function PillBtn({ active, onClick, children }) {
   return (
-    <button onClick={onClick} style={{ padding: '5px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#555', border: `1px solid ${active ? '#1a1a1a' : '#d8d8d8'}`, cursor: 'pointer' }}>
+    <button onClick={onClick} style={{ padding: '5px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? 'var(--pn-text)' : 'var(--pn-surface)', color: active ? '#fff' : 'var(--pn-text-muted)', border: `1px solid ${active ? 'var(--pn-text)' : 'var(--pn-border-strong)'}`, cursor: 'pointer' }}>
       {children}
     </button>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ textAlign: 'center', padding: '48px 0', color: '#bbb', fontSize: 13 }}>{children}</div>;
+  return <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
 function F({ label, children }) {
-  return <div style={{ marginBottom: 14 }}><label style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>{children}</div>;
+  return <div style={{ marginBottom: 14 }}><label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', display: 'block', marginBottom: 5 }}>{label}</label>{children}</div>;
 }
 
-const inp = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px', fontSize: 13, background: '#fafafa', outline: 'none' };
+const inp = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '9px 12px', fontSize: 13, background: 'var(--pn-bg)', outline: 'none' };

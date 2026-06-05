@@ -235,7 +235,7 @@ export default function MeetingsAdmin() {
   const stats = useMemo(() => computeStats(visibleMeetings, today, gUser?.email || ''), [visibleMeetings, today, gUser]);
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 60, color: '#bbb', fontSize: 13 }}>Loading…</div>;
+    return <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>;
   }
 
   return (
@@ -251,19 +251,19 @@ export default function MeetingsAdmin() {
 
       {/* My open action items — only shown when the current user has any */}
       {stats.myActions.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             ⚡ My open action items ({stats.myActions.length})
           </div>
           {stats.myActions.slice(0, 5).map((a, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 0', borderBottom: i < Math.min(4, stats.myActions.length - 1) ? '1px solid #fef3c7' : 'none' }}>
-              <span style={{ fontSize: 13, flex: 1, color: '#1a1a1a' }}>{a.text}</span>
+              <span style={{ fontSize: 13, flex: 1, color: 'var(--pn-text)' }}>{a.text}</span>
               {a.dueDate && (
                 <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: a.overdue ? '#fee2e2' : '#fef3c7', color: a.overdue ? '#991b1b' : '#92400e' }}>
                   {a.overdue ? 'OVERDUE · ' : ''}{a.dueDate}
                 </span>
               )}
-              <span style={{ fontSize: 10, color: '#999' }}>{a.meetingTitle}</span>
+              <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{a.meetingTitle}</span>
             </div>
           ))}
         </div>
@@ -275,12 +275,12 @@ export default function MeetingsAdmin() {
           value={query}
           onChange={e => setQuery(e.target.value)}
           placeholder="Search meetings…"
-          style={{ flex: '1 1 220px', minWidth: 0, padding: '8px 12px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', fontFamily: 'inherit', fontSize: 13 }}
+          style={{ flex: '1 1 220px', minWidth: 0, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit', fontSize: 13 }}
         />
-        <div style={{ display: 'inline-flex', borderRadius: 8, border: '1px solid #d8d8d8', overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ display: 'inline-flex', borderRadius: 8, border: '1px solid var(--pn-border-strong)', overflow: 'hidden', flexShrink: 0 }}>
           {[{ id: 'list', label: '☰ List' }, { id: 'calendar', label: '📅 Calendar' }].map(v => (
             <button key={v.id} onClick={() => setViewMode(v.id)}
-              style={{ padding: '7px 14px', border: 'none', background: viewMode === v.id ? '#3D95CE' : '#fff', color: viewMode === v.id ? '#fff' : '#555', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: viewMode === v.id ? 700 : 500 }}>
+              style={{ padding: '7px 14px', border: 'none', background: viewMode === v.id ? '#3D95CE' : 'var(--pn-surface)', color: viewMode === v.id ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: viewMode === v.id ? 700 : 500 }}>
               {v.label}
             </button>
           ))}
@@ -313,7 +313,7 @@ export default function MeetingsAdmin() {
 
       {viewMode === 'list' && (
         upcoming.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#bbb', fontSize: 13, background: '#fafafa', borderRadius: 12, marginBottom: 16 }}>
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--pn-text-faint)', fontSize: 13, background: 'var(--pn-bg)', borderRadius: 12, marginBottom: 16 }}>
             {query || typeFilter !== 'all'
               ? 'No upcoming meetings match your filter.'
               : 'No upcoming meetings. Create one to get started.'}
@@ -336,7 +336,7 @@ export default function MeetingsAdmin() {
       {viewMode === 'list' && past.length > 0 && (
         <>
           <button onClick={() => setShowPast(p => !p)}
-            style={{ fontSize: 12, color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10 }}>
+            style={{ fontSize: 12, color: 'var(--pn-text-faint)', background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '4px 0', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 10 }}>
             {showPast ? '▲' : '▼'} Past meetings ({past.length})
           </button>
           {showPast && (
@@ -411,26 +411,26 @@ function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDay
   const isCurrentMonth = month === today.slice(0, 7);
 
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
       {/* Calendar header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a' }}>{monthLabel}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)' }}>{monthLabel}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
           <button onClick={() => shift(-1)} title="Previous month"
-            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>‹</button>
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>‹</button>
           <button onClick={goToday} disabled={isCurrentMonth}
-            style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid #d8d8d8', background: isCurrentMonth ? '#f5f5f5' : '#fff', color: isCurrentMonth ? '#bbb' : '#555', cursor: isCurrentMonth ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 }}>
+            style={{ padding: '5px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: isCurrentMonth ? 'var(--pn-surface-alt)' : 'var(--pn-surface)', color: isCurrentMonth ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)', cursor: isCurrentMonth ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600 }}>
             Today
           </button>
           <button onClick={() => shift(1)} title="Next month"
-            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>›</button>
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>›</button>
         </div>
       </div>
 
       {/* Weekday header */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid #f0f0f0', background: '#fafafa' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
         {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
-          <div key={d} style={{ padding: '6px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em' }}>
+          <div key={d} style={{ padding: '6px 8px', textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>
             {d}
           </div>
         ))}
@@ -452,10 +452,10 @@ function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDay
                 if (e.target === e.currentTarget) onDayClick?.(ds);
               }}
               style={{
-                borderRight: i % 7 === 6 ? 'none' : '1px solid #f0f0f0',
-                borderBottom: i < 35 ? '1px solid #f0f0f0' : 'none',
+                borderRight: i % 7 === 6 ? 'none' : '1px solid var(--pn-border)',
+                borderBottom: i < 35 ? '1px solid var(--pn-border)' : 'none',
                 padding: '4px 6px',
-                background: isToday ? '#eff6ff' : isWeekend && inMonth ? '#fafbfc' : '#fff',
+                background: isToday ? '#eff6ff' : isWeekend && inMonth ? 'var(--pn-bg)' : 'var(--pn-surface)',
                 opacity: inMonth ? 1 : 0.45,
                 position: 'relative', minHeight: 96, cursor: 'pointer',
                 display: 'flex', flexDirection: 'column', gap: 2,
@@ -463,14 +463,14 @@ function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDay
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
                 <span style={{
                   fontSize: 11, fontWeight: isToday ? 800 : 600,
-                  color: isToday ? '#1e40af' : inMonth ? '#374151' : '#9ca3af',
+                  color: isToday ? '#1e40af' : inMonth ? 'var(--pn-text)' : 'var(--pn-text-faint)',
                   background: isToday ? '#3D95CE' : 'transparent',
                   WebkitBackgroundClip: isToday ? 'text' : 'unset',
                   padding: isToday ? '0 4px' : 0, borderRadius: 4,
                 }}>
                   {d.getDate()}
                 </span>
-                {dayMtgs.length > 0 && <span style={{ fontSize: 9, color: '#aaa', fontWeight: 600 }}>{dayMtgs.length}</span>}
+                {dayMtgs.length > 0 && <span style={{ fontSize: 9, color: 'var(--pn-text-faint)', fontWeight: 600 }}>{dayMtgs.length}</span>}
               </div>
 
               {visibleMtgs.map(mtg => {
@@ -514,10 +514,10 @@ function MonthCalendar({ month, setMonth, meetings, today, onMeetingClick, onDay
 
 function StatTile({ label, value, sublabel, accent }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #f0f0f0', borderRadius: 12, padding: '12px 14px', borderLeft: `3px solid ${accent}` }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 700, color: '#1a1a1a', lineHeight: 1.1, marginTop: 4 }}>{value}</div>
-      <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>{sublabel}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '12px 14px', borderLeft: `3px solid ${accent}` }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1.1, marginTop: 4 }}>{value}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>{sublabel}</div>
     </div>
   );
 }
@@ -527,14 +527,14 @@ function TypeChip({ id, label, active, onClick, count, accent, bg }) {
     <button onClick={onClick}
       style={{
         fontSize: 11, padding: '4px 10px', borderRadius: 20,
-        border: `1.5px solid ${active ? (accent || '#3D95CE') : '#d8d8d8'}`,
-        background: active ? (bg || '#eff6ff') : '#fff',
-        color: active ? (accent || '#3D95CE') : '#666',
+        border: `1.5px solid ${active ? (accent || '#3D95CE') : 'var(--pn-border-strong)'}`,
+        background: active ? (bg || '#eff6ff') : 'var(--pn-surface)',
+        color: active ? (accent || '#3D95CE') : 'var(--pn-text-muted)',
         cursor: 'pointer', fontFamily: 'inherit', fontWeight: active ? 700 : 500,
         display: 'inline-flex', alignItems: 'center', gap: 6,
       }}>
       {label}
-      <span style={{ fontSize: 10, color: active ? (accent || '#3D95CE') : '#aaa', opacity: .8 }}>{count}</span>
+      <span style={{ fontSize: 10, color: active ? (accent || '#3D95CE') : 'var(--pn-text-faint)', opacity: .8 }}>{count}</span>
     </button>
   );
 }
@@ -606,11 +606,11 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
   const daysAway    = !past ? daysBetween(today, meeting.date) : null;
 
   return (
-    <div style={{ background: '#fff', borderRadius: 12, border: `1.5px solid ${past ? '#f0f0f0' : isToday ? '#bfdbfe' : '#e8e8e8'}`, overflow: 'hidden', opacity: past ? 0.75 : 1, boxShadow: isToday ? '0 0 0 3px #eff6ff' : 'none' }}>
+    <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: `1.5px solid ${past ? 'var(--pn-border)' : isToday ? '#bfdbfe' : 'var(--pn-border)'}`, overflow: 'hidden', opacity: past ? 0.75 : 1, boxShadow: isToday ? '0 0 0 3px #eff6ff' : 'none' }}>
       <div style={{ display: 'flex', alignItems: 'stretch' }}>
 
         {/* Date column */}
-        <div style={{ width: 76, flexShrink: 0, background: past ? '#f5f5f5' : `linear-gradient(135deg,${type.color},${type.color}cc)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 6px', color: past ? '#bbb' : '#fff', textAlign: 'center' }}>
+        <div style={{ width: 76, flexShrink: 0, background: past ? 'var(--pn-surface-alt)' : `linear-gradient(135deg,${type.color},${type.color}cc)`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '12px 6px', color: past ? 'var(--pn-text-faint)' : '#fff', textAlign: 'center' }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', opacity: .85 }}>
             {new Date(meeting.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short' })}
           </div>
@@ -632,7 +632,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, justifyContent: 'space-between' }}>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{meeting.title}</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>{meeting.title}</span>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 8px', borderRadius: 10, background: type.bg, color: type.color, letterSpacing: '.04em', textTransform: 'uppercase' }}>
                   {type.emoji} {type.short}
                 </span>
@@ -643,7 +643,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
                   </span>
                 )}
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, color: '#666' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, color: 'var(--pn-text-muted)' }}>
                 <span>🕐 {fmtTime(meeting.startTime)}</span>
                 <span>⏱ {durationLabel(meeting.duration)}</span>
                 {meeting.location && <span>📍 {meeting.location}</span>}
@@ -653,7 +653,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
               {(agenda.length > 0 || actionItems.length > 0 || meeting.minutes) && (
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 11, marginTop: 8 }}>
                   {agenda.length > 0 && (
-                    <span style={{ background: '#f3f4f6', borderRadius: 4, padding: '1px 7px', color: '#374151' }}>
+                    <span style={{ background: 'var(--pn-surface-alt)', borderRadius: 4, padding: '1px 7px', color: 'var(--pn-text)' }}>
                       📋 {agenda.filter(a => a.done).length}/{agenda.length} agenda
                     </span>
                   )}
@@ -669,7 +669,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
               )}
 
               {meeting.description && (
-                <div style={{ fontSize: 12, color: '#888', marginTop: 6, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 6, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                   {meeting.description}
                 </div>
               )}
@@ -677,34 +677,34 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
               {parts.length > 0 && (
                 <div style={{ marginTop: 8 }}>
                   <button onClick={() => setShowAttendance(s => !s)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid #e8e8e8', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', color: '#555' }}>
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: 11, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
                     <span>👥 {parts.length}</span>
                     {anySent ? (
                       <>
                         {counts.accepted > 0 && <span style={{ color: '#16a34a', fontWeight: 700 }}>✓ {counts.accepted}</span>}
                         {counts.maybe    > 0 && <span style={{ color: '#f59e0b', fontWeight: 700 }}>? {counts.maybe}</span>}
                         {counts.declined > 0 && <span style={{ color: '#ef4444', fontWeight: 700 }}>✗ {counts.declined}</span>}
-                        {counts.pending  > 0 && <span style={{ color: '#888' }}>⏳ {counts.pending}</span>}
+                        {counts.pending  > 0 && <span style={{ color: 'var(--pn-text-muted)' }}>⏳ {counts.pending}</span>}
                       </>
                     ) : (
-                      <span style={{ color: '#aaa' }}>not yet invited</span>
+                      <span style={{ color: 'var(--pn-text-faint)' }}>not yet invited</span>
                     )}
-                    <span style={{ color: '#bbb' }}>{showAttendance ? '▴' : '▾'}</span>
+                    <span style={{ color: 'var(--pn-text-faint)' }}>{showAttendance ? '▴' : '▾'}</span>
                   </button>
                   {showAttendance && (
-                    <div style={{ marginTop: 8, background: '#fafafa', border: '1px solid #f0f0f0', borderRadius: 8, padding: '8px 12px' }}>
+                    <div style={{ marginTop: 8, background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '8px 12px' }}>
                       {parts.map((p, i) => {
                         const att = (meeting.attendance || {})[p.email || p.name];
                         const sty = p.response === 'accept'  ? { color: '#16a34a', label: '✓ Accepted' }
                                   : p.response === 'maybe'   ? { color: '#f59e0b', label: '? Maybe' }
                                   : p.response === 'decline' ? { color: '#ef4444', label: '✗ Declined' }
-                                  : p.inviteSentAt           ? { color: '#888',   label: '⏳ No response yet' }
-                                  :                            { color: '#bbb',   label: 'not invited' };
+                                  : p.inviteSentAt           ? { color: 'var(--pn-text-muted)',   label: '⏳ No response yet' }
+                                  :                            { color: 'var(--pn-text-faint)',   label: 'not invited' };
                         return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < parts.length - 1 ? '1px solid #f1f1f1' : 'none' }}>
-                            <div style={{ fontSize: 12, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0', borderBottom: i < parts.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+                            <div style={{ fontSize: 12, color: 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {p.name || p.email}
-                              {p.email && p.name && <span style={{ color: '#aaa', marginLeft: 6, fontSize: 11 }}>{p.email}</span>}
+                              {p.email && p.name && <span style={{ color: 'var(--pn-text-faint)', marginLeft: 6, fontSize: 11 }}>{p.email}</span>}
                             </div>
                             <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0, marginLeft: 8 }}>
                               {att && <AttBadge value={att} />}
@@ -723,7 +723,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flexShrink: 0, justifyContent: 'flex-end' }}>
               {!past && parts.some(p => (p.email || '').trim()) && onSendInvites && (
                 <button onClick={onSendInvites} title={anySent ? 'Resend invitation emails' : 'Send invitation emails to all participants'}
-                  style={{ ...btnStyle, background: anySent ? '#fafafa' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: anySent ? '#555' : '#fff', border: anySent ? '1px solid #d8d8d8' : 'none', fontWeight: 700 }}>
+                  style={{ ...btnStyle, background: anySent ? 'var(--pn-bg)' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: anySent ? 'var(--pn-text-muted)' : '#fff', border: anySent ? '1px solid var(--pn-border-strong)' : 'none', fontWeight: 700 }}>
                   {anySent ? '✉ Resend' : '✉ Send invites'}
                 </button>
               )}
@@ -855,7 +855,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 200, overflowY: 'auto', padding: '20px 0' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 640, boxShadow: '0 20px 60px rgba(0,0,0,.3)', marginBottom: 20 }}
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 640, boxShadow: '0 20px 60px rgba(0,0,0,.3)', marginBottom: 20 }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
@@ -868,7 +868,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid #f0f0f0', padding: '0 12px', overflowX: 'auto' }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--pn-border)', padding: '0 12px', overflowX: 'auto' }}>
           {[
             { id: 'details',    label: 'Details' },
             { id: 'agenda',     label: `Agenda${agenda.length ? ` (${agenda.length})` : ''}` },
@@ -878,7 +878,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
             <button key={t.id} onClick={() => setTab(t.id)}
               style={{
                 padding: '12px 14px', border: 'none', background: 'none', fontFamily: 'inherit', fontSize: 13,
-                fontWeight: tab === t.id ? 700 : 500, color: tab === t.id ? '#2D7A5F' : '#666',
+                fontWeight: tab === t.id ? 700 : 500, color: tab === t.id ? '#2D7A5F' : 'var(--pn-text-muted)',
                 borderBottom: tab === t.id ? '2px solid #2D7A5F' : '2px solid transparent',
                 cursor: 'pointer', whiteSpace: 'nowrap',
               }}>
@@ -908,21 +908,21 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                       // toggle private on; team / huddle toggle off.
                       if (seed.private == null) setIsPrivate(PRIVATE_BY_DEFAULT.has(t.id));
                     }} type="button"
-                      style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: `1.5px solid ${type === t.id ? t.color : '#d8d8d8'}`, background: type === t.id ? t.bg : '#fff', color: type === t.id ? t.color : '#666', cursor: 'pointer', fontFamily: 'inherit', fontWeight: type === t.id ? 700 : 500 }}>
+                      style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, border: `1.5px solid ${type === t.id ? t.color : 'var(--pn-border-strong)'}`, background: type === t.id ? t.bg : 'var(--pn-surface)', color: type === t.id ? t.color : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: type === t.id ? 700 : 500 }}>
                       {t.emoji} {t.short}
                     </button>
                   ))}
                 </div>
               </div>
 
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${isPrivate ? '#fca5a5' : '#e5e7eb'}`, background: isPrivate ? '#fef2f2' : '#fafafa', cursor: 'pointer' }}>
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${isPrivate ? '#fca5a5' : 'var(--pn-border)'}`, background: isPrivate ? '#fef2f2' : 'var(--pn-bg)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={isPrivate} onChange={e => setIsPrivate(e.target.checked)}
                   style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#991b1b', flexShrink: 0, marginTop: 2 }} />
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: isPrivate ? '#991b1b' : '#374151' }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: isPrivate ? '#991b1b' : 'var(--pn-text)' }}>
                     🔒 Private meeting
                   </div>
-                  <div style={{ fontSize: 11, color: isPrivate ? '#7f1d1d' : '#888', marginTop: 2, lineHeight: 1.45 }}>
+                  <div style={{ fontSize: 11, color: isPrivate ? '#7f1d1d' : 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
                     {isPrivate
                       ? 'Only you (the organizer) and listed participants can see the title, agenda, minutes, and action items. Other staff won\'t see this meeting in their list.'
                       : 'Visible to all tenant staff. Recommended for team meetings, training, daily huddles.'}
@@ -962,9 +962,9 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
 
               <div>
                 <label style={lbl}>Participants (receive email reminders)</label>
-                <div style={{ background: '#fafafa', borderRadius: 10, border: '1px solid #e8e8e8', padding: '10px 12px', maxHeight: 200, overflowY: 'auto' }}>
+                <div style={{ background: 'var(--pn-bg)', borderRadius: 10, border: '1px solid var(--pn-border)', padding: '10px 12px', maxHeight: 200, overflowY: 'auto' }}>
                   {employees.length === 0 ? (
-                    <div style={{ fontSize: 12, color: '#bbb' }}>No employees on record.</div>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>No employees on record.</div>
                   ) : employees.map(emp => {
                     const key     = `${emp.name}||${emp.email || ''}`;
                     const checked = selected.includes(key);
@@ -972,9 +972,9 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                       <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', cursor: 'pointer' }}>
                         <input type="checkbox" checked={checked} onChange={() => toggleEmp(emp)}
                           style={{ width: 14, height: 14, cursor: 'pointer', accentColor: '#2D7A5F' }} />
-                        <span style={{ fontSize: 13, color: '#333', flex: 1 }}>{emp.name}</span>
+                        <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{emp.name}</span>
                         {emp.email
-                          ? <span style={{ fontSize: 11, color: '#aaa' }}>{emp.email}</span>
+                          ? <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{emp.email}</span>
                           : <span style={{ fontSize: 11, color: '#fca5a5' }}>no email</span>
                         }
                       </label>
@@ -988,7 +988,7 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                     placeholder="Add guest email…"
                     style={{ ...inp, flex: 1 }} />
                   <button onClick={addCustomEmail} type="button"
-                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555', flexShrink: 0 }}>Add</button>
+                    style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--pn-text-muted)', flexShrink: 0 }}>Add</button>
                 </div>
                 {selected.some(k => !empKeys.includes(k)) && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
@@ -1010,24 +1010,24 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
 
           {tab === 'agenda' && (
             <div>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 8 }}>
                 What needs to be discussed. Check items off as you go through the meeting.
               </div>
               {agenda.length === 0 && (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#bbb', fontSize: 12, border: '1px dashed #e0e0e0', borderRadius: 8 }}>No agenda items yet.</div>
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12, border: '1px dashed var(--pn-border)', borderRadius: 8 }}>No agenda items yet.</div>
               )}
               {agenda.map((a, i) => (
-                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < agenda.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: i < agenda.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
                   <input type="checkbox" checked={!!a.done} onChange={e => patchAgenda(i, { done: e.target.checked })}
                     style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#2D7A5F', flexShrink: 0 }} />
                   <input value={a.text} onChange={e => patchAgenda(i, { text: e.target.value })}
                     placeholder="Discuss…"
-                    style={{ flex: 1, border: 'none', background: 'none', fontFamily: 'inherit', fontSize: 13, padding: 4, outline: 'none', textDecoration: a.done ? 'line-through' : 'none', color: a.done ? '#999' : '#1a1a1a' }} />
-                  <button onClick={() => removeAgenda(i)} type="button" style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
+                    style={{ flex: 1, border: 'none', background: 'none', fontFamily: 'inherit', fontSize: 13, padding: 4, outline: 'none', textDecoration: a.done ? 'line-through' : 'none', color: a.done ? 'var(--pn-text-faint)' : 'var(--pn-text)' }} />
+                  <button onClick={() => removeAgenda(i)} type="button" style={{ border: 'none', background: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}>×</button>
                 </div>
               ))}
               <button onClick={addAgenda} type="button"
-                style={{ width: '100%', marginTop: 8, padding: '8px', borderRadius: 8, border: '1px dashed #d0d0d0', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555' }}>
+                style={{ width: '100%', marginTop: 8, padding: '8px', borderRadius: 8, border: '1px dashed var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--pn-text-muted)' }}>
                 + Add agenda item
               </button>
             </div>
@@ -1035,25 +1035,25 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
 
           {tab === 'attendance' && (
             <div>
-              <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 8 }}>
                 Mark who actually showed up. Separate from RSVP — a "Present" mark stays even if RSVP was a maybe.
               </div>
               {participantsForAttendance.length === 0 && (
-                <div style={{ padding: '20px', textAlign: 'center', color: '#bbb', fontSize: 12, border: '1px dashed #e0e0e0', borderRadius: 8 }}>No participants yet — add some on the Details tab.</div>
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12, border: '1px dashed var(--pn-border)', borderRadius: 8 }}>No participants yet — add some on the Details tab.</div>
               )}
               {participantsForAttendance.map((p, i) => {
                 const key = p.email || p.name;
                 const cur = attendance[key];
                 return (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < participantsForAttendance.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: i < participantsForAttendance.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || p.email}</div>
-                      {p.email && p.name && <div style={{ fontSize: 11, color: '#aaa' }}>{p.email}</div>}
+                      <div style={{ fontSize: 13, color: 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name || p.email}</div>
+                      {p.email && p.name && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{p.email}</div>}
                     </div>
                     <div style={{ display: 'flex', gap: 4 }}>
                       {Object.entries(ATT_STYLE).map(([k, s]) => (
                         <button key={k} type="button" onClick={() => setAtt(key, k)}
-                          style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 6, border: `1px solid ${cur === k ? s.color : '#d8d8d8'}`, background: cur === k ? s.bg : '#fff', color: cur === k ? s.color : '#666', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '.04em' }}>
+                          style={{ fontSize: 10, fontWeight: 700, padding: '4px 8px', borderRadius: 6, border: `1px solid ${cur === k ? s.color : 'var(--pn-border-strong)'}`, background: cur === k ? s.bg : 'var(--pn-surface)', color: cur === k ? s.color : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '.04em' }}>
                           {s.label}
                         </button>
                       ))}
@@ -1075,14 +1075,14 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
 
               <div style={{ marginTop: 18 }}>
                 <label style={lbl}>Action items</label>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 8 }}>
                   Tasks that came out of this meeting. Surface in each assignee's "My open action items" panel.
                 </div>
                 {actionItems.length === 0 && (
-                  <div style={{ padding: '18px', textAlign: 'center', color: '#bbb', fontSize: 12, border: '1px dashed #e0e0e0', borderRadius: 8 }}>No action items yet.</div>
+                  <div style={{ padding: '18px', textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 12, border: '1px dashed var(--pn-border)', borderRadius: 8 }}>No action items yet.</div>
                 )}
                 {actionItems.map((a, i) => (
-                  <div key={a.id} style={{ marginBottom: 8, padding: 10, background: a.status === 'done' ? '#f9fafb' : '#fffbeb', border: `1px solid ${a.status === 'done' ? '#e5e7eb' : '#fde68a'}`, borderRadius: 8, opacity: a.status === 'done' ? 0.7 : 1 }}>
+                  <div key={a.id} style={{ marginBottom: 8, padding: 10, background: a.status === 'done' ? 'var(--pn-bg)' : '#fffbeb', border: `1px solid ${a.status === 'done' ? 'var(--pn-border)' : '#fde68a'}`, borderRadius: 8, opacity: a.status === 'done' ? 0.7 : 1 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                       <input type="checkbox" checked={a.status === 'done'}
                         onChange={e => patchAction(i, { status: e.target.checked ? 'done' : 'open', completedAt: e.target.checked ? new Date().toISOString() : '' })}
@@ -1090,24 +1090,24 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <input value={a.text} onChange={e => patchAction(i, { text: e.target.value })}
                           placeholder="What needs to happen…"
-                          style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #d8d8d8', borderRadius: 6, padding: '5px 8px', fontFamily: 'inherit', fontSize: 13, marginBottom: 6, textDecoration: a.status === 'done' ? 'line-through' : 'none' }} />
+                          style={{ width: '100%', boxSizing: 'border-box', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '5px 8px', fontFamily: 'inherit', fontSize: 13, marginBottom: 6, textDecoration: a.status === 'done' ? 'line-through' : 'none' }} />
                         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                           <select value={a.assignee} onChange={e => patchAction(i, { assignee: e.target.value })}
-                            style={{ flex: '1 1 140px', minWidth: 0, border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 8px', fontFamily: 'inherit', fontSize: 12, background: '#fff' }}>
+                            style={{ flex: '1 1 140px', minWidth: 0, border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 8px', fontFamily: 'inherit', fontSize: 12, background: 'var(--pn-surface)' }}>
                             <option value="">Assign to…</option>
                             {employees.map(e => e.email && <option key={e.id} value={e.email}>{e.name} ({e.email})</option>)}
                           </select>
                           <input type="date" value={a.dueDate || ''} onChange={e => patchAction(i, { dueDate: e.target.value })}
-                            style={{ flex: '1 1 120px', minWidth: 0, border: '1px solid #d8d8d8', borderRadius: 6, padding: '4px 8px', fontFamily: 'inherit', fontSize: 12, background: '#fff' }} />
+                            style={{ flex: '1 1 120px', minWidth: 0, border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 8px', fontFamily: 'inherit', fontSize: 12, background: 'var(--pn-surface)' }} />
                         </div>
                       </div>
                       <button onClick={() => removeAction(i)} type="button"
-                        style={{ border: 'none', background: 'none', color: '#bbb', cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>
+                        style={{ border: 'none', background: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 16, padding: '0 4px', flexShrink: 0 }}>×</button>
                     </div>
                   </div>
                 ))}
                 <button onClick={addAction} type="button"
-                  style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px dashed #d0d0d0', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: '#555' }}>
+                  style={{ width: '100%', padding: '8px', borderRadius: 8, border: '1px dashed var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--pn-text-muted)' }}>
                   + Add action item
                 </button>
               </div>
@@ -1117,13 +1117,13 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid #f0f0f0', display: 'flex', gap: 8 }}>
+        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8 }}>
           <button onClick={onClose}
-            style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+            style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
             Cancel
           </button>
           <button onClick={handleSubmit} disabled={!canSubmit}
-            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: canSubmit ? 'linear-gradient(135deg,#2D7A5F,#3D95CE)' : '#d0d0d0', color: '#fff', cursor: canSubmit ? 'pointer' : 'default', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: canSubmit ? 'linear-gradient(135deg,#2D7A5F,#3D95CE)' : 'var(--pn-border-strong)', color: '#fff', cursor: canSubmit ? 'pointer' : 'default', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
             {saving ? 'Saving…' : existing?.id ? 'Save Changes' : 'Create Meeting'}
           </button>
         </div>
@@ -1133,6 +1133,6 @@ function MeetingModal({ existing, draft, employees, onSave, onClose, author }) {
 }
 
 // ── Shared styles ──────────────────────────────────────
-const lbl     = { fontSize: 11, color: '#888', display: 'block', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' };
-const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: '#333', outline: 'none', background: '#fafafa', boxSizing: 'border-box' };
-const btnStyle = { padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: '#fafafa', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, color: '#555', fontWeight: 500 };
+const lbl     = { fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' };
+const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
+const btnStyle = { padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 500 };

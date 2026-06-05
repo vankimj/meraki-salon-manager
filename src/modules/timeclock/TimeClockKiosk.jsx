@@ -279,7 +279,7 @@ function PinAndActionModal({ emp, state, onClose, onSuccess }) {
     <div onClick={onClose}
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: '#fff', color: '#1a1a1a', borderRadius: 22, width: '100%', maxWidth: 400, padding: 26, boxShadow: '0 28px 80px rgba(0,0,0,.5)' }}>
+        style={{ background: 'var(--pn-surface)', color: 'var(--pn-text)', borderRadius: 22, width: '100%', maxWidth: 400, padding: 26, boxShadow: '0 28px 80px rgba(0,0,0,.5)' }}>
 
         {/* Header — avatar + name */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginBottom: 16 }}>
@@ -289,17 +289,17 @@ function PinAndActionModal({ emp, state, onClose, onSuccess }) {
 
         {step === 'pin' && (
           <>
-            <div style={{ fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 12 }}>Enter your 4-digit PIN</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', textAlign: 'center', marginBottom: 12 }}>Enter your 4-digit PIN</div>
             <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
               {[0, 1, 2, 3].map(i => (
                 <div key={i}
-                  style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid #d0d0d0', background: i < pin.length ? '#5b3b8c' : 'transparent' }} />
+                  style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--pn-border-strong)', background: i < pin.length ? '#5b3b8c' : 'transparent' }} />
               ))}
             </div>
             {err && <div style={{ textAlign: 'center', color: '#b91c1c', fontSize: 13, marginBottom: 10 }}>{err}</div>}
             <Keypad onPress={press} onBack={back} onClear={clear} />
             <button onClick={onClose}
-              style={{ marginTop: 14, width: '100%', padding: '12px 16px', fontSize: 15, fontWeight: 600, borderRadius: 12, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ marginTop: 14, width: '100%', padding: '12px 16px', fontSize: 15, fontWeight: 600, borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit' }}>
               Cancel
             </button>
           </>
@@ -307,7 +307,7 @@ function PinAndActionModal({ emp, state, onClose, onSuccess }) {
 
         {step === 'actions' && (
           <>
-            <div style={{ fontSize: 13, color: '#666', textAlign: 'center', marginBottom: 16 }}>What would you like to do?</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', textAlign: 'center', marginBottom: 16 }}>What would you like to do?</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {actions.map(a => (
                 <button key={a.kind} onClick={() => runAction(a)}
@@ -317,14 +317,14 @@ function PinAndActionModal({ emp, state, onClose, onSuccess }) {
               ))}
             </div>
             <button onClick={onClose}
-              style={{ marginTop: 14, width: '100%', padding: '12px 16px', fontSize: 15, fontWeight: 600, borderRadius: 12, border: '1px solid #d8d8d8', background: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ marginTop: 14, width: '100%', padding: '12px 16px', fontSize: 15, fontWeight: 600, borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit' }}>
               Cancel
             </button>
           </>
         )}
 
         {step === 'working' && (
-          <div style={{ padding: 30, textAlign: 'center', color: '#666' }}>
+          <div style={{ padding: 30, textAlign: 'center', color: 'var(--pn-text-muted)' }}>
             <div style={{ fontSize: 32, marginBottom: 8 }}>⏳</div>
             <div style={{ fontSize: 15 }}>Recording…</div>
           </div>
@@ -354,9 +354,9 @@ function Keypad({ onPress, onBack, onClear }) {
             }}
             style={{
               padding: '18px 0', fontSize: 22, fontWeight: 600,
-              border: '1px solid #e0e0e0', borderRadius: 12,
-              background: isAction ? '#fafafa' : '#fff',
-              color: isAction ? '#888' : '#1a1a1a',
+              border: '1px solid var(--pn-border)', borderRadius: 12,
+              background: isAction ? 'var(--pn-bg)' : 'var(--pn-surface)',
+              color: isAction ? 'var(--pn-text-muted)' : 'var(--pn-text)',
               cursor: 'pointer', fontFamily: 'inherit',
             }}>
             {k}

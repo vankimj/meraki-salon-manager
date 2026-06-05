@@ -23,7 +23,7 @@ export default function MembershipsAdmin() {
   const [editMember, setEditMember] = useState(null);   // member obj or 'new'
 
   if (!isAdmin) {
-    return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Admin only.</div>;
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Admin only.</div>;
   }
 
   useEffect(() => subscribeMembershipPlans(setPlans), []);
@@ -52,11 +52,11 @@ export default function MembershipsAdmin() {
       </div>
 
       {/* Tabs */}
-      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid #e8e8e8' }}>
+      <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--pn-border)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, background: 'none', border: 'none', cursor: 'pointer', color: tab === t.id ? '#1a1a1a' : '#888', borderBottom: tab === t.id ? '2px solid #5b3b8c' : '2px solid transparent', marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
-            {t.label}{t.id === 'members' && members.length > 0 && <span style={{ marginLeft: 6, color: '#aaa' }}>({members.length})</span>}
+            style={{ padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, background: 'none', border: 'none', cursor: 'pointer', color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-muted)', borderBottom: tab === t.id ? '2px solid #5b3b8c' : '2px solid transparent', marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {t.label}{t.id === 'members' && members.length > 0 && <span style={{ marginLeft: 6, color: 'var(--pn-text-faint)' }}>({members.length})</span>}
           </button>
         ))}
       </div>
@@ -135,7 +135,7 @@ function PlansTab({ plans, onNew, onEdit, onDelete }) {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-        <div style={{ fontSize: 14, color: '#666' }}>Define recurring subscription plans your clients can sign up for.</div>
+        <div style={{ fontSize: 14, color: 'var(--pn-text-muted)' }}>Define recurring subscription plans your clients can sign up for.</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <TrashButton collections={['memberships', 'membershipPlans']} scope="Memberships" />
           <button onClick={onNew} style={primaryBtn}>+ New plan</button>
@@ -147,20 +147,20 @@ function PlansTab({ plans, onNew, onEdit, onDelete }) {
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
           {plans.map(p => (
-            <div key={p.id} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 18, position: 'relative', opacity: p.active === false ? .5 : 1 }}>
-              {p.active === false && <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, fontWeight: 700, color: '#888', background: '#f0f0f0', padding: '2px 8px', borderRadius: 4 }}>INACTIVE</div>}
-              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 4 }}>{p.name}</div>
+            <div key={p.id} style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 14, padding: 18, position: 'relative', opacity: p.active === false ? .5 : 1 }}>
+              {p.active === false && <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', background: 'var(--pn-surface-alt)', padding: '2px 8px', borderRadius: 4 }}>INACTIVE</div>}
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>{p.name}</div>
               <div style={{ fontSize: 22, fontWeight: 700, color: '#5b3b8c', lineHeight: 1.2, marginBottom: 8 }}>
-                ${p.price}<span style={{ fontSize: 13, color: '#888', fontWeight: 500 }}>/{p.billingPeriod === 'yearly' ? 'yr' : 'mo'}</span>
+                ${p.price}<span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 500 }}>/{p.billingPeriod === 'yearly' ? 'yr' : 'mo'}</span>
               </div>
               {p.discountPct > 0 && (
                 <div style={{ fontSize: 12, color: '#22c55e', marginBottom: 6, fontWeight: 600 }}>
                   {p.discountPct}% off all services
                 </div>
               )}
-              {p.description && <div style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>{p.description}</div>}
+              {p.description && <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 8 }}>{p.description}</div>}
               {Array.isArray(p.perks) && p.perks.length > 0 && (
-                <ul style={{ fontSize: 12, color: '#444', paddingLeft: 18, margin: '8px 0' }}>
+                <ul style={{ fontSize: 12, color: 'var(--pn-text-muted)', paddingLeft: 18, margin: '8px 0' }}>
                   {p.perks.map((perk, i) => <li key={i} style={{ marginBottom: 3 }}>{perk}</li>)}
                 </ul>
               )}
@@ -261,7 +261,7 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
         <div style={{ display: 'flex', gap: 4 }}>
           {['active', 'paused', 'cancelled', 'all'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '5px 12px', fontFamily: 'inherit', fontSize: 12, borderRadius: 8, border: filter === f ? '1px solid #5b3b8c' : '1px solid #d8d8d8', background: filter === f ? '#f3eafc' : '#fff', color: filter === f ? '#5b3b8c' : '#666', cursor: 'pointer', fontWeight: filter === f ? 600 : 400 }}>
+              style={{ padding: '5px 12px', fontFamily: 'inherit', fontSize: 12, borderRadius: 8, border: filter === f ? '1px solid #5b3b8c' : '1px solid var(--pn-border-strong)', background: filter === f ? '#f3eafc' : 'var(--pn-surface)', color: filter === f ? '#5b3b8c' : 'var(--pn-text-muted)', cursor: 'pointer', fontWeight: filter === f ? 600 : 400 }}>
               {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)} ({filter === f ? filtered.length : members.filter(m => f === 'all' || m.status === f).length})
             </button>
           ))}
@@ -276,10 +276,10 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
       ) : filtered.length === 0 ? (
         <Empty>No {filter === 'all' ? '' : filter} members yet.</Empty>
       ) : (
-        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, overflow: 'hidden' }}>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
             <thead>
-              <tr style={{ background: '#fafafa', borderBottom: '1px solid #e8e8e8' }}>
+              <tr style={{ background: 'var(--pn-bg)', borderBottom: '1px solid var(--pn-border)' }}>
                 <th style={th}>Client</th>
                 <th style={th}>Plan</th>
                 <th style={th}>Price</th>
@@ -290,13 +290,13 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
             </thead>
             <tbody>
               {filtered.map(m => {
-                const statusColor = m.status === 'active' ? '#166534' : m.status === 'paused' ? '#92400e' : '#888';
-                const statusBg    = m.status === 'active' ? '#f0fdf4' : m.status === 'paused' ? '#fffbeb' : '#f5f5f5';
+                const statusColor = m.status === 'active' ? '#166534' : m.status === 'paused' ? '#92400e' : 'var(--pn-text-muted)';
+                const statusBg    = m.status === 'active' ? '#f0fdf4' : m.status === 'paused' ? '#fffbeb' : 'var(--pn-surface-alt)';
                 const hasStripe = !!m.stripeSubscriptionId;
                 const linkSent  = !!m.paymentLinkSentAt;
                 const busyAction = busyMember?.id === m.id ? busyMember.action : null;
                 return (
-                  <tr key={m.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  <tr key={m.id} style={{ borderBottom: '1px solid var(--pn-border)' }}>
                     <td style={td}>
                       <div style={{ fontWeight: 600 }}>
                         {m.clientName}
@@ -410,7 +410,7 @@ function PlanEditor({ plan, onSave, onClose }) {
       </Field>
       <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '8px 0', cursor: 'pointer' }}>
         <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
-        <span>Active <span style={{ color: '#888', fontSize: 11 }}>(uncheck to retire without deleting)</span></span>
+        <span>Active <span style={{ color: 'var(--pn-text-muted)', fontSize: 11 }}>(uncheck to retire without deleting)</span></span>
       </label>
       {err && <div style={{ fontSize: 12, color: '#b91c1c', marginBottom: 8 }}>{err}</div>}
       <ModalFooter onCancel={onClose} onSave={submit} saving={saving} />
@@ -468,7 +468,7 @@ function MemberEditor({ member, plans, clients, existingMembers, onSave, onClose
             ))}
           </select>
         ) : (
-          <div style={{ ...inp, background: '#f5f5f5' }}>{member.clientName}</div>
+          <div style={{ ...inp, background: 'var(--pn-surface-alt)' }}>{member.clientName}</div>
         )}
       </Field>
       <Field label="Plan">
@@ -503,27 +503,27 @@ function MemberEditor({ member, plans, clients, existingMembers, onSave, onClose
 // ── Reusable bits ────────────────────────────────────
 function Stat({ label, value, sub, accent }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: 14, position: 'relative', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: 14, position: 'relative', overflow: 'hidden' }}>
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: accent }} />
-      <div style={{ fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700 }}>{label}</div>
       <div style={{ fontSize: 24, fontWeight: 700, color: accent, lineHeight: 1.2, marginTop: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }
 
 function Empty({ children }) {
-  return <div style={{ background: '#fafafa', border: '1px dashed #d8d8d8', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: '#888', fontSize: 13 }}>{children}</div>;
+  return <div style={{ background: 'var(--pn-bg)', border: '1px dashed var(--pn-border-strong)', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>{children}</div>;
 }
 
 function Modal({ title, children, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, width: '94%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #f0f0f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 15, fontWeight: 700 }}>{title}</div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid #d0d0d0', background: '#fff', cursor: 'pointer', fontSize: 16 }}>×</button>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16 }}>×</button>
         </div>
         <div style={{ padding: 20 }}>{children}</div>
       </div>
@@ -543,7 +543,7 @@ function ModalFooter({ onCancel, onSave, saving }) {
 function Field({ label, children, style }) {
   return (
     <div style={{ marginBottom: 12, ...style }}>
-      <div style={{ fontSize: 11, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.04em' }}>{label}</div>
       {children}
     </div>
   );
@@ -551,15 +551,15 @@ function Field({ label, children, style }) {
 
 const inp = {
   width: '100%', fontFamily: 'inherit', fontSize: 13, padding: '8px 10px',
-  borderRadius: 8, border: '1px solid #d8d8d8', background: '#fafafa', outline: 'none', boxSizing: 'border-box',
+  borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', outline: 'none', boxSizing: 'border-box',
 };
 const primaryBtn = {
   padding: '8px 16px', borderRadius: 10, border: 'none', background: '#5b3b8c',
   color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
 };
 const secondaryBtn = {
-  padding: '8px 14px', borderRadius: 8, border: '1px solid #d8d8d8', background: '#fff',
-  color: '#666', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+  padding: '8px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)',
+  color: 'var(--pn-text-muted)', fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
 };
-const th = { textAlign: 'left', padding: '10px 14px', fontSize: 11, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700 };
-const td = { padding: '10px 14px', fontSize: 13, color: '#333' };
+const th = { textAlign: 'left', padding: '10px 14px', fontSize: 11, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', fontWeight: 700 };
+const td = { padding: '10px 14px', fontSize: 13, color: 'var(--pn-text)' };
