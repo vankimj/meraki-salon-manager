@@ -1088,7 +1088,7 @@ function openNew(techName, slotMins) {
           ? <div style={{ textAlign: 'center', color: 'var(--pn-text-faint)', padding: 40, fontSize: 13 }}>Loading…</div>
           : <WeekGrid
               weekStart={weekStart}
-              appts={weekAppts}
+              appts={isMultiLocation(locState) ? weekAppts.filter(a => appointmentInLocation(a, curLoc)) : weekAppts}
               clients={clients}
               employees={employees}
               allTechs={techs}
@@ -1099,7 +1099,7 @@ function openNew(techName, slotMins) {
           ? <div style={{ textAlign: 'center', color: 'var(--pn-text-faint)', padding: 40, fontSize: 13 }}>Loading…</div>
           : <DayGrid
               date={date}
-              appts={appts}
+              appts={visibleAppts}
               timeOff={timeOff}
               techs={displayTechs}
               allTechs={techs}
@@ -1435,7 +1435,7 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', gap: 4, overflowX: 'auto', overflowY: 'hidden' }}>
         {days.map(day => {
           const isToday   = day === today;
-          const dayAppts  = visibleAppts.filter(a => a.date === day).sort((a, b) => strToMins(a.startTime) - strToMins(b.startTime));
+          const dayAppts  = appts.filter(a => a.date === day).sort((a, b) => strToMins(a.startTime) - strToMins(b.startTime));
           const bdays     = bdayMap[day] || [];
           const headerFmt = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
@@ -1809,7 +1809,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
             });
             flush();
           });
-          return visibleAppts.map(appt => {
+          return appts.map(appt => {
           const techIdx = techs.indexOf(appt.techName);
           if (techIdx === -1) return null;
           const startMins = strToMins(appt.startTime);
