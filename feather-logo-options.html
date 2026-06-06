@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plume Nexus — Constellation & Rosette Refinement</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{color-scheme:dark;} *{box-sizing:border-box;}
+  body{margin:0;background:#06090e;color:#e8e6f0;font-family:Inter,system-ui,sans-serif;padding:38px 26px 90px;}
+  h1{font-family:Cinzel,serif;font-weight:600;letter-spacing:.04em;font-size:25px;text-align:center;margin:0 0 6px;}
+  .sub{text-align:center;color:#8b88a0;font-size:13.5px;margin:0 0 28px;}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;max-width:1120px;margin:0 auto;}
+  @media(max-width:820px){.grid{grid-template-columns:repeat(2,1fr);}}
+  .cell{border:1px solid rgba(255,255,255,.09);border-radius:18px;padding:24px 16px 18px;text-align:center;
+        background:radial-gradient(120% 90% at 50% 0%, rgba(106,79,160,.12), transparent 70%);position:relative;}
+  .num{position:absolute;top:10px;left:13px;font-size:11px;color:#6f6c84;letter-spacing:.1em;}
+  .tag{position:absolute;top:10px;right:13px;font-size:9px;color:#7a7790;letter-spacing:.12em;text-transform:uppercase;}
+  .markname{font-size:13.5px;letter-spacing:.05em;color:#dcd8ec;margin-top:14px;font-weight:600;}
+  .lockup{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:14px;}
+  .wordmark{font-family:Cinzel,serif;font-size:18px;letter-spacing:.06em;color:#f1eff7;}
+  .wordmark b{font-weight:600;} .wordmark i{font-style:normal;color:#b9b5cc;}
+  .proofs{display:flex;gap:9px;justify-content:center;align-items:center;margin-top:16px;}
+  .proof{border-radius:8px;display:flex;align-items:center;justify-content:center;}
+  .proof.light{background:#faf8f3;} .proof.dark{background:#0f1923;}
+  .cap{font-size:10px;color:#5f5c74;margin-top:7px;letter-spacing:.04em;}
+  footer{text-align:center;color:#6f6c84;font-size:13px;margin-top:46px;line-height:1.7;}
+  b.hl{color:#cfcbe0;}
+</style>
+</head>
+<body>
+  <h1>Plume Nexus — Constellation &amp; Rosette</h1>
+  <p class="sub">Refining 8 · 9 · 12 — with the constellation plume scaled up inside the roundel</p>
+
+  <svg width="0" height="0" style="position:absolute"><defs>
+    <linearGradient id="pcV" gradientUnits="userSpaceOnUse" x1="32" y1="3" x2="32" y2="60"><stop offset="0%" stop-color="#f3da90"/><stop offset="44%" stop-color="#7a5bb0"/><stop offset="100%" stop-color="#2b1d4d"/></linearGradient>
+    <linearGradient id="pcG" gradientUnits="userSpaceOnUse" x1="32" y1="3" x2="32" y2="60"><stop offset="0%" stop-color="#f3da90"/><stop offset="100%" stop-color="#6a4fa0"/></linearGradient>
+    <radialGradient id="pcR" gradientUnits="userSpaceOnUse" cx="32" cy="27" r="31"><stop offset="0%" stop-color="#6a4fa0"/><stop offset="100%" stop-color="#1d1338"/></radialGradient>
+  </defs></svg>
+
+  <div class="grid" id="root"></div>
+  <footer>All original artwork · no third-party trademarks.<br>
+    Tell me the <b class="hl">number + name</b> — when one’s right I’ll ship it across every surface and update the board.</footer>
+
+<script>
+const CREAM='#f6efdc', INK='#1d1338', GOLD='#f3da90', PLUM='#6a4fa0', DEEP='#2b1d4d', TEAL='#2a9d8f';
+function hx(c){return [parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)];}
+function iriColor(t){
+  const st=[[0,'#2b1d4d'],[0.3,'#2a9d8f'],[0.6,'#6a4fa0'],[1,'#f3da90']];
+  let a=st[0],b=st[st.length-1];
+  for(let i=0;i<st.length-1;i++){if(t>=st[i][0]&&t<=st[i+1][0]){a=st[i];b=st[i+1];break;}}
+  const f=(t-a[0])/((b[0]-a[0])||1),ca=hx(a[1]),cb=hx(b[1]);
+  return `rgb(${ca.map((v,i)=>Math.round(v+(cb[i]-v)*f)).join(',')})`;
+}
+function plume(o){
+  const {iri=true,grad='url(#pcV)',eye=false,eyeScale=1,down=true,nodes=false,
+         n=40,maxLen=16,T=5,B=58,bow=0,tipDX=0,tilt=0}=o;
+  const cx=32, P={bx:cx,by:B,cx1:cx+bow,cy1:(T+B)/2,tx:cx+tipDX,ty:T};
+  const sp=t=>{const u=1-t;return{
+    x:u*u*P.bx+2*u*t*P.cx1+t*t*P.tx, y:u*u*P.by+2*u*t*P.cy1+t*t*P.ty,
+    dx:2*u*(P.cx1-P.bx)+2*t*(P.tx-P.cx1), dy:2*u*(P.cy1-P.by)+2*t*(P.ty-P.cy1)};};
+  const topCut=eye?0.72:1, geo=[];
+  for(let i=0;i<n;i++){
+    const t=i/(n-1); if(t>topCut)continue;
+    const s0=sp(t), tl=Math.hypot(s0.dx,s0.dy)||1, ux=s0.dx/tl, uy=s0.dy/tl;
+    const baseLen=maxLen*Math.sin(Math.PI*Math.pow(t,0.8)), sw=(55-24*t)*Math.PI/180;
+    for(const s of [-1,1]){
+      const nx=-uy*s, ny=ux*s;
+      let bdx=nx*Math.cos(sw)+ux*Math.sin(sw), bdy=ny*Math.cos(sw)+uy*Math.sin(sw);
+      const bl=Math.hypot(bdx,bdy)||1; bdx/=bl; bdy/=bl;
+      const L=baseLen; if(L<0.6)continue;
+      const ex=s0.x+bdx*L, ey=s0.y+bdy*L;
+      const pxs=-bdy,pys=bdx, wb=1.8*(0.32+0.9*Math.sin(Math.PI*t)), curl=s*0.9;
+      const blx=s0.x-pxs*wb/2,bly=s0.y-pys*wb/2,brx=s0.x+pxs*wb/2,bry=s0.y+pys*wb/2;
+      const c1x=s0.x+bdx*L*0.5+pxs*wb*0.2+nx*curl,c1y=s0.y+bdy*L*0.5+pys*wb*0.2+ny*curl;
+      const c2x=s0.x+bdx*L*0.5-pxs*wb*0.2+nx*curl,c2y=s0.y+bdy*L*0.5-pys*wb*0.2+ny*curl;
+      geo.push({t,s,rx:s0.x,ry:s0.y,ex,ey,
+        d:`M${blx.toFixed(1)} ${bly.toFixed(1)} Q ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${ex.toFixed(1)} ${ey.toFixed(1)} Q ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${brx.toFixed(1)} ${bry.toFixed(1)} Z`});
+    }
+  }
+  const Lt=geo.filter(g=>g.s<0).sort((a,b)=>a.t-b.t), Rt=geo.filter(g=>g.s>0).sort((a,b)=>b.t-a.t);
+  let uv=''; if(Lt.length&&Rt.length){let d=`M ${Lt[0].rx.toFixed(1)} ${Lt[0].ry.toFixed(1)} `;
+    Lt.forEach(g=>d+=`L ${g.ex.toFixed(1)} ${g.ey.toFixed(1)} `); Rt.forEach(g=>d+=`L ${g.ex.toFixed(1)} ${g.ey.toFixed(1)} `);
+    uv=`<path d="${d}Z" fill="${grad}" opacity="0.12"/>`;}
+  const calamus=`<path d="M${P.bx-1.5} ${P.by-3} Q ${P.bx} ${P.by+5} ${P.bx+1.5} ${P.by-3} Z" fill="${GOLD}" opacity="0.5"/>`;
+  let downEl=''; if(down){const fl=[];for(let k=0;k<6;k++){const s=k<3?-1:1,o2=(k%3)/3,yy=P.by-2-o2*8;
+    fl.push(`<path d="M${P.bx} ${P.by-1} Q ${P.bx+s*4} ${(yy-2).toFixed(1)} ${(P.bx+s*(4+o2*4)).toFixed(1)} ${(yy-5).toFixed(1)}" stroke="${grad}" stroke-width="1.1" fill="none" stroke-linecap="round"/>`);}
+    downEl=`<g opacity="0.5">${fl.join('')}</g>`;}
+  const shadow=`<g transform="translate(0.8 0.9)" opacity="0.24">${geo.map(g=>`<path d="${g.d}" fill="${INK}"/>`).join('')}</g>`;
+  const main=geo.map(g=>`<path d="${g.d}" fill="${iri?iriColor(g.t):grad}" opacity="0.97"/>`).join('');
+  const sheen=geo.filter(g=>g.t>0.22).map(g=>`<path d="M${g.rx.toFixed(1)} ${g.ry.toFixed(1)} L ${((g.rx+g.ex)/2).toFixed(1)} ${((g.ry+g.ey)/2).toFixed(1)}" stroke="${CREAM}" stroke-width="0.4" stroke-linecap="round" opacity="${(0.12+0.2*g.t).toFixed(2)}"/>`).join('');
+  const rachis=`<path d="M${P.bx} ${P.by} Q ${P.cx1} ${P.cy1} ${P.tx} ${P.ty}" stroke="${GOLD}" stroke-width="1.7" fill="none" stroke-linecap="round" opacity="0.95"/>`;
+  let eyeEl=''; if(eye){const c=sp(0.8),ang=Math.atan2(c.dy,c.dx)*180/Math.PI-90,e=eyeScale,X=c.x.toFixed(1),Y=c.y.toFixed(1);
+    eyeEl=`<g transform="rotate(${ang.toFixed(1)} ${X} ${Y})"><ellipse cx="${X}" cy="${Y}" rx="${8.5*e}" ry="${11*e}" fill="${DEEP}"/><ellipse cx="${X}" cy="${Y}" rx="${8.5*e}" ry="${11*e}" fill="none" stroke="${TEAL}" stroke-width="${2.7*e}"/><ellipse cx="${X}" cy="${Y}" rx="${5.3*e}" ry="${7*e}" fill="none" stroke="${PLUM}" stroke-width="${1.9*e}"/><ellipse cx="${X}" cy="${Y}" rx="${2.9*e}" ry="${4*e}" fill="${GOLD}"/><ellipse cx="${X}" cy="${(c.y-0.3).toFixed(1)}" rx="${1.3*e}" ry="${2*e}" fill="${INK}"/></g>`;}
+  let nodesEl=''; if(nodes){const outline=[...Lt,...Rt]; let pl='';
+    outline.forEach((g,i)=>pl+=`${i?'L':'M'} ${g.ex.toFixed(1)} ${g.ey.toFixed(1)} `);
+    const dots=outline.filter((_,i)=>i%2===0).map(g=>`<circle cx="${g.ex.toFixed(1)}" cy="${g.ey.toFixed(1)}" r="1.05" fill="${GOLD}"/><circle cx="${g.ex.toFixed(1)}" cy="${g.ey.toFixed(1)}" r="1.05" fill="none" stroke="${INK}" stroke-width="0.3"/>`).join('');
+    nodesEl=`<path d="${pl}" stroke="${GOLD}" stroke-width="0.55" fill="none" opacity="0.6" stroke-dasharray="0.6 2.6"/>${dots}`;}
+  const inner=uv+calamus+downEl+shadow+main+sheen+rachis+eyeEl+nodesEl;
+  return tilt?`<g transform="rotate(${tilt} 32 32)">${inner}</g>`:inner;
+}
+function hubNode(eye){return eye
+  ?`<ellipse cx="32" cy="32" rx="5.2" ry="5.2" fill="${DEEP}"/><circle cx="32" cy="32" r="5.2" fill="none" stroke="${TEAL}" stroke-width="1.8"/><circle cx="32" cy="32" r="2.6" fill="${GOLD}"/><circle cx="32" cy="32" r="0.95" fill="${INK}"/>`
+  :`<circle cx="32" cy="32" r="3.4" fill="${GOLD}"/><circle cx="32" cy="32" r="3.4" fill="none" stroke="${INK}" stroke-width="0.6"/>`;}
+function rosette(count,opt){
+  const {centerEye=false,tipNodes=false,ring=false,maxLen=8.5,n=15}=opt||{};
+  const f=plume({T:4,B:33,n,maxLen,down:false});
+  let g='';for(let i=0;i<count;i++)g+=`<g transform="rotate(${(360/count*i).toFixed(2)} 32 32)">${f}</g>`;
+  let net='';
+  if(ring||tipNodes){const R=28,pts=[];for(let i=0;i<count;i++){const a=(360/count*i)*Math.PI/180;pts.push([32+R*Math.sin(a),32-R*Math.cos(a)]);}
+    if(ring){let d='';pts.forEach((p,i)=>d+=`${i?'L':'M'} ${p[0].toFixed(1)} ${p[1].toFixed(1)} `);d+='Z';
+      net+=`<path d="${d}" fill="none" stroke="${GOLD}" stroke-width="0.55" opacity="0.5" stroke-dasharray="1 3"/>`;}
+    if(tipNodes)net+=pts.map(p=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="1.6" fill="${GOLD}"/>`).join('');
+  }
+  return g+net+hubNode(centerEye);
+}
+function roundel(inner,sc,dy){return `<circle cx="32" cy="32" r="27.5" fill="url(#pcR)"/><circle cx="32" cy="32" r="27.5" fill="none" stroke="${GOLD}" stroke-width="1.2" opacity="0.55"/><g transform="translate(32 ${32+(dy||0)}) scale(${sc}) translate(-32 -32)">${inner}</g>`;}
+
+const MARKS=[
+  {tag:'rosette roundel', name:'Rosette ×7 Roundel',          inner:roundel(rosette(7,{maxLen:8.3,n:14}),0.82)},
+  {tag:'rosette roundel', name:'Rosette ×8 Roundel',          inner:roundel(rosette(8,{maxLen:8,n:13}),0.82)},
+  {tag:'rosette roundel', name:'Rosette ×9 Roundel',          inner:roundel(rosette(9,{maxLen:7.6,n:12}),0.82)},
+  {tag:'rosette roundel', name:'Rosette ×8 + Eye Hub',        inner:roundel(rosette(8,{maxLen:8,n:13,centerEye:true}),0.82)},
+  {tag:'rosette roundel', name:'Rosette ×8 + Net Ring',       inner:roundel(rosette(8,{maxLen:8,n:13,ring:true,tipNodes:true}),0.8)},
+
+  {tag:'constellation', name:'Constellation Curved (9)',      inner:plume({nodes:true,bow:9,n:32})},
+  {tag:'constellation', name:'Constellation Curved, More Arc',inner:plume({nodes:true,bow:13,n:32})},
+  {tag:'constellation', name:'Constellation Curved, Dense',   inner:plume({nodes:true,bow:9,n:42})},
+  {tag:'constellation', name:'Constellation Curved + Eye',    inner:plume({nodes:true,bow:9,eye:true,n:30})},
+
+  {tag:'big roundel', name:'Constellation Roundel · 0.66',    inner:roundel(plume({nodes:true,bow:9,n:30,down:false}),0.66)},
+  {tag:'big roundel', name:'Constellation Roundel · 0.74',    inner:roundel(plume({nodes:true,bow:9,n:30,down:false}),0.74)},
+  {tag:'big roundel', name:'Constellation Roundel · 0.82',    inner:roundel(plume({nodes:true,bow:9,n:30,down:false}),0.82)},
+  {tag:'big roundel', name:'Constellation Roundel · 0.82 + Eye', inner:roundel(plume({nodes:true,bow:9,eye:true,n:28,down:false}),0.8)},
+  {tag:'big roundel', name:'Constellation Roundel · 0.88',    inner:roundel(plume({nodes:true,bow:9,n:30,down:false}),0.88)},
+  {tag:'big roundel', name:'Constellation Roundel · Gentle Arc 0.82', inner:roundel(plume({nodes:true,bow:6,n:30,down:false}),0.82)},
+];
+
+const svg=(inner,size)=>`<svg width="${size}" height="${size}" viewBox="0 0 64 64">${inner}</svg>`;
+const root=document.getElementById('root');
+MARKS.forEach((m,i)=>{
+  root.insertAdjacentHTML('beforeend',`<div class="cell"><div class="num">${i+1}</div><div class="tag">${m.tag}</div>
+    ${svg(m.inner,120)}
+    <div class="markname">${i+1} · ${m.name}</div>
+    <div class="lockup">${svg(m.inner,30)}<span class="wordmark"><b>Plume</b> <i>Nexus</i></span></div>
+    <div class="proofs">
+      <div class="proof light" style="width:46px;height:46px">${svg(m.inner,34)}</div>
+      <div class="proof dark"  style="width:46px;height:46px">${svg(m.inner,34)}</div>
+      <div class="proof light" style="width:26px;height:26px">${svg(m.inner,16)}</div>
+      <div class="proof dark"  style="width:26px;height:26px">${svg(m.inner,16)}</div>
+    </div>
+    <div class="cap">lockup · 34px · 16px (light / dark)</div></div>`);
+});
+</script>
+</body>
+</html>

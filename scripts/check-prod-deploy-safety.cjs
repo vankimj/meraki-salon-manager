@@ -9,7 +9,9 @@
 const { execSync } = require('node:child_process');
 
 if (process.env.SKIP_PROD_DEPLOY_GUARD === '1') {
-  console.log('⚠  Prod deploy guard skipped via SKIP_PROD_DEPLOY_GUARD=1');
+  // stderr, not stdout — predeploy hook output is otherwise prepended to the
+  // `firebase ... --json` payload that deploy-safe.cjs parses for the channel URL.
+  console.error('⚠  Prod deploy guard skipped via SKIP_PROD_DEPLOY_GUARD=1');
   process.exit(0);
 }
 

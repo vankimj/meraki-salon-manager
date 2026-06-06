@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plume Nexus · Payments Economics Calculator</title>
+<style>
+  :root{
+    --green:#2D7A5F; --blue:#3D95CE; --teal:#3D9E8A;
+    --ink:#0f1923; --muted:#5b6b78; --line:#e3e8ec; --bg:#f6f8f9; --card:#fff;
+    --pos:#1f8a4c; --neg:#c0392b; --gold:#b8893b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);padding:32px 20px}
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:24px;margin:0 0 4px}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-bottom:8px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+  .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 12px}
+  label{display:block;font-size:13px;margin:10px 0 4px;color:var(--ink)}
+  label:first-of-type{margin-top:0}
+  input{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fcfdfe}
+  input:focus{outline:none;border-color:var(--blue)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .hint{font-size:11px;color:var(--muted);margin-top:2px}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:20px}
+  th,td{padding:11px 14px;text-align:right;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+  th:first-child,td:first-child{text-align:left}
+  thead th{background:#eef3f5;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+  tbody tr:last-child td{border-bottom:none}
+  .pos{color:var(--pos);font-weight:600}
+  .neg{color:var(--neg);font-weight:600}
+  .name{font-weight:600}
+  .tag{display:inline-block;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#fff;background:var(--teal);border-radius:4px;padding:1px 6px;margin-left:6px;vertical-align:middle}
+  .note{font-size:12px;color:var(--muted);margin-top:14px;line-height:1.6}
+  .best{background:#f1f9f4}
+  footer{margin-top:22px;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Payments Economics Calculator</h1>
+  <p class="sub">Stripe vs. Helcim, per-salon, per-month. Adjust any input — the table recomputes live. All rates illustrative; confirm Helcim profit-share % via the partner program.</p>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Salon volume</h2>
+      <label>Monthly card volume ($)</label>
+      <input id="vol" type="number" value="30000" min="0" step="1000">
+      <label>Transactions / month</label>
+      <input id="txns" type="number" value="500" min="1" step="10">
+      <div class="hint">Avg ticket auto-derives below.</div>
+    </div>
+
+    <div class="card">
+      <h2>Benchmark (today)</h2>
+      <label>GlossGenius rate they pay now (%)</label>
+      <input id="ggPct" type="number" value="2.6" step="0.05">
+      <label>+ per-txn ($)</label>
+      <input id="ggFlat" type="number" value="0" step="0.01">
+      <div class="hint">What the salon pays before switching.</div>
+    </div>
+
+    <div class="card">
+      <h2>Stripe — your cost</h2>
+      <div class="row2">
+        <div><label>Standard (%)</label><input id="stdPct" type="number" value="2.7" step="0.05"></div>
+        <div><label>+ flat ($)</label><input id="stdFlat" type="number" value="0.05" step="0.01"></div>
+      </div>
+      <div class="row2">
+        <div><label>Negotiated IC+ (%)</label><input id="icPct" type="number" value="2.3" step="0.05"></div>
+        <div><label>+ flat ($)</label><input id="icFlat" type="number" value="0.05" step="0.01"></div>
+      </div>
+      <label>App fee you charge salon — negotiated case (%)</label>
+      <input id="appPct" type="number" value="2.6" step="0.05">
+      <div class="hint">The blended rate the salon sees. Margin = this − your IC+ cost.</div>
+    </div>
+
+    <div class="card">
+      <h2>Helcim</h2>
+      <div class="row2">
+        <div><label>Salon effective (%)</label><input id="helPct" type="number" value="1.93" step="0.05"></div>
+        <div><label>+ flat ($)</label><input id="helFlat" type="number" value="0.08" step="0.01"></div>
+      </div>
+      <div class="row2">
+        <div><label>Helcim margin "plus" (%)</label><input id="helMarginPct" type="number" value="0.40" step="0.05"></div>
+        <div><label>+ flat ($)</label><input id="helMarginFlat" type="number" value="0.08" step="0.01"></div>
+      </div>
+      <label>Your profit-share of Helcim margin (%)</label>
+      <input id="shareLow" type="number" value="40" step="5">
+      <div class="hint">Undisclosed until partner onboarding; 30–50% is a guess.</div>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Scenario</th><th>Salon pays /mo</th><th>You net /mo</th><th>vs GG</th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <p class="note" id="ticket"></p>
+  <p class="note">
+    <strong>Reading it:</strong> “Stripe std, fee = 0” is your <em>current code</em> — you absorb the Stripe fee.
+    To profit on Stripe you must negotiate IC+ <em>and</em> set an app fee. Helcim makes the salon pay less
+    <em>and</em> pays you, with no fund-flow risk — but you don’t control the split.
+  </p>
+  <footer>Plume Nexus Salon Manager · companion to HELCIM_INTEGRATION_PLAN.md §6 · numbers are estimates, not quotes.</footer>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const money = n => (n<0?'-':'') + '$' + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:0,maximumFractionDigits:0});
+const cell = (n,cls) => `<td class="${cls||''}">${money(n)}</td>`;
+const signed = n => `<td class="${n>0?'pos':(n<0?'neg':'')}">${n>0?'+':''}${money(n)}</td>`;
+
+function vsGG(salonPays, gg){
+  const d = salonPays - gg;
+  if (Math.abs(d) < 1) return `<td>same as GG</td>`;
+  return `<td class="${d<0?'pos':'neg'}">${d<0?'−':'+'}${money(Math.abs(d))} ${d<0?'cheaper':'worse'}</td>`;
+}
+
+function compute(){
+  const vol=+$('vol').value, txns=+$('txns').value;
+  const fee=(pct,flat)=> vol*(pct/100) + txns*flat;
+
+  const gg   = fee(+$('ggPct').value, +$('ggFlat').value);
+  const std  = fee(+$('stdPct').value, +$('stdFlat').value);
+  const ic   = fee(+$('icPct').value, +$('icFlat').value);
+  const appSalon = vol*(+$('appPct').value/100);          // negotiated app-fee rate, salon-facing (flat 0 for simplicity)
+  const hel  = fee(+$('helPct').value, +$('helFlat').value);
+  const helMargin = fee(+$('helMarginPct').value, +$('helMarginFlat').value);
+  const helYou = helMargin * (+$('shareLow').value/100);
+
+  const rows = [
+    {name:'Stripe std · app fee = 0', tag:'current', salon:0,        you:-std,           best:false},
+    {name:'Stripe std · app fee = cost', salon:std,                  you:0,              best:false},
+    {name:'Stripe IC+ · charge salon app%', salon:appSalon,          you:appSalon-ic,    best:false},
+    {name:'Helcim', tag:'cheapest', salon:hel,                       you:helYou,         best:true},
+  ];
+
+  $('rows').innerHTML = rows.map(r=>`
+    <tr class="${r.best?'best':''}">
+      <td class="name">${r.name}${r.tag?`<span class="tag">${r.tag}</span>`:''}</td>
+      ${cell(r.salon)}
+      ${signed(r.you)}
+      ${vsGG(r.salon, gg)}
+    </tr>`).join('');
+
+  $('ticket').innerHTML = `<strong>Avg ticket:</strong> ${money(vol/Math.max(txns,1))} · `
+    + `<strong>GG baseline:</strong> ${money(gg)}/mo · <strong>Helcim margin pool:</strong> ${money(helMargin)}/mo`;
+}
+
+document.querySelectorAll('input').forEach(i=>i.addEventListener('input',compute));
+compute();
+</script>
+</body>
+</html>
