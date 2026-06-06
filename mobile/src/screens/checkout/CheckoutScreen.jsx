@@ -46,6 +46,7 @@ export default function CheckoutScreen({ navigation }) {
   const [membership, setMembership] = useState(null);   // primary client's active membership
   const [clientCredit, setClientCredit] = useState(0);  // primary client's store-credit balance
   const [applyCredit, setApplyCredit] = useState(false);
+  const [issueCredit, setIssueCredit] = useState('');   // staff goodwill credit added to the client
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
@@ -170,6 +171,7 @@ export default function CheckoutScreen({ navigation }) {
         method, stripePaymentIntentId, discType, discVal, promo, giftCard,
         saleId, skipSideEffects: isRetry,
         receiptContact: parseReceiptContact(receiptPhone),
+        issueCredit: primaryClientId ? Number(issueCredit) || 0 : 0,
       });
       await clearTab();
       const extra = sideEffectErrors?.length ? `\n(${sideEffectErrors.join('; ')})` : '';
@@ -264,6 +266,17 @@ export default function CheckoutScreen({ navigation }) {
           </View>
           <View style={[styles.toggle, applyCredit && styles.toggleOn]}><View style={[styles.knob, applyCredit && styles.knobOn]} /></View>
         </TouchableOpacity>
+      )}
+
+      {!!primaryClientId && (
+        <>
+          <Text style={styles.section}>Issue store credit</Text>
+          <View style={styles.applyRow}>
+            <Text style={{ color: theme.textMuted, fontSize: 16 }}>$</Text>
+            <TextInput style={[styles.input, { flex: 1 }]} value={issueCredit} onChangeText={setIssueCredit} keyboardType="decimal-pad" placeholder="0.00  — added to this client's balance" placeholderTextColor={theme.placeholder} />
+          </View>
+          {Number(issueCredit) > 0 && <Text style={styles.creditSub}>New balance: {money(Math.max(clientCredit - totals.creditApply, 0) + Number(issueCredit))}</Text>}
+        </>
       )}
 
       {!hasPhoneOnFile && (

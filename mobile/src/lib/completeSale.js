@@ -22,7 +22,7 @@ export async function completeSale({
   method = 'cash', stripePaymentIntentId = null,
   discType = 'none', discVal = 0, promo = null, giftCard = null,
   cashTendered = null, saleId = null, skipSideEffects = false,
-  receiptContact = null,
+  receiptContact = null, issueCredit = 0,
 }) {
   const t = totals;
   const sp = buildTechSplit(lines, t.tipAmt);
@@ -73,16 +73,18 @@ export async function completeSale({
     for (const it of products) {
       await saveProduct(it.product.id, { stock: Math.max(0, (Number(it.product.stock) || 0) - it.qty) }).catch(() => {});
     }
-    // Spend the client's store credit: deduct exactly what the totals applied.
-    // Best-effort + retry-guarded (skipSideEffects) so a re-save never
-    // double-deducts. Mirrors the web checkout's credit bookkeeping.
+    // Client store-credit bookkeeping, in ONE write (mirrors web): deduct
+    // exactly what the totals applied, then add any staff-issued goodwill
+    // credit. Best-effort + retry-guarded (skipSideEffects) so a re-save never
+    // double-deducts or double-issues.
+    const issued = Number(issueCredit) || 0;
     const creditClientId = (tab.appts || []).map(a => a.clientId).find(Boolean) || null;
-    if (t.creditApply > 0 && creditClientId) {
+    if ((t.creditApply > 0 || issued > 0) && creditClientId) {
       try {
         const c = await fetchClient(creditClientId);
-        const newCredit = Math.max((Number(c?.credit) || 0) - t.creditApply, 0);
+        const newCredit = Math.max((Number(c?.credit) || 0) - t.creditApply, 0) + issued;
         await saveClient(creditClientId, { credit: newCredit });
-      } catch (e) { sideEffectErrors.push('Store credit not deducted: ' + (e?.message || 'failed')); }
+      } catch (e) { sideEffectErrors.push('Store credit not updated: ' + (e?.message || 'failed')); }
     }
   }
 
