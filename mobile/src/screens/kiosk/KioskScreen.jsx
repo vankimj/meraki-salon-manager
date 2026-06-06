@@ -240,11 +240,16 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   }
 
   if (stage === 'done') {
+    const c = parseReceiptContact(receiptPhone);
+    const receiptLine = c?.email ? `Receipt emailed to ${c.email}.`
+      : c?.phone ? `Receipt texted to •••${c.phone.replace(/\D/g, '').slice(-4)}.`
+      : hasPhoneOnFile ? 'A receipt is on its way.'
+      : 'See you next time!';
     return (
       <View style={styles.idle}>
         <Text style={styles.doneMark}>✓</Text>
         <Text style={styles.idleTitle}>{paidMsg}</Text>
-        <Text style={styles.idleSub}>A receipt is on its way. See you next time!</Text>
+        <Text style={styles.idleSub}>{receiptLine}</Text>
         <TouchableOpacity style={styles.doneBtn} onPress={() => clearCheckoutSession().catch(() => {})}>
           <Text style={styles.doneBtnText}>Done</Text>
         </TouchableOpacity>
