@@ -57,6 +57,8 @@ export default function CheckoutScreen({ navigation }) {
   const [paid, setPaid]           = useState(null);   // {method,opts} once money is CAPTURED — blocks re-charge
   const [recordErr, setRecordErr] = useState('');
   const [saleId]                  = useState(() => genReceiptToken(24)); // idempotency key + receipt id
+  const [receiptPhone, setReceiptPhone] = useState(''); // walk-ins: capture a number for the texted receipt
+  const hasPhoneOnFile = (tab.appts || []).some(a => a.clientPhone);
 
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
 
@@ -144,6 +146,7 @@ export default function CheckoutScreen({ navigation }) {
         tab, lines, products, totals: t, settings, email,
         method, stripePaymentIntentId, discType, discVal, promo, giftCard,
         saleId, skipSideEffects: isRetry,
+        receiptContact: receiptPhone.trim() ? { phone: receiptPhone.trim() } : null,
       });
       await clearTab();
       const extra = sideEffectErrors?.length ? `\n(${sideEffectErrors.join('; ')})` : '';
@@ -224,6 +227,13 @@ export default function CheckoutScreen({ navigation }) {
           ? <TouchableOpacity onPress={() => { setGiftCard(null); setGcCode(''); }} style={styles.clearBtn}><Text style={styles.clearText}>✕ -{money(totals.gcApply)}</Text></TouchableOpacity>
           : <TouchableOpacity onPress={applyGiftCard} style={styles.applyBtn}><Text style={styles.applyText}>Apply</Text></TouchableOpacity>}
       </View>
+
+      {!hasPhoneOnFile && (
+        <>
+          <Text style={styles.section}>Text receipt to</Text>
+          <TextInput style={styles.input} value={receiptPhone} onChangeText={setReceiptPhone} keyboardType="phone-pad" placeholder="Phone number (optional)" placeholderTextColor={theme.placeholder} maxLength={20} />
+        </>
+      )}
 
       <Text style={styles.section}>Tip</Text>
       <View style={styles.chips}>
