@@ -42,23 +42,28 @@ function computeTechSlice(receipts, appointments, techName) {
   const clientIds = new Set();
   const tipEntries = [];          // { date, amount, clientName }
   const services   = {};          // { name: { count, revenue } }
+  const byDay      = {};          // { date: take-home (revenue + tips) }
 
   receipts.forEach(r => {
     const p = r.payment || {};
     const isNeg = r.transactionType === 'refund' || r.transactionType === 'void' || r.transactionType === 'cancellation';
     const sign  = isNeg ? -1 : 1;
+    let rTake = 0;                 // this receipt's take-home for this tech
     if (p.techSplit && p.techSplit.length) {
       p.techSplit.forEach(s => {
         if (s.techName !== techName) return;
-        revenue += sign * (Number(s.revenue) || 0);
-        tips    += sign * (Number(s.tip) || 0);
+        const rev = sign * (Number(s.revenue) || 0);
+        const tip = sign * (Number(s.tip) || 0);
+        revenue += rev; tips += tip; rTake += rev + tip;
         if (s.tip && !isNeg) tipEntries.push({ date: r.date, amount: Number(s.tip), clientName: r.clientName || 'Walk-in' });
       });
     } else if (r.techName === techName) {
-      revenue += sign * (Number(p.subtotal) || ((r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0)));
-      tips    += sign * (Number(p.tip) || 0);
+      const rev = sign * (Number(p.subtotal) || ((r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0)));
+      const tip = sign * (Number(p.tip) || 0);
+      revenue += rev; tips += tip; rTake += rev + tip;
       if (p.tip && !isNeg) tipEntries.push({ date: r.date, amount: Number(p.tip), clientName: r.clientName || 'Walk-in' });
     }
+    if (rTake !== 0 && r.date) byDay[r.date] = (byDay[r.date] || 0) + rTake;
     if (r.clientId && !isNeg && (r.techName === techName || (p.techSplit || []).some(s => s.techName === techName))) {
       clientIds.add(r.clientId);
     }
@@ -85,7 +90,7 @@ function computeTechSlice(receipts, appointments, techName) {
     .map(([name, v]) => ({ name, ...v }))
     .sort((a, b) => b.count - a.count);
 
-  return { revenue, tips, serviceCount, clientCount: clientIds.size, tipEntries, serviceList };
+  return { revenue, tips, serviceCount, clientCount: clientIds.size, tipEntries, serviceList, byDay };
 }
 
 const RANGES = [
@@ -99,7 +104,7 @@ export default function EarningsScreen() {
   const styles = useThemedStyles(makeStyles);
   const { techName, loading: empLoading } = useCurrentEmployee();
   const [range, setRange] = useState('week');
-  const [data,  setData]  = useState({ revenue: 0, tips: 0, serviceCount: 0, clientCount: 0, tipEntries: [], serviceList: [] });
+  const [data,  setData]  = useState({ revenue: 0, tips: 0, serviceCount: 0, clientCount: 0, tipEntries: [], serviceList: [], byDay: {} });
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -145,6 +150,26 @@ export default function EarningsScreen() {
   }
 
   const total = data.revenue + data.tips;
+
+  // Per-day take-home across the selected range (skip 'today' — one bar isn't a
+  // trend). Missing days fill to 0 so the spacing reflects real calendar gaps.
+  const trend = useMemo(() => {
+    if (range === 'today') return [];
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = endDate.split('-').map(Number);
+    const cur = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+    const out = [];
+    let guard = 0;
+    while (cur <= end && guard++ < 40) {
+      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+      out.push({ key: iso, value: Math.max(0, data.byDay?.[iso] || 0), dow: cur.getDay(), dom: cur.getDate() });
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }, [range, startDate, endDate, data.byDay]);
+  const trendMax = Math.max(...trend.map(d => d.value), 1);
+  const trendBest = trend.reduce((m, d) => Math.max(m, d.value), 0);
 
   return (
     <ScrollView
@@ -192,6 +217,28 @@ export default function EarningsScreen() {
             <Stat label="Services" value={String(data.serviceCount)}  accent="#3D95CE" />
             <Stat label="Clients"  value={String(data.clientCount)}   accent="#5b3b8c" />
           </View>
+
+          {trend.length > 1 && trendBest > 0 && (
+            <View style={{ marginTop: 16 }}>
+              <Text style={styles.sectionLabel}>Daily take-home</Text>
+              <View style={styles.card}>
+                <View style={styles.chartRow}>
+                  {trend.map(d => {
+                    const h = d.value > 0 ? Math.max(4, Math.round((d.value / trendMax) * 92)) : 2;
+                    const isBest = d.value === trendBest && d.value > 0;
+                    const label = range === 'week' ? ['S', 'M', 'T', 'W', 'T', 'F', 'S'][d.dow] : (d.dom % 5 === 0 ? String(d.dom) : '');
+                    return (
+                      <View key={d.key} style={styles.chartCol}>
+                        <View style={[styles.bar, { height: h, backgroundColor: d.value > 0 ? (isBest ? theme.teal : theme.green) : theme.border }]} />
+                        <Text style={styles.barLabel} numberOfLines={1}>{label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+                <Text style={styles.chartCaption}>Best day {fmtMoney(trendBest)}</Text>
+              </View>
+            </View>
+          )}
 
           {data.serviceCount === 0 && data.tips === 0 && (
             <View style={styles.welcomeCard}>
@@ -273,6 +320,11 @@ const makeStyles = (t) => StyleSheet.create({
 
   sectionLabel: { fontSize: 11, color: t.textMuted, textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '700', marginBottom: 8, marginLeft: 4 },
   card:         { backgroundColor: t.surface, borderRadius: 12, padding: 4 },
+  chartRow:     { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', height: 108, paddingHorizontal: 8, paddingTop: 8, gap: 2 },
+  chartCol:     { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
+  bar:          { width: '70%', maxWidth: 22, borderRadius: 3 },
+  barLabel:     { fontSize: 9, color: t.textFaint, marginTop: 4 },
+  chartCaption: { fontSize: 11, color: t.textMuted, textAlign: 'center', paddingVertical: 8 },
 
   serviceRow:        { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 12, gap: 12 },
   serviceRowDivider: { borderTopWidth: 1, borderTopColor: t.border },
