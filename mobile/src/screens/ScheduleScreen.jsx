@@ -407,6 +407,11 @@ export default function ScheduleScreen({ navigation }) {
             onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 600); }}
             onTapAppt={(a) => setDetail(a)}
             onTapEmpty={(startTime) => setCreatePrefill({ date, startTime, techName: showAll ? '' : (techName || '') })}
+            onReschedule={async (a, patch) => {
+              setAppts(prev => prev.map(x => x.id === a.id ? { ...x, ...patch } : x));
+              try { await updateAppointment(a.id, patch); }
+              catch (e) { Alert.alert('Couldn\'t move', e?.message || 'Try again.'); setAppts(prev => prev.map(x => x.id === a.id ? { ...x, startTime: a.startTime, techName: a.techName } : x)); }
+            }}
           />
         )
       )}
@@ -485,10 +490,11 @@ export default function ScheduleScreen({ navigation }) {
 // to that slot. Filled rows render the appt block sized to its
 // duration (1 SLOT_PX per 30 min). Multi-tech overlaps are stacked
 // horizontally; "Just me" mode never overlaps so most days are clean.
-function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays, timeOff, techName, refreshing, onRefresh, onTapAppt, onTapEmpty }) {
+function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays, timeOff, techName, refreshing, onRefresh, onTapAppt, onTapEmpty, onReschedule }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { contentMaxWidth } = useResponsive();
+  const [moving, setMoving] = useState(null);   // appt long-pressed to reschedule
   // Working-window awareness — same rules as WeekView's gap calc.
   // Only meaningful when scoped to a single tech (showAll=false).
   const off    = !showAll ? timeOffOn(date, techName, timeOff) : null;
@@ -524,6 +530,13 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
   }
 
   return (
+    <>
+    {moving && (
+      <View style={styles.moveBanner}>
+        <Text style={styles.moveBannerText} numberOfLines={1}>Moving {moving.clientName || 'Walk-in'} — tap a new time</Text>
+        <TouchableOpacity onPress={() => setMoving(null)} style={styles.moveCancel}><Text style={styles.moveCancelText}>✕ Cancel</Text></TouchableOpacity>
+      </View>
+    )}
     <ScrollView
       style={{ flex: 1, backgroundColor: theme.surface }}
       contentContainerStyle={{ paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
@@ -539,10 +552,16 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
         return (
           <TouchableOpacity
             key={idx}
-            onPress={() => slotAppt ? onTapAppt(slotAppt) : onTapEmpty(startTime)}
+            onPress={() => {
+              if (moving) { onReschedule?.(moving, { startTime, techName: moving.techName }); setMoving(null); }
+              else if (slotAppt) onTapAppt(slotAppt);
+              else onTapEmpty(startTime);
+            }}
+            onLongPress={() => { if (onReschedule && slotAppt && !moving) setMoving(slotAppt); }}
+            delayLongPress={300}
             activeOpacity={0.6}
-            disabled={!inWorkWindow && !slotAppt}
-            style={[styles.dayTimelineRow, { height: SLOT_PX }, !inWorkWindow && styles.dayTimelineRowOff]}
+            disabled={!moving && !inWorkWindow && !slotAppt}
+            style={[styles.dayTimelineRow, { height: SLOT_PX }, !inWorkWindow && styles.dayTimelineRowOff, moving && styles.dayTimelineRowDrop]}
           >
             <View style={styles.dayTimeLabel}>
               {isHourMark && <Text style={[styles.dayTimeLabelText, !inWorkWindow && { color: theme.textFaint }]}>{fmtTime(startTime)}</Text>}
@@ -557,7 +576,7 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
                       height: Math.max(SLOT_PX - 4, ((slotAppt.duration || 30) / SLOT_MINUTES) * SLOT_PX - 4),
                       backgroundColor: c.bg,
                       borderLeftColor: c.border,
-                      opacity: c.faded ? 0.65 : 1,
+                      opacity: moving?.id === slotAppt.id ? 0.4 : (c.faded ? 0.65 : 1),
                     },
                   ]}>
                     <Text style={[styles.dayApptClient, { color: c.text }]} numberOfLines={1}>
@@ -584,6 +603,7 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
         );
       })}
     </ScrollView>
+    </>
   );
 }
 
@@ -1894,6 +1914,7 @@ const makeStyles = (t) => StyleSheet.create({
   // Day timeline
   dayTimelineRow:     { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: t.border },
   dayTimelineRowOff:  { backgroundColor: t.surfaceAlt },  // out-of-hours rows are visually muted
+  dayTimelineRowDrop: { backgroundColor: t.blueSoft },    // while moving, rows are drop targets
   dayTimeLabel:       { width: 56, paddingLeft: 8, paddingTop: 2 },
   dayTimeLabelText:   { fontSize: 11, color: t.textMuted, fontWeight: '600' },
   dayTimelineSlot:    { flex: 1, paddingVertical: 2, paddingRight: 8, justifyContent: 'flex-start', alignItems: 'stretch' },
