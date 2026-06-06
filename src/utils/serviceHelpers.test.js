@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatPrice, formatDuration, groupByCategory, validateService, blankService, resolveServicePricing, techServiceDuration, resolveBookedDurations } from './serviceHelpers';
+import { formatPrice, formatDuration, groupByCategory, validateService, blankService, resolveServicePricing, techServiceDuration, techServicePrice, resolveBookedDurations } from './serviceHelpers';
 
 describe('formatPrice', () => {
   it('shows + for priceFrom=true',  () => expect(formatPrice(70, true)).toBe('$70+'));
@@ -84,6 +84,45 @@ describe('techServiceDuration', () => {
   });
   it('returns 0 when neither service nor tech has a duration', () =>
     expect(techServiceDuration({ id: 'x' }, null)).toBe(0));
+});
+
+describe('techServicePrice', () => {
+  const svc = { id: 'gel', basePrice: 50 };
+  it('falls back to base price when no tech', () => expect(techServicePrice(svc, null)).toBe(50));
+  it('falls back when tech has no overrides', () => expect(techServicePrice(svc, { name: 'A' })).toBe(50));
+  it('falls back when tech has no override for this service', () =>
+    expect(techServicePrice(svc, { servicePrices: { other: 80 } })).toBe(50));
+  it('uses the tech override when set (senior tech charges more)', () =>
+    expect(techServicePrice(svc, { servicePrices: { gel: 65 } })).toBe(65));
+  it('honors a $0 override (comped/free)', () =>
+    expect(techServicePrice(svc, { servicePrices: { gel: 0 } })).toBe(0));
+  it('ignores a negative override', () =>
+    expect(techServicePrice(svc, { servicePrices: { gel: -5 } })).toBe(50));
+  it('reads legacy price field when no basePrice', () =>
+    expect(techServicePrice({ id: 'x', price: 32 }, null)).toBe(32));
+});
+
+describe('resolveServicePricing with per-tech price', () => {
+  const svc = { id: 'gel', basePrice: 50, duration: 60 };
+  const seniorTech = { servicePrices: { gel: 65 } };
+
+  it('uses base price when no tech', () =>
+    expect(resolveServicePricing(svc, null).price).toBe(50));
+  it('applies the tech price override as the base', () =>
+    expect(resolveServicePricing(svc, null, seniorTech).price).toBe(65));
+  it('adds priceAdd on top of the tech override', () => {
+    const opt = { id: 'len', priceAdd: 10 };
+    expect(resolveServicePricing(svc, opt, seniorTech).price).toBe(75); // 65 + 10
+  });
+  it('an absolute option price still wins over the tech override', () => {
+    const opt = { id: 'fixed', price: 90 };
+    expect(resolveServicePricing(svc, opt, seniorTech).price).toBe(90);
+  });
+  it('combines per-tech price and per-tech duration overrides', () => {
+    const tech = { servicePrices: { gel: 65 }, serviceDurations: { gel: 75 } };
+    const r = resolveServicePricing(svc, null, tech);
+    expect(r).toEqual({ price: 65, duration: 75 });
+  });
 });
 
 describe('resolveServicePricing with per-tech duration', () => {

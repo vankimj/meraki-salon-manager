@@ -2134,8 +2134,9 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
 
   function pickService(i, name) {
     const svc = services.find(s => s.name === name);
-    const duration = svc ? (resolveServicePricing(svc, null, apptTech).duration || 60) : 60;
-    patchService(i, { name, duration, price: svc?.basePrice || '' });
+    const r = svc ? resolveServicePricing(svc, null, apptTech) : null;
+    const duration = r?.duration || 60;
+    patchService(i, { name, duration, price: r != null ? r.price : (svc?.basePrice || '') });
   }
 
   // Re-resolve every service's duration for the newly-assigned tech so their
@@ -2147,7 +2148,8 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
       if (sv.optionId) return sv;
       const svc = services.find(s => s.name === sv.name);
       if (!svc) return sv;
-      return { ...sv, duration: resolveServicePricing(svc, null, newTech).duration || sv.duration || 60 };
+      const r = resolveServicePricing(svc, null, newTech);
+      return { ...sv, duration: r.duration || sv.duration || 60, price: r.price };
     });
     onChange({ techName: name, services: next });
   }
