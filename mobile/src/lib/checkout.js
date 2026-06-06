@@ -88,12 +88,26 @@ export function buildTechSplit(lines, tipAmt) {
 }
 
 // Opaque URL-safe token for the hosted /r/{token} receipt page (mirrors web
-// genUrlSafeToken). 22 chars ≈ 130 bits — infeasible to guess.
+// genUrlSafeToken). It is the ONLY secret gating that PUBLIC, unauthenticated
+// page (which returns client PII), so it MUST come from a CSPRNG: Math.random()
+// (xorshift128+) is state-recoverable from a few observed tokens, letting an
+// attacker predict other clients' receipt links. expo-crypto's getRandomBytes is
+// the native CSPRNG (already a dep). The 64-char alphabet is 2^6, so `byte & 63`
+// maps uniformly with no modulo bias. Lazy-require so the pure module still
+// imports in node/test contexts; fall back to Math.random only if the native
+// module is somehow unavailable (e.g. before a rebuild).
 export function genReceiptToken(len = 22) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  let s = '';
-  for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
-  return s;
+  try {
+    const bytes = require('expo-crypto').getRandomBytes(len);
+    let s = '';
+    for (let i = 0; i < len; i++) s += alphabet[bytes[i] & 63];
+    return s;
+  } catch (_) {
+    let s = '';
+    for (let i = 0; i < len; i++) s += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return s;
+  }
 }
 
 // Normalize a mobile promo record ({type, discountPct, discountAmount}) into
