@@ -356,6 +356,7 @@ export default function ReportsAdmin() {
             activeCount={activeFilterCount}
             totalCount={appts?.length || 0}
             shownCount={filteredAppts?.length || 0}
+            locations={locState}
           />
 
           {loading ? (
@@ -2348,7 +2349,7 @@ const filterSelectStyle = {
 };
 
 // ── Filters panel ──────────────────────────────────────
-function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, shownCount }) {
+function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, shownCount, locations }) {
   const [open, setOpen] = useState(false);
 
   function toggleMulti(key, value) {
@@ -2416,10 +2417,10 @@ function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, s
               </FilterChip>
             ))}
           </FilterSection>
-          {isMultiLocation(locState) && (
+          {isMultiLocation(locations) && (
             <FilterSection label="Location">
               <FilterChip active={!filters.location} onClick={() => setFilters(f => ({ ...f, location: '' }))} radio>All locations</FilterChip>
-              {activeLocations(locState).map(l => (
+              {activeLocations(locations).map(l => (
                 <FilterChip key={l.id} active={filters.location === l.id} onClick={() => setFilters(f => ({ ...f, location: l.id }))} radio>{l.name || l.id}</FilterChip>
               ))}
             </FilterSection>
