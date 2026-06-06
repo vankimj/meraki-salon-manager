@@ -194,6 +194,13 @@ service cloud.firestore {
         allow read:  if true;
         allow write: if isTenantAdmin(tenantId);
       }
+      // Front-desk kiosk checkout session. A tech "sends to front desk" (write);
+      // the kiosk iPad subscribes (read); both ends update/clear it. Both are
+      // staff devices and it holds only the in-flight cart + client name —
+      // nothing sensitive (no card data; charges run through Cloud Functions).
+      match /data/checkoutSession {
+        allow read, write: if isTenantStaff(tenantId);
+      }
       // Slim user projections — staff readable. Holds ONLY:
       //   staffEmails  (array of every staff email; rules use this for
       //                  isTenantStaff() membership checks)
