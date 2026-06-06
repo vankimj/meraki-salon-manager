@@ -589,6 +589,33 @@ export function subscribeCheckoutSession(cb) {
 // first kiosk to claim wins via a transaction; a claim older than 10 min is
 // considered abandoned (a crashed/closed kiosk) and can be re-claimed. Returns
 // true if THIS kiosk holds the claim.
+// Idempotency claim for a sale's NON-idempotent side effects (store-credit
+// deduct/issue, gift-card debit, promo count, stock decrement). The receipt +
+// appt writes are already idempotent via the deterministic saleId, but the
+// side effects are read-modify-write — so an offline-queue REPLAY (where the
+// side effects committed but the critical write failed, leaving the sale to be
+// replayed) would double-apply them. This transactionally claims a marker doc
+// keyed by saleId: the first caller commits the marker and runs the side
+// effects; any replay sees the marker and skips them (at-most-once). Returns
+// true if THIS call should run the side effects.
+export async function claimSaleSideEffects(saleId) {
+  if (!saleId) return true; // no idempotency key (legacy) — preserve old behavior
+  const ref = doc(tenantCol('saleMarkers'), saleId);
+  try {
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (snap.exists()) return false;            // already applied by a prior attempt
+      tx.set(ref, { at: new Date().toISOString() });
+      return true;
+    });
+  } catch (_) {
+    // Transient error: fail open so a normal (non-replay) sale still applies
+    // its side effects. The replay case the marker protects against runs during
+    // a flush that already confirmed connectivity, so the read succeeds there.
+    return true;
+  }
+}
+
 export async function claimCheckoutSession(kioskId) {
   const ref = tenantDoc('checkoutSession');
   try {
