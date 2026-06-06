@@ -7,7 +7,7 @@ import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient,
 } from '../../lib/firestore';
-import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken } from '../../lib/checkout';
+import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from './CardPayButton';
@@ -146,7 +146,7 @@ export default function CheckoutScreen({ navigation }) {
         tab, lines, products, totals: t, settings, email,
         method, stripePaymentIntentId, discType, discVal, promo, giftCard,
         saleId, skipSideEffects: isRetry,
-        receiptContact: receiptPhone.trim() ? { phone: receiptPhone.trim() } : null,
+        receiptContact: parseReceiptContact(receiptPhone),
       });
       await clearTab();
       const extra = sideEffectErrors?.length ? `\n(${sideEffectErrors.join('; ')})` : '';
@@ -230,8 +230,8 @@ export default function CheckoutScreen({ navigation }) {
 
       {!hasPhoneOnFile && (
         <>
-          <Text style={styles.section}>Text receipt to</Text>
-          <TextInput style={styles.input} value={receiptPhone} onChangeText={setReceiptPhone} keyboardType="phone-pad" placeholder="Phone number (optional)" placeholderTextColor={theme.placeholder} maxLength={20} />
+          <Text style={styles.section}>Send receipt to</Text>
+          <TextInput style={styles.input} value={receiptPhone} onChangeText={setReceiptPhone} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} placeholder="Phone or email (optional)" placeholderTextColor={theme.placeholder} maxLength={60} />
         </>
       )}
 
