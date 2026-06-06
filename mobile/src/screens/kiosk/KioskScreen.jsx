@@ -157,6 +157,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const savedPm = client?.paymentMethods?.find(p => p.id === client.defaultPaymentMethodId) || client?.paymentMethods?.[0] || null;
   const hasPhoneOnFile = (cart.appts || []).some(a => a.clientPhone) || !!client?.phone;
   const memberDiscount = membership ? { isPercent: true, value: Number(membership.discountPct) || 0 } : null;
+  const clientCredit = Number(client?.credit) || 0;
 
   const tip = { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
   const totalsFor = (method) => computeTotals({
@@ -164,9 +165,10 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
     taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method, noCardTips: !!settings?.noCardTips, tip, giftCardBalance: 0, applyGC: false,
+    clientCredit, applyCredit: clientCredit > 0,
   });
-  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership]);
-  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership]);
+  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit]);
+  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit]);
 
   // Keep the result (esp. change due) on screen, then auto-return to idle.
   useEffect(() => {
@@ -337,6 +339,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         <Row styles={styles} label="Subtotal" value={money(cashTotals.subtotal)} />
         {cashTotals.discountAmount > 0 && <Row styles={styles} label={`★ ${membership?.planName || 'Member'} (${membership?.discountPct}%)`} value={`−${money(cashTotals.discountAmount)}`} />}
         {cashTotals.taxAmt > 0 && <Row styles={styles} label="Tax" value={money(cashTotals.taxAmt)} />}
+        {cashTotals.creditApply > 0 && <Row styles={styles} label="Store credit" value={`−${money(cashTotals.creditApply)}`} />}
         {cashTotals.tipAmt > 0 && <Row styles={styles} label="Tip" value={money(cashTotals.tipAmt)} />}
         <View style={styles.divider} />
         <Row styles={styles} label="Total" value={money(cashTotals.total)} big />

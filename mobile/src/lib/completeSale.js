@@ -1,5 +1,5 @@
 import { buildTechSplit, genReceiptToken } from './checkout';
-import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient } from './firestore';
+import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient, saveClient } from './firestore';
 
 // Writes a completed sale, shared by the tech checkout (CheckoutScreen) and the
 // front-desk kiosk so both produce IDENTICAL receipts (no duplicated money
@@ -72,6 +72,17 @@ export async function completeSale({
     }
     for (const it of products) {
       await saveProduct(it.product.id, { stock: Math.max(0, (Number(it.product.stock) || 0) - it.qty) }).catch(() => {});
+    }
+    // Spend the client's store credit: deduct exactly what the totals applied.
+    // Best-effort + retry-guarded (skipSideEffects) so a re-save never
+    // double-deducts. Mirrors the web checkout's credit bookkeeping.
+    const creditClientId = (tab.appts || []).map(a => a.clientId).find(Boolean) || null;
+    if (t.creditApply > 0 && creditClientId) {
+      try {
+        const c = await fetchClient(creditClientId);
+        const newCredit = Math.max((Number(c?.credit) || 0) - t.creditApply, 0);
+        await saveClient(creditClientId, { credit: newCredit });
+      } catch (e) { sideEffectErrors.push('Store credit not deducted: ' + (e?.message || 'failed')); }
     }
   }
 
