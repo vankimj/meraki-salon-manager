@@ -8,6 +8,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { auth } from '../lib/firebase';
 import { saveEmployee, fetchTimeOff, createTimeOff, deleteTimeOff } from '../lib/firestore';
+import ConflictTextsModal from '../components/ConflictTextsModal';
 import { clearPushTokenForUser } from '../hooks/usePushRegistration';
 import { clearCurrentTenant } from '../lib/currentTenant';
 import { getPrefs, setTheme, setAutoLogoutMin, subscribePrefs } from '../lib/userPrefs';
@@ -31,6 +32,7 @@ export default function ProfileScreen({ navigation }) {
   // the employee record changes (sign-in, tenant switch).
   const [myTimeOff, setMyTimeOff] = useState([]);
   const [timeOffOpen, setTimeOffOpen] = useState(false);
+  const [conflictEntry, setConflictEntry] = useState(null); // opens conflict-texts flow after time off saved
   async function reloadTimeOff() {
     if (!employee?.name) { setMyTimeOff([]); return; }
     try {
@@ -559,10 +561,12 @@ export default function ProfileScreen({ navigation }) {
         </TouchableOpacity>
       </ScrollView>
 
+      <ConflictTextsModal entry={conflictEntry} onClose={() => setConflictEntry(null)} />
+
       <AddTimeOffModal
         open={timeOffOpen}
         onClose={() => setTimeOffOpen(false)}
-        onSaved={() => { setTimeOffOpen(false); reloadTimeOff(); }}
+        onSaved={(saved) => { setTimeOffOpen(false); reloadTimeOff(); if (saved) setConflictEntry(saved); }}
         techName={employee?.name}
       />
     </KeyboardAvoidingView>
@@ -623,7 +627,7 @@ function AddTimeOffModal({ open, onClose, onSaved, techName }) {
     setSaving(true);
     try {
       await createTimeOff({ techName, startDate, endDate, type, reason: reason.trim() });
-      onSaved?.();
+      onSaved?.({ techName, startDate, endDate, type, reason: reason.trim() });
     } catch (e) {
       Alert.alert('Couldn\'t save', e?.message || 'Try again.');
     } finally { setSaving(false); }

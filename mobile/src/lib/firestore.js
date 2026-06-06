@@ -330,6 +330,16 @@ export async function sendEmailToClient(clientId, subject, body) {
   const res = await callFn('sendDirectEmail')({ tenantId: getCurrentTenant(), clientId, subject, body });
   return res?.data || { ok: true };
 }
+// AI-drafted, per-client outreach when a tech is unavailable (mirrors the web
+// ScheduleAdmin flow). `affected` = [{ id, clientName, clientPhone, clientEmail,
+// date, startTime, services, techRequestType, newTechName }]. Returns { drafts:
+// [{ apptId, smsDraft, emailDraft, ... }] } with reschedule links baked in.
+export async function draftConflictTexts({ technicianName, reason, startDate, endDate, affected }) {
+  const res = await callFn('draftConflictMessages')({
+    tenantId: getCurrentTenant(), technicianName, reason, startDate, endDate, affected,
+  });
+  return res?.data || { drafts: [] };
+}
 
 // ── Products (Studio, admin) ───────────────────────────
 export async function fetchProducts() {
