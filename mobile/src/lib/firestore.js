@@ -540,6 +540,27 @@ export async function updateSettings(payload) {
   await setDoc(tenantDoc('settings'), { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+// ── Front-desk kiosk checkout session ──────────────────
+// One active session per tenant (data/checkoutSession). A tech "sends to front
+// desk" → setCheckoutSession (status 'pending'); the front-desk kiosk subscribes
+// and takes over the screen. status: 'pending' | 'paying' | 'done' | 'idle'.
+// The kiosk shows the customer checkout while pending/paying; idle/done → tip display.
+export async function setCheckoutSession(data) {
+  await setDoc(tenantDoc('checkoutSession'),
+    { status: 'pending', createdAt: new Date().toISOString(), ...data, updatedAt: new Date().toISOString() });
+}
+export async function updateCheckoutSession(patch) {
+  await setDoc(tenantDoc('checkoutSession'), { ...patch, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function clearCheckoutSession() {
+  try { await setDoc(tenantDoc('checkoutSession'), { status: 'idle', updatedAt: new Date().toISOString() }, { merge: true }); } catch (_) {}
+}
+export function subscribeCheckoutSession(cb) {
+  return onSnapshot(tenantDoc('checkoutSession'),
+    (snap) => cb(snap.exists() ? snap.data() : null),
+    () => cb(null));
+}
+
 // Rich users[] from data/usersFull (admin-only doc). Read-only on mobile
 // for now; role edits stay on web until the projection writeBatch is ported.
 export async function fetchUsersFull() {
