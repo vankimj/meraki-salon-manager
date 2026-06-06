@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Text, TouchableOpacity, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import { Text, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Platform, PermissionsAndroid } from 'react-native';
 import { createCardPaymentIntent } from '../../lib/terminal';
 import { useThemedStyles } from '../../theme/ThemeContext';
 
@@ -9,6 +9,20 @@ import { useThemedStyles } from '../../theme/ThemeContext';
 let SDK = null;
 try { SDK = require('@stripe/stripe-terminal-react-native'); } catch { SDK = null; }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// Android grants reader permissions at RUNTIME (iOS uses Info.plist strings the
+// Terminal plugin injects). discoverReaders() fails on Android without these,
+// so request them up front: fine location (required by the Terminal SDK for
+// both BT and Tap to Pay) + Bluetooth scan/connect on Android 12+ (API 31) for
+// the BT reader path. No-op on iOS. Returns true if everything needed is granted.
+async function ensureAndroidPermissions(needsBluetooth) {
+  if (Platform.OS !== 'android') return true;
+  const P = PermissionsAndroid.PERMISSIONS;
+  const wanted = [P.ACCESS_FINE_LOCATION];
+  if (needsBluetooth && Platform.Version >= 31) wanted.push(P.BLUETOOTH_SCAN, P.BLUETOOTH_CONNECT);
+  const res = await PermissionsAndroid.requestMultiple(wanted.filter(Boolean));
+  return wanted.every(p => res[p] === PermissionsAndroid.RESULTS.GRANTED);
+}
 
 // In-person card capture via Stripe Terminal.
 //   preferReader=true  (iPad)   → Bluetooth reader (Stripe M2 / WisePOS)
@@ -45,14 +59,19 @@ export default function CardPayButton({ amountCents, description, locationId, on
       throw new Error('No Terminal Location set. Create one in Stripe → Terminal → Locations and add its ID to salon settings (terminalLocationId).');
     }
     setPhase(method === 'tapToPay' ? 'Preparing Tap to Pay…' : 'Searching for reader…');
+    const granted = await ensureAndroidPermissions(method === 'bluetoothScan');
+    if (!granted) {
+      throw new Error('Location' + (method === 'bluetoothScan' ? ' and Bluetooth' : '') + ' permission is required to take card payments. Enable it in Settings and try again.');
+    }
     readersRef.current = [];
     const { error: dErr } = await term.discoverReaders({ discoveryMethod: method });
     if (dErr) throw new Error(dErr.message);
     const reader = await waitForReader();
     try { await term.cancelDiscovering(); } catch {}
     if (!reader) {
+      const tapDevice = Platform.OS === 'android' ? 'an NFC-capable Android device (Android 11+)' : 'an iPhone XS or later';
       throw new Error(method === 'tapToPay'
-        ? 'Tap to Pay is unavailable on this device (needs an iPhone XS or later).'
+        ? `Tap to Pay is unavailable on this device (needs ${tapDevice}).`
         : 'No card reader found. Make sure it is powered on and nearby.');
     }
     setPhase('Connecting…');
