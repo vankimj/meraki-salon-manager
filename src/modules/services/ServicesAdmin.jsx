@@ -286,27 +286,30 @@ export default function ServicesAdmin() {
         />
       )}
 
+      <style>{`@keyframes svcFade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}`}</style>
       {groups.map(({ category, services: svcs }) => (
         <div key={category} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', marginBottom: 14, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span>{category}</span>
-            <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--pn-text-faint)', letterSpacing: 0, textTransform: 'none' }}>{svcs.length}</span>
+          <div style={{ padding: '12px 18px 10px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <span style={{ fontFamily: "'Cinzel', serif", fontSize: 12, fontWeight: 600, color: '#2D7A5F', letterSpacing: '.16em', textTransform: 'uppercase' }}>{category}</span>
+            <span style={{ fontFamily: "'Cinzel', serif", fontSize: 10, fontWeight: 500, color: 'var(--pn-text-faint)', letterSpacing: '.12em' }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
           </div>
-          {svcs.map(svc => (
+          {svcs.map((svc, i) => (
             <div key={svc.id}
               onClick={() => { setEditing({ ...svc }); setErrors({}); }}
-              style={{ padding: '10px 16px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', gap: 12, opacity: svc.active ? 1 : .45, cursor: 'pointer', transition: 'background .12s' }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--pn-bg)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = ''; }}>
+              style={{ padding: '13px 18px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', gap: 14, opacity: svc.active === false ? .42 : 1, cursor: 'pointer', transition: 'box-shadow .15s ease, background .15s ease', animation: svc.active === false ? 'none' : 'svcFade .4s ease both', animationDelay: `${i * 28}ms` }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--pn-bg)'; e.currentTarget.style.boxShadow = 'inset 3px 0 0 #2D7A5F'; }}
+              onMouseLeave={e => { e.currentTarget.style.background = ''; e.currentTarget.style.boxShadow = ''; }}>
               <ServiceThumb image={svc.image} name={svc.name} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{svc.name}</div>
-                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>
-                  {formatPrice(svc.basePrice, svc.priceFrom)} · {formatDuration(svc.duration, svc.durationMin)}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+                  <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: 18, fontWeight: 500, color: 'var(--pn-text)', letterSpacing: '.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{svc.name}</span>
+                  <span style={{ flex: 1, borderBottom: '1px dotted var(--pn-border-strong)', transform: 'translateY(-3px)', minWidth: 18 }} />
+                  <span style={{ fontFamily: "'Cinzel', serif", fontSize: 14, fontWeight: 600, color: '#2D7A5F', whiteSpace: 'nowrap', letterSpacing: '.02em' }}>{formatPrice(svc.basePrice, svc.priceFrom)}</span>
                 </div>
-                {svc.description && (
-                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 260 }}>{svc.description}</div>
-                )}
+                <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, marginTop: 3 }}>
+                  <span style={{ fontFamily: "'Cormorant Garamond', serif", fontStyle: 'italic', fontSize: 13.5, color: 'var(--pn-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>{svc.description || ''}</span>
+                  <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', flexShrink: 0 }}>{formatDuration(svc.duration, svc.durationMin)}</span>
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 }} onClick={e => e.stopPropagation()}>
                 {!isTech && <Toggle active={svc.active} onChange={() => toggleActive(svc)} />}

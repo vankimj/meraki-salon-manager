@@ -241,7 +241,7 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
         {emp.email && onSendInvite && (
           <button onClick={onSendInvite}
             title={emp.inviteSentAt ? `Resend sign-in link (last sent ${new Date(emp.inviteSentAt).toLocaleDateString()})` : 'Send sign-in invite to this employee'}
-            style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d0e8', background: emp.inviteSentAt ? '#f3eafc' : 'var(--pn-surface)', color: '#5b3b8c', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d0e8', background: emp.inviteSentAt ? '#f3eafc' : 'var(--pn-surface)', color: '#6a4fa0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             {emp.inviteSentAt ? '↻ Resend' : '📨 Invite'}
           </button>
         )}

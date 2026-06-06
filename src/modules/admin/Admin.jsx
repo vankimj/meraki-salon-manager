@@ -340,9 +340,9 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </div>
                 {tenantAliases.length > 0 && (
                   <div style={{ padding: '8px 12px', background: '#f5f3fa', border: '1px solid #e6e0ee', borderRadius: 10, marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, color: '#5b3b8c', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Previous URLs (still working as 301 redirects)</div>
+                    <div style={{ fontSize: 10, color: '#6a4fa0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Previous URLs (still working as 301 redirects)</div>
                     {tenantAliases.map(a => (
-                      <div key={a} style={{ fontSize: 11, color: '#5b3b8c', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+                      <div key={a} style={{ fontSize: 11, color: '#6a4fa0', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
                         https://{a}.plumenexus.com → current
                       </div>
                     ))}
@@ -350,7 +350,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 )}
                 <button onClick={() => setShowUrlSoon(true)} style={{
                   padding: '6px 12px', fontSize: 12, fontWeight: 600,
-                  background: 'var(--pn-surface)', color: '#5b3b8c', border: '1px solid #d8c8ec',
+                  background: 'var(--pn-surface)', color: '#6a4fa0', border: '1px solid #d8c8ec',
                   borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
                 }}>Change my URL</button>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8, lineHeight: 1.5 }}>
@@ -453,12 +453,12 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {showUrlSoon && (
               <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }} onClick={() => setShowUrlSoon(false)}>
                 <div onClick={e => e.stopPropagation()} style={{ background: 'var(--pn-surface)', borderRadius: 14, padding: 24, maxWidth: 440, width: '100%', boxShadow: '0 16px 40px rgba(0,0,0,.2)' }}>
-                  <div style={{ width: 52, height: 52, borderRadius: 12, background: 'linear-gradient(135deg, #5b3b8c, #3d95ce)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 14 }}>🚧</div>
+                  <div style={{ width: 52, height: 52, borderRadius: 12, background: 'linear-gradient(135deg, #6a4fa0, #3d95ce)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 14 }}>🚧</div>
                   <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)', margin: '0 0 8px' }}>Self-serve URL change — coming soon</h3>
                   <p style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.6, margin: '0 0 14px' }}>
-                    We're building a self-serve flow so you can change your salon URL anytime. Until then, email <a href="mailto:hello@plumenexus.com" style={{ color: '#5b3b8c', fontWeight: 600 }}>hello@plumenexus.com</a> and we'll handle it within one business day. Your old URL stays as a permanent 301 redirect so nothing breaks.
+                    We're building a self-serve flow so you can change your salon URL anytime. Until then, email <a href="mailto:hello@plumenexus.com" style={{ color: '#6a4fa0', fontWeight: 600 }}>hello@plumenexus.com</a> and we'll handle it within one business day. Your old URL stays as a permanent 301 redirect so nothing breaks.
                   </p>
-                  <button onClick={() => setShowUrlSoon(false)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: '#5b3b8c', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>Got it</button>
+                  <button onClick={() => setShowUrlSoon(false)} style={{ padding: '8px 16px', fontSize: 13, fontWeight: 600, background: '#6a4fa0', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit' }}>Got it</button>
                 </div>
               </div>
             )}
@@ -1484,7 +1484,7 @@ function OnboardingTab({ onOpenWizard }) {
         })}
       </div>
 
-      <Btn color="#5b3b8c" onClick={() => onOpenWizard?.()}>
+      <Btn color="#6a4fa0" onClick={() => onOpenWizard?.()}>
         {done ? '🎯 Re-open wizard' : '🎯 Continue setup'}
       </Btn>
     </div>
@@ -1814,7 +1814,7 @@ function BackupRestoreSection() {
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 10 }}>
           <button onClick={handleExport} disabled={busy}
-            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: busy ? '#cbb6e0' : '#5b3b8c', fontSize: 13, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ padding: '9px 18px', borderRadius: 8, border: 'none', background: busy ? '#cbb6e0' : '#6a4fa0', fontSize: 13, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             ⬇ Download Everything (CSV + JSON + photos)
           </button>
           <button onClick={handleJsonOnly} disabled={busy}
@@ -2609,7 +2609,7 @@ const PORTFOLIO_PRESETS = [
     id:       'magazine',
     name:     'Magazine',
     desc:     'Editorial mix · varied sizes',
-    accent:   '#5b3b8c',
+    accent:   '#6a4fa0',
     pattern: ['t-wide','t-tall','t-sq','t-mid','t-md2','t-sq','t-mid','t-tall',
               't-sq','t-md2','t-wide','t-sq','t-mid','t-tall','t-sq','t-md2'],
   },
@@ -3406,7 +3406,7 @@ function PauseSection({ settings, updateSettings }) {
 
         {/* Forward toggle */}
         <details style={{ marginBottom: 12 }}>
-          <summary style={{ fontSize: 12, color: '#5b3b8c', fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>
+          <summary style={{ fontSize: 12, color: '#6a4fa0', fontWeight: 600, cursor: 'pointer', padding: '6px 0' }}>
             ⚙️ Forward inbound to my personal phone instead (emergencies)
           </summary>
           <div style={{ paddingTop: 8 }}>
@@ -3440,7 +3440,7 @@ function PauseSection({ settings, updateSettings }) {
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Btn color="#5b3b8c" onClick={save}>{saving ? 'Saving…' : (until ? 'Save pause settings' : 'Save')}</Btn>
+          <Btn color="#6a4fa0" onClick={save}>{saving ? 'Saving…' : (until ? 'Save pause settings' : 'Save')}</Btn>
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e' }}>✓ Saved</span>}
         </div>
       </div>

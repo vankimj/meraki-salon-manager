@@ -121,7 +121,7 @@ export default function Phase3Money({ onboarding, onAdvance, saving }) {
 function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   );
@@ -144,7 +144,7 @@ function ToggleRow({ checked, onChange, label, desc }) {
   return (
     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: 'pointer', background: 'var(--pn-surface)' }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)}
-        style={{ marginTop: 2, accentColor: '#5b3b8c' }} />
+        style={{ marginTop: 2, accentColor: '#6a4fa0' }} />
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{label}</div>
         {desc && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
@@ -167,7 +167,7 @@ function CheckRow({ checked, onChange, label, desc }) {
 }
 
 function Link({ href, children }) {
-  return <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', fontWeight: 600, textDecoration: 'underline' }}>{children}</a>;
+  return <a href={href} target="_blank" rel="noopener noreferrer" style={{ color: '#6a4fa0', fontWeight: 600, textDecoration: 'underline' }}>{children}</a>;
 }
 
 // Side-by-side trade-off table. Renders ABOVE the two picker cards so
@@ -226,14 +226,14 @@ function ConnectComparisonTable() {
 
   return (
     <details open style={{ marginBottom: 14, borderRadius: 10, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
-      <summary style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#5b3b8c', cursor: 'pointer', userSelect: 'none' }}>
+      <summary style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6a4fa0', cursor: 'pointer', userSelect: 'none' }}>
         Compare the two options side-by-side
       </summary>
       <div style={{ overflowX: 'auto', padding: '0 4px 10px' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, color: 'var(--pn-text)' }}>
           <thead>
             <tr>
-              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#5b3b8c', background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)', width: '32%' }}></th>
+              <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: '#6a4fa0', background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)', width: '32%' }}></th>
               <th style={{ ...cellBase, textAlign: 'left', fontWeight: 700, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', borderBottom: '2px solid #6ee7b7' }}>
                 ✓ Your own Stripe (Standard)
               </th>
@@ -254,8 +254,8 @@ function ConnectComparisonTable() {
         </table>
         <div style={{ padding: '8px 10px 0', fontSize: 11, color: 'var(--pn-text-faint)' }}>
           Rates set by Stripe ·{' '}
-          <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', textDecoration: 'underline' }}>stripe.com/pricing</a> ·{' '}
-          <a href="https://stripe.com/connect/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#5b3b8c', textDecoration: 'underline' }}>stripe.com/connect/pricing</a>
+          <a href="https://stripe.com/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#6a4fa0', textDecoration: 'underline' }}>stripe.com/pricing</a> ·{' '}
+          <a href="https://stripe.com/connect/pricing" target="_blank" rel="noopener noreferrer" style={{ color: '#6a4fa0', textDecoration: 'underline' }}>stripe.com/connect/pricing</a>
         </div>
       </div>
     </details>
@@ -722,5 +722,5 @@ function EmbeddedModal({ title, children, onClose }) {
 }
 
 const inp = { boxSizing: 'border-box', padding: '7px 10px', fontSize: 13, border: '1px solid var(--pn-border-strong)', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: 'var(--pn-surface)' };
-const btnPrimary = (disabled) => ({ padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: disabled ? '#cfc2e3' : '#5b3b8c', color: '#fff', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' });
+const btnPrimary = (disabled) => ({ padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: disabled ? '#cfc2e3' : '#6a4fa0', color: '#fff', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit' });
 const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

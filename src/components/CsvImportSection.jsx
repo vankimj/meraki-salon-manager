@@ -497,7 +497,7 @@ function ProgressBar({ current, total, label, onCancel, cancelling }) {
   return (
     <div style={{ marginTop: 12, padding: '10px 12px', background: '#f5efff', border: '1px solid #d8c9f0', borderRadius: 8 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
-        <span style={{ color: '#5b3b8c', fontWeight: 700 }}>
+        <span style={{ color: '#6a4fa0', fontWeight: 700 }}>
           {current.toLocaleString()} / {total.toLocaleString()} {label} · {pct}%
         </span>
         <button
@@ -516,7 +516,7 @@ function ProgressBar({ current, total, label, onCancel, cancelling }) {
       <div style={{ height: 8, background: 'var(--pn-surface)', borderRadius: 4, overflow: 'hidden', border: '1px solid #e0d4f5' }}>
         <div style={{
           width: `${pct}%`, height: '100%',
-          background: 'linear-gradient(90deg, #5b3b8c, #7e57c2)',
+          background: 'linear-gradient(90deg, #6a4fa0, #7e57c2)',
           transition: 'width 200ms ease-out',
         }} />
       </div>

@@ -286,7 +286,7 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
         {locations.map((loc, i) => (
           <div key={i} style={{ padding: 14, border: '1px solid var(--pn-border)', borderRadius: 10, marginBottom: 10, background: 'var(--pn-bg)' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.08em', textTransform: 'uppercase' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.08em', textTransform: 'uppercase' }}>
                 {multi ? `Location ${i + 1}` : 'Your salon'}
               </div>
               {multi && i > 0 && (
@@ -340,7 +340,7 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
 
         {multi && (
           <button type="button" onClick={addLocation}
-            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: 'var(--pn-surface)', border: '1px dashed #5b3b8c', borderRadius: 8, color: '#5b3b8c', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '8px 14px', fontSize: 12, fontWeight: 600, background: 'var(--pn-surface)', border: '1px dashed #6a4fa0', borderRadius: 8, color: '#6a4fa0', cursor: 'pointer', fontFamily: 'inherit' }}>
             + Add another location
           </button>
         )}
@@ -365,7 +365,7 @@ export default function Phase1Profile({ onboarding, onAdvance, saving }) {
 function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   );
@@ -391,7 +391,7 @@ function RadioCard({ selected, onClick, title, desc }) {
     <button onClick={onClick} type="button"
       style={{
         flex: 1, textAlign: 'left', padding: '12px 14px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        border: `1.5px solid ${selected ? '#6a4fa0' : 'var(--pn-border)'}`,
         borderRadius: 10, background: selected ? '#f5efff' : 'var(--pn-surface)', cursor: 'pointer',
         fontFamily: 'inherit', transition: 'border-color .15s, background .15s',
       }}>
@@ -415,6 +415,6 @@ function inpStyle(err) {
 }
 
 const inp = inpStyle(null);
-const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
+const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#6a4fa0', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
 const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };
 const btnGhost     = { padding: '0 10px', fontSize: 11, fontWeight: 600, background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

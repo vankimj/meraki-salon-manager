@@ -88,7 +88,7 @@ function AICard({ icon, title, body }) {
     }}
       onMouseEnter={e => {
         e.currentTarget.style.background = 'rgba(255,255,255,.07)';
-        e.currentTarget.style.borderColor = 'rgba(162,136,201,.4)';
+        e.currentTarget.style.borderColor = 'rgba(139,111,196,.4)';
       }}
       onMouseLeave={e => {
         e.currentTarget.style.background = 'rgba(255,255,255,.04)';

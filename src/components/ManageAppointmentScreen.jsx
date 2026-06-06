@@ -119,7 +119,7 @@ function Frame({ children }) {
         maxWidth: 480,
         background: '#fff',
         borderRadius: 16,
-        boxShadow: '0 12px 40px rgba(91,59,140,.12)',
+        boxShadow: '0 12px 40px rgba(106,79,160,.12)',
         overflow: 'hidden',
       }}>
         {children}
@@ -132,7 +132,7 @@ function SummaryView({ appt, policy, salon, onReschedule, onCancel }) {
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Service';
   return (
     <>
-      <div style={{ background: 'linear-gradient(135deg,#5b3b8c 0%, #7a4ad9 100%)', padding: '28px 24px', color: '#fff', textAlign: 'center' }}>
+      <div style={{ background: 'linear-gradient(135deg,#6a4fa0 0%, #7a4ad9 100%)', padding: '28px 24px', color: '#fff', textAlign: 'center' }}>
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .8, marginBottom: 8 }}>
           Your appointment
         </div>
@@ -161,7 +161,7 @@ function SummaryView({ appt, policy, salon, onReschedule, onCancel }) {
         {policy.canModify ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <button onClick={onReschedule}
-              style={{ ...primaryBtn, background: '#5b3b8c' }}>
+              style={{ ...primaryBtn, background: '#6a4fa0' }}>
               📅 Reschedule
             </button>
             <button onClick={onCancel}
@@ -249,7 +249,7 @@ function RescheduleView({ appt, salon, policy, tid, apptId, token, exp, onConfir
 
   return (
     <>
-      <div style={{ background: 'linear-gradient(135deg, #5b3b8c 0%, #7a4ad9 100%)', padding: '24px', color: '#fff' }}>
+      <div style={{ background: 'linear-gradient(135deg, #6a4fa0 0%, #7a4ad9 100%)', padding: '24px', color: '#fff' }}>
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', opacity: .8, marginBottom: 6 }}>
           Reschedule
         </div>
@@ -275,7 +275,7 @@ function RescheduleView({ appt, salon, policy, tid, apptId, token, exp, onConfir
           <div style={{ maxHeight: '50vh', overflowY: 'auto', paddingRight: 4, marginBottom: 14 }}>
             {availability.map(d => (
               <div key={d.date} style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: '#5b3b8c', marginBottom: 6 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#6a4fa0', marginBottom: 6 }}>
                   {fmtDateShort(d.date)}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: 6 }}>
@@ -287,9 +287,9 @@ function RescheduleView({ appt, salon, policy, tid, apptId, token, exp, onConfir
                         style={{
                           padding: '9px 4px',
                           borderRadius: 8,
-                          border: isPick ? '2px solid #5b3b8c' : '1px solid #e8e8e8',
+                          border: isPick ? '2px solid #6a4fa0' : '1px solid #e8e8e8',
                           background: isPick ? '#f3eafc' : '#fff',
-                          color: isPick ? '#5b3b8c' : '#333',
+                          color: isPick ? '#6a4fa0' : '#333',
                           fontWeight: isPick ? 700 : 500,
                           fontSize: 13,
                           cursor: 'pointer',
@@ -307,7 +307,7 @@ function RescheduleView({ appt, salon, policy, tid, apptId, token, exp, onConfir
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <button onClick={confirm} disabled={!pick || submitting}
-            style={{ ...primaryBtn, background: !pick || submitting ? '#cbb6e0' : '#5b3b8c' }}>
+            style={{ ...primaryBtn, background: !pick || submitting ? '#cbb6e0' : '#6a4fa0' }}>
             {submitting ? 'Confirming…' : pick ? `Confirm ${fmtDateShort(pick.date)} at ${fmtTime(pick.startTime)}` : 'Pick a time'}
           </button>
           <button onClick={onBack} disabled={submitting} style={secondaryBtn}>
@@ -344,14 +344,14 @@ function DoneView({ state, salon }) {
           <>
             {icsHref && (
               <a href={icsHref} download={`${salon.name || 'Appointment'}.ics`}
-                style={{ display: 'inline-block', padding: '10px 18px', borderRadius: 10, background: '#5b3b8c', color: '#fff', textDecoration: 'none', fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
+                style={{ display: 'inline-block', padding: '10px 18px', borderRadius: 10, background: '#6a4fa0', color: '#fff', textDecoration: 'none', fontWeight: 600, fontSize: 13, marginBottom: 14 }}>
                 📅 Add to Calendar
               </a>
             )}
             <div style={{ marginBottom: 8 }}>You'll get a reminder {state.appt.startTime ? '24 hours before' : 'before your visit'}.</div>
           </>
         )}
-        Questions? Call <a href={`tel:${salon.phone || ''}`} style={{ color: '#5b3b8c', fontWeight: 600, textDecoration: 'none' }}>
+        Questions? Call <a href={`tel:${salon.phone || ''}`} style={{ color: '#6a4fa0', fontWeight: 600, textDecoration: 'none' }}>
           {salon.phone || salon.name}
         </a>.
       </div>

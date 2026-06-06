@@ -81,7 +81,7 @@ function ScriptName({ script, light }) {
       fontFamily: '"Great Vibes", cursive',
       fontWeight: 400,
       fontSize: 32,
-      color: light ? '#c19a4a' : '#5b3b8c',
+      color: light ? '#c19a4a' : '#6a4fa0',
       lineHeight: .8,
       marginTop: 4,
       textShadow: light ? '0 2px 18px rgba(193,154,74,.3)' : 'none',
@@ -97,7 +97,7 @@ function Greeting({ greet, light }) {
       fontFamily: '"Cinzel", Georgia, serif',
       fontSize: 9,
       fontWeight: 600,
-      color: light ? 'rgba(255,255,255,.78)' : '#5b3b8c',
+      color: light ? 'rgba(255,255,255,.78)' : '#6a4fa0',
       letterSpacing: '.22em',
       textTransform: 'uppercase',
       opacity: .9,
@@ -152,7 +152,7 @@ function LogoOrMark({ brandLogoUrl, size = 40 }) {
     <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
       <g transform="translate(50 50)">
         {[0, 1, 2, 3, 4].map(i => (
-          <ellipse key={i} cx="0" cy="-20" rx="14" ry="22" fill="#a288c9" opacity="0.85" transform={`rotate(${i * 72})`} />
+          <ellipse key={i} cx="0" cy="-20" rx="14" ry="22" fill="#8b6fc4" opacity="0.85" transform={`rotate(${i * 72})`} />
         ))}
         <circle r="7" fill="#c19a4a" />
       </g>
@@ -213,7 +213,7 @@ function Stacked({ greet, primary, script, above, brandColor, brandLogoUrl }) {
     }}>
       <div style={{
         background: 'var(--pn-surface)', borderRadius: 16, padding: '20px 26px',
-        boxShadow: '0 6px 24px rgba(91,59,140,.12)', textAlign: 'center',
+        boxShadow: '0 6px 24px rgba(106,79,160,.12)', textAlign: 'center',
         border: '1px solid #ead8b5',
       }}>
         <LogoOrMark brandLogoUrl={brandLogoUrl} size={28} />
@@ -296,7 +296,7 @@ const frameWrap = {
   marginTop: 14, padding: 0,
 };
 const frameLabel = {
-  fontSize: 10, fontWeight: 700, color: '#5b3b8c',
+  fontSize: 10, fontWeight: 700, color: '#6a4fa0',
   letterSpacing: '.14em', textTransform: 'uppercase',
   marginBottom: 6,
 };
@@ -304,7 +304,7 @@ const frame = {
   width: '100%', maxWidth: 460,
   border: '1px solid var(--pn-border-strong)',
   borderRadius: 12, overflow: 'hidden',
-  boxShadow: '0 4px 14px rgba(91,59,140,.08)',
+  boxShadow: '0 4px 14px rgba(106,79,160,.08)',
   background: 'var(--pn-surface)',
 };
 const stage = {

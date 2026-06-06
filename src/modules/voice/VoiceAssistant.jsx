@@ -235,11 +235,11 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           height: 56,
           borderRadius: '50%',
           border: 'none',
-          background: open ? '#5b3b8c' : 'linear-gradient(135deg, #6d4cb8, #4a8dc1)',
+          background: open ? '#6a4fa0' : 'linear-gradient(135deg, #6d4cb8, #4a8dc1)',
           color: '#fff',
           fontSize: 24,
           cursor: 'pointer',
-          boxShadow: '0 6px 18px rgba(91,59,140,.35)',
+          boxShadow: '0 6px 18px rgba(106,79,160,.35)',
           zIndex: 90,
           transition: 'transform .12s, background .12s',
         }}
@@ -256,13 +256,13 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           background: 'var(--pn-surface)',
           border: '1px solid #e6e0ee',
           borderRadius: 16,
-          boxShadow: '0 16px 40px rgba(91,59,140,.18)',
+          boxShadow: '0 16px 40px rgba(106,79,160,.18)',
           zIndex: 95,
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
         }}>
-          <div style={{ background: 'linear-gradient(135deg, #5b3b8c, #4a8dc1)', color: '#fff', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ background: 'linear-gradient(135deg, #6a4fa0, #4a8dc1)', color: '#fff', padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 14, fontWeight: 700 }}>🎙️ Voice command</div>
             <button onClick={() => { setOpen(false); reset(); }} style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: 18, cursor: 'pointer' }}>×</button>
           </div>
@@ -278,11 +278,11 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                       style={{
                         width: 84, height: 84, borderRadius: '50%',
                         border: 'none',
-                        background: listening ? '#ef4444' : '#5b3b8c',
+                        background: listening ? '#ef4444' : '#6a4fa0',
                         color: '#fff',
                         fontSize: 36,
                         cursor: 'pointer',
-                        boxShadow: listening ? '0 0 0 8px rgba(239,68,68,.18)' : '0 4px 12px rgba(91,59,140,.3)',
+                        boxShadow: listening ? '0 0 0 8px rgba(239,68,68,.18)' : '0 4px 12px rgba(106,79,160,.3)',
                         transition: 'all .15s',
                       }}
                     >{listening ? '⏹' : '🎙️'}</button>
@@ -309,7 +309,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                     style={{ flex: 1, fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', outline: 'none' }}
                   />
                   <button type="submit" disabled={!typedInput.trim()}
-                    style={{ padding: '8px 12px', borderRadius: 10, border: 'none', background: typedInput.trim() ? '#5b3b8c' : '#cbb6e0', color: '#fff', fontSize: 13, cursor: typedInput.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                    style={{ padding: '8px 12px', borderRadius: 10, border: 'none', background: typedInput.trim() ? '#6a4fa0' : '#cbb6e0', color: '#fff', fontSize: 13, cursor: typedInput.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
                     Send
                   </button>
                 </form>
@@ -565,14 +565,14 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
       </div>
 
       {listening && (
-        <div style={{ fontSize: 11, color: '#5b3b8c', marginBottom: 8, textAlign: 'center', fontStyle: 'italic' }}>
+        <div style={{ fontSize: 11, color: '#6a4fa0', marginBottom: 8, textAlign: 'center', fontStyle: 'italic' }}>
           🎙️ Listening — say "yes" to confirm, "no" to cancel
         </div>
       )}
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={onConfirm} disabled={executing || (actionType === 'book' && !payload.clientId && !payload.clientName)}
-          style={{ flex: 2, padding: '10px 14px', borderRadius: 10, border: 'none', background: executing ? '#cbb6e0' : '#5b3b8c', color: '#fff', fontWeight: 600, fontSize: 13, cursor: executing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+          style={{ flex: 2, padding: '10px 14px', borderRadius: 10, border: 'none', background: executing ? '#cbb6e0' : '#6a4fa0', color: '#fff', fontWeight: 600, fontSize: 13, cursor: executing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
           {executing ? 'Working…' : 'Confirm'}
         </button>
         <button onClick={onCancel} disabled={executing}
@@ -583,7 +583,7 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
 
       {!listening && !executing && onListenAgain && (
         <button onClick={onListenAgain}
-          style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: '#5b3b8c', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ marginTop: 8, width: '100%', padding: '7px 10px', borderRadius: 8, border: 'none', background: 'transparent', color: '#6a4fa0', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
           🎙️ Listen for "yes" / "no"
         </button>
       )}

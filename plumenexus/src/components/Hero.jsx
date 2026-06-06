@@ -37,7 +37,7 @@ export default function Hero() {
       paddingBottom: 88,
       overflow: 'hidden',
       background: `radial-gradient(1400px 700px at 78% -8%, rgba(193,154,74,.10), transparent 62%),
-                   radial-gradient(900px 500px at 0% 30%, rgba(91,59,140,.06), transparent 60%),
+                   radial-gradient(900px 500px at 0% 30%, rgba(106,79,160,.06), transparent 60%),
                    ${C.bg}`,
     }}>
       <CamelliaWatermark />
@@ -54,8 +54,8 @@ export default function Hero() {
             <div style={{
               display: 'inline-flex', alignItems: 'center', gap: 8,
               padding: '6px 14px', borderRadius: 999,
-              background: 'rgba(91,59,140,.08)',
-              border: '1px solid rgba(91,59,140,.18)',
+              background: 'rgba(106,79,160,.08)',
+              border: '1px solid rgba(106,79,160,.18)',
               fontSize: 12, fontWeight: 600, color: C.plumDeep,
               letterSpacing: '.04em', textTransform: 'uppercase',
               marginBottom: 22,
@@ -257,8 +257,8 @@ function HeroVisual() {
         {/* AI notice */}
         <div style={{
           margin: '4px 14px 14px', padding: '10px 12px',
-          background: 'linear-gradient(90deg, rgba(91,59,140,.07), rgba(61,149,206,.07))',
-          borderRadius: 12, border: '1px solid rgba(91,59,140,.16)',
+          background: 'linear-gradient(90deg, rgba(106,79,160,.07), rgba(61,149,206,.07))',
+          borderRadius: 12, border: '1px solid rgba(106,79,160,.16)',
           display: 'flex', alignItems: 'center', gap: 10,
         }}>
           <div style={{ fontSize: 16 }}>✨</div>

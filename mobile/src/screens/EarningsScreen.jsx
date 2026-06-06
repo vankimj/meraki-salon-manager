@@ -215,7 +215,7 @@ export default function EarningsScreen() {
             <Stat label="Revenue"  value={fmtMoney(data.revenue)}     accent="#2D7A5F" />
             <Stat label="Tips"     value={fmtMoney(data.tips)}        accent="#3D9E8A" />
             <Stat label="Services" value={String(data.serviceCount)}  accent="#3D95CE" />
-            <Stat label="Clients"  value={String(data.clientCount)}   accent="#5b3b8c" />
+            <Stat label="Clients"  value={String(data.clientCount)}   accent="#6a4fa0" />
           </View>
 
           {trend.length > 1 && trendBest > 0 && (

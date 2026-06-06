@@ -17,7 +17,7 @@ export default function Layout({ user, currentPath, children }) {
         <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 12, textDecoration: 'none', color: '#fff' }}>
           <div style={{
             width: 30, height: 30, borderRadius: 7,
-            background: `linear-gradient(135deg, #5b3b8c, #3d95ce)`,
+            background: `linear-gradient(135deg, #6a4fa0, #3d95ce)`,
             color: '#fff', fontSize: 12, fontWeight: 800, letterSpacing: -.5,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}>PA</div>

@@ -145,7 +145,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           {realIsAdmin && !viewAs && myTechEmpName && (
             <button onClick={() => setViewAs({ role: 'tech', techName: myTechEmpName })}
               title={`See your day as ${myTechEmpName}`} className="ms-action-btn"
-              style={{ height: 40, borderRadius: 20, border: '1px solid #5b3b8c', background: 'var(--pn-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#5b3b8c', fontFamily: 'inherit' }}>
+              style={{ height: 40, borderRadius: 20, border: '1px solid #6a4fa0', background: 'var(--pn-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#6a4fa0', fontFamily: 'inherit' }}>
               👩‍💼 <span className="ms-action-label">My tech view</span>
             </button>
           )}
@@ -328,7 +328,7 @@ function WelcomeHero({ style, heroBrand, onSignIn }) {
 }
 
 function TimeIcon({ kind, light = false, size = 34 }) {
-  const stop2 = light ? '#e1c8f0' : '#a288c9';
+  const stop2 = light ? '#e1c8f0' : '#8b6fc4';
   const id = `tm-time-${kind}-${light ? 'l' : 'd'}`;
   if (kind === 'moon') {
     return (
@@ -341,7 +341,7 @@ function TimeIcon({ kind, light = false, size = 34 }) {
         </defs>
         <path d="M22 8 C16 8 11 13 11 19 C11 25 16 30 22 30 C24 30 26 29.5 27.5 28.5 C22 28.5 17 23.5 17 18 C17 12.5 22 7.5 27.5 7.5 C26 7.5 24 8 22 8 Z" fill={`url(#${id})`}/>
         <circle cx="6" cy="10" r="1" fill="#c19a4a" opacity={light ? 0.7 : 0.5}/>
-        <circle cx="30" cy="6" r="1.3" fill={light ? '#fff' : '#a288c9'} opacity={light ? 0.7 : 0.5}/>
+        <circle cx="30" cy="6" r="1.3" fill={light ? '#fff' : '#8b6fc4'} opacity={light ? 0.7 : 0.5}/>
       </svg>
     );
   }
@@ -391,7 +391,7 @@ function BoutiqueLockup({ primary, script, size = 'md', light = false }) {
           fontFamily: '"Great Vibes", cursive',
           fontWeight: 400,
           fontSize: sz.script,
-          color: light ? '#c19a4a' : 'var(--tm-primary, #5b3b8c)',
+          color: light ? '#c19a4a' : 'var(--tm-primary, #6a4fa0)',
           lineHeight: .8,
           marginTop: 6,
           textShadow: light ? '0 2px 18px rgba(193,154,74,.3)' : 'none',
@@ -409,7 +409,7 @@ function Greeting({ greet, light = false }) {
       fontFamily: '"Cinzel", Georgia, serif',
       fontSize: 11,
       fontWeight: 600,
-      color: light ? 'rgba(255,255,255,.78)' : '#5b3b8c',
+      color: light ? 'rgba(255,255,255,.78)' : '#6a4fa0',
       letterSpacing: '.34em',
       textTransform: 'uppercase',
     }}>
@@ -490,7 +490,7 @@ function PoweredBy({ heroBrand, light = false }) {
 function HeroCentered({ greet, primary, script, onSignIn, heroBrand }) {
   return (
     <div style={{ position: 'relative', padding: '72px 24px 56px', flexShrink: 0, maxWidth: 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
-      <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(91,59,140,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(106,79,160,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <TimeIcon kind={greet.icon} />
         <Greeting greet={greet} />
@@ -534,7 +534,7 @@ function HeroHairlineSplit(props) {
 function HeroStacked({ greet, primary, script, onSignIn, heroBrand }) {
   return (
     <div style={{ position: 'relative', padding: '64px 24px 48px', flexShrink: 0, maxWidth: 720, width: '100%', alignSelf: 'center', boxSizing: 'border-box', textAlign: 'center' }}>
-      <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(91,59,140,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
+      <div aria-hidden style={{ position: 'absolute', top: 24, left: '50%', transform: 'translateX(-50%)', width: 640, height: 320, background: 'radial-gradient(ellipse 50% 60% at 50% 30%, rgba(106,79,160,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
       <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <TimeIcon kind={greet.icon} />
         <Greeting greet={greet} />
@@ -557,7 +557,7 @@ function HeroPhoto({ greet, primary, script, onSignIn, heroBrand }) {
   return (
     <div style={{ position: 'relative', width: '100%', flexShrink: 0, alignSelf: 'stretch', overflow: 'hidden', minHeight: 480, display: 'flex', flexDirection: 'column' }}>
       <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #3a2c4a 0%, #2a4858 50%, #1f3a4e 100%)' }} />
-      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 55% 50% at 30% 28%, rgba(193,154,74,.32) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 72% 78%, rgba(91,59,140,.45) 0%, transparent 62%)' }} />
+      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 55% 50% at 30% 28%, rgba(193,154,74,.32) 0%, transparent 60%), radial-gradient(ellipse 50% 50% at 72% 78%, rgba(106,79,160,.45) 0%, transparent 62%)' }} />
       <div style={{ position: 'relative', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '64px 24px 56px', textAlign: 'center', color: '#fff' }}>
         <TimeIcon kind={greet.icon} light />
         <Greeting greet={greet} light />
@@ -584,7 +584,7 @@ function HeroPhotoSplit(props) {
       <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1px 1fr', alignItems: 'stretch', minHeight: 480 }}>
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '56px 36px', textAlign: 'center', color: '#fff', overflow: 'hidden' }}>
           <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, #3a2c4a 0%, #2a4858 60%, #1f3a4e 100%)' }} />
-          <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 30% 30%, rgba(193,154,74,.32) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 75% 80%, rgba(91,59,140,.45) 0%, transparent 60%)' }} />
+          <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 60% 50% at 30% 30%, rgba(193,154,74,.32) 0%, transparent 60%), radial-gradient(ellipse 50% 60% at 75% 80%, rgba(106,79,160,.45) 0%, transparent 60%)' }} />
           <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
             <TimeIcon kind={greet.icon} light />
             <Greeting greet={greet} light />

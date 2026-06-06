@@ -2964,7 +2964,7 @@ function buildReminderHtml(appt, client, tenantId, brand, manageLink) {
         </div>` : ''}
       </div>
       ${manageLink ? `<div style="text-align:center;margin:18px 0 0;">
-        <a href="${esc(manageLink)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
+        <a href="${esc(manageLink)}" style="display:inline-block;background:#6a4fa0;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
           Reschedule or cancel
         </a>
       </div>` : ''}
@@ -3534,7 +3534,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
         <div style="font-size:13px;color:#555;"><strong>📍</strong> ${esc(locationLine)}</div>
       </div>
       ${manageLink ? `<div style="text-align:center;margin:18px 0 0;">
-        <a href="${esc(manageLink)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
+        <a href="${esc(manageLink)}" style="display:inline-block;background:#6a4fa0;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
           Reschedule or cancel
         </a>
       </div>` : ''}
@@ -9015,7 +9015,7 @@ exports.submitContactInquiry = onCall(
       const esc = (s) => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
       const html = `
 <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1a1f2e;">
-  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#5b3b8c;text-transform:uppercase;margin-bottom:6px;">PLUME NEXUS · NEW INQUIRY</div>
+  <div style="font-size:11px;font-weight:700;letter-spacing:.08em;color:#6a4fa0;text-transform:uppercase;margin-bottom:6px;">PLUME NEXUS · NEW INQUIRY</div>
   <h2 style="margin:0 0 18px;font-size:20px;color:#0f1923;">${esc(cleanName)} · ${esc(cleanSalon || 'No salon name given')}</h2>
   <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:16px;">
     <tr><td style="padding:6px 0;color:#888;width:90px;">Email</td><td style="padding:6px 0;font-weight:600;"><a href="mailto:${esc(cleanEmail)}">${esc(cleanEmail)}</a></td></tr>
@@ -11962,7 +11962,7 @@ function ticketEmailHtml({ tenantName, tenantId, priority, subject, body, author
       </div>
       <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;border-left:3px solid #e3e6ed;padding:4px 0 4px 14px;color:#1a1f2e">${esc(body)}</div>
       <div style="margin-top:24px;padding-top:18px;border-top:1px solid #eef0f4;font-size:13px">
-        <a href="${dashLink}" style="display:inline-block;padding:9px 16px;background:#5b3b8c;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Open in platform admin →</a>
+        <a href="${dashLink}" style="display:inline-block;padding:9px 16px;background:#6a4fa0;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Open in platform admin →</a>
       </div>
       <div style="margin-top:14px;font-size:10px;color:#8b94a3">Ticket ID: ${esc(ticketId)} · Tenant: ${esc(tenantId)}</div>
     </div>
@@ -11972,11 +11972,11 @@ function ticketEmailHtml({ tenantName, tenantId, priority, subject, body, author
 function ownerReplyEmailHtml({ tenantName, subject, body, ticketId, salonAppUrl }) {
   return `<!doctype html><html><body style="margin:0;padding:24px;background:#f5f6f9;font-family:-apple-system,BlinkMacSystemFont,'Inter',sans-serif;color:#1a1f2e">
     <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:12px;padding:24px;border:1px solid #e3e6ed">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:#5b3b8c;margin-bottom:6px">Reply from Plume Nexus support</div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;color:#6a4fa0;margin-bottom:6px">Reply from Plume Nexus support</div>
       <div style="font-size:18px;font-weight:700;margin-bottom:14px;color:#0f1923">Re: ${esc(subject)}</div>
       <div style="font-size:14px;line-height:1.6;white-space:pre-wrap;border-left:3px solid #e3e6ed;padding:4px 0 4px 14px;color:#1a1f2e">${esc(body)}</div>
       <div style="margin-top:24px;padding-top:18px;border-top:1px solid #eef0f4;font-size:13px">
-        <a href="${salonAppUrl}" style="display:inline-block;padding:9px 16px;background:#5b3b8c;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">View thread in ${esc(tenantName)} →</a>
+        <a href="${salonAppUrl}" style="display:inline-block;padding:9px 16px;background:#6a4fa0;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">View thread in ${esc(tenantName)} →</a>
       </div>
       <div style="margin-top:14px;font-size:10px;color:#8b94a3">Ticket ID: ${esc(ticketId)}</div>
     </div>

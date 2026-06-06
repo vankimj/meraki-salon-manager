@@ -152,7 +152,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
           </div>
         ) : (
           <div style={{
-            fontSize: 12, color: '#5b3b8c', background: '#f5efff',
+            fontSize: 12, color: '#6a4fa0', background: '#f5efff',
             border: '1px solid #d8c8f0', borderRadius: 8,
             padding: '10px 14px', marginBottom: 12, lineHeight: 1.55,
           }}>
@@ -184,7 +184,7 @@ export default function Phase6Reach({ onboarding, onAdvance, saving }) {
 function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{children}</div>
     </div>
   );
@@ -207,7 +207,7 @@ function ToggleRow({ checked, onChange, disabled, label, desc }) {
   return (
     <label style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, cursor: disabled ? 'default' : 'pointer', background: 'var(--pn-surface)', opacity: disabled ? 0.7 : 1 }}>
       <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} disabled={disabled}
-        style={{ marginTop: 2, accentColor: '#5b3b8c' }} />
+        style={{ marginTop: 2, accentColor: '#6a4fa0' }} />
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{label}</div>
         {desc && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.5 }}>{desc}</div>}
@@ -217,6 +217,6 @@ function ToggleRow({ checked, onChange, disabled, label, desc }) {
 }
 
 const inp = { boxSizing: 'border-box', width: '100%', padding: '7px 10px', fontSize: 13, border: '1px solid var(--pn-border-strong)', borderRadius: 8, fontFamily: 'inherit', outline: 'none', background: 'var(--pn-surface)' };
-const btnPrimary   = { padding: '9px 16px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
+const btnPrimary   = { padding: '9px 16px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#6a4fa0', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
 const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };
 const btnSmall     = { padding: '4px 10px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

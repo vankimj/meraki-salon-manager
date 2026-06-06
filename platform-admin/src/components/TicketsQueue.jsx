@@ -368,7 +368,7 @@ function AiTriagePanel({ ticket, onUseDraft }) {
             background: '#7c3aed', color: '#fff', textTransform: 'uppercase', letterSpacing: '.06em',
           }}>AI triage</span>
           {ticket.aiCategory && (
-            <span style={{ fontSize: 11, color: '#5b3b8c', fontWeight: 600, textTransform: 'capitalize' }}>{ticket.aiCategory}</span>
+            <span style={{ fontSize: 11, color: '#6a4fa0', fontWeight: 600, textTransform: 'capitalize' }}>{ticket.aiCategory}</span>
           )}
           {priorityMismatch && (
             <span style={{

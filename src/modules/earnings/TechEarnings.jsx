@@ -281,7 +281,7 @@ export default function TechEarnings() {
             />
             <StatCard
               title="This month"
-              accent="#5b3b8c"
+              accent="#6a4fa0"
               services={data.month.serviceCount}
               revenue={data.month.revenue}
               tips={data.month.tips}
@@ -375,7 +375,7 @@ export default function TechEarnings() {
                         <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>{name}</div>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>×{s.count}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#5b3b8c' }}>{fmtMoney(s.revenue)}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#6a4fa0' }}>{fmtMoney(s.revenue)}</span>
                         </div>
                       </div>
                     ))}

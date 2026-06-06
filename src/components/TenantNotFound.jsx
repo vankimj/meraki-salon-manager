@@ -30,7 +30,7 @@ export default function TenantNotFound({ slug, reason }) {
             <g transform="translate(50 50)">
               {[0,1,2,3,4].map(i => (
                 <ellipse key={i} cx="0" cy="-20" rx="14" ry="22"
-                  fill="#a288c9" opacity="0.85"
+                  fill="#8b6fc4" opacity="0.85"
                   transform={`rotate(${i * 72})`} />
               ))}
               <circle r="7" fill="#c19a4a" />
@@ -68,7 +68,7 @@ const card = {
   borderRadius: 16,
   padding: '40px 36px 32px',
   textAlign: 'center',
-  boxShadow: '0 6px 26px rgba(91,59,140,.08)',
+  boxShadow: '0 6px 26px rgba(106,79,160,.08)',
 };
 const mark = { marginBottom: 18 };
 const title = {
@@ -76,7 +76,7 @@ const title = {
   fontSize: 22,
   fontWeight: 700,
   letterSpacing: '.04em',
-  color: '#5b3b8c',
+  color: '#6a4fa0',
   marginBottom: 14,
 };
 const text = {
@@ -90,7 +90,7 @@ const btnPrimary = {
   padding: '10px 18px',
   fontSize: 13,
   fontWeight: 700,
-  background: '#5b3b8c',
+  background: '#6a4fa0',
   color: '#fff',
   borderRadius: 999,
   border: 'none',
@@ -102,7 +102,7 @@ const btnSecondary = {
   fontSize: 13,
   fontWeight: 600,
   background: '#fff',
-  color: '#5b3b8c',
+  color: '#6a4fa0',
   borderRadius: 999,
   border: '1px solid #c19a4a',
   textDecoration: 'none',

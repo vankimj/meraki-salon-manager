@@ -39,7 +39,7 @@ export default function TrustPage() {
           <div style={{ maxWidth: 880, margin: '0 auto', textAlign: 'center' }}>
             <div style={{
               display: 'inline-block', padding: '6px 14px', borderRadius: 999,
-              background: 'rgba(91,59,140,.08)', border: '1px solid rgba(91,59,140,.18)',
+              background: 'rgba(106,79,160,.08)', border: '1px solid rgba(106,79,160,.18)',
               color: C.plumDeep, fontSize: 11, fontWeight: 700, letterSpacing: '.08em',
               textTransform: 'uppercase', marginBottom: 22,
             }}>Trust & Architecture</div>
@@ -212,7 +212,7 @@ function Section({ eyebrow, title, children, alt }) {
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
           <div style={{
             display: 'inline-block', padding: '4px 11px', borderRadius: 999,
-            background: 'rgba(91,59,140,.08)', color: C.plum,
+            background: 'rgba(106,79,160,.08)', color: C.plum,
             fontSize: 11, fontWeight: 600, letterSpacing: '.08em',
             textTransform: 'uppercase', marginBottom: 12,
           }}>{eyebrow}</div>

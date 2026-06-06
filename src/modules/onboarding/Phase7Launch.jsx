@@ -55,8 +55,8 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
       )}
 
       <div style={{ padding: 16, borderRadius: 10, background: 'linear-gradient(135deg, #f5efff 0%, #eaf3fc 100%)', border: '1px solid #d8d0e8' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: '#5b3b8c', marginBottom: 6 }}>🚀 Launch artifacts (coming soon)</div>
-        <div style={{ fontSize: 12, color: '#5b3b8c', lineHeight: 1.55 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#6a4fa0', marginBottom: 6 }}>🚀 Launch artifacts (coming soon)</div>
+        <div style={{ fontSize: 12, color: '#6a4fa0', lineHeight: 1.55 }}>
           Sprint 4 of this wizard will generate everything you need for launch day:
           a QR code linking to your booking page, an email + SMS announcement template,
           a "we've moved" Instagram bio template, and a printable in-salon signage PDF.
@@ -78,5 +78,5 @@ export default function Phase7Launch({ onboarding, onAdvance, saving, onJump }) 
   );
 }
 
-const btnPrimary   = { padding: '9px 22px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
+const btnPrimary   = { padding: '9px 22px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#6a4fa0', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
 const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

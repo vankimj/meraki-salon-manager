@@ -293,7 +293,7 @@ function PinAndActionModal({ emp, state, onClose, onSuccess }) {
             <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginBottom: 12 }}>
               {[0, 1, 2, 3].map(i => (
                 <div key={i}
-                  style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--pn-border-strong)', background: i < pin.length ? '#5b3b8c' : 'transparent' }} />
+                  style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--pn-border-strong)', background: i < pin.length ? '#6a4fa0' : 'transparent' }} />
               ))}
             </div>
             {err && <div style={{ textAlign: 'center', color: '#b91c1c', fontSize: 13, marginBottom: 10 }}>{err}</div>}

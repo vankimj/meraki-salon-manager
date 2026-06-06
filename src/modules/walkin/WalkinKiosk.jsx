@@ -236,11 +236,11 @@ export default function WalkinKiosk() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ fontSize: fullscreen ? 24 : 18, fontWeight: 700, color: fullscreen ? '#fff' : '#5b3b8c', fontVariantNumeric: 'tabular-nums' }}>
+          <div style={{ fontSize: fullscreen ? 24 : 18, fontWeight: 700, color: fullscreen ? '#fff' : '#6a4fa0', fontVariantNumeric: 'tabular-nums' }}>
             {fmtClock(now)}
           </div>
           <button onClick={toggleFullscreen}
-            style={{ fontSize: 14, padding: '8px 14px', borderRadius: 10, border: 'none', background: fullscreen ? 'rgba(255,255,255,.15)' : '#f3eafc', color: fullscreen ? '#fff' : '#5b3b8c', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ fontSize: 14, padding: '8px 14px', borderRadius: 10, border: 'none', background: fullscreen ? 'rgba(255,255,255,.15)' : '#f3eafc', color: fullscreen ? '#fff' : '#6a4fa0', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             {fullscreen ? '✕ Exit fullscreen' : '⛶ Fullscreen'}
           </button>
         </div>
@@ -337,7 +337,7 @@ function NextUpHero({ next, hasWalkIn, onSeatNext, fullscreen }) {
   return (
     <div style={{
       background: fullscreen
-        ? 'linear-gradient(135deg, #5b3b8c 0%, #7a4ad9 100%)'
+        ? 'linear-gradient(135deg, #6a4fa0 0%, #7a4ad9 100%)'
         : 'linear-gradient(135deg, #f3eafc 0%, #eaf3fc 100%)',
       border: fullscreen ? 'none' : '1px solid #d8d0e8',
       borderRadius: 18,
@@ -348,9 +348,9 @@ function NextUpHero({ next, hasWalkIn, onSeatNext, fullscreen }) {
       alignItems: 'center',
       justifyContent: 'center',
       textAlign: 'center',
-      boxShadow: fullscreen ? '0 20px 60px rgba(0,0,0,.4)' : '0 4px 12px rgba(91,59,140,.08)',
+      boxShadow: fullscreen ? '0 20px 60px rgba(0,0,0,.4)' : '0 4px 12px rgba(106,79,160,.08)',
     }}>
-      <div style={{ fontSize: fullscreen ? 16 : 14, fontWeight: 700, color: fullscreen ? '#d4c5ff' : '#5b3b8c', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 14 }}>
+      <div style={{ fontSize: fullscreen ? 16 : 14, fontWeight: 700, color: fullscreen ? '#d4c5ff' : '#6a4fa0', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 14 }}>
         ⭐ Next Up
       </div>
       <div style={{
@@ -411,7 +411,7 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
           📝 Waitlist {waiting.length > 0 && <span style={{ color: '#ef4444' }}>({waiting.length})</span>}
         </div>
         <button onClick={onAdd}
-          style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+          style={{ fontSize: 13, padding: '6px 12px', borderRadius: 8, border: 'none', background: '#6a4fa0', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
           + Add
         </button>
       </div>
@@ -665,7 +665,7 @@ function AddWalkinModal({ services, employees, clients, onClose, onAdded }) {
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
           <button onClick={submit} disabled={saving}
-            style={{ flex: 2, padding: '10px 14px', borderRadius: 10, border: 'none', background: saving ? '#cbb6e0' : '#5b3b8c', color: '#fff', fontWeight: 600, fontSize: 14, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ flex: 2, padding: '10px 14px', borderRadius: 10, border: 'none', background: saving ? '#cbb6e0' : '#6a4fa0', color: '#fff', fontWeight: 600, fontSize: 14, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Adding…' : 'Add to waitlist'}
           </button>
           <button onClick={onClose} disabled={saving}

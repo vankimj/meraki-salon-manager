@@ -45,7 +45,7 @@ export default function MembershipsAdmin() {
     <div style={{ maxWidth: 1080, margin: '0 auto', paddingBottom: 32 }}>
       {/* Stat strip */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 18 }}>
-        <Stat label="Active members" value={stats.activeCount} accent="#5b3b8c" />
+        <Stat label="Active members" value={stats.activeCount} accent="#6a4fa0" />
         <Stat label="MRR" value={`$${Math.round(stats.mrr).toLocaleString()}`} sub="monthly recurring revenue" accent="#22c55e" />
         <Stat label="ARR" value={`$${Math.round(stats.arr).toLocaleString()}`} sub="annualized" accent="#3D95CE" />
         <Stat label="Plans available" value={stats.planCount} accent="#f59e0b" />
@@ -55,7 +55,7 @@ export default function MembershipsAdmin() {
       <div className="scroll-x" style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--pn-border)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={{ padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, background: 'none', border: 'none', cursor: 'pointer', color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-muted)', borderBottom: tab === t.id ? '2px solid #5b3b8c' : '2px solid transparent', marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            style={{ padding: '8px 18px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, background: 'none', border: 'none', cursor: 'pointer', color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-muted)', borderBottom: tab === t.id ? '2px solid #6a4fa0' : '2px solid transparent', marginBottom: -1, whiteSpace: 'nowrap', flexShrink: 0 }}>
             {t.label}{t.id === 'members' && members.length > 0 && <span style={{ marginLeft: 6, color: 'var(--pn-text-faint)' }}>({members.length})</span>}
           </button>
         ))}
@@ -150,7 +150,7 @@ function PlansTab({ plans, onNew, onEdit, onDelete }) {
             <div key={p.id} style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 14, padding: 18, position: 'relative', opacity: p.active === false ? .5 : 1 }}>
               {p.active === false && <div style={{ position: 'absolute', top: 10, right: 10, fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', background: 'var(--pn-surface-alt)', padding: '2px 8px', borderRadius: 4 }}>INACTIVE</div>}
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>{p.name}</div>
-              <div style={{ fontSize: 22, fontWeight: 700, color: '#5b3b8c', lineHeight: 1.2, marginBottom: 8 }}>
+              <div style={{ fontSize: 22, fontWeight: 700, color: '#6a4fa0', lineHeight: 1.2, marginBottom: 8 }}>
                 ${p.price}<span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 500 }}>/{p.billingPeriod === 'yearly' ? 'yr' : 'mo'}</span>
               </div>
               {p.discountPct > 0 && (
@@ -261,7 +261,7 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
         <div style={{ display: 'flex', gap: 4 }}>
           {['active', 'paused', 'cancelled', 'all'].map(f => (
             <button key={f} onClick={() => setFilter(f)}
-              style={{ padding: '5px 12px', fontFamily: 'inherit', fontSize: 12, borderRadius: 8, border: filter === f ? '1px solid #5b3b8c' : '1px solid var(--pn-border-strong)', background: filter === f ? '#f3eafc' : 'var(--pn-surface)', color: filter === f ? '#5b3b8c' : 'var(--pn-text-muted)', cursor: 'pointer', fontWeight: filter === f ? 600 : 400 }}>
+              style={{ padding: '5px 12px', fontFamily: 'inherit', fontSize: 12, borderRadius: 8, border: filter === f ? '1px solid #6a4fa0' : '1px solid var(--pn-border-strong)', background: filter === f ? '#f3eafc' : 'var(--pn-surface)', color: filter === f ? '#6a4fa0' : 'var(--pn-text-muted)', cursor: 'pointer', fontWeight: filter === f ? 600 : 400 }}>
               {f === 'all' ? 'All' : f.charAt(0).toUpperCase() + f.slice(1)} ({filter === f ? filtered.length : members.filter(m => f === 'all' || m.status === f).length})
             </button>
           ))}
@@ -331,7 +331,7 @@ function MembersTab({ members, clients, plans, onNew, onEdit, onDelete }) {
                       ) : (
                         <button onClick={() => sendPaymentLink(m)} disabled={busyAction === 'sendLink'}
                           title="Generate a Stripe Checkout link and email it to the client"
-                          style={{ ...secondaryBtn, padding: '4px 10px', fontSize: 11, marginRight: 4, color: '#5b3b8c', borderColor: '#d8d0e8', background: '#f3eafc' }}>
+                          style={{ ...secondaryBtn, padding: '4px 10px', fontSize: 11, marginRight: 4, color: '#6a4fa0', borderColor: '#d8d0e8', background: '#f3eafc' }}>
                           {busyAction === 'sendLink' ? '…' : (linkSent ? '↻ Resend' : '💳 Send link')}
                         </button>
                       )}
@@ -554,7 +554,7 @@ const inp = {
   borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', outline: 'none', boxSizing: 'border-box',
 };
 const primaryBtn = {
-  padding: '8px 16px', borderRadius: 10, border: 'none', background: '#5b3b8c',
+  padding: '8px 16px', borderRadius: 10, border: 'none', background: '#6a4fa0',
   color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
 };
 const secondaryBtn = {

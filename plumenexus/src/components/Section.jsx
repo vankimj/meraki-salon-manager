@@ -20,9 +20,9 @@ export default function Section({ id, eyebrow, title, subtitle, children, dark, 
             {eyebrow && (
               <div style={{
                 display: 'inline-block', padding: '5px 13px', borderRadius: 999,
-                background: dark ? 'rgba(255,255,255,.08)' : 'rgba(91,59,140,.08)',
+                background: dark ? 'rgba(255,255,255,.08)' : 'rgba(106,79,160,.08)',
                 color: dark ? 'rgba(255,255,255,.85)' : C.plum,
-                border: dark ? '1px solid rgba(255,255,255,.14)' : '1px solid rgba(91,59,140,.18)',
+                border: dark ? '1px solid rgba(255,255,255,.14)' : '1px solid rgba(106,79,160,.18)',
                 fontSize: 11, fontWeight: 600, letterSpacing: '.08em',
                 textTransform: 'uppercase', marginBottom: 18,
               }}>

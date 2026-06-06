@@ -2824,7 +2824,7 @@ function MarkdownLite({ text }) {
                 <thead>
                   <tr>
                     {b.header.map((h, hi) => (
-                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: '#f3eafc', color: '#5b3b8c', fontWeight: 700, borderBottom: '1px solid #d8d0e8', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: '#f3eafc', color: '#6a4fa0', fontWeight: 700, borderBottom: '1px solid #d8d0e8', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
                         {renderInline(h, `${k}h${hi}`)}
                       </th>
                     ))}
@@ -2890,7 +2890,7 @@ function AskAI() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ background: 'linear-gradient(135deg, #f3eafc, #eaf3fc)', border: '1px solid #d8d0e8', borderRadius: 12, padding: '14px 18px' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#5b3b8c', marginBottom: 4 }}>🤖 Ask anything about your data</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#6a4fa0', marginBottom: 4 }}>🤖 Ask anything about your data</div>
         <div style={{ fontSize: 12, color: '#7a6a9a' }}>
           Read-only. I can answer questions about appointments, revenue, clients, and techs — but I can't make changes.
         </div>
@@ -2920,7 +2920,7 @@ function AskAI() {
             padding: m.role === 'user' ? '10px 14px' : '14px 18px',
             borderRadius: 14,
             border: m.role === 'user' ? 'none' : '1px solid #e8e4f0',
-            boxShadow: m.role === 'user' ? 'none' : '0 1px 3px rgba(91,59,140,.06)',
+            boxShadow: m.role === 'user' ? 'none' : '0 1px 3px rgba(106,79,160,.06)',
             fontSize: 13.5,
             lineHeight: 1.55,
             wordBreak: 'break-word',
@@ -2951,7 +2951,7 @@ function AskAI() {
           style={{ flex: 1, fontFamily: 'inherit', fontSize: 14, padding: '10px 14px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', outline: 'none', background: 'var(--pn-surface)', color: 'var(--pn-text)' }}
         />
         <button type="submit" disabled={busy || !input.trim()}
-          style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, padding: '10px 18px', borderRadius: 10, border: 'none', background: busy || !input.trim() ? '#cbb6e0' : '#5b3b8c', color: '#fff', cursor: busy || !input.trim() ? 'default' : 'pointer' }}>
+          style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, padding: '10px 18px', borderRadius: 10, border: 'none', background: busy || !input.trim() ? '#cbb6e0' : '#6a4fa0', color: '#fff', cursor: busy || !input.trim() ? 'default' : 'pointer' }}>
           Ask
         </button>
         {messages.length > 0 && (

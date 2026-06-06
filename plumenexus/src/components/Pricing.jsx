@@ -156,7 +156,7 @@ export default function Pricing() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{
             display: 'inline-block', padding: '4px 12px', borderRadius: 999,
-            background: 'rgba(91,59,140,.1)', color: C.plum,
+            background: 'rgba(106,79,160,.1)', color: C.plum,
             fontSize: 11, fontWeight: 700, letterSpacing: '.08em',
             textTransform: 'uppercase', marginBottom: 12,
           }}>Power Packs · stack on any plan</div>
@@ -348,7 +348,7 @@ function Tier({ name, price, annual, blurb, features, cta, featured, foundersFre
             color: featured ? 'rgba(255,255,255,.85)' : C.text,
             display: 'flex', alignItems: 'flex-start', gap: 9,
           }}>
-            <span style={{ color: featured ? '#a288c9' : C.success, fontSize: 13, marginTop: 2 }}>✓</span>
+            <span style={{ color: featured ? '#8b6fc4' : C.success, fontSize: 13, marginTop: 2 }}>✓</span>
             <span>{f}</span>
           </li>
         ))}

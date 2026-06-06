@@ -20,7 +20,7 @@ export default function Footer() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
             <Logo size={36} />
             <span style={{ fontFamily: FONT.display, fontWeight: 700, letterSpacing: '.04em', fontSize: 18, color: '#fff' }}>
-              PLUME <span style={{ color: '#a288c9' }}>NEXUS</span>
+              PLUME <span style={{ color: '#8b6fc4' }}>NEXUS</span>
             </span>
           </div>
           <div style={{ fontSize: 14, lineHeight: 1.6, maxWidth: 320, color: 'rgba(255,255,255,.6)' }}>

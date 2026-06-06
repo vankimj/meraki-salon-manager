@@ -155,7 +155,7 @@ export default function OnboardingWizard({ onDismiss, initialPhase }) {
         {/* Header */}
         <div style={{ padding: '14px 22px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.18em', textTransform: 'uppercase' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.18em', textTransform: 'uppercase' }}>
               Onboarding · Step {idx + 1} of {PHASES.length}
             </div>
             <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)', marginTop: 2 }}>
@@ -175,7 +175,7 @@ export default function OnboardingWizard({ onDismiss, initialPhase }) {
             {PHASES.map((p, i) => {
               const s = phaseStatus(onboarding, p.key);
               const isCur = p.key === currentKey;
-              const color = isCur ? '#5b3b8c'
+              const color = isCur ? '#6a4fa0'
                 : s === 'done' ? '#10b981'
                 : s === 'skipped' ? '#cbd5e1'
                 : '#e5e5e5';

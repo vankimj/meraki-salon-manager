@@ -75,7 +75,7 @@ export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
 function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>
         {title}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -91,7 +91,7 @@ function Card({ selected, onClick, icon, title, desc, compact }) {
       style={{
         textAlign: 'left',
         padding: compact ? '10px 14px' : '14px 16px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        border: `1.5px solid ${selected ? '#6a4fa0' : 'var(--pn-border)'}`,
         borderRadius: 10,
         background: selected ? '#f5efff' : 'var(--pn-surface)',
         cursor: 'pointer',
@@ -106,7 +106,7 @@ function Card({ selected, onClick, icon, title, desc, compact }) {
         <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 3 }}>{title}</div>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>{desc}</div>
       </div>
-      {selected && <span style={{ fontSize: 16, color: '#5b3b8c', marginTop: 2 }}>✓</span>}
+      {selected && <span style={{ fontSize: 16, color: '#6a4fa0', marginTop: 2 }}>✓</span>}
     </button>
   );
 }
@@ -117,7 +117,7 @@ const btnPrimary = {
   fontWeight: 700,
   borderRadius: 8,
   border: 'none',
-  background: '#5b3b8c',
+  background: '#6a4fa0',
   color: '#fff',
   cursor: 'pointer',
   fontFamily: 'inherit',

@@ -3971,7 +3971,7 @@ function ConflictMessagesPanel({ affected, draftEntry, reassignmentsByApptId, on
       </div>
 
       <div style={{ background: 'linear-gradient(135deg,#f3eafc,#eaf3fc)', border: '1px solid #d8d0e8', borderRadius: 10, padding: '10px 12px', marginBottom: 12 }}>
-        <div style={{ fontSize: 12, color: '#5b3b8c', lineHeight: 1.5 }}>
+        <div style={{ fontSize: 12, color: '#6a4fa0', lineHeight: 1.5 }}>
           <strong>AI-drafted outreach for {affected.length} affected client{affected.length === 1 ? '' : 's'}.</strong> Edit any message, then send via SMS or email. Reassigned appts get a "swap confirmation" message; un-reassigned appts get a "please reschedule" message.
         </div>
       </div>

@@ -105,7 +105,7 @@ function MigratePath({ onboarding, onAdvance, saving }) {
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14, alignItems: 'center' }}>
         {importBusy && (
-          <span style={{ fontSize: 11, color: '#5b3b8c', fontStyle: 'italic', marginRight: 6 }}>
+          <span style={{ fontSize: 11, color: '#6a4fa0', fontStyle: 'italic', marginRight: 6 }}>
             Finish or cancel the import to continue
           </span>
         )}
@@ -127,7 +127,7 @@ function SourceCard({ src, selected, onClick }) {
     <button onClick={onClick} type="button"
       style={{
         textAlign: 'left', padding: '10px 12px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        border: `1.5px solid ${selected ? '#6a4fa0' : 'var(--pn-border)'}`,
         borderRadius: 10, background: selected ? '#f5efff' : 'var(--pn-surface)', cursor: 'pointer',
         fontFamily: 'inherit', position: 'relative',
       }}>
@@ -252,7 +252,7 @@ function TemplateCard({ t, selected, onClick }) {
     <button onClick={onClick} type="button" disabled={!t.supported}
       style={{
         textAlign: 'left', padding: '12px 14px',
-        border: `1.5px solid ${selected ? '#5b3b8c' : 'var(--pn-border)'}`,
+        border: `1.5px solid ${selected ? '#6a4fa0' : 'var(--pn-border)'}`,
         borderRadius: 10, background: selected ? '#f5efff' : 'var(--pn-surface)',
         cursor: t.supported ? 'pointer' : 'not-allowed',
         opacity: t.supported ? 1 : 0.55,
@@ -273,11 +273,11 @@ function TemplateCard({ t, selected, onClick }) {
 function Section({ title, children }) {
   return (
     <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: '#5b3b8c', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#6a4fa0', letterSpacing: '.12em', textTransform: 'uppercase', marginBottom: 10 }}>{title}</div>
       <div>{children}</div>
     </div>
   );
 }
 
-const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#5b3b8c', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
+const btnPrimary   = { padding: '9px 18px', fontSize: 13, fontWeight: 700, borderRadius: 8, border: 'none', background: '#6a4fa0', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' };
 const btnSecondary = { padding: '9px 14px', fontSize: 13, fontWeight: 600, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' };

@@ -23,12 +23,12 @@ export const C = {
   bg:         '#fbf8f1',   // bone (was pure #ffffff)
   bgSoft:     '#f6f2ea',   // oat
   bgCream:    '#efe9dc',   // deeper cream
-  plum:       '#5b3b8c',
+  plum:       '#6a4fa0',
   plumDeep:   '#3f2767',
-  plumSoft:   '#a288c9',
+  plumSoft:   '#8b6fc4',
   blue:       '#3d95ce',
   blueDeep:   '#1f6ea3',
-  teal:       '#3d9e8a',
+  teal:       '#2a9d8f',
   gold:       '#c19a4a',
   goldDeep:   '#9c7a32',
   success:    '#2D7A5F',
@@ -57,7 +57,7 @@ export const shadow = {
   sm: '0 2px 8px rgba(15,25,35,.05)',
   md: '0 8px 24px rgba(15,25,35,.08)',
   lg: '0 16px 48px rgba(15,25,35,.12)',
-  brand: '0 12px 36px rgba(91,59,140,.25)',
+  brand: '0 12px 36px rgba(106,79,160,.25)',
 };
 
 export const radius = {

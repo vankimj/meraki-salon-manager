@@ -256,7 +256,7 @@ export default function SmsSetup() {
             {[1, 2, 3].map(n => (
               <div key={n} style={{
                 flex: 1, height: 4, borderRadius: 2,
-                background: step >= n ? '#5b3b8c' : 'var(--pn-surface-alt)',
+                background: step >= n ? '#6a4fa0' : 'var(--pn-surface-alt)',
                 transition: 'background .2s',
               }} />
             ))}
@@ -422,7 +422,7 @@ export default function SmsSetup() {
 function Step({ title, children }) {
   return (
     <div style={{ padding: 18, background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12 }}>
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#5b3b8c', marginBottom: 14, letterSpacing: '.04em', textTransform: 'uppercase' }}>{title}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#6a4fa0', marginBottom: 14, letterSpacing: '.04em', textTransform: 'uppercase' }}>{title}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>{children}</div>
     </div>
   );
@@ -481,7 +481,7 @@ const btnPrimary = {
   fontWeight: 700,
   borderRadius: 8,
   border: 'none',
-  background: '#5b3b8c',
+  background: '#6a4fa0',
   color: '#fff',
   cursor: 'pointer',
   fontFamily: 'inherit',

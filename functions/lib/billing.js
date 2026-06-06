@@ -524,7 +524,7 @@ function buildPaymentFailedEmailHtml({ salonName, amountDollars, currency, porta
     <p style="font-size:14px;color:#555;line-height:1.65;margin:0 0 8px;">We weren't able to charge <strong>$${esc(amountDollars)} ${esc((currency || 'USD').toUpperCase())}</strong> for your Plume Nexus subscription.</p>
     ${safeNext}
     <div style="text-align:center;margin:24px 0;">
-      <a href="${esc(safePortal)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:14px;font-weight:700;padding:13px 28px;border-radius:10px;text-decoration:none;">Update billing →</a>
+      <a href="${esc(safePortal)}" style="display:inline-block;background:#6a4fa0;color:#fff;font-size:14px;font-weight:700;padding:13px 28px;border-radius:10px;text-decoration:none;">Update billing →</a>
     </div>
     <p style="font-size:12px;color:#888;line-height:1.5;margin:8px 0 0;text-align:center;">If you have questions, just reply to this email.</p>
   </div>
@@ -539,7 +539,7 @@ function buildSubscriptionCanceledEmailHtml({ salonName, portalUrl }) {
   const safePortal = String(portalUrl || 'https://plumenexus.com');
   return `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
 <div style="max-width:560px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-  <div style="background:linear-gradient(135deg,#5b3b8c,#3D95CE);padding:20px 24px;">
+  <div style="background:linear-gradient(135deg,#6a4fa0,#3D95CE);padding:20px 24px;">
     <div style="color:#fff;font-size:16px;font-weight:700;">Your Plume Nexus subscription ended</div>
   </div>
   <div style="padding:24px;">
@@ -547,7 +547,7 @@ function buildSubscriptionCanceledEmailHtml({ salonName, portalUrl }) {
     <p style="font-size:14px;color:#555;line-height:1.65;margin:0 0 12px;">${esc(safeSalon)} has been moved to the Starter plan. You can continue using <strong>Schedule, Clients, Services, Employees, and Walk-in Kiosk</strong> for free.</p>
     <p style="font-size:14px;color:#555;line-height:1.65;margin:0 0 16px;">Paid features (Reports, Earnings, Marketing, HR, Memberships, etc.) are paused. Re-subscribe any time to turn them back on — your data is preserved.</p>
     <div style="text-align:center;margin:24px 0;">
-      <a href="${esc(safePortal)}" style="display:inline-block;background:#5b3b8c;color:#fff;font-size:14px;font-weight:700;padding:13px 28px;border-radius:10px;text-decoration:none;">Manage billing →</a>
+      <a href="${esc(safePortal)}" style="display:inline-block;background:#6a4fa0;color:#fff;font-size:14px;font-weight:700;padding:13px 28px;border-radius:10px;text-decoration:none;">Manage billing →</a>
     </div>
     <p style="font-size:12px;color:#888;line-height:1.5;margin:8px 0 0;text-align:center;">Thanks for trying Plume Nexus. If something didn't work for you, we'd love to hear why — just reply.</p>
   </div>

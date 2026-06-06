@@ -71,7 +71,7 @@ function ShowcaseItem({ eyebrow, title, body, bullets, visual: Visual, reverse }
       <div style={{ order: reverse ? 2 : 1 }} className="pn-showcase-copy">
         <div style={{
           display: 'inline-block', padding: '4px 11px', borderRadius: 999,
-          background: 'rgba(91,59,140,.08)',
+          background: 'rgba(106,79,160,.08)',
           color: C.plum,
           fontSize: 11, fontWeight: 600, letterSpacing: '.08em',
           textTransform: 'uppercase', marginBottom: 14,

@@ -27,7 +27,7 @@ import {
 const C = {
   ink: 'var(--pn-text)', text: 'var(--pn-text)', muted: 'var(--pn-text-muted)', mutedSoft: 'var(--pn-text-faint)',
   rule: 'var(--pn-border)', ruleSoft: 'var(--pn-surface-alt)', bg: 'var(--pn-bg)', card: 'var(--pn-surface)',
-  plum: '#5b3b8c', plumDeep: '#3f2767',
+  plum: '#6a4fa0', plumDeep: '#3f2767',
   blue: '#3d95ce', blueDeep: '#1f6ea3',
   success: 'var(--pn-success)', successSoft: 'var(--pn-success-bg)',
   warning: 'var(--pn-warning)', warningSoft: 'var(--pn-warning-bg)',
@@ -48,7 +48,7 @@ export default function SupportTicketsButton() {
           position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
           width: 48, height: 48, borderRadius: '50%',
           background: C.plum, color: '#fff', border: 'none',
-          boxShadow: '0 6px 20px rgba(91,59,140,.35)',
+          boxShadow: '0 6px 20px rgba(106,79,160,.35)',
           fontSize: 22, fontWeight: 700, cursor: 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontFamily: 'inherit',

@@ -40,7 +40,7 @@ export default function Splash() {
       }}>
 
         <img src="/brandmark.svg" width="200" height="200" alt=""
-          style={{ marginBottom: 8, filter: 'drop-shadow(0 8px 24px rgba(91,59,140,.45))' }} />
+          style={{ marginBottom: 8, filter: 'drop-shadow(0 8px 24px rgba(106,79,160,.45))' }} />
 
         <div style={{ position: 'relative', textAlign: 'center', userSelect: 'none' }}>
 
@@ -62,7 +62,7 @@ export default function Splash() {
             fontSize: 88,
             color: '#ffffff',
             lineHeight: 0.95,
-            textShadow: '0 2px 24px rgba(91,59,140,.55), 0 0 48px rgba(61,149,206,.3)',
+            textShadow: '0 2px 24px rgba(106,79,160,.55), 0 0 48px rgba(61,149,206,.3)',
             letterSpacing: '0.01em',
           }}>
             {settings?.brandName || settings?.salonName || 'Plume Nexus'}
