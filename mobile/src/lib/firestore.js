@@ -1,6 +1,6 @@
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc, deleteDoc, updateDoc,
-  query, where, orderBy, limit, onSnapshot, arrayUnion, increment, deleteField, writeBatch,
+  query, where, orderBy, limit, onSnapshot, arrayUnion, increment, deleteField, writeBatch, runTransaction,
 } from 'firebase/firestore';
 import { db, callFn, auth } from './firebase';
 import { getCurrentTenant } from './currentTenant';
@@ -573,6 +573,32 @@ export function subscribeCheckoutSession(cb) {
   return onSnapshot(tenantDoc('checkoutSession'),
     (snap) => cb(snap.exists() ? snap.data() : null),
     () => cb(null));
+}
+
+// Concurrency lock: when multiple front-desk kiosks share one session, only ONE
+// may take payment (else two kiosks would create two separate charges — the
+// per-kiosk idempotency keys differ, so idempotency alone can't stop it). The
+// first kiosk to claim wins via a transaction; a claim older than 10 min is
+// considered abandoned (a crashed/closed kiosk) and can be re-claimed. Returns
+// true if THIS kiosk holds the claim.
+export async function claimCheckoutSession(kioskId) {
+  const ref = tenantDoc('checkoutSession');
+  try {
+    return await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) return false;
+      const d = snap.data();
+      if (d.status !== 'pending' && d.status !== 'paying') return false; // not an active session
+      const claimedAt = d.claimedAt ? Date.parse(d.claimedAt) : 0;
+      const stale = !claimedAt || (Date.now() - claimedAt) > 10 * 60 * 1000;
+      if (d.claimedBy && d.claimedBy !== kioskId && !stale) return false; // held by another kiosk
+      tx.update(ref, { claimedBy: kioskId, claimedAt: new Date().toISOString() });
+      return true;
+    });
+  } catch (_) {
+    // On a transient error default to claiming — never lock out the only kiosk.
+    return true;
+  }
 }
 
 // TipFlow slides (data/slides.slides[]) — used by the kiosk idle slideshow.

@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, chargeStoredCard, fetchSlides } from '../../lib/firestore';
+import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, genReceiptToken } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { isTerminalAvailable } from '../../lib/terminal';
@@ -127,6 +127,15 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   // One stable id per checkout: the Stripe idempotency key (no double-charge on
   // retry/double-tap) AND the receipt doc id (no duplicate receipt on a retry).
   const [saleId] = useState(() => genReceiptToken(24));
+  // Concurrency lock: if two kiosks share this session, only the one that wins
+  // the claim shows pay buttons; the other shows a read-only "handled elsewhere".
+  const [kioskId] = useState(() => genReceiptToken(12));
+  const [claimState, setClaimState] = useState('checking'); // checking | mine | other
+  useEffect(() => {
+    let alive = true;
+    claimCheckoutSession(kioskId).then(ok => { if (alive) setClaimState(ok ? 'mine' : 'other'); });
+    return () => { alive = false; };
+  }, [kioskId]);
 
   // Pull the client to surface a "charge card on file" option when they have one.
   useEffect(() => {
@@ -208,6 +217,21 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   }
 
   function cancel() { clearCheckoutSession().catch(() => {}); }
+
+  // Another station already owns this checkout — show a read-only state (no pay
+  // buttons here) so the same sale can't be charged twice.
+  if (claimState === 'checking' && stage !== 'done') {
+    return <View style={styles.center}><ActivityIndicator color={theme.green} size="large" /></View>;
+  }
+  if (claimState === 'other' && stage !== 'done') {
+    return (
+      <View style={styles.idle}>
+        <Text style={styles.idleMark}>🧾</Text>
+        <Text style={styles.idleTitle}>Checking out…</Text>
+        <Text style={styles.idleSub}>This sale is being completed at another station.</Text>
+      </View>
+    );
+  }
 
   if (stage === 'done') {
     return (
