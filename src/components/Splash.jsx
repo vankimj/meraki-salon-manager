@@ -25,12 +25,12 @@ export default function Splash() {
       pointerEvents: fading ? 'none' : 'auto',
     }}>
 
-      {/* Ambient gradient glow behind logo */}
+      {/* Ambient gradient glow behind logo — plum/teal/gold to match the mark */}
       <div style={{
         position: 'absolute',
         width: 520, height: 520,
         borderRadius: '50%',
-        background: 'radial-gradient(ellipse, rgba(45,122,95,.28) 0%, rgba(61,149,206,.14) 50%, transparent 72%)',
+        background: 'radial-gradient(ellipse, rgba(106,79,160,.30) 0%, rgba(42,157,143,.14) 50%, transparent 72%)',
         pointerEvents: 'none',
       }} />
 
@@ -39,25 +39,8 @@ export default function Splash() {
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
       }}>
 
-        <svg viewBox="0 0 120 120" width="200" height="200"
-          style={{ marginBottom: 8, filter: 'drop-shadow(0 8px 24px rgba(91,59,140,.45))' }}>
-          <defs>
-            <radialGradient id="splash-camellia" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"   stopColor="#c19a4a" stopOpacity="0.28" />
-              <stop offset="55%"  stopColor="#a288c9" />
-              <stop offset="100%" stopColor="#5b3b8c" />
-            </radialGradient>
-          </defs>
-          <g fill="url(#splash-camellia)" opacity="0.96">
-            <ellipse cx="60" cy="34" rx="14" ry="22"/>
-            <g transform="rotate(72 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
-            <g transform="rotate(144 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
-            <g transform="rotate(216 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
-            <g transform="rotate(288 60 60)"><ellipse cx="60" cy="34" rx="14" ry="22"/></g>
-          </g>
-          <circle cx="60" cy="60" r="11" fill="#ffffff" opacity="0.95"/>
-          <circle cx="60" cy="60" r="5"  fill="#c19a4a"/>
-        </svg>
+        <img src="/brandmark.svg" width="200" height="200" alt=""
+          style={{ marginBottom: 8, filter: 'drop-shadow(0 8px 24px rgba(91,59,140,.45))' }} />
 
         <div style={{ position: 'relative', textAlign: 'center', userSelect: 'none' }}>
 
