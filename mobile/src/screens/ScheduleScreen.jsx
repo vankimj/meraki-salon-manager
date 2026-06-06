@@ -7,7 +7,7 @@ import {
   subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes,
   fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
   fetchTimeOff, createClient, updateAppointment, fetchClient, softDeleteAppointment,
-  softDeleteRecurringSeries,
+  softDeleteRecurringSeries, setCheckoutSession,
 } from '../lib/firestore';
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
@@ -429,7 +429,25 @@ export default function ScheduleScreen({ navigation }) {
       />
 
       <TabModal open={tabOpen} tab={tabSnap} onClose={() => setTabOpen(false)}
-        onCheckout={() => { setTabOpen(false); navigation.navigate('Checkout'); }} />
+        onCheckout={() => { setTabOpen(false); navigation.navigate('Checkout'); }}
+        onSendToFrontDesk={async () => {
+          const t = getCurrentTab();
+          if ((t.appts?.length || 0) + (t.products?.length || 0) === 0) return;
+          const primary = (t.appts || [])[0] || {};
+          try {
+            await setCheckoutSession({
+              cart: t,
+              clientId: primary.clientId || null,
+              clientName: Array.from(new Set((t.appts || []).map(a => a.clientName || 'Walk-in').filter(Boolean))).join(' + ') || 'Walk-in',
+              createdBy: email || null,
+            });
+            await clearTab();
+            setTabOpen(false);
+            Alert.alert('Sent', 'This sale is now on the front-desk kiosk for the client to pay.');
+          } catch (e) {
+            Alert.alert('Couldn\'t send', e?.message || 'Try again.');
+          }
+        }} />
     </View>
   );
 }
@@ -1373,7 +1391,7 @@ const SOCIAL_EMOJI = { instagram: '📸', facebook: '👥', tiktok: '🎵', venm
 // pay button is disabled with a "coming soon" affordance so the
 // interaction is documented in the UI but the code path doesn't
 // silently do nothing.
-function TabModal({ open, tab, onClose, onCheckout }) {
+function TabModal({ open, tab, onClose, onCheckout, onSendToFrontDesk }) {
   const styles = useThemedStyles(makeStyles);
   if (!open) return null;
   const total = tab.appts.reduce((s, a) => {
@@ -1441,9 +1459,19 @@ function TabModal({ open, tab, onClose, onCheckout }) {
                 >
                   <Text style={styles.primaryBtnText}>Check out · ${total.toFixed(2)}</Text>
                 </TouchableOpacity>
+
+                {!!onSendToFrontDesk && (
+                  <TouchableOpacity
+                    style={[styles.sendDeskBtn, { marginTop: 10 }]}
+                    activeOpacity={0.85}
+                    onPress={() => onSendToFrontDesk?.()}
+                  >
+                    <Text style={styles.sendDeskBtnText}>🏪  Send to front desk</Text>
+                  </TouchableOpacity>
+                )}
                 <Text style={styles.tabFootnote}>
-                  Cash checkout is live — services, discounts, promo/gift cards, tips & multi-tech
-                  split. Card (Stripe Terminal / Tap to Pay) activates once the reader is connected.
+                  "Send to front desk" hands this sale to the kiosk iPad so the client can
+                  tip + pay (cash or the reader) at the desk. Or check out here yourself.
                 </Text>
 
                 <TouchableOpacity
@@ -2027,6 +2055,8 @@ const makeStyles = (t) => StyleSheet.create({
   repeatCountInput:{ width: 70, backgroundColor: t.surface, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, borderWidth: 1, borderColor: t.border, textAlign: 'center' },
   primaryBtn: { backgroundColor: t.green, borderRadius: 12, paddingVertical: 13, alignItems: 'center' },
   primaryBtnText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  sendDeskBtn: { backgroundColor: t.blueSoft, borderRadius: 12, paddingVertical: 13, alignItems: 'center', borderWidth: 1, borderColor: t.blue },
+  sendDeskBtnText: { color: t.blue, fontSize: 14, fontWeight: '800' },
   checkedInPill: { backgroundColor: t.greenSoft, borderColor: t.green, borderWidth: 1, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
   checkedInPillText: { color: t.success, fontSize: 13, fontWeight: '600' },
 

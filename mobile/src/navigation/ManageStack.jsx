@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import HeaderTitle         from '../components/HeaderTitle';
 import { useTheme }        from '../theme/ThemeContext';
 import ManageGridScreen    from '../screens/manage/ManageGridScreen';
+import KioskScreen         from '../screens/kiosk/KioskScreen';
 import ModulePlaceholder   from '../screens/manage/ModulePlaceholder';
 import ChatScreen          from '../screens/ChatScreen';
 import ChatThreadScreen    from '../screens/ChatThreadScreen';
@@ -44,6 +45,8 @@ export default function ManageStack() {
     >
       <Stack.Screen name="ManageGrid"  component={ManageGridScreen}
         options={{ title: 'Manage', headerTitle: () => <HeaderTitle title="Manage" /> }} />
+      <Stack.Screen name="Kiosk" component={KioskScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Front Desk Kiosk" /> }} />
 
       <Stack.Screen name="Services"    component={ServicesScreen}
         options={{ headerTitle: () => <HeaderTitle title="Services" /> }} />

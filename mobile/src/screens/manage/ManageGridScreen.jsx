@@ -76,6 +76,18 @@ export default function ManageGridScreen({ navigation }) {
           );
         })}
 
+        <TouchableOpacity
+          style={[styles.tile, styles.kioskTile, { width: tileW }]}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Kiosk')}
+        >
+          <View style={[styles.iconWrap, styles.kioskIconWrap]}>
+            <Icon name="dollar" size={26} color={theme.blue} />
+          </View>
+          <Text style={styles.tileLabel} numberOfLines={1}>Front Desk Kiosk</Text>
+          <Text style={styles.tileDesc} numberOfLines={2}>Customer checkout display</Text>
+        </TouchableOpacity>
+
         {isAdmin && (
           <TouchableOpacity
             style={[styles.tile, styles.adminTile, { width: tileW }]}
@@ -116,6 +128,8 @@ const makeStyles = (t) => StyleSheet.create({
   soonPill:  { alignSelf: 'flex-start', marginTop: 8, backgroundColor: t.warningBg, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
   soonText:  { fontSize: 10, fontWeight: '700', color: t.warning, letterSpacing: 0.2 },
   adminTile:    { borderColor: t.dangerBg },
+  kioskTile:    { borderColor: t.blueSoft },
+  kioskIconWrap:{ backgroundColor: t.blueSoft },
   adminIconWrap:{ backgroundColor: t.dangerBg },
   empty:     { textAlign: 'center', color: t.textFaint, marginTop: 40, fontSize: 13 },
 });
