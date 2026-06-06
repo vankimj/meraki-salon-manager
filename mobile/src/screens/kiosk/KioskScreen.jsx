@@ -117,6 +117,9 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [tipMode, setTipMode]   = useState('pct');   // 'pct' | 'custom'
   const [tipPct, setTipPct]     = useState(0);
   const [tipAmtStr, setTipAmtStr] = useState('');
+  // Walk-ins have no phone on file, so the receipt SMS/email triggers have
+  // nothing to fire on. Let them opt into a texted receipt at the kiosk.
+  const [receiptPhone, setReceiptPhone] = useState('');
   const [stage, setStage]       = useState('review'); // review | cash | done
   const [cashStr, setCashStr]   = useState('');
   const [saving, setSaving]     = useState(false);
@@ -144,6 +147,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
     return () => { alive = false; };
   }, [session.clientId]);
   const savedPm = client?.paymentMethods?.find(p => p.id === client.defaultPaymentMethodId) || client?.paymentMethods?.[0] || null;
+  const hasPhoneOnFile = (cart.appts || []).some(a => a.clientPhone) || !!client?.phone;
 
   const tip = { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
   const totalsFor = (method) => computeTotals({
@@ -171,7 +175,9 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       const t = method === 'card' ? cardTotals : cashTotals;
       const { total, changeDue, sideEffectErrors } = await completeSale({
         tab: { appts: cart.appts || [], products }, lines, products,
-        totals: t, settings, email, method, saleId, skipSideEffects: isRetry, ...opts,
+        totals: t, settings, email, method, saleId, skipSideEffects: isRetry,
+        receiptContact: receiptPhone.trim() ? { phone: receiptPhone.trim() } : null,
+        ...opts,
       });
       const base = method === 'cash' && changeDue != null
         ? `Paid ${money(total)} — change due ${money(changeDue)}`
@@ -291,6 +297,21 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
               <TextInput style={styles.tipInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />
             )}
           </View>
+
+          {!hasPhoneOnFile && (
+            <>
+              <Text style={styles.section}>Text my receipt</Text>
+              <TextInput
+                style={styles.receiptInput}
+                value={receiptPhone}
+                onChangeText={setReceiptPhone}
+                keyboardType="phone-pad"
+                placeholder="Phone number (optional)"
+                placeholderTextColor={theme.placeholder}
+                maxLength={20}
+              />
+            </>
+          )}
         </>
       )}
 
@@ -417,6 +438,7 @@ const makeStyles = (t) => StyleSheet.create({
   tipChipText:{ fontSize: 16, fontWeight: '800', color: t.textMuted },
   tipChipTextOn:{ color: t.green },
   tipInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border, minWidth: 90 },
+  receiptInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border },
   totals:   { backgroundColor: t.surface, borderRadius: 16, padding: 18, marginTop: 24, borderWidth: 1, borderColor: t.border },
   totRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
   totLabel: { fontSize: 15, color: t.textMuted },

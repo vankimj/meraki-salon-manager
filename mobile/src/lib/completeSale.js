@@ -22,6 +22,7 @@ export async function completeSale({
   method = 'cash', stripePaymentIntentId = null,
   discType = 'none', discVal = 0, promo = null, giftCard = null,
   cashTendered = null, saleId = null, skipSideEffects = false,
+  receiptContact = null,
 }) {
   const t = totals;
   const sp = buildTechSplit(lines, t.tipAmt);
@@ -91,11 +92,17 @@ export async function completeSale({
   const allServices = lines.map(l => ({ name: l.name, price: l.price, techName: l.techName }));
   let clientEmail = null;
   try { if (primaryAppt?.clientId) clientEmail = (await fetchClient(primaryAppt.clientId))?.email || null; } catch (_) {}
+  // A walk-in (no client on file) can still get a texted/emailed receipt by
+  // entering their contact at the kiosk. The contact entered for THIS sale wins
+  // over anything on the appt/client — server normalizes the phone + fires the
+  // sendReceiptSms / sendReceiptEmail triggers off these two fields.
+  const contactPhone = (receiptContact?.phone || '').trim();
+  const contactEmail = (receiptContact?.email || '').trim();
   await createReceipt({
     clientId:    primaryAppt?.clientId || null,
     clientName:  clientNames.join(' + ') || 'Walk-in',
-    clientPhone: primaryAppt?.clientPhone || null,
-    clientEmail,
+    clientPhone: contactPhone || primaryAppt?.clientPhone || null,
+    clientEmail: contactEmail || clientEmail,
     viewToken:   saleId || genReceiptToken(22),
     techName:    sp ? sp.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
     date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
