@@ -419,6 +419,14 @@ export async function fetchMemberships() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
     .sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''));
 }
+// A client's active membership (mirrors web fetchClientMembership) so mobile
+// checkout/kiosk can auto-apply the member discount. Returns null when none.
+export async function fetchClientMembership(clientId) {
+  if (!clientId) return null;
+  const snap = await getDocs(query(tenantCol('memberships'), where('clientId', '==', clientId), where('status', '==', 'active')));
+  const d = snap.docs.map(x => ({ id: x.id, ...x.data() })).filter(notTombstoned)[0];
+  return d || null;
+}
 export async function createMembership(data) {
   const ref = await addDoc(tenantCol('memberships'), {
     ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
