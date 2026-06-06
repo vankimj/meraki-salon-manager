@@ -44,6 +44,8 @@ export default function CheckoutScreen({ navigation }) {
   const [discType, setDiscType]   = useState('none');   // none | percent | amount | member
   const [discVal, setDiscVal]     = useState('');
   const [membership, setMembership] = useState(null);   // primary client's active membership
+  const [clientCredit, setClientCredit] = useState(0);  // primary client's store-credit balance
+  const [applyCredit, setApplyCredit] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
@@ -77,6 +79,7 @@ export default function CheckoutScreen({ navigation }) {
       setDiscType(prev => (prev === 'none' ? 'member' : prev));
       setDiscVal(prev => (prev === '' ? String(m.discountPct) : prev));
     }).catch(() => {});
+    fetchClient(primaryClientId).then(c => { if (alive) setClientCredit(Number(c?.credit) || 0); }).catch(() => {});
     return () => { alive = false; };
   }, [primaryClientId]);
 
@@ -111,7 +114,8 @@ export default function CheckoutScreen({ navigation }) {
     noCardTips: !!settings?.noCardTips,
     tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
+    clientCredit, applyCredit: applyCredit && clientCredit > 0,
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings, clientCredit, applyCredit]);
 
   // Card total can differ from cash when the salon passes the card fee to the
   // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
@@ -127,7 +131,8 @@ export default function CheckoutScreen({ navigation }) {
     noCardTips: !!settings?.noCardTips,
     tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings]);
+    clientCredit, applyCredit: applyCredit && clientCredit > 0,
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings, clientCredit, applyCredit]);
 
   const split = buildTechSplit(lines, totals.tipAmt);
 
@@ -251,6 +256,16 @@ export default function CheckoutScreen({ navigation }) {
           : <TouchableOpacity onPress={applyGiftCard} style={styles.applyBtn}><Text style={styles.applyText}>Apply</Text></TouchableOpacity>}
       </View>
 
+      {clientCredit > 0 && (
+        <TouchableOpacity activeOpacity={0.7} onPress={() => setApplyCredit(v => !v)} style={[styles.creditRow, applyCredit && styles.creditRowOn]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.creditLabel}>Apply store credit</Text>
+            <Text style={styles.creditSub}>{money(clientCredit)} available{applyCredit && totals.creditApply > 0 ? ` · using ${money(totals.creditApply)}` : ''}</Text>
+          </View>
+          <View style={[styles.toggle, applyCredit && styles.toggleOn]}><View style={[styles.knob, applyCredit && styles.knobOn]} /></View>
+        </TouchableOpacity>
+      )}
+
       {!hasPhoneOnFile && (
         <>
           <Text style={styles.section}>Send receipt to</Text>
@@ -280,6 +295,7 @@ export default function CheckoutScreen({ navigation }) {
         {totals.taxAmt > 0 && <Row label="Tax" value={money(totals.taxAmt)} />}
         {totals.tipAmt > 0 && <Row label="Tip" value={money(totals.tipAmt)} />}
         {totals.gcApply > 0 && <Row label="Gift card" value={`-${money(totals.gcApply)}`} />}
+        {totals.creditApply > 0 && <Row label="Store credit" value={`-${money(totals.creditApply)}`} />}
         <View style={styles.divider} />
         <Row label="Total" value={money(totals.total)} big />
       </View>
@@ -392,6 +408,14 @@ const makeStyles = (t) => StyleSheet.create({
   applyText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   clearBtn:  { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
   clearText: { color: t.green, fontWeight: '800', fontSize: 13 },
+  creditRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, backgroundColor: t.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.border },
+  creditRowOn:{ borderColor: t.green, backgroundColor: t.greenSoft },
+  creditLabel:{ fontSize: 14, fontWeight: '700', color: t.text },
+  creditSub:  { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  toggle:     { width: 44, height: 26, borderRadius: 13, backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.border, padding: 2, justifyContent: 'center' },
+  toggleOn:   { backgroundColor: t.green, borderColor: t.green },
+  knob:       { width: 20, height: 20, borderRadius: 10, backgroundColor: '#fff' },
+  knobOn:     { alignSelf: 'flex-end' },
   totals:    { backgroundColor: t.surface, borderRadius: 14, padding: 16, marginTop: 22, borderWidth: 1, borderColor: t.border },
   totRow:    { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4 },
   totLabel:  { fontSize: 14, color: t.textMuted },
