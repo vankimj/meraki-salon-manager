@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange } from '../../lib/firestore';
 import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
+import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
 import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations } from './metrics';
@@ -51,6 +52,7 @@ const EMPTY_FILTERS = Object.freeze({
   methods:    [],          // multi: 'card' | 'cash' | 'venmo' | 'other'
   sources:    [],          // multi: 'in-salon' | 'online_booking' | 'imported' | 'rebook_prompt'
   clientType: 'all',       // 'all' | 'scheduled' | 'walkin'
+  location:   '',          // '' = all locations (aggregate); else a locationId
 });
 
 const METHOD_OPTIONS = [
@@ -102,6 +104,7 @@ function countActiveFilters(f) {
   if (f.methods.length)  n++;
   if (f.sources.length)  n++;
   if (f.clientType !== 'all') n++;
+  if (f.location) n++;
   return n;
 }
 
@@ -126,6 +129,7 @@ function filterTransactions(appts, f) {
     }
     if (f.clientType === 'scheduled' && !t.clientId) return false;
     if (f.clientType === 'walkin'    &&  t.clientId) return false;
+    if (f.location && !appointmentInLocation(t, f.location)) return false;
     return true;
   });
 }
@@ -157,8 +161,10 @@ export default function ReportsAdmin() {
   const [priorAppts,  setPriorAppts]  = useState(null);
   const [priorClientIds, setPriorClientIds] = useState(null);
   const [loading,     setLoading]     = useState(true);
-  // Overview filters (all multi-select except clientType).
+  // Overview filters (all multi-select except clientType + location).
   const [filters,     setFilters]     = useState(EMPTY_FILTERS);
+  const [locState,    setLocState]    = useState(null);
+  useEffect(() => subscribeLocations(setLocState), []);
 
   if (isTech || isScheduler) {
     return (
@@ -2410,6 +2416,14 @@ function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, s
               </FilterChip>
             ))}
           </FilterSection>
+          {isMultiLocation(locState) && (
+            <FilterSection label="Location">
+              <FilterChip active={!filters.location} onClick={() => setFilters(f => ({ ...f, location: '' }))} radio>All locations</FilterChip>
+              {activeLocations(locState).map(l => (
+                <FilterChip key={l.id} active={filters.location === l.id} onClick={() => setFilters(f => ({ ...f, location: l.id }))} radio>{l.name || l.id}</FilterChip>
+              ))}
+            </FilterSection>
+          )}
         </div>
       )}
     </div>

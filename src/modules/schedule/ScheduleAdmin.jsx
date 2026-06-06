@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
+import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours } from '../../lib/firestore';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
@@ -248,6 +249,17 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   for (let m = dayStart; m < dayEnd; m += 30) slots.push(m);
   const [appts,        setAppts]       = useState([]);
   const [loading,      setLoading]     = useState(true);
+  // Multi-location: when >1 active location, the grid shows only the current
+  // location's appointments (plus legacy untagged ones — never hidden). Filtered
+  // client-side so no composite index is needed; single-location is unaffected.
+  const [curLoc,   setCurLoc]   = useState(currentLocationId());
+  const [locState, setLocState] = useState(null);
+  useEffect(() => subscribeCurrentLocation(setCurLoc), []);
+  useEffect(() => subscribeLocations(setLocState), []);
+  const visibleAppts = useMemo(
+    () => (isMultiLocation(locState) ? appts.filter(a => appointmentInLocation(a, curLoc)) : appts),
+    [appts, locState, curLoc],
+  );
   const [modal,        setModal]       = useState(null);
   const [checkout,     setCheckout]    = useState(null);
   const [refund,       setRefund]      = useState(null);
@@ -506,7 +518,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
         }
         await createSeries(full, recurrence, dates, logDetail);
       } else {
-        const newId = await createAppointment(full);
+        const newId = await createAppointment({ ...full, locationId: full.locationId || currentLocationId() });
         full.id = newId;
         logActivity('appt_created', logDetail);
       }
@@ -586,6 +598,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     for (let i = 0; i < dates.length; i++) {
       await createAppointment({
         ...full,
+        locationId: full.locationId || currentLocationId(),
         date: dates[i],
         recurringGroupId: groupId,
         recurringIndex: i + 1,
@@ -1422,7 +1435,7 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(7, minmax(120px, 1fr))', gap: 4, overflowX: 'auto', overflowY: 'hidden' }}>
         {days.map(day => {
           const isToday   = day === today;
-          const dayAppts  = appts.filter(a => a.date === day).sort((a, b) => strToMins(a.startTime) - strToMins(b.startTime));
+          const dayAppts  = visibleAppts.filter(a => a.date === day).sort((a, b) => strToMins(a.startTime) - strToMins(b.startTime));
           const bdays     = bdayMap[day] || [];
           const headerFmt = new Date(day + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 
@@ -1796,7 +1809,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
             });
             flush();
           });
-          return appts.map(appt => {
+          return visibleAppts.map(appt => {
           const techIdx = techs.indexOf(appt.techName);
           if (techIdx === -1) return null;
           const startMins = strToMins(appt.startTime);
