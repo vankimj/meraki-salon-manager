@@ -15,6 +15,7 @@ import useTenantAccess from '../hooks/useTenantAccess';
 import useResponsive from '../hooks/useResponsive';
 import useTrashHeader from '../hooks/useTrashHeader';
 import Icon from '../components/Icon';
+import RefundModal from './checkout/RefundModal';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 // Salon hours + slot grid. Matches the web SLOT_H=40 / 9am-8pm convention
@@ -173,6 +174,7 @@ export default function ScheduleScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [showAll, setShowAll] = useState(false); // admins / floor-view toggle
   const [detail,  setDetail]  = useState(null);  // selected appt for the modal
+  const [refundAppt, setRefundAppt] = useState(null);  // appt being refunded
   const [view,    setView]    = useState('day'); // 'day' | 'week' | 'month'
   const [createPrefill, setCreatePrefill] = useState(null);  // { date, startTime, techName } or null
   const [editAppt, setEditAppt] = useState(null);            // existing appt being edited or null
@@ -418,6 +420,17 @@ export default function ScheduleScreen({ navigation }) {
           // Optimistic local update; live sub will reconcile.
           setAppts(prev => prev.map(a => a.id === detail.id ? { ...a, ...patch } : a));
           setDetail(prev => prev ? { ...prev, ...patch } : null);
+        }}
+        onRefund={(a) => { setDetail(null); setRefundAppt(a); }}
+      />
+
+      <RefundModal
+        appt={refundAppt}
+        onClose={() => setRefundAppt(null)}
+        onDone={(refund) => {
+          setAppts(prev => prev.map(a => a.id === refundAppt.id ? { ...a, refund } : a));
+          setRefundAppt(null);
+          Alert.alert('Refund recorded', `$${(Number(refund.amount) || 0).toFixed(2)} refunded${refund.addedCredit ? ' + store credit added' : ''}.`);
         }}
       />
 
@@ -1491,7 +1504,7 @@ function TabModal({ open, tab, onClose, onCheckout, onSendToFrontDesk }) {
 }
 
 // ── Detail modal (status, check-in, notes, client snapshot) ─────────────
-function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, onAddToTab, onDelete, onDeleteSeries }) {
+function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, onAddToTab, onDelete, onDeleteSeries, onRefund }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [notes,   setNotes]   = useState('');
@@ -1772,6 +1785,19 @@ function ApptDetailModal({ appt, cartTab, canDelete, onClose, onUpdate, onEdit, 
                     );
                   })}
                 </View>
+
+                {/* Refund — done sales only */}
+                {appt.status === 'done' && appt.payment && (
+                  appt.refund ? (
+                    <View style={styles.refundedPill}>
+                      <Text style={styles.refundedText}>↩ Refunded ${(Number(appt.refund.amount) || 0).toFixed(2)}{appt.refund.reason ? ` · ${appt.refund.reason}` : ''}</Text>
+                    </View>
+                  ) : canDelete ? (
+                    <TouchableOpacity style={styles.refundBtn} onPress={() => onRefund?.(appt)} activeOpacity={0.85}>
+                      <Text style={styles.refundBtnText}>↩ Refund this sale</Text>
+                    </TouchableOpacity>
+                  ) : null
+                )}
 
                 {/* Contact info */}
                 {(appt.clientPhone || appt.clientEmail) && (
@@ -2066,6 +2092,10 @@ const makeStyles = (t) => StyleSheet.create({
     borderWidth: 1.5, borderColor: t.borderStrong, backgroundColor: t.surface, flexGrow: 1, alignItems: 'center', minWidth: '47%',
   },
   statusBtnText: { fontSize: 13, color: t.textMuted },
+  refundBtn:     { marginTop: 16, paddingVertical: 13, borderRadius: 12, alignItems: 'center', backgroundColor: t.dangerBg, borderWidth: 1, borderColor: t.danger },
+  refundBtnText: { fontSize: 14, fontWeight: '800', color: t.danger },
+  refundedPill:  { marginTop: 16, paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, backgroundColor: t.surfaceMuted, borderWidth: 1, borderColor: t.border },
+  refundedText:  { fontSize: 12.5, fontWeight: '700', color: t.textMuted },
 
   contactLine: { fontSize: 14, color: t.text, marginBottom: 6 },
   notesInput: {
