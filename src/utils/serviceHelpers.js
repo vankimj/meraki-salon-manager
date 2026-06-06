@@ -48,14 +48,24 @@ export function techServiceDuration(svc, tech) {
   return (typeof v === 'number' && v > 0) ? v : (svc?.duration ?? 0);
 }
 
+// Per-tech price override: a senior tech can charge more for the same service.
+// `tech.servicePrices[svcId]` (dollars) replaces the service's base price when
+// set to a non-negative number; unset = the service's standard price. Mirrors
+// the per-tech duration override so booking + checkout freeze the right price
+// for whoever is performing the service.
+export function techServicePrice(svc, tech) {
+  const v = tech?.servicePrices?.[svc?.id];
+  return (typeof v === 'number' && v >= 0) ? v : (svc?.basePrice ?? svc?.price ?? 0);
+}
+
 // Resolve effective price + duration for a service given an optional selected
 // option and an optional performing tech. Options can override (price,
 // duration) or just adjust (priceAdd, durationAdd) the base; the per-tech
-// override sets the base duration before options apply.
+// override sets the base price + duration before options apply.
 export function resolveServicePricing(svc, opt, tech) {
   // Legacy services stored `price` instead of `basePrice` — fall through
   // so booking + checkout don't display $0 / NaN on un-migrated docs.
-  const svcBase = svc?.basePrice ?? svc?.price ?? 0;
+  const svcBase = techServicePrice(svc, tech);
   const durBase = techServiceDuration(svc, tech);
   if (!opt) return { price: svcBase, duration: durBase };
   const price    = opt.price    != null ? Number(opt.price)    : svcBase + Number(opt.priceAdd    || 0);

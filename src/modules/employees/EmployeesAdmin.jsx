@@ -26,6 +26,7 @@ function blankEmployee() {
     workDays: {},
     serviceIds: [],
     serviceDurations: {},
+    servicePrices: {},
   };
 }
 
@@ -533,6 +534,8 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
               onChange={ids => onChange({ serviceIds: ids })}
               durations={emp.serviceDurations || {}}
               onDurationsChange={map => onChange({ serviceDurations: map })}
+              prices={emp.servicePrices || {}}
+              onPricesChange={map => onChange({ servicePrices: map })}
             />
           )}
 
@@ -661,7 +664,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
   );
 }
 
-function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDurationsChange }) {
+function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDurationsChange, prices = {}, onPricesChange }) {
   const isAll = !selectedIds || selectedIds.length === 0;
   const grouped = {};
   services.forEach(s => {
@@ -688,11 +691,21 @@ function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDur
     onDurationsChange?.(next);
   }
 
+  // Per-tech price override (dollars). Empty/invalid/negative clears it (falls
+  // back to the service's standard price). $0 is a valid override (comp/free).
+  function setPrice(id, raw) {
+    const next = { ...prices };
+    const n = Number(raw);
+    if (raw === '' || !Number.isFinite(n) || n < 0) delete next[id];
+    else next[id] = n;
+    onPricesChange?.(next);
+  }
+
   return (
     <>
       <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-        Pick which services this tech can perform, and optionally set how long <em>this tech</em> takes per service.
-        Leave the minutes blank to use the service's standard time. {isAll && <strong style={{ color: '#16a34a' }}>No services checked = can do every service.</strong>}
+        Pick which services this tech can perform, and optionally set how long <em>this tech</em> takes ($ and minutes) per service.
+        Leave a field blank to use the service's standard price / time. {isAll && <strong style={{ color: '#16a34a' }}>No services checked = can do every service.</strong>}
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
         <button onClick={selectAll} style={{ ...btnBase, fontSize: 11, padding: '5px 10px' }}>Select all</button>
@@ -706,7 +719,7 @@ function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDur
       ) : Object.entries(grouped).map(([cat, items]) => (
         <div key={cat} style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 6, letterSpacing: '.04em', textTransform: 'uppercase' }}>{cat}</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 6 }}>
             {items.map(s => {
               const checked = selectedIds.includes(s.id);
               const canDo   = isAll || checked;
@@ -717,19 +730,32 @@ function ServicesPicker({ services, selectedIds, onChange, durations = {}, onDur
                     <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} style={{ flexShrink: 0 }} />
                     <span style={{ fontSize: 12, color: checked ? 'var(--pn-info)' : 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</span>
                   </label>
-                  {canDo && (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
-                      <input
-                        type="number" min={1} inputMode="numeric"
-                        value={override ?? ''}
-                        onChange={e => setDuration(s.id, e.target.value)}
-                        placeholder={String(s.duration ?? '')}
-                        title={`Standard: ${s.duration ?? '?'} min`}
-                        style={{ width: 46, fontFamily: 'inherit', border: `1px solid ${override ? '#3D95CE' : 'var(--pn-border-strong)'}`, borderRadius: 6, padding: '3px 5px', fontSize: 11, textAlign: 'right', color: 'var(--pn-text)', background: 'var(--pn-surface)', outline: 'none' }}
-                      />
-                      <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>min</span>
-                    </span>
-                  )}
+                  {canDo && (() => {
+                    const priceOverride = prices[s.id];
+                    const stdPrice = s.basePrice ?? s.price ?? 0;
+                    return (
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>$</span>
+                        <input
+                          type="number" min={0} step="0.01" inputMode="decimal"
+                          value={priceOverride ?? ''}
+                          onChange={e => setPrice(s.id, e.target.value)}
+                          placeholder={String(stdPrice)}
+                          title={`Standard: $${stdPrice}`}
+                          style={{ width: 52, fontFamily: 'inherit', border: `1px solid ${priceOverride != null ? '#3D95CE' : 'var(--pn-border-strong)'}`, borderRadius: 6, padding: '3px 5px', fontSize: 11, textAlign: 'right', color: 'var(--pn-text)', background: 'var(--pn-surface)', outline: 'none' }}
+                        />
+                        <input
+                          type="number" min={1} inputMode="numeric"
+                          value={override ?? ''}
+                          onChange={e => setDuration(s.id, e.target.value)}
+                          placeholder={String(s.duration ?? '')}
+                          title={`Standard: ${s.duration ?? '?'} min`}
+                          style={{ width: 46, fontFamily: 'inherit', border: `1px solid ${override ? '#3D95CE' : 'var(--pn-border-strong)'}`, borderRadius: 6, padding: '3px 5px', fontSize: 11, textAlign: 'right', color: 'var(--pn-text)', background: 'var(--pn-surface)', outline: 'none' }}
+                        />
+                        <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>min</span>
+                      </span>
+                    );
+                  })()}
                 </div>
               );
             })}
