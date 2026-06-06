@@ -6,6 +6,7 @@ vi.mock('./tenant', () => ({ TENANT_ID: 'test-tenant' }));
 import {
   isMultiLocation, activeLocations, resolveLocation, locationTaxRate,
   setCurrentLocationId, subscribeCurrentLocation, DEFAULT_LOCATION_ID,
+  appointmentInLocation,
 } from './locations';
 
 const single = { list: [{ id: 'main', name: 'Main', isPrimary: true, active: true, taxRate: 7.5 }], defaultLocationId: 'main' };
@@ -50,6 +51,16 @@ describe('locationTaxRate', () => {
   it('falls back when location missing entirely', () => expect(locationTaxRate({ list: [] }, 'x', 7)).toBe(7));
   it('ignores a negative/garbage rate', () =>
     expect(locationTaxRate({ list: [{ id: 'a', active: true, taxRate: -3 }] }, 'a', 7)).toBe(7));
+});
+
+describe('appointmentInLocation', () => {
+  it('matches same location', () => expect(appointmentInLocation({ locationId: 'north' }, 'north')).toBe(true));
+  it('excludes a different location', () => expect(appointmentInLocation({ locationId: 'north' }, 'main')).toBe(false));
+  it('untagged (legacy) appt shows at EVERY location', () => {
+    expect(appointmentInLocation({}, 'main')).toBe(true);
+    expect(appointmentInLocation({ locationId: '' }, 'north')).toBe(true);
+    expect(appointmentInLocation(null, 'main')).toBe(true);
+  });
 });
 
 describe('current-location subscribers', () => {

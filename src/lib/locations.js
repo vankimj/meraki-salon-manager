@@ -78,6 +78,16 @@ export function resolveLocation(state, locationId) {
     || null;
 }
 
+// Does an appointment/record belong to the given location? Back-compat is the
+// whole point: records created before locations existed (or by a not-yet-updated
+// surface) have NO locationId, and they must still appear at EVERY location —
+// never hide an untagged appointment. Pure; used for client-side filtering so
+// no composite Firestore index is required.
+export function appointmentInLocation(appt, locationId) {
+  const loc = appt?.locationId;
+  return !loc || loc === locationId;
+}
+
 // Per-location tax rate, falling back to the tenant-wide rate when a location
 // has no explicit override. Pure. `fallbackRate` is settings.taxRate.
 export function locationTaxRate(state, locationId, fallbackRate = 0) {
