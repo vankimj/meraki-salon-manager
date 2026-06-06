@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, RefreshControl, Alert, Modal } from 'react-native';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
@@ -19,6 +19,7 @@ export default function WalkinScreen() {
   const [waitlist, setWaitlist] = useState([]);
   const [emps,    setEmps]    = useState([]);
   const [newName, setNewName] = useState('');
+  const [seatingFor, setSeatingFor] = useState(null); // waitlist entry being assigned
 
   const load = useCallback(async () => {
     const [r, w, e] = await Promise.all([fetchTurnRoster(), fetchWaitlist(), fetchEmployees().catch(() => [])]);
@@ -67,8 +68,28 @@ export default function WalkinScreen() {
     try { await addWaitlistEntry({ clientName: name }); await load(); }
     catch (e) { Alert.alert('Couldn\'t add', e?.message || 'Try again.'); }
   }
-  async function seat(entry) {
-    try { await updateWaitlistEntry(entry.id, { status: 'seated', seatedAt: new Date().toISOString() }); await load(); } catch {}
+  // Seating a walk-in assigns them to a tech AND advances that tech's turn —
+  // the two halves were previously disconnected, so the rotation only stayed
+  // accurate if someone also hit "+1 turn" by hand. With no techs on the
+  // roster, seat without an assignment. Default to the next-up tech but let
+  // the picker override (clients often request a specific tech).
+  function seat(entry) {
+    if (!canEdit) return;
+    if (roster.length === 0) { assignSeat(entry, null); return; }
+    setSeatingFor(entry);
+  }
+  async function assignSeat(entry, tech) {
+    setSeatingFor(null);
+    if (tech) {
+      persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + 1 } : t));
+    }
+    try {
+      await updateWaitlistEntry(entry.id, {
+        status: 'seated', seatedAt: new Date().toISOString(),
+        seatedTechId: tech?.techId || null, seatedTechName: tech?.techName || null,
+      });
+      await load();
+    } catch {}
   }
   async function removeWaiter(id) {
     try { await removeWaitlistEntry(id); await load(); } catch {}
@@ -81,6 +102,7 @@ export default function WalkinScreen() {
   const offRoster = emps.filter(e => !roster.some(t => t.techId === e.id));
 
   return (
+    <>
     <FlatList
       style={styles.wrap}
       data={sorted}
@@ -144,6 +166,25 @@ export default function WalkinScreen() {
         </View>
       }
     />
+
+    <Modal visible={!!seatingFor} transparent animationType="fade" onRequestClose={() => setSeatingFor(null)}>
+      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSeatingFor(null)}>
+        <View style={styles.sheet}>
+          <Text style={styles.sheetTitle}>Seat {seatingFor?.clientName || 'walk-in'} with…</Text>
+          <Text style={styles.sheetSub}>This adds a turn to the tech you pick.</Text>
+          {sorted.map((t, i) => (
+            <TouchableOpacity key={t.techId} style={[styles.pickRow, i === 0 && styles.pickRowNext]} onPress={() => assignSeat(seatingFor, t)}>
+              <Text style={styles.pickName}>{i === 0 ? '⭐ ' : ''}{t.techName}</Text>
+              <Text style={styles.pickTurns}>{t.turnsTaken || 0} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
+            </TouchableOpacity>
+          ))}
+          <TouchableOpacity style={styles.pickSkip} onPress={() => assignSeat(seatingFor, null)}>
+            <Text style={styles.pickSkipText}>Seat without assigning a turn</Text>
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+    </>
   );
 }
 
@@ -165,7 +206,17 @@ const makeStyles = (t) => StyleSheet.create({
   chip:       { backgroundColor: t.surface, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8 },
   chipText:   { fontSize: 13, color: t.textMuted, fontWeight: '600' },
   addRow:     { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  input:      { flex: 1, backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, borderWidth: 1, borderColor: t.border },
+  input:      { flex: 1, backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   addBtn:     { backgroundColor: t.green, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
   addText:    { color: '#fff', fontWeight: '800', fontSize: 14 },
+  backdrop:   { flex: 1, backgroundColor: t.overlay, justifyContent: 'center', padding: 24 },
+  sheet:      { backgroundColor: t.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: t.border },
+  sheetTitle: { fontSize: 16, fontWeight: '800', color: t.text },
+  sheetSub:   { fontSize: 12, color: t.textMuted, marginTop: 3, marginBottom: 12 },
+  pickRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 13, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: t.border, marginBottom: 8 },
+  pickRowNext:{ borderColor: t.green, backgroundColor: t.greenSoft },
+  pickName:   { fontSize: 15, fontWeight: '700', color: t.text },
+  pickTurns:  { fontSize: 12, color: t.textMuted },
+  pickSkip:   { paddingVertical: 12, alignItems: 'center', marginTop: 2 },
+  pickSkipText:{ fontSize: 13, color: t.textFaint, fontWeight: '600' },
 });
