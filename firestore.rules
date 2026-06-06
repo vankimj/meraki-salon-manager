@@ -552,6 +552,14 @@ service cloud.firestore {
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
+      // Idempotency markers for a sale's non-idempotent side effects (keyed by
+      // saleId). Staff claim one per checkout so an offline-queue replay can't
+      // double-apply store credit / gift-card debits / stock. No sensitive data
+      // — just an existence flag + timestamp.
+      match /saleMarkers/{saleId} {
+        allow read, write: if isTenantStaff(tenantId);
+      }
+
       // Marketing campaigns: admin creates/reads; Cloud Function updates status via admin SDK
       match /campaigns/{campaignId} {
         allow read, write: if isTenantAdmin(tenantId);

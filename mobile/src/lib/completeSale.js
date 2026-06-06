@@ -1,5 +1,5 @@
 import { buildTechSplit, genReceiptToken } from './checkout';
-import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient, saveClient } from './firestore';
+import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient, saveClient, claimSaleSideEffects } from './firestore';
 
 // Writes a completed sale, shared by the tech checkout (CheckoutScreen) and the
 // front-desk kiosk so both produce IDENTICAL receipts (no duplicated money
@@ -54,11 +54,16 @@ export async function completeSale({
     paidAt: new Date().toISOString(), paidBy: email || null,
   };
 
-  // Non-idempotent side effects FIRST, exactly once (retries pass skipSideEffects),
-  // best-effort: never throw — money may already be captured, so a side-effect
-  // failure must not block recording the sale below. Collected + returned.
+  // Non-idempotent side effects FIRST, exactly once, best-effort: never throw —
+  // money may already be captured, so a side-effect failure must not block
+  // recording the sale below. Collected + returned. `skipSideEffects` is the
+  // in-memory retry guard; claimSaleSideEffects is the DURABLE guard — it stops
+  // an offline-queue replay (side effects committed, critical write failed →
+  // sale replayed) from double-applying credit / gift-card / stock writes.
   const sideEffectErrors = [];
-  if (!skipSideEffects) {
+  let runSideEffects = !skipSideEffects;
+  if (runSideEffects && saleId) runSideEffects = await claimSaleSideEffects(saleId);
+  if (runSideEffects) {
     if (giftCard && t.gcApply > 0) {
       try { await updateGiftCard(giftCard.id, { balance: Math.max((giftCard.balance || 0) - t.gcApply, 0) }); }
       catch (e) { sideEffectErrors.push('Gift card not debited: ' + (e?.message || 'failed')); }
