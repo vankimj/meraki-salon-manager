@@ -5,7 +5,7 @@ import {
 import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, updateAppointment,
-  updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient,
+  updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
 } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
@@ -41,8 +41,9 @@ export default function CheckoutScreen({ navigation }) {
   }, [tab]);
 
   const [prices, setPrices] = useState(() => lines0.map(l => String(l.price)));
-  const [discType, setDiscType]   = useState('none');   // none | percent | amount
+  const [discType, setDiscType]   = useState('none');   // none | percent | amount | member
   const [discVal, setDiscVal]     = useState('');
+  const [membership, setMembership] = useState(null);   // primary client's active membership
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
@@ -61,6 +62,23 @@ export default function CheckoutScreen({ navigation }) {
   const hasPhoneOnFile = (tab.appts || []).some(a => a.clientPhone);
 
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
+
+  // Auto-apply the primary client's active membership discount once, the same
+  // way the web checkout does — members shouldn't have to be discounted by
+  // hand. Only takes over when no discount is set yet (never clobbers a manual
+  // one); staff can still switch it off via the discount chips.
+  const primaryClientId = (tab.appts || []).map(a => a.clientId).find(Boolean) || null;
+  useEffect(() => {
+    if (!primaryClientId) return;
+    let alive = true;
+    fetchClientMembership(primaryClientId).then(m => {
+      if (!alive || !m || m.status !== 'active' || !(Number(m.discountPct) > 0)) return;
+      setMembership(m);
+      setDiscType(prev => (prev === 'none' ? 'member' : prev));
+      setDiscVal(prev => (prev === '' ? String(m.discountPct) : prev));
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [primaryClientId]);
 
   const lines = lines0.map((l, i) => ({ ...l, price: Number(prices[i]) || 0 }));
   const productsTotal = products.reduce((s, it) => s + (Number(it.product.price) || 0) * it.qty, 0);
@@ -84,7 +102,7 @@ export default function CheckoutScreen({ navigation }) {
 
   const totals = useMemo(() => computeTotals({
     lines, productsTotal,
-    discount: discType === 'none' ? null : { isPercent: discType === 'percent', value: Number(discVal) || 0 },
+    discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
     promo: normalizePromo(promo),
     taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: Number(settings?.ccFeePct) || 0,
@@ -100,7 +118,7 @@ export default function CheckoutScreen({ navigation }) {
   // button must charge this amount, not the cash total.
   const cardTotals = useMemo(() => computeTotals({
     lines, productsTotal,
-    discount: discType === 'none' ? null : { isPercent: discType === 'percent', value: Number(discVal) || 0 },
+    discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
     promo: normalizePromo(promo),
     taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: Number(settings?.ccFeePct) || 0,
@@ -202,8 +220,13 @@ export default function CheckoutScreen({ navigation }) {
 
       <Text style={styles.section}>Discount</Text>
       <View style={styles.chips}>
-        {[['none', 'None'], ['percent', '% off'], ['amount', '$ off']].map(([id, lbl]) => (
-          <TouchableOpacity key={id} onPress={() => setDiscType(id)} style={[styles.chip, discType === id && styles.chipOn]}>
+        {[
+          ['none', 'None'],
+          ...(membership ? [['member', `★ ${membership.planName || 'Member'} ${membership.discountPct}%`]] : []),
+          ['percent', '% off'],
+          ['amount', '$ off'],
+        ].map(([id, lbl]) => (
+          <TouchableOpacity key={id} onPress={() => { setDiscType(id); if (id === 'member') setDiscVal(String(membership.discountPct)); }} style={[styles.chip, discType === id && styles.chipOn]}>
             <Text style={[styles.chipText, discType === id && styles.chipTextOn]}>{lbl}</Text>
           </TouchableOpacity>
         ))}

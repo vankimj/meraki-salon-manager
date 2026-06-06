@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
+import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, fetchClientMembership, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { isTerminalAvailable } from '../../lib/terminal';
@@ -125,6 +125,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [saving, setSaving]     = useState(false);
   const [paidMsg, setPaidMsg]   = useState('');
   const [client, setClient]     = useState(null);
+  const [membership, setMembership] = useState(null); // active membership → auto discount
   const [paid, setPaid]         = useState(null);   // {method,opts} once money is CAPTURED — blocks any re-charge
   const [recordErr, setRecordErr] = useState('');
   // One stable id per checkout: the Stripe idempotency key (no double-charge on
@@ -140,24 +141,32 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
     return () => { alive = false; };
   }, [kioskId]);
 
-  // Pull the client to surface a "charge card on file" option when they have one.
+  // Pull the client to surface a "charge card on file" option when they have
+  // one, and their active membership so the member discount auto-applies (the
+  // customer never has to ask — same as the web checkout).
   useEffect(() => {
     let alive = true;
-    if (session.clientId) fetchClient(session.clientId).then(c => { if (alive) setClient(c); }).catch(() => {});
+    if (session.clientId) {
+      fetchClient(session.clientId).then(c => { if (alive) setClient(c); }).catch(() => {});
+      fetchClientMembership(session.clientId).then(m => {
+        if (alive && m && m.status === 'active' && Number(m.discountPct) > 0) setMembership(m);
+      }).catch(() => {});
+    }
     return () => { alive = false; };
   }, [session.clientId]);
   const savedPm = client?.paymentMethods?.find(p => p.id === client.defaultPaymentMethodId) || client?.paymentMethods?.[0] || null;
   const hasPhoneOnFile = (cart.appts || []).some(a => a.clientPhone) || !!client?.phone;
+  const memberDiscount = membership ? { isPercent: true, value: Number(membership.discountPct) || 0 } : null;
 
   const tip = { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
   const totalsFor = (method) => computeTotals({
-    lines, productsTotal, discount: null, promo: null,
+    lines, productsTotal, discount: memberDiscount, promo: null,
     taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method, noCardTips: !!settings?.noCardTips, tip, giftCardBalance: 0, applyGC: false,
   });
-  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings]);
-  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings]);
+  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership]);
+  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership]);
 
   // Keep the result (esp. change due) on screen, then auto-return to idle.
   useEffect(() => {
@@ -177,6 +186,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         tab: { appts: cart.appts || [], products }, lines, products,
         totals: t, settings, email, method, saleId, skipSideEffects: isRetry,
         receiptContact: parseReceiptContact(receiptPhone),
+        ...(membership ? { discType: 'member', discVal: Number(membership.discountPct) || 0 } : {}),
         ...opts,
       });
       const base = method === 'cash' && changeDue != null
@@ -325,6 +335,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       {/* Totals */}
       <View style={styles.totals}>
         <Row styles={styles} label="Subtotal" value={money(cashTotals.subtotal)} />
+        {cashTotals.discountAmount > 0 && <Row styles={styles} label={`★ ${membership?.planName || 'Member'} (${membership?.discountPct}%)`} value={`−${money(cashTotals.discountAmount)}`} />}
         {cashTotals.taxAmt > 0 && <Row styles={styles} label="Tax" value={money(cashTotals.taxAmt)} />}
         {cashTotals.tipAmt > 0 && <Row styles={styles} label="Tip" value={money(cashTotals.tipAmt)} />}
         <View style={styles.divider} />
