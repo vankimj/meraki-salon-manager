@@ -436,8 +436,13 @@ export async function deleteMembership(id) {
 // Mirrors web createReceipt — a done appointment carries its `payment` and
 // IS the receipt for metrics; createReceipt is for retail-only / walk-in
 // sales with no appointment.
-export async function createReceipt(data) {
-  await addDoc(tenantCol('receipts'), { sent: false, ...data, createdAt: data.createdAt || new Date().toISOString() });
+// `id` (optional, a stable per-sale key) makes the write idempotent — a retried
+// completeSale overwrites the same receipt instead of creating a duplicate
+// (which would double-count revenue in Reports).
+export async function createReceipt(data, id = null) {
+  const payload = { sent: false, ...data, createdAt: data.createdAt || new Date().toISOString() };
+  if (id) await setDoc(doc(tenantCol('receipts'), String(id)), payload, { merge: true });
+  else await addDoc(tenantCol('receipts'), payload);
 }
 export async function fetchPromoByCode(code) {
   const snap = await getDocs(query(tenantCol('promoCodes'), where('code', '==', String(code || '').trim().toUpperCase())));
@@ -458,16 +463,16 @@ export async function createTerminalConnectionToken() {
   const res = await callFn('createTerminalConnectionToken')({ tenantId: getCurrentTenant() });
   return res?.data?.secret || null;
 }
-export async function createCardPaymentIntent(amountCents, description) {
-  const res = await callFn('createPaymentIntent')({ tenantId: getCurrentTenant(), amountCents, description, paymentMethodType: 'card_present' });
+export async function createCardPaymentIntent(amountCents, description, idempotencyKey) {
+  const res = await callFn('createPaymentIntent')({ tenantId: getCurrentTenant(), amountCents, description, paymentMethodType: 'card_present', idempotencyKey });
   return res?.data || null; // { clientSecret, paymentIntentId }
 }
 
 // Charge a client's saved card off-session (card on file). Admin-only on the
 // server (requireTenantAdmin). Returns { paymentIntentId, status, amountCharged }.
-export async function chargeStoredCard({ clientId, amountCents, description, paymentMethodId } = {}) {
+export async function chargeStoredCard({ clientId, amountCents, description, paymentMethodId, idempotencyKey } = {}) {
   const res = await callFn('chargeStoredCard')({
-    tenantId: getCurrentTenant(), clientId, amount: amountCents, description, paymentMethodId,
+    tenantId: getCurrentTenant(), clientId, amount: amountCents, description, paymentMethodId, idempotencyKey,
   });
   return res?.data || null;
 }

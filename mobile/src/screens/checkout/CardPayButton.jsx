@@ -15,7 +15,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 //   preferReader=false (iPhone) → Tap to Pay on iPhone (no hardware)
 // Flow: connect a reader (once) → server-created card_present PaymentIntent
 // → collectPaymentMethod → confirmPaymentIntent → onPaid(paymentIntentId).
-export default function CardPayButton({ amountCents, description, locationId, onBehalfOf, merchantName, preferReader, disabled, onPaid }) {
+export default function CardPayButton({ amountCents, description, locationId, onBehalfOf, merchantName, preferReader, disabled, onPaid, idempotencyKey }) {
   const styles = useThemedStyles(makeStyles);
   const useStripeTerminal = SDK?.useStripeTerminal;
   const readersRef   = useRef([]);
@@ -70,7 +70,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
     try {
       await ensureConnected();
       setPhase('Starting payment…');
-      const pi0 = await createCardPaymentIntent(amountCents, description);
+      const pi0 = await createCardPaymentIntent(amountCents, description, idempotencyKey);
       if (!pi0?.clientSecret) throw new Error('Could not start the payment.');
       const { paymentIntent: pi, error: rErr } = await term.retrievePaymentIntent(pi0.clientSecret);
       if (rErr) throw new Error(rErr.message);

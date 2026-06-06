@@ -5362,7 +5362,7 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   // OUR publishable key + the returned clientSecret, scams victims into
   // paying us, then disputes / disappears — with the salon's brand on the
   // Stripe Element).
-  const { tenantId: tid, amountCents, description, applicationFeeAmount, paymentMethodType } = request.data || {};
+  const { tenantId: tid, amountCents, description, applicationFeeAmount, paymentMethodType, idempotencyKey } = request.data || {};
   const tenantId = String(tid || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
     throw new HttpsError('invalid-argument', 'Invalid tenantId');
@@ -5411,7 +5411,12 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   }
 
   const stripe = require('stripe')(key);
-  const paymentIntent = await stripe.paymentIntents.create(chargeReq);
+  // Idempotency: a stable per-checkout key (from the client) makes a retried
+  // callable / double-tap reuse the SAME PaymentIntent instead of minting a new
+  // charge. Validated/bounded so a bad value can't poison the Stripe request.
+  const idemOpts = (typeof idempotencyKey === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey))
+    ? { idempotencyKey: `pi_${tenantId}_${idempotencyKey}` } : undefined;
+  const paymentIntent = await stripe.paymentIntents.create(chargeReq, idemOpts);
 
   return { clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id };
 });
@@ -6566,9 +6571,10 @@ exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (r
   const {
     clientId, amount, description, paymentMethodId: pmOverride,
     applicationFeeAmount, statementDescriptorSuffix,
-    tenantId: tid,
+    tenantId: tid, idempotencyKey,
   } = request.data || {};
-  const tenantId = tid || TENANT_ID;
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
 
   const db = getFirestore();
   await requireTenantAdmin(db, tenantId, request);
@@ -6615,7 +6621,12 @@ exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (r
   }
 
   try {
-    const intent = await stripe.paymentIntents.create(chargeReq);
+    // Idempotency: off_session + confirm:true charges the saved card
+    // immediately, so a retried/double-fired callable would otherwise double
+    // -charge. A stable per-checkout key makes the retry reuse the same charge.
+    const idemOpts = (typeof idempotencyKey === 'string' && /^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey))
+      ? { idempotencyKey: `cof_${tenantId}_${idempotencyKey}` } : undefined;
+    const intent = await stripe.paymentIntents.create(chargeReq, idemOpts);
     return {
       paymentIntentId: intent.id,
       status:          intent.status,
