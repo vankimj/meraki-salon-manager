@@ -4,7 +4,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, fetchClientMembership, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
+import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
+import useOnline from '../../hooks/useOnline';
 import CardPayButton from '../checkout/CardPayButton';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
@@ -126,6 +128,8 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [paidMsg, setPaidMsg]   = useState('');
   const [client, setClient]     = useState(null);
   const [membership, setMembership] = useState(null); // active membership → auto discount
+  const [queued, setQueued]     = useState(false);    // sale saved offline, pending sync
+  const online = useOnline();
   const [paid, setPaid]         = useState(null);   // {method,opts} once money is CAPTURED — blocks any re-charge
   const [recordErr, setRecordErr] = useState('');
   // One stable id per checkout: the Stripe idempotency key (no double-charge on
@@ -170,6 +174,9 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit]);
   const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit]);
 
+  // Flush any sales stranded offline whenever the kiosk arms a new checkout.
+  useEffect(() => { syncOfflineSales().catch(() => {}); }, [session.createdAt]);
+
   // Keep the result (esp. change due) on screen, then auto-return to idle.
   useEffect(() => {
     if (stage !== 'done') return;
@@ -184,16 +191,28 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
     setSaving(true); setRecordErr('');
     try {
       const t = method === 'card' ? cardTotals : cashTotals;
-      const { total, changeDue, sideEffectErrors } = await completeSale({
+      const changeDue = (method === 'cash' && opts.cashTendered != null)
+        ? Math.max(0, (Number(opts.cashTendered) || 0) - t.total) : null;
+      const args = {
         tab: { appts: cart.appts || [], products }, lines, products,
         totals: t, settings, email, method, saleId, skipSideEffects: isRetry,
         receiptContact: parseReceiptContact(receiptPhone),
         ...(membership ? { discType: 'member', discVal: Number(membership.discountPct) || 0 } : {}),
         ...opts,
-      });
+      };
+      // Card already charged online → record directly. Cash goes through
+      // recordSale so a dropped connection just queues the receipt to sync later.
+      let sideEffectErrors = []; let wasQueued = false;
+      if (method === 'card') {
+        const r = await completeSale(args); sideEffectErrors = r.sideEffectErrors || [];
+      } else {
+        const r = await recordSale(args);
+        if (r.queued) wasQueued = true; else sideEffectErrors = r.result.sideEffectErrors || [];
+      }
+      setQueued(wasQueued);
       const base = method === 'cash' && changeDue != null
-        ? `Paid ${money(total)} — change due ${money(changeDue)}`
-        : `Paid ${money(total)} — thank you!`;
+        ? `Paid ${money(t.total)} — change due ${money(changeDue)}`
+        : `Paid ${money(t.total)} — thank you!`;
       setPaidMsg(sideEffectErrors?.length ? `${base}\n(${sideEffectErrors.join('; ')})` : base);
       setStage('done');
     } catch (e) {
@@ -253,7 +272,8 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
 
   if (stage === 'done') {
     const c = parseReceiptContact(receiptPhone);
-    const receiptLine = c?.email ? `Receipt emailed to ${c.email}.`
+    const receiptLine = queued ? "Saved — your receipt sends once we're back online."
+      : c?.email ? `Receipt emailed to ${c.email}.`
       : c?.phone ? `Receipt texted to •••${c.phone.replace(/\D/g, '').slice(-4)}.`
       : hasPhoneOnFile ? 'A receipt is on its way.'
       : 'See you next time!';
@@ -369,12 +389,17 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
 
       {stage === 'review' && !paid && (
         <>
-          {savedPm && (
+          {!online && (
+            <View style={styles.offlineNote}><Text style={styles.offlineText}>📴 Offline — pay with cash for now. Your receipt syncs automatically once we're back online.</Text></View>
+          )}
+          {online && savedPm && (
             <TouchableOpacity style={styles.cofBtn} onPress={payCardOnFile} disabled={saving} activeOpacity={0.85}>
               <Text style={styles.cofBtnText}>💳  Charge card on file · {(savedPm.brand || 'card')} •••• {savedPm.last4 || '••••'}</Text>
             </TouchableOpacity>
           )}
-          {isTerminalAvailable() ? (
+          {!online ? (
+            <View style={styles.cardDisabled}><Text style={styles.cardDisabledText}>💳 Card — needs a live connection</Text></View>
+          ) : isTerminalAvailable() ? (
             <CardPayButton
               amountCents={Math.round((cardTotals.total || 0) * 100)}
               description={clientName}
@@ -467,6 +492,8 @@ const makeStyles = (t) => StyleSheet.create({
   totLabelBig:{ fontSize: 19, fontWeight: '800', color: t.text },
   totValueBig:{ fontSize: 24, fontWeight: '800', color: t.green },
   divider:  { height: 1, backgroundColor: t.border, marginVertical: 9 },
+  offlineNote:{ marginTop: 10, backgroundColor: t.warnBg || t.surfaceAlt, borderRadius: 12, padding: 12, borderWidth: 1, borderColor: t.warn || t.borderStrong },
+  offlineText:{ fontSize: 13, color: t.text, lineHeight: 18, textAlign: 'center' },
   cardDisabled:{ marginTop: 14, borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt },
   cardDisabledText:{ color: t.textFaint, fontWeight: '700', fontSize: 14 },
   cofBtn:   { marginTop: 14, backgroundColor: t.blueSoft, borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: t.blue },

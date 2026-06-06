@@ -9,10 +9,12 @@ import {
 } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
+import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from './CardPayButton';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
+import useOnline from '../../hooks/useOnline';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 const TIP_PCTS = [15, 18, 20, 25];
@@ -64,7 +66,11 @@ export default function CheckoutScreen({ navigation }) {
   const [receiptPhone, setReceiptPhone] = useState(''); // walk-ins: capture a number for the texted receipt
   const hasPhoneOnFile = (tab.appts || []).some(a => a.clientPhone);
 
+  const online = useOnline();
+
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
+  // Sync anything stranded offline whenever checkout opens online.
+  useEffect(() => { syncOfflineSales().catch(() => {}); }, []);
 
   // Auto-apply the primary client's active membership discount once, the same
   // way the web checkout does — members shouldn't have to be discounted by
@@ -166,16 +172,30 @@ export default function CheckoutScreen({ navigation }) {
     try {
       const card = method === 'card';
       const t = card ? cardTotals : totals;
-      const { total, sideEffectErrors } = await completeSale({
+      const args = {
         tab, lines, products, totals: t, settings, email,
         method, stripePaymentIntentId, discType, discVal, promo, giftCard,
         saleId, skipSideEffects: isRetry,
         receiptContact: parseReceiptContact(receiptPhone),
         issueCredit: primaryClientId ? Number(issueCredit) || 0 : 0,
-      });
-      await clearTab();
-      const extra = sideEffectErrors?.length ? `\n(${sideEffectErrors.join('; ')})` : '';
-      Alert.alert('Paid', `${money(total)} collected (${card ? 'card' : 'cash'}).${extra}`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+      };
+      // Card was already charged online — record it directly (retry UI handles a
+      // failure). Cash/credit goes through recordSale so it survives no network.
+      if (card) {
+        const r = await completeSale(args);
+        await clearTab();
+        const extra = r.sideEffectErrors?.length ? `\n(${r.sideEffectErrors.join('; ')})` : '';
+        Alert.alert('Paid', `${money(r.total)} collected (card).${extra}`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+      } else {
+        const r = await recordSale(args);
+        await clearTab();
+        if (r.queued) {
+          Alert.alert('Saved offline', `${money(t.total)} recorded. It'll sync automatically once you're back online.`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+        } else {
+          const extra = r.result.sideEffectErrors?.length ? `\n(${r.result.sideEffectErrors.join('; ')})` : '';
+          Alert.alert('Paid', `${money(r.result.total)} collected (cash).${extra}`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+        }
+      }
     } catch (e) {
       setRecordErr(e?.message || 'Could not save the receipt.');
       setSaving(false);
@@ -337,10 +357,17 @@ export default function CheckoutScreen({ navigation }) {
         </View>
       ) : (
         <>
+          {!online && (
+            <View style={styles.offlineNote}>
+              <Text style={styles.offlineText}>📴 Offline — take cash or store credit now; the receipt syncs automatically when you're back online. Card needs a live connection.</Text>
+            </View>
+          )}
           <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
             <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
           </TouchableOpacity>
-          {isTerminalAvailable() ? (
+          {!online ? (
+            <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — needs a live connection</Text></View>
+          ) : isTerminalAvailable() ? (
             <CardPayButton
               amountCents={Math.round((cardTotals.total || 0) * 100)}
               description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
@@ -421,6 +448,8 @@ const makeStyles = (t) => StyleSheet.create({
   applyText: { color: '#fff', fontWeight: '800', fontSize: 14 },
   clearBtn:  { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
   clearText: { color: t.green, fontWeight: '800', fontSize: 13 },
+  offlineNote:{ backgroundColor: t.warnBg || t.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.warn || t.borderStrong },
+  offlineText:{ fontSize: 12.5, color: t.text, lineHeight: 18 },
   creditRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, backgroundColor: t.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.border },
   creditRowOn:{ borderColor: t.green, backgroundColor: t.greenSoft },
   creditLabel:{ fontSize: 14, fontWeight: '700', color: t.text },
