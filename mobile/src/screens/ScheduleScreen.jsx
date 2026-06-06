@@ -26,6 +26,20 @@ const DAY_END_MIN   = 20 * 60;      // 8 PM
 const SLOT_PX       = 50;           // taller than web for finger-tap accuracy
 const SLOT_COUNT    = (DAY_END_MIN - DAY_START_MIN) / SLOT_MINUTES;
 
+// Resolve a service's effective price + duration for the performing tech.
+// Mirrors the web techServicePrice / techServiceDuration (serviceHelpers.js):
+// tech.servicePrices[svcId] / serviceDurations[svcId] override the service's
+// flat price/duration when set (price >= 0 valid incl. $0 comp; duration > 0).
+// Mobile services are flat (no options/basePrice), so resolution is direct.
+function resolveTechSvc(svc, tech) {
+  const p = tech?.servicePrices?.[svc?.id];
+  const d = tech?.serviceDurations?.[svc?.id];
+  return {
+    price:    (typeof p === 'number' && p >= 0) ? p : (Number(svc?.price) || 0),
+    duration: (typeof d === 'number' && d > 0) ? d : (svc?.duration || 30),
+  };
+}
+
 function minToHHMM(min) {
   return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
 }
@@ -979,10 +993,14 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   // field the web edits). Soft sort + a ★ marker — never hides a service, so
   // an off-menu booking is still possible.
   const apptTechName = (isEdit ? editAppt?.techName : prefill?.techName) || '';
-  const assignedIds = useMemo(() => {
-    const emp = employees.find(e => (e.name || '') === apptTechName);
-    return new Set(Array.isArray(emp?.serviceIds) ? emp.serviceIds : []);
-  }, [employees, apptTechName]);
+  const apptTech = useMemo(
+    () => employees.find(e => (e.name || '') === apptTechName) || null,
+    [employees, apptTechName],
+  );
+  const assignedIds = useMemo(
+    () => new Set(Array.isArray(apptTech?.serviceIds) ? apptTech.serviceIds : []),
+    [apptTech],
+  );
   const sortedServices = useMemo(() => {
     if (assignedIds.size === 0) return services;
     const yes = [], no = [];
@@ -1002,9 +1020,10 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
   if (!open) return null;   // Safe now — every hook above already ran.
 
   function toggleService(svc) {
+    const { price, duration } = resolveTechSvc(svc, apptTech);
     setPickedServices(prev => prev.some(s => s.id === svc.id)
       ? prev.filter(s => s.id !== svc.id)
-      : [...prev, { id: svc.id, name: svc.name, duration: svc.duration || 30, price: Number(svc.price) || 0 }]);
+      : [...prev, { id: svc.id, name: svc.name, duration, price }]);
   }
 
   // Inline client creation. Phone is required so every appt has a way
@@ -1237,6 +1256,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                 {sortedServices.map(svc => {
                   const active = pickedServices.some(s => s.id === svc.id);
                   const performs = assignedIds.has(svc.id);
+                  const eff = resolveTechSvc(svc, apptTech);
                   return (
                     <TouchableOpacity
                       key={svc.id}
@@ -1247,7 +1267,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
                         {performs ? '★ ' : ''}{svc.name}
                       </Text>
                       <Text style={[styles.serviceChipMeta, active && styles.serviceChipMetaActive]}>
-                        {svc.duration || 30}m · ${Number(svc.price) || 0}
+                        {eff.duration}m · ${eff.price}
                       </Text>
                     </TouchableOpacity>
                   );
