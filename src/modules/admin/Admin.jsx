@@ -77,6 +77,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
   const [removalPrice,   setRemovalPrice]  = useState(settings.removalPrice ?? 15);
   const [noCardTips,     setNoCardTips]    = useState(!!settings.noCardTips);
+  const [terminalLocationId, setTerminalLocationId] = useState(settings.terminalLocationId ?? '');
   const [finSaving,      setFinSaving]     = useState(false);
   const [themeId,        setThemeId]       = useState(settings.themeId   || 'meraki');
   const [autoTheme,      setAutoTheme]     = useState(!!settings.autoTheme);
@@ -708,6 +709,14 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Stripe Terminal Location ID</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>For in-person card payments (Tap to Pay / reader). Create a Location in Stripe → Terminal → Locations and paste its <code>tml_…</code> ID. Must match the app's Stripe mode (test vs live).</div>
+                </div>
+                <input type="text" value={terminalLocationId} onChange={e => setTerminalLocationId(e.target.value.trim())} placeholder="tml_…"
+                  style={{ width: 210, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
+                <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Removal service price</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Charged when a customer says "yes" to the removal question on a service that allows it.</div>
                 </div>
@@ -737,7 +746,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
-                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips });
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips, terminalLocationId: terminalLocationId.trim() || null });
                   // Mirror removalPrice onto bookingConfig so the public-facing
                   // booking page can read it without admin permissions.
                   if (bookingCfg) {
