@@ -1,6 +1,7 @@
-import { useEffect, useState, useMemo } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert } from 'react-native';
-import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings } from '../../lib/firestore';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
+import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, chargeStoredCard, fetchSlides } from '../../lib/firestore';
 import { computeTotals, buildTechSplit } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { isTerminalAvailable } from '../../lib/terminal';
@@ -17,7 +18,7 @@ const TIP_PCTS = [0, 15, 18, 20, 25];
 // customer-facing checkout: itemized services + tax + total, a tip selector,
 // then Pay → Cash (tendered + change) or Card (M2 reader). On success it writes
 // the canonical receipt (via completeSale) and returns to idle.
-export default function KioskScreen() {
+export default function KioskScreen({ navigation }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { email } = useTenantAccess();
@@ -27,12 +28,21 @@ export default function KioskScreen() {
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
   useEffect(() => subscribeCheckoutSession(setSession), []);
 
+  // Kiosk lock: hide the bottom tab bar while the kiosk is focused (the header
+  // is hidden + back gesture disabled in ManageStack), so a customer can't
+  // navigate away. Staff exit via a long-press on the idle screen.
+  useFocusEffect(useCallback(() => {
+    const parent = navigation.getParent();
+    parent?.setOptions({ tabBarStyle: { display: 'none' } });
+    return () => parent?.setOptions({ tabBarStyle: undefined });
+  }, [navigation]));
+
   const active = session && (session.status === 'pending' || session.status === 'paying');
 
   if (session === undefined || settings === null) {
     return <View style={styles.center}><ActivityIndicator color={theme.green} size="large" /></View>;
   }
-  if (!active) return <KioskIdle styles={styles} theme={theme} />;
+  if (!active) return <KioskIdle styles={styles} theme={theme} onExit={() => navigation.goBack()} />;
 
   return (
     <KioskCheckout
@@ -46,13 +56,45 @@ export default function KioskScreen() {
   );
 }
 
-function KioskIdle({ styles, theme }) {
+function KioskIdle({ styles, theme, onExit }) {
+  // Cycle the TipFlow slides (headshots) as the idle screen; fall back to a
+  // branded card if there are no slides.
+  const [slides, setSlides] = useState(null);
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    fetchSlides().then(s => { if (alive) setSlides((s || []).filter(x => x.img)); }).catch(() => { if (alive) setSlides([]); });
+    return () => { alive = false; };
+  }, []);
+  useEffect(() => {
+    if (!slides || slides.length < 2) return;
+    const id = setInterval(() => setIdx(i => (i + 1) % slides.length), 6000);
+    return () => clearInterval(id);
+  }, [slides]);
+
+  // Long-press anywhere on the idle screen = staff exit out of kiosk mode.
+  const exitProps = { activeOpacity: 1, onLongPress: onExit, delayLongPress: 900 };
+
+  if (!slides || slides.length === 0) {
+    return (
+      <TouchableOpacity style={styles.idle} {...exitProps}>
+        <Text style={styles.idleMark}>✦</Text>
+        <Text style={styles.idleTitle}>Plume Nexus</Text>
+        <Text style={styles.idleSub}>Welcome — please relax while we get you checked out.</Text>
+      </TouchableOpacity>
+    );
+  }
+  const s = slides[idx % slides.length];
   return (
-    <View style={styles.idle}>
-      <Text style={styles.idleMark}>✦</Text>
-      <Text style={styles.idleTitle}>Plume Nexus</Text>
-      <Text style={styles.idleSub}>Welcome — please relax while we get you checked out.</Text>
-    </View>
+    <TouchableOpacity style={styles.slideWrap} {...exitProps}>
+      <Image source={{ uri: s.img }} style={styles.slideImg} resizeMode="cover" />
+      {!!s.name && (
+        <View style={styles.slideCaption}>
+          <Text style={styles.slideName}>{s.name}</Text>
+          {!!s.handle && <Text style={styles.slideHandle}>{s.handle}</Text>}
+        </View>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -79,6 +121,15 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [cashStr, setCashStr]   = useState('');
   const [saving, setSaving]     = useState(false);
   const [paidMsg, setPaidMsg]   = useState('');
+  const [client, setClient]     = useState(null);
+
+  // Pull the client to surface a "charge card on file" option when they have one.
+  useEffect(() => {
+    let alive = true;
+    if (session.clientId) fetchClient(session.clientId).then(c => { if (alive) setClient(c); }).catch(() => {});
+    return () => { alive = false; };
+  }, [session.clientId]);
+  const savedPm = client?.paymentMethods?.find(p => p.id === client.defaultPaymentMethodId) || client?.paymentMethods?.[0] || null;
 
   const tip = { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
   const totalsFor = (method) => computeTotals({
@@ -113,6 +164,27 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       setStage('done');
     } catch (e) {
       Alert.alert('Checkout failed', e?.message || 'Please try again.');
+      setSaving(false);
+    }
+  }
+
+  async function payCardOnFile() {
+    if (saving || !savedPm) return;
+    setSaving(true);
+    try {
+      const res = await chargeStoredCard({
+        clientId: session.clientId,
+        amountCents: Math.round((cardTotals.total || 0) * 100),
+        description: clientName,
+        paymentMethodId: savedPm.id,
+      });
+      const status = res?.status;
+      if (!res || (status !== 'succeeded' && status !== 'requires_capture')) {
+        throw new Error(`Card ${status || 'was declined'}.`);
+      }
+      await finish('card', { stripePaymentIntentId: res.paymentIntentId });
+    } catch (e) {
+      Alert.alert('Card on file failed', e?.message || 'Please try again.');
       setSaving(false);
     }
   }
@@ -191,6 +263,11 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
 
       {stage === 'review' && (
         <>
+          {savedPm && (
+            <TouchableOpacity style={styles.cofBtn} onPress={payCardOnFile} disabled={saving} activeOpacity={0.85}>
+              <Text style={styles.cofBtnText}>💳  Charge card on file · {(savedPm.brand || 'card')} •••• {savedPm.last4 || '••••'}</Text>
+            </TouchableOpacity>
+          )}
           {isTerminalAvailable() ? (
             <CardPayButton
               amountCents={Math.round((cardTotals.total || 0) * 100)}
@@ -251,6 +328,11 @@ const makeStyles = (t) => StyleSheet.create({
   wrap:     { flex: 1, backgroundColor: t.bg },
   content:  { padding: 22, paddingBottom: 48 },
   idle:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg, padding: 40 },
+  slideWrap:{ flex: 1, backgroundColor: '#000' },
+  slideImg: { flex: 1, width: '100%' },
+  slideCaption: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingVertical: 22, paddingHorizontal: 24, backgroundColor: 'rgba(0,0,0,0.45)' },
+  slideName:{ color: '#fff', fontSize: 24, fontWeight: '800' },
+  slideHandle:{ color: 'rgba(255,255,255,0.85)', fontSize: 15, marginTop: 3 },
   idleMark: { fontSize: 54, color: t.green, marginBottom: 16 },
   doneMark: { fontSize: 60, color: t.success, marginBottom: 16, fontWeight: '800' },
   idleTitle:{ fontSize: 26, fontWeight: '800', color: t.text, textAlign: 'center' },
@@ -279,6 +361,8 @@ const makeStyles = (t) => StyleSheet.create({
   divider:  { height: 1, backgroundColor: t.border, marginVertical: 9 },
   cardDisabled:{ marginTop: 14, borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt },
   cardDisabledText:{ color: t.textFaint, fontWeight: '700', fontSize: 14 },
+  cofBtn:   { marginTop: 14, backgroundColor: t.blueSoft, borderRadius: 14, paddingVertical: 16, alignItems: 'center', borderWidth: 1, borderColor: t.blue },
+  cofBtnText:{ color: t.blue, fontWeight: '800', fontSize: 15 },
   cashBtn:  { marginTop: 12, backgroundColor: t.surface, borderRadius: 14, paddingVertical: 17, alignItems: 'center', borderWidth: 1, borderColor: t.border },
   cashBtnText:{ color: t.text, fontWeight: '800', fontSize: 16 },
   cashPane: { marginTop: 18 },

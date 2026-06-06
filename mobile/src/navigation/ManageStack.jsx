@@ -46,7 +46,7 @@ export default function ManageStack() {
       <Stack.Screen name="ManageGrid"  component={ManageGridScreen}
         options={{ title: 'Manage', headerTitle: () => <HeaderTitle title="Manage" /> }} />
       <Stack.Screen name="Kiosk" component={KioskScreen}
-        options={{ headerTitle: () => <HeaderTitle title="Front Desk Kiosk" /> }} />
+        options={{ headerShown: false, gestureEnabled: false }} />
 
       <Stack.Screen name="Services"    component={ServicesScreen}
         options={{ headerTitle: () => <HeaderTitle title="Services" /> }} />
