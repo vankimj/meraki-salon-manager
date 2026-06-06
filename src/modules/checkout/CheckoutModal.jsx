@@ -5,6 +5,7 @@ import { saveAppointment, fetchClient, saveClient,
          fetchProducts, saveProduct, createReviewRequest,
          fetchClientMembership } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
+import { subscribeLocations, currentLocationId, locationTaxRate } from '../../lib/locations';
 import { applyTurnCredit } from '../../lib/turnCredit';
 import { useApp } from '../../context/AppContext';
 import { escapeHtml, genUrlSafeToken } from '../../utils/helpers';
@@ -45,7 +46,12 @@ export default function CheckoutModal(props) {
 
 function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
   const { settings, isOnline } = useApp();
-  const taxRate    = Number(settings.taxRate ?? 0);
+  // Tax follows the location the sale is rung up at (the current-location
+  // switcher); falls back to the tenant-wide rate for single-location tenants
+  // or a location with no override. While locations load, the fallback applies.
+  const [locState, setLocState] = useState(null);
+  useEffect(() => subscribeLocations(setLocState), []);
+  const taxRate    = locationTaxRate(locState, currentLocationId(), settings.taxRate ?? 0);
   const ccFeePct   = Number(settings.ccFeePct ?? 0);
   const ccFeeFlat  = Number(settings.ccFeeFlat ?? 0);
   const noCardTips = !!settings.noCardTips;

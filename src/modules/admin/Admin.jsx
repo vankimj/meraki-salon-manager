@@ -30,6 +30,7 @@ import SmsSetup from './SmsSetup';
 import { subscribeOnboarding, completedCount, isOnboardingComplete, phaseStatus, PHASES as ONBOARDING_PHASES } from '../../lib/onboarding';
 import CsvImportSection from '../../components/CsvImportSection';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
+import LocationsTab from './LocationsTab';
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
@@ -97,6 +98,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
     { id: 'notifs',   label: 'Notifs'   },
     { id: 'reviews',  label: 'Reviews'  },
     { id: 'settings', label: 'Settings' },
+    ...(isAdmin ? [{ id: 'locations', label: 'Locations' }] : []),
     { id: 'webfront', label: 'Webfront' },
     { id: 'sms',      label: 'SMS'      },
     { id: 'onboarding', label: 'Onboarding' },
@@ -291,6 +293,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             await loadReviews();
           }} />
         )}
+
+        {tab === 'locations' && <LocationsTab />}
 
         {tab === 'webfront' && (
           <WebfrontTab cfg={webfrontCfg} setCfg={setWebfrontCfg} employees={employees} />
