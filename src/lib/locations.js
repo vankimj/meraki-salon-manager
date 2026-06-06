@@ -61,9 +61,53 @@ export function isMultiLocation(state) {
   return Array.isArray(state?.list) && state.list.filter(l => l.active !== false).length > 1;
 }
 
-// Sprint 1 ships single-location only — every caller resolves to 'main'.
-// Sprint 6 will replace this with a context-based current-location-id
-// driven by the top-bar location switcher (stored in localStorage).
+// Active locations, primary first then by name — the order the switcher shows.
+export function activeLocations(state) {
+  return (state?.list || [])
+    .filter(l => l.active !== false)
+    .sort((a, b) => (b.isPrimary ? 1 : 0) - (a.isPrimary ? 1 : 0) || (a.name || '').localeCompare(b.name || ''));
+}
+
+// Resolve a location entry by id, falling back to the default/primary then the
+// first active one. Pure — safe to unit-test.
+export function resolveLocation(state, locationId) {
+  const list = state?.list || [];
+  return list.find(l => l.id === locationId)
+    || list.find(l => l.id === (state?.defaultLocationId || DEFAULT_LOCATION_ID))
+    || activeLocations(state)[0]
+    || null;
+}
+
+// Per-location tax rate, falling back to the tenant-wide rate when a location
+// has no explicit override. Pure. `fallbackRate` is settings.taxRate.
+export function locationTaxRate(state, locationId, fallbackRate = 0) {
+  const loc = resolveLocation(state, locationId);
+  const r = loc?.taxRate;
+  return (typeof r === 'number' && isFinite(r) && r >= 0) ? r : (Number(fallbackRate) || 0);
+}
+
+// ── Current-location context ────────────────────────────────────────────────
+// Stored per tenant in localStorage so a refresh keeps the switcher's choice.
+// Single-location tenants always resolve to DEFAULT_LOCATION_ID. The setter
+// notifies subscribers so the switcher + dependent views re-render live.
+const CUR_KEY = () => `pn:currentLocation:${TENANT_ID}`;
+const curSubs = new Set();
+
 export function currentLocationId() {
-  return DEFAULT_LOCATION_ID;
+  try {
+    const v = typeof localStorage !== 'undefined' ? localStorage.getItem(CUR_KEY()) : null;
+    return v || DEFAULT_LOCATION_ID;
+  } catch (_) {
+    return DEFAULT_LOCATION_ID;
+  }
+}
+
+export function setCurrentLocationId(id) {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(CUR_KEY(), id || DEFAULT_LOCATION_ID); } catch (_) {}
+  curSubs.forEach(cb => { try { cb(id || DEFAULT_LOCATION_ID); } catch (_) {} });
+}
+
+export function subscribeCurrentLocation(cb) {
+  curSubs.add(cb);
+  return () => curSubs.delete(cb);
 }

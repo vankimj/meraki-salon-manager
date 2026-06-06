@@ -6,6 +6,7 @@ import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
 import SupportTicketsButton from './SupportTicketsButton';
 import { MODULE_ICONS, IconHome, IconSettings, IconMessage } from './Icons';
+import LocationSwitcher from './LocationSwitcher';
 import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } from '../lib/modules';
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
@@ -163,6 +164,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
 
         {/* Right side */}
         <div className="ms-topnav-right" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+          <LocationSwitcher />
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: syncColor, transition: 'background .3s', animation: syncState === 'syncing' ? 'pulse .8s infinite' : 'none' }} />
           {realIsAdmin && viewAs && (
             <button onClick={() => setViewAs(null)} title={`Exit preview: ${previewLabel(viewAs)}`}
