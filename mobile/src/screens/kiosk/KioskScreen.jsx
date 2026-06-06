@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
-import { computeTotals, buildTechSplit, genReceiptToken } from '../../lib/checkout';
+import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from '../checkout/CardPayButton';
@@ -176,7 +176,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       const { total, changeDue, sideEffectErrors } = await completeSale({
         tab: { appts: cart.appts || [], products }, lines, products,
         totals: t, settings, email, method, saleId, skipSideEffects: isRetry,
-        receiptContact: receiptPhone.trim() ? { phone: receiptPhone.trim() } : null,
+        receiptContact: parseReceiptContact(receiptPhone),
         ...opts,
       });
       const base = method === 'cash' && changeDue != null
@@ -300,15 +300,17 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
 
           {!hasPhoneOnFile && (
             <>
-              <Text style={styles.section}>Text my receipt</Text>
+              <Text style={styles.section}>Get my receipt</Text>
               <TextInput
                 style={styles.receiptInput}
                 value={receiptPhone}
                 onChangeText={setReceiptPhone}
-                keyboardType="phone-pad"
-                placeholder="Phone number (optional)"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Phone or email (optional)"
                 placeholderTextColor={theme.placeholder}
-                maxLength={20}
+                maxLength={60}
               />
             </>
           )}

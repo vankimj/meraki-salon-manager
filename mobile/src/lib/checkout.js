@@ -110,6 +110,20 @@ export function genReceiptToken(len = 22) {
   }
 }
 
+// Turn a single free-text receipt-contact field (the kiosk / checkout "text or
+// email my receipt" input) into the { phone, email } shape completeSale wants.
+// A value containing "@" is treated as an email; anything else as a phone (the
+// server normalizes the digits). Returns null when blank so callers can pass it
+// straight through. Whitespace-only and a bare "@" are both treated as empty.
+export function parseReceiptContact(raw) {
+  const v = (raw || '').trim();
+  if (!v) return null;
+  if (v.includes('@')) {
+    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v) ? { email: v } : null;
+  }
+  return /\d/.test(v) ? { phone: v } : null;
+}
+
 // Normalize a mobile promo record ({type, discountPct, discountAmount}) into
 // the {type, value} shape computeTotals expects.
 export function normalizePromo(p) {
