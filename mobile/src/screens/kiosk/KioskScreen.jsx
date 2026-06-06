@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, chargeStoredCard, fetchSlides } from '../../lib/firestore';
-import { computeTotals, buildTechSplit } from '../../lib/checkout';
+import { computeTotals, buildTechSplit, genReceiptToken } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from '../checkout/CardPayButton';
@@ -122,6 +122,11 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [saving, setSaving]     = useState(false);
   const [paidMsg, setPaidMsg]   = useState('');
   const [client, setClient]     = useState(null);
+  const [paid, setPaid]         = useState(null);   // {method,opts} once money is CAPTURED — blocks any re-charge
+  const [recordErr, setRecordErr] = useState('');
+  // One stable id per checkout: the Stripe idempotency key (no double-charge on
+  // retry/double-tap) AND the receipt doc id (no duplicate receipt on a retry).
+  const [saleId] = useState(() => genReceiptToken(24));
 
   // Pull the client to surface a "charge card on file" option when they have one.
   useEffect(() => {
@@ -148,24 +153,35 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
     return () => clearTimeout(id);
   }, [stage]);
 
-  async function finish(method, opts = {}) {
-    setSaving(true);
+  // Record the sale (write the receipt). Separate from the CHARGE: by the time
+  // this runs the money is already captured (card charged / cash in hand), so a
+  // failure here NEVER re-charges — it surfaces a retry that only re-saves.
+  async function doRecord(method, opts, isRetry = false) {
+    setSaving(true); setRecordErr('');
     try {
       const t = method === 'card' ? cardTotals : cashTotals;
-      const { total, changeDue } = await completeSale({
+      const { total, changeDue, sideEffectErrors } = await completeSale({
         tab: { appts: cart.appts || [], products }, lines, products,
-        totals: t, settings, email, method, ...opts,
+        totals: t, settings, email, method, saleId, skipSideEffects: isRetry, ...opts,
       });
-      // Leave the session active (so this done screen stays mounted) until the
-      // auto-clear below returns the kiosk to idle — lets staff read the change.
-      setPaidMsg(method === 'cash' && changeDue != null
+      const base = method === 'cash' && changeDue != null
         ? `Paid ${money(total)} — change due ${money(changeDue)}`
-        : `Paid ${money(total)} — thank you!`);
+        : `Paid ${money(total)} — thank you!`;
+      setPaidMsg(sideEffectErrors?.length ? `${base}\n(${sideEffectErrors.join('; ')})` : base);
       setStage('done');
     } catch (e) {
-      Alert.alert('Checkout failed', e?.message || 'Please try again.');
+      setRecordErr(e?.message || 'Could not save the receipt.');
       setSaving(false);
     }
+  }
+
+  // Called the instant payment is captured. Latches `paid` so the charge
+  // buttons disappear (no double-charge), then records the sale.
+  function settle(method, opts = {}) {
+    if (paid) return;
+    if (lines.length === 0 && products.length === 0) return; // never record an empty sale
+    setPaid({ method, opts });
+    doRecord(method, opts, false);
   }
 
   async function payCardOnFile() {
@@ -177,12 +193,14 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         amountCents: Math.round((cardTotals.total || 0) * 100),
         description: clientName,
         paymentMethodId: savedPm.id,
+        idempotencyKey: saleId,
       });
-      const status = res?.status;
-      if (!res || (status !== 'succeeded' && status !== 'requires_capture')) {
-        throw new Error(`Card ${status || 'was declined'}.`);
+      // Only 'succeeded' means the money was actually captured; 'requires_capture'
+      // is an uncaptured authorization and must NOT be recorded as a paid sale.
+      if (!res || res.status !== 'succeeded') {
+        throw new Error(`Card ${res?.status || 'was declined'}.`);
       }
-      await finish('card', { stripePaymentIntentId: res.paymentIntentId });
+      settle('card', { stripePaymentIntentId: res.paymentIntentId });
     } catch (e) {
       Alert.alert('Card on file failed', e?.message || 'Please try again.');
       setSaving(false);
@@ -261,7 +279,29 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         <Row styles={styles} label="Total" value={money(cashTotals.total)} big />
       </View>
 
-      {stage === 'review' && (
+      {/* Payment captured but the receipt-save failed: retry the SAVE only —
+          the card is never re-charged (charge buttons are gone once paid). */}
+      {paid && stage !== 'done' && (
+        <View style={styles.settling}>
+          {!recordErr ? (
+            <>
+              <ActivityIndicator color={theme.green} />
+              <Text style={styles.settlingText}>Payment received — saving…</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.settlingErr}>Payment received, but saving the receipt failed:</Text>
+              <Text style={styles.settlingErrSub}>{recordErr}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={() => doRecord(paid.method, paid.opts, true)} disabled={saving}>
+                <Text style={styles.retryBtnText}>{saving ? 'Saving…' : 'Retry saving receipt'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.settlingNote}>The card was NOT charged again — this only re-saves the receipt.</Text>
+            </>
+          )}
+        </View>
+      )}
+
+      {stage === 'review' && !paid && (
         <>
           {savedPm && (
             <TouchableOpacity style={styles.cofBtn} onPress={payCardOnFile} disabled={saving} activeOpacity={0.85}>
@@ -276,8 +316,9 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
               onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
               merchantName={settings?.salonName || 'Salon'}
               preferReader={isTablet}
+              idempotencyKey={saleId}
               disabled={saving || (lines.length === 0 && products.length === 0)}
-              onPaid={(piId) => finish('card', { stripePaymentIntentId: piId })}
+              onPaid={(piId) => settle('card', { stripePaymentIntentId: piId })}
             />
           ) : (
             <View style={styles.cardDisabled}><Text style={styles.cardDisabledText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
@@ -288,7 +329,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         </>
       )}
 
-      {stage === 'cash' && (() => {
+      {stage === 'cash' && !paid && (() => {
         const tendered = Number(cashStr) || 0;
         const change = tendered - cashTotals.total;
         return (
@@ -303,7 +344,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
             </Text>
             <View style={styles.cashActions}>
               <TouchableOpacity style={styles.backBtn} onPress={() => setStage('review')}><Text style={styles.backBtnText}>‹ Back</Text></TouchableOpacity>
-              <TouchableOpacity style={[styles.confirmBtn, (saving || change < 0) && { opacity: 0.5 }]} disabled={saving || change < 0} onPress={() => finish('cash', { cashTendered: tendered })}>
+              <TouchableOpacity style={[styles.confirmBtn, (saving || change < 0) && { opacity: 0.5 }]} disabled={saving || change < 0} onPress={() => settle('cash', { cashTendered: tendered })}>
                 <Text style={styles.confirmBtnText}>{saving ? 'Saving…' : `Take ${money(cashTotals.total)}`}</Text>
               </TouchableOpacity>
             </View>
@@ -377,4 +418,11 @@ const makeStyles = (t) => StyleSheet.create({
   confirmBtnText:{ color: '#fff', fontWeight: '800', fontSize: 17 },
   doneBtn:  { marginTop: 26, backgroundColor: t.green, borderRadius: 24, paddingVertical: 13, paddingHorizontal: 44 },
   doneBtnText:{ color: '#fff', fontWeight: '800', fontSize: 16 },
+  settling: { marginTop: 18, backgroundColor: t.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: t.border, alignItems: 'center', gap: 10 },
+  settlingText:{ fontSize: 16, fontWeight: '700', color: t.text },
+  settlingErr: { fontSize: 15, fontWeight: '800', color: t.danger, textAlign: 'center' },
+  settlingErrSub:{ fontSize: 13, color: t.textMuted, textAlign: 'center' },
+  retryBtn: { marginTop: 6, backgroundColor: t.green, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 28 },
+  retryBtnText:{ color: '#fff', fontWeight: '800', fontSize: 15 },
+  settlingNote:{ fontSize: 11.5, color: t.textFaint, textAlign: 'center', marginTop: 2 },
 });

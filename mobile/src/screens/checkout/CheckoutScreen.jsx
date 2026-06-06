@@ -54,6 +54,9 @@ export default function CheckoutScreen({ navigation }) {
   const [allProducts, setAllProducts] = useState(null);
   const [showPicker, setShowPicker]   = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [paid, setPaid]           = useState(null);   // {method,opts} once money is CAPTURED — blocks re-charge
+  const [recordErr, setRecordErr] = useState('');
+  const [saleId]                  = useState(() => genReceiptToken(24)); // idempotency key + receipt id
 
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
 
@@ -125,24 +128,39 @@ export default function CheckoutScreen({ navigation }) {
     if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
     Alert.alert('Take cash payment?', `Total ${money(totals.total)} in cash.`, [
       { text: 'Cancel', style: 'cancel' },
-      { text: `Charge ${money(totals.total)}`, onPress: () => complete({ method: 'cash' }) },
+      { text: `Charge ${money(totals.total)}`, onPress: () => settle('cash') },
     ]);
   }
 
-  async function complete({ method = 'cash', stripePaymentIntentId = null } = {}) {
-    setSaving(true);
+  // Record the sale. Separate from the CHARGE: by the time this runs the money
+  // is captured, so a failure here only ever re-SAVES (idempotent via saleId),
+  // never re-charges. `isRetry` skips the once-only side effects.
+  async function doRecord({ method, stripePaymentIntentId = null }, isRetry = false) {
+    setSaving(true); setRecordErr('');
     try {
       const card = method === 'card';
       const t = card ? cardTotals : totals;
-      const { total } = await completeSale({
+      const { total, sideEffectErrors } = await completeSale({
         tab, lines, products, totals: t, settings, email,
         method, stripePaymentIntentId, discType, discVal, promo, giftCard,
+        saleId, skipSideEffects: isRetry,
       });
       await clearTab();
-      Alert.alert('Paid', `${money(total)} collected (${card ? 'card' : 'cash'}).`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+      const extra = sideEffectErrors?.length ? `\n(${sideEffectErrors.join('; ')})` : '';
+      Alert.alert('Paid', `${money(total)} collected (${card ? 'card' : 'cash'}).${extra}`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
     } catch (e) {
-      Alert.alert('Checkout failed', e?.message || 'Please try again.');
-    } finally { setSaving(false); }
+      setRecordErr(e?.message || 'Could not save the receipt.');
+      setSaving(false);
+    }
+  }
+
+  // Latches `paid` the instant payment is captured so the charge buttons
+  // disappear (no double-charge), then records the sale.
+  function settle(method, opts = {}) {
+    if (paid) return;
+    if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
+    setPaid({ method, opts });
+    doRecord({ method, ...opts }, false);
   }
 
   if (settings === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
@@ -240,22 +258,42 @@ export default function CheckoutScreen({ navigation }) {
         </View>
       )}
 
-      <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
-        <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
-      </TouchableOpacity>
-      {isTerminalAvailable() ? (
-        <CardPayButton
-          amountCents={Math.round((cardTotals.total || 0) * 100)}
-          description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
-          locationId={settings?.terminalLocationId || null}
-          onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
-          merchantName={settings?.salonName || settings?.name || 'Salon'}
-          preferReader={isTablet}
-          disabled={saving || (lines.length === 0 && products.length === 0)}
-          onPaid={(piId) => complete({ method: 'card', stripePaymentIntentId: piId })}
-        />
+      {paid ? (
+        <View style={styles.settling}>
+          {!recordErr ? (
+            <Text style={styles.settlingText}>Payment received — saving…</Text>
+          ) : (
+            <>
+              <Text style={styles.settlingErr}>Payment received, but saving the receipt failed:</Text>
+              <Text style={styles.settlingSub}>{recordErr}</Text>
+              <TouchableOpacity style={styles.retryBtn} onPress={() => doRecord({ method: paid.method, ...paid.opts }, true)} disabled={saving}>
+                <Text style={styles.retryText}>{saving ? 'Saving…' : 'Retry saving receipt'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.settlingNote}>The card was NOT charged again — this only re-saves the receipt.</Text>
+            </>
+          )}
+        </View>
       ) : (
-        <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
+        <>
+          <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
+            <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
+          </TouchableOpacity>
+          {isTerminalAvailable() ? (
+            <CardPayButton
+              amountCents={Math.round((cardTotals.total || 0) * 100)}
+              description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
+              locationId={settings?.terminalLocationId || null}
+              onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
+              merchantName={settings?.salonName || settings?.name || 'Salon'}
+              preferReader={isTablet}
+              idempotencyKey={saleId}
+              disabled={saving || (lines.length === 0 && products.length === 0)}
+              onPaid={(piId) => settle('card', { stripePaymentIntentId: piId })}
+            />
+          ) : (
+            <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
+          )}
+        </>
       )}
       </View>
       </View>
@@ -335,6 +373,13 @@ const makeStyles = (t) => StyleSheet.create({
   payText:   { color: '#fff', fontWeight: '800', fontSize: 16 },
   cardBtn:   { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt },
   cardText:  { color: t.textFaint, fontWeight: '700', fontSize: 13 },
+  settling:  { marginTop: 22, backgroundColor: t.surface, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: t.border, alignItems: 'center', gap: 8 },
+  settlingText:{ fontSize: 15, fontWeight: '700', color: t.text },
+  settlingErr: { fontSize: 14, fontWeight: '800', color: t.danger, textAlign: 'center' },
+  settlingSub: { fontSize: 12.5, color: t.textMuted, textAlign: 'center' },
+  retryBtn:  { marginTop: 6, backgroundColor: t.green, borderRadius: 12, paddingVertical: 13, paddingHorizontal: 26 },
+  retryText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  settlingNote:{ fontSize: 11, color: t.textFaint, textAlign: 'center' },
   addProdBtn:{ borderWidth: 1, borderColor: t.borderStrong, borderStyle: 'dashed', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   addProdText:{ color: t.textMuted, fontWeight: '700', fontSize: 14 },
   backdrop:  { flex: 1, backgroundColor: t.overlay, justifyContent: 'flex-end' },

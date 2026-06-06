@@ -10,11 +10,18 @@ import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createRe
 //
 // `totals` is the already-resolved totals object (cash or card) from computeTotals.
 // `cashTendered` (optional) records the cash given + computes changeDue on the receipt.
+// `saleId` (a stable per-checkout key) makes the receipt idempotent — a retried
+// completeSale (after a transient write failure) overwrites the same receipt
+// instead of double-counting revenue. `skipSideEffects` is set on a retry so the
+// non-idempotent side effects (gift-card debit, promo count, stock) run exactly
+// once. Side effects are best-effort: a failure there (e.g. a non-admin can't
+// write gift cards) is collected, never thrown — it must not block recording a
+// sale whose money is already captured.
 export async function completeSale({
   tab, lines, products = [], totals, settings = {}, email = null,
   method = 'cash', stripePaymentIntentId = null,
   discType = 'none', discVal = 0, promo = null, giftCard = null,
-  cashTendered = null,
+  cashTendered = null, saleId = null, skipSideEffects = false,
 }) {
   const t = totals;
   const sp = buildTechSplit(lines, t.tipAmt);
@@ -46,7 +53,29 @@ export async function completeSale({
     paidAt: new Date().toISOString(), paidBy: email || null,
   };
 
-  // Reconstruct each appt's services with edited prices; mark done + attach payment.
+  // Non-idempotent side effects FIRST, exactly once (retries pass skipSideEffects),
+  // best-effort: never throw — money may already be captured, so a side-effect
+  // failure must not block recording the sale below. Collected + returned.
+  const sideEffectErrors = [];
+  if (!skipSideEffects) {
+    if (giftCard && t.gcApply > 0) {
+      try { await updateGiftCard(giftCard.id, { balance: Math.max((giftCard.balance || 0) - t.gcApply, 0) }); }
+      catch (e) { sideEffectErrors.push('Gift card not debited: ' + (e?.message || 'failed')); }
+    }
+    if (promo) {
+      try {
+        const newCount = (promo.usedCount || 0) + 1;
+        const maxHit = promo.maxUses && newCount >= promo.maxUses;
+        await savePromoCode(promo.id, { usedCount: newCount, ...((promo.singleUse || maxHit) ? { active: false } : {}) });
+      } catch (e) { sideEffectErrors.push('Promo not updated: ' + (e?.message || 'failed')); }
+    }
+    for (const it of products) {
+      await saveProduct(it.product.id, { stock: Math.max(0, (Number(it.product.stock) || 0) - it.qty) }).catch(() => {});
+    }
+  }
+
+  // Critical, idempotent records. Appt updates use setDoc(merge) and the receipt
+  // uses the stable saleId, so a retry overwrites rather than duplicates.
   for (let apptIdx = 0; apptIdx < (tab.appts || []).length; apptIdx++) {
     const a = tab.appts[apptIdx];
     const svc = (a.services || []).map((s, svcIdx) => {
@@ -55,18 +84,6 @@ export async function completeSale({
     });
     const apptSubtotal = svc.reduce((s, x) => s + (Number(x.price) || 0), 0);
     await updateAppointment(a.id, { services: svc, status: 'done', payment: { ...payment, amountForThisAppt: apptSubtotal } });
-  }
-
-  if (giftCard && t.gcApply > 0) {
-    await updateGiftCard(giftCard.id, { balance: Math.max((giftCard.balance || 0) - t.gcApply, 0) });
-  }
-  if (promo) {
-    const newCount = (promo.usedCount || 0) + 1;
-    const maxHit = promo.maxUses && newCount >= promo.maxUses;
-    await savePromoCode(promo.id, { usedCount: newCount, ...((promo.singleUse || maxHit) ? { active: false } : {}) });
-  }
-  for (const it of products) {
-    await saveProduct(it.product.id, { stock: Math.max(0, (Number(it.product.stock) || 0) - it.qty) }).catch(() => {});
   }
 
   const primaryAppt = (tab.appts || [])[0] || null;
@@ -79,7 +96,7 @@ export async function completeSale({
     clientName:  clientNames.join(' + ') || 'Walk-in',
     clientPhone: primaryAppt?.clientPhone || null,
     clientEmail,
-    viewToken:   genReceiptToken(22),
+    viewToken:   saleId || genReceiptToken(22),
     techName:    sp ? sp.map(s => s.techName).join(', ') : (allServices[0]?.techName || ''),
     date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
     startTime:   primaryAppt?.startTime || '',
@@ -87,7 +104,7 @@ export async function completeSale({
     retailProducts,
     payment,
     apptIds:     (tab.appts || []).map(a => a.id),
-  });
+  }, saleId);
 
-  return { total: t.total, changeDue, split: sp };
+  return { total: t.total, changeDue, split: sp, sideEffectErrors };
 }
