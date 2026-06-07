@@ -3,7 +3,7 @@ import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, Activity
 import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
-  fetchEmployees,
+  fetchEmployees, fetchAttendance,
 } from '../../lib/firestore';
 import { playChime } from '../../lib/chime';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
@@ -22,10 +22,38 @@ export default function WalkinScreen() {
   const [seatingFor, setSeatingFor] = useState(null); // waitlist entry being assigned
 
   const load = useCallback(async () => {
-    const [r, w, e] = await Promise.all([fetchTurnRoster(), fetchWaitlist(), fetchEmployees().catch(() => [])]);
-    setRoster(r.roster || []);
+    const today = new Date().toISOString().slice(0, 10);
+    const [r, w, e, att] = await Promise.all([
+      fetchTurnRoster(),
+      fetchWaitlist(),
+      fetchEmployees().catch(() => []),
+      fetchAttendance(today).catch(() => ({ entries: [] })),
+    ]);
+    const savedRoster = r.roster || [];
+    const activeEmps = e.filter(x => x.active !== false);
+
+    // Sync the rotation with the time clock (Clock Kiosk / Attendance): a tech
+    // who's clocked in auto-joins the rotation, and a tech who clocks out drops
+    // off. Manually-added techs (no attendance record at all) are left alone.
+    const attByEmp = {};
+    (att.entries || []).forEach(en => { if (en.employeeId) attByEmp[en.employeeId] = en; });
+    const clockedIn  = (id) => { const a = attByEmp[id]; return !!(a && a.clockInAt && !a.clockOutAt); };
+    const clockedOut = (id) => { const a = attByEmp[id]; return !!(a && a.clockOutAt); };
+
+    let next = savedRoster.filter(t => !clockedOut(t.techId));   // drop the ones who clocked out
+    activeEmps.forEach(emp => {                                   // add the ones now clocked in
+      if (clockedIn(emp.id) && !next.some(t => t.techId === emp.id)) {
+        next.push({ techId: emp.id, techName: emp.name, clockInAt: attByEmp[emp.id].clockInAt, turnsTaken: 0 });
+      }
+    });
+
+    setRoster(next);
     setWaitlist(w);
-    setEmps(e.filter(x => x.active !== false));
+    setEmps(activeEmps);
+    // Persist only when membership actually changed, so the 15s poll doesn't write-loop.
+    if (savedRoster.map(t => t.techId).sort().join(',') !== next.map(t => t.techId).sort().join(',')) {
+      try { await saveTurnRoster(today, next); } catch {}
+    }
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -110,7 +138,7 @@ export default function WalkinScreen() {
       contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
       ListHeaderComponent={<Text style={styles.section}>Rotation — next up first</Text>}
-      ListEmptyComponent={<Text style={styles.empty}>No techs clocked in. Add one below.</Text>}
+      ListEmptyComponent={<Text style={styles.empty}>No techs clocked in yet — they appear here automatically when they clock in at the Clock Kiosk. Or add one manually below.</Text>}
       renderItem={({ item, index }) => (
         <View style={[styles.row, index === 0 && styles.nextRow]}>
           <View style={{ flex: 1 }}>
@@ -129,7 +157,8 @@ export default function WalkinScreen() {
         <View>
           {canEdit && offRoster.length > 0 && (
             <>
-              <Text style={styles.subSection}>Clock in a tech</Text>
+              <Text style={styles.subSection}>Add a tech manually</Text>
+              <Text style={styles.hint}>Techs who clock in at the Clock Kiosk join automatically.</Text>
               <View style={styles.chipWrap}>
                 {offRoster.map(e => (
                   <TouchableOpacity key={e.id} style={styles.chip} onPress={() => addTech(e)}>
@@ -192,7 +221,8 @@ const makeStyles = (t) => StyleSheet.create({
   wrap:       { flex: 1, backgroundColor: t.bg },
   center:     { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
   section:    { fontSize: 14, fontWeight: '800', color: t.text, marginTop: 18, marginBottom: 8 },
-  subSection: { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 16, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
+  subSection: { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 16, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3 },
+  hint:       { fontSize: 11.5, color: t.textFaint, marginBottom: 8, lineHeight: 16 },
   empty:      { color: t.textFaint, fontSize: 13, paddingVertical: 14 },
   row:        { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 14, marginBottom: 8, borderWidth: 1, borderColor: t.border, gap: 8 },
   nextRow:    { borderColor: t.green, backgroundColor: t.greenSoft },
