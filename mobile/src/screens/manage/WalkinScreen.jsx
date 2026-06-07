@@ -3,8 +3,11 @@ import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, Activity
 import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
-  fetchEmployees, fetchAttendance,
+  fetchEmployees, fetchAttendance, fetchSettings,
 } from '../../lib/firestore';
+
+const TURN_WEIGHTS = { full: 1, half: 0.5, none: 0 };
+const fmtTurns = (n) => { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 import { playChime } from '../../lib/chime';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
@@ -20,15 +23,20 @@ export default function WalkinScreen() {
   const [emps,    setEmps]    = useState([]);
   const [newName, setNewName] = useState('');
   const [seatingFor, setSeatingFor] = useState(null); // waitlist entry being assigned
+  const [cfg, setCfg] = useState({ partialTurns: false, requestNoTurn: false });
+  const [seatWeight, setSeatWeight] = useState('full');   // full | half | none (partial-turns mode)
+  const [seatRequested, setSeatRequested] = useState(false);
 
   const load = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const [r, w, e, att] = await Promise.all([
+    const [r, w, e, att, s] = await Promise.all([
       fetchTurnRoster(),
       fetchWaitlist(),
       fetchEmployees().catch(() => []),
       fetchAttendance(today).catch(() => ({ entries: [] })),
+      fetchSettings().catch(() => ({})),
     ]);
+    setCfg({ partialTurns: !!s?.walkinPartialTurns, requestNoTurn: !!s?.walkinRequestNoTurn });
     const savedRoster = r.roster || [];
     const activeEmps = e.filter(x => x.active !== false);
 
@@ -103,13 +111,18 @@ export default function WalkinScreen() {
   // the picker override (clients often request a specific tech).
   function seat(entry) {
     if (!canEdit) return;
+    setSeatWeight('full'); setSeatRequested(false);
     if (roster.length === 0) { assignSeat(entry, null); return; }
     setSeatingFor(entry);
   }
   async function assignSeat(entry, tech) {
     setSeatingFor(null);
     if (tech) {
-      persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + 1 } : t));
+      // Turn weight: full/half/none in partial-turns mode, else a full turn.
+      // A client-requested tech takes no turn when that policy is on (Mango-style).
+      let delta = cfg.partialTurns ? (TURN_WEIGHTS[seatWeight] ?? 1) : 1;
+      if (seatRequested && cfg.requestNoTurn) delta = 0;
+      persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + delta } : t));
     }
     try {
       await updateWaitlistEntry(entry.id, {
@@ -119,13 +132,22 @@ export default function WalkinScreen() {
       await load();
     } catch {}
   }
+  function toggleAway(techId) {
+    if (!canEdit) return;
+    persistRoster(roster.map(t => t.techId === techId ? { ...t, away: !t.away } : t));
+  }
   async function removeWaiter(id) {
     try { await removeWaitlistEntry(id); await load(); } catch {}
   }
 
   if (roster === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
-  const sorted = [...roster].sort((a, b) => (a.turnsTaken || 0) - (b.turnsTaken || 0) || (a.clockInAt || '').localeCompare(b.clockInAt || ''));
+  // Away techs sink to the bottom and never hold the "next up" star; among the
+  // available, fewest turns first, then earliest clocked in.
+  const sorted = [...roster].sort((a, b) =>
+    (a.away ? 1 : 0) - (b.away ? 1 : 0)
+    || (a.turnsTaken || 0) - (b.turnsTaken || 0)
+    || (a.clockInAt || '').localeCompare(b.clockInAt || ''));
   const waiting = waitlist.filter(w => w.status !== 'seated');
   const offRoster = emps.filter(e => !roster.some(t => t.techId === e.id));
 
@@ -139,20 +161,24 @@ export default function WalkinScreen() {
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
       ListHeaderComponent={<Text style={styles.section}>Rotation — next up first</Text>}
       ListEmptyComponent={<Text style={styles.empty}>No techs clocked in yet — they appear here automatically when they clock in at the Clock Kiosk. Or add one manually below.</Text>}
-      renderItem={({ item, index }) => (
-        <View style={[styles.row, index === 0 && styles.nextRow]}>
+      renderItem={({ item, index }) => {
+        const isNext = index === 0 && !item.away;
+        return (
+        <View style={[styles.row, isNext && styles.nextRow, item.away && styles.awayRow]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{index === 0 ? '⭐ ' : ''}{item.techName}</Text>
-            <Text style={styles.sub}>{item.turnsTaken || 0} turn{(item.turnsTaken || 0) === 1 ? '' : 's'} today</Text>
+            <Text style={styles.name}>{isNext ? '⭐ ' : ''}{item.away ? '💤 ' : ''}{item.techName}</Text>
+            <Text style={styles.sub}>{fmtTurns(item.turnsTaken)} turn{(item.turnsTaken || 0) === 1 ? '' : 's'} today{item.away ? ' · away' : ''}</Text>
           </View>
           {canEdit && (
             <>
-              <TouchableOpacity style={styles.turnBtn} onPress={() => addTurn(item.techId)}><Text style={styles.turnText}>+1 turn</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.awayBtn} onPress={() => toggleAway(item.techId)}><Text style={styles.awayText}>{item.away ? 'Back' : 'Away'}</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.turnBtn} onPress={() => addTurn(item.techId)}><Text style={styles.turnText}>+1</Text></TouchableOpacity>
               <TouchableOpacity style={styles.xBtn} onPress={() => removeTech(item.techId)}><Text style={styles.xText}>✕</Text></TouchableOpacity>
             </>
           )}
         </View>
-      )}
+        );
+      }}
       ListFooterComponent={
         <View>
           {canEdit && offRoster.length > 0 && (
@@ -200,11 +226,28 @@ export default function WalkinScreen() {
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSeatingFor(null)}>
         <View style={styles.sheet}>
           <Text style={styles.sheetTitle}>Seat {seatingFor?.clientName || 'walk-in'} with…</Text>
-          <Text style={styles.sheetSub}>This adds a turn to the tech you pick.</Text>
+          <Text style={styles.sheetSub}>{cfg.partialTurns ? 'Pick the turn amount, then a tech.' : 'This adds a turn to the tech you pick.'}</Text>
+
+          {cfg.partialTurns && (
+            <View style={styles.weightRow}>
+              {[['full', 'Full turn'], ['half', 'Half turn'], ['none', 'No turn']].map(([w, label]) => (
+                <TouchableOpacity key={w} onPress={() => setSeatWeight(w)} style={[styles.weightChip, seatWeight === w && styles.weightChipOn]}>
+                  <Text style={[styles.weightChipText, seatWeight === w && styles.weightChipTextOn]}>{label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {cfg.requestNoTurn && (
+            <TouchableOpacity style={styles.reqRow} activeOpacity={0.7} onPress={() => setSeatRequested(v => !v)}>
+              <View style={[styles.reqBox, seatRequested && styles.reqBoxOn]}>{seatRequested && <Text style={styles.reqCheck}>✓</Text>}</View>
+              <Text style={styles.reqLabel}>Client requested this tech (doesn't take a turn)</Text>
+            </TouchableOpacity>
+          )}
+
           {sorted.map((t, i) => (
-            <TouchableOpacity key={t.techId} style={[styles.pickRow, i === 0 && styles.pickRowNext]} onPress={() => assignSeat(seatingFor, t)}>
-              <Text style={styles.pickName}>{i === 0 ? '⭐ ' : ''}{t.techName}</Text>
-              <Text style={styles.pickTurns}>{t.turnsTaken || 0} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
+            <TouchableOpacity key={t.techId} style={[styles.pickRow, i === 0 && !t.away && styles.pickRowNext, t.away && { opacity: 0.55 }]} onPress={() => assignSeat(seatingFor, t)}>
+              <Text style={styles.pickName}>{i === 0 && !t.away ? '⭐ ' : ''}{t.away ? '💤 ' : ''}{t.techName}</Text>
+              <Text style={styles.pickTurns}>{fmtTurns(t.turnsTaken)} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
             </TouchableOpacity>
           ))}
           <TouchableOpacity style={styles.pickSkip} onPress={() => assignSeat(seatingFor, null)}>
@@ -228,8 +271,21 @@ const makeStyles = (t) => StyleSheet.create({
   nextRow:    { borderColor: t.green, backgroundColor: t.greenSoft },
   name:       { fontSize: 15, fontWeight: '700', color: t.text },
   sub:        { fontSize: 12, color: t.textMuted, marginTop: 2 },
-  turnBtn:    { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 7 },
+  turnBtn:    { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 7 },
   turnText:   { color: t.green, fontWeight: '800', fontSize: 12 },
+  awayRow:    { opacity: 0.6 },
+  awayBtn:    { backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
+  awayText:   { color: t.textMuted, fontWeight: '800', fontSize: 12 },
+  weightRow:  { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  weightChip: { flex: 1, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: t.border, alignItems: 'center', backgroundColor: t.surfaceAlt },
+  weightChipOn:{ backgroundColor: t.greenSoft, borderColor: t.green },
+  weightChipText:{ fontSize: 13, fontWeight: '700', color: t.textMuted },
+  weightChipTextOn:{ color: t.green },
+  reqRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, paddingVertical: 4 },
+  reqBox:     { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: t.border, alignItems: 'center', justifyContent: 'center' },
+  reqBoxOn:   { backgroundColor: t.green, borderColor: t.green },
+  reqCheck:   { color: '#fff', fontSize: 14, fontWeight: '900' },
+  reqLabel:   { flex: 1, fontSize: 13, color: t.text },
   xBtn:       { width: 30, height: 30, borderRadius: 15, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' },
   xText:      { color: t.textFaint, fontSize: 14, fontWeight: '700' },
   chipWrap:   { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
