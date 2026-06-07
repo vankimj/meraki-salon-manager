@@ -6,6 +6,7 @@ import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
+  setCheckoutSession,
 } from '../../lib/firestore';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
@@ -211,6 +212,47 @@ export default function CheckoutScreen({ navigation }) {
     doRecord({ method, ...opts }, false);
   }
 
+  // Hand the FULLY-PRICED sale to the front-desk kiosk so the client adds a tip
+  // and pays there. The edited line prices are baked into the cart and every
+  // adjustment the tech set (discount / promo / gift card / store credit / issued
+  // credit) rides along on the session as `priced: true`, so the kiosk honors
+  // them exactly instead of re-deriving from raw service prices. The tip is left
+  // off on purpose — the customer chooses it at the kiosk.
+  async function sendToFrontDesk() {
+    if (paid) return;
+    if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to send.'); return; }
+    setSaving(true);
+    try {
+      const appts = (tab.appts || []).map((a, apptIdx) => ({
+        ...a,
+        services: (a.services || []).map((s, svcIdx) => {
+          const li = lines0.findIndex(l => l.apptIdx === apptIdx && l.svcIdx === svcIdx);
+          return li >= 0 ? { ...s, price: Number(prices[li]) || 0, techName: lines[li].techName } : s;
+        }),
+      }));
+      const clientName = Array.from(new Set((tab.appts || []).map(a => a.clientName || 'Walk-in').filter(Boolean))).join(' + ') || 'Walk-in';
+      await setCheckoutSession({
+        cart: { appts, products },
+        priced: true,
+        clientId: primaryClientId || null,
+        clientName,
+        createdBy: email || null,
+        discType,
+        discVal: Number(discVal) || 0,
+        promo: promo || null,
+        giftCard: giftCard || null,
+        applyCredit: !!applyCredit,
+        issueCredit: primaryClientId ? Number(issueCredit) || 0 : 0,
+        receiptPhone: receiptPhone || null,
+      });
+      await clearTab();
+      Alert.alert('Sent to front desk', 'The client can add a tip and pay at the kiosk.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
+    } catch (e) {
+      setSaving(false);
+      Alert.alert("Couldn't send", e?.message || 'Try again.');
+    }
+  }
+
   if (settings === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   return (
@@ -382,6 +424,12 @@ export default function CheckoutScreen({ navigation }) {
           ) : (
             <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
           )}
+          {online && (
+            <TouchableOpacity style={[styles.deskBtn, saving && { opacity: 0.6 }]} onPress={sendToFrontDesk} disabled={saving} activeOpacity={0.85}>
+              <Text style={styles.deskBtnText}>🏪  Send to front desk</Text>
+              <Text style={styles.deskBtnSub}>Client adds the tip + pays at the kiosk — this exact total &amp; all discounts carry over</Text>
+            </TouchableOpacity>
+          )}
         </>
       )}
       </View>
@@ -472,6 +520,9 @@ const makeStyles = (t) => StyleSheet.create({
   payText:   { color: '#fff', fontWeight: '800', fontSize: 16 },
   cardBtn:   { marginTop: 10, borderRadius: 14, paddingVertical: 14, alignItems: 'center', borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt },
   cardText:  { color: t.textFaint, fontWeight: '700', fontSize: 13 },
+  deskBtn:   { marginTop: 12, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 14, alignItems: 'center', borderWidth: 1, borderColor: t.blue, backgroundColor: t.blueSoft },
+  deskBtnText:{ color: t.blue, fontWeight: '800', fontSize: 15 },
+  deskBtnSub:{ color: t.textMuted, fontWeight: '600', fontSize: 11.5, marginTop: 3, textAlign: 'center' },
   settling:  { marginTop: 22, backgroundColor: t.surface, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: t.border, alignItems: 'center', gap: 8 },
   settlingText:{ fontSize: 15, fontWeight: '700', color: t.text },
   settlingErr: { fontSize: 14, fontWeight: '800', color: t.danger, textAlign: 'center' },
