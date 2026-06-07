@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import Icon from '../../components/Icon';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import { getVisibleModules, moduleMeta } from '../../lib/modules';
-import { fetchSettings } from '../../lib/firestore';
+import { fetchSettings, hasKioskPin } from '../../lib/firestore';
 import { subscribeTenant } from '../../lib/currentTenant';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
@@ -45,6 +45,24 @@ export default function ManageGridScreen({ navigation }) {
     navigation.navigate('ModulePlaceholder', { id: mod.id, label: mod.label, desc: mod.desc });
   }
 
+  // Kiosks are admin-only and LOCK once entered — the admin needs a kiosk PIN on
+  // file to unlock/leave, so require it before entering.
+  async function enterKiosk(screen) {
+    try {
+      const { hasPin } = await hasKioskPin();
+      if (!hasPin) {
+        Alert.alert(
+          'Set a kiosk PIN first',
+          'Kiosks lock once open — you exit with your admin PIN. Set it in Manage → Settings → "Kiosk exit PIN", then try again.',
+        );
+        return;
+      }
+      navigation.navigate(screen);
+    } catch (e) {
+      Alert.alert('Could not open kiosk', e?.message || 'Please try again.');
+    }
+  }
+
   if (accessLoading && !loaded) {
     return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
   }
@@ -76,17 +94,33 @@ export default function ManageGridScreen({ navigation }) {
           );
         })}
 
-        <TouchableOpacity
-          style={[styles.tile, styles.kioskTile, { width: tileW }]}
-          activeOpacity={0.7}
-          onPress={() => navigation.navigate('Kiosk')}
-        >
-          <View style={[styles.iconWrap, styles.kioskIconWrap]}>
-            <Icon name="dollar" size={26} color={theme.blue} />
-          </View>
-          <Text style={styles.tileLabel} numberOfLines={1}>Front Desk Kiosk</Text>
-          <Text style={styles.tileDesc} numberOfLines={2}>Customer checkout display</Text>
-        </TouchableOpacity>
+        {isAdmin && (
+          <TouchableOpacity
+            style={[styles.tile, styles.kioskTile, { width: tileW }]}
+            activeOpacity={0.7}
+            onPress={() => enterKiosk('Kiosk')}
+          >
+            <View style={[styles.iconWrap, styles.kioskIconWrap]}>
+              <Icon name="dollar" size={26} color={theme.blue} />
+            </View>
+            <Text style={styles.tileLabel} numberOfLines={1}>Front Desk Kiosk</Text>
+            <Text style={styles.tileDesc} numberOfLines={2}>Customer checkout display · locks</Text>
+          </TouchableOpacity>
+        )}
+
+        {isAdmin && (
+          <TouchableOpacity
+            style={[styles.tile, styles.kioskTile, { width: tileW }]}
+            activeOpacity={0.7}
+            onPress={() => enterKiosk('ClockKiosk')}
+          >
+            <View style={[styles.iconWrap, styles.kioskIconWrap]}>
+              <Icon name="clock" size={26} color={theme.blue} />
+            </View>
+            <Text style={styles.tileLabel} numberOfLines={1}>Clock Kiosk</Text>
+            <Text style={styles.tileDesc} numberOfLines={2}>Staff clock in / out by PIN · locks</Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={[styles.tile, { width: tileW }]}

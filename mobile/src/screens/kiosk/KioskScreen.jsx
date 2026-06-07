@@ -1,7 +1,9 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, fetchClientMembership, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
+import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, fetchClientMembership, chargeStoredCard, fetchSlides, claimCheckoutSession, fetchEmployees } from '../../lib/firestore';
+import QRCode from '../../components/QRCode';
+import KioskExitButton from '../../components/KioskExitButton';
 import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact, normalizePromo } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
@@ -46,21 +48,17 @@ export default function KioskScreen({ navigation }) {
   if (session === undefined || settings === null) {
     return <View style={styles.center}><ActivityIndicator color={theme.green} size="large" /></View>;
   }
-  if (!active) return <KioskIdle styles={styles} theme={theme} onExit={() => navigation.goBack()} />;
-
   return (
-    <KioskCheckout
-      key={session.createdAt}
-      session={session}
-      settings={settings}
-      email={email}
-      styles={styles}
-      theme={theme}
-    />
+    <View style={{ flex: 1 }}>
+      {active
+        ? <KioskCheckout key={session.createdAt} session={session} settings={settings} email={email} styles={styles} theme={theme} />
+        : <KioskIdle styles={styles} theme={theme} />}
+      <View style={styles.kioskExit}><KioskExitButton onExit={() => navigation.goBack()} /></View>
+    </View>
   );
 }
 
-function KioskIdle({ styles, theme, onExit }) {
+function KioskIdle({ styles, theme }) {
   // Cycle the TipFlow slides (headshots) as the idle screen; fall back to a
   // branded card if there are no slides.
   const [slides, setSlides] = useState(null);
@@ -76,21 +74,19 @@ function KioskIdle({ styles, theme, onExit }) {
     return () => clearInterval(id);
   }, [slides]);
 
-  // Long-press anywhere on the idle screen = staff exit out of kiosk mode.
-  const exitProps = { activeOpacity: 1, onLongPress: onExit, delayLongPress: 900 };
-
+  // Exit is via the admin-PIN KioskExitButton overlay (rendered by KioskScreen).
   if (!slides || slides.length === 0) {
     return (
-      <TouchableOpacity style={styles.idle} {...exitProps}>
+      <View style={styles.idle}>
         <Text style={styles.idleMark}>✦</Text>
         <Text style={styles.idleTitle}>Plume Nexus</Text>
         <Text style={styles.idleSub}>Welcome — please relax while we get you checked out.</Text>
-      </TouchableOpacity>
+      </View>
     );
   }
   const s = slides[idx % slides.length];
   return (
-    <TouchableOpacity style={styles.slideWrap} {...exitProps}>
+    <View style={styles.slideWrap}>
       <Image source={{ uri: s.img }} style={styles.slideImg} resizeMode="cover" />
       {!!s.name && (
         <View style={styles.slideCaption}>
@@ -98,7 +94,7 @@ function KioskIdle({ styles, theme, onExit }) {
           {!!s.handle && <Text style={styles.slideHandle}>{s.handle}</Text>}
         </View>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -131,6 +127,18 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [tipPct, setTipPct]     = useState(0);
   const [tipAmtStr, setTipAmtStr] = useState('');
   const [perTechTips, setPerTechTips] = useState({});   // { techName: '12.00' }
+  const [venmoByTech, setVenmoByTech] = useState({});   // { techName: '@handle' }
+  const [showVenmo, setShowVenmo]     = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchEmployees().then(emps => {
+      if (!alive) return;
+      const m = {};
+      (emps || []).forEach(e => { if (e.name && e.venmo) m[e.name] = e.venmo; });
+      setVenmoByTech(m);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
   const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
@@ -213,6 +221,18 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   });
   const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
   const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
+
+  // Venmo tips: customers can tip a tech directly (QR to their Venmo) instead of
+  // (or on top of) a card tip. Amount prefilled from the selected tip, split per
+  // tech by service revenue (or the per-tech amounts when "Tip each tech").
+  const venmoTechs = Object.keys(techRevenue).filter(t => t && venmoByTech[t]);
+  const totalRev   = Object.values(techRevenue).reduce((s, v) => s + v, 0);
+  function venmoTipFor(t) {
+    if (tipMode === 'perTech') return Number(perTechTips[t]) || 0;
+    const tipAmt = cashTotals.tipAmt || 0;
+    if (!tipAmt || !totalRev) return 0;
+    return Math.round(tipAmt * ((techRevenue[t] || 0) / totalRev) * 100) / 100;
+  }
 
   // Flush any sales stranded offline whenever the kiosk arms a new checkout.
   useEffect(() => { syncOfflineSales().catch(() => {}); }, [session.createdAt]);
@@ -405,6 +425,12 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
             <Text style={styles.splitNote}>Split across techs by service amount. Tap "Tip each tech" to set them individually.</Text>
           )}
 
+          {venmoTechs.length > 0 && (
+            <TouchableOpacity style={styles.venmoBtn} onPress={() => setShowVenmo(true)} activeOpacity={0.85}>
+              <Text style={styles.venmoBtnText}>💸  Tip a tech with Venmo</Text>
+            </TouchableOpacity>
+          )}
+
           {!hasPhoneOnFile && (
             <>
               <Text style={styles.section}>Get my receipt</Text>
@@ -514,6 +540,32 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
           </View>
         );
       })()}
+
+      <Modal visible={showVenmo} transparent animationType="slide" onRequestClose={() => setShowVenmo(false)}>
+        <View style={styles.venmoBackdrop}>
+          <View style={styles.venmoCard}>
+            <Text style={styles.venmoTitle}>Tip with Venmo</Text>
+            <Text style={styles.venmoSub}>Scan with your phone’s camera</Text>
+            <ScrollView contentContainerStyle={{ alignItems: 'center', gap: 20, paddingVertical: 10 }}>
+              {venmoTechs.map(t => {
+                const amt = venmoTipFor(t);
+                const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
+                const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
+                return (
+                  <View key={t} style={styles.venmoItem}>
+                    <Text style={styles.venmoTech}>{t}</Text>
+                    <QRCode value={url} size={190} />
+                    <Text style={styles.venmoHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
+                  </View>
+                );
+              })}
+            </ScrollView>
+            <TouchableOpacity style={styles.venmoClose} onPress={() => setShowVenmo(false)}>
+              <Text style={styles.venmoCloseText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -557,6 +609,18 @@ const makeStyles = (t) => StyleSheet.create({
   tipChipTextOn:{ color: t.green },
   tipInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border, minWidth: 90 },
   splitNote: { fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 17 },
+  kioskExit: { position: 'absolute', top: 12, right: 12, zIndex: 50 },
+  venmoBtn:  { marginTop: 12, backgroundColor: '#3D95CE', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  venmoBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  venmoBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
+  venmoCard: { backgroundColor: t.surface, borderRadius: 24, padding: 24, width: '100%', maxWidth: 380, maxHeight: '88%' },
+  venmoTitle: { fontSize: 22, fontWeight: '800', color: t.text, textAlign: 'center' },
+  venmoSub:  { fontSize: 14, color: t.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
+  venmoItem: { alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 16, padding: 16, width: '100%' },
+  venmoTech: { fontSize: 16, fontWeight: '800', color: t.text, marginBottom: 12 },
+  venmoHandle: { fontSize: 15, fontWeight: '700', color: '#3D95CE', marginTop: 12 },
+  venmoClose: { marginTop: 14, backgroundColor: t.green, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  venmoCloseText: { color: '#fff', fontWeight: '800', fontSize: 15 },
   receiptInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border },
   totals:   { backgroundColor: t.surface, borderRadius: 16, padding: 18, marginTop: 24, borderWidth: 1, borderColor: t.border },
   totRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },

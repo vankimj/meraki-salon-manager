@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Switch, Alert } from 'react-native';
-import { fetchSettings, updateSettings } from '../../lib/firestore';
+import { fetchSettings, updateSettings, setKioskPin, hasKioskPin } from '../../lib/firestore';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 const RECEIPT_MODES = [
   { value: 'auto', label: 'Auto' }, { value: 'email', label: 'Email' },
@@ -30,6 +30,17 @@ export default function AdminSettingsScreen() {
   const [receipt,  setReceipt]  = useState('auto');
   const [refundDefault, setRefundDefault] = useState('withhold');
   const [saving,   setSaving]   = useState(false);
+  const [kPin, setKPin]       = useState('');
+  const [kHas, setKHas]       = useState(false);
+  const [kSaving, setKSaving] = useState(false);
+
+  async function saveKioskPin() {
+    if (!/^\d{4}$/.test(kPin)) { Alert.alert('PIN must be 4 digits'); return; }
+    setKSaving(true);
+    try { await setKioskPin(kPin); setKHas(true); setKPin(''); Alert.alert('Saved', 'Kiosk exit PIN updated.'); }
+    catch (e) { Alert.alert('Couldn\'t save', e?.message || 'Please try again.'); }
+    finally { setKSaving(false); }
+  }
 
   const load = useCallback(async () => {
     const s = await fetchSettings().catch(() => ({})) || {};
@@ -39,6 +50,7 @@ export default function AdminSettingsScreen() {
     setDraft(d);
     setReceipt(s.receiptDelivery || 'auto');
     setRefundDefault(s.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
+    hasKioskPin().then(r => setKHas(!!r.hasPin)).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -110,6 +122,15 @@ export default function AdminSettingsScreen() {
         })}
       </View>
       <Text style={styles.note}>Default for new refunds — staff can override per tech at refund time.</Text>
+
+      <Text style={styles.fieldLabel}>Kiosk exit PIN</Text>
+      <Text style={styles.note}>{kHas ? 'A PIN is set. Enter a new 4-digit PIN to change it.' : 'Set a 4-digit PIN. Required to lock + leave the clock and front-desk kiosks.'}</Text>
+      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 8 }}>
+        <TextInput style={[styles.input, { flex: 1 }]} value={kPin} onChangeText={t => setKPin(t.replace(/\D/g, '').slice(0, 4))} keyboardType="number-pad" placeholder="4-digit PIN" placeholderTextColor={theme.placeholder} secureTextEntry maxLength={4} />
+        <TouchableOpacity style={[styles.saveBtn, { marginTop: 0, paddingHorizontal: 20 }, (kSaving || kPin.length !== 4) && { opacity: 0.5 }]} onPress={saveKioskPin} disabled={kSaving || kPin.length !== 4}>
+          <Text style={styles.saveText}>{kSaving ? '…' : kHas ? 'Change' : 'Set'}</Text>
+        </TouchableOpacity>
+      </View>
 
       <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save settings'}</Text>
