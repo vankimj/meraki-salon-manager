@@ -462,6 +462,18 @@ export async function createReceipt(data, id = null) {
   if (id) await setDoc(doc(tenantCol('receipts'), String(id)), payload, { merge: true });
   else await addDoc(tenantCol('receipts'), payload);
 }
+// Re-send a receipt by text/email after the sale. The server resets the
+// sent/error markers + re-runs the same send path. `to` is an optional override
+// (a different number/address than the one stored on the receipt). Identify the
+// receipt by id when known, else by viewToken (the stable per-sale saleId).
+export async function resendReceiptSms({ receiptId = null, viewToken = null, phone = null } = {}) {
+  const res = await callFn('resendReceiptSms')({ tenantId: getCurrentTenant(), receiptId, viewToken, phone });
+  return res?.data || { ok: false };
+}
+export async function resendReceiptEmail({ receiptId = null, viewToken = null, email = null } = {}) {
+  const res = await callFn('resendReceiptEmail')({ tenantId: getCurrentTenant(), receiptId, viewToken, email });
+  return res?.data || { ok: false };
+}
 export async function fetchPromoByCode(code) {
   const snap = await getDocs(query(tenantCol('promoCodes'), where('code', '==', String(code || '').trim().toUpperCase())));
   if (snap.empty) return null;

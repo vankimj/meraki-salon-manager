@@ -944,23 +944,28 @@ exports.sendReceiptEmail = onDocumentCreated(
   async (event) => {
     const snap = event.data;
     if (!snap) return;
-    const tenantId = event.params.tenantId;
-
-    const data   = snap.data();
+    const data = snap.data();
     if (!data || data.sent || data.error) return;
+    await deliverReceiptEmail(getFirestore(), event.params.tenantId, snap.ref, data);
+  }
+);
 
+// Builds + sends the receipt email and marks the receipt sent/error. Shared by
+// the onCreate trigger above and the manual resend (resendReceiptEmail) so both
+// produce an identical email. Returns { ok, error }.
+async function deliverReceiptEmail(db, tenantId, ref, data) {
     const apiKey = awsAccessKey.value();
-    if (!apiKey) { await snap.ref.update({ error: 'email_not_configured' }); return; }
+    if (!apiKey) { await ref.update({ error: 'email_not_configured' }); return { ok: false, error: 'email_not_configured' }; }
 
     const { clientName, clientEmail, techName, date, startTime, services = [], retailProducts = [], payment = {}, viewToken } = data;
-    if (!clientEmail) { await snap.ref.update({ error: 'no_email' }); return; }
+    if (!clientEmail) { await ref.update({ error: 'no_email' }); return { ok: false, error: 'no_email' }; }
 
     // Read Google review URL + email rating style from settings (best-effort).
     // emailRatingStyle controls the rating CTA shape: inline_stars | single_button | both.
     let googleReviewUrl = null;
     let emailRatingStyle = 'both';
     try {
-      const settingsSnap = await getFirestore().doc(`tenants/${tenantId}/data/settings`).get();
+      const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
       if (settingsSnap.exists) {
         const s = settingsSnap.data();
         googleReviewUrl = s.googleReviewUrl || null;
@@ -969,8 +974,8 @@ exports.sendReceiptEmail = onDocumentCreated(
         }
       }
     } catch { /* non-fatal */ }
-    const brand   = await tenantBranding(getFirestore(), tenantId);
-    const baseUrl = await tenantBaseUrl(getFirestore(), tenantId);
+    const brand   = await tenantBranding(db, tenantId);
+    const baseUrl = await tenantBaseUrl(db, tenantId);
 
     const dateStr     = `${esc(fmtDate(date))}${startTime ? ' at ' + esc(fmtTime(startTime)) : ''}`;
     const firstName   = (clientName || 'there').split(' ')[0];
@@ -1038,20 +1043,21 @@ exports.sendReceiptEmail = onDocumentCreated(
 
     try {
       const { error } = await sendEmail({
-        from:    await tenantFromAddress(getFirestore(), tenantId),
+        from:    await tenantFromAddress(db, tenantId),
         to:      clientEmail,
         subject: `Your receipt — ${fmtDate(date)}`,
         html,
       });
       if (error) throw new Error(error.message || JSON.stringify(error));
-      await snap.ref.update({ sent: true, sentAt: new Date().toISOString() });
+      await ref.update({ sent: true, sentAt: new Date().toISOString() });
       console.log(`[Receipt] Sent to ${clientName} (${clientEmail})`);
+      return { ok: true };
     } catch (e) {
       console.error('[Receipt] Failed:', e.message);
-      await snap.ref.update({ error: e.message });
+      await ref.update({ error: e.message });
+      return { ok: false, error: e.message };
     }
-  }
-);
+}
 
 // Reads tenants/{id}/data/settings.receiptDelivery. Default 'auto':
 //   email-only if email present, sms-only if phone present, both if both.
@@ -1897,6 +1903,56 @@ exports.resendReceiptSms = onCall({ cors: true }, async (request) => {
     await ref.update({ smsError: r.error || 'send_failed' });
   }
   return { ok: !!r.ok, error: r.error || null, sandboxed: !!r.sandboxed };
+});
+
+// Email twin of resendReceiptSms — resets the sent/error markers and re-sends
+// the receipt email via the shared deliverReceiptEmail. Optional email override
+// lets staff send to a different address than the one stored on the receipt.
+exports.resendReceiptEmail = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, viewToken, email } = request.data || {};
+  const tenantId = String(tid || TENANT_ID);
+  if (!receiptId && !viewToken) throw new HttpsError('invalid-argument', 'receiptId or viewToken required');
+
+  const overrideEmail = String(email || '').trim();
+  if (overrideEmail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(overrideEmail)) {
+    throw new HttpsError('invalid-argument', 'Invalid email address');
+  }
+
+  // Reuse the staff-membership check — admin or techs can re-send their own.
+  const callerEmail = String(request.auth.token?.email || '').toLowerCase();
+  if (!callerEmail) throw new HttpsError('permission-denied', 'No email on token');
+  const usersSnap = await getFirestore().doc(`tenants/${tenantId}/data/usersFull`).get();
+  const list = (usersSnap.exists ? usersSnap.data()?.users : []) || [];
+  const me = list.find(u => String(u.email || '').toLowerCase() === callerEmail);
+  if (!me || (me.role !== 'admin' && me.role !== 'tech')) {
+    throw new HttpsError('permission-denied', 'Staff access required');
+  }
+
+  if (!checkRate(`resendReceiptEmail:${callerEmail}`, Date.now(), 60 * 1000, 5)) {
+    throw new HttpsError('resource-exhausted', 'Too many resends. Try again in a minute.');
+  }
+
+  const db = getFirestore();
+  let ref;
+  if (receiptId) {
+    ref = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+  } else {
+    const q = await db.collection(`tenants/${tenantId}/receipts`)
+      .where('viewToken', '==', String(viewToken)).limit(1).get();
+    if (q.empty) throw new HttpsError('not-found', 'Receipt not found');
+    ref = q.docs[0].ref;
+  }
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Receipt not found');
+
+  const update = { sent: false, error: null, emailResendRequestedAt: new Date().toISOString() };
+  if (overrideEmail) update.clientEmail = overrideEmail;
+  await ref.update(update);
+
+  const data = (await ref.get()).data();
+  const res = await deliverReceiptEmail(db, tenantId, ref, data);
+  return { ok: !!res.ok, error: res.error || null };
 });
 
 // Returns the CALLER's own role + techName for a tenant. Replaces the
