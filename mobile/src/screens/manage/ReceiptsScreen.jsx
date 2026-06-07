@@ -14,6 +14,19 @@ function fmtDate(d) {
   if (!y || !m || !day) return String(d);
   return `${Number(m)}/${Number(day)}/${String(y).slice(2)}`;
 }
+const cap = (s) => s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '';
+// Card brand + last4 if captured (in-person sales, going forward); else blank.
+function paidWith(pay) {
+  if (pay?.method === 'card' && pay.cardBrand && pay.cardLast4) return `${cap(pay.cardBrand)} ••${pay.cardLast4}`;
+  return '';
+}
+function refundTypeLabel(r) {
+  const m = r?.method;
+  if (m === 'store_credit' || r?.addedCredit) return 'Store-credit';
+  if (m === 'card') return 'Card';
+  if (m === 'cash') return 'Cash';
+  return 'Recorded';
+}
 
 // Sales / receipts. Browse a recent window (default 6 months) or search a
 // client by exact name across ALL time — so an old receipt a customer asks for
@@ -109,9 +122,18 @@ export default function ReceiptsScreen() {
             ))}
             {pay.discountAmount > 0 && <View style={styles.liRow}><Text style={styles.liMuted}>Discount</Text><Text style={styles.liMuted}>−{money(pay.discountAmount)}</Text></View>}
             {pay.promoAmount > 0 && <View style={styles.liRow}><Text style={styles.liMuted}>Promo</Text><Text style={styles.liMuted}>−{money(pay.promoAmount)}</Text></View>}
+            {pay.giftCard?.applied > 0 && <View style={styles.liRow}><Text style={styles.liMuted}>Gift card used</Text><Text style={styles.liMuted}>−{money(pay.giftCard.applied)}</Text></View>}
+            {pay.creditApplied > 0 && <View style={styles.liRow}><Text style={styles.liMuted}>Store credit used</Text><Text style={styles.liMuted}>−{money(pay.creditApplied)}</Text></View>}
             {pay.tax > 0 && <View style={styles.liRow}><Text style={styles.liMuted}>Tax</Text><Text style={styles.liMuted}>{money(pay.tax)}</Text></View>}
             {pay.tip > 0 && <View style={styles.liRow}><Text style={styles.liMuted}>Tip</Text><Text style={styles.liMuted}>{money(pay.tip)}</Text></View>}
-            <View style={[styles.liRow, styles.liTotal]}><Text style={styles.liName}>Total</Text><Text style={styles.liVal}>{money(pay.total)}</Text></View>
+            <View style={[styles.liRow, styles.liTotal]}><Text style={styles.liName}>Total</Text><Text style={styles.liVal}>{money(pay.total)}{paidWith(pay) ? ` · ${paidWith(pay)}` : ''}</Text></View>
+
+            {(item.refunds || (item.refund ? [item.refund] : [])).map((r, i) => (
+              <View key={`rf${i}`} style={[styles.liRow, i === 0 && { marginTop: 6 }]}>
+                <Text style={styles.refundLine} numberOfLines={1}>↩ {refundTypeLabel(r)} refund{r.reason ? ` · ${r.reason}` : ''}</Text>
+                <Text style={styles.refundLine}>−{money(r.amount)}</Text>
+              </View>
+            ))}
 
             <Text style={styles.expandLabel}>Resend receipt</Text>
             {(item.apptIds || []).length > 1
@@ -276,6 +298,7 @@ const makeStyles = (t) => StyleSheet.create({
   liVal:   { fontSize: 13.5, color: t.text, fontWeight: '700' },
   liMuted: { fontSize: 12.5, color: t.textMuted },
   liTotal: { borderTopWidth: 1, borderTopColor: t.border, marginTop: 5, paddingTop: 6 },
+  refundLine: { fontSize: 12.5, color: t.danger, fontWeight: '700' },
   expandLabel:{ fontSize: 12, fontWeight: '800', color: t.textMuted, marginTop: 14, textTransform: 'uppercase', letterSpacing: 0.3 },
   recipientsHint:{ fontSize: 12, color: t.textMuted, marginTop: 4, marginBottom: 2 },
   recipientName:{ fontSize: 13.5, fontWeight: '700', color: t.text, marginBottom: 4 },
