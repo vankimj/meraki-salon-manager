@@ -130,6 +130,42 @@ All demo records tagged `_demo: true` for targeted deletion.
 
 ---
 
+## Task tracking — Kanban board (source of truth)
+
+**All task/roadmap tracking lives on the GitHub Projects board, and Claude keeps it current every session.**
+
+- **Board:** https://github.com/users/vankimj/projects/1 ("Plume Nexus Roadmap")
+- **Cards are real GitHub issues** in `vankimj/Plumenexus-Salon-Manager`. Reference `Closes #NN` in PRs to auto-move a card to Done.
+- **Columns** = the `Status` single-select field: Backlog → Todo → In Progress → In Review → Security Review → QA / E2E → Staging → Done, plus **Blocked** (holding lane for cards waiting on an external dependency).
+- **Security Review is a hard gate** — nothing reaches Done without passing it (PII/payroll/Stripe is the #1 concern).
+
+**Every session must, without being asked:**
+1. At start, if the user is picking up roadmap/feature work, glance at the board (`gh project item-list 1 --owner vankimj`) to ground next steps.
+2. When work begins on a card, move it to **In Progress**; when a PR is open, **Review**; when merged/shipped, **Done**.
+3. When the user describes new work not on the board, create an issue + add it as a card in the right column.
+
+**Operating the board via `gh` (token needs `project` scope — already granted):**
+```bash
+# IDs (stable):
+PROJ=PVT_kwHOBbclvc4BZ3cw                 # project node id
+FIELD=PVTSSF_lAHOBbclvc4BZ3cwzhUzJ7Y      # Status field id
+# Status option ids (regenerated 2026-06-06 when columns were expanded):
+#   Backlog=e701ac56 Todo=19669990 "In Progress"=54cdc0d9 "In Review"=0da981b4
+#   "Security Review"=a4e683c4 "QA / E2E"=32a528bb Staging=c0ec43e9 Done=0897e59f Blocked=a8d44f01
+
+# Add a new card:
+url=$(gh issue create --title "..." --body "..." --label "feature")
+item=$(gh project item-add 1 --owner vankimj --url "$url" --format json | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+gh project item-edit --id "$item" --project-id "$PROJ" --field-id "$FIELD" --single-select-option-id 19669990  # -> Todo
+
+# Move an existing card: find its item id via `gh project item-list 1 --owner vankimj --limit 100 --format json` (MUST pass --limit 100; default ~30 silently truncates), then item-edit with the target option id.
+```
+Labels in use: `feature`, `infra`, `mobile`, `pos`, `sms`, `p1`, `p2`.
+
+**⚠️ NEVER edit the Status field's options with `updateProjectV2Field` unless you pass the EXISTING option `id`s for every option you keep.** Omitting ids regenerates ALL option ids and **wipes the Status of every card on the board** (hit 2026-06-06 — wiped 47 cards, had to restore from issue open/closed state). To add a column safely, first query the field's current options + ids, then resubmit the full list with those ids preserved plus the new option(s).
+
+---
+
 ## Roadmap (not yet built)
 - **Reporting** — revenue dashboard, employee service history, leaderboard, IRS fiscal year report
 - **POS / Checkout** — multi-tech credit split, discounts (friends & family, promo codes, gift cards), future credits, refunds with photos
