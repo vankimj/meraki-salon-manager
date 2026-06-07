@@ -11,6 +11,7 @@ import { clearPushTokenForUser } from './src/hooks/usePushRegistration';
 import AuthScreen from './src/screens/AuthScreen';
 import RootNav    from './src/navigation/RootNav';
 import TerminalProvider from './src/components/TerminalProvider';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { ThemeProvider } from './src/theme/ThemeContext';
 
 // Auto-logout — single inactivity timer at the root. Resets on any
@@ -80,7 +81,9 @@ export default function App() {
       <SafeAreaProvider>
         <StatusBar style="auto" />
         <View style={{ flex: 1 }} onTouchStart={resetIdle}>
-          {user ? <TerminalProvider><RootNav /></TerminalProvider> : <AuthScreen />}
+          <ErrorBoundary>
+            {user ? <TerminalProvider><RootNav /></TerminalProvider> : <AuthScreen />}
+          </ErrorBoundary>
         </View>
       </SafeAreaProvider>
     </ThemeProvider>
