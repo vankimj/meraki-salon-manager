@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, Modal, ScrollView, Platform } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { fetchEmployees, fetchAttendance, clockEvent } from '../../lib/firestore';
 import PinPad from '../../components/PinPad';
@@ -76,11 +76,11 @@ export default function ClockKioskScreen({ navigation }) {
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        {mode === 'menu'
-          ? <Text style={styles.h1}>Clock Kiosk</Text>
-          : <TouchableOpacity onPress={() => setMode('menu')} style={styles.backBtn}><Text style={styles.backText}>‹ Menu</Text></TouchableOpacity>}
-        {mode !== 'menu' && <Text style={styles.h1Sub} numberOfLines={1}>{mode === 'timeclock' ? 'Time Clock' : 'Walk-in Monitor'}</Text>}
-        <KioskExitButton onExit={() => navigation.goBack()} />
+        {mode !== 'menu' && (
+          <TouchableOpacity onPress={() => setMode('menu')} style={styles.backBtn}><Text style={styles.backText}>‹ Menu</Text></TouchableOpacity>
+        )}
+        <Text style={styles.h1} numberOfLines={1}>{mode === 'menu' ? 'Clock In / Out' : mode === 'timeclock' ? 'Time Clock' : 'Walk-in Monitor'}</Text>
+        <View style={styles.exitWrap}><KioskExitButton onExit={() => navigation.goBack()} /></View>
       </View>
 
       {mode === 'menu' && (
@@ -159,11 +159,12 @@ export default function ClockKioskScreen({ navigation }) {
 
 const makeStyles = (t) => StyleSheet.create({
   wrap:    { flex: 1, backgroundColor: t.bg },
-  header:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
-  h1:      { fontSize: 24, fontWeight: '800', color: t.text },
-  h1Sub:   { fontSize: 20, fontWeight: '800', color: t.text, flex: 1, textAlign: 'center', marginHorizontal: 10 },
-  backBtn: { paddingVertical: 6, paddingRight: 12 },
+  header:  { minHeight: 76, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 60, paddingTop: 18, paddingBottom: 12 },
+  h1:      { fontSize: 32, color: t.text, textAlign: 'center', letterSpacing: 0.5, fontWeight: '600',
+             fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'serif' }) },
+  backBtn: { position: 'absolute', left: 14, bottom: 14, paddingVertical: 6, paddingRight: 12, zIndex: 2 },
   backText:{ fontSize: 17, fontWeight: '700', color: t.green },
+  exitWrap:{ position: 'absolute', right: 12, bottom: 10, zIndex: 2 },
   menu:    { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 24 },
   menuTile:{ width: 240, height: 210, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surface, borderRadius: 24, borderWidth: 1, borderColor: t.border, padding: 20 },
   menuEmoji:{ fontSize: 54 },
