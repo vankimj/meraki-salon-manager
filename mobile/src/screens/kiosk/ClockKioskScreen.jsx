@@ -4,6 +4,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { fetchEmployees, fetchAttendance, clockEvent } from '../../lib/firestore';
 import PinPad from '../../components/PinPad';
 import KioskExitButton from '../../components/KioskExitButton';
+import WalkinMonitor from './WalkinMonitor';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 function todayKey() {
@@ -31,6 +32,7 @@ export default function ClockKioskScreen({ navigation }) {
   const [busy, setBusy]       = useState(false);
   const [err, setErr]         = useState('');
   const [confirm, setConfirm] = useState(null);     // { name, kind, time }
+  const [mode, setMode]       = useState('menu');   // menu | timeclock | monitor
 
   const load = useCallback(async () => {
     const [employees, day] = await Promise.all([fetchEmployees(), fetchAttendance(todayKey())]);
@@ -74,31 +76,53 @@ export default function ClockKioskScreen({ navigation }) {
   return (
     <View style={styles.wrap}>
       <View style={styles.header}>
-        <Text style={styles.h1}>Clock in / out</Text>
+        {mode === 'menu'
+          ? <Text style={styles.h1}>Clock Kiosk</Text>
+          : <TouchableOpacity onPress={() => setMode('menu')} style={styles.backBtn}><Text style={styles.backText}>‹ Menu</Text></TouchableOpacity>}
+        {mode !== 'menu' && <Text style={styles.h1Sub} numberOfLines={1}>{mode === 'timeclock' ? 'Time Clock' : 'Walk-in Monitor'}</Text>}
         <KioskExitButton onExit={() => navigation.goBack()} />
       </View>
 
-      {emps === null ? (
-        <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
-      ) : emps.length === 0 ? (
-        <View style={styles.center}><Text style={styles.empty}>No active team members.</Text></View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.grid}>
-          {emps.map(e => {
-            const on = stateOf(e.id) === 'in';
-            return (
-              <TouchableOpacity key={e.id} style={styles.tile} activeOpacity={0.8} onPress={() => { setErr(''); setSel(e); }}>
-                {e.photo
-                  ? <Image source={{ uri: e.photo }} style={styles.avatar} />
-                  : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarInit}>{initials(e.name)}</Text></View>}
-                <Text style={styles.tileName} numberOfLines={1}>{shortName(e.name)}</Text>
-                <View style={[styles.badge, on ? styles.badgeIn : styles.badgeOut]}>
-                  <Text style={[styles.badgeText, on ? styles.badgeTextIn : styles.badgeTextOut]}>{on ? 'Clocked in' : 'Clocked out'}</Text>
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
+      {mode === 'menu' && (
+        <View style={styles.menu}>
+          <TouchableOpacity style={styles.menuTile} activeOpacity={0.85} onPress={() => setMode('timeclock')}>
+            <Text style={styles.menuEmoji}>🕒</Text>
+            <Text style={styles.menuTitle}>Time Clock</Text>
+            <Text style={styles.menuDesc}>Clock in / out by PIN</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuTile} activeOpacity={0.85} onPress={() => setMode('monitor')}>
+            <Text style={styles.menuEmoji}>📋</Text>
+            <Text style={styles.menuTitle}>Walk-in Monitor</Text>
+            <Text style={styles.menuDesc}>Live rotation + waitlist</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {mode === 'monitor' && <WalkinMonitor />}
+
+      {mode === 'timeclock' && (
+        emps === null ? (
+          <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
+        ) : emps.length === 0 ? (
+          <View style={styles.center}><Text style={styles.empty}>No active team members.</Text></View>
+        ) : (
+          <ScrollView contentContainerStyle={styles.grid}>
+            {emps.map(e => {
+              const on = stateOf(e.id) === 'in';
+              return (
+                <TouchableOpacity key={e.id} style={styles.tile} activeOpacity={0.8} onPress={() => { setErr(''); setSel(e); }}>
+                  {e.photo
+                    ? <Image source={{ uri: e.photo }} style={styles.avatar} />
+                    : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarInit}>{initials(e.name)}</Text></View>}
+                  <Text style={styles.tileName} numberOfLines={1}>{shortName(e.name)}</Text>
+                  <View style={[styles.badge, on ? styles.badgeIn : styles.badgeOut]}>
+                    <Text style={[styles.badgeText, on ? styles.badgeTextIn : styles.badgeTextOut]}>{on ? 'Clocked in' : 'Clocked out'}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )
       )}
 
       {/* PIN entry */}
@@ -137,6 +161,14 @@ const makeStyles = (t) => StyleSheet.create({
   wrap:    { flex: 1, backgroundColor: t.bg },
   header:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 18, paddingBottom: 10 },
   h1:      { fontSize: 24, fontWeight: '800', color: t.text },
+  h1Sub:   { fontSize: 20, fontWeight: '800', color: t.text, flex: 1, textAlign: 'center', marginHorizontal: 10 },
+  backBtn: { paddingVertical: 6, paddingRight: 12 },
+  backText:{ fontSize: 17, fontWeight: '700', color: t.green },
+  menu:    { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 24 },
+  menuTile:{ width: 240, height: 210, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surface, borderRadius: 24, borderWidth: 1, borderColor: t.border, padding: 20 },
+  menuEmoji:{ fontSize: 54 },
+  menuTitle:{ fontSize: 22, fontWeight: '800', color: t.text, marginTop: 14 },
+  menuDesc: { fontSize: 14, color: t.textMuted, marginTop: 6, textAlign: 'center' },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty:   { color: t.textMuted, fontSize: 15 },
   grid:    { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 16, padding: 16 },

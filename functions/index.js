@@ -1,4 +1,4 @@
-const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onSchedule }       = require('firebase-functions/v2/scheduler');
 const { onCall, onRequest, HttpsError }= require('firebase-functions/v2/https');
 const { initializeApp }    = require('firebase-admin/app');
@@ -2883,6 +2883,67 @@ exports.notifyOnCheckIn = onDocumentUpdated(
       createdAt:   new Date().toISOString(),
       sent:        false,
     });
+  }
+);
+
+// When the walk-in turn rotation changes, push each AFFECTED tech their current
+// standing (position in line) + how many guests are waiting. "Affected" = a tech
+// whose position or away-state actually changed, so routine no-op writes don't
+// spam. Best-effort: techs with no app/push token simply don't get pinged.
+exports.notifyRotationChange = onDocumentWritten(
+  `tenants/{tenantId}/turnRoster/{date}`,
+  async (event) => {
+    const tenantId = event.params?.tenantId;
+    const date = event.params?.date;
+    // Only recent rosters (the kiosk only writes today's). ±36h covers any
+    // tenant timezone while skipping historical/backfill edits.
+    const utcToday = new Date().toISOString().slice(0, 10);
+    const ms = Math.abs(new Date(`${date}T00:00:00Z`).getTime() - new Date(`${utcToday}T00:00:00Z`).getTime());
+    if (!(ms <= 36 * 3600 * 1000)) return;
+
+    const before = event.data?.before?.data()?.roster || [];
+    const after  = event.data?.after?.data()?.roster  || [];
+    if (!Array.isArray(after) || after.length === 0) return;
+
+    const db = getFirestore();
+    const [setSnap, empSnap, waitSnap] = await Promise.all([
+      db.doc(`tenants/${tenantId}/data/settings`).get(),
+      db.collection(`tenants/${tenantId}/employees`).get(),
+      db.collection(`tenants/${tenantId}/waitlist`).where('date', '==', date).get(),
+    ]);
+    const seniority = !!(setSnap.exists && setSnap.data().walkinSeniorityOrder);
+    const empById = {};
+    empSnap.docs.forEach(d => { empById[d.id] = d.data() || {}; });
+    const waiting = waitSnap.docs.filter(d => (d.data()?.status) !== 'seated').length;
+
+    const sortRoster = (roster) => [...roster].sort((a, b) =>
+      (a.away ? 1 : 0) - (b.away ? 1 : 0)
+      || (Number(a.turnsTaken) || 0) - (Number(b.turnsTaken) || 0)
+      || (seniority ? ((empById[a.techId]?.sortOrder ?? 999) - (empById[b.techId]?.sortOrder ?? 999)) : 0)
+      || String(a.clockInAt || '').localeCompare(String(b.clockInAt || '')));
+
+    const beforePos = {};
+    sortRoster(before).forEach((t, i) => { beforePos[t.techId] = { pos: i, away: !!t.away }; });
+    const afterSorted = sortRoster(after);
+    const nextId = afterSorted.find(t => !t.away)?.techId;
+
+    const waitStr = waiting === 0 ? 'No one waiting yet.' : (waiting === 1 ? '1 guest waiting.' : `${waiting} guests waiting.`);
+
+    await Promise.all(afterSorted.map(async (t, i) => {
+      const email = empById[t.techId]?.email;
+      if (!email || t.away) return;
+      const prev = beforePos[t.techId];
+      const changed = !prev || prev.pos !== i || prev.away !== !!t.away;
+      if (!changed) return;
+      const standing = t.techId === nextId ? "You're up next! 🎉" : `You're #${i + 1} in the rotation.`;
+      try {
+        await sendPushToEmail(db, tenantId, email, {
+          title: 'Walk-in rotation',
+          body: `${standing} ${waitStr}`,
+          data: { type: 'rotation', position: i + 1, waiting },
+        });
+      } catch (e) { /* best-effort */ }
+    }));
   }
 );
 

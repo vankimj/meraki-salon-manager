@@ -17,7 +17,7 @@ export default function WalkinScreen() {
   const { canEditSchedule, isAdmin } = useTenantAccess();
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
-  const canEdit = isAdmin || canEditSchedule;
+  const canEdit = isAdmin;   // Walk-in Manager is read-only to everyone except admins
   const [roster,  setRoster]  = useState(null);
   const [waitlist, setWaitlist] = useState([]);
   const [emps,    setEmps]    = useState([]);
