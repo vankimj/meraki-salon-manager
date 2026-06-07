@@ -1,12 +1,11 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, RefreshControl, Alert, Modal } from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, RefreshControl, Alert, Modal, ScrollView } from 'react-native';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
-  fetchEmployees, fetchAttendance, fetchSettings,
+  fetchEmployees, fetchAttendance, fetchSettings, fetchServices,
 } from '../../lib/firestore';
 
-const TURN_WEIGHTS = { full: 1, half: 0.5, none: 0 };
 const fmtTurns = (n) => { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 import { playChime } from '../../lib/chime';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
@@ -23,20 +22,23 @@ export default function WalkinScreen() {
   const [emps,    setEmps]    = useState([]);
   const [newName, setNewName] = useState('');
   const [seatingFor, setSeatingFor] = useState(null); // waitlist entry being assigned
-  const [cfg, setCfg] = useState({ partialTurns: false, requestNoTurn: false });
-  const [seatWeight, setSeatWeight] = useState('full');   // full | half | none (partial-turns mode)
+  const [cfg, setCfg] = useState({ partialTurns: false, requestNoTurn: false, seniority: false });
+  const [services, setServices] = useState([]);
+  const [seatWeight, setSeatWeight] = useState(1);        // numeric turn weight (partial-turns mode)
   const [seatRequested, setSeatRequested] = useState(false);
 
   const load = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const [r, w, e, att, s] = await Promise.all([
+    const [r, w, e, att, s, svc] = await Promise.all([
       fetchTurnRoster(),
       fetchWaitlist(),
       fetchEmployees().catch(() => []),
       fetchAttendance(today).catch(() => ({ entries: [] })),
       fetchSettings().catch(() => ({})),
+      fetchServices().catch(() => []),
     ]);
-    setCfg({ partialTurns: !!s?.walkinPartialTurns, requestNoTurn: !!s?.walkinRequestNoTurn });
+    setCfg({ partialTurns: !!s?.walkinPartialTurns, requestNoTurn: !!s?.walkinRequestNoTurn, seniority: !!s?.walkinSeniorityOrder });
+    setServices((svc || []).filter(x => x.active !== false));
     const savedRoster = r.roster || [];
     const activeEmps = e.filter(x => x.active !== false);
 
@@ -111,7 +113,7 @@ export default function WalkinScreen() {
   // the picker override (clients often request a specific tech).
   function seat(entry) {
     if (!canEdit) return;
-    setSeatWeight('full'); setSeatRequested(false);
+    setSeatWeight(1); setSeatRequested(false);
     if (roster.length === 0) { assignSeat(entry, null); return; }
     setSeatingFor(entry);
   }
@@ -120,7 +122,7 @@ export default function WalkinScreen() {
     if (tech) {
       // Turn weight: full/half/none in partial-turns mode, else a full turn.
       // A client-requested tech takes no turn when that policy is on (Mango-style).
-      let delta = cfg.partialTurns ? (TURN_WEIGHTS[seatWeight] ?? 1) : 1;
+      let delta = cfg.partialTurns ? (Number(seatWeight) || 0) : 1;
       if (seatRequested && cfg.requestNoTurn) delta = 0;
       persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + delta } : t));
     }
@@ -143,10 +145,14 @@ export default function WalkinScreen() {
   if (roster === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
   // Away techs sink to the bottom and never hold the "next up" star; among the
-  // available, fewest turns first, then earliest clocked in.
+  // available, fewest turns first, then (optionally) by seniority (employee
+  // sortOrder), then earliest clocked in.
+  const senById = {};
+  emps.forEach(e => { senById[e.id] = Number.isFinite(e.sortOrder) ? e.sortOrder : 999; });
   const sorted = [...roster].sort((a, b) =>
     (a.away ? 1 : 0) - (b.away ? 1 : 0)
     || (a.turnsTaken || 0) - (b.turnsTaken || 0)
+    || (cfg.seniority ? ((senById[a.techId] ?? 999) - (senById[b.techId] ?? 999)) : 0)
     || (a.clockInAt || '').localeCompare(b.clockInAt || ''));
   const waiting = waitlist.filter(w => w.status !== 'seated');
   const offRoster = emps.filter(e => !roster.some(t => t.techId === e.id));
@@ -226,33 +232,49 @@ export default function WalkinScreen() {
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSeatingFor(null)}>
         <View style={styles.sheet}>
           <Text style={styles.sheetTitle}>Seat {seatingFor?.clientName || 'walk-in'} with…</Text>
-          <Text style={styles.sheetSub}>{cfg.partialTurns ? 'Pick the turn amount, then a tech.' : 'This adds a turn to the tech you pick.'}</Text>
+          <Text style={styles.sheetSub}>{cfg.partialTurns ? `Pick the turn amount (now: ${fmtTurns(seatWeight)}), then a tech.` : 'This adds a turn to the tech you pick.'}</Text>
 
-          {cfg.partialTurns && (
-            <View style={styles.weightRow}>
-              {[['full', 'Full turn'], ['half', 'Half turn'], ['none', 'No turn']].map(([w, label]) => (
-                <TouchableOpacity key={w} onPress={() => setSeatWeight(w)} style={[styles.weightChip, seatWeight === w && styles.weightChipOn]}>
-                  <Text style={[styles.weightChipText, seatWeight === w && styles.weightChipTextOn]}>{label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          {cfg.requestNoTurn && (
-            <TouchableOpacity style={styles.reqRow} activeOpacity={0.7} onPress={() => setSeatRequested(v => !v)}>
-              <View style={[styles.reqBox, seatRequested && styles.reqBoxOn]}>{seatRequested && <Text style={styles.reqCheck}>✓</Text>}</View>
-              <Text style={styles.reqLabel}>Client requested this tech (doesn't take a turn)</Text>
-            </TouchableOpacity>
-          )}
+          <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+            {cfg.partialTurns && (
+              <>
+                <View style={styles.weightRow}>
+                  {[['Full', 1], ['Half', 0.5], ['None', 0]].map(([label, w]) => (
+                    <TouchableOpacity key={label} onPress={() => setSeatWeight(w)} style={[styles.weightChip, seatWeight === w && styles.weightChipOn]}>
+                      <Text style={[styles.weightChipText, seatWeight === w && styles.weightChipTextOn]}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                {services.length > 0 && (
+                  <View style={styles.svcWrap}>
+                    {services.map(s => {
+                      const w = Number(s.turnWeight) || 1;
+                      return (
+                        <TouchableOpacity key={s.id} onPress={() => setSeatWeight(w)} style={[styles.svcChip, seatWeight === w && styles.svcChipOn]}>
+                          <Text style={[styles.svcChipText, seatWeight === w && styles.svcChipTextOn]} numberOfLines={1}>{s.name} ·{fmtTurns(w)}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </>
+            )}
+            {cfg.requestNoTurn && (
+              <TouchableOpacity style={styles.reqRow} activeOpacity={0.7} onPress={() => setSeatRequested(v => !v)}>
+                <View style={[styles.reqBox, seatRequested && styles.reqBoxOn]}>{seatRequested && <Text style={styles.reqCheck}>✓</Text>}</View>
+                <Text style={styles.reqLabel}>Client requested this tech (doesn't take a turn)</Text>
+              </TouchableOpacity>
+            )}
 
-          {sorted.map((t, i) => (
-            <TouchableOpacity key={t.techId} style={[styles.pickRow, i === 0 && !t.away && styles.pickRowNext, t.away && { opacity: 0.55 }]} onPress={() => assignSeat(seatingFor, t)}>
-              <Text style={styles.pickName}>{i === 0 && !t.away ? '⭐ ' : ''}{t.away ? '💤 ' : ''}{t.techName}</Text>
-              <Text style={styles.pickTurns}>{fmtTurns(t.turnsTaken)} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
+            {sorted.map((t, i) => (
+              <TouchableOpacity key={t.techId} style={[styles.pickRow, i === 0 && !t.away && styles.pickRowNext, t.away && { opacity: 0.55 }]} onPress={() => assignSeat(seatingFor, t)}>
+                <Text style={styles.pickName}>{i === 0 && !t.away ? '⭐ ' : ''}{t.away ? '💤 ' : ''}{t.techName}</Text>
+                <Text style={styles.pickTurns}>{fmtTurns(t.turnsTaken)} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={styles.pickSkip} onPress={() => assignSeat(seatingFor, null)}>
+              <Text style={styles.pickSkipText}>Seat without assigning a turn</Text>
             </TouchableOpacity>
-          ))}
-          <TouchableOpacity style={styles.pickSkip} onPress={() => assignSeat(seatingFor, null)}>
-            <Text style={styles.pickSkipText}>Seat without assigning a turn</Text>
-          </TouchableOpacity>
+          </ScrollView>
         </View>
       </TouchableOpacity>
     </Modal>
@@ -281,6 +303,11 @@ const makeStyles = (t) => StyleSheet.create({
   weightChipOn:{ backgroundColor: t.greenSoft, borderColor: t.green },
   weightChipText:{ fontSize: 13, fontWeight: '700', color: t.textMuted },
   weightChipTextOn:{ color: t.green },
+  svcWrap:    { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
+  svcChip:    { paddingVertical: 6, paddingHorizontal: 10, borderRadius: 14, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt, maxWidth: '100%' },
+  svcChipOn:  { backgroundColor: t.greenSoft, borderColor: t.green },
+  svcChipText:{ fontSize: 12, fontWeight: '600', color: t.textMuted },
+  svcChipTextOn:{ color: t.green },
   reqRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12, paddingVertical: 4 },
   reqBox:     { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: t.border, alignItems: 'center', justifyContent: 'center' },
   reqBoxOn:   { backgroundColor: t.green, borderColor: t.green },

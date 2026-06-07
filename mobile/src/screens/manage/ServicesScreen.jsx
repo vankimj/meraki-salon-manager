@@ -8,6 +8,7 @@ const FIELDS = [
   { key: 'category',    label: 'Category',    type: 'text',   placeholder: 'Manicures' },
   { key: 'price',       label: 'Price ($)',   type: 'number', placeholder: '45' },
   { key: 'duration',    label: 'Duration (min)', type: 'number', placeholder: '45' },
+  { key: 'turnWeight',  label: 'Walk-in turn weight (1 = full)', type: 'number', placeholder: '1' },
   { key: 'description', label: 'Description', type: 'text',   placeholder: 'Optional' },
   { key: 'taxable',     label: 'Taxable',     type: 'bool' },
   { key: 'active',      label: 'Active',      type: 'bool' },
@@ -23,7 +24,7 @@ export default function ServicesScreen({ navigation }) {
       save={saveService}
       remove={deleteService}
       canEdit={isAdmin}
-      blank={() => ({ name: '', category: '', price: 0, duration: 0, description: '', taxable: true, active: true })}
+      blank={() => ({ name: '', category: '', price: 0, duration: 0, turnWeight: 1, description: '', taxable: true, active: true })}
       fields={FIELDS}
       titleOf={(s) => s.name}
       subtitleOf={(s) => [s.price != null ? `$${s.price}` : null, s.duration ? `${s.duration} min` : null, s.category]
