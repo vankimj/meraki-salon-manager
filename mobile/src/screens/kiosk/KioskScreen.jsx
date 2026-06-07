@@ -8,6 +8,7 @@ import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import useOnline from '../../hooks/useOnline';
 import CardPayButton from '../checkout/CardPayButton';
+import ResendReceiptRow from '../../components/ResendReceiptRow';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
@@ -314,6 +315,12 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         <Text style={styles.doneMark}>✓</Text>
         <Text style={styles.idleTitle}>{paidMsg}</Text>
         <Text style={styles.idleSub}>{receiptLine}</Text>
+        {!queued && (
+          <View style={styles.resendBox}>
+            <Text style={styles.resendLabel}>Want it texted or emailed?</Text>
+            <ResendReceiptRow viewToken={saleId} defaultContact={receiptPhone} />
+          </View>
+        )}
         <TouchableOpacity style={styles.doneBtn} onPress={() => clearCheckoutSession().catch(() => {})}>
           <Text style={styles.doneBtnText}>Done</Text>
         </TouchableOpacity>
@@ -546,6 +553,8 @@ const makeStyles = (t) => StyleSheet.create({
   confirmBtnText:{ color: '#fff', fontWeight: '800', fontSize: 17 },
   doneBtn:  { marginTop: 26, backgroundColor: t.green, borderRadius: 24, paddingVertical: 13, paddingHorizontal: 44 },
   doneBtnText:{ color: '#fff', fontWeight: '800', fontSize: 16 },
+  resendBox:{ width: '100%', maxWidth: 380, marginTop: 22 },
+  resendLabel:{ fontSize: 13, fontWeight: '700', color: t.textMuted, textAlign: 'center', marginBottom: 4 },
   settling: { marginTop: 18, backgroundColor: t.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: t.border, alignItems: 'center', gap: 10 },
   settlingText:{ fontSize: 16, fontWeight: '700', color: t.text },
   settlingErr: { fontSize: 15, fontWeight: '800', color: t.danger, textAlign: 'center' },

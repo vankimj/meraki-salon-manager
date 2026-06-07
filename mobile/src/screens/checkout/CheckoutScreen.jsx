@@ -13,6 +13,7 @@ import { completeSale } from '../../lib/completeSale';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from './CardPayButton';
+import ResendReceiptRow from '../../components/ResendReceiptRow';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import useOnline from '../../hooks/useOnline';
@@ -62,6 +63,7 @@ export default function CheckoutScreen({ navigation }) {
   const [showPicker, setShowPicker]   = useState(false);
   const [saving, setSaving]       = useState(false);
   const [paid, setPaid]           = useState(null);   // {method,opts} once money is CAPTURED — blocks re-charge
+  const [done, setDone]           = useState(null);   // {total,method,queued,note} once the receipt is written
   const [recordErr, setRecordErr] = useState('');
   const [saleId]                  = useState(() => genReceiptToken(24)); // idempotency key + receipt id
   const [receiptPhone, setReceiptPhone] = useState(''); // walk-ins: capture a number for the texted receipt
@@ -185,17 +187,14 @@ export default function CheckoutScreen({ navigation }) {
       if (card) {
         const r = await completeSale(args);
         await clearTab();
-        const extra = r.sideEffectErrors?.length ? `\n(${r.sideEffectErrors.join('; ')})` : '';
-        Alert.alert('Paid', `${money(r.total)} collected (card).${extra}`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
+        setSaving(false);
+        setDone({ total: r.total, method: 'card', queued: false, note: r.sideEffectErrors?.length ? r.sideEffectErrors.join('; ') : '' });
       } else {
         const r = await recordSale(args);
         await clearTab();
-        if (r.queued) {
-          Alert.alert('Saved offline', `${money(t.total)} recorded. It'll sync automatically once you're back online.`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
-        } else {
-          const extra = r.result.sideEffectErrors?.length ? `\n(${r.result.sideEffectErrors.join('; ')})` : '';
-          Alert.alert('Paid', `${money(r.result.total)} collected (cash).${extra}`, [{ text: 'Done', onPress: () => navigation.goBack() }]);
-        }
+        setSaving(false);
+        if (r.queued) setDone({ total: t.total, method, queued: true, note: '' });
+        else setDone({ total: r.result.total, method, queued: false, note: r.result.sideEffectErrors?.length ? r.result.sideEffectErrors.join('; ') : '' });
       }
     } catch (e) {
       setRecordErr(e?.message || 'Could not save the receipt.');
@@ -254,6 +253,28 @@ export default function CheckoutScreen({ navigation }) {
   }
 
   if (settings === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
+
+  if (done) {
+    return (
+      <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16, paddingBottom: 40, maxWidth: pageMax, width: '100%', alignSelf: 'center' }}>
+        <View style={styles.donePanel}>
+          <Text style={styles.doneMark}>✓</Text>
+          <Text style={styles.doneTitle}>{money(done.total)} collected</Text>
+          <Text style={styles.doneSub}>{done.queued ? "Saved — the receipt sends once you're back online." : `Paid by ${done.method}.`}</Text>
+          {!!done.note && <Text style={styles.doneNote}>{done.note}</Text>}
+          {!done.queued && (
+            <>
+              <Text style={styles.doneSection}>Text or email the receipt</Text>
+              <ResendReceiptRow viewToken={saleId} defaultContact={receiptPhone} />
+            </>
+          )}
+          <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>
+            <Text style={styles.doneBtnText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16, paddingBottom: 40, maxWidth: pageMax, width: '100%', alignSelf: 'center' }}>
@@ -538,4 +559,12 @@ const makeStyles = (t) => StyleSheet.create({
   pickRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: t.border },
   pickName:  { fontSize: 15, fontWeight: '600', color: t.text },
   pickPrice: { fontSize: 13, color: t.textMuted },
+  donePanel: { backgroundColor: t.surface, borderRadius: 16, padding: 24, marginTop: 24, borderWidth: 1, borderColor: t.border, alignItems: 'center' },
+  doneMark:  { fontSize: 54, color: t.success, fontWeight: '800', marginBottom: 8 },
+  doneTitle: { fontSize: 24, fontWeight: '800', color: t.text, textAlign: 'center' },
+  doneSub:   { fontSize: 14, color: t.textMuted, marginTop: 6, textAlign: 'center' },
+  doneNote:  { fontSize: 12.5, color: t.danger, marginTop: 8, textAlign: 'center' },
+  doneSection:{ fontSize: 13, fontWeight: '800', color: t.text, marginTop: 22, marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.3, alignSelf: 'flex-start' },
+  doneBtn:   { marginTop: 22, backgroundColor: t.green, borderRadius: 14, paddingVertical: 15, paddingHorizontal: 44, alignSelf: 'stretch', alignItems: 'center' },
+  doneBtnText:{ color: '#fff', fontWeight: '800', fontSize: 16 },
 });

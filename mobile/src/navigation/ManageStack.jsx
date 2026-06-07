@@ -15,6 +15,7 @@ import EmployeesScreen     from '../screens/manage/EmployeesScreen';
 import MeetingsScreen      from '../screens/manage/MeetingsScreen';
 import WalkinScreen        from '../screens/manage/WalkinScreen';
 import ReportsScreen       from '../screens/manage/ReportsScreen';
+import ReceiptsScreen      from '../screens/manage/ReceiptsScreen';
 import HRScreen            from '../screens/manage/HRScreen';
 import MarketingScreen     from '../screens/manage/MarketingScreen';
 import TrashScreen         from '../screens/manage/TrashScreen';
@@ -66,6 +67,8 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Walk-in Kiosk" /> }} />
       <Stack.Screen name="Reports" component={ReportsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Reports" /> }} />
+      <Stack.Screen name="Receipts" component={ReceiptsScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Sales & Receipts" /> }} />
       <Stack.Screen name="HR" component={HRScreen}
         options={{ headerTitle: () => <HeaderTitle title="HR" /> }} />
       <Stack.Screen name="Marketing" component={MarketingScreen}
