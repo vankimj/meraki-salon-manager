@@ -91,6 +91,7 @@ export default function ClientsScreen({ navigation }) {
                   <Text style={styles.clientSub}>
                     {[c.phone, c.email].filter(Boolean).join(' · ') || 'No contact info'}
                   </Text>
+                  {Number(c.credit) > 0 && <Text style={styles.creditPill}>💳 ${Number(c.credit).toFixed(2)} credit</Text>}
                 </View>
                 {c.visits?.length > 0 && (
                   <Text style={styles.visitCount}>{c.visits.length} visit{c.visits.length !== 1 ? 's' : ''}</Text>
@@ -136,6 +137,7 @@ const makeStyles = (t) => StyleSheet.create({
   avatarInitial: { fontSize: 16, fontWeight: '700', color: t.green },
   info: { flex: 1 },
   clientName: { fontSize: 14, fontWeight: '600', color: t.text },
+  creditPill: { fontSize: 11, fontWeight: '700', color: t.green, marginTop: 2 },
   clientSub: { fontSize: 11, color: t.textMuted, marginTop: 2 },
   visitCount: { fontSize: 11, color: t.blue, fontWeight: '600' },
 });
