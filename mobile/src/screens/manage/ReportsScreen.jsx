@@ -4,6 +4,7 @@ import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../../lib/firestore';
 import { buildTransactions, computeMetrics, computeCancellations } from '../../lib/metrics';
+import AskAIChat from '../../components/AskAIChat';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import useTrashHeader from '../../hooks/useTrashHeader';
@@ -65,6 +66,7 @@ export default function ReportsScreen({ navigation }) {
   const [prev, setPrev]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [techFilter, setTechFilter] = useState('');   // '' = all techs
+  const [section, setSection] = useState('overview');  // overview | ask
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
   // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
@@ -116,6 +118,15 @@ export default function ReportsScreen({ navigation }) {
   }
 
   return (
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <View style={styles.sectionTabs}>
+        {[['overview', 'Overview'], ['ask', 'Ask AI']].map(([id, label]) => (
+          <TouchableOpacity key={id} onPress={() => setSection(id)} style={[styles.sectionTab, section === id && styles.sectionTabOn]}>
+            <Text style={[styles.sectionTabText, section === id && styles.sectionTabTextOn]}>{label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {section === 'ask' ? <AskAIChat /> : (
     <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 14, paddingBottom: 40, maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center' }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}>
       <View style={styles.tabs}>
@@ -257,10 +268,12 @@ export default function ReportsScreen({ navigation }) {
           <TouchableOpacity onPress={shareSummary} style={styles.shareBtn} activeOpacity={0.85}>
             <Text style={styles.shareBtnText}>⤴  Share summary</Text>
           </TouchableOpacity>
-          <Text style={styles.note}>AI assistant + PDF/1099 export are on the web app.</Text>
+          <Text style={styles.note}>Tax / 1099 PDF export is on the web app.</Text>
         </>
       )}
     </ScrollView>
+      )}
+    </View>
   );
 }
 
@@ -319,6 +332,11 @@ const makeStyles = (t) => StyleSheet.create({
   wrap:     { flex: 1, backgroundColor: t.bg },
   center:   { paddingVertical: 60, alignItems: 'center' },
   empty:    { textAlign: 'center', color: t.textFaint, marginTop: 50, fontSize: 13 },
+  sectionTabs:   { flexDirection: 'row', gap: 8, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 4, backgroundColor: t.bg },
+  sectionTab:    { flex: 1, paddingVertical: 11, borderRadius: 12, alignItems: 'center', backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  sectionTabOn:  { backgroundColor: t.green, borderColor: t.green },
+  sectionTabText:{ fontSize: 14, fontWeight: '800', color: t.textMuted },
+  sectionTabTextOn:{ color: '#fff' },
   tabs:     { flexDirection: 'row', gap: 6, marginBottom: 12 },
   tab:      { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
   tabOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
