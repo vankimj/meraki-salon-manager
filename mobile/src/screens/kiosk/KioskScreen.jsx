@@ -299,7 +299,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       if (!res || res.status !== 'succeeded') {
         throw new Error(`Card ${res?.status || 'was declined'}.`);
       }
-      settle('card', { stripePaymentIntentId: res.paymentIntentId });
+      settle('card', { stripePaymentIntentId: res.paymentIntentId, cardBrand: savedPm.brand || null, cardLast4: savedPm.last4 || null });
     } catch (e) {
       Alert.alert('Card on file failed', e?.message || 'Please try again.');
       setSaving(false);

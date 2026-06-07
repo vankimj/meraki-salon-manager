@@ -109,7 +109,6 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [membership,   setMembership]   = useState(null);   // active membership for primaryClient (or null)
   const [memberDiscountApplied, setMemberDiscountApplied] = useState(false);
   const [applyCredit,  setApplyCredit]  = useState(false);
-  const [issueCredit,  setIssueCredit]  = useState('');
   const [tip,          setTip]          = useState('');     // dollar amount when customTip is on
   const [tipPct,       setTipPct]       = useState(null);    // selected percentage (null = none)
   const [customTip,    setCustomTip]    = useState(false);
@@ -475,13 +474,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         const c = await fetchClient(primaryClient.id);
         if (c) {
           clientEmail = c.email?.trim() || clientEmail;
-          if (creditApply > 0 || Number(issueCredit) > 0) {
-            const newCredit = Math.max((c.credit || 0) - creditApply, 0) + (Number(issueCredit) || 0);
+          if (creditApply > 0) {
+            const newCredit = Math.max((c.credit || 0) - creditApply, 0);
             const { id: cid, createdAt: cc, ...cd } = c;
             await saveClient(cid, { ...cd, credit: newCredit });
-            if (Number(issueCredit) > 0) {
-              logActivity('credit_issued', `${primaryClient.name || c.name} · +$${Number(issueCredit).toFixed(2)} → balance $${newCredit.toFixed(2)}`);
-            }
           }
         }
       }
@@ -956,24 +952,6 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               </div>
             )}
           </div>
-
-          {/* Issue store credit (optional) — only if we have a known client */}
-          {primaryClient?.id && (
-            <Section title="Issue Store Credit">
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
-                <input type="number" min={0} value={issueCredit} onChange={e => setIssueCredit(e.target.value)}
-                  placeholder="0.00  — credit added to client's account"
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)' }}
-                />
-              </div>
-              {Number(issueCredit) > 0 && (
-                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
-                  Client's credit balance will become ${(clientCredit + Number(issueCredit) - creditApply).toFixed(2)}
-                </div>
-              )}
-            </Section>
-          )}
 
         </div>
 

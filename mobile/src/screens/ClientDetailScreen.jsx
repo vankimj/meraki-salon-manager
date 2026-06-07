@@ -3,8 +3,9 @@ import {
   View, Text, ScrollView, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, Image, Alert, KeyboardAvoidingView, Platform, Linking, Switch,
 } from 'react-native';
-import { fetchClient, saveClient, fetchClientAppointments } from '../lib/firestore';
+import { fetchClient, saveClient, fetchClientAppointments, adjustClientCredit } from '../lib/firestore';
 import Icon from '../components/Icon';
+import useTenantAccess from '../hooks/useTenantAccess';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
 
 const TABS = [
@@ -30,6 +31,35 @@ export default function ClientDetailScreen({ route, navigation }) {
   const [visits,  setVisits]  = useState([]);
   const styles = useThemedStyles(makeStyles);
   const { theme } = useTheme();
+  const { isAdmin, role, techName } = useTenantAccess();
+  const canAdjust = isAdmin || role === 'tech' || !!techName;
+  const [adjOpen, setAdjOpen]     = useState(false);
+  const [adjAmt, setAdjAmt]       = useState('');
+  const [adjDir, setAdjDir]       = useState('add');
+  const [adjReason, setAdjReason] = useState('');
+  const [adjBusy, setAdjBusy]     = useState(false);
+  const [adjIdem, setAdjIdem]     = useState('');
+
+  function openAdj() {
+    setAdjIdem(`cadj_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    setAdjAmt(''); setAdjReason(''); setAdjDir('add'); setAdjOpen(true);
+  }
+  async function applyAdj() {
+    const a = Number(adjAmt) || 0;
+    if (a <= 0) { Alert.alert('Enter an amount'); return; }
+    if (!adjReason.trim()) { Alert.alert('Reason required', 'Add a short reason.'); return; }
+    if (adjBusy) return;
+    setAdjBusy(true);
+    try {
+      const cents = Math.round(a * 100) * (adjDir === 'remove' ? -1 : 1);
+      const res = await adjustClientCredit({ clientId, deltaCents: cents, reason: adjReason.trim(), idempotencyKey: adjIdem });
+      if (!res?.ok) throw new Error(res?.error || 'Failed');
+      setClient(c => ({ ...c, credit: Number(res.credit) || 0 }));
+      setAdjOpen(false);
+      Alert.alert('Store credit updated', `New balance $${(Number(res.credit) || 0).toFixed(2)}`);
+    } catch (e) { Alert.alert('Couldn\'t adjust credit', e?.message || 'Please try again.'); }
+    finally { setAdjBusy(false); }
+  }
 
   // Load client + visit history once on mount.
   useEffect(() => {
@@ -141,12 +171,41 @@ export default function ClientDetailScreen({ route, navigation }) {
           {visits.length > 0 && (
             <Text style={styles.visitsCount}>{visits.length} visit{visits.length !== 1 ? 's' : ''}</Text>
           )}
-          {Number(client.credit) > 0 && (
+          {!canAdjust && Number(client.credit) > 0 && (
             <View style={styles.creditChip}>
               <Text style={styles.creditChipText}>💳 ${Number(client.credit).toFixed(2)} store credit</Text>
             </View>
           )}
         </View>
+
+        {canAdjust && (
+          <View style={styles.adjCard}>
+            <View style={styles.adjHead}>
+              <Text style={styles.adjTitle}>💳 Store credit · ${Number(client.credit || 0).toFixed(2)}</Text>
+              {!adjOpen && <TouchableOpacity onPress={openAdj}><Text style={styles.adjLink}>Adjust</Text></TouchableOpacity>}
+            </View>
+            {adjOpen && (
+              <View style={{ marginTop: 10 }}>
+                <View style={styles.adjToggle}>
+                  <TouchableOpacity onPress={() => setAdjDir('add')} style={[styles.adjTab, adjDir === 'add' && styles.adjTabOn]}><Text style={[styles.adjTabText, adjDir === 'add' && styles.adjTabTextOn]}>Add</Text></TouchableOpacity>
+                  <TouchableOpacity onPress={() => setAdjDir('remove')} style={[styles.adjTab, adjDir === 'remove' && styles.adjTabOn]}><Text style={[styles.adjTabText, adjDir === 'remove' && styles.adjTabTextOn]}>Remove</Text></TouchableOpacity>
+                </View>
+                <View style={styles.adjAmtRow}>
+                  <Text style={{ color: theme.textMuted, fontSize: 16 }}>$</Text>
+                  <TextInput style={styles.adjInput} value={adjAmt} onChangeText={setAdjAmt} keyboardType="decimal-pad" placeholder="0.00" placeholderTextColor={theme.placeholder} />
+                </View>
+                <TextInput style={styles.adjReason} value={adjReason} onChangeText={setAdjReason} placeholder="Reason (required)" placeholderTextColor={theme.placeholder} maxLength={200} />
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  <TouchableOpacity style={[styles.adjApply, (adjBusy || !(Number(adjAmt) > 0) || !adjReason.trim()) && { opacity: 0.5 }]} onPress={applyAdj} disabled={adjBusy || !(Number(adjAmt) > 0) || !adjReason.trim()}>
+                    <Text style={styles.adjApplyText}>{adjBusy ? 'Saving…' : adjDir === 'remove' ? 'Remove credit' : 'Add credit'}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.adjCancel} onPress={() => setAdjOpen(false)}><Text style={styles.adjCancelText}>Cancel</Text></TouchableOpacity>
+                </View>
+                <Text style={styles.adjNote}>Audit-logged · alerts all admins.</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Tabs */}
         <View style={styles.tabRow}>
@@ -327,6 +386,23 @@ const makeStyles = (t) => StyleSheet.create({
   visitsCount: { fontSize: 12, color: t.blue, fontWeight: '600', marginTop: 4 },
   creditChip:  { marginTop: 8, backgroundColor: t.greenSoft, borderColor: t.green, borderWidth: 1, borderRadius: 14, paddingVertical: 5, paddingHorizontal: 12 },
   creditChipText: { fontSize: 13, fontWeight: '800', color: t.green },
+  adjCard:   { marginHorizontal: 16, marginTop: 12, backgroundColor: t.greenSoft, borderColor: t.green, borderWidth: 1, borderRadius: 12, padding: 12 },
+  adjHead:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  adjTitle:  { fontSize: 14, fontWeight: '800', color: t.green },
+  adjLink:   { fontSize: 13, fontWeight: '800', color: t.green, textDecorationLine: 'underline' },
+  adjToggle: { flexDirection: 'row', gap: 6, marginBottom: 8 },
+  adjTab:    { flex: 1, paddingVertical: 7, borderRadius: 7, backgroundColor: t.surfaceMuted, alignItems: 'center' },
+  adjTabOn:  { backgroundColor: t.green },
+  adjTabText:{ fontSize: 12.5, fontWeight: '800', color: t.textMuted },
+  adjTabTextOn:{ color: '#fff' },
+  adjAmtRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: t.border, marginBottom: 8 },
+  adjInput:  { flex: 1, fontSize: 16, fontWeight: '700', color: t.text, paddingVertical: 10, marginLeft: 6 },
+  adjReason: { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: t.text, borderWidth: 1, borderColor: t.border },
+  adjApply:  { flex: 1, backgroundColor: t.green, borderRadius: 10, paddingVertical: 11, alignItems: 'center' },
+  adjApplyText:{ color: '#fff', fontWeight: '800', fontSize: 14 },
+  adjCancel: { paddingVertical: 11, paddingHorizontal: 16, borderRadius: 10, borderWidth: 1, borderColor: t.border, alignItems: 'center' },
+  adjCancelText:{ color: t.textMuted, fontWeight: '700', fontSize: 14 },
+  adjNote:   { fontSize: 10.5, color: t.textFaint, marginTop: 8 },
 
   tabRow:        { flexDirection: 'row', backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
   tabBtn:        { flex: 1, paddingVertical: 11, alignItems: 'center' },
