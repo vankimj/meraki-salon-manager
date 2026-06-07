@@ -133,6 +133,25 @@ export default function EarningsScreen() {
 
   useEffect(() => { load(); /* eslint-disable-line */ }, [range, techName]);
 
+  // Per-day take-home across the selected range (skip 'today' — one bar isn't a
+  // trend). Missing days fill to 0 so the spacing reflects real calendar gaps.
+  // MUST stay above the early returns below — a hook can't run conditionally.
+  const trend = useMemo(() => {
+    if (range === 'today') return [];
+    const [sy, sm, sd] = startDate.split('-').map(Number);
+    const [ey, em, ed] = endDate.split('-').map(Number);
+    const cur = new Date(sy, sm - 1, sd);
+    const end = new Date(ey, em - 1, ed);
+    const out = [];
+    let guard = 0;
+    while (cur <= end && guard++ < 40) {
+      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+      out.push({ key: iso, value: Math.max(0, data.byDay?.[iso] || 0), dow: cur.getDay(), dom: cur.getDate() });
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }, [range, startDate, endDate, data.byDay]);
+
   if (empLoading) {
     return <ActivityIndicator style={{ marginTop: 60 }} color={theme.blue} />;
   }
@@ -150,24 +169,6 @@ export default function EarningsScreen() {
   }
 
   const total = data.revenue + data.tips;
-
-  // Per-day take-home across the selected range (skip 'today' — one bar isn't a
-  // trend). Missing days fill to 0 so the spacing reflects real calendar gaps.
-  const trend = useMemo(() => {
-    if (range === 'today') return [];
-    const [sy, sm, sd] = startDate.split('-').map(Number);
-    const [ey, em, ed] = endDate.split('-').map(Number);
-    const cur = new Date(sy, sm - 1, sd);
-    const end = new Date(ey, em - 1, ed);
-    const out = [];
-    let guard = 0;
-    while (cur <= end && guard++ < 40) {
-      const iso = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
-      out.push({ key: iso, value: Math.max(0, data.byDay?.[iso] || 0), dow: cur.getDay(), dom: cur.getDate() });
-      cur.setDate(cur.getDate() + 1);
-    }
-    return out;
-  }, [range, startDate, endDate, data.byDay]);
   const trendMax = Math.max(...trend.map(d => d.value), 1);
   const trendBest = trend.reduce((m, d) => Math.max(m, d.value), 0);
 
