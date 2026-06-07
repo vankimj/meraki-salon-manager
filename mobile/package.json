@@ -19,6 +19,7 @@
     "@stripe/stripe-terminal-react-native": "^0.0.1-beta.31",
     "babel-preset-expo": "~54.0.10",
     "expo": "~54.0.0",
+    "expo-apple-authentication": "~8.0.8",
     "expo-asset": "~12.0.13",
     "expo-audio": "~1.1.1",
     "expo-auth-session": "~7.0.11",

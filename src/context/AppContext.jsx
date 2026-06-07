@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getTheme, detectAutoTheme } from '../lib/themes';
-import { onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
+import { onAuthStateChanged, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
 import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats, subscribeToRecentNotifications, markNotificationRead, ensureStaffEmailsBackfill, healUsersFullIfMissing } from '../lib/firestore';
 import { logActivity, setLoggerUser } from '../lib/logger';
@@ -577,6 +577,22 @@ export function AppProvider({ children }) {
     }
   }, []); // eslint-disable-line
 
+  // Sign in with Apple (web popup). Same access/role check as Google — works for
+  // staff and clients. Needs the Apple provider enabled in the Firebase console
+  // (Apple Services ID + key) before it succeeds.
+  const appleSignIn = useCallback(async () => {
+    try {
+      const provider = new OAuthProvider('apple.com');
+      provider.addScope('email');
+      provider.addScope('name');
+      const result = await signInWithPopup(auth, provider);
+      return await checkUserAccess(result.user);
+    } catch (e) {
+      if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') return { ok: false, reason: 'Sign-in failed: ' + e.message };
+      return { ok: false, reason: '' };
+    }
+  }, []); // eslint-disable-line
+
   const switchAccount = useCallback(async () => {
     clearTimeout(logoutTimer.current);
     await fbSignOut(auth);
@@ -651,7 +667,7 @@ export function AppProvider({ children }) {
       showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
       addSlide, updateSlide, deleteSlide, setDefault,
       grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings,
-      signIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
+      signIn, appleSignIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
       handbookPending, handbookDoc, signHandbook,
       totalChatUnread,
       recentNotifs, unreadNotifCount, markNotifRead,
