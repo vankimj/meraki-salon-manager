@@ -4,6 +4,8 @@ import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import TrashButton from '../../components/TrashButton';
 import { resizeImg, formatTime } from '../../utils/helpers';
 import { logActivity, logError } from '../../lib/logger';
+import { callFn } from '../../lib/firebase';
+import { TENANT_ID } from '../../lib/tenant';
 
 import { useApp } from '../../context/AppContext';
 import NotesEditor from '../../components/NotesEditor';
@@ -337,8 +339,77 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
 }
 
 // ── modal ──────────────────────────────────────────────
+// Add / remove store credit on a client's account (admin or tech). Backed by the
+// adjustClientCredit callable (atomic, audit-logged, alerts all admins). Replaces
+// the old "issue store credit" field that used to live on checkout.
+function CreditAdjuster({ client, onReload, showToast }) {
+  const [balance, setBalance] = useState(Number(client.credit) || 0);
+  const [open, setOpen] = useState(false);
+  const [amt, setAmt] = useState('');
+  const [dir, setDir] = useState('add');   // add | remove
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [idem, setIdem] = useState('');
+
+  useEffect(() => { setBalance(Number(client.credit) || 0); }, [client.id]); // eslint-disable-line
+
+  function openForm() {
+    setIdem(`cadj_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    setAmt(''); setReason(''); setDir('add'); setOpen(true);
+  }
+  async function apply() {
+    const a = Number(amt) || 0;
+    if (a <= 0) { showToast('Enter an amount'); return; }
+    if (!reason.trim()) { showToast('Add a reason'); return; }
+    setBusy(true);
+    try {
+      const cents = Math.round(a * 100) * (dir === 'remove' ? -1 : 1);
+      const res = await callFn('adjustClientCredit')({ tenantId: TENANT_ID, clientId: client.id, deltaCents: cents, reason: reason.trim(), idempotencyKey: idem });
+      if (!res.data?.ok) throw new Error(res.data?.error || 'Failed');
+      setBalance(Number(res.data.credit) || 0);
+      setOpen(false);
+      showToast(`Store credit updated — balance $${(Number(res.data.credit) || 0).toFixed(2)}`);
+      onReload?.();
+    } catch (e) { showToast('Couldn\'t adjust credit: ' + (e?.message || 'error')); }
+    finally { setBusy(false); }
+  }
+
+  const tab = (on) => ({ flex: 1, padding: '7px 8px', borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 12.5, background: on ? '#2D7A5F' : 'var(--pn-surface-muted)', color: on ? '#fff' : 'var(--pn-text-muted)' });
+
+  return (
+    <div style={{ marginBottom: 14, borderRadius: 8, background: 'var(--pn-success-bg)', border: '1px solid #2D7A5F', padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>💳 Store credit balance</span>
+        <span style={{ fontSize: 16, fontWeight: 800, color: '#2D7A5F' }}>${balance.toFixed(2)}</span>
+      </div>
+      {!open ? (
+        <button onClick={openForm} style={{ marginTop: 8, padding: '6px 12px', fontSize: 12.5, fontWeight: 700, borderRadius: 8, border: '1px solid #2D7A5F', background: 'transparent', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit' }}>Adjust store credit</button>
+      ) : (
+        <div style={{ marginTop: 10 }}>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <button onClick={() => setDir('add')} style={tab(dir === 'add')}>Add</button>
+            <button onClick={() => setDir('remove')} style={tab(dir === 'remove')}>Remove</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+            <span style={{ color: 'var(--pn-text-faint)' }}>$</span>
+            <input type="number" min={0} value={amt} onChange={e => setAmt(e.target.value)} placeholder="0.00"
+              style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', color: 'var(--pn-text)' }} />
+          </div>
+          <input value={reason} onChange={e => setReason(e.target.value)} placeholder="Reason (required)" maxLength={200}
+            style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', color: 'var(--pn-text)', marginBottom: 8 }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button onClick={apply} disabled={busy || !(Number(amt) > 0) || !reason.trim()} style={{ flex: 1, padding: '8px', fontWeight: 800, fontSize: 13, borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: (busy || !(Number(amt) > 0) || !reason.trim()) ? 0.5 : 1, fontFamily: 'inherit' }}>{busy ? 'Saving…' : dir === 'remove' ? 'Remove credit' : 'Add credit'}</button>
+            <button onClick={() => setOpen(false)} style={{ padding: '8px 14px', fontWeight: 700, fontSize: 13, borderRadius: 8, border: '1px solid var(--pn-border)', background: 'transparent', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--pn-text-faint)', marginTop: 8, lineHeight: 1.4 }}>Adjustments are audit-logged and alert all admins.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, onSave, onClose, onReload }) {
-  const { gUser, settings, showToast, isAdmin } = useApp();
+  const { gUser, settings, showToast, isAdmin, isTech } = useApp();
   const [mode,             setMode]             = useState(initialMode);
   const [tab,              setTab]              = useState('profile');
   const [saving,           setSaving]           = useState(false);
@@ -516,12 +587,14 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                 </div>
               </div>
 
-              {Number(client.credit) > 0 && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', marginBottom: 14, borderRadius: 8, background: 'var(--pn-success-bg)', border: '1px solid #2D7A5F' }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>💳 Store credit balance</span>
-                  <span style={{ fontSize: 16, fontWeight: 800, color: '#2D7A5F' }}>${Number(client.credit).toFixed(2)}</span>
-                </div>
-              )}
+              {(isAdmin || isTech)
+                ? <CreditAdjuster client={client} onReload={onReload} showToast={showToast} />
+                : Number(client.credit) > 0 && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', marginBottom: 14, borderRadius: 8, background: 'var(--pn-success-bg)', border: '1px solid #2D7A5F' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>💳 Store credit balance</span>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: '#2D7A5F' }}>${Number(client.credit).toFixed(2)}</span>
+                  </div>
+                )}
 
               <Field label="Phone">
                 {isView

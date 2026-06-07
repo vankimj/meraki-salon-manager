@@ -110,7 +110,10 @@ export default function CardPayButton({ amountCents, description, locationId, on
       const { paymentIntent: pi3, error: conErr } = await term.confirmPaymentIntent({ paymentIntent: pi2 });
       if (conErr) throw new Error(conErr.message);
       if (pi3?.status !== 'succeeded') throw new Error(`Payment ${pi3?.status || 'did not complete'}.`);
-      onPaid?.(pi3.id || pi0.paymentIntentId);
+      const cpd = pi3?.charges?.[0]?.paymentMethodDetails?.cardPresentDetails
+                || pi3?.charges?.[0]?.paymentMethodDetails?.cardPresent || null;
+      const cardInfo = cpd ? { brand: cpd.brand || null, last4: cpd.last4 || null } : null;
+      onPaid?.(pi3.id || pi0.paymentIntentId, cardInfo);
     } catch (e) {
       Alert.alert('Card payment failed', e?.message || 'Please try again.');
     } finally {

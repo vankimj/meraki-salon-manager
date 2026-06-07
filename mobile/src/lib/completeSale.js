@@ -23,6 +23,7 @@ export async function completeSale({
   discType = 'none', discVal = 0, promo = null, giftCard = null,
   cashTendered = null, saleId = null, skipSideEffects = false,
   receiptContact = null, issueCredit = 0, tipByTech = null,
+  cardBrand = null, cardLast4 = null,
 }) {
   const t = totals;
   const sp = buildTechSplit(lines, t.tipAmt, tipByTech);
@@ -48,6 +49,7 @@ export async function completeSale({
     method, ccFee: t.ccFee,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     stripePaymentIntentId: stripePaymentIntentId || null,
+    ...(cardBrand ? { cardBrand, cardLast4: cardLast4 || null } : {}),
     ...(cashTendered != null ? { cashTendered: Number(cashTendered) || 0, changeDue } : {}),
     techSplit: sp,
     apptIds: (tab.appts || []).map(a => a.id),

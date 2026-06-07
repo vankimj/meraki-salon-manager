@@ -51,7 +51,6 @@ export default function CheckoutScreen({ navigation }) {
   const [membership, setMembership] = useState(null);   // primary client's active membership
   const [clientCredit, setClientCredit] = useState(0);  // primary client's store-credit balance
   const [applyCredit, setApplyCredit] = useState(false);
-  const [issueCredit, setIssueCredit] = useState('');   // staff goodwill credit added to the client
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
@@ -186,17 +185,16 @@ export default function CheckoutScreen({ navigation }) {
   // Record the sale. Separate from the CHARGE: by the time this runs the money
   // is captured, so a failure here only ever re-SAVES (idempotent via saleId),
   // never re-charges. `isRetry` skips the once-only side effects.
-  async function doRecord({ method, stripePaymentIntentId = null }, isRetry = false) {
+  async function doRecord({ method, stripePaymentIntentId = null, cardBrand = null, cardLast4 = null }, isRetry = false) {
     setSaving(true); setRecordErr('');
     try {
       const card = method === 'card';
       const t = card ? cardTotals : totals;
       const args = {
         tab, lines, products, totals: t, settings, email,
-        method, stripePaymentIntentId, discType, discVal, promo, giftCard,
+        method, stripePaymentIntentId, cardBrand, cardLast4, discType, discVal, promo, giftCard,
         saleId, skipSideEffects: isRetry, tipByTech,
         receiptContact: parseReceiptContact(receiptPhone),
-        issueCredit: primaryClientId ? Number(issueCredit) || 0 : 0,
       };
       // Card was already charged online — record it directly (retry UI handles a
       // failure). Cash/credit goes through recordSale so it survives no network.
@@ -257,7 +255,6 @@ export default function CheckoutScreen({ navigation }) {
         promo: promo || null,
         giftCard: giftCard || null,
         applyCredit: !!applyCredit,
-        issueCredit: primaryClientId ? Number(issueCredit) || 0 : 0,
         receiptPhone: receiptPhone || null,
       });
       await clearTab();
@@ -367,16 +364,6 @@ export default function CheckoutScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
-      {!!primaryClientId && (
-        <>
-          <Text style={styles.section}>Issue store credit</Text>
-          <View style={styles.applyRow}>
-            <Text style={{ color: theme.textMuted, fontSize: 16 }}>$</Text>
-            <TextInput style={[styles.input, { flex: 1 }]} value={issueCredit} onChangeText={setIssueCredit} keyboardType="decimal-pad" placeholder="0.00  — added to this client's balance" placeholderTextColor={theme.placeholder} />
-          </View>
-          {Number(issueCredit) > 0 && <Text style={styles.creditSub}>New balance: {money(Math.max(clientCredit - totals.creditApply, 0) + Number(issueCredit))}</Text>}
-        </>
-      )}
 
       {!hasPhoneOnFile && (
         <>
@@ -465,7 +452,7 @@ export default function CheckoutScreen({ navigation }) {
               preferReader={isTablet}
               idempotencyKey={saleId}
               disabled={saving || (lines.length === 0 && products.length === 0)}
-              onPaid={(piId) => settle('card', { stripePaymentIntentId: piId })}
+              onPaid={(piId, card) => settle('card', { stripePaymentIntentId: piId, cardBrand: card?.brand || null, cardLast4: card?.last4 || null })}
             />
           ) : (
             <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
