@@ -67,7 +67,7 @@ export default function ManageStack() {
       <Stack.Screen name="Meetings" component={MeetingsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Meetings" /> }} />
       <Stack.Screen name="Walkin" component={WalkinScreen}
-        options={{ headerTitle: () => <HeaderTitle title="Walk-in Kiosk" /> }} />
+        options={{ headerTitle: () => <HeaderTitle title="Walk-in Manager" /> }} />
       <Stack.Screen name="Reports" component={ReportsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Reports" /> }} />
       <Stack.Screen name="Receipts" component={ReceiptsScreen}

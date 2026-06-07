@@ -14,7 +14,7 @@ export const MODULES = [
   { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'starter', adminOnly: false },
   { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'starter', adminOnly: false },
   { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'starter', adminOnly: true  },
-  { id: 'walkin',      label: 'Walk-in Kiosk',    desc: 'Live turn rotation + waitlist',     plan: 'starter', adminOnly: false },
+  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'starter', adminOnly: false },
 
   // ── Studio ─
   { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false },
