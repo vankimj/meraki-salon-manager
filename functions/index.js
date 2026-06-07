@@ -5487,7 +5487,7 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
 // refunds or double-issues store credit.
 exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const { tenantId: tid, receiptId, amountCents, reason, addCredit, idempotencyKey } = request.data || {};
+  const { tenantId: tid, receiptId, amountCents, reason, refundTo, idempotencyKey } = request.data || {};
   const tenantId = String(tid || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
 
@@ -5502,11 +5502,19 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   if (amt < 1) throw new HttpsError('invalid-argument', 'Refund amount must be positive');
   const reasonStr = String(reason || '').trim().slice(0, 500);
   if (!reasonStr) throw new HttpsError('invalid-argument', 'A reason is required');
+  // Refund DESTINATION — mutually exclusive: 'money' returns the funds (Stripe
+  // refund for card / record-only for cash); 'credit' issues store credit and
+  // moves NO money. Default 'money'. (Replaces the old additive addCredit, which
+  // could double-pay: card refund + credit.)
+  const dest = refundTo === 'credit' ? 'credit' : 'money';
 
   const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
   const recSnap = await recRef.get();
   if (!recSnap.exists) throw new HttpsError('not-found', 'Sale not found');
   const rec = recSnap.data();
+  if (dest === 'credit' && !rec.clientId) {
+    throw new HttpsError('invalid-argument', 'Store credit needs a client on file — a walk-in can only be refunded to the original payment.');
+  }
   const payment = rec.payment || {};
   const originalCents = Math.round(Number(payment.total || 0) * 100);
   const priorRefunds  = Array.isArray(rec.refunds) ? rec.refunds : [];
@@ -5524,11 +5532,11 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   const piId   = payment.stripePaymentIntentId || null;
   const isCard = payment.method === 'card' && !!piId;
 
-  // Real Stripe refund for card sales. Idempotency-keyed so a retry returns the
-  // same refund instead of moving money twice. Stripe also caps total refunds at
-  // the charge amount, a backstop against any over-refund race.
+  // Real Stripe refund for card sales — ONLY when refunding to money. A
+  // store-credit refund moves no money (skips Stripe), so no double-pay.
+  // Idempotency-keyed so a retry returns the same refund, not a second one.
   let stripeRefundId = null;
-  if (isCard) {
+  if (isCard && dest === 'money') {
     const key = stripeKey.value();
     if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
     const stripe = require('stripe')(key);
@@ -5550,9 +5558,9 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
     key: idemKey,
     amount: amt / 100,
     reason: reasonStr,
-    method: isCard ? 'card' : (payment.method || 'cash'),
+    method: dest === 'credit' ? 'store_credit' : (isCard ? 'card' : (payment.method || 'cash')),
     stripeRefundId,
-    addedCredit: !!addCredit && !!rec.clientId,
+    addedCredit: dest === 'credit',
     issuedBy: issuerEmail || null,
     refundedAt: new Date().toISOString(),
   };
@@ -5614,7 +5622,7 @@ async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmai
   const amtStr = `$${Number(refundEntry.amount || 0).toFixed(2)}`;
   const who    = issuerEmail || 'a staff member';
   const client = rec.clientName || 'Walk-in';
-  const kind   = refundEntry.stripeRefundId ? 'card refund' : 'refund';
+  const kind   = refundEntry.addedCredit ? 'store-credit refund' : refundEntry.stripeRefundId ? 'card refund' : 'refund';
   const title  = `${amtStr} ${kind} issued`;
   const line   = `${who} issued a ${amtStr} ${kind} for ${client}${refundEntry.reason ? ` — "${refundEntry.reason}"` : ''}.`;
 
