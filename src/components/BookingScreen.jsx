@@ -1,7 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut as fbSignOut,
+import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, OAuthProvider, signOut as fbSignOut,
          sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
          RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
+
+function appleProvider() {
+  const p = new OAuthProvider('apple.com');
+  p.addScope('email'); p.addScope('name');
+  return p;
+}
 import { auth, callFn } from '../lib/firebase';
 import { TENANT_ID } from '../lib/tenant';
 import {
@@ -548,6 +554,10 @@ export default function BookingScreen() {
     try { await signInWithPopup(auth, new GoogleAuthProvider()); }
     catch { /* user cancelled */ }
   }
+  async function handleAppleSignIn() {
+    try { await signInWithPopup(auth, appleProvider()); }
+    catch { /* user cancelled */ }
+  }
   async function handleSignOut() {
     await fbSignOut(auth);
     setClient(null);
@@ -928,6 +938,7 @@ export default function BookingScreen() {
             onVerifyOtp={verifyOtp}
             onResetOtp={resetOtp}
             onGoogleSignIn={handleGoogleSignIn}
+            onAppleSignIn={handleAppleSignIn}
             onChange={patch => setForm(f => ({ ...f, ...patch }))}
             onNext={() => setStep(5)}
             onBack={() => setStep(3)}
@@ -1667,7 +1678,7 @@ function Step4Info({
   form, webCfg, gUser, client,
   emailLinkState, onSendEmailLink,
   otpState, otpError, otpPhonePretty,
-  onSendOtp, onVerifyOtp, onResetOtp, onGoogleSignIn,
+  onSendOtp, onVerifyOtp, onResetOtp, onGoogleSignIn, onAppleSignIn,
   onChange, onNext, onBack, flowCfg,
 }) {
   const salonName = webCfg?.salonName || 'our salon';
@@ -1769,10 +1780,13 @@ function Step4Info({
         {/* Google sign-in */}
         <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>Sign in with Google</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>Google or Apple</div>
             <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>One tap, no password</div>
           </div>
-          <GoogleSignInBtn onClick={onGoogleSignIn} />
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            <GoogleSignInBtn onClick={onGoogleSignIn} />
+            <AppleSignInBtn onClick={onAppleSignIn} />
+          </div>
         </div>
 
         {/* Phone OR email — auto-detects what the user is typing */}
@@ -2534,6 +2548,18 @@ function GoogleSignInBtn({ onClick }) {
   return (
     <button onClick={go} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #d8d8d8', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#333', fontFamily: 'inherit', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
       <GoogleIcon />
+      Sign in
+    </button>
+  );
+}
+function AppleSignInBtn({ onClick }) {
+  async function go() {
+    if (onClick) return onClick();
+    try { await signInWithPopup(auth, appleProvider()); } catch { /* cancelled */ }
+  }
+  return (
+    <button onClick={go} style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#000', border: '1px solid #000', borderRadius: 10, padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#fff', fontFamily: 'inherit', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }}>
+      <svg width="13" height="13" viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
       Sign in
     </button>
   );

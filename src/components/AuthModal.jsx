@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../context/AppContext';
 
 export default function AuthModal({ onClose, onSuccess }) {
-  const { signIn, sendMagicLink } = useApp();
+  const { signIn, appleSignIn, sendMagicLink } = useApp();
   const [status,    setStatus]    = useState('');
   const [email,     setEmail]     = useState('');
   const [sending,   setSending]   = useState(false);
@@ -11,6 +11,13 @@ export default function AuthModal({ onClose, onSuccess }) {
   async function handleGoogleSignIn() {
     setStatus('');
     const result = await signIn();
+    if (result.ok) { onSuccess?.(); onClose(); }
+    else if (result.reason) setStatus(result.reason);
+  }
+
+  async function handleAppleSignIn() {
+    setStatus('');
+    const result = await appleSignIn();
     if (result.ok) { onSuccess?.(); onClose(); }
     else if (result.reason) setStatus(result.reason);
   }
@@ -55,6 +62,13 @@ export default function AuthModal({ onClose, onSuccess }) {
             <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
           </svg>
           Sign in with Google
+        </button>
+
+        {/* Apple */}
+        <button onClick={handleAppleSignIn}
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, width: '100%', padding: 12, border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 600, cursor: 'pointer', background: '#000', color: '#fff', fontFamily: 'inherit', marginBottom: 16 }}>
+          <svg width={16} height={16} viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
+          Sign in with Apple
         </button>
 
         {/* Divider */}
