@@ -1,9 +1,10 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image, Modal } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, fetchClientMembership, chargeStoredCard, fetchSlides, claimCheckoutSession, fetchEmployees } from '../../lib/firestore';
 import QRCode from '../../components/QRCode';
 import KioskExitButton from '../../components/KioskExitButton';
+import TechAvatar from '../../components/TechAvatar';
 import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact, normalizePromo } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
@@ -128,14 +129,15 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [tipAmtStr, setTipAmtStr] = useState('');
   const [perTechTips, setPerTechTips] = useState({});   // { techName: '12.00' }
   const [venmoByTech, setVenmoByTech] = useState({});   // { techName: '@handle' }
-  const [showVenmo, setShowVenmo]     = useState(false);
+  const [photoByTech, setPhotoByTech] = useState({});   // { techName: base64/url }
+  const [tipMethod, setTipMethod]     = useState('card'); // card | venmo | cash
   useEffect(() => {
     let alive = true;
     fetchEmployees().then(emps => {
       if (!alive) return;
-      const m = {};
-      (emps || []).forEach(e => { if (e.name && e.venmo) m[e.name] = e.venmo; });
-      setVenmoByTech(m);
+      const v = {}, p = {};
+      (emps || []).forEach(e => { if (e.name) { if (e.venmo) v[e.name] = e.venmo; if (e.photo) p[e.name] = e.photo; } });
+      setVenmoByTech(v); setPhotoByTech(p);
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -211,16 +213,22 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const tip = (tipMode === 'perTech')
     ? { custom: true, amount: perTechTotal, pct: null }
     : { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
-  const totalsFor = (method) => computeTotals({
+  // The tip is added to the charge ONLY when paid by card. Venmo / cash tips go
+  // straight to the tech (QR / cash in hand), so they're never part of the bill.
+  const tipForCharge = tipMethod === 'card' ? tip : { custom: true, amount: 0, pct: null };
+  const totalsFor = (method, tipArg) => computeTotals({
     lines, productsTotal, discount, promo: normalizePromo(promo),
     taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
-    method, noCardTips: !!settings?.noCardTips, tip,
+    method, noCardTips: !!settings?.noCardTips, tip: tipArg,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit,
   });
-  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
-  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
+  const cashTotals = useMemo(() => totalsFor('cash', tipForCharge), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, membership, clientCredit, priced]);
+  const cardTotals = useMemo(() => totalsFor('card', tipForCharge), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, membership, clientCredit, priced]);
+  // The tip amount the customer selected (drives the Venmo QR), regardless of
+  // whether it's charged — so the QR shows the right amount even when off-bill.
+  const selectedTipAmt = useMemo(() => totalsFor('card', tip).tipAmt || 0, [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
 
   // Venmo tips: customers can tip a tech directly (QR to their Venmo) instead of
   // (or on top of) a card tip. Amount prefilled from the selected tip, split per
@@ -229,7 +237,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const totalRev   = Object.values(techRevenue).reduce((s, v) => s + v, 0);
   function venmoTipFor(t) {
     if (tipMode === 'perTech') return Number(perTechTips[t]) || 0;
-    const tipAmt = cashTotals.tipAmt || 0;
+    const tipAmt = selectedTipAmt || 0;
     if (!tipAmt || !totalRev) return 0;
     return Math.round(tipAmt * ((techRevenue[t] || 0) / totalRev) * 100) / 100;
   }
@@ -380,6 +388,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       <Text style={styles.section}>Your visit</Text>
       {lines.map((l, i) => (
         <View key={`${l.apptIdx}-${l.svcIdx}-${i}`} style={styles.lineRow}>
+          {!!l.techName && <View style={{ marginRight: 10 }}><TechAvatar name={l.techName} photo={photoByTech[l.techName]} size={34} /></View>}
           <View style={{ flex: 1 }}>
             <Text style={styles.lineName}>{l.name}</Text>
             <Text style={styles.lineTech}>{l.techName || '—'}</Text>
@@ -397,38 +406,75 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       {stage === 'review' && (
         <>
           <Text style={styles.section}>Add a tip?</Text>
-          <View style={styles.tipRow}>
-            {TIP_PCTS.map(p => {
-              const on = tipMode === 'pct' && tipPct === p;
-              return (
-                <TouchableOpacity key={p} onPress={() => { setTipMode('pct'); setTipPct(p); }} style={[styles.tipChip, on && styles.tipChipOn]}>
-                  <Text style={[styles.tipChipText, on && styles.tipChipTextOn]}>{p === 0 ? 'No tip' : `${p}%`}</Text>
-                </TouchableOpacity>
-              );
-            })}
-            <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.tipChip, tipMode === 'custom' && styles.tipChipOn]}>
-              <Text style={[styles.tipChipText, tipMode === 'custom' && styles.tipChipTextOn]}>$</Text>
+          <View style={styles.tipMethodRow}>
+            <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
+              <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
             </TouchableOpacity>
-            {tipMode === 'custom' && (
-              <TextInput style={styles.tipInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />
-            )}
-            {multiTech && (
-              <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.tipChip, tipMode === 'perTech' && styles.tipChipOn]}>
-                <Text style={[styles.tipChipText, tipMode === 'perTech' && styles.tipChipTextOn]}>Tip each tech</Text>
+            {venmoTechs.length > 0 && (
+              <TouchableOpacity style={[styles.tipMethod, tipMethod === 'venmo' && styles.tipMethodOn]} onPress={() => setTipMethod('venmo')}>
+                <Text style={[styles.tipMethodText, tipMethod === 'venmo' && styles.tipMethodTextOn]}>💸 Venmo</Text>
               </TouchableOpacity>
             )}
+            <TouchableOpacity style={[styles.tipMethod, tipMethod === 'cash' && styles.tipMethodOn]} onPress={() => setTipMethod('cash')}>
+              <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
+            </TouchableOpacity>
           </View>
-          {tipMode === 'perTech' && (
-            <TechTipInputs techRevenue={techRevenue} values={perTechTips} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
-          )}
-          {multiTech && tipMode !== 'perTech' && cashTotals.tipAmt > 0 && (
-            <Text style={styles.splitNote}>Split across techs by service amount. Tap "Tip each tech" to set them individually.</Text>
+
+          {tipMethod === 'cash' ? (
+            <View style={styles.tipCashNote}>
+              <Text style={styles.tipCashText}>No tip added to your bill — please hand your tip in cash directly to your nail tech. Thank you! 💚</Text>
+            </View>
+          ) : (
+            <>
+              <View style={styles.tipRow}>
+                {TIP_PCTS.map(p => {
+                  const on = tipMode === 'pct' && tipPct === p;
+                  return (
+                    <TouchableOpacity key={p} onPress={() => { setTipMode('pct'); setTipPct(p); }} style={[styles.tipChip, on && styles.tipChipOn]}>
+                      <Text style={[styles.tipChipText, on && styles.tipChipTextOn]}>{p === 0 ? 'No tip' : `${p}%`}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.tipChip, tipMode === 'custom' && styles.tipChipOn]}>
+                  <Text style={[styles.tipChipText, tipMode === 'custom' && styles.tipChipTextOn]}>$</Text>
+                </TouchableOpacity>
+                {tipMode === 'custom' && (
+                  <TextInput style={styles.tipInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />
+                )}
+                {multiTech && (
+                  <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.tipChip, tipMode === 'perTech' && styles.tipChipOn]}>
+                    <Text style={[styles.tipChipText, tipMode === 'perTech' && styles.tipChipTextOn]}>Tip each tech</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {tipMode === 'perTech' && (
+                <TechTipInputs techRevenue={techRevenue} values={perTechTips} photoByTech={photoByTech} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
+              )}
+              {multiTech && tipMode !== 'perTech' && selectedTipAmt > 0 && (
+                <Text style={styles.splitNote}>{tipMethod === 'venmo' ? 'Each tech gets their share by service amount.' : 'Split across techs by service amount. Tap "Tip each tech" to set them individually.'}</Text>
+              )}
+            </>
           )}
 
-          {venmoTechs.length > 0 && (
-            <TouchableOpacity style={styles.venmoBtn} onPress={() => setShowVenmo(true)} activeOpacity={0.85}>
-              <Text style={styles.venmoBtnText}>💸  Tip a tech with Venmo</Text>
-            </TouchableOpacity>
+          {tipMethod === 'venmo' && venmoTechs.length > 0 && (
+            <View style={styles.venmoInline}>
+              <Text style={styles.venmoNote}>Scan to tip your tech directly with Venmo — this is not added to your bill.</Text>
+              {venmoTechs.map(t => {
+                const amt = venmoTipFor(t);
+                const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
+                const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
+                return (
+                  <View key={t} style={styles.venmoQrItem}>
+                    <View style={styles.venmoQrHead}>
+                      <TechAvatar name={t} photo={photoByTech[t]} size={32} />
+                      <Text style={styles.venmoQrName}>{t}</Text>
+                    </View>
+                    <QRCode value={url} size={180} />
+                    <Text style={styles.venmoQrHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
+                  </View>
+                );
+              })}
+            </View>
           )}
 
           {!hasPhoneOnFile && (
@@ -540,32 +586,6 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
           </View>
         );
       })()}
-
-      <Modal visible={showVenmo} transparent animationType="slide" onRequestClose={() => setShowVenmo(false)}>
-        <View style={styles.venmoBackdrop}>
-          <View style={styles.venmoCard}>
-            <Text style={styles.venmoTitle}>Tip with Venmo</Text>
-            <Text style={styles.venmoSub}>Scan with your phone’s camera</Text>
-            <ScrollView contentContainerStyle={{ alignItems: 'center', gap: 20, paddingVertical: 10 }}>
-              {venmoTechs.map(t => {
-                const amt = venmoTipFor(t);
-                const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
-                const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
-                return (
-                  <View key={t} style={styles.venmoItem}>
-                    <Text style={styles.venmoTech}>{t}</Text>
-                    <QRCode value={url} size={190} />
-                    <Text style={styles.venmoHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
-                  </View>
-                );
-              })}
-            </ScrollView>
-            <TouchableOpacity style={styles.venmoClose} onPress={() => setShowVenmo(false)}>
-              <Text style={styles.venmoCloseText}>Done</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </ScrollView>
   );
 }
@@ -610,17 +630,19 @@ const makeStyles = (t) => StyleSheet.create({
   tipInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border, minWidth: 90 },
   splitNote: { fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 17 },
   kioskExit: { position: 'absolute', top: 12, right: 12, zIndex: 50 },
-  venmoBtn:  { marginTop: 12, backgroundColor: '#3D95CE', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  venmoBtnText: { color: '#fff', fontWeight: '800', fontSize: 15 },
-  venmoBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  venmoCard: { backgroundColor: t.surface, borderRadius: 24, padding: 24, width: '100%', maxWidth: 380, maxHeight: '88%' },
-  venmoTitle: { fontSize: 22, fontWeight: '800', color: t.text, textAlign: 'center' },
-  venmoSub:  { fontSize: 14, color: t.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 8 },
-  venmoItem: { alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 16, padding: 16, width: '100%' },
-  venmoTech: { fontSize: 16, fontWeight: '800', color: t.text, marginBottom: 12 },
-  venmoHandle: { fontSize: 15, fontWeight: '700', color: '#3D95CE', marginTop: 12 },
-  venmoClose: { marginTop: 14, backgroundColor: t.green, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
-  venmoCloseText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  tipMethodRow:  { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 10 },
+  tipMethod:     { flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: t.border, alignItems: 'center', backgroundColor: t.surface },
+  tipMethodOn:   { backgroundColor: t.greenSoft, borderColor: t.green },
+  tipMethodText: { fontSize: 14, fontWeight: '800', color: t.textMuted },
+  tipMethodTextOn:{ color: t.green },
+  tipCashNote:   { backgroundColor: t.greenSoft, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.green, marginBottom: 6 },
+  tipCashText:   { fontSize: 14, fontWeight: '600', color: t.green, lineHeight: 20 },
+  venmoInline:   { marginTop: 12, alignItems: 'center', gap: 16 },
+  venmoNote:     { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 18 },
+  venmoQrItem:   { alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 16, padding: 16, width: '100%' },
+  venmoQrHead:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  venmoQrName:   { fontSize: 16, fontWeight: '800', color: t.text },
+  venmoQrHandle: { fontSize: 15, fontWeight: '700', color: '#3D95CE', marginTop: 12 },
   receiptInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border },
   totals:   { backgroundColor: t.surface, borderRadius: 16, padding: 18, marginTop: 24, borderWidth: 1, borderColor: t.border },
   totRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },

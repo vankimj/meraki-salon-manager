@@ -1,5 +1,6 @@
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+import TechAvatar from './TechAvatar';
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
@@ -7,7 +8,7 @@ const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // their service revenue so the customer can tip each differently. `techRevenue`
 // is { techName: revenue }; `values` is { techName: string }; onChange(tech,text).
 // The default (no entry) is the revenue-proportional split done in buildTechSplit.
-export default function TechTipInputs({ techRevenue, values, onChange }) {
+export default function TechTipInputs({ techRevenue, values, onChange, photoByTech = {} }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const total = Object.keys(techRevenue).reduce((s, t) => s + (Number(values[t]) || 0), 0);
@@ -15,6 +16,7 @@ export default function TechTipInputs({ techRevenue, values, onChange }) {
     <View style={styles.wrap}>
       {Object.entries(techRevenue).map(([tech, rev]) => (
         <View key={tech || '—'} style={styles.row}>
+          <TechAvatar name={tech} photo={photoByTech[tech]} size={34} />
           <View style={{ flex: 1 }}>
             <Text style={styles.name} numberOfLines={1}>{tech || '—'}</Text>
             <Text style={styles.sub}>{money(rev)} in services</Text>
