@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../../lib/firestore';
+import { fetchReceiptsByRange, fetchAppointmentsByRange, fetchServiceRatingsByRange } from '../../lib/firestore';
 import { buildTransactions, computeMetrics, computeCancellations } from '../../lib/metrics';
 import AskAIChat from '../../components/AskAIChat';
 import useTenantAccess from '../../hooks/useTenantAccess';
@@ -19,6 +19,30 @@ function presetRange(days) {
   start.setDate(start.getDate() - days);
   return { startDate: isoDay(start), endDate: isoDay(end) };
 }
+
+// Aggregate service ratings for the Ratings tab (matches the web tab).
+function computeRatings(list) {
+  const arr = (list || []).filter(r => Number(r.rating) >= 1 && Number(r.rating) <= 5);
+  const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  const sources = { email: 0, sms: 0, web: 0 };
+  const techMap = {};
+  let sum = 0;
+  arr.forEach(r => {
+    const v = Math.round(Number(r.rating)); sum += Number(r.rating);
+    dist[v] = (dist[v] || 0) + 1;
+    if (sources[r.source] != null) sources[r.source]++;
+    const t = r.techName || '—';
+    (techMap[t] || (techMap[t] = { name: t, count: 0, sum: 0 }));
+    techMap[t].count++; techMap[t].sum += Number(r.rating);
+  });
+  const byTech = Object.values(techMap)
+    .map(t => ({ ...t, avg: t.count ? t.sum / t.count : 0 }))
+    .sort((a, b) => b.avg - a.avg || b.count - a.count);
+  const low = arr.filter(r => Number(r.rating) < 3).slice(0, 20);
+  return { count: arr.length, avg: arr.length ? sum / arr.length : 0, dist, sources, byTech, low };
+}
+
+const stars = (n) => '★'.repeat(Math.round(Number(n) || 0)) + '☆'.repeat(Math.max(0, 5 - Math.round(Number(n) || 0)));
 
 // Revenue-by-day bar chart (react-native-svg — already a dep, no native add).
 // `width` is the inner card width; falls back to the phone window width.
@@ -66,7 +90,8 @@ export default function ReportsScreen({ navigation }) {
   const [prev, setPrev]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [techFilter, setTechFilter] = useState('');   // '' = all techs
-  const [section, setSection] = useState('overview');  // overview | ask
+  const [section, setSection] = useState('overview');  // overview | ratings | ask
+  const [ratings, setRatings] = useState(null);
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
   // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
@@ -83,16 +108,18 @@ export default function ReportsScreen({ navigation }) {
       const prevEnd = new Date(s.getTime() - 86400000);
       const prevStart = new Date(prevEnd.getTime() - (e - s));
       const pIso = (d) => d.toISOString().slice(0, 10);
-      const [receipts, appts, pReceipts, pAppts] = await Promise.all([
+      const [receipts, appts, pReceipts, pAppts, svcRatings] = await Promise.all([
         fetchReceiptsByRange(startDate, endDate).catch(() => []),
         fetchAppointmentsByRange(startDate, endDate).catch(() => []),
         fetchReceiptsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
         fetchAppointmentsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
+        fetchServiceRatingsByRange(startDate, endDate).catch(() => []),
       ]);
       setMetrics(computeMetrics(buildTransactions(receipts, appts)));
       setCancels(computeCancellations(appts, receipts));
       setPrev(computeMetrics(buildTransactions(pReceipts, pAppts)));
-    } catch { setMetrics(null); setCancels(null); setPrev(null); }
+      setRatings(computeRatings(svcRatings));
+    } catch { setMetrics(null); setCancels(null); setPrev(null); setRatings(null); }
     finally { setLoading(false); }
   }, [custom, days, cStart, cEnd]);
   useEffect(() => { load(); }, [load]);
@@ -120,7 +147,7 @@ export default function ReportsScreen({ navigation }) {
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <View style={styles.sectionTabs}>
-        {[['overview', 'Overview'], ['ask', 'Ask AI']].map(([id, label]) => (
+        {[['overview', 'Overview'], ['ratings', 'Ratings'], ['ask', 'Ask AI']].map(([id, label]) => (
           <TouchableOpacity key={id} onPress={() => setSection(id)} style={[styles.sectionTab, section === id && styles.sectionTabOn]}>
             <Text style={[styles.sectionTabText, section === id && styles.sectionTabTextOn]}>{label}</Text>
           </TouchableOpacity>
@@ -160,7 +187,7 @@ export default function ReportsScreen({ navigation }) {
         />
       )}
 
-      {loading ? (
+      {section === 'overview' && (loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
       ) : !metrics || metrics.totalAppts === 0 ? (
         <Text style={styles.empty}>No completed transactions in this period.</Text>
@@ -270,7 +297,56 @@ export default function ReportsScreen({ navigation }) {
           </TouchableOpacity>
           <Text style={styles.note}>Tax / 1099 PDF export is on the web app.</Text>
         </>
-      )}
+      ))}
+
+      {section === 'ratings' && (loading ? (
+        <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
+      ) : !ratings || ratings.count === 0 ? (
+        <Text style={styles.empty}>No service ratings in this period.</Text>
+      ) : (
+        <>
+          <View style={styles.ratingHero}>
+            <Text style={styles.ratingBig}>{ratings.avg.toFixed(2)}</Text>
+            <Text style={styles.ratingStars}>{stars(ratings.avg)}</Text>
+            <Text style={styles.ratingCount}>{ratings.count} rating{ratings.count === 1 ? '' : 's'}</Text>
+          </View>
+
+          <Text style={styles.section2}>Distribution</Text>
+          {[5, 4, 3, 2, 1].map(n => {
+            const c = ratings.dist[n] || 0;
+            const pct = ratings.count ? Math.round((c / ratings.count) * 100) : 0;
+            return (
+              <View key={n} style={styles.distRow}>
+                <Text style={styles.distLabel}>{n}★</Text>
+                <View style={styles.distBarBg}><View style={[styles.distBarFill, { width: `${pct}%` }]} /></View>
+                <Text style={styles.distCount}>{c}</Text>
+              </View>
+            );
+          })}
+
+          <Text style={styles.section2}>By tech</Text>
+          {ratings.byTech.map(t => (
+            <View key={t.name} style={styles.rRow}>
+              <Text style={styles.rName} numberOfLines={1}>{t.name}</Text>
+              <Text style={styles.rStars}>{stars(t.avg)}</Text>
+              <Text style={styles.rAvg}>{t.avg.toFixed(2)} · {t.count}</Text>
+            </View>
+          ))}
+          <Text style={styles.rSources}>Sources — email {ratings.sources.email} · sms {ratings.sources.sms} · web {ratings.sources.web}</Text>
+
+          {ratings.low.length > 0 && (
+            <>
+              <Text style={styles.section2}>Needs attention (under 3★)</Text>
+              {ratings.low.map(r => (
+                <View key={r.id} style={styles.lowCard}>
+                  <Text style={styles.lowHead}>{stars(r.rating)}  ·  {r.techName || '—'}{r.clientName ? `  ·  ${r.clientName}` : ''}</Text>
+                  {!!r.comment && <Text style={styles.lowComment}>“{r.comment}”</Text>}
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      ))}
     </ScrollView>
       )}
     </View>
@@ -337,6 +413,24 @@ const makeStyles = (t) => StyleSheet.create({
   sectionTabOn:  { backgroundColor: t.green, borderColor: t.green },
   sectionTabText:{ fontSize: 14, fontWeight: '800', color: t.textMuted },
   sectionTabTextOn:{ color: '#fff' },
+  ratingHero:  { alignItems: 'center', backgroundColor: t.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: t.border, marginTop: 4 },
+  ratingBig:   { fontSize: 44, fontWeight: '800', color: t.text },
+  ratingStars: { fontSize: 22, color: '#f5b400', marginTop: 2, letterSpacing: 2 },
+  ratingCount: { fontSize: 13, color: t.textMuted, marginTop: 6 },
+  section2:    { fontSize: 14, fontWeight: '800', color: t.text, marginTop: 20, marginBottom: 8 },
+  distRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+  distLabel:   { width: 28, fontSize: 13, fontWeight: '700', color: t.textMuted },
+  distBarBg:   { flex: 1, height: 12, borderRadius: 6, backgroundColor: t.surfaceAlt, overflow: 'hidden' },
+  distBarFill: { height: 12, borderRadius: 6, backgroundColor: '#f5b400' },
+  distCount:   { width: 34, fontSize: 13, fontWeight: '700', color: t.text, textAlign: 'right' },
+  rRow:        { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.border, gap: 8 },
+  rName:       { flex: 1, fontSize: 15, fontWeight: '700', color: t.text },
+  rStars:      { fontSize: 14, color: '#f5b400', letterSpacing: 1 },
+  rAvg:        { fontSize: 13, fontWeight: '700', color: t.textMuted, width: 64, textAlign: 'right' },
+  rSources:    { fontSize: 12.5, color: t.textFaint, marginTop: 10 },
+  lowCard:     { backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.danger },
+  lowHead:     { fontSize: 13, fontWeight: '700', color: t.text },
+  lowComment:  { fontSize: 13, color: t.textMuted, marginTop: 4, fontStyle: 'italic', lineHeight: 18 },
   tabs:     { flexDirection: 'row', gap: 6, marginBottom: 12 },
   tab:      { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
   tabOn:    { backgroundColor: t.greenSoft, borderColor: t.green },

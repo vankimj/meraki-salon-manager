@@ -223,6 +223,18 @@ export async function fetchReceiptsByRange(startDate, endDate) {
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+// Post-checkout service ratings (tenants/{tid}/serviceRatings), keyed on the
+// ISO `submittedAt`. Matches the web fetchServiceRatingsByRange.
+export async function fetchServiceRatingsByRange(startDate, endDate) {
+  const snap = await getDocs(query(
+    tenantCol('serviceRatings'),
+    where('submittedAt', '>=', `${startDate}T00:00:00.000Z`),
+    where('submittedAt', '<=', `${endDate}T23:59:59.999Z`),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+}
+
 // All-time receipt lookup by exact client name — for pulling up an old receipt
 // (older than the browse window) when a customer asks. Single `where` (no
 // composite index); sorted newest-first client-side.
