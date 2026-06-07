@@ -372,7 +372,7 @@ export default function CheckoutScreen({ navigation }) {
               amountCents={Math.round((cardTotals.total || 0) * 100)}
               description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
               locationId={settings?.terminalLocationId || null}
-              onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
+              onBehalfOf={settings?.stripeConnect?.accountId || settings?.connectAccountId || settings?.stripeAccountId || undefined}
               merchantName={settings?.salonName || settings?.name || 'Salon'}
               preferReader={isTablet}
               idempotencyKey={saleId}

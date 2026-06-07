@@ -404,7 +404,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
               amountCents={Math.round((cardTotals.total || 0) * 100)}
               description={clientName}
               locationId={settings?.terminalLocationId || null}
-              onBehalfOf={settings?.connectAccountId || settings?.stripeAccountId || undefined}
+              onBehalfOf={settings?.stripeConnect?.accountId || settings?.connectAccountId || settings?.stripeAccountId || undefined}
               merchantName={settings?.salonName || 'Salon'}
               preferReader={isTablet}
               idempotencyKey={saleId}
