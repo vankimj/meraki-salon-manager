@@ -307,3 +307,34 @@ export function computeMetrics(transactions, today = todayStr()) {
     tipTotal, tipTxnCount, tipsByMethod, tipsByTech,
   };
 }
+
+// Refunds & commission for the period (verbatim port of web metrics). For each
+// refund, allocate the commission withheld-from-tech vs absorbed-as-goodwill by
+// the tech's revenue share, honoring per-tech commissionByTech overrides.
+export function computeRefundBreakdown(receipts) {
+  let refunded = 0, withheld = 0, goodwill = 0, count = 0;
+  (receipts || []).forEach(r => {
+    const list = Array.isArray(r.refunds) ? r.refunds : (r.refund ? [r.refund] : []);
+    if (!list.length) return;
+    const split = (r.payment && Array.isArray(r.payment.techSplit)) ? r.payment.techSplit : null;
+    const totalRev = split ? split.reduce((a, s) => a + (Number(s.revenue) || 0), 0) : 0;
+    list.forEach(rf => {
+      const amt = Number(rf.amount) || 0;
+      if (amt <= 0) return;
+      refunded += amt; count += 1;
+      if (split && totalRev > 0) {
+        let w = 0;
+        split.forEach(s => {
+          const treat = (rf.commissionByTech && rf.commissionByTech[s.techName]) || 'withhold';
+          if (treat === 'withhold') w += (Number(s.revenue) || 0) / totalRev * amt;
+        });
+        withheld += w; goodwill += (amt - w);
+      } else {
+        const treats = Object.values(rf.commissionByTech || {});
+        if (treats.length > 0 && treats.every(t => t === 'goodwill')) goodwill += amt;
+        else withheld += amt;
+      }
+    });
+  });
+  return { refunded, withheld, goodwill, count };
+}

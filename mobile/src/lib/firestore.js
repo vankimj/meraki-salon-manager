@@ -223,6 +223,19 @@ export async function fetchReceiptsByRange(startDate, endDate) {
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+// Distinct clientIds with any appointment/receipt BEFORE a date — powers the
+// New-vs-Returning split (a client absent here is new). Matches web.
+export async function fetchHistoricalClientIds(beforeDate) {
+  const [aSnap, rSnap] = await Promise.all([
+    getDocs(query(tenantCol('appointments'), where('date', '<', beforeDate))).catch(() => ({ docs: [] })),
+    getDocs(query(tenantCol('receipts'), where('date', '<', beforeDate))).catch(() => ({ docs: [] })),
+  ]);
+  const ids = new Set();
+  aSnap.docs.forEach(d => { const c = d.data().clientId; if (c) ids.add(c); });
+  rSnap.docs.forEach(d => { const c = d.data().clientId; if (c) ids.add(c); });
+  return ids;
+}
+
 // Post-checkout service ratings (tenants/{tid}/serviceRatings), keyed on the
 // ISO `submittedAt`. Matches the web fetchServiceRatingsByRange.
 export async function fetchServiceRatingsByRange(startDate, endDate) {

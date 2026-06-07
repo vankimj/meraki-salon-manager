@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share, Modal } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { fetchReceiptsByRange, fetchAppointmentsByRange, fetchServiceRatingsByRange } from '../../lib/firestore';
-import { buildTransactions, computeMetrics, computeCancellations } from '../../lib/metrics';
+import { fetchReceiptsByRange, fetchAppointmentsByRange, fetchServiceRatingsByRange, fetchHistoricalClientIds, fetchClients, fetchClientAppointments } from '../../lib/firestore';
+import { buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown } from '../../lib/metrics';
 import AskAIChat from '../../components/AskAIChat';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
@@ -92,6 +92,11 @@ export default function ReportsScreen({ navigation }) {
   const [techFilter, setTechFilter] = useState('');   // '' = all techs
   const [section, setSection] = useState('overview');  // overview | ratings | ask
   const [ratings, setRatings] = useState(null);
+  const [refundBreak, setRefundBreak] = useState(null);
+  const [retention, setRetention] = useState(null);    // { nw, ret, walk }
+  const [referrals, setReferrals] = useState([]);
+  const [visitClient, setVisitClient] = useState(null);// { id, name } for the visits modal
+  const [visits, setVisits] = useState(null);
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
   // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
@@ -108,18 +113,37 @@ export default function ReportsScreen({ navigation }) {
       const prevEnd = new Date(s.getTime() - 86400000);
       const prevStart = new Date(prevEnd.getTime() - (e - s));
       const pIso = (d) => d.toISOString().slice(0, 10);
-      const [receipts, appts, pReceipts, pAppts, svcRatings] = await Promise.all([
+      const [receipts, appts, pReceipts, pAppts, svcRatings, priorIds, clients] = await Promise.all([
         fetchReceiptsByRange(startDate, endDate).catch(() => []),
         fetchAppointmentsByRange(startDate, endDate).catch(() => []),
         fetchReceiptsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
         fetchAppointmentsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
         fetchServiceRatingsByRange(startDate, endDate).catch(() => []),
+        fetchHistoricalClientIds(startDate).catch(() => new Set()),
+        fetchClients().catch(() => []),
       ]);
-      setMetrics(computeMetrics(buildTransactions(receipts, appts)));
+      const txns = buildTransactions(receipts, appts);
+      setMetrics(computeMetrics(txns));
       setCancels(computeCancellations(appts, receipts));
       setPrev(computeMetrics(buildTransactions(pReceipts, pAppts)));
       setRatings(computeRatings(svcRatings));
-    } catch { setMetrics(null); setCancels(null); setPrev(null); setRatings(null); }
+      setRefundBreak(computeRefundBreakdown(receipts));
+      // New vs returning: a client with any visit before the period is returning.
+      const seen = new Set(); let nw = 0, ret = 0, walk = 0;
+      txns.forEach(t => {
+        if (!t.clientId) { walk++; return; }
+        if (seen.has(t.clientId)) return; seen.add(t.clientId);
+        if (priorIds.has(t.clientId)) ret++; else nw++;
+      });
+      setRetention({ nw, ret, walk });
+      // Referral leaderboard from client.referredBy.
+      const refMap = {};
+      (clients || []).forEach(c => {
+        const rb = c.referredBy;
+        if (rb && rb.id) { (refMap[rb.id] || (refMap[rb.id] = { name: rb.name || 'Someone', names: [] })).names.push(c.name || 'Client'); }
+      });
+      setReferrals(Object.values(refMap).map(r => ({ name: r.name, count: r.names.length, names: r.names })).sort((a, b) => b.count - a.count).slice(0, 10));
+    } catch { setMetrics(null); setCancels(null); setPrev(null); setRatings(null); setRefundBreak(null); setRetention(null); setReferrals([]); }
     finally { setLoading(false); }
   }, [custom, days, cStart, cEnd]);
   useEffect(() => { load(); }, [load]);
@@ -143,6 +167,11 @@ export default function ReportsScreen({ navigation }) {
       await Share.share({ message: buildSummary({ custom, days, range, techFilter, metrics, tb, ptTips, ptAvg, ptServices, techs, services }) });
     } catch {}
   }
+  async function openVisits(clientId, name) {
+    setVisitClient({ id: clientId, name }); setVisits(null);
+    try { setVisits(await fetchClientAppointments(clientId) || []); } catch { setVisits([]); }
+  }
+  const topClients = metrics ? Object.entries(metrics.byClient || {}).map(([id, c]) => ({ id, ...c })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -295,6 +324,73 @@ export default function ReportsScreen({ navigation }) {
           <TouchableOpacity onPress={shareSummary} style={styles.shareBtn} activeOpacity={0.85}>
             <Text style={styles.shareBtnText}>⤴  Share summary</Text>
           </TouchableOpacity>
+          {!techFilter && (
+            <>
+              <Text style={styles.section}>Processing fees</Text>
+              <View style={styles.card2}>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Total card fees</Text><Text style={styles.statValue}>{money(metrics.ccFeeTotal)}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Avg per card sale</Text><Text style={styles.statValue}>{money(metrics.cardTxnCount ? metrics.ccFeeTotal / metrics.cardTxnCount : 0)}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Effective rate</Text><Text style={styles.statValue}>{(metrics.cardRevenue ? (metrics.ccFeeTotal / metrics.cardRevenue) * 100 : 0).toFixed(2)}%</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Net card revenue</Text><Text style={styles.statValue}>{money(metrics.cardRevenue - metrics.ccFeeTotal)}</Text></View>
+              </View>
+
+              <Text style={styles.section}>Gratuity</Text>
+              <View style={styles.card2}>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Total tips</Text><Text style={styles.statValue}>{money(metrics.tipTotal)}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Tip rate</Text><Text style={styles.statValue}>{(metrics.totalRevenue ? (metrics.tipTotal / metrics.totalRevenue) * 100 : 0).toFixed(1)}%</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Card tips</Text><Text style={styles.statValue}>{money(metrics.tipsByMethod.card)}</Text></View>
+                <View style={styles.statRow}><Text style={styles.statLabel}>Cash tips</Text><Text style={styles.statValue}>{money(metrics.tipsByMethod.cash)}</Text></View>
+                {metrics.tipsByMethod.other > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Other tips</Text><Text style={styles.statValue}>{money(metrics.tipsByMethod.other)}</Text></View>}
+              </View>
+              {Object.entries(metrics.tipsByTech).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amt]) => (
+                <View key={name} style={styles.miniRow}><Text style={styles.miniName} numberOfLines={1}>{name}</Text><Text style={styles.miniVal}>{money(amt)}</Text></View>
+              ))}
+
+              {refundBreak && refundBreak.count > 0 && (
+                <>
+                  <Text style={styles.section}>Refunds & commission</Text>
+                  <View style={styles.card2}>
+                    <View style={styles.statRow}><Text style={styles.statLabel}>Refunded ({refundBreak.count})</Text><Text style={styles.statValue}>{money(refundBreak.refunded)}</Text></View>
+                    <View style={styles.statRow}><Text style={styles.statLabel}>Withheld from techs</Text><Text style={styles.statValue}>{money(refundBreak.withheld)}</Text></View>
+                    <View style={styles.statRow}><Text style={styles.statLabel}>Salon goodwill</Text><Text style={styles.statValue}>{money(refundBreak.goodwill)}</Text></View>
+                  </View>
+                </>
+              )}
+
+              {retention && (
+                <>
+                  <Text style={styles.section}>New vs returning</Text>
+                  <View style={styles.card2}>
+                    <View style={styles.statRow}><Text style={styles.statLabel}>New clients</Text><Text style={styles.statValue}>{retention.nw}</Text></View>
+                    <View style={styles.statRow}><Text style={styles.statLabel}>Returning clients</Text><Text style={styles.statValue}>{retention.ret}</Text></View>
+                    <View style={styles.statRow}><Text style={styles.statLabel}>Walk-ins</Text><Text style={styles.statValue}>{retention.walk}</Text></View>
+                  </View>
+                </>
+              )}
+
+              {referrals.length > 0 && (
+                <>
+                  <Text style={styles.section}>Top referrers</Text>
+                  {referrals.map(r => (
+                    <View key={r.name} style={styles.miniRow}><Text style={styles.miniName} numberOfLines={1}>{r.name}</Text><Text style={styles.miniVal}>{r.count} referral{r.count === 1 ? '' : 's'}</Text></View>
+                  ))}
+                </>
+              )}
+
+              {topClients.length > 0 && (
+                <>
+                  <Text style={styles.section}>Top clients</Text>
+                  {topClients.map(c => (
+                    <TouchableOpacity key={c.id} style={styles.miniRow} onPress={() => openVisits(c.id, c.name)}>
+                      <Text style={styles.miniName} numberOfLines={1}>{c.name || 'Client'}</Text>
+                      <Text style={styles.miniVal}>{money(c.revenue)} · {c.count} visit{c.count === 1 ? '' : 's'}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+            </>
+          )}
+
           <Text style={styles.note}>Tax / 1099 PDF export is on the web app.</Text>
         </>
       ))}
@@ -349,6 +445,31 @@ export default function ReportsScreen({ navigation }) {
       ))}
     </ScrollView>
       )}
+
+      <Modal visible={!!visitClient} transparent animationType="slide" onRequestClose={() => setVisitClient(null)}>
+        <View style={styles.vBackdrop}>
+          <View style={styles.vSheet}>
+            <View style={styles.vHead}>
+              <Text style={styles.vTitle} numberOfLines={1}>{visitClient?.name || 'Client'}</Text>
+              <TouchableOpacity onPress={() => setVisitClient(null)}><Text style={styles.vClose}>✕</Text></TouchableOpacity>
+            </View>
+            {visits === null ? (
+              <ActivityIndicator color={theme.green} style={{ marginVertical: 24 }} />
+            ) : visits.length === 0 ? (
+              <Text style={styles.empty}>No visit history.</Text>
+            ) : (
+              <ScrollView style={{ maxHeight: 440 }}>
+                {visits.map(v => (
+                  <View key={v.id} style={styles.vRow}>
+                    <Text style={styles.vDate}>{v.date}{v.startTime ? ` · ${v.startTime}` : ''}{v.status ? `  ·  ${v.status}` : ''}</Text>
+                    <Text style={styles.vServices} numberOfLines={2}>{((v.services || []).map(s => s.name).filter(Boolean).join(', ')) || '—'}{v.techName ? `  ·  ${v.techName}` : ''}</Text>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -431,6 +552,21 @@ const makeStyles = (t) => StyleSheet.create({
   lowCard:     { backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.danger },
   lowHead:     { fontSize: 13, fontWeight: '700', color: t.text },
   lowComment:  { fontSize: 13, color: t.textMuted, marginTop: 4, fontStyle: 'italic', lineHeight: 18 },
+  card2:       { backgroundColor: t.surface, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: t.border },
+  statRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 5 },
+  statLabel:   { fontSize: 14, color: t.textMuted },
+  statValue:   { fontSize: 15, fontWeight: '800', color: t.text },
+  miniRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: t.surface, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12, marginTop: 6, borderWidth: 1, borderColor: t.border, gap: 8 },
+  miniName:    { flex: 1, fontSize: 14, fontWeight: '600', color: t.text },
+  miniVal:     { fontSize: 13, fontWeight: '700', color: t.textMuted },
+  vBackdrop:   { flex: 1, backgroundColor: t.overlay || 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  vSheet:      { backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
+  vHead:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  vTitle:      { fontSize: 18, fontWeight: '800', color: t.text, flex: 1 },
+  vClose:      { fontSize: 20, color: t.textMuted, paddingHorizontal: 8 },
+  vRow:        { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: t.border },
+  vDate:       { fontSize: 13, fontWeight: '700', color: t.text },
+  vServices:   { fontSize: 13, color: t.textMuted, marginTop: 2 },
   tabs:     { flexDirection: 'row', gap: 6, marginBottom: 12 },
   tab:      { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
   tabOn:    { backgroundColor: t.greenSoft, borderColor: t.green },
