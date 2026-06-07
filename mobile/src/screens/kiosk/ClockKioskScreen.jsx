@@ -39,6 +39,15 @@ export default function ClockKioskScreen({ navigation }) {
   }, []);
   useFocusEffect(useCallback(() => { load().catch(() => {}); }, [load]));
 
+  // Lock: hide the bottom tab bar while focused so the kiosk can't be left via
+  // a tab without the admin PIN (back gesture is disabled in ManageStack; the
+  // KioskExitButton blocks Android hardware-back). Mirrors the front-desk kiosk.
+  useFocusEffect(useCallback(() => {
+    const parent = navigation.getParent();
+    parent?.setOptions({ tabBarStyle: { display: 'none' } });
+    return () => parent?.setOptions({ tabBarStyle: undefined });
+  }, [navigation]));
+
   const stateOf = (id) => { const e = byEmp[id]; return (e && e.clockInAt && !e.clockOutAt) ? 'in' : 'out'; };
 
   async function submitPin(pin) {
