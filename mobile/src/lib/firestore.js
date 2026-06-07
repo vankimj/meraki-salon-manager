@@ -363,6 +363,12 @@ export async function sendSmsToClient(clientId, body) {
   const res = await callFn('sendDirectSms')({ tenantId: getCurrentTenant(), clientId, body });
   return res?.data || { ok: true };
 }
+
+// Reports AI assistant — sends the full message history, returns { reply }.
+export async function chatWithReports(messages) {
+  const res = await callFn('chatWithReports')({ tenantId: getCurrentTenant(), messages });
+  return res?.data || { reply: '' };
+}
 export async function sendEmailToClient(clientId, subject, body) {
   const res = await callFn('sendDirectEmail')({ tenantId: getCurrentTenant(), clientId, subject, body });
   return res?.data || { ok: true };
