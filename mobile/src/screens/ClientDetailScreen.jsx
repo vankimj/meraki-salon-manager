@@ -141,6 +141,11 @@ export default function ClientDetailScreen({ route, navigation }) {
           {visits.length > 0 && (
             <Text style={styles.visitsCount}>{visits.length} visit{visits.length !== 1 ? 's' : ''}</Text>
           )}
+          {Number(client.credit) > 0 && (
+            <View style={styles.creditChip}>
+              <Text style={styles.creditChipText}>💳 ${Number(client.credit).toFixed(2)} store credit</Text>
+            </View>
+          )}
         </View>
 
         {/* Tabs */}
@@ -320,6 +325,8 @@ const makeStyles = (t) => StyleSheet.create({
   avatarInitial:   { fontSize: 30, fontWeight: '700', color: t.green },
   name:        { fontSize: 18, fontWeight: '700', color: t.text },
   visitsCount: { fontSize: 12, color: t.blue, fontWeight: '600', marginTop: 4 },
+  creditChip:  { marginTop: 8, backgroundColor: t.greenSoft, borderColor: t.green, borderWidth: 1, borderRadius: 14, paddingVertical: 5, paddingHorizontal: 12 },
+  creditChipText: { fontSize: 13, fontWeight: '800', color: t.green },
 
   tabRow:        { flexDirection: 'row', backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
   tabBtn:        { flex: 1, paddingVertical: 11, alignItems: 'center' },

@@ -314,6 +314,11 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
                 ↗ {referralCount} referred
               </span>
             )}
+            {Number(client.credit) > 0 && (
+              <span style={{ fontSize: 10, background: 'var(--pn-success-bg)', color: '#2D7A5F', borderRadius: 10, padding: '1px 7px', fontWeight: 700, flexShrink: 0 }}>
+                💳 ${Number(client.credit).toFixed(2)} credit
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
             {[client.phone, client.email].filter(Boolean).join(' · ') || 'No contact info'}
@@ -510,6 +515,13 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                   </Field>
                 </div>
               </div>
+
+              {Number(client.credit) > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', marginBottom: 14, borderRadius: 8, background: 'var(--pn-success-bg)', border: '1px solid #2D7A5F' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>💳 Store credit balance</span>
+                  <span style={{ fontSize: 16, fontWeight: 800, color: '#2D7A5F' }}>${Number(client.credit).toFixed(2)}</span>
+                </div>
+              )}
 
               <Field label="Phone">
                 {isView
