@@ -1987,6 +1987,24 @@ export async function fetchReceiptsByRange(startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
+// All-time receipt lookup by exact client name — pull up an old sale a customer
+// asks about (older than the browse window). Single `where`, sorted newest-first.
+export async function fetchReceiptsByClientName(name) {
+  const n = String(name || '').trim();
+  if (!n) return [];
+  const snap = await getDocs(query(RECEIPTS_COL, where('clientName', '==', n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')));
+}
+
+// Fetch specific appointments by id (e.g. a receipt's apptIds) to resolve the
+// participants of a combined checkout. Small N — one getDoc each.
+export async function fetchAppointmentsByIds(ids = []) {
+  const uniq = [...new Set((ids || []).filter(Boolean).map(String))];
+  const snaps = await Promise.all(uniq.map(id => getDoc(doc(APPTS_COL, id)).catch(() => null)));
+  return snaps.filter(s => s && s.exists()).map(s => ({ id: s.id, ...s.data() }));
+}
+
 // Service ratings written by submitServiceRating callable when clients tap
 // stars on the hosted /r/{token} page. One row per (receipt, tech).
 const SERVICE_RATINGS_COL = tenantCol('serviceRatings');

@@ -16,6 +16,7 @@ import ClientsAdmin from './modules/clients/ClientsAdmin';
 import ServicesAdmin from './modules/services/ServicesAdmin';
 import EmployeesAdmin from './modules/employees/EmployeesAdmin';
 import ReportsAdmin from './modules/reports/ReportsAdmin';
+import ReceiptsAdmin from './modules/receipts/ReceiptsAdmin';
 import HRAdmin from './modules/hr/HRAdmin';
 import TechEarnings from './modules/earnings/TechEarnings';
 import WalkinKiosk from './modules/walkin/WalkinKiosk';
@@ -53,6 +54,7 @@ const MODULE_TITLES = {
   services:   'Services',
   employees:  'Employees',
   reports:    'Reports',
+  receipts:   'Sales & Receipts',
   attendance: 'Attendance',
   hr:         'HR',
   giftcards:  'Gift Cards & Promos',
@@ -308,6 +310,7 @@ function AppShell({ initialView = 'home' }) {
           {id === 'services'  && <ServicesAdmin />}
           {id === 'employees' && <EmployeesAdmin />}
           {id === 'reports'    && <ReportsAdmin />}
+          {id === 'receipts'   && <ReceiptsAdmin />}
           {id === 'attendance' && <AttendanceAdmin />}
           {id === 'hr'         && <HRAdmin />}
           {id === 'giftcards'  && <GiftCardsAdmin />}

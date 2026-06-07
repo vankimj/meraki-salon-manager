@@ -30,6 +30,7 @@ export const MODULES = [
 
   // ── Studio (run your salon better — analytics, inventory, payments) ─
   { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false },
+  { id: 'receipts',    label: 'Sales & Receipts', desc: 'Browse, search, resend & refund sales', plan: 'studio', adminOnly: false },
   { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'studio',  adminOnly: false },
   { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'studio',  adminOnly: true  },
   { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'studio',  adminOnly: true  },
