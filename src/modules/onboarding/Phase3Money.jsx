@@ -609,6 +609,8 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
           <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
             Connect (or create) a Stripe account in your salon's name. You own it,
             you keep it if you ever leave Plume, and there's no per-payout fee.
+            <strong style={{ color: 'var(--pn-text)' }}> Best if you want the lowest cost and full control</strong> —
+            takes about 10 minutes to set up with Stripe.
           </div>
           <ul style={{ fontSize: 11, color: 'var(--pn-text-muted)', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
             <li>You own the merchant account</li>
@@ -624,16 +626,17 @@ function StripeConnectStep({ stripeConnect, showToast, settings, updateSettings 
 
         {/* Express card — alternative */}
         <div style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: 14, background: 'var(--pn-surface)' }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>Plume-managed</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>Plume-managed · the hands-off option</div>
           <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-            We create + manage a sub-account for you. Dashboard lives inside Plume,
-            no stripe.com login. Small per-payout fee covers it.
+            No Stripe signup, no second login — we create and run the payments
+            account for you, you just start taking cards.
+            <strong style={{ color: 'var(--pn-text)' }}> Best if you'd rather never deal with Stripe.</strong>
           </div>
           <ul style={{ fontSize: 11, color: 'var(--pn-text-muted)', padding: '0 0 0 16px', margin: '0 0 10px', lineHeight: 1.7 }}>
-            <li>Dashboard inside Plume</li>
-            <li>No separate stripe.com account</li>
-            <li>Small per-payout fee</li>
-            <li>Disputes routed through Plume</li>
+            <li>No Stripe account to create — start taking cards in minutes</li>
+            <li>Everything inside Plume — no separate stripe.com login</li>
+            <li>We handle Stripe verification, updates &amp; disputes for you</li>
+            <li><strong style={{ color: 'var(--pn-text)' }}>~0.25% + $0.25 per payout + $2/mo</strong> — Stripe's fee, passed straight through (no Plume markup)</li>
           </ul>
           <RateCard accountType="express" color="var(--pn-text-muted)" borderColor="var(--pn-border)" background="var(--pn-bg)" />
           <button onClick={startExpress} disabled={busy} style={btnSecondary} type="button">
