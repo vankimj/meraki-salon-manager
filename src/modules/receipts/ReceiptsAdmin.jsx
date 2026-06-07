@@ -19,6 +19,19 @@ function fmtDate(r) {
   if (!y || !m || !day) return String(d || '');
   return `${Number(m)}/${Number(day)}/${String(y).slice(2)}`;
 }
+const cap = (s) => s ? String(s).charAt(0).toUpperCase() + String(s).slice(1) : '';
+// Card brand + last4 if captured (in-person sales, going forward); else blank.
+function paidWith(pay) {
+  if (pay?.method === 'card' && pay.cardBrand && pay.cardLast4) return `${cap(pay.cardBrand)} ••${pay.cardLast4}`;
+  return '';
+}
+function refundTypeLabel(r) {
+  const m = r?.method;
+  if (m === 'store_credit' || r?.addedCredit) return 'Store-credit';
+  if (m === 'card') return 'Card';
+  if (m === 'cash') return 'Cash';
+  return 'Recorded';
+}
 function parseContact(raw) {
   const v = (raw || '').trim();
   if (!v) return null;
@@ -171,11 +184,19 @@ function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund }) {
           ))}
           {pay.discountAmount > 0 && <Row muted label="Discount" value={`−${money(pay.discountAmount)}`} />}
           {pay.promoAmount > 0 && <Row muted label="Promo" value={`−${money(pay.promoAmount)}`} />}
+          {pay.giftCard?.applied > 0 && <Row muted label="Gift card used" value={`−${money(pay.giftCard.applied)}`} />}
+          {pay.creditApplied > 0 && <Row muted label="Store credit used" value={`−${money(pay.creditApplied)}`} />}
           {pay.tax > 0 && <Row muted label="Tax" value={money(pay.tax)} />}
           {pay.tip > 0 && <Row muted label="Tip" value={money(pay.tip)} />}
           <div style={{ borderTop: '1px solid var(--pn-border)', marginTop: 6, paddingTop: 6 }}>
-            <Row bold label="Total" value={money(pay.total)} />
+            <Row bold label="Total" value={`${money(pay.total)}${paidWith(pay) ? ' · ' + paidWith(pay) : ''}`} />
           </div>
+          {(item.refunds || (item.refund ? [item.refund] : [])).map((r, i) => (
+            <div key={`rf${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: i === 0 ? 6 : 0 }}>
+              <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>↩ {refundTypeLabel(r)} refund{r.reason ? ` · ${r.reason}` : ''}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>−{money(r.amount)}</span>
+            </div>
+          ))}
 
           {canWrite && (
             <>
