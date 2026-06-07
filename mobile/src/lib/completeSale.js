@@ -22,10 +22,10 @@ export async function completeSale({
   method = 'cash', stripePaymentIntentId = null,
   discType = 'none', discVal = 0, promo = null, giftCard = null,
   cashTendered = null, saleId = null, skipSideEffects = false,
-  receiptContact = null, issueCredit = 0,
+  receiptContact = null, issueCredit = 0, tipByTech = null,
 }) {
   const t = totals;
-  const sp = buildTechSplit(lines, t.tipAmt);
+  const sp = buildTechSplit(lines, t.tipAmt, tipByTech);
   const retailProducts = products.length > 0
     ? products.map(it => ({ id: it.product.id, name: it.product.name, price: it.product.price, qty: it.qty }))
     : null;

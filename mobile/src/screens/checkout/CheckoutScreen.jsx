@@ -14,6 +14,7 @@ import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from './CardPayButton';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
+import TechTipInputs from '../../components/TechTipInputs';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import useOnline from '../../hooks/useOnline';
@@ -55,9 +56,10 @@ export default function CheckoutScreen({ navigation }) {
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
   const [giftCard, setGiftCard]   = useState(null);
-  const [tipMode, setTipMode]     = useState('none');   // none | pct | custom
+  const [tipMode, setTipMode]     = useState('none');   // none | pct | custom | perTech
   const [tipPct, setTipPct]       = useState(null);
   const [tipAmtStr, setTipAmtStr] = useState('');
+  const [perTechTips, setPerTechTips] = useState({});   // { techName: '12.00' }
   const [products, setProducts]   = useState([]);    // [{ product, qty }]
   const [allProducts, setAllProducts] = useState(null);
   const [showPicker, setShowPicker]   = useState(false);
@@ -96,6 +98,20 @@ export default function CheckoutScreen({ navigation }) {
   const lines = lines0.map((l, i) => ({ ...l, price: Number(prices[i]) || 0 }));
   const productsTotal = products.reduce((s, it) => s + (Number(it.product.price) || 0) * it.qty, 0);
 
+  // Service revenue per tech → the optional per-tech tip fields (2+ techs only).
+  const techRevenue = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { const t = l.techName || ''; m[t] = (m[t] || 0) + (Number(l.price) || 0); });
+    return m;
+  }, [JSON.stringify(prices)]);
+  const multiTech = Object.keys(techRevenue).length >= 2;
+  const tipByTech = (tipMode === 'perTech')
+    ? Object.keys(techRevenue).map(t => ({ techName: t, amount: Number(perTechTips[t]) || 0 }))
+    : null;
+  const tipObj = (tipMode === 'perTech')
+    ? { custom: true, amount: (tipByTech || []).reduce((s, t) => s + t.amount, 0), pct: null }
+    : { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
+
   async function openPicker() {
     if (!allProducts) {
       const p = await fetchProducts().catch(() => []);
@@ -122,10 +138,10 @@ export default function CheckoutScreen({ navigation }) {
     ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method: 'cash',
     noCardTips: !!settings?.noCardTips,
-    tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
+    tip: tipObj,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings, clientCredit, applyCredit]);
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), settings, clientCredit, applyCredit]);
 
   // Card total can differ from cash when the salon passes the card fee to the
   // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
@@ -139,12 +155,12 @@ export default function CheckoutScreen({ navigation }) {
     ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method: 'card',
     noCardTips: !!settings?.noCardTips,
-    tip: { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null },
+    tip: tipObj,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, settings, clientCredit, applyCredit]);
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), settings, clientCredit, applyCredit]);
 
-  const split = buildTechSplit(lines, totals.tipAmt);
+  const split = buildTechSplit(lines, totals.tipAmt, tipByTech);
 
   async function applyPromo() {
     const p = await fetchPromoByCode(promoCode).catch(() => null);
@@ -178,7 +194,7 @@ export default function CheckoutScreen({ navigation }) {
       const args = {
         tab, lines, products, totals: t, settings, email,
         method, stripePaymentIntentId, discType, discVal, promo, giftCard,
-        saleId, skipSideEffects: isRetry,
+        saleId, skipSideEffects: isRetry, tipByTech,
         receiptContact: parseReceiptContact(receiptPhone),
         issueCredit: primaryClientId ? Number(issueCredit) || 0 : 0,
       };
@@ -379,7 +395,16 @@ export default function CheckoutScreen({ navigation }) {
         ))}
         <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.chip, tipMode === 'custom' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'custom' && styles.chipTextOn]}>$</Text></TouchableOpacity>
         {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />}
+        {multiTech && (
+          <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.chip, tipMode === 'perTech' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'perTech' && styles.chipTextOn]}>Per tech</Text></TouchableOpacity>
+        )}
       </View>
+      {tipMode === 'perTech' && (
+        <TechTipInputs techRevenue={techRevenue} values={perTechTips} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
+      )}
+      {multiTech && tipMode !== 'perTech' && totals.tipAmt > 0 && (
+        <Text style={styles.muted}>Split across techs by service amount — tap "Per tech" to set each.</Text>
+      )}
 
       </View>
       <View style={isTablet ? styles.colRight : styles.colFull}>
