@@ -46,25 +46,42 @@ function computeTechSlice(receipts, appointments, techName) {
 
   receipts.forEach(r => {
     const p = r.payment || {};
-    const isNeg = r.transactionType === 'refund' || r.transactionType === 'void' || r.transactionType === 'cancellation';
-    const sign  = isNeg ? -1 : 1;
+    const refundList = Array.isArray(r.refunds) ? r.refunds : (r.refund ? [r.refund] : []);
+    const structured = refundList.length > 0;
+    // Legacy refunds (pre per-tech commission) flipped the whole receipt negative;
+    // structured refunds carry per-tech withhold/goodwill and are docked below.
+    const legacyNeg = !structured && (r.transactionType === 'refund' || r.transactionType === 'void' || r.transactionType === 'cancellation');
+    const sign  = legacyNeg ? -1 : 1;
     let rTake = 0;                 // this receipt's take-home for this tech
+    let myRev = 0, totalRev = 0;
     if (p.techSplit && p.techSplit.length) {
+      p.techSplit.forEach(s => { totalRev += Number(s.revenue) || 0; });
       p.techSplit.forEach(s => {
         if (s.techName !== techName) return;
+        myRev += Number(s.revenue) || 0;
         const rev = sign * (Number(s.revenue) || 0);
         const tip = sign * (Number(s.tip) || 0);
         revenue += rev; tips += tip; rTake += rev + tip;
-        if (s.tip && !isNeg) tipEntries.push({ date: r.date, amount: Number(s.tip), clientName: r.clientName || 'Walk-in' });
+        if (s.tip && !legacyNeg) tipEntries.push({ date: r.date, amount: Number(s.tip), clientName: r.clientName || 'Walk-in' });
       });
     } else if (r.techName === techName) {
-      const rev = sign * (Number(p.subtotal) || ((r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0)));
+      const baseRev = Number(p.subtotal) || ((r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0));
+      myRev = baseRev; totalRev = baseRev;
+      const rev = sign * baseRev;
       const tip = sign * (Number(p.tip) || 0);
       revenue += rev; tips += tip; rTake += rev + tip;
-      if (p.tip && !isNeg) tipEntries.push({ date: r.date, amount: Number(p.tip), clientName: r.clientName || 'Walk-in' });
+      if (p.tip && !legacyNeg) tipEntries.push({ date: r.date, amount: Number(p.tip), clientName: r.clientName || 'Walk-in' });
+    }
+    // Structured refunds: dock this tech's revenue by their share of each WITHHELD
+    // refund (goodwill leaves the tech whole — the salon absorbs that share).
+    if (structured && myRev > 0 && totalRev > 0) {
+      refundList.forEach(rf => {
+        const treat = (rf.commissionByTech && rf.commissionByTech[techName]) || 'withhold';
+        if (treat === 'withhold') { const dock = (myRev / totalRev) * (Number(rf.amount) || 0); revenue -= dock; rTake -= dock; }
+      });
     }
     if (rTake !== 0 && r.date) byDay[r.date] = (byDay[r.date] || 0) + rTake;
-    if (r.clientId && !isNeg && (r.techName === techName || (p.techSplit || []).some(s => s.techName === techName))) {
+    if (r.clientId && !legacyNeg && (r.techName === techName || (p.techSplit || []).some(s => s.techName === techName))) {
       clientIds.add(r.clientId);
     }
   });

@@ -125,6 +125,39 @@ export function computeCancellations(appointments, receipts) {
   };
 }
 
+// Refund breakdown over receipts: total refunded, and how the commission was
+// handled — WITHHELD (clawed back from techs) vs GOODWILL (salon absorbed).
+// Per refund, each tech's withheld share = their revenue share × the refund
+// amount when their commissionByTech is 'withhold'; the rest is goodwill.
+// Refunds with no techSplit fall to all-withheld unless every tech is goodwill.
+export function computeRefundBreakdown(receipts) {
+  let refunded = 0, withheld = 0, goodwill = 0, count = 0;
+  (receipts || []).forEach(r => {
+    const list = Array.isArray(r.refunds) ? r.refunds : (r.refund ? [r.refund] : []);
+    if (!list.length) return;
+    const split = (r.payment && Array.isArray(r.payment.techSplit)) ? r.payment.techSplit : null;
+    const totalRev = split ? split.reduce((a, s) => a + (Number(s.revenue) || 0), 0) : 0;
+    list.forEach(rf => {
+      const amt = Number(rf.amount) || 0;
+      if (amt <= 0) return;
+      refunded += amt; count += 1;
+      if (split && totalRev > 0) {
+        let w = 0;
+        split.forEach(s => {
+          const treat = (rf.commissionByTech && rf.commissionByTech[s.techName]) || 'withhold';
+          if (treat === 'withhold') w += (Number(s.revenue) || 0) / totalRev * amt;
+        });
+        withheld += w; goodwill += (amt - w);
+      } else {
+        const treats = Object.values(rf.commissionByTech || {});
+        if (treats.length > 0 && treats.every(t => t === 'goodwill')) goodwill += amt;
+        else withheld += amt;
+      }
+    });
+  });
+  return { refunded, withheld, goodwill, count };
+}
+
 // Receipts are the canonical record. For done appts without one, synthesize.
 export function buildTransactions(receipts, appointments) {
   const covered = new Set();
