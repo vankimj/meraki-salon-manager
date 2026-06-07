@@ -479,7 +479,7 @@ export async function fetchGiftCardByCode(code) {
 // rebuild + a reader to run).
 export async function createTerminalConnectionToken() {
   const res = await callFn('createTerminalConnectionToken')({ tenantId: getCurrentTenant() });
-  return res?.data?.secret || null;
+  return { secret: res?.data?.secret || null, testMode: !!res?.data?.testMode };
 }
 export async function createCardPaymentIntent(amountCents, description, idempotencyKey) {
   const res = await callFn('createPaymentIntent')({ tenantId: getCurrentTenant(), amountCents, description, paymentMethodType: 'card_present', idempotencyKey });

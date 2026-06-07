@@ -1,6 +1,6 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 import { Text, TouchableOpacity, ActivityIndicator, Alert, StyleSheet, Platform, PermissionsAndroid } from 'react-native';
-import { createCardPaymentIntent } from '../../lib/terminal';
+import { createCardPaymentIntent, fetchTerminalTestMode } from '../../lib/terminal';
 import { useThemedStyles } from '../../theme/ThemeContext';
 
 // Rendered ONLY when the native Terminal module is present (CheckoutScreen
@@ -36,6 +36,11 @@ export default function CardPayButton({ amountCents, description, locationId, on
   const connectedRef = useRef(false);
   const [busy, setBusy]   = useState(false);
   const [phase, setPhase] = useState('');
+  // Test/sandbox keys can't charge real NFC cards, so fall back to Stripe's
+  // simulated reader (auto-approves with test card 4242) — lets Tap to Pay be
+  // exercised end-to-end with no physical card. Live mode uses the real reader.
+  const [simulated, setSimulated] = useState(false);
+  useEffect(() => { let a = true; fetchTerminalTestMode().then(v => { if (a) setSimulated(!!v); }).catch(() => {}); return () => { a = false; }; }, []);
 
   const term = useStripeTerminal({
     onUpdateDiscoveredReaders: (list) => { readersRef.current = list || []; },
@@ -55,16 +60,18 @@ export default function CardPayButton({ amountCents, description, locationId, on
 
   async function ensureConnected() {
     if (connectedRef.current) return;
-    if (!locationId) {
+    if (!locationId && !simulated) {
       throw new Error('No Terminal Location set. Create one in Stripe → Terminal → Locations and add its ID to salon settings (terminalLocationId).');
     }
-    setPhase(method === 'tapToPay' ? 'Preparing Tap to Pay…' : 'Searching for reader…');
-    const granted = await ensureAndroidPermissions(method === 'bluetoothScan');
-    if (!granted) {
-      throw new Error('Location' + (method === 'bluetoothScan' ? ' and Bluetooth' : '') + ' permission is required to take card payments. Enable it in Settings and try again.');
+    setPhase(simulated ? 'Preparing test reader…' : (method === 'tapToPay' ? 'Preparing Tap to Pay…' : 'Searching for reader…'));
+    if (!simulated) {
+      const granted = await ensureAndroidPermissions(method === 'bluetoothScan');
+      if (!granted) {
+        throw new Error('Location' + (method === 'bluetoothScan' ? ' and Bluetooth' : '') + ' permission is required to take card payments. Enable it in Settings and try again.');
+      }
     }
     readersRef.current = [];
-    const { error: dErr } = await term.discoverReaders({ discoveryMethod: method });
+    const { error: dErr } = await term.discoverReaders({ discoveryMethod: method, simulated });
     if (dErr) throw new Error(dErr.message);
     const reader = await waitForReader();
     try { await term.cancelDiscovering(); } catch {}
@@ -75,9 +82,12 @@ export default function CardPayButton({ amountCents, description, locationId, on
         : 'No card reader found. Make sure it is powered on and nearby.');
     }
     setPhase('Connecting…');
+    // The simulated reader carries its own test location; fall back to it when
+    // no real Terminal Location is configured (sandbox).
+    const locId = locationId || reader?.location?.id || undefined;
     const params = method === 'tapToPay'
-      ? { discoveryMethod: 'tapToPay', reader, locationId, onBehalfOf, merchantDisplayName: merchantName }
-      : { discoveryMethod: 'bluetoothScan', reader, locationId };
+      ? { discoveryMethod: 'tapToPay', reader, locationId: locId, onBehalfOf, merchantDisplayName: merchantName }
+      : { discoveryMethod: 'bluetoothScan', reader, locationId: locId };
     const { reader: cr, error: cErr } = await term.connectReader(params);
     if (cErr) throw new Error(cErr.message);
     connectedRef.current = !!cr;
@@ -93,7 +103,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
       if (!pi0?.clientSecret) throw new Error('Could not start the payment.');
       const { paymentIntent: pi, error: rErr } = await term.retrievePaymentIntent(pi0.clientSecret);
       if (rErr) throw new Error(rErr.message);
-      setPhase(method === 'tapToPay' ? 'Ask the client to tap…' : 'Present card on the reader…');
+      setPhase(simulated ? 'Simulating a test tap…' : (method === 'tapToPay' ? 'Ask the client to tap…' : 'Present card on the reader…'));
       const { paymentIntent: pi2, error: colErr } = await term.collectPaymentMethod({ paymentIntent: pi });
       if (colErr) throw new Error(colErr.message);
       setPhase('Processing…');
@@ -114,7 +124,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
       {busy ? (
         <Text style={styles.txt}>{phase || 'Working…'}</Text>
       ) : (
-        <Text style={styles.txt}>💳  {preferReader ? 'Card — tap / insert on reader' : 'Card — Tap to Pay'}</Text>
+        <Text style={styles.txt}>💳  {preferReader ? 'Card — tap / insert on reader' : 'Card — Tap to Pay'}{simulated ? '  (test)' : ''}</Text>
       )}
     </TouchableOpacity>
   );
