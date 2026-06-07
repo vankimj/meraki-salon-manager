@@ -486,6 +486,14 @@ export async function resendReceiptEmail({ receiptId = null, viewToken = null, e
   const res = await callFn('resendReceiptEmail')({ tenantId: getCurrentTenant(), receiptId, viewToken, email });
   return res?.data || { ok: false };
 }
+// Refund a sale. Card sales (with a Stripe PaymentIntent) get a REAL refund to
+// the card; cash / no-PI sales are recorded only. Staff (admin or tech) may
+// call it; the server notifies all admins. `idempotencyKey` (stable per attempt)
+// makes a retry safe — no double refund or double credit.
+export async function refundSale({ receiptId, amountCents, reason, addCredit = false, idempotencyKey }) {
+  const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, addCredit, idempotencyKey });
+  return res?.data || { ok: false };
+}
 export async function fetchPromoByCode(code) {
   const snap = await getDocs(query(tenantCol('promoCodes'), where('code', '==', String(code || '').trim().toUpperCase())));
   if (snap.empty) return null;
