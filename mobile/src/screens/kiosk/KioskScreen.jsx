@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator, Alert, Image } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { subscribeCheckoutSession, clearCheckoutSession, fetchSettings, fetchClient, fetchClientMembership, chargeStoredCard, fetchSlides, claimCheckoutSession } from '../../lib/firestore';
-import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
+import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact, normalizePromo } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
@@ -121,7 +121,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const [tipAmtStr, setTipAmtStr] = useState('');
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
-  const [receiptPhone, setReceiptPhone] = useState('');
+  const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
   const [stage, setStage]       = useState('review'); // review | cash | done
   const [cashStr, setCashStr]   = useState('');
   const [saving, setSaving]     = useState(false);
@@ -160,19 +160,39 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   }, [session.clientId]);
   const savedPm = client?.paymentMethods?.find(p => p.id === client.defaultPaymentMethodId) || client?.paymentMethods?.[0] || null;
   const hasPhoneOnFile = (cart.appts || []).some(a => a.clientPhone) || !!client?.phone;
-  const memberDiscount = membership ? { isPercent: true, value: Number(membership.discountPct) || 0 } : null;
   const clientCredit = Number(client?.credit) || 0;
+
+  // A "priced" session was sent from the tech's checkout with every adjustment
+  // already applied — honor EXACTLY what they set and do NOT also auto-apply the
+  // membership discount (that would double-discount). A bare hand-off (no
+  // pricing) keeps the old behavior: auto-apply the member discount + any store
+  // credit so the customer never has to ask.
+  const priced = !!session.priced;
+  const memberDiscount = membership ? { isPercent: true, value: Number(membership.discountPct) || 0 } : null;
+  const sessionDiscount = (session.discType && session.discType !== 'none')
+    ? { isPercent: session.discType !== 'amount', value: Number(session.discVal) || 0 }
+    : null;
+  const discount   = priced ? sessionDiscount : memberDiscount;
+  const promo      = priced ? (session.promo || null) : null;
+  const giftCard   = priced ? (session.giftCard || null) : null;
+  const applyCredit = priced ? (!!session.applyCredit && clientCredit > 0) : (clientCredit > 0);
+  const discountLabel = priced
+    ? (session.discType === 'member' ? `★ Member (${Number(session.discVal) || 0}%)`
+       : session.discType === 'amount' ? 'Discount'
+       : `Discount (${Number(session.discVal) || 0}%)`)
+    : `★ ${membership?.planName || 'Member'} (${membership?.discountPct}%)`;
 
   const tip = { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
   const totalsFor = (method) => computeTotals({
-    lines, productsTotal, discount: memberDiscount, promo: null,
+    lines, productsTotal, discount, promo: normalizePromo(promo),
     taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
-    method, noCardTips: !!settings?.noCardTips, tip, giftCardBalance: 0, applyGC: false,
-    clientCredit, applyCredit: clientCredit > 0,
+    method, noCardTips: !!settings?.noCardTips, tip,
+    giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
+    clientCredit, applyCredit,
   });
-  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit]);
-  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit]);
+  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit, priced]);
+  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit, priced]);
 
   // Flush any sales stranded offline whenever the kiosk arms a new checkout.
   useEffect(() => { syncOfflineSales().catch(() => {}); }, [session.createdAt]);
@@ -193,11 +213,23 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       const t = method === 'card' ? cardTotals : cashTotals;
       const changeDue = (method === 'cash' && opts.cashTendered != null)
         ? Math.max(0, (Number(opts.cashTendered) || 0) - t.total) : null;
+      // A priced hand-off carries the tech's exact adjustments so the receipt +
+      // side effects (gift-card debit, promo count, credit deduct/issue) match
+      // what was shown; a bare hand-off only carries the auto member discount.
+      const adj = priced
+        ? {
+            discType: (session.discType && session.discType !== 'none') ? session.discType : 'none',
+            discVal: Number(session.discVal) || 0,
+            promo: session.promo || null,
+            giftCard: session.giftCard || null,
+            issueCredit: Number(session.issueCredit) || 0,
+          }
+        : (membership ? { discType: 'member', discVal: Number(membership.discountPct) || 0 } : {});
       const args = {
         tab: { appts: cart.appts || [], products }, lines, products,
         totals: t, settings, email, method, saleId, skipSideEffects: isRetry,
         receiptContact: parseReceiptContact(receiptPhone),
-        ...(membership ? { discType: 'member', discVal: Number(membership.discountPct) || 0 } : {}),
+        ...adj,
         ...opts,
       };
       // Card already charged online → record directly. Cash goes through
@@ -357,8 +389,10 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
       {/* Totals */}
       <View style={styles.totals}>
         <Row styles={styles} label="Subtotal" value={money(cashTotals.subtotal)} />
-        {cashTotals.discountAmount > 0 && <Row styles={styles} label={`★ ${membership?.planName || 'Member'} (${membership?.discountPct}%)`} value={`−${money(cashTotals.discountAmount)}`} />}
+        {cashTotals.discountAmount > 0 && <Row styles={styles} label={discountLabel} value={`−${money(cashTotals.discountAmount)}`} />}
+        {cashTotals.promoAmount > 0 && <Row styles={styles} label={`Promo ${promo?.code || ''}`} value={`−${money(cashTotals.promoAmount)}`} />}
         {cashTotals.taxAmt > 0 && <Row styles={styles} label="Tax" value={money(cashTotals.taxAmt)} />}
+        {cashTotals.gcApply > 0 && <Row styles={styles} label="Gift card" value={`−${money(cashTotals.gcApply)}`} />}
         {cashTotals.creditApply > 0 && <Row styles={styles} label="Store credit" value={`−${money(cashTotals.creditApply)}`} />}
         {cashTotals.tipAmt > 0 && <Row styles={styles} label="Tip" value={money(cashTotals.tipAmt)} />}
         <View style={styles.divider} />
