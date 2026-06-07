@@ -11,7 +11,7 @@ const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 // card (server-side via refundSale → Stripe reverse_transfer); cash / no-PI is
 // recorded only. Partial-refund aware (caps at the remaining refundable) and
 // idempotent (one stable key per open sheet).
-export default function RefundSheet({ receipt, onClose, onDone }) {
+export default function RefundSheet({ receipt, onClose, onDone, commissionDefault = 'withhold' }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const open = !!receipt;
@@ -20,10 +20,18 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
   const already   = Number(receipt?.refundedAmount) || 0;
   const remaining = Math.max(0, original - already);
   const isCard    = payment.method === 'card' && !!payment.stripePaymentIntentId;
+  // Distinct techs on this sale — each gets a withhold/goodwill commission choice.
+  const techs = (() => {
+    const ts = (Array.isArray(payment.techSplit) && payment.techSplit.length)
+      ? payment.techSplit.map(s => s.techName || '').filter(Boolean)
+      : [payment.techName || receipt?.techName || ''].filter(Boolean);
+    return [...new Set(ts)];
+  })();
 
   const [amount,    setAmount]    = useState('');
   const [reason,    setReason]    = useState('');
   const [refundTo,  setRefundTo]  = useState('money');   // 'money' | 'credit'
+  const [commission, setCommission] = useState({});      // { techName: 'withhold'|'goodwill' }
   const [saving,    setSaving]    = useState(false);
   const [idemKey,   setIdemKey]   = useState('');
 
@@ -31,6 +39,8 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
     if (receipt) {
       setAmount(remaining ? String(remaining.toFixed(2)) : '');
       setReason(''); setRefundTo('money'); setSaving(false);
+      const init = {}; techs.forEach(t => { init[t] = commissionDefault === 'goodwill' ? 'goodwill' : 'withhold'; });
+      setCommission(init);
       setIdemKey(genReceiptToken(24));   // one stable idempotency key per sheet open
     }
   }, [receipt?.id]);
@@ -48,6 +58,7 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
         amountCents: Math.round(amt * 100),
         reason: reason.trim(),
         refundTo,
+        commissionByTech: commission,
         idempotencyKey: idemKey,
       });
       if (!res?.ok) throw new Error(res?.error || 'Refund failed.');
@@ -103,6 +114,26 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
                   : isCard ? 'Refunds the customer’s card for real, via Stripe.'
                   : 'Records the refund — hand the cash back yourself.'}
               </Text>
+
+              {techs.length > 0 && (
+                <>
+                  <Text style={styles.label}>Commission</Text>
+                  {techs.map(t => (
+                    <View key={t} style={styles.commRow}>
+                      <Text style={styles.commTech} numberOfLines={1}>{t || '—'}</Text>
+                      <View style={styles.commToggle}>
+                        <TouchableOpacity onPress={() => setCommission(p => ({ ...p, [t]: 'withhold' }))} style={[styles.commBtn, (commission[t] || 'withhold') === 'withhold' && styles.commBtnOn]}>
+                          <Text style={[styles.commBtnText, (commission[t] || 'withhold') === 'withhold' && styles.commBtnTextOn]}>Withhold</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={() => setCommission(p => ({ ...p, [t]: 'goodwill' }))} style={[styles.commBtn, commission[t] === 'goodwill' && styles.commBtnOn]}>
+                          <Text style={[styles.commBtnText, commission[t] === 'goodwill' && styles.commBtnTextOn]}>Goodwill</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  ))}
+                  <Text style={styles.methodNote}>Withhold = tech loses commission on their share of the refund. Goodwill = tech keeps it, the salon absorbs it.</Text>
+                </>
+              )}
             </ScrollView>
 
             <TouchableOpacity style={[styles.submit, (saving || !(Number(amount) > 0) || !reason.trim()) && { opacity: 0.5 }]} onPress={submit} disabled={saving || !(Number(amount) > 0) || !reason.trim()}>
@@ -131,6 +162,13 @@ const makeStyles = (t) => StyleSheet.create({
   methodTitleOn:{ color: t.green },
   methodSub:  { fontSize: 11, color: t.textFaint, marginTop: 2 },
   methodNote: { fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 17 },
+  commRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, gap: 10 },
+  commTech:   { flex: 1, fontSize: 14, fontWeight: '700', color: t.text },
+  commToggle: { flexDirection: 'row', borderRadius: 8, borderWidth: 1, borderColor: t.border, overflow: 'hidden' },
+  commBtn:    { paddingVertical: 7, paddingHorizontal: 12, backgroundColor: t.surfaceAlt },
+  commBtnOn:  { backgroundColor: t.green },
+  commBtnText:{ fontSize: 12.5, fontWeight: '800', color: t.textMuted },
+  commBtnTextOn:{ color: '#fff' },
   label:    { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 14, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
   amountRow:{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: t.border },
   dollar:   { fontSize: 18, color: t.textMuted },

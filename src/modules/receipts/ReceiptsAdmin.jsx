@@ -44,7 +44,7 @@ function newIdemKey() {
 }
 
 export default function ReceiptsAdmin() {
-  const { isAdmin, isTech, showToast } = useApp();
+  const { isAdmin, isTech, showToast, settings } = useApp();
   const canWrite = !!(isAdmin || isTech);   // resend + refund (backend also enforces)
 
   const [rangeDays, setRangeDays] = useState(180);
@@ -150,7 +150,7 @@ export default function ReceiptsAdmin() {
       )}
 
       {refundReceipt && (
-        <RefundModal receipt={refundReceipt} onClose={() => setRefundReceipt(null)} onDone={afterRefund} showToast={showToast} />
+        <RefundModal receipt={refundReceipt} onClose={() => setRefundReceipt(null)} onDone={afterRefund} showToast={showToast} commissionDefault={settings?.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold'} />
       )}
     </div>
   );
@@ -300,18 +300,28 @@ function Recipients({ receipt, showToast }) {
   );
 }
 
-function RefundModal({ receipt, onClose, onDone, showToast }) {
+function RefundModal({ receipt, onClose, onDone, showToast, commissionDefault = 'withhold' }) {
   const pay = receipt.payment || {};
   const original = Number(pay.total) || 0;
   const already = Number(receipt.refundedAmount) || 0;
   const remaining = Math.max(0, original - already);
   const isCard = pay.method === 'card' && !!pay.stripePaymentIntentId;
+  const techs = (() => {
+    const ts = (Array.isArray(pay.techSplit) && pay.techSplit.length)
+      ? pay.techSplit.map(s => s.techName || '').filter(Boolean)
+      : [pay.techName || receipt.techName || ''].filter(Boolean);
+    return [...new Set(ts)];
+  })();
   const [amount, setAmount] = useState(remaining ? remaining.toFixed(2) : '');
   const [reason, setReason] = useState('');
   const [refundTo, setRefundTo] = useState('money');   // 'money' | 'credit'
+  const [commission, setCommission] = useState(() => {
+    const init = {}; techs.forEach(t => { init[t] = commissionDefault === 'goodwill' ? 'goodwill' : 'withhold'; }); return init;
+  });
   const [busy, setBusy] = useState(false);
   const [idem] = useState(newIdemKey);
   const mbtn = (on) => ({ flex: 1, padding: '9px 8px', borderRadius: 8, border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: on ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' });
+  const cbtn = (on) => ({ padding: '6px 12px', fontSize: 12.5, fontWeight: 800, border: 'none', background: on ? '#2D7A5F' : 'var(--pn-surface-muted)', color: on ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' });
 
   async function submit() {
     const amt = Number(amount) || 0;
@@ -320,7 +330,7 @@ function RefundModal({ receipt, onClose, onDone, showToast }) {
     if (!reason.trim()) { showToast('Add a reason for the refund.'); return; }
     setBusy(true);
     try {
-      const res = await callFn('refundSale')({ tenantId: TENANT_ID, receiptId: receipt.id, amountCents: Math.round(amt * 100), reason: reason.trim(), refundTo, idempotencyKey: idem });
+      const res = await callFn('refundSale')({ tenantId: TENANT_ID, receiptId: receipt.id, amountCents: Math.round(amt * 100), reason: reason.trim(), refundTo, commissionByTech: commission, idempotencyKey: idem });
       if (!res.data?.ok) throw new Error(res.data?.error || 'Refund failed.');
       const kind = refundTo === 'credit' ? 'store-credit refund' : isCard ? 'card refund' : 'refund';
       logActivity('refund_issued', `${money(amt)} ${kind} · ${receipt.clientName || 'Walk-in'}${reason.trim() ? ' · ' + reason.trim() : ''}`);
@@ -368,6 +378,22 @@ function RefundModal({ receipt, onClose, onDone, showToast }) {
         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Reason</label>
         <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Why is this being refunded?" rows={3} maxLength={400}
           style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 11px', fontSize: 13.5, background: 'var(--pn-bg)', color: 'var(--pn-text)', resize: 'vertical' }} />
+
+        {techs.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Commission</label>
+            {techs.map(t => (
+              <div key={t} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 6 }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--pn-text)' }}>{t || '—'}</span>
+                <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--pn-border)' }}>
+                  <button onClick={() => setCommission(p => ({ ...p, [t]: 'withhold' }))} style={cbtn((commission[t] || 'withhold') === 'withhold')}>Withhold</button>
+                  <button onClick={() => setCommission(p => ({ ...p, [t]: 'goodwill' }))} style={cbtn(commission[t] === 'goodwill')}>Goodwill</button>
+                </div>
+              </div>
+            ))}
+            <div style={{ fontSize: 11.5, color: 'var(--pn-text-muted)', marginTop: 6, lineHeight: 1.4 }}>Withhold = tech loses commission on their share of the refund. Goodwill = tech keeps it; the salon absorbs it.</div>
+          </div>
+        )}
 
         <button onClick={submit} disabled={busy || !(Number(amount) > 0) || !reason.trim()}
           style={{ width: '100%', marginTop: 18, padding: '12px', fontWeight: 800, fontSize: 14, borderRadius: 12, border: 'none', background: 'var(--pn-danger)', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: (busy || !(Number(amount) > 0) || !reason.trim()) ? 0.5 : 1, fontFamily: 'inherit' }}>
