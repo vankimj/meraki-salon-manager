@@ -119,7 +119,9 @@ export default function ManageCrud({
               <TouchableOpacity onPress={() => setEditing(null)} style={styles.close}><Text style={styles.closeText}>×</Text></TouchableOpacity>
             </View>
             <ScrollView style={{ maxHeight: 440 }}>
-              {!!editing && fields.map(f => (
+              {!!editing && fields.map(f => {
+                if (f.show && !f.show(editing)) return null;
+                return (
                 <View key={f.key} style={styles.field}>
                   <Text style={styles.fieldLabel}>{f.label}</Text>
                   {f.type === 'bool' ? (
@@ -159,6 +161,8 @@ export default function ManageCrud({
                         );
                       })}
                     </View>
+                  ) : f.type === 'custom' ? (
+                    f.render(editing, setEditing)
                   ) : (
                     <TextInput
                       style={styles.input}
@@ -171,7 +175,8 @@ export default function ManageCrud({
                     />
                   )}
                 </View>
-              ))}
+                );
+              })}
             </ScrollView>
             <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={doSave} disabled={saving}>
               <Text style={styles.saveBtnText}>{saving ? 'Saving…' : (editing?.id ? 'Save changes' : 'Create')}</Text>
