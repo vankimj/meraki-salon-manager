@@ -28,6 +28,7 @@ export default function AdminSettingsScreen() {
   const [settings, setSettings] = useState(null);
   const [draft,    setDraft]    = useState({});
   const [receipt,  setReceipt]  = useState('auto');
+  const [refundDefault, setRefundDefault] = useState('withhold');
   const [saving,   setSaving]   = useState(false);
 
   const load = useCallback(async () => {
@@ -37,13 +38,14 @@ export default function AdminSettingsScreen() {
     FIELDS.forEach(f => { d[f.key] = f.type === 'bool' ? !!s[f.key] : (s[f.key] ?? f.def ?? ''); });
     setDraft(d);
     setReceipt(s.receiptDelivery || 'auto');
+    setRefundDefault(s.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
   }, []);
   useEffect(() => { load(); }, [load]);
 
   async function save() {
     setSaving(true);
     try {
-      const payload = { receiptDelivery: receipt };
+      const payload = { receiptDelivery: receipt, refundCommissionDefault: refundDefault };
       FIELDS.forEach(f => {
         if (f.type === 'number') payload[f.key] = Number(draft[f.key]) || 0;
         else if (f.type === 'bool') payload[f.key] = !!draft[f.key];
@@ -95,6 +97,19 @@ export default function AdminSettingsScreen() {
           );
         })}
       </View>
+
+      <Text style={styles.fieldLabel}>Refund commission default</Text>
+      <View style={styles.chips}>
+        {[{ value: 'withhold', label: 'Withhold from tech' }, { value: 'goodwill', label: 'Salon absorbs' }].map(m => {
+          const on = refundDefault === m.value;
+          return (
+            <TouchableOpacity key={m.value} onPress={() => setRefundDefault(m.value)} style={[styles.chip, on && styles.chipOn]}>
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>{m.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <Text style={styles.note}>Default for new refunds — staff can override per tech at refund time.</Text>
 
       <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save settings'}</Text>

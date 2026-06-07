@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
-import { fetchReceiptsByRange, fetchReceiptsByClientName, fetchAppointmentsByIds, fetchClient } from '../../lib/firestore';
+import { fetchReceiptsByRange, fetchReceiptsByClientName, fetchAppointmentsByIds, fetchClient, fetchSettings } from '../../lib/firestore';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
 import RefundSheet from '../../components/RefundSheet';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
@@ -43,6 +43,8 @@ export default function ReceiptsScreen() {
   const [allTime, setAllTime] = useState(null);   // {name, results} when an all-time name search is active
   const [searching, setSearching] = useState(false);
   const [refundReceipt, setRefundReceipt] = useState(null);
+  const [commissionDefault, setCommissionDefault] = useState('withhold');
+  useEffect(() => { fetchSettings().then(s => { if (s?.refundCommissionDefault === 'goodwill') setCommissionDefault('goodwill'); }).catch(() => {}); }, []);
 
   const load = useCallback(async () => {
     const end = new Date();
@@ -215,7 +217,7 @@ export default function ReceiptsScreen() {
         ListEmptyComponent={<Text style={styles.empty}>{allTime ? `No sales found for “${allTime.name}”.` : q.trim() ? 'No matches in this window — try “All dates”.' : 'No sales in this window.'}</Text>}
         renderItem={renderItem}
       />
-      <RefundSheet receipt={refundReceipt} onClose={() => setRefundReceipt(null)} onDone={afterRefund} />
+      <RefundSheet receipt={refundReceipt} onClose={() => setRefundReceipt(null)} onDone={afterRefund} commissionDefault={commissionDefault} />
     </>
   );
 }

@@ -77,6 +77,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
   const [removalPrice,   setRemovalPrice]  = useState(settings.removalPrice ?? 15);
   const [noCardTips,     setNoCardTips]    = useState(!!settings.noCardTips);
+  const [refundCommDefault, setRefundCommDefault] = useState(settings.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
   const [finSaving,      setFinSaving]     = useState(false);
   const [themeId,        setThemeId]       = useState(settings.themeId   || 'meraki');
   const [autoTheme,      setAutoTheme]     = useState(!!settings.autoTheme);
@@ -734,10 +735,25 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   }} />
                 </button>
               </div>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Refund commission default</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>When a refund is issued, default the tech's commission to withheld (refund is the tech's fault) or kept (the salon absorbs it as goodwill). Staff can override per tech at refund time.</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[{ v: 'withhold', l: 'Withhold from tech' }, { v: 'goodwill', l: 'Salon absorbs' }].map(o => {
+                    const on = refundCommDefault === o.v;
+                    return (
+                      <button key={o.v} onClick={() => setRefundCommDefault(o.v)} style={{
+                        flex: 1, padding: '9px 8px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, fontSize: 13,
+                        border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: on ? 'var(--pn-success)' : 'var(--pn-text-muted)',
+                      }}>{o.l}</button>
+                    );
+                  })}
+                </div>
+              </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
-                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips });
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips, refundCommissionDefault: refundCommDefault });
                   // Mirror removalPrice onto bookingConfig so the public-facing
                   // booking page can read it without admin permissions.
                   if (bookingCfg) {
