@@ -77,7 +77,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
   const [removalPrice,   setRemovalPrice]  = useState(settings.removalPrice ?? 15);
   const [noCardTips,     setNoCardTips]    = useState(!!settings.noCardTips);
-  const [terminalLocationId, setTerminalLocationId] = useState(settings.terminalLocationId ?? '');
   const [finSaving,      setFinSaving]     = useState(false);
   const [themeId,        setThemeId]       = useState(settings.themeId   || 'meraki');
   const [autoTheme,      setAutoTheme]     = useState(!!settings.autoTheme);
@@ -709,14 +708,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
-                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Stripe Terminal Location ID</div>
-                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>For in-person card payments (Tap to Pay / reader). Create a Location in Stripe → Terminal → Locations and paste its <code>tml_…</code> ID. Must match the app's Stripe mode (test vs live).</div>
-                </div>
-                <input type="text" value={terminalLocationId} onChange={e => setTerminalLocationId(e.target.value.trim())} placeholder="tml_…"
-                  style={{ width: 210, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-              </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
-                <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Removal service price</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Charged when a customer says "yes" to the removal question on a service that allows it.</div>
                 </div>
@@ -746,7 +737,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
-                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips, terminalLocationId: terminalLocationId.trim() || null });
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips });
                   // Mirror removalPrice onto bookingConfig so the public-facing
                   // booking page can read it without admin permissions.
                   if (bookingCfg) {
@@ -3798,6 +3789,15 @@ function StripeConnectSection({ onOpenWizard }) {
   const { settings, updateSettings } = useApp();
   const sc = settings?.stripeConnect || null;
   const [refreshing, setRefreshing] = useState(false);
+  const [tll, setTll] = useState(settings?.terminalLocationId || '');
+  const [tllSaving, setTllSaving] = useState(false);
+  const [tllMsg, setTllMsg] = useState('');
+  async function saveTll() {
+    setTllSaving(true); setTllMsg('');
+    try { await updateSettings({ ...settings, terminalLocationId: tll.trim() || null }); setTllMsg('Saved ✓'); setTimeout(() => setTllMsg(''), 2500); }
+    catch (e) { setTllMsg(e?.message || 'Save failed'); }
+    finally { setTllSaving(false); }
+  }
 
   async function refresh() {
     setRefreshing(true);
@@ -3849,6 +3849,23 @@ function StripeConnectSection({ onOpenWizard }) {
           {!connected ? 'Set up payments →' : needsMore ? 'Finish setup →' : 'Manage →'}
         </button>
       </div>
+      {connected && (
+        <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 13, color: 'var(--pn-text)', marginBottom: 2 }}>Terminal Location ID <span style={{ fontWeight: 400, color: 'var(--pn-text-faint)' }}>· in-person card payments</span></div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 8, lineHeight: 1.5, maxWidth: 480 }}>
+            Needed for Tap to Pay / card readers. Create a Location in Stripe → Terminal → Locations and paste its <code>tml_…</code> ID. Must match your Stripe mode (test vs live).
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input type="text" value={tll} onChange={e => setTll(e.target.value.trim())} placeholder="tml_…"
+              style={{ flex: 1, maxWidth: 280, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-bg)', color: 'var(--pn-text)' }} />
+            <button onClick={saveTll} disabled={tllSaving} type="button"
+              style={{ background: '#2D7A5F', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: tllSaving ? 'default' : 'pointer', opacity: tllSaving ? 0.6 : 1, fontFamily: 'inherit' }}>
+              {tllSaving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+          {!!tllMsg && <div style={{ fontSize: 12, color: tllMsg === 'Saved ✓' ? 'var(--pn-success)' : 'var(--pn-danger)', marginTop: 6 }}>{tllMsg}</div>}
+        </div>
+      )}
     </Section>
   );
 }
