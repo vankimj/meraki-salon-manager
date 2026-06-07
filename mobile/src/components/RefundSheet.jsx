@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, Switch, StyleSheet, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
 import { refundSale } from '../lib/firestore';
 import { genReceiptToken } from '../lib/checkout';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
@@ -23,14 +23,14 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
 
   const [amount,    setAmount]    = useState('');
   const [reason,    setReason]    = useState('');
-  const [addCredit, setAddCredit] = useState(false);
+  const [refundTo,  setRefundTo]  = useState('money');   // 'money' | 'credit'
   const [saving,    setSaving]    = useState(false);
   const [idemKey,   setIdemKey]   = useState('');
 
   useEffect(() => {
     if (receipt) {
       setAmount(remaining ? String(remaining.toFixed(2)) : '');
-      setReason(''); setAddCredit(false); setSaving(false);
+      setReason(''); setRefundTo('money'); setSaving(false);
       setIdemKey(genReceiptToken(24));   // one stable idempotency key per sheet open
     }
   }, [receipt?.id]);
@@ -47,12 +47,13 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
         receiptId: receipt.id,
         amountCents: Math.round(amt * 100),
         reason: reason.trim(),
-        addCredit: addCredit && !!receipt.clientId,
+        refundTo,
         idempotencyKey: idemKey,
       });
       if (!res?.ok) throw new Error(res?.error || 'Refund failed.');
-      const msg = isCard
-        ? `${money(amt)} refunded to the card.`
+      const msg = refundTo === 'credit'
+        ? `${money(amt)} added as store credit.`
+        : isCard ? `${money(amt)} refunded to the card.`
         : `${money(amt)} refund recorded — return the cash to the customer.`;
       onDone?.({ amount: amt, message: msg });
     } catch (e) {
@@ -73,14 +74,6 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
             <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
               <Text style={styles.sub}>{receipt?.clientName || 'Walk-in'} · original {money(original)}{already > 0 ? ` · ${money(already)} already refunded` : ''}</Text>
 
-              <View style={[styles.modeBanner, isCard ? styles.modeCard : styles.modeCash]}>
-                <Text style={[styles.modeText, isCard ? styles.modeTextCard : styles.modeTextCash]}>
-                  {isCard
-                    ? '💳 This refunds the customer’s card for real, via Stripe.'
-                    : '💵 Cash/other sale — this records the refund; hand the money back yourself.'}
-                </Text>
-              </View>
-
               <Text style={styles.label}>Refund amount</Text>
               <View style={styles.amountRow}>
                 <Text style={styles.dollar}>$</Text>
@@ -91,19 +84,29 @@ export default function RefundSheet({ receipt, onClose, onDone }) {
               <Text style={styles.label}>Reason</Text>
               <TextInput style={[styles.input, { minHeight: 70, textAlignVertical: 'top' }]} value={reason} onChangeText={setReason} placeholder="Why is this being refunded?" placeholderTextColor={theme.placeholder} multiline maxLength={400} />
 
-              {!!receipt?.clientId && (
-                <TouchableOpacity style={styles.creditRow} activeOpacity={0.7} onPress={() => setAddCredit(v => !v)}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.creditLabel}>Also add as store credit</Text>
-                    <Text style={styles.creditSub}>Apply {money(Number(amount) || 0)} to this client's account on top of the refund.</Text>
-                  </View>
-                  <Switch value={addCredit} onValueChange={setAddCredit} trackColor={{ true: theme.green }} />
+              <Text style={styles.label}>Refund to</Text>
+              <View style={styles.methodRow}>
+                <TouchableOpacity style={[styles.methodBtn, refundTo === 'money' && styles.methodBtnOn]} onPress={() => setRefundTo('money')} activeOpacity={0.8}>
+                  <Text style={[styles.methodTitle, refundTo === 'money' && styles.methodTitleOn]}>{isCard ? 'Back to card' : 'Cash'}</Text>
+                  <Text style={styles.methodSub}>{isCard ? 'Stripe refund' : 'hand cash back'}</Text>
                 </TouchableOpacity>
-              )}
+                {!!receipt?.clientId && (
+                  <TouchableOpacity style={[styles.methodBtn, refundTo === 'credit' && styles.methodBtnOn]} onPress={() => setRefundTo('credit')} activeOpacity={0.8}>
+                    <Text style={[styles.methodTitle, refundTo === 'credit' && styles.methodTitleOn]}>Store credit</Text>
+                    <Text style={styles.methodSub}>no money moves</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <Text style={styles.methodNote}>
+                {refundTo === 'credit'
+                  ? `Adds ${money(Number(amount) || 0)} to ${receipt?.clientName || 'the client'}'s balance — the original payment is NOT refunded.`
+                  : isCard ? 'Refunds the customer’s card for real, via Stripe.'
+                  : 'Records the refund — hand the cash back yourself.'}
+              </Text>
             </ScrollView>
 
             <TouchableOpacity style={[styles.submit, (saving || !(Number(amount) > 0) || !reason.trim()) && { opacity: 0.5 }]} onPress={submit} disabled={saving || !(Number(amount) > 0) || !reason.trim()}>
-              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{isCard ? `Refund ${money(Number(amount) || 0)} to card` : `Record ${money(Number(amount) || 0)} refund`}</Text>}
+              {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.submitText}>{refundTo === 'credit' ? `Give ${money(Number(amount) || 0)} credit` : isCard ? `Refund ${money(Number(amount) || 0)} to card` : `Record ${money(Number(amount) || 0)} refund`}</Text>}
             </TouchableOpacity>
             <Text style={styles.note}>Every refund alerts all admins (push, email, and text) with your name.</Text>
           </View>
@@ -121,12 +124,13 @@ const makeStyles = (t) => StyleSheet.create({
   close:    { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: t.surfaceMuted },
   closeText:{ fontSize: 22, color: t.textMuted, lineHeight: 24 },
   sub:      { fontSize: 13, color: t.textMuted, marginBottom: 12 },
-  modeBanner:{ borderRadius: 10, padding: 11, marginBottom: 4, borderWidth: 1 },
-  modeCard: { backgroundColor: t.blueSoft, borderColor: t.blue },
-  modeCash: { backgroundColor: t.surfaceAlt, borderColor: t.border },
-  modeText: { fontSize: 12.5, fontWeight: '600', lineHeight: 17 },
-  modeTextCard:{ color: t.blue },
-  modeTextCash:{ color: t.textMuted },
+  methodRow:  { flexDirection: 'row', gap: 8, marginTop: 6 },
+  methodBtn:  { flex: 1, borderRadius: 10, paddingVertical: 11, paddingHorizontal: 10, borderWidth: 1.5, borderColor: t.border, backgroundColor: t.surfaceAlt, alignItems: 'center' },
+  methodBtnOn:{ borderColor: t.green, backgroundColor: t.greenSoft },
+  methodTitle:{ fontSize: 14, fontWeight: '800', color: t.textMuted },
+  methodTitleOn:{ color: t.green },
+  methodSub:  { fontSize: 11, color: t.textFaint, marginTop: 2 },
+  methodNote: { fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 17 },
   label:    { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 14, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
   amountRow:{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: t.border },
   dollar:   { fontSize: 18, color: t.textMuted },

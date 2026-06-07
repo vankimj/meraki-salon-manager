@@ -287,9 +287,10 @@ function RefundModal({ receipt, onClose, onDone, showToast }) {
   const isCard = pay.method === 'card' && !!pay.stripePaymentIntentId;
   const [amount, setAmount] = useState(remaining ? remaining.toFixed(2) : '');
   const [reason, setReason] = useState('');
-  const [addCredit, setAddCredit] = useState(false);
+  const [refundTo, setRefundTo] = useState('money');   // 'money' | 'credit'
   const [busy, setBusy] = useState(false);
   const [idem] = useState(newIdemKey);
+  const mbtn = (on) => ({ flex: 1, padding: '9px 8px', borderRadius: 8, border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: on ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' });
 
   async function submit() {
     const amt = Number(amount) || 0;
@@ -298,10 +299,11 @@ function RefundModal({ receipt, onClose, onDone, showToast }) {
     if (!reason.trim()) { showToast('Add a reason for the refund.'); return; }
     setBusy(true);
     try {
-      const res = await callFn('refundSale')({ tenantId: TENANT_ID, receiptId: receipt.id, amountCents: Math.round(amt * 100), reason: reason.trim(), addCredit: addCredit && !!receipt.clientId, idempotencyKey: idem });
+      const res = await callFn('refundSale')({ tenantId: TENANT_ID, receiptId: receipt.id, amountCents: Math.round(amt * 100), reason: reason.trim(), refundTo, idempotencyKey: idem });
       if (!res.data?.ok) throw new Error(res.data?.error || 'Refund failed.');
-      logActivity('refund_issued', `${money(amt)} ${isCard ? 'card refund' : 'refund'} · ${receipt.clientName || 'Walk-in'}${reason.trim() ? ' · ' + reason.trim() : ''}`);
-      onDone(isCard ? `${money(amt)} refunded to the card` : `${money(amt)} refund recorded`);
+      const kind = refundTo === 'credit' ? 'store-credit refund' : isCard ? 'card refund' : 'refund';
+      logActivity('refund_issued', `${money(amt)} ${kind} · ${receipt.clientName || 'Walk-in'}${reason.trim() ? ' · ' + reason.trim() : ''}`);
+      onDone(refundTo === 'credit' ? `${money(amt)} added as store credit` : isCard ? `${money(amt)} refunded to the card` : `${money(amt)} refund recorded`);
     } catch (e) { showToast('Refund failed: ' + (e?.message || 'error')); setBusy(false); }
   }
 
@@ -314,8 +316,24 @@ function RefundModal({ receipt, onClose, onDone, showToast }) {
         </div>
         <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 12 }}>{receipt.clientName || 'Walk-in'} · original {money(original)}{already > 0 ? ` · ${money(already)} already refunded` : ''}</div>
 
-        <div style={{ padding: 11, borderRadius: 8, marginBottom: 12, border: `1px solid ${isCard ? 'var(--tm-accent)' : 'var(--pn-border)'}`, background: isCard ? 'var(--pn-info-bg, var(--pn-surface-alt))' : 'var(--pn-surface-alt)', fontSize: 12.5, fontWeight: 600, color: isCard ? 'var(--tm-accent)' : 'var(--pn-text-muted)' }}>
-          {isCard ? '💳 This refunds the customer’s card for real, via Stripe.' : '💵 Cash/other sale — this records the refund; hand the money back yourself.'}
+        <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Refund to</label>
+        <div style={{ display: 'flex', gap: 8, margin: '6px 0 8px' }}>
+          <button onClick={() => setRefundTo('money')} style={mbtn(refundTo === 'money')}>
+            <div style={{ fontWeight: 800, fontSize: 13 }}>{isCard ? 'Back to card' : 'Cash'}</div>
+            <div style={{ fontSize: 11, opacity: .7 }}>{isCard ? 'Stripe refund' : 'hand cash back'}</div>
+          </button>
+          {!!receipt.clientId && (
+            <button onClick={() => setRefundTo('credit')} style={mbtn(refundTo === 'credit')}>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>Store credit</div>
+              <div style={{ fontSize: 11, opacity: .7 }}>no money moves</div>
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.4 }}>
+          {refundTo === 'credit'
+            ? `Adds ${money(Number(amount) || 0)} to ${receipt.clientName || 'the client'}'s balance — the original payment is NOT refunded.`
+            : isCard ? 'Refunds the customer’s card for real, via Stripe.'
+            : 'Records the refund — hand the cash back yourself.'}
         </div>
 
         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Refund amount</label>
@@ -330,16 +348,9 @@ function RefundModal({ receipt, onClose, onDone, showToast }) {
         <textarea value={reason} onChange={e => setReason(e.target.value)} placeholder="Why is this being refunded?" rows={3} maxLength={400}
           style={{ width: '100%', boxSizing: 'border-box', marginTop: 6, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 11px', fontSize: 13.5, background: 'var(--pn-bg)', color: 'var(--pn-text)', resize: 'vertical' }} />
 
-        {!!receipt.clientId && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, cursor: 'pointer', fontSize: 13, color: 'var(--pn-text)' }}>
-            <input type="checkbox" checked={addCredit} onChange={e => setAddCredit(e.target.checked)} />
-            Also add {money(Number(amount) || 0)} as store credit
-          </label>
-        )}
-
         <button onClick={submit} disabled={busy || !(Number(amount) > 0) || !reason.trim()}
           style={{ width: '100%', marginTop: 18, padding: '12px', fontWeight: 800, fontSize: 14, borderRadius: 12, border: 'none', background: 'var(--pn-danger)', color: '#fff', cursor: busy ? 'default' : 'pointer', opacity: (busy || !(Number(amount) > 0) || !reason.trim()) ? 0.5 : 1, fontFamily: 'inherit' }}>
-          {busy ? 'Processing…' : isCard ? `Refund ${money(Number(amount) || 0)} to card` : `Record ${money(Number(amount) || 0)} refund`}
+          {busy ? 'Processing…' : refundTo === 'credit' ? `Give ${money(Number(amount) || 0)} credit` : isCard ? `Refund ${money(Number(amount) || 0)} to card` : `Record ${money(Number(amount) || 0)} refund`}
         </button>
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 10 }}>Every refund alerts all admins (push, email, text) with your name.</div>
       </div>
