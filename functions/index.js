@@ -5487,7 +5487,7 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
 // refunds or double-issues store credit.
 exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
-  const { tenantId: tid, receiptId, amountCents, reason, refundTo, idempotencyKey } = request.data || {};
+  const { tenantId: tid, receiptId, amountCents, reason, refundTo, idempotencyKey, commissionByTech } = request.data || {};
   const tenantId = String(tid || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
 
@@ -5532,6 +5532,48 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   const piId   = payment.stripePaymentIntentId || null;
   const isCard = payment.method === 'card' && !!piId;
 
+  // Per-tech commission treatment for this refund. Default per tech =
+  // settings.refundCommissionDefault ('withhold'|'goodwill', default withhold);
+  // caller overrides per tech via commissionByTech. 'withhold' = tech loses
+  // commission on their refunded share; 'goodwill' = tech keeps it (salon eats).
+  let defTreat = 'withhold';
+  try {
+    const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+    if (sSnap.exists && sSnap.data().refundCommissionDefault === 'goodwill') defTreat = 'goodwill';
+  } catch (e) { /* default withhold */ }
+  const techNames = (Array.isArray(payment.techSplit) && payment.techSplit.length)
+    ? [...new Set(payment.techSplit.map(s => s.techName || '').filter(Boolean))]
+    : [payment.techName || rec.techName || ''].filter(Boolean);
+  const cbt = {};
+  techNames.forEach(t => {
+    const v = commissionByTech && commissionByTech[t];
+    cbt[t] = (v === 'withhold' || v === 'goodwill') ? v : defTreat;
+  });
+
+  // Per-client store-credit split: a combined sale (2+ clients) splits the refund
+  // across each client by their appointment's share of the sale, so EACH gets
+  // their own credit (last absorbs rounding). Single-client → that one client.
+  let creditTargets = [{ clientId: rec.clientId, amount: amt / 100 }];
+  if (dest === 'credit' && (rec.apptIds || []).length > 1) {
+    try {
+      const snaps = await Promise.all((rec.apptIds || []).map(id => db.doc(`tenants/${tenantId}/appointments/${id}`).get().catch(() => null)));
+      const byClient = {}; let base = 0;
+      snaps.filter(s => s && s.exists()).forEach(s => {
+        const a = s.data(); const cid = a.clientId; if (!cid) return;
+        const share = Number(a.payment?.amountForThisAppt) || (a.services || []).reduce((x, sv) => x + (Number(sv.price) || 0), 0);
+        byClient[cid] = (byClient[cid] || 0) + share; base += share;
+      });
+      const entries = Object.entries(byClient);
+      if (base > 0 && entries.length) {
+        let alloc = 0;
+        creditTargets = entries.map(([cid, b], i) => {
+          const a = (i === entries.length - 1) ? Math.round((amt / 100 - alloc) * 100) / 100 : Math.round((amt / 100) * (b / base) * 100) / 100;
+          alloc += a; return { clientId: cid, amount: a };
+        });
+      }
+    } catch (e) { console.error('[refund] credit split failed:', e?.message); }
+  }
+
   // Real Stripe refund for card sales — ONLY when refunding to money. A
   // store-credit refund moves no money (skips Stripe), so no double-pay.
   // Idempotency-keyed so a retry returns the same refund, not a second one.
@@ -5561,6 +5603,8 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
     method: dest === 'credit' ? 'store_credit' : (isCard ? 'card' : (payment.method || 'cash')),
     stripeRefundId,
     addedCredit: dest === 'credit',
+    commissionByTech: cbt,
+    creditByClient: dest === 'credit' ? creditTargets.filter(t => t.clientId && t.amount > 0) : null,
     issuedBy: issuerEmail || null,
     refundedAt: new Date().toISOString(),
   };
@@ -5589,17 +5633,20 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
     for (const aId of (rec.apptIds || [])) {
       try { await db.doc(`tenants/${tenantId}/appointments/${aId}`).set({ refund: refundEntry, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) { /* best-effort */ }
     }
-    // Optional store credit (separate txn so a retry can't double-issue — only
-    // runs when THIS call added the refund entry).
-    if (refundEntry.addedCredit && rec.clientId) {
-      try {
-        const cRef = db.doc(`tenants/${tenantId}/clients/${rec.clientId}`);
-        await db.runTransaction(async (tx) => {
-          const c = await tx.get(cRef);
-          const cur = Number(c.exists ? c.data().credit : 0) || 0;
-          tx.set(cRef, { credit: cur + refundEntry.amount, updatedAt: new Date().toISOString() }, { merge: true });
-        });
-      } catch (e) { console.error('[refund] credit failed:', e?.message); }
+    // Store credit, split per client for combined sales (separate txns so a
+    // retry can't double-issue — only runs when THIS call added the refund).
+    if (refundEntry.addedCredit) {
+      for (const tgt of creditTargets) {
+        if (!tgt.clientId || !(tgt.amount > 0)) continue;
+        try {
+          const cRef = db.doc(`tenants/${tenantId}/clients/${tgt.clientId}`);
+          await db.runTransaction(async (tx) => {
+            const c = await tx.get(cRef);
+            const cur = Number(c.exists ? c.data().credit : 0) || 0;
+            tx.set(cRef, { credit: Math.round((cur + tgt.amount) * 100) / 100, updatedAt: new Date().toISOString() }, { merge: true });
+          });
+        } catch (e) { console.error('[refund] credit target failed:', e?.message); }
+      }
     }
     notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmail }).catch(e => console.error('[refund] notify failed:', e?.message));
   }
@@ -5607,10 +5654,10 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   return { ok: true, stripeRefundId, refundedTotal: (alreadyCents + amt) / 100, alreadyRecorded: !added };
 });
 
-// Fan out a refund alert to every admin: push + email always, SMS where the
-// admin has a phone on their employee record. All best-effort — a failed
-// channel never blocks the refund (which already committed).
-async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmail }) {
+// Generic admin fan-out: push + email always, SMS where the admin has a phone
+// on their employee record. All best-effort — a failed channel never blocks the
+// caller (whose money action already committed).
+async function notifyTenantAdmins(db, tenantId, { title, line, data = {} }) {
   const usersDoc = await db.doc(`tenants/${tenantId}/data/users`).get();
   const admins = new Set((usersDoc.exists ? (usersDoc.data().adminEmails || []) : []).map(e => String(e || '').toLowerCase()).filter(Boolean));
   const tenDoc = await db.doc(`tenants/${tenantId}`).get();
@@ -5618,14 +5665,7 @@ async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmai
   if (owner) admins.add(owner);
   if (!admins.size) return;
 
-  const brand  = await tenantBranding(db, tenantId);
-  const amtStr = `$${Number(refundEntry.amount || 0).toFixed(2)}`;
-  const who    = issuerEmail || 'a staff member';
-  const client = rec.clientName || 'Walk-in';
-  const kind   = refundEntry.addedCredit ? 'store-credit refund' : refundEntry.stripeRefundId ? 'card refund' : 'refund';
-  const title  = `${amtStr} ${kind} issued`;
-  const line   = `${who} issued a ${amtStr} ${kind} for ${client}${refundEntry.reason ? ` — "${refundEntry.reason}"` : ''}.`;
-
+  const brand = await tenantBranding(db, tenantId);
   // Map admin email → phone via employee records (staff users carry no phone).
   const phoneByEmail = {};
   try {
@@ -5634,12 +5674,76 @@ async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmai
   } catch (e) { /* best-effort */ }
 
   await Promise.all([...admins].map(async (em) => {
-    try { await sendPushToEmail(db, tenantId, em, { title, body: line, data: { type: 'refund', receiptId: rec.viewToken || null } }); } catch (e) { /* best-effort */ }
+    try { await sendPushToEmail(db, tenantId, em, { title, body: line, data }); } catch (e) { /* best-effort */ }
     try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
     const phone = phoneByEmail[em];
     if (phone) { try { await sendSms({ to: phone, body: `${brand.salonName}: ${line}`, tenantId, kind: 'transactional' }); } catch (e) { /* best-effort */ } }
   }));
 }
+
+async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmail }) {
+  const amtStr = `$${Number(refundEntry.amount || 0).toFixed(2)}`;
+  const who    = issuerEmail || 'a staff member';
+  const client = rec.clientName || 'Walk-in';
+  const kind   = refundEntry.addedCredit ? 'store-credit refund' : refundEntry.stripeRefundId ? 'card refund' : 'refund';
+  await notifyTenantAdmins(db, tenantId, {
+    title: `${amtStr} ${kind} issued`,
+    line:  `${who} issued a ${amtStr} ${kind} for ${client}${refundEntry.reason ? ` — "${refundEntry.reason}"` : ''}.`,
+    data:  { type: 'refund', receiptId: rec.viewToken || null },
+  });
+}
+
+// Manually add/remove a client's store credit (admin OR tech). Atomic increment
+// (no races), idempotent per call, audit-logged, and alerts all admins. Credit
+// never goes below $0. Replaces the old "issue store credit" field on checkout.
+exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, clientId, deltaCents, reason, idempotencyKey } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantStaff(db, tenantId, request);   // admin or tech
+  const issuerEmail = await callerEmail(request);
+
+  if (!clientId || typeof clientId !== 'string') throw new HttpsError('invalid-argument', 'clientId required');
+  const delta = Math.round(Number(deltaCents) || 0) / 100;
+  if (!delta) throw new HttpsError('invalid-argument', 'A non-zero amount is required');
+  const reasonStr = String(reason || '').trim().slice(0, 500);
+  if (!reasonStr) throw new HttpsError('invalid-argument', 'A reason is required');
+  const idemKey = String(idempotencyKey || '');
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(idemKey)) throw new HttpsError('invalid-argument', 'idempotencyKey required');
+
+  const cRef = db.doc(`tenants/${tenantId}/clients/${clientId}`);
+  let out = null;
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(cRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'Client not found');
+    const c = snap.data();
+    if (c.lastCreditAdjustKey === idemKey) { out = { ok: true, alreadyApplied: true, credit: Number(c.credit) || 0 }; return; }
+    const cur = Number(c.credit) || 0;
+    const next = Math.max(0, Math.round((cur + delta) * 100) / 100);
+    tx.set(cRef, { credit: next, lastCreditAdjustKey: idemKey, updatedAt: new Date().toISOString() }, { merge: true });
+    out = { ok: true, credit: next, applied: Math.round((next - cur) * 100) / 100, clientName: c.name || 'Client' };
+  });
+
+  if (out && !out.alreadyApplied) {
+    const sign = out.applied >= 0 ? 'added' : 'removed';
+    const amt  = `$${Math.abs(out.applied).toFixed(2)}`;
+    try {
+      await db.collection(`tenants/${tenantId}/logs`).add({
+        timestamp: new Date().toISOString(), email: issuerEmail || null, name: issuerEmail || null,
+        action: 'credit_adjusted',
+        details: `${sign === 'added' ? '+' : '−'}${amt} store credit · ${out.clientName} · new balance $${out.credit.toFixed(2)} · "${reasonStr}"`,
+      });
+    } catch (e) { console.error('[adjustClientCredit] log failed:', e?.message); }
+    notifyTenantAdmins(db, tenantId, {
+      title: `${amt} store credit ${sign}`,
+      line:  `${issuerEmail || 'A staff member'} ${sign} ${amt} store credit ${out.applied >= 0 ? 'to' : 'from'} ${out.clientName} (new balance $${out.credit.toFixed(2)}) — "${reasonStr}".`,
+      data:  { type: 'credit_adjust', clientId },
+    }).catch(e => console.error('[adjustClientCredit] notify failed:', e?.message));
+  }
+  return out;
+});
 
 // Stripe Terminal connection token — required by @stripe/stripe-terminal-react-
 // native to talk to readers / Tap to Pay. Minted on the PLATFORM account
