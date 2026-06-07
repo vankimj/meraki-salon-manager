@@ -207,6 +207,18 @@ export async function fetchReceiptsByRange(startDate, endDate) {
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+// All-time receipt lookup by exact client name — for pulling up an old receipt
+// (older than the browse window) when a customer asks. Single `where` (no
+// composite index); sorted newest-first client-side.
+export async function fetchReceiptsByClientName(name) {
+  const n = String(name || '').trim();
+  if (!n) return [];
+  const snap = await getDocs(query(tenantCol('receipts'), where('clientName', '==', n)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+}
+
 export async function fetchAppointmentsByRange(startDate, endDate) {
   const snap = await getDocs(query(
     tenantCol('appointments'),
