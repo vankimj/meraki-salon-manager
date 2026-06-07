@@ -5539,7 +5539,7 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
         reverse_transfer: true,
         refund_application_fee: true,
         metadata: { tenantId, receiptId, issuedBy: issuerEmail || '' },
-      }, { idempotencyKey: `refund_${tenantId}_${idemKey}` });
+      }, { idempotencyKey: `refund_${tenantId}_${receiptId}_${idemKey}` });
       stripeRefundId = refund.id;
     } catch (e) {
       throw new HttpsError('failed-precondition', `Card refund failed at Stripe: ${e?.message || 'unknown error'}`);
