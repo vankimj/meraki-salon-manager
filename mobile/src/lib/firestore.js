@@ -495,12 +495,18 @@ export async function resendReceiptEmail({ receiptId = null, viewToken = null, e
   const res = await callFn('resendReceiptEmail')({ tenantId: getCurrentTenant(), receiptId, viewToken, email });
   return res?.data || { ok: false };
 }
-// Refund a sale. Card sales (with a Stripe PaymentIntent) get a REAL refund to
-// the card; cash / no-PI sales are recorded only. Staff (admin or tech) may
+// Refund a sale. `refundTo`: 'money' (Stripe refund for card / record-only for
+// cash) or 'credit' (store credit, no money moves). Staff (admin or tech) may
 // call it; the server notifies all admins. `idempotencyKey` (stable per attempt)
 // makes a retry safe — no double refund or double credit.
-export async function refundSale({ receiptId, amountCents, reason, addCredit = false, idempotencyKey }) {
-  const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, addCredit, idempotencyKey });
+export async function refundSale({ receiptId, amountCents, reason, refundTo = 'money', idempotencyKey }) {
+  const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, refundTo, idempotencyKey });
+  return res?.data || { ok: false };
+}
+// Manually add/remove a client's store credit (admin or tech). deltaCents is
+// signed (+add / −remove). Server is atomic, audit-logged, alerts all admins.
+export async function adjustClientCredit({ clientId, deltaCents, reason, idempotencyKey }) {
+  const res = await callFn('adjustClientCredit')({ tenantId: getCurrentTenant(), clientId, deltaCents, reason, idempotencyKey });
   return res?.data || { ok: false };
 }
 export async function fetchPromoByCode(code) {
