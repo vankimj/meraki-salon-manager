@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Alert } from 'react-native';
-import { fetchReceiptsByRange, fetchReceiptsByClientName } from '../../lib/firestore';
+import { fetchReceiptsByRange, fetchReceiptsByClientName, fetchAppointmentsByIds, fetchClient } from '../../lib/firestore';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
 import RefundSheet from '../../components/RefundSheet';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
@@ -114,7 +114,9 @@ export default function ReceiptsScreen() {
             <View style={[styles.liRow, styles.liTotal]}><Text style={styles.liName}>Total</Text><Text style={styles.liVal}>{money(pay.total)}</Text></View>
 
             <Text style={styles.expandLabel}>Resend receipt</Text>
-            <ResendReceiptRow receiptId={item.id} viewToken={item.viewToken || null} defaultContact={contact} compact />
+            {(item.apptIds || []).length > 1
+              ? <ReceiptRecipients receipt={item} theme={theme} styles={styles} />
+              : <ResendReceiptRow receiptId={item.id} viewToken={item.viewToken || null} defaultContact={contact} compact />}
 
             {remaining > 0 ? (
               <TouchableOpacity style={styles.refundBtn} onPress={() => setRefundReceipt(item)} activeOpacity={0.85}>
@@ -196,6 +198,55 @@ export default function ReceiptsScreen() {
   );
 }
 
+// A combined checkout writes one receipt covering everyone but stores only the
+// primary contact. Resolve each participant from the receipt's apptIds → clients
+// so the receipt can be sent to each person individually (one send row each,
+// prefilled with their phone/email). Falls back to a single row if it resolves
+// to one person.
+function ReceiptRecipients({ receipt, theme, styles }) {
+  const [people, setPeople] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const appts = await fetchAppointmentsByIds(receipt.apptIds || []);
+        const byKey = new Map();
+        for (const a of appts) {
+          const k = a.clientId || `walkin:${a.clientName || a.id}`;
+          if (!byKey.has(k)) byKey.set(k, { clientId: a.clientId || null, name: a.clientName || 'Walk-in', contact: '' });
+        }
+        const list = [...byKey.values()];
+        await Promise.all(list.map(async (p) => {
+          if (!p.clientId) return;
+          const c = await fetchClient(p.clientId).catch(() => null);
+          if (c) { p.contact = c.phone || c.email || ''; p.name = c.name || p.name; }
+        }));
+        if (alive) setPeople(list);
+      } catch {
+        if (alive) setPeople([]);
+      }
+    })();
+    return () => { alive = false; };
+  }, [receipt.id]);
+
+  if (people === null) return <ActivityIndicator color={theme.green} style={{ marginTop: 12 }} />;
+  if (people.length <= 1) {
+    const only = people[0];
+    return <ResendReceiptRow receiptId={receipt.id} viewToken={receipt.viewToken || null} defaultContact={only?.contact || receipt.clientPhone || receipt.clientEmail || ''} compact />;
+  }
+  return (
+    <View>
+      <Text style={styles.recipientsHint}>Combined sale — send the receipt to each person:</Text>
+      {people.map((p, i) => (
+        <View key={p.clientId || `w${i}`} style={{ marginTop: i ? 12 : 6 }}>
+          <Text style={styles.recipientName}>{p.name}</Text>
+          <ResendReceiptRow receiptId={receipt.id} viewToken={receipt.viewToken || null} defaultContact={p.contact} compact />
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const makeStyles = (t) => StyleSheet.create({
   wrap:    { flex: 1, backgroundColor: t.bg },
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
@@ -226,6 +277,8 @@ const makeStyles = (t) => StyleSheet.create({
   liMuted: { fontSize: 12.5, color: t.textMuted },
   liTotal: { borderTopWidth: 1, borderTopColor: t.border, marginTop: 5, paddingTop: 6 },
   expandLabel:{ fontSize: 12, fontWeight: '800', color: t.textMuted, marginTop: 14, textTransform: 'uppercase', letterSpacing: 0.3 },
+  recipientsHint:{ fontSize: 12, color: t.textMuted, marginTop: 4, marginBottom: 2 },
+  recipientName:{ fontSize: 13.5, fontWeight: '700', color: t.text, marginBottom: 4 },
   refundBtn:{ marginTop: 14, borderWidth: 1, borderColor: t.danger, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   refundBtnText:{ color: t.danger, fontWeight: '800', fontSize: 14 },
   fullyRefunded:{ marginTop: 14, textAlign: 'center', color: t.textFaint, fontSize: 12.5, fontWeight: '700' },
