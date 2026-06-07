@@ -5437,7 +5437,10 @@ exports.createTerminalConnectionToken = onCall({ secrets: [stripeKey] }, async (
 
   const stripe = require('stripe')(key);
   const token = await stripe.terminal.connectionTokens.create();
-  return { secret: token.secret };
+  // testMode lets the app pick Stripe's SIMULATED reader in sandbox (real NFC
+  // cards are always declined in test mode), and the real Tap to Pay / BT reader
+  // in live mode.
+  return { secret: token.secret, testMode: key.startsWith('sk_test') };
 });
 
 // Tracks when a client clicks the review link in their email, then redirects to Google.

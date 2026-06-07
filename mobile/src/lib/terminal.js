@@ -43,9 +43,21 @@ export function isTerminalAvailable() {
 // The SDK calls this to authenticate with Stripe. Wire into
 // <StripeTerminalProvider tokenProvider={tokenProvider} />.
 export async function tokenProvider() {
-  const secret = await createTerminalConnectionToken();
-  if (!secret) throw new Error('Could not get a Terminal connection token (is Stripe Terminal enabled?)');
-  return secret;
+  const r = await createTerminalConnectionToken();
+  if (!r?.secret) throw new Error('Could not get a Terminal connection token (is Stripe Terminal enabled?)');
+  if (_testMode === undefined) _testMode = !!r.testMode;
+  return r.secret;
+}
+
+// Whether the tenant's Stripe account is in TEST mode. Drives the simulated
+// reader (real NFC cards can't be charged in test mode). Cached after the first
+// connection-token call; falls back to a dedicated fetch.
+let _testMode;
+export async function fetchTerminalTestMode() {
+  if (_testMode !== undefined) return _testMode;
+  try { const r = await createTerminalConnectionToken(); _testMode = !!r?.testMode; }
+  catch { _testMode = false; }
+  return _testMode;
 }
 
 export { createCardPaymentIntent };
