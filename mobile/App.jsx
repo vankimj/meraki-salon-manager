@@ -12,6 +12,8 @@ import AuthScreen from './src/screens/AuthScreen';
 import RootNav    from './src/navigation/RootNav';
 import TerminalProvider from './src/components/TerminalProvider';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import KioskLockGate from './src/components/KioskLockGate';
+import { loadInitialKioskLock, isKioskLocked, subscribeKioskLock } from './src/lib/kioskLock';
 import { ThemeProvider } from './src/theme/ThemeContext';
 
 // Auto-logout — single inactivity timer at the root. Resets on any
@@ -24,6 +26,7 @@ function useAutoLogout(user) {
   const reset = useCallback(() => {
     clearTimeout(timer.current);
     if (!user) return;
+    if (isKioskLocked()) return;   // unattended kiosk must stay up — don't auto-sign-out
     const minutes = getPrefs().autoLogoutMin;
     if (!minutes) return;            // 0 = off
     timer.current = setTimeout(async () => {
@@ -48,6 +51,7 @@ function useAutoLogout(user) {
 export default function App() {
   const [user,    setUser]    = useState(undefined); // undefined = loading
   const [loading, setLoading] = useState(true);
+  const [kioskLocked, setKioskLockedState] = useState(false);
 
   useEffect(() => {
     // Load persisted state from AsyncStorage BEFORE any Firestore
@@ -58,6 +62,8 @@ export default function App() {
       await loadInitialTenant();
       await loadInitialTab();
       await loadInitialPrefs();
+      await loadInitialKioskLock();
+      setKioskLockedState(isKioskLocked());
       unsub = onAuthStateChanged(auth, u => {
         setUser(u);
         setLoading(false);
@@ -65,6 +71,12 @@ export default function App() {
     })();
     return () => { if (unsub) unsub(); };
   }, []);
+
+  // The gate is a RELAUNCH guard (set at boot from the persisted flag). During a
+  // live session, entering a kiosk must NOT swap the running app to the gate —
+  // the kiosk's own navigation handles that. So react only to CLEARING (unlock /
+  // exit), which flips back to the normal app.
+  useEffect(() => subscribeKioskLock(r => { if (!r) setKioskLockedState(false); }), []);
 
   const resetIdle = useAutoLogout(user);
 
@@ -82,7 +94,9 @@ export default function App() {
         <StatusBar style="auto" />
         <View style={{ flex: 1 }} onTouchStart={resetIdle}>
           <ErrorBoundary>
-            {user ? <TerminalProvider><RootNav /></TerminalProvider> : <AuthScreen />}
+            {user
+              ? (kioskLocked ? <KioskLockGate /> : <TerminalProvider><RootNav /></TerminalProvider>)
+              : <AuthScreen />}
           </ErrorBoundary>
         </View>
       </SafeAreaProvider>
