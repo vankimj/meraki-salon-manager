@@ -5477,6 +5477,162 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   return { clientSecret: paymentIntent.client_secret, paymentIntentId: paymentIntent.id };
 });
 
+// Refund a sale. Staff (admin OR tech) may issue refunds; EVERY refund notifies
+// all admins (push + email always, SMS where a phone is on file) with who issued
+// it. Card sales with a Stripe PaymentIntent get a REAL refund back to the card
+// (reverse_transfer pulls the funds back from the salon's connected account —
+// the destination-charge mirror of createPaymentIntent); cash / no-PaymentIntent
+// sales are recorded only (the salon returns the cash). Partial-refund aware and
+// idempotent via the caller's stable idempotencyKey, so a retry never double-
+// refunds or double-issues store credit.
+exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, amountCents, reason, addCredit, idempotencyKey } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+
+  const db = getFirestore();
+  await requireTenantStaff(db, tenantId, request);   // admins + techs
+  const issuerEmail = await callerEmail(request);
+
+  if (!receiptId || typeof receiptId !== 'string') throw new HttpsError('invalid-argument', 'receiptId required');
+  const idemKey = String(idempotencyKey || '');
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(idemKey)) throw new HttpsError('invalid-argument', 'idempotencyKey required');
+  const amt = Math.round(Number(amountCents) || 0);   // cents
+  if (amt < 1) throw new HttpsError('invalid-argument', 'Refund amount must be positive');
+  const reasonStr = String(reason || '').trim().slice(0, 500);
+  if (!reasonStr) throw new HttpsError('invalid-argument', 'A reason is required');
+
+  const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+  const recSnap = await recRef.get();
+  if (!recSnap.exists) throw new HttpsError('not-found', 'Sale not found');
+  const rec = recSnap.data();
+  const payment = rec.payment || {};
+  const originalCents = Math.round(Number(payment.total || 0) * 100);
+  const priorRefunds  = Array.isArray(rec.refunds) ? rec.refunds : [];
+
+  // Idempotent short-circuit: this exact refund attempt already recorded.
+  if (priorRefunds.some(r => r && r.key === idemKey)) {
+    return { ok: true, alreadyRecorded: true };
+  }
+  const alreadyCents = Math.round(priorRefunds.reduce((a, r) => a + (Number(r.amount) || 0), 0) * 100);
+  if (amt > originalCents - alreadyCents + 1) {
+    throw new HttpsError('invalid-argument',
+      `Refund exceeds the remaining $${((originalCents - alreadyCents) / 100).toFixed(2)} refundable on this sale.`);
+  }
+
+  const piId   = payment.stripePaymentIntentId || null;
+  const isCard = payment.method === 'card' && !!piId;
+
+  // Real Stripe refund for card sales. Idempotency-keyed so a retry returns the
+  // same refund instead of moving money twice. Stripe also caps total refunds at
+  // the charge amount, a backstop against any over-refund race.
+  let stripeRefundId = null;
+  if (isCard) {
+    const key = stripeKey.value();
+    if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
+    const stripe = require('stripe')(key);
+    try {
+      const refund = await stripe.refunds.create({
+        payment_intent: piId,
+        amount: amt,
+        reverse_transfer: true,
+        refund_application_fee: true,
+        metadata: { tenantId, receiptId, issuedBy: issuerEmail || '' },
+      }, { idempotencyKey: `refund_${tenantId}_${receiptId}_${idemKey}` });
+      stripeRefundId = refund.id;
+    } catch (e) {
+      throw new HttpsError('failed-precondition', `Card refund failed at Stripe: ${e?.message || 'unknown error'}`);
+    }
+  }
+
+  const refundEntry = {
+    key: idemKey,
+    amount: amt / 100,
+    reason: reasonStr,
+    method: isCard ? 'card' : (payment.method || 'cash'),
+    stripeRefundId,
+    addedCredit: !!addCredit && !!rec.clientId,
+    issuedBy: issuerEmail || null,
+    refundedAt: new Date().toISOString(),
+  };
+
+  // Record idempotently: recompute the array + total inside a txn, deduped by
+  // key, so concurrent / retried writes converge instead of double-counting.
+  let added = false;
+  await db.runTransaction(async (tx) => {
+    const s = await tx.get(recRef);
+    const d = s.exists ? s.data() : {};
+    const existing = Array.isArray(d.refunds) ? d.refunds : [];
+    if (existing.some(r => r && r.key === idemKey)) return;
+    const refunds = [...existing, refundEntry];
+    const refundedAmount = refunds.reduce((a, r) => a + (Number(r.amount) || 0), 0);
+    const fullyRefunded = refundedAmount >= (originalCents / 100) - 0.005;
+    tx.set(recRef, {
+      refunds, refund: refundEntry, refundedAmount,
+      transactionType: fullyRefunded ? 'refund' : (d.transactionType || 'sale'),
+      updatedAt: new Date().toISOString(),
+    }, { merge: true });
+    added = true;
+  });
+
+  if (added) {
+    // Mirror onto linked appointment(s) so the Schedule + reports reflect it.
+    for (const aId of (rec.apptIds || [])) {
+      try { await db.doc(`tenants/${tenantId}/appointments/${aId}`).set({ refund: refundEntry, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) { /* best-effort */ }
+    }
+    // Optional store credit (separate txn so a retry can't double-issue — only
+    // runs when THIS call added the refund entry).
+    if (refundEntry.addedCredit && rec.clientId) {
+      try {
+        const cRef = db.doc(`tenants/${tenantId}/clients/${rec.clientId}`);
+        await db.runTransaction(async (tx) => {
+          const c = await tx.get(cRef);
+          const cur = Number(c.exists ? c.data().credit : 0) || 0;
+          tx.set(cRef, { credit: cur + refundEntry.amount, updatedAt: new Date().toISOString() }, { merge: true });
+        });
+      } catch (e) { console.error('[refund] credit failed:', e?.message); }
+    }
+    notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmail }).catch(e => console.error('[refund] notify failed:', e?.message));
+  }
+
+  return { ok: true, stripeRefundId, refundedTotal: (alreadyCents + amt) / 100, alreadyRecorded: !added };
+});
+
+// Fan out a refund alert to every admin: push + email always, SMS where the
+// admin has a phone on their employee record. All best-effort — a failed
+// channel never blocks the refund (which already committed).
+async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmail }) {
+  const usersDoc = await db.doc(`tenants/${tenantId}/data/users`).get();
+  const admins = new Set((usersDoc.exists ? (usersDoc.data().adminEmails || []) : []).map(e => String(e || '').toLowerCase()).filter(Boolean));
+  const tenDoc = await db.doc(`tenants/${tenantId}`).get();
+  const owner = tenDoc.exists ? String(tenDoc.data().ownerEmail || '').toLowerCase() : '';
+  if (owner) admins.add(owner);
+  if (!admins.size) return;
+
+  const brand  = await tenantBranding(db, tenantId);
+  const amtStr = `$${Number(refundEntry.amount || 0).toFixed(2)}`;
+  const who    = issuerEmail || 'a staff member';
+  const client = rec.clientName || 'Walk-in';
+  const kind   = refundEntry.stripeRefundId ? 'card refund' : 'refund';
+  const title  = `${amtStr} ${kind} issued`;
+  const line   = `${who} issued a ${amtStr} ${kind} for ${client}${refundEntry.reason ? ` — "${refundEntry.reason}"` : ''}.`;
+
+  // Map admin email → phone via employee records (staff users carry no phone).
+  const phoneByEmail = {};
+  try {
+    const emps = await db.collection(`tenants/${tenantId}/employees`).get();
+    emps.docs.forEach(d => { const e = d.data() || {}; const em = String(e.email || '').toLowerCase(); if (em && e.phone) phoneByEmail[em] = e.phone; });
+  } catch (e) { /* best-effort */ }
+
+  await Promise.all([...admins].map(async (em) => {
+    try { await sendPushToEmail(db, tenantId, em, { title, body: line, data: { type: 'refund', receiptId: rec.viewToken || null } }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+    const phone = phoneByEmail[em];
+    if (phone) { try { await sendSms({ to: phone, body: `${brand.salonName}: ${line}`, tenantId, kind: 'transactional' }); } catch (e) { /* best-effort */ } }
+  }));
+}
+
 // Stripe Terminal connection token — required by @stripe/stripe-terminal-react-
 // native to talk to readers / Tap to Pay. Minted on the PLATFORM account
 // (matching the destination-charge model: readers live on the platform, funds
