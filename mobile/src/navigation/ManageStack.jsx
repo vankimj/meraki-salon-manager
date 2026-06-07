@@ -3,6 +3,7 @@ import HeaderTitle         from '../components/HeaderTitle';
 import { useTheme }        from '../theme/ThemeContext';
 import ManageGridScreen    from '../screens/manage/ManageGridScreen';
 import KioskScreen         from '../screens/kiosk/KioskScreen';
+import ClockKioskScreen    from '../screens/kiosk/ClockKioskScreen';
 import ModulePlaceholder   from '../screens/manage/ModulePlaceholder';
 import ChatScreen          from '../screens/ChatScreen';
 import ChatThreadScreen    from '../screens/ChatThreadScreen';
@@ -47,6 +48,8 @@ export default function ManageStack() {
       <Stack.Screen name="ManageGrid"  component={ManageGridScreen}
         options={{ title: 'Manage', headerTitle: () => <HeaderTitle title="Manage" /> }} />
       <Stack.Screen name="Kiosk" component={KioskScreen}
+        options={{ headerShown: false, gestureEnabled: false }} />
+      <Stack.Screen name="ClockKiosk" component={ClockKioskScreen}
         options={{ headerShown: false, gestureEnabled: false }} />
 
       <Stack.Screen name="Services"    component={ServicesScreen}

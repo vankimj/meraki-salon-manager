@@ -509,6 +509,25 @@ export async function adjustClientCredit({ clientId, deltaCents, reason, idempot
   const res = await callFn('adjustClientCredit')({ tenantId: getCurrentTenant(), clientId, deltaCents, reason, idempotencyKey });
   return res?.data || { ok: false };
 }
+// Self-service time clock (kiosk): verifies the tech's PIN server-side + records
+// the clock in/out and alerts admins. kind = 'in' | 'out' | 'break_start' | 'break_end'.
+export async function clockEvent({ employeeId, kind, pin, via = 'kiosk', at = null }) {
+  const res = await callFn('clockEvent')({ tenantId: getCurrentTenant(), employeeId, kind, pin, via, at });
+  return res?.data || { ok: false };
+}
+// Admin kiosk-exit PIN (to lock/unlock a kiosk).
+export async function setKioskPin(pin) {
+  const res = await callFn('setKioskPin')({ tenantId: getCurrentTenant(), pin });
+  return res?.data || { ok: false };
+}
+export async function verifyKioskPin(pin) {
+  const res = await callFn('verifyKioskPin')({ tenantId: getCurrentTenant(), pin });
+  return res?.data || { ok: false };
+}
+export async function hasKioskPin() {
+  const res = await callFn('hasKioskPin')({ tenantId: getCurrentTenant() });
+  return res?.data || { hasPin: false };
+}
 export async function fetchPromoByCode(code) {
   const snap = await getDocs(query(tenantCol('promoCodes'), where('code', '==', String(code || '').trim().toUpperCase())));
   if (snap.empty) return null;

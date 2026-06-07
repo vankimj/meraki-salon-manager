@@ -2320,6 +2320,10 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
       employeeName: emp.name || entry.employeeName || '',
       events:       newEvents,
     };
+    // Also maintain flat clockInAt/clockOutAt so the admin Attendance screen
+    // (which reads those) reflects self-service kiosk clock events.
+    if (kind === 'in' && !entries[idx].clockInAt) entries[idx].clockInAt = at;
+    if (kind === 'out') entries[idx].clockOutAt = at;
     tx.set(attRef, { date, entries, updatedAt: new Date().toISOString() }, { merge: true });
     result = {
       state:   tcCurrentState(newEvents),
@@ -2364,6 +2368,25 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
     console.warn(`[clockEvent] post-event SMS failed for tenant=${tenantId} emp=${employeeId}:`, e?.message);
   }
 
+  // Notify ALL admins of a clock in/out (attendance visibility) — best-effort,
+  // never blocks the clock event the tech already saw confirmed.
+  try {
+    if (!result?.duplicate && (kind === 'in' || kind === 'out')) {
+      const tzN   = await tenantTimezone(db, tenantId);
+      const tStrN = new Date(at).toLocaleTimeString('en-US', { timeZone: tzN, hour: 'numeric', minute: '2-digit', hour12: true });
+      const verb  = kind === 'in' ? 'clocked in' : 'clocked out';
+      const extra = (kind === 'out' && result?.summary) ? ` · ${(result.summary.workedMinutes / 60).toFixed(1).replace(/\.0$/, '')}h today` : '';
+      const who   = emp.name || 'A team member';
+      await notifyTenantAdmins(db, tenantId, {
+        title: `${who} ${verb}`,
+        line:  `${who} ${verb} at ${tStrN}${extra}.`,
+        data:  { type: 'clock', employeeId, kind },
+      });
+    }
+  } catch (e) {
+    console.warn(`[clockEvent] admin notify failed for tenant=${tenantId}:`, e?.message);
+  }
+
   return result;
 });
 
@@ -2405,6 +2428,58 @@ exports.clearEmployeePin = onCall({ cors: true }, async (request) => {
     pinUpdatedAt: new Date().toISOString(),
   }, { merge: true });
   return { ok: true };
+});
+
+// Admin sets their OWN 4-digit kiosk-exit PIN. Used to UNLOCK a locked kiosk
+// (clock or front-desk): once in kiosk mode the app stays signed in as the admin
+// who entered, so leaving requires that same admin to punch their PIN. Stored
+// scrypt-hashed per uid in data/kioskAuth (function-only; never client-readable).
+exports.setKioskPin = onCall({ cors: true }, async (request) => {
+  const { tenantId: tid, pin } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const cleanPin = String(pin || '').trim();
+  if (!tcIsValidPin(cleanPin)) throw new HttpsError('invalid-argument', 'PIN must be exactly 4 digits');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);   // only admins get a kiosk-exit PIN
+  const uid   = request.auth.uid;
+  const email = String(request.auth.token?.email || '').toLowerCase();
+  const salt  = tcGenSalt();
+  const hash  = tcHashPin(cleanPin, salt);
+  await db.doc(`tenants/${tenantId}/data/kioskAuth`).set({
+    pins: { [uid]: { salt, hash, email, setAt: new Date().toISOString() } },
+  }, { merge: true });
+  return { ok: true };
+});
+
+// Verify the CALLER's own kiosk-exit PIN (to leave a locked kiosk). request.auth
+// identifies the admin who entered; only their own PIN unlocks. Returns {ok}.
+exports.verifyKioskPin = onCall({ cors: true }, async (request) => {
+  const { tenantId: tid, pin } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const cleanPin = String(pin || '').trim();
+  if (!tcIsValidPin(cleanPin)) return { ok: false };
+  const uid  = request.auth.uid;
+  const snap = await db.doc(`tenants/${tenantId}/data/kioskAuth`).get();
+  const rec  = snap.exists ? (snap.data().pins || {})[uid] : null;
+  if (!rec || !rec.salt || !rec.hash) throw new HttpsError('failed-precondition', 'no_kiosk_pin');
+  return { ok: tcVerifyPin(cleanPin, rec.salt, rec.hash) };
+});
+
+// Whether the CALLER has a kiosk-exit PIN set (so the UI can prompt to set one
+// before entering kiosk mode).
+exports.hasKioskPin = onCall({ cors: true }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const snap = await db.doc(`tenants/${tenantId}/data/kioskAuth`).get();
+  const rec  = snap.exists ? (snap.data().pins || {})[request.auth.uid] : null;
+  return { hasPin: !!(rec && rec.hash) };
 });
 
 // Returns the signed manage-appointment URL for staff. Same URL the booking
