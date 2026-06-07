@@ -113,6 +113,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [tip,          setTip]          = useState('');     // dollar amount when customTip is on
   const [tipPct,       setTipPct]       = useState(null);    // selected percentage (null = none)
   const [customTip,    setCustomTip]    = useState(false);
+  const [perTechMode,  setPerTechMode]  = useState(false);  // tip each tech individually (multi-tech only)
+  const [perTechTips,  setPerTechTips]  = useState({});     // { techName: '12.00' }
   const [method,       setMethod]       = useState(() => {
     const offline = typeof navigator !== 'undefined' && !navigator.onLine;
     return (offline || !settings?.stripeConnect?.chargesEnabled) ? 'cash' : 'card';
@@ -179,9 +181,23 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const taxableAfterDisc = Math.max(taxableSubtotal - (discountAmount + promoAmount) * taxableShare, 0);
   const taxAmt           = Math.round(taxableAfterDisc * taxRate) / 100;
 
+  // Service revenue per tech → default proportional tip split + the optional
+  // per-tech tip fields (2+ techs only).
+  const techRevenue = (() => {
+    const m = {};
+    serviceLines.forEach((line, i) => { const t = techNames[i] || line.techName || ''; m[t] = (m[t] || 0) + (Number(prices[i]) || 0); });
+    return m;
+  })();
+  const multiTech = Object.keys(techRevenue).length > 1;
+  const tipByTech = perTechMode
+    ? Object.keys(techRevenue).map(t => ({ techName: t, amount: Number(perTechTips[t]) || 0 }))
+    : null;
+
   const billBeforeTip  = afterDiscounts + taxAmt;
   const tipsDisabled   = method === 'card' && noCardTips;
   const tipAmt         = tipsDisabled ? 0
+    : perTechMode
+      ? Math.round((tipByTech || []).reduce((s, t) => s + t.amount, 0) * 100) / 100
     : customTip
       ? (Number(tip) || 0)
       : (tipPct ? Math.round(subtotal * tipPct) / 100 : 0);
@@ -224,8 +240,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     setDiscountValue(id && def.default ? String(def.default) : '');
   }
 
-  function pickTipPct(pct) { setTipPct(pct); setCustomTip(false); setTip(''); }
-  function pickCustomTip()  { setCustomTip(true); setTipPct(null); setTip(''); }
+  function pickTipPct(pct) { setTipPct(pct); setCustomTip(false); setTip(''); setPerTechMode(false); }
+  function pickCustomTip()  { setCustomTip(true); setTipPct(null); setTip(''); setPerTechMode(false); }
+  function pickPerTech()    { setPerTechMode(true); setCustomTip(false); setTipPct(null); setTip(''); }
 
   async function applyPromo() {
     const code = promoInput.trim();
@@ -330,16 +347,26 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       const totalServiceRev = splitEntries.reduce((s, [, d]) => s + d.revenue, 0);
       let techSplit = null;
       if (splitEntries.length > 1) {
-        // Allocate tip across techs by service-revenue ratio.
-        // Last entry absorbs any rounding remainder so tipShares sum exactly to tipAmt.
-        let tipAllocated = 0;
-        techSplit = splitEntries.map(([techName, d], i) => {
-          const ratio = totalServiceRev > 0 ? d.revenue / totalServiceRev : 1 / splitEntries.length;
-          let tipShare;
-          if (i === splitEntries.length - 1) tipShare = Math.round((tipAmt - tipAllocated) * 100) / 100;
-          else { tipShare = Math.round(ratio * tipAmt * 100) / 100; tipAllocated += tipShare; }
-          return { techName, revenue: d.revenue, services: d.services, tipShare };
-        });
+        if (perTechMode) {
+          // Customer tipped each tech a specific amount — use verbatim.
+          const m = {};
+          (tipByTech || []).forEach(t => { const k = t.techName || ''; m[k] = (m[k] || 0) + (Number(t.amount) || 0); });
+          techSplit = splitEntries.map(([techName, d]) => {
+            const tipShare = Math.round((m[techName] || 0) * 100) / 100;
+            return { techName, revenue: d.revenue, services: d.services, tipShare, tip: tipShare };
+          });
+        } else {
+          // Default: allocate tip across techs by service-revenue ratio.
+          // Last entry absorbs any rounding remainder so shares sum exactly to tipAmt.
+          let tipAllocated = 0;
+          techSplit = splitEntries.map(([techName, d], i) => {
+            const ratio = totalServiceRev > 0 ? d.revenue / totalServiceRev : 1 / splitEntries.length;
+            let tipShare;
+            if (i === splitEntries.length - 1) tipShare = Math.round((tipAmt - tipAllocated) * 100) / 100;
+            else { tipShare = Math.round(ratio * tipAmt * 100) / 100; tipAllocated += tipShare; }
+            return { techName, revenue: d.revenue, services: d.services, tipShare, tip: tipShare };
+          });
+        }
       }
 
       const retailProducts = cartItems.length > 0
@@ -809,9 +836,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           {/* Tip — hidden when card tips are disabled */}
           {!tipsDisabled && (
             <Section title="Tip">
-              <div style={{ display: 'flex', gap: 6, marginBottom: customTip ? 10 : 0 }}>
+              <div style={{ display: 'flex', gap: 6, marginBottom: (customTip || perTechMode) ? 10 : 0, flexWrap: 'wrap' }}>
                 {QUICK_TIP_PCTS.map(pct => {
-                  const active = !customTip && tipPct === pct;
+                  const active = !customTip && !perTechMode && tipPct === pct;
                   const amt    = subtotal * pct / 100;
                   return (
                     <button key={pct} onClick={() => pickTipPct(pct)}
@@ -822,12 +849,19 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                   );
                 })}
                 <button onClick={pickCustomTip}
-                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip ? '#2D7A5F' : 'var(--pn-border)'}`, background: customTip ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: customTip ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip && !perTechMode ? '#2D7A5F' : 'var(--pn-border)'}`, background: customTip && !perTechMode ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: customTip && !perTechMode ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
                   <span style={{ fontSize: 13, fontWeight: 700 }}>Other</span>
                   <span style={{ fontSize: 10, opacity: .7 }}>custom $</span>
                 </button>
+                {multiTech && (
+                  <button onClick={pickPerTech}
+                    style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${perTechMode ? '#2D7A5F' : 'var(--pn-border)'}`, background: perTechMode ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: perTechMode ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
+                    <span style={{ fontSize: 13, fontWeight: 700 }}>Per tech</span>
+                    <span style={{ fontSize: 10, opacity: .7 }}>set each</span>
+                  </button>
+                )}
               </div>
-              {customTip && (
+              {customTip && !perTechMode && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
                   <input type="number" min={0} value={tip} onChange={e => setTip(e.target.value)}
@@ -836,7 +870,30 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                   />
                 </div>
               )}
-              <TipSplitPreview tipAmt={tipAmt} serviceLines={serviceLines} prices={prices} techNames={techNames} />
+              {perTechMode ? (
+                <div>
+                  {Object.entries(techRevenue).map(([t, rev]) => (
+                    <div key={t || '—'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{t || '—'}</div>
+                        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>${rev.toFixed(2)} in services</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
+                        <input type="number" min={0} value={perTechTips[t] || ''} onChange={e => setPerTechTips(p => ({ ...p, [t]: e.target.value }))}
+                          placeholder="0"
+                          style={{ width: 84, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', textAlign: 'right' }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: 'var(--pn-text-muted)', marginTop: 4 }}>
+                    <span>Total tip</span><span>${tipAmt.toFixed(2)}</span>
+                  </div>
+                </div>
+              ) : (
+                <TipSplitPreview tipAmt={tipAmt} serviceLines={serviceLines} prices={prices} techNames={techNames} />
+              )}
             </Section>
           )}
 
