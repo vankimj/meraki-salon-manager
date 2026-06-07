@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, BackHandler } from 'react-native';
 import PinPad from './PinPad';
 import { verifyKioskPin } from '../lib/firestore';
+import { clearKioskLocked } from '../lib/kioskLock';
 import { useThemedStyles } from '../theme/ThemeContext';
 
 // Locked-kiosk exit. The app stays signed in as the admin who entered kiosk mode,
@@ -23,7 +24,7 @@ export default function KioskExitButton({ onExit, label = 'Exit kiosk' }) {
     setBusy(true); setErr('');
     try {
       const res = await verifyKioskPin(pin);
-      if (res?.ok) { setOpen(false); onExit?.(); return; }
+      if (res?.ok) { await clearKioskLocked(); setOpen(false); onExit?.(); return; }
       setErr('Wrong PIN');
     } catch (e) {
       setErr(String(e?.message || '').includes('no_kiosk_pin')

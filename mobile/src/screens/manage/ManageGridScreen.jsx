@@ -5,6 +5,7 @@ import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import { getVisibleModules, moduleMeta } from '../../lib/modules';
 import { fetchSettings, hasKioskPin } from '../../lib/firestore';
+import { setKioskLocked } from '../../lib/kioskLock';
 import { subscribeTenant } from '../../lib/currentTenant';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
@@ -57,6 +58,7 @@ export default function ManageGridScreen({ navigation }) {
         );
         return;
       }
+      await setKioskLocked(screen);   // sticky across app kills — gate on relaunch
       navigation.navigate(screen);
     } catch (e) {
       Alert.alert('Could not open kiosk', e?.message || 'Please try again.');
