@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
-import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations } from './metrics';
+import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown } from './metrics';
 import CoachMark from '../../components/CoachMark';
 import { TENANT_ID } from '../../lib/tenant';
 
@@ -158,6 +158,7 @@ export default function ReportsAdmin() {
   const [customEnd,   setCustomEnd]   = useState(todayStr());
   const [appts,       setAppts]       = useState(null);
   const [rawAppts,    setRawAppts]    = useState(null); // for cancellation stats
+  const [rawReceipts, setRawReceipts] = useState(null); // for the refund breakdown
   const [priorAppts,  setPriorAppts]  = useState(null);
   const [priorClientIds, setPriorClientIds] = useState(null);
   const [loading,     setLoading]     = useState(true);
@@ -208,6 +209,7 @@ export default function ReportsAdmin() {
         fetchHistoricalClientIds(startDate).catch(() => new Set()),
       ]);
       setAppts(buildTransactions(curRs, curAs));
+      setRawReceipts(curRs);
       setRawAppts(curAs);
       setPriorAppts(buildTransactions(priorRs, priorAs));
       setPriorClientIds(historicalIds);
@@ -245,6 +247,10 @@ export default function ReportsAdmin() {
   const cancellations = useMemo(
     () => filteredRawAppts ? computeCancellations(filteredRawAppts, filteredAppts) : null,
     [filteredRawAppts, filteredAppts],
+  );
+  const refundBreakdown = useMemo(
+    () => rawReceipts ? computeRefundBreakdown(rawReceipts) : null,
+    [rawReceipts],
   );
 
   // For "All time", the fetch uses a wide 10-year window so we don't miss
@@ -399,6 +405,19 @@ export default function ReportsAdmin() {
               {cancellations && (
                 <Card title="Cancellation Analysis" style={{ marginBottom: 12 }}>
                   <CancellationsBreakdown stats={cancellations} />
+                </Card>
+              )}
+
+              {refundBreakdown && refundBreakdown.count > 0 && (
+                <Card title="Refunds & Commission" style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 10 }}>
+                    <KpiTile label="Total refunded" big={fmt$(refundBreakdown.refunded)} sub={`${refundBreakdown.count} refund${refundBreakdown.count !== 1 ? 's' : ''}`} color="#EF4444" />
+                    <KpiTile label="Commission withheld" big={fmt$(refundBreakdown.withheld)} sub="clawed back from techs" color="#F59E0B" />
+                    <KpiTile label="Goodwill absorbed" big={fmt$(refundBreakdown.goodwill)} sub="salon ate the commission" color="#9333EA" />
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', lineHeight: 1.5 }}>
+                    Per refund, each tech&apos;s commission is either <strong>withheld</strong> (deducted from their earnings) or covered as <strong>goodwill</strong> by the salon. Set per tech at refund time; default in Admin → Settings.
+                  </div>
                 </Card>
               )}
 

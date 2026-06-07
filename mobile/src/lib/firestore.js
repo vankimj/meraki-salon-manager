@@ -499,8 +499,8 @@ export async function resendReceiptEmail({ receiptId = null, viewToken = null, e
 // cash) or 'credit' (store credit, no money moves). Staff (admin or tech) may
 // call it; the server notifies all admins. `idempotencyKey` (stable per attempt)
 // makes a retry safe — no double refund or double credit.
-export async function refundSale({ receiptId, amountCents, reason, refundTo = 'money', idempotencyKey }) {
-  const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, refundTo, idempotencyKey });
+export async function refundSale({ receiptId, amountCents, reason, refundTo = 'money', commissionByTech, idempotencyKey }) {
+  const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, refundTo, commissionByTech, idempotencyKey });
   return res?.data || { ok: false };
 }
 // Manually add/remove a client's store credit (admin or tech). deltaCents is
