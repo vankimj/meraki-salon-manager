@@ -528,6 +528,15 @@ export async function hasKioskPin() {
   const res = await callFn('hasKioskPin')({ tenantId: getCurrentTenant() });
   return res?.data || { hasPin: false };
 }
+// Admin sets / clears an employee's 4-digit clock-in PIN (scrypt-hashed server-side).
+export async function setEmployeePin(employeeId, pin) {
+  const res = await callFn('setEmployeePin')({ tenantId: getCurrentTenant(), employeeId, pin });
+  return res?.data || { ok: false };
+}
+export async function clearEmployeePin(employeeId) {
+  const res = await callFn('clearEmployeePin')({ tenantId: getCurrentTenant(), employeeId });
+  return res?.data || { ok: false };
+}
 export async function fetchPromoByCode(code) {
   const snap = await getDocs(query(tenantCol('promoCodes'), where('code', '==', String(code || '').trim().toUpperCase())));
   if (snap.empty) return null;

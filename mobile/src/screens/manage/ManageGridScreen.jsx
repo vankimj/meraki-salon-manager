@@ -53,7 +53,7 @@ export default function ManageGridScreen({ navigation }) {
       if (!hasPin) {
         Alert.alert(
           'Set a kiosk PIN first',
-          'Kiosks lock once open — you exit with your admin PIN. Set it in Manage → Settings → "Kiosk exit PIN", then try again.',
+          'Kiosks lock once open — you exit with your admin PIN. Set it in Manage → Admin → Settings → "Kiosk exit PIN", then try again.',
         );
         return;
       }
