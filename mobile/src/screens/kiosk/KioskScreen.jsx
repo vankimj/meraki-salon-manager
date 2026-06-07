@@ -9,6 +9,7 @@ import { isTerminalAvailable } from '../../lib/terminal';
 import useOnline from '../../hooks/useOnline';
 import CardPayButton from '../checkout/CardPayButton';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
+import TechTipInputs from '../../components/TechTipInputs';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
@@ -117,9 +118,19 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
   const products = cart.products || [];
   const productsTotal = products.reduce((s, it) => s + (Number(it.product?.price) || 0) * (it.qty || 1), 0);
 
-  const [tipMode, setTipMode]   = useState('pct');   // 'pct' | 'custom'
+  // Service revenue per tech — drives the default proportional tip split and the
+  // optional per-tech tip fields (only offered when 2+ techs worked this sale).
+  const techRevenue = useMemo(() => {
+    const m = {};
+    lines.forEach(l => { const t = l.techName || ''; m[t] = (m[t] || 0) + (Number(l.price) || 0); });
+    return m;
+  }, [lines]);
+  const multiTech = Object.keys(techRevenue).length >= 2;
+
+  const [tipMode, setTipMode]   = useState('pct');   // 'pct' | 'custom' | 'perTech'
   const [tipPct, setTipPct]     = useState(0);
   const [tipAmtStr, setTipAmtStr] = useState('');
+  const [perTechTips, setPerTechTips] = useState({});   // { techName: '12.00' }
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
   const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
@@ -183,7 +194,15 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
        : `Discount (${Number(session.discVal) || 0}%)`)
     : `★ ${membership?.planName || 'Member'} (${membership?.discountPct}%)`;
 
-  const tip = { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
+  // Per-tech tips override the proportional split when the customer chose to tip
+  // each tech separately; the sale's tip total is then their sum.
+  const tipByTech = (tipMode === 'perTech')
+    ? Object.keys(techRevenue).map(t => ({ techName: t, amount: Number(perTechTips[t]) || 0 }))
+    : null;
+  const perTechTotal = tipByTech ? tipByTech.reduce((s, t) => s + t.amount, 0) : 0;
+  const tip = (tipMode === 'perTech')
+    ? { custom: true, amount: perTechTotal, pct: null }
+    : { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
   const totalsFor = (method) => computeTotals({
     lines, productsTotal, discount, promo: normalizePromo(promo),
     taxRate: Number(settings?.taxRate) || 0,
@@ -192,8 +211,8 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit,
   });
-  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit, priced]);
-  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, settings, membership, clientCredit, priced]);
+  const cashTotals = useMemo(() => totalsFor('cash'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
+  const cardTotals = useMemo(() => totalsFor('card'), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
 
   // Flush any sales stranded offline whenever the kiosk arms a new checkout.
   useEffect(() => { syncOfflineSales().catch(() => {}); }, [session.createdAt]);
@@ -230,6 +249,7 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
         tab: { appts: cart.appts || [], products }, lines, products,
         totals: t, settings, email, method, saleId, skipSideEffects: isRetry,
         receiptContact: parseReceiptContact(receiptPhone),
+        tipByTech,
         ...adj,
         ...opts,
       };
@@ -372,7 +392,18 @@ function KioskCheckout({ session, settings, email, styles, theme }) {
             {tipMode === 'custom' && (
               <TextInput style={styles.tipInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />
             )}
+            {multiTech && (
+              <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.tipChip, tipMode === 'perTech' && styles.tipChipOn]}>
+                <Text style={[styles.tipChipText, tipMode === 'perTech' && styles.tipChipTextOn]}>Tip each tech</Text>
+              </TouchableOpacity>
+            )}
           </View>
+          {tipMode === 'perTech' && (
+            <TechTipInputs techRevenue={techRevenue} values={perTechTips} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
+          )}
+          {multiTech && tipMode !== 'perTech' && cashTotals.tipAmt > 0 && (
+            <Text style={styles.splitNote}>Split across techs by service amount. Tap "Tip each tech" to set them individually.</Text>
+          )}
 
           {!hasPhoneOnFile && (
             <>
@@ -525,6 +556,7 @@ const makeStyles = (t) => StyleSheet.create({
   tipChipText:{ fontSize: 16, fontWeight: '800', color: t.textMuted },
   tipChipTextOn:{ color: t.green },
   tipInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border, minWidth: 90 },
+  splitNote: { fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 17 },
   receiptInput: { backgroundColor: t.surface, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 13, fontSize: 17, color: t.text, borderWidth: 1, borderColor: t.border },
   totals:   { backgroundColor: t.surface, borderRadius: 16, padding: 18, marginTop: 24, borderWidth: 1, borderColor: t.border },
   totRow:   { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },

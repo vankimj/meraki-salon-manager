@@ -63,10 +63,18 @@ export function computeTotals(input) {
   return { subtotal, discountAmount, promoAmount, afterDiscounts, taxAmt, billBeforeTip, tipAmt, gcApply, creditApply, charged, total, ccFee };
 }
 
-// Per-tech revenue split + tip allocated by revenue ratio. Returns null for a
-// single tech (no split needed). `lines` carry { price, techName }. Last entry
-// absorbs rounding so tipShares sum EXACTLY to tipAmt.
-export function buildTechSplit(lines, tipAmt) {
+// Per-tech revenue split + tip allocation. Returns null for a single tech (no
+// split needed). `lines` carry { price, techName }.
+//
+// DEFAULT: the tip is split across techs by each tech's service revenue (the
+// last entry absorbs rounding so shares sum EXACTLY to tipAmt).
+// OVERRIDE: pass `tipByTech` ([{ techName, amount }]) when the customer tipped
+// each tech a specific amount — those amounts are used verbatim instead.
+//
+// Each entry carries BOTH `tipShare` and `tip` (same value): earnings readers
+// (web + mobile) key off `s.tip`, so writing only `tipShare` silently dropped
+// split tips from earnings — emit both for correct per-tech attribution.
+export function buildTechSplit(lines, tipAmt, tipByTech = null) {
   const splitMap = {};
   (lines || []).forEach(l => {
     const t = l.techName || '';
@@ -76,6 +84,16 @@ export function buildTechSplit(lines, tipAmt) {
   });
   const entries = Object.entries(splitMap);
   if (entries.length <= 1) return null;
+
+  if (Array.isArray(tipByTech) && tipByTech.length) {
+    const m = {};
+    tipByTech.forEach(t => { const k = t.techName || ''; m[k] = (m[k] || 0) + (Number(t.amount) || 0); });
+    return entries.map(([techName, d]) => {
+      const tipShare = Math.round((m[techName] || 0) * 100) / 100;
+      return { techName, revenue: d.revenue, services: d.services, tipShare, tip: tipShare };
+    });
+  }
+
   const totalRev = entries.reduce((s, [, d]) => s + d.revenue, 0);
   let allocated = 0;
   return entries.map(([techName, d], i) => {
@@ -83,7 +101,7 @@ export function buildTechSplit(lines, tipAmt) {
     let tipShare;
     if (i === entries.length - 1) tipShare = Math.round((tipAmt - allocated) * 100) / 100;
     else { tipShare = Math.round(ratio * tipAmt * 100) / 100; allocated += tipShare; }
-    return { techName, revenue: d.revenue, services: d.services, tipShare };
+    return { techName, revenue: d.revenue, services: d.services, tipShare, tip: tipShare };
   });
 }
 
