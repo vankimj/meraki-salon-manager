@@ -219,6 +219,15 @@ export async function fetchReceiptsByClientName(name) {
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 }
 
+// Fetch specific appointments by id (e.g. a receipt's apptIds) to resolve the
+// participants of a combined checkout. Small N — one getDoc each, missing ids
+// dropped.
+export async function fetchAppointmentsByIds(ids = []) {
+  const uniq = [...new Set((ids || []).filter(Boolean).map(String))];
+  const snaps = await Promise.all(uniq.map(id => getDoc(doc(tenantCol('appointments'), id)).catch(() => null)));
+  return snaps.filter(s => s && s.exists()).map(s => ({ id: s.id, ...s.data() }));
+}
+
 export async function fetchAppointmentsByRange(startDate, endDate) {
   const snap = await getDocs(query(
     tenantCol('appointments'),
