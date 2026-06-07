@@ -56,7 +56,7 @@ export default function ReceiptsAdmin() {
       setList([]); showToast('Failed to load receipts.');
     } finally { setLoading(false); }
   }
-  useEffect(() => { load(); }, [rangeDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [rangeDays]);
 
   async function searchAllTime() {
     const name = q.trim();
