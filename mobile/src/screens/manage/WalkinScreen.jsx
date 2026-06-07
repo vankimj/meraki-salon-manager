@@ -4,6 +4,7 @@ import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
   fetchEmployees, fetchAttendance, fetchSettings, fetchServices,
+  fetchClientByPhone, createClient,
 } from '../../lib/firestore';
 
 const fmtTurns = (n) => { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
@@ -21,6 +22,12 @@ export default function WalkinScreen() {
   const [waitlist, setWaitlist] = useState([]);
   const [emps,    setEmps]    = useState([]);
   const [newName, setNewName] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+  const [foundClient, setFoundClient] = useState(null); // existing client matched by phone
+  const [searching, setSearching] = useState(false);
+  const [adding, setAdding] = useState(false);          // add-walk-in modal open
+  const [newServiceIds, setNewServiceIds] = useState([]); // services the walk-in wants
+  const [newTechId, setNewTechId] = useState(null);     // requested tech id, or null = no preference
   const [seatingFor, setSeatingFor] = useState(null); // waitlist entry being assigned
   const [cfg, setCfg] = useState({ partialTurns: false, requestNoTurn: false, seniority: false });
   const [services, setServices] = useState([]);
@@ -99,12 +106,46 @@ export default function WalkinScreen() {
     if (!canEdit || roster.some(t => t.techId === emp.id)) return;
     persistRoster([...roster, { techId: emp.id, techName: emp.name, clockInAt: new Date().toISOString(), turnsTaken: 0 }]);
   }
+  function openAdd() {
+    if (!canEdit) return;
+    setNewName(''); setNewPhone(''); setFoundClient(null);
+    setNewServiceIds([]); setNewTechId(null); setAdding(true);
+  }
+  async function searchPhone() {
+    const digits = (newPhone.match(/\d/g) || []).join('');
+    if (digits.replace(/^1(?=\d{10}$)/, '').length < 10) { Alert.alert('Enter a 10-digit phone number'); return; }
+    setSearching(true);
+    try {
+      const c = await fetchClientByPhone(newPhone);
+      if (c) { setFoundClient(c); setNewName(c.name || ''); }
+      else { setFoundClient(null); Alert.alert('No match', 'No client found — enter a name to create a new profile.'); }
+    } catch (e) { Alert.alert('Search failed', e?.message || 'Try again.'); }
+    finally { setSearching(false); }
+  }
   async function addWaiter() {
     const name = newName.trim();
-    if (!name) return;
-    setNewName('');
-    try { await addWaitlistEntry({ clientName: name }); await load(); }
-    catch (e) { Alert.alert('Couldn\'t add', e?.message || 'Try again.'); }
+    const digits = (newPhone.match(/\d/g) || []).join('');
+    if (!name) { Alert.alert('Name required'); return; }
+    if (!foundClient && digits.replace(/^1(?=\d{10}$)/, '').length < 10) { Alert.alert('Phone required', 'A phone number is needed to create a profile.'); return; }
+    const serviceNames = services.filter(s => newServiceIds.includes(s.id)).map(s => s.name);
+    const reqTech = newTechId ? emps.find(e => e.id === newTechId) : null;
+    setAdding(false);
+    try {
+      // Existing client → link; otherwise create a profile from name + phone.
+      let clientId = foundClient?.id || null;
+      if (!clientId) { clientId = await createClient({ name, phone: newPhone.trim() }); }
+      await addWaitlistEntry({
+        clientId,
+        clientName: name,
+        clientPhone: foundClient?.phone || newPhone.trim(),
+        serviceIds: newServiceIds,
+        serviceNames,
+        requestedTechId: reqTech?.id || null,
+        requestedTechName: reqTech?.name || null,
+      });
+      setNewName(''); setNewPhone(''); setFoundClient(null); setNewServiceIds([]); setNewTechId(null);
+      await load();
+    } catch (e) { Alert.alert('Couldn\'t add', e?.message || 'Try again.'); }
   }
   // Seating a walk-in assigns them to a tech AND advances that tech's turn —
   // the two halves were previously disconnected, so the rotation only stayed
@@ -148,12 +189,21 @@ export default function WalkinScreen() {
   // available, fewest turns first, then (optionally) by seniority (employee
   // sortOrder), then earliest clocked in.
   const senById = {};
-  emps.forEach(e => { senById[e.id] = Number.isFinite(e.sortOrder) ? e.sortOrder : 999; });
+  const empById = {};
+  emps.forEach(e => { senById[e.id] = Number.isFinite(e.sortOrder) ? e.sortOrder : 999; empById[e.id] = e; });
   const sorted = [...roster].sort((a, b) =>
     (a.away ? 1 : 0) - (b.away ? 1 : 0)
     || (a.turnsTaken || 0) - (b.turnsTaken || 0)
     || (cfg.seniority ? ((senById[a.techId] ?? 999) - (senById[b.techId] ?? 999)) : 0)
     || (a.clockInAt || '').localeCompare(b.clockInAt || ''));
+  // Can this tech perform every requested service? Empty skill list = unconfigured
+  // → treat as can-do-all (so salons that haven't set skills aren't blocked).
+  const canDoServices = (techId, serviceIds) => {
+    if (!serviceIds || serviceIds.length === 0) return true;
+    const skills = empById[techId]?.serviceIds;
+    if (!Array.isArray(skills) || skills.length === 0) return true;
+    return serviceIds.every(sid => skills.includes(sid));
+  };
   const waiting = waitlist.filter(w => w.status !== 'seated');
   const offRoster = emps.filter(e => !roster.some(t => t.techId === e.id));
 
@@ -203,18 +253,21 @@ export default function WalkinScreen() {
 
           <Text style={styles.section}>Waitlist ({waiting.length})</Text>
           {canEdit && (
-            <View style={styles.addRow}>
-              <TextInput style={styles.input} value={newName} onChangeText={setNewName} placeholder="Walk-in name" placeholderTextColor={theme.placeholder} onSubmitEditing={addWaiter} returnKeyType="done" />
-              <TouchableOpacity style={styles.addBtn} onPress={addWaiter}><Text style={styles.addText}>Add</Text></TouchableOpacity>
-            </View>
+            <TouchableOpacity style={styles.addWalkinBtn} onPress={openAdd}>
+              <Text style={styles.addWalkinText}>＋ Add walk-in</Text>
+            </TouchableOpacity>
           )}
           {waiting.length === 0 ? (
             <Text style={styles.empty}>No one waiting.</Text>
-          ) : waiting.map(w => (
+          ) : waiting.map(w => {
+            const svc = (w.serviceNames && w.serviceNames.length) ? w.serviceNames.join(', ') : (w.services || '');
+            const pref = w.requestedTechName ? `wants ${w.requestedTechName}` : 'no preference';
+            const time = w.addedAt ? new Date(w.addedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+            return (
             <View key={w.id} style={styles.row}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{w.clientName || 'Walk-in'}</Text>
-                <Text style={styles.sub}>{w.addedAt ? new Date(w.addedAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : ''}{w.services ? ` · ${w.services}` : ''}</Text>
+                <Text style={styles.sub} numberOfLines={2}>{[time, svc, pref].filter(Boolean).join(' · ')}</Text>
               </View>
               {canEdit && (
                 <>
@@ -223,10 +276,66 @@ export default function WalkinScreen() {
                 </>
               )}
             </View>
-          ))}
+            );
+          })}
         </View>
       }
     />
+
+    <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
+      <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setAdding(false)}>
+        <TouchableOpacity activeOpacity={1} style={styles.sheet} onPress={() => {}}>
+          <Text style={styles.sheetTitle}>Add walk-in</Text>
+          <Text style={styles.sheetSub}>Search an existing client by phone, or enter name + phone to create a profile.</Text>
+          <ScrollView style={{ maxHeight: 460 }} keyboardShouldPersistTaps="handled">
+            <Text style={styles.fieldLbl}>Phone</Text>
+            <View style={styles.addRow}>
+              <TextInput style={styles.input} value={newPhone} onChangeText={t => { setNewPhone(t); setFoundClient(null); }} keyboardType="phone-pad" placeholder="(555) 123-4567" placeholderTextColor={theme.placeholder} />
+              <TouchableOpacity style={[styles.addBtn, searching && { opacity: 0.6 }]} onPress={searchPhone} disabled={searching}>
+                <Text style={styles.addText}>{searching ? '…' : 'Search'}</Text>
+              </TouchableOpacity>
+            </View>
+            {!!foundClient && (
+              <View style={styles.foundBanner}><Text style={styles.foundText}>✓ {foundClient.name} — existing client</Text></View>
+            )}
+
+            <Text style={styles.fieldLbl}>Name</Text>
+            <TextInput style={styles.inputFull} value={newName} onChangeText={setNewName} placeholder="Customer name" placeholderTextColor={theme.placeholder} editable={!foundClient} />
+
+            <Text style={styles.fieldLbl}>Services wanted</Text>
+            <View style={styles.svcWrap}>
+              {services.length === 0 ? <Text style={styles.hint}>No services configured.</Text> : services.map(s => {
+                const on = newServiceIds.includes(s.id);
+                return (
+                  <TouchableOpacity key={s.id} onPress={() => setNewServiceIds(on ? newServiceIds.filter(x => x !== s.id) : [...newServiceIds, s.id])} style={[styles.svcChip, on && styles.svcChipOn]}>
+                    <Text style={[styles.svcChipText, on && styles.svcChipTextOn]} numberOfLines={1}>{s.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.fieldLbl}>Tech preference</Text>
+            <View style={styles.svcWrap}>
+              <TouchableOpacity onPress={() => setNewTechId(null)} style={[styles.svcChip, !newTechId && styles.svcChipOn]}>
+                <Text style={[styles.svcChipText, !newTechId && styles.svcChipTextOn]}>No preference</Text>
+              </TouchableOpacity>
+              {emps.map(e => {
+                const on = newTechId === e.id;
+                const elig = newServiceIds.length === 0 || canDoServices(e.id, newServiceIds);
+                return (
+                  <TouchableOpacity key={e.id} onPress={() => setNewTechId(e.id)} style={[styles.svcChip, on && styles.svcChipOn, !elig && { opacity: 0.45 }]}>
+                    <Text style={[styles.svcChipText, on && styles.svcChipTextOn]} numberOfLines={1}>{e.name}{!elig ? ' ⚠︎' : ''}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </ScrollView>
+          <TouchableOpacity style={styles.addWalkinSubmit} onPress={addWaiter}>
+            <Text style={styles.addWalkinSubmitText}>Add to waitlist</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
 
     <Modal visible={!!seatingFor} transparent animationType="fade" onRequestClose={() => setSeatingFor(null)}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setSeatingFor(null)}>
@@ -265,12 +374,27 @@ export default function WalkinScreen() {
               </TouchableOpacity>
             )}
 
-            {sorted.map((t, i) => (
-              <TouchableOpacity key={t.techId} style={[styles.pickRow, i === 0 && !t.away && styles.pickRowNext, t.away && { opacity: 0.55 }]} onPress={() => assignSeat(seatingFor, t)}>
-                <Text style={styles.pickName}>{i === 0 && !t.away ? '⭐ ' : ''}{t.away ? '💤 ' : ''}{t.techName}</Text>
-                <Text style={styles.pickTurns}>{fmtTurns(t.turnsTaken)} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
-              </TouchableOpacity>
-            ))}
+            {(() => {
+              // Route by skill: techs who can do the requested service(s) come
+              // first (requested tech pinned to top); those who can't are dimmed
+              // with a note at the bottom but stay tappable as an override.
+              const reqSvc = seatingFor?.serviceIds || [];
+              const reqSvcNames = (seatingFor?.serviceNames || []).join(', ');
+              const reqTechId = seatingFor?.requestedTechId || null;
+              const ordered = sorted
+                .map(t => ({ ...t, _elig: canDoServices(t.techId, reqSvc), _req: reqTechId === t.techId }))
+                .sort((a, b) => (b._req ? 1 : 0) - (a._req ? 1 : 0) || (b._elig ? 1 : 0) - (a._elig ? 1 : 0));
+              const nextId = ordered.find(t => !t.away && t._elig)?.techId;
+              return ordered.map(t => (
+                <TouchableOpacity key={t.techId} style={[styles.pickRow, t.techId === nextId && styles.pickRowNext, (t.away || !t._elig) && { opacity: 0.5 }]} onPress={() => assignSeat(seatingFor, t)}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pickName}>{t.techId === nextId ? '⭐ ' : ''}{t.away ? '💤 ' : ''}{t.techName}{t._req ? '  ·  requested' : ''}</Text>
+                    {!t._elig && <Text style={styles.pickWarn}>doesn't do {reqSvcNames || 'this service'}</Text>}
+                  </View>
+                  <Text style={styles.pickTurns}>{fmtTurns(t.turnsTaken)} turn{(t.turnsTaken || 0) === 1 ? '' : 's'}</Text>
+                </TouchableOpacity>
+              ));
+            })()}
             <TouchableOpacity style={styles.pickSkip} onPress={() => assignSeat(seatingFor, null)}>
               <Text style={styles.pickSkipText}>Seat without assigning a turn</Text>
             </TouchableOpacity>
@@ -322,6 +446,15 @@ const makeStyles = (t) => StyleSheet.create({
   input:      { flex: 1, backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   addBtn:     { backgroundColor: t.green, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
   addText:    { color: '#fff', fontWeight: '800', fontSize: 14 },
+  addWalkinBtn: { backgroundColor: t.green, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 10 },
+  addWalkinText:{ color: '#fff', fontWeight: '800', fontSize: 14 },
+  fieldLbl:   { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
+  inputFull:  { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
+  foundBanner:{ backgroundColor: t.greenSoft, borderRadius: 10, padding: 10, marginTop: 8, borderWidth: 1, borderColor: t.green },
+  foundText:  { color: t.green, fontWeight: '700', fontSize: 13 },
+  addWalkinSubmit: { marginTop: 14, backgroundColor: t.green, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  addWalkinSubmitText: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  pickWarn:   { fontSize: 11, color: t.danger, marginTop: 2 },
   backdrop:   { flex: 1, backgroundColor: t.overlay, justifyContent: 'center', padding: 24 },
   sheet:      { backgroundColor: t.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: t.border },
   sheetTitle: { fontSize: 16, fontWeight: '800', color: t.text },

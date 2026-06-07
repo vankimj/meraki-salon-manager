@@ -143,6 +143,22 @@ export async function createClient(data) {
   return ref.id;
 }
 
+// Find a client by phone, matching on the last 10 digits so it works regardless
+// of how the stored phone is formatted (existing clients are free-form). Returns
+// the client or null. Scans the tenant's clients client-side — fine for a kiosk
+// lookup at salon scale; revisit with a server-side phone index if it grows.
+export async function fetchClientByPhone(phone) {
+  const digits = (String(phone || '').match(/\d/g) || []).join('');
+  const last10 = digits.replace(/^1(?=\d{10}$)/, '').slice(-10);
+  if (last10.length < 10) return null;
+  const snap = await getDocs(tenantCol('clients'));
+  for (const d of snap.docs) {
+    const cd = (String(d.data().phone || '').match(/\d/g) || []).join('').slice(-10);
+    if (cd && cd === last10) return { id: d.id, ...d.data() };
+  }
+  return null;
+}
+
 export async function saveClient(id, data) {
   await setDoc(doc(tenantCol('clients'), id),
     { ...data, updatedAt: new Date().toISOString() },
