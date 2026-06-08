@@ -75,9 +75,6 @@ export default function DashboardScreen({ navigation }) {
         <Text style={styles.profileLink}>View profile ›</Text>
       </TouchableOpacity>
 
-      {/* Earnings (moved from the old Earnings tab) */}
-      <EarningsPanel techName={techName} />
-
       {/* Today's shift hours */}
       <Text style={styles.sectionLabel}>Today's shift</Text>
       <View style={styles.shiftCard}>
@@ -121,6 +118,10 @@ export default function DashboardScreen({ navigation }) {
           )}
         </>
       )}
+
+      {/* Earnings (moved from the old Earnings tab) — at the bottom */}
+      <Text style={styles.sectionLabel}>Earnings</Text>
+      <EarningsPanel techName={techName} />
     </ScrollView>
   );
 }
