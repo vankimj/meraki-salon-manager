@@ -93,7 +93,7 @@ export default function ManageStack() {
       <Stack.Screen name="MerchantOnboarding" component={MerchantOnboardingScreen}
         options={{ headerTitle: () => <HeaderTitle title="Payments setup" /> }} />
       <Stack.Screen name="TapToPaySetup" component={TapToPaySetupScreen}
-        options={{ headerTitle: () => <HeaderTitle title="Tap to Pay" /> }} />
+        options={{ headerTitle: () => <HeaderTitle title="Tap to Pay on iPhone" /> }} />
 
       <Stack.Screen name="Trash" component={TrashScreen}
         options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />

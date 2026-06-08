@@ -60,7 +60,7 @@ export default function MerchantOnboardingScreen({ navigation }) {
         <Text style={styles.title}>{active ? 'Payments active' : connected ? 'Finish your payment setup' : 'Set up payments'}</Text>
         <Text style={styles.sub}>
           {active
-            ? 'You can accept card payments. On iPhone, you can also use Tap to Pay.'
+            ? 'You can accept card payments. On iPhone, you can also use Tap to Pay on iPhone — no extra hardware needed.'
             : connected
               ? 'Your application is in progress. Finish the remaining steps to start accepting cards.'
               : 'Verify your business with Stripe to accept credit and debit cards in person and online.'}
@@ -92,7 +92,7 @@ export default function MerchantOnboardingScreen({ navigation }) {
       )}
 
       {Platform.OS !== 'ios' && active && (
-        <Text style={styles.note}>Tap to Pay runs on iPhone (XS or newer). Use the iPhone app to accept contactless cards directly on the device; this device can use a connected card reader.</Text>
+        <Text style={styles.note}>Tap to Pay on iPhone requires an iPhone (XS or newer). Use the iPhone app to accept contactless cards directly on the device; this device can use a connected card reader.</Text>
       )}
       <Text style={styles.note}>Verification is handled securely by Stripe. You can return any time to finish or update your details.</Text>
     </ScrollView>

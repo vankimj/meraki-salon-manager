@@ -77,7 +77,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
     if (!locationId && !simulated) {
       throw new Error('No Terminal Location set. Create one in Stripe → Terminal → Locations and add its ID to salon settings (terminalLocationId).');
     }
-    setPhase(simulated ? 'Preparing test reader…' : (method === 'tapToPay' ? 'Preparing Tap to Pay…' : 'Searching for reader…'));
+    setPhase(simulated ? 'Preparing test reader…' : (method === 'tapToPay' ? 'Preparing Tap to Pay on iPhone…' : 'Searching for reader…'));
     if (!simulated) {
       const granted = await ensureAndroidPermissions(method === 'bluetoothScan');
       if (!granted) {
@@ -92,7 +92,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
     if (!reader) {
       const tapDevice = Platform.OS === 'android' ? 'an NFC-capable Android device (Android 11+)' : 'an iPhone XS or later';
       throw new Error(method === 'tapToPay'
-        ? `Tap to Pay is unavailable on this device (needs ${tapDevice}).`
+        ? `Tap to Pay on iPhone is unavailable on this device (needs ${tapDevice}).`
         : 'No card reader found. Make sure it is powered on and nearby.');
     }
     setPhase('Connecting…');
@@ -133,7 +133,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
       // "update iOS" message instead of a generic failure.
       const msg = String(e?.message || '');
       if (/osVersionNotSupported|os version|update.*ios|ios.*update/i.test(msg)) {
-        Alert.alert('Update iOS to use Tap to Pay', 'Tap to Pay on iPhone needs a newer version of iOS. Update this iPhone in Settings → General → Software Update, then try again.');
+        Alert.alert('Update iOS to use Tap to Pay on iPhone', 'Tap to Pay on iPhone needs a newer version of iOS. Update this iPhone in Settings → General → Software Update, then try again.');
       } else {
         Alert.alert('Card payment failed', msg || 'Please try again.');
       }
@@ -157,7 +157,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
           {SymbolView
             ? <SymbolView name="wave.3.right.circle.fill" size={22} tintColor="#ffffff" style={{ width: 22, height: 22 }} />
             : <Text style={styles.txt}>〰️</Text>}
-          <Text style={styles.txt}>Tap to Pay{simulated ? '  (test)' : ''}</Text>
+          <Text style={styles.txt}>Tap to Pay on iPhone{simulated ? '  (test)' : ''}</Text>
         </>
       )}
     </TouchableOpacity>
