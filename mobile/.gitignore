@@ -10,7 +10,9 @@ android/
 
 # Local credentials (never commit)
 GoogleService-Info.plist
-google-services.json
+# google-services.json is committed: it's client Firebase config (restricted
+# Android API key, shipped in the APK) and EAS Build needs it in the git archive
+# for Android FCM. The real secret (FCM v1 service-account key) lives in EAS, not git.
 
 # Dependencies
 node_modules/
