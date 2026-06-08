@@ -9,6 +9,7 @@ import {
   fetchTimeOff, createClient, updateAppointment, fetchClient, softDeleteAppointment,
   softDeleteRecurringSeries,
 } from '../lib/firestore';
+import { notifyAffectedTechs } from '../lib/notifications';
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
 import useTenantAccess from '../hooks/useTenantAccess';
@@ -389,7 +390,7 @@ export default function ScheduleScreen({ navigation }) {
             onTapEmpty={(startTime, tech) => setCreatePrefill({ date, startTime, techName: tech ?? '' })}
             onReschedule={async (a, patch) => {
               setAppts(prev => prev.map(x => x.id === a.id ? { ...x, ...patch } : x));
-              try { await updateAppointment(a.id, patch); }
+              try { await updateAppointment(a.id, patch); notifyAffectedTechs(a, { ...a, ...patch }).catch(() => {}); }
               catch (e) { Alert.alert('Couldn\'t move', e?.message || 'Try again.'); setAppts(prev => prev.map(x => x.id === a.id ? { ...x, startTime: a.startTime, techName: a.techName } : x)); }
             }}
           />
@@ -409,7 +410,7 @@ export default function ScheduleScreen({ navigation }) {
             onTapEmpty={(startTime) => setCreatePrefill({ date, startTime, techName: showAll ? '' : (techName || '') })}
             onReschedule={async (a, patch) => {
               setAppts(prev => prev.map(x => x.id === a.id ? { ...x, ...patch } : x));
-              try { await updateAppointment(a.id, patch); }
+              try { await updateAppointment(a.id, patch); notifyAffectedTechs(a, { ...a, ...patch }).catch(() => {}); }
               catch (e) { Alert.alert('Couldn\'t move', e?.message || 'Try again.'); setAppts(prev => prev.map(x => x.id === a.id ? { ...x, startTime: a.startTime, techName: a.techName } : x)); }
             }}
           />
@@ -425,6 +426,7 @@ export default function ScheduleScreen({ navigation }) {
         onAddToTab={(a) => addApptToTab(a)}
         onDelete={async (a) => {
           await softDeleteAppointment(a.id, email);
+          notifyAffectedTechs(a, { ...a, status: 'cancelled' }).catch(() => {});
           removeApptFromTab(a.id);
           setAppts(prev => prev.filter(x => x.id !== a.id));
           setDetail(null);
@@ -1092,6 +1094,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
           services:  pickedServices,
           duration:  totalDuration,
         });
+        notifyAffectedTechs(editAppt, { ...editAppt, startTime: editStartTime, clientId: pickedClient.id, clientName: pickedClient.name, services: pickedServices }).catch(() => {});
       } else {
         // Recurring series: create N appts stepped by the chosen interval,
         // linked by a shared recurringGroupId.
@@ -1121,6 +1124,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
           });
           d = stepDate(d, repeat);
         }
+        notifyAffectedTechs(null, { date: prefill.date, startTime: prefill.startTime, techName: prefill.techName || '', clientName: pickedClient.name }).catch(() => {});
       }
       onCreated?.();
     } catch (e) {

@@ -2615,6 +2615,16 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
       cancelledBy:      'client_self_service',
       updatedAt:        new Date().toISOString(),
     });
+    // Notify the assigned tech (push, via sendApptNotification).
+    try {
+      await db.collection(`tenants/${tid}/notifications`).add({
+        apptId: appt.id || null, techName: appt.techName || '', clientName: appt.clientName || 'A client',
+        date: appt.date || '', startTime: appt.startTime || '',
+        changeType: 'appt_removed',
+        message: `${appt.clientName || 'A client'} cancelled their appointment${appt.date ? ` on ${appt.date}` : ''}${appt.startTime ? ` at ${appt.startTime}` : ''}.`,
+        createdAt: new Date().toISOString(), sent: false,
+      });
+    } catch (e) { console.error('[manageAppt] cancel notify failed:', e?.message); }
     return { ok: true };
   }
 
@@ -2702,6 +2712,15 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
       rescheduledBy:    'client_self_service',
       updatedAt:        new Date().toISOString(),
     });
+    try {
+      await db.collection(`tenants/${tid}/notifications`).add({
+        apptId: appt.id || null, techName: useTechName || '', clientName: appt.clientName || 'A client',
+        date, startTime,
+        changeType: 'appt_modified',
+        message: `${appt.clientName || 'A client'} rescheduled their appointment to ${date} at ${startTime}.`,
+        createdAt: new Date().toISOString(), sent: false,
+      });
+    } catch (e) { console.error('[manageAppt] reschedule notify failed:', e?.message); }
     return { ok: true, newDate: date, newStartTime: startTime };
   }
 
@@ -3709,6 +3728,21 @@ exports.sendBookingConfirmation = onDocumentCreated(
 
     const appt = snap.data();
     if (!appt || appt.source !== 'online_booking') return;
+
+    // Notify the assigned tech of the new online booking (push via
+    // sendApptNotification). Runs before the email so it fires even if email
+    // isn't configured. The notifications collection won't re-trigger this.
+    if (appt.techName && appt.techName !== 'TBD') {
+      try {
+        await db.collection(`tenants/${tenantId}/notifications`).add({
+          apptId: event.params?.apptId || snap.id, techName: appt.techName,
+          clientName: appt.clientName || 'A client', date: appt.date || '', startTime: appt.startTime || '',
+          changeType: 'appt_added',
+          message: `${appt.clientName || 'A client'} booked online with you on ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}.`,
+          createdAt: new Date().toISOString(), sent: false,
+        });
+      } catch (e) { console.error('[booking] tech notify failed:', e?.message); }
+    }
 
     const apiKey = awsAccessKey.value();
     if (!apiKey) return;
