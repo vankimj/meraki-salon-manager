@@ -115,19 +115,29 @@ export default function CardPayButton({ amountCents, description, locationId, on
       const cardInfo = cpd ? { brand: cpd.brand || null, last4: cpd.last4 || null } : null;
       onPaid?.(pi3.id || pi0.paymentIntentId, cardInfo);
     } catch (e) {
-      Alert.alert('Card payment failed', e?.message || 'Please try again.');
+      // req 1.4 — Tap to Pay needs iOS 17.6+ on older flows; surface a clear
+      // "update iOS" message instead of a generic failure.
+      const msg = String(e?.message || '');
+      if (/osVersionNotSupported|os version|update.*ios|ios.*update/i.test(msg)) {
+        Alert.alert('Update iOS to use Tap to Pay', 'Tap to Pay on iPhone needs a newer version of iOS. Update this iPhone in Settings → General → Software Update, then try again.');
+      } else {
+        Alert.alert('Card payment failed', msg || 'Please try again.');
+      }
     } finally {
       setBusy(false);
       setPhase('');
     }
   }
 
+  // req 5.5 wants the SF Symbol "wave.3.right.circle" on the Tap to Pay button —
+  // that needs expo-symbols (native), added in the next iPhone rebuild. Until
+  // then we approximate with a wave glyph + the required "Tap to Pay" copy.
   return (
     <TouchableOpacity style={[styles.btn, (busy || disabled) && { opacity: 0.6 }]} onPress={pay} disabled={busy || disabled} activeOpacity={0.85}>
       {busy ? (
         <Text style={styles.txt}>{phase || 'Working…'}</Text>
       ) : (
-        <Text style={styles.txt}>💳  {preferReader ? 'Card — tap / insert on reader' : 'Card — Tap to Pay'}{simulated ? '  (test)' : ''}</Text>
+        <Text style={styles.txt}>{preferReader ? '💳  Card — tap / insert on reader' : '〰️  Tap to Pay'}{simulated ? '  (test)' : ''}</Text>
       )}
     </TouchableOpacity>
   );
