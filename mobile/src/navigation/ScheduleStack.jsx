@@ -16,7 +16,7 @@ export default function ScheduleStack() {
       screenOptions={{ headerStyle: { backgroundColor: theme.headerBg }, headerTintColor: theme.green, contentStyle: { backgroundColor: theme.bg } }}
     >
       <Stack.Screen name="ScheduleHome" component={ScheduleScreen}
-        options={{ headerTitle: () => <HeaderTitle title="Today" /> }} />
+        options={{ headerTitle: () => <HeaderTitle title="Appointments" /> }} />
       <Stack.Screen name="Trash" component={TrashScreen}
         options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />
       <Stack.Screen name="Checkout" component={CheckoutScreen}
