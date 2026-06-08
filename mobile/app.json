@@ -39,6 +39,7 @@
         "backgroundColor": "#0f1923"
       },
       "package": "app.plumenexus.pro",
+      "googleServicesFile": "./google-services.json",
       "useNextNotificationsApi": true
     },
     "plugins": [
