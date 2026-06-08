@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "563347750501",
+    "project_id": "plumenexus-prod",
+    "storage_bucket": "plumenexus-prod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:563347750501:android:39ce7d09c8c8e4423c908c",
+        "android_client_info": {
+          "package_name": "app.plumenexus.pro"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "563347750501-jlmqatcbesk7r9ltou2sl928sgmtk606.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9dZY7x6XuA-hyQXmUU9xkQ6An_A_QWQc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "563347750501-jlmqatcbesk7r9ltou2sl928sgmtk606.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "563347750501-n1pe3i700s6fh75cpu1sspjjd63n04oa.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "app.plumenexus.pro"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
