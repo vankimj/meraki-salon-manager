@@ -1781,6 +1781,7 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
   const ratingsCol = db.collection(`tenants/${tenantId}/serviceRatings`);
   const now        = new Date().toISOString();
   let highest      = 0;
+  const lowRatings = [];   // newly-low ratings (< threshold) to alert admins about
 
   // Upsert per techName — one rating row per tech, idempotent.
   for (const raw of ratings) {
@@ -1794,6 +1795,7 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
       .where('receiptId', '==', receiptRef.id)
       .where('techName', '==', techName)
       .limit(1).get();
+    const prevRating = existing.empty ? null : Number(existing.docs[0].data().rating);
 
     const techServices = (r.services || []).filter(s => (s.techName || '') === techName)
       .map(s => ({ name: s.name || '', price: Number(s.price) || 0 }));
@@ -1815,6 +1817,25 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
     } else {
       await existing.docs[0].ref.update(payload);
     }
+
+    // Alert on a low rating, but only when it's new or actually changed — so an
+    // idempotent re-submit of the same score doesn't re-ping the team.
+    if (rating < threshold && prevRating !== rating) lowRatings.push({ techName, rating, comment });
+  }
+
+  // A low rating goes straight to the owner/admins (push + email + SMS), so a
+  // bad visit isn't discovered only later in the Ratings report.
+  if (lowRatings.length) {
+    const client = r.clientName || 'A client';
+    const parts  = lowRatings.map(l => `${l.techName} ${l.rating}★${l.comment ? ` — "${l.comment}"` : ''}`);
+    const title  = lowRatings.length === 1
+      ? `⚠️ ${lowRatings[0].rating}★ rating for ${lowRatings[0].techName}`
+      : `⚠️ Low ratings from ${client}`;
+    notifyTenantAdmins(db, tenantId, {
+      title,
+      line: `${client} left a low rating: ${parts.join('; ')}.`,
+      data: { type: 'low_rating', receiptId: token },
+    }).catch(e => console.error('[rating] low-rating notify failed:', e?.message));
   }
 
   const safeGoogleUrl = safeUrl(sData?.googleReviewUrl) || null;
