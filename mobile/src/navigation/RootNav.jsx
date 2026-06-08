@@ -5,7 +5,7 @@ import { View } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import ScheduleStack  from './ScheduleStack';
 import ClientsStack   from './ClientsStack';
-import EarningsScreen from '../screens/EarningsScreen';
+import DashboardScreen from '../screens/DashboardScreen';
 import ManageStack    from './ManageStack';
 import ProfileScreen  from '../screens/ProfileScreen';
 import usePushRegistration from '../hooks/usePushRegistration';
@@ -24,8 +24,8 @@ function TabIcon({ name, color }) {
   switch (name) {
     case 'Schedule':
       return <Svg {...props}><Rect x="3" y="4" width="18" height="18" rx="2" /><Path d="M16 2v4M8 2v4M3 10h18" /></Svg>;
-    case 'Earnings':
-      return <Svg {...props}><Path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" /></Svg>;
+    case 'Dashboard':
+      return <Svg {...props}><Path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><Path d="M9 22V12h6v10" /></Svg>;
     case 'Clients':
       return <Svg {...props}><Path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /><Circle cx="9" cy="7" r="4" /></Svg>;
     case 'Manage':
@@ -42,9 +42,9 @@ function TabIcon({ name, color }) {
 // the right label per tab without each screen needing to set
 // `headerTitle` individually.
 const HEADER_TITLES = {
-  Schedule: 'Today',
-  Earnings: 'Earnings',
-  Profile:  'Profile',
+  Schedule:  'Appointments',
+  Dashboard: 'Dashboard',
+  Profile:   'Profile',
 };
 function titleFor(routeName) { return HEADER_TITLES[routeName] || routeName; }
 
@@ -89,8 +89,8 @@ export default function RootNav() {
           tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
         })}
       >
-        <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Today' }} />
-        <Tab.Screen name="Earnings" component={EarningsScreen} />
+        <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Appointments' }} />
+        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
         <Tab.Screen
           name="Clients"
           component={ClientsStack}
