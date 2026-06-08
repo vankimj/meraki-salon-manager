@@ -490,9 +490,8 @@ export default function CheckoutScreen({ navigation }) {
               <Text style={styles.offlineText}>📴 Offline — take cash or store credit now; the receipt syncs automatically when you're back online. Card needs a live connection.</Text>
             </View>
           )}
-          <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
-            <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
-          </TouchableOpacity>
+          {/* Card / Tap to Pay first — req 5.2 keeps it at the top of the
+              payment options, accessible without scrolling. */}
           {!online ? (
             <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — needs a live connection</Text></View>
           ) : isTerminalAvailable() ? (
@@ -510,6 +509,9 @@ export default function CheckoutScreen({ navigation }) {
           ) : (
             <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
           )}
+          <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
+            <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
+          </TouchableOpacity>
           {online && (
             <TouchableOpacity style={[styles.deskBtn, saving && { opacity: 0.6 }]} onPress={sendToFrontDesk} disabled={saving} activeOpacity={0.85}>
               <Text style={styles.deskBtnText}>🏪  Send to front desk</Text>
