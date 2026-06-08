@@ -152,6 +152,7 @@ const {
   verifyPin:          tcVerifyPin,
   isValidPinFormat:   tcIsValidPin,
 } = require('./lib/timeclock');
+const { planReassignments: tcPlanReassign, nowMinutesInTz: tcNowMinsInTz } = require('./lib/reassign');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -2408,8 +2409,106 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
     console.warn(`[clockEvent] admin notify failed for tenant=${tenantId}:`, e?.message);
   }
 
+  // Day-of reassignment: when a tech clocks IN, re-distribute today's still-
+  // unclaimed no-preference bookings to the techs now on the clock, in clock-in
+  // order (earliest gets first pick). Best-effort and post-commit — a failure
+  // here must never undo the clock event the tech already saw confirmed.
+  if (kind === 'in' && !result?.duplicate) {
+    try { await reassignNoPrefOnClockIn(db, tenantId, date); }
+    catch (e) { console.warn(`[clockEvent] reassign failed for tenant=${tenantId}:`, e?.message); }
+  }
+
   return result;
 });
+
+// Read today's attendance + employees + appointments, plan the no-preference
+// reassignment (pure planner in lib/reassign.js), batch-write the moves, and
+// push-notify the affected techs + admins. dateKey is the tenant-tz YYYY-MM-DD
+// the clock event landed on.
+async function reassignNoPrefOnClockIn(db, tenantId, dateKey) {
+  const attSnap = await db.doc(`tenants/${tenantId}/attendance/${dateKey}`).get();
+  if (!attSnap.exists) return;
+  const entries = Array.isArray(attSnap.data().entries) ? attSnap.data().entries : [];
+
+  // Currently clocked-in techs, each tagged with their first clock-in time.
+  const clockedIn = entries.map(en => {
+    const events = Array.isArray(en.events) ? en.events : [];
+    if (tcCurrentState(events) !== TC_STATES.IN) return null;       // 'in' or back from break
+    const firstIn = events.find(ev => ev && ev.kind === 'in');
+    return { employeeId: en.employeeId, employeeName: en.employeeName, clockInAt: (firstIn && firstIn.at) || en.clockInAt || null };
+  }).filter(Boolean);
+  if (!clockedIn.length) return;
+
+  const empSnap = await db.collection(`tenants/${tenantId}/employees`).get();
+  const empById = {};
+  empSnap.docs.forEach(d => { empById[d.id] = { id: d.id, ...d.data() }; });
+
+  const clockedInTechs = clockedIn.map(c => {
+    const e = empById[c.employeeId] || {};
+    return { id: c.employeeId, name: c.employeeName || e.name || '', email: e.email || '', serviceIds: e.serviceIds || [], clockInAt: c.clockInAt };
+  }).filter(t => t.name && empById[t.id]?.active !== false);
+  if (!clockedInTechs.length) return;
+
+  const apSnap = await db.collection(`tenants/${tenantId}/appointments`).where('date', '==', dateKey).get();
+  const appts = apSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const tz = await tenantTimezone(db, tenantId);
+  const nowMins = tcNowMinsInTz(tz);
+
+  const changes = tcPlanReassign({ appts, clockedInTechs, nowMins });
+  if (!changes.length) return;
+
+  const batch = db.batch();
+  const nowIso = new Date().toISOString();
+  changes.forEach(ch => {
+    batch.update(db.doc(`tenants/${tenantId}/appointments/${ch.apptId}`), {
+      techId: ch.toTechId, techName: ch.toTechName,
+      reassignedAt: nowIso, reassignedByClockIn: true, updatedAt: nowIso,
+    });
+  });
+  await batch.commit();
+
+  await notifyReassignments(db, tenantId, changes, empById);
+}
+
+// Push the techs who gained / lost appointments on a reassignment pass, plus a
+// summary to all admins. Aggregated per person so a pass that moves several
+// appts sends one push each, not one per appt.
+async function notifyReassignments(db, tenantId, changes, empById) {
+  const gained = {}, lost = {};
+  changes.forEach(ch => {
+    const toEmail = String(empById[ch.toTechId]?.email || '').toLowerCase();
+    if (toEmail) (gained[toEmail] = gained[toEmail] || { name: ch.toTechName, n: 0 }).n++;
+    if (ch.fromTechId) {
+      const fromEmail = String(empById[ch.fromTechId]?.email || '').toLowerCase();
+      if (fromEmail) (lost[fromEmail] = lost[fromEmail] || { name: ch.fromTechName, n: 0 }).n++;
+    }
+  });
+  const appts = (n) => `${n} appointment${n === 1 ? '' : 's'}`;
+
+  await Promise.all([
+    ...Object.entries(gained).map(([email, g]) =>
+      sendPushToEmail(db, tenantId, email, {
+        title: 'New appointments assigned',
+        body:  `${appts(g.n)} assigned to you today now that you're clocked in.`,
+        data:  { type: 'appt_reassigned', kind: 'gained' },
+      }).catch(() => {})),
+    ...Object.entries(lost).map(([email, l]) =>
+      sendPushToEmail(db, tenantId, email, {
+        title: 'Appointments reassigned',
+        body:  `${appts(l.n)} moved to a clocked-in teammate.`,
+        data:  { type: 'appt_reassigned', kind: 'lost' },
+      }).catch(() => {})),
+  ]);
+
+  try {
+    await notifyTenantAdmins(db, tenantId, {
+      title: 'Appointments reassigned',
+      line:  `${appts(changes.length)} reassigned to clocked-in techs by clock-in order.`,
+      data:  { type: 'appt_reassigned' },
+    });
+  } catch { /* best-effort */ }
+}
 
 // Admin sets / resets a 4-digit PIN for an employee. Stored as scrypt(salt+pin)
 // so a stolen DB doesn't reveal PINs to a buddy-puncher trying to clock for
