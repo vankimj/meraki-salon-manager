@@ -6,7 +6,7 @@ import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, fetchGiftCardsByContact, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
-  setCheckoutSession, fetchAttendance,
+  setCheckoutSession, fetchAttendance, fetchEmployees,
 } from '../../lib/firestore';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
@@ -16,6 +16,8 @@ import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from './CardPayButton';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
 import TechTipInputs from '../../components/TechTipInputs';
+import QRCode from '../../components/QRCode';
+import TechAvatar from '../../components/TechAvatar';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
 import useOnline from '../../hooks/useOnline';
@@ -65,6 +67,9 @@ export default function CheckoutScreen({ navigation }) {
   const [tipPct, setTipPct]       = useState(null);
   const [tipAmtStr, setTipAmtStr] = useState('');
   const [perTechTips, setPerTechTips] = useState({});   // { techName: '12.00' }
+  const [tipMethod, setTipMethod] = useState('card');   // card | venmo | cash
+  const [venmoByTech, setVenmoByTech] = useState({});   // { techName: '@handle' }
+  const [photoByTech, setPhotoByTech] = useState({});   // { techName: base64/url }
   const [products, setProducts]   = useState([]);    // [{ product, qty }]
   const [allProducts, setAllProducts] = useState(null);
   const [showPicker, setShowPicker]   = useState(false);
@@ -82,6 +87,14 @@ export default function CheckoutScreen({ navigation }) {
   // Clock-in gate: load today's attendance so we can block checkout while the
   // salon is open if any credited tech isn't clocked in (admins exempt).
   useEffect(() => { fetchAttendance(attendanceKey()).then(setAttendance).catch(() => setAttendance({ entries: [] })); }, []);
+  // Venmo handles + photos per tech — drives the Venmo tip QR (off-bill tips).
+  useEffect(() => {
+    fetchEmployees().then(emps => {
+      const v = {}, p = {};
+      (emps || []).forEach(e => { if (e.name) { if (e.venmo) v[e.name] = e.venmo; if (e.photo) p[e.name] = e.photo; } });
+      setVenmoByTech(v); setPhotoByTech(p);
+    }).catch(() => {});
+  }, []);
   // Sync anything stranded offline whenever checkout opens online.
   useEffect(() => { syncOfflineSales().catch(() => {}); }, []);
 
@@ -127,6 +140,11 @@ export default function CheckoutScreen({ navigation }) {
   const tipObj = (tipMode === 'perTech')
     ? { custom: true, amount: (tipByTech || []).reduce((s, t) => s + t.amount, 0), pct: null }
     : { custom: tipMode === 'custom', amount: Number(tipAmtStr) || 0, pct: tipMode === 'pct' ? tipPct : null };
+  // The tip is added to the charge ONLY when paid by card. Venmo / cash tips go
+  // straight to the tech (QR / cash in hand), so they're never part of the bill
+  // or the recorded commission split.
+  const tipForCharge   = tipMethod === 'card' ? tipObj : { custom: true, amount: 0, pct: null };
+  const chargedTipByTech = tipMethod === 'card' ? tipByTech : null;
 
   async function openPicker() {
     if (!allProducts) {
@@ -154,10 +172,10 @@ export default function CheckoutScreen({ navigation }) {
     ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method: 'cash',
     noCardTips: !!settings?.noCardTips,
-    tip: tipObj,
+    tip: tipForCharge,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), settings, clientCredit, applyCredit]);
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), tipMethod, settings, clientCredit, applyCredit]);
 
   // Card total can differ from cash when the salon passes the card fee to the
   // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
@@ -171,12 +189,33 @@ export default function CheckoutScreen({ navigation }) {
     ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method: 'card',
     noCardTips: !!settings?.noCardTips,
-    tip: tipObj,
+    tip: tipForCharge,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), settings, clientCredit, applyCredit]);
+  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), tipMethod, settings, clientCredit, applyCredit]);
 
-  const split = buildTechSplit(lines, totals.tipAmt, tipByTech);
+  const split = buildTechSplit(lines, totals.tipAmt, chargedTipByTech);
+
+  // The tip the customer selected (drives the Venmo QR), regardless of whether
+  // it's charged — so the QR shows the right amount even when the tip is off-bill.
+  const selectedTipAmt = useMemo(() => computeTotals({
+    lines, productsTotal,
+    discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
+    promo: normalizePromo(promo), taxRate: Number(settings?.taxRate) || 0,
+    ccFeePct: 0, ccFeeFlat: 0, method: 'cash', noCardTips: false, tip: tipObj,
+    giftCardBalance: 0, applyGC: false, clientCredit: 0, applyCredit: false,
+  }).tipAmt || 0, [JSON.stringify(prices), productsTotal, discType, discVal, promo, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), settings]);
+
+  // Venmo tips: client tips a tech directly (QR to their Venmo), split per tech by
+  // service revenue (or the per-tech amounts when "Per tech"). Off the bill.
+  const venmoTechs = Object.keys(techRevenue).filter(t => t && venmoByTech[t]);
+  const totalRev   = Object.values(techRevenue).reduce((s, v) => s + v, 0);
+  function venmoTipFor(t) {
+    if (tipMode === 'perTech') return Number(perTechTips[t]) || 0;
+    const tipAmt = selectedTipAmt || 0;
+    if (!tipAmt || !totalRev) return 0;
+    return Math.round(tipAmt * ((techRevenue[t] || 0) / totalRev) * 100) / 100;
+  }
 
   async function applyPromo() {
     const p = await fetchPromoByCode(promoCode).catch(() => null);
@@ -221,7 +260,7 @@ export default function CheckoutScreen({ navigation }) {
       const args = {
         tab, lines, products, totals: t, settings, email,
         method, stripePaymentIntentId, cardBrand, cardLast4, discType, discVal, promo, giftCard,
-        saleId, skipSideEffects: isRetry, tipByTech,
+        saleId, skipSideEffects: isRetry, tipByTech: chargedTipByTech,
         receiptContact: parseReceiptContact(receiptPhone),
       };
       // Card was already charged online — record it directly (retry UI handles a
@@ -439,32 +478,74 @@ export default function CheckoutScreen({ navigation }) {
       )}
 
 
-      {!hasPhoneOnFile && (
+      <Text style={styles.section}>Send receipt to</Text>
+      {hasPhoneOnFile && (
+        <Text style={styles.muted}>Sends to the contact on file — enter a phone or email below to send it somewhere else.</Text>
+      )}
+      <TextInput style={styles.input} value={receiptPhone} onChangeText={setReceiptPhone} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} placeholder={hasPhoneOnFile ? 'Different phone or email (optional)' : 'Phone or email (optional)'} placeholderTextColor={theme.placeholder} maxLength={60} />
+
+      <Text style={styles.section}>Tip</Text>
+      <View style={styles.tipMethodRow}>
+        <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
+          <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
+        </TouchableOpacity>
+        {venmoTechs.length > 0 && (
+          <TouchableOpacity style={[styles.tipMethod, tipMethod === 'venmo' && styles.tipMethodOn]} onPress={() => setTipMethod('venmo')}>
+            <Text style={[styles.tipMethodText, tipMethod === 'venmo' && styles.tipMethodTextOn]}>💸 Venmo</Text>
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity style={[styles.tipMethod, tipMethod === 'cash' && styles.tipMethodOn]} onPress={() => setTipMethod('cash')}>
+          <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
+        </TouchableOpacity>
+      </View>
+
+      {tipMethod === 'cash' ? (
+        <View style={styles.tipCashNote}>
+          <Text style={styles.tipCashText}>No tip added to the bill — the client hands their tip in cash directly to the tech. 💚</Text>
+        </View>
+      ) : (
         <>
-          <Text style={styles.section}>Send receipt to</Text>
-          <TextInput style={styles.input} value={receiptPhone} onChangeText={setReceiptPhone} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} placeholder="Phone or email (optional)" placeholderTextColor={theme.placeholder} maxLength={60} />
+          <View style={styles.chips}>
+            <TouchableOpacity onPress={() => { setTipMode('none'); setTipPct(null); }} style={[styles.chip, tipMode === 'none' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'none' && styles.chipTextOn]}>None</Text></TouchableOpacity>
+            {TIP_PCTS.map(p => (
+              <TouchableOpacity key={p} onPress={() => { setTipMode('pct'); setTipPct(p); }} style={[styles.chip, tipMode === 'pct' && tipPct === p && styles.chipOn]}>
+                <Text style={[styles.chipText, tipMode === 'pct' && tipPct === p && styles.chipTextOn]}>{p}%</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.chip, tipMode === 'custom' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'custom' && styles.chipTextOn]}>$</Text></TouchableOpacity>
+            {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />}
+            {multiTech && (
+              <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.chip, tipMode === 'perTech' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'perTech' && styles.chipTextOn]}>Per tech</Text></TouchableOpacity>
+            )}
+          </View>
+          {tipMode === 'perTech' && (
+            <TechTipInputs techRevenue={techRevenue} values={perTechTips} photoByTech={photoByTech} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
+          )}
+          {multiTech && tipMode !== 'perTech' && selectedTipAmt > 0 && (
+            <Text style={styles.muted}>{tipMethod === 'venmo' ? 'Each tech gets their share by service amount.' : 'Split across techs by service amount — tap "Per tech" to set each.'}</Text>
+          )}
         </>
       )}
 
-      <Text style={styles.section}>Tip</Text>
-      <View style={styles.chips}>
-        <TouchableOpacity onPress={() => { setTipMode('none'); setTipPct(null); }} style={[styles.chip, tipMode === 'none' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'none' && styles.chipTextOn]}>None</Text></TouchableOpacity>
-        {TIP_PCTS.map(p => (
-          <TouchableOpacity key={p} onPress={() => { setTipMode('pct'); setTipPct(p); }} style={[styles.chip, tipMode === 'pct' && tipPct === p && styles.chipOn]}>
-            <Text style={[styles.chipText, tipMode === 'pct' && tipPct === p && styles.chipTextOn]}>{p}%</Text>
-          </TouchableOpacity>
-        ))}
-        <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.chip, tipMode === 'custom' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'custom' && styles.chipTextOn]}>$</Text></TouchableOpacity>
-        {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />}
-        {multiTech && (
-          <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.chip, tipMode === 'perTech' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'perTech' && styles.chipTextOn]}>Per tech</Text></TouchableOpacity>
-        )}
-      </View>
-      {tipMode === 'perTech' && (
-        <TechTipInputs techRevenue={techRevenue} values={perTechTips} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
-      )}
-      {multiTech && tipMode !== 'perTech' && totals.tipAmt > 0 && (
-        <Text style={styles.muted}>Split across techs by service amount — tap "Per tech" to set each.</Text>
+      {tipMethod === 'venmo' && venmoTechs.length > 0 && (
+        <View style={styles.venmoInline}>
+          <Text style={styles.venmoNote}>Have the client scan to tip the tech directly with Venmo — not added to the bill.</Text>
+          {venmoTechs.map(t => {
+            const amt = venmoTipFor(t);
+            const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
+            const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
+            return (
+              <View key={t} style={styles.venmoQrItem}>
+                <View style={styles.venmoQrHead}>
+                  <TechAvatar name={t} photo={photoByTech[t]} size={32} />
+                  <Text style={styles.venmoQrName}>{t}</Text>
+                </View>
+                <QRCode value={url} size={180} />
+                <Text style={styles.venmoQrHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
+              </View>
+            );
+          })}
+        </View>
       )}
 
       </View>
@@ -592,6 +673,19 @@ const makeStyles = (t) => StyleSheet.create({
   colFull:   { width: '100%' },
   section:   { fontSize: 13, fontWeight: '800', color: t.text, marginTop: 20, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
   muted:     { color: t.textFaint, fontSize: 13 },
+  tipMethodRow:  { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 10 },
+  tipMethod:     { flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: t.border, alignItems: 'center', backgroundColor: t.surface },
+  tipMethodOn:   { backgroundColor: t.greenSoft, borderColor: t.green },
+  tipMethodText: { fontSize: 14, fontWeight: '800', color: t.textMuted },
+  tipMethodTextOn:{ color: t.green },
+  tipCashNote:   { backgroundColor: t.greenSoft, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.green, marginBottom: 6 },
+  tipCashText:   { fontSize: 14, fontWeight: '600', color: t.green, lineHeight: 20 },
+  venmoInline:   { marginTop: 12, alignItems: 'center', gap: 16 },
+  venmoNote:     { fontSize: 13, color: t.textMuted, textAlign: 'center', lineHeight: 18 },
+  venmoQrItem:   { alignItems: 'center', backgroundColor: t.surfaceAlt, borderRadius: 16, padding: 16, width: '100%' },
+  venmoQrHead:   { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  venmoQrName:   { fontSize: 16, fontWeight: '800', color: t.text },
+  venmoQrHandle: { fontSize: 15, fontWeight: '700', color: '#3D95CE', marginTop: 12 },
   lineRow:   { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: t.border },
   lineName:  { fontSize: 15, fontWeight: '700', color: t.text },
   lineTech:  { fontSize: 12, color: t.textMuted, marginTop: 2 },
