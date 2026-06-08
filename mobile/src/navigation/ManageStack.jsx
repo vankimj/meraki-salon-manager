@@ -16,6 +16,8 @@ import EmployeesScreen     from '../screens/manage/EmployeesScreen';
 import MeetingsScreen      from '../screens/manage/MeetingsScreen';
 import WalkinScreen        from '../screens/manage/WalkinScreen';
 import HelpScreen          from '../screens/manage/HelpScreen';
+import MerchantOnboardingScreen from '../screens/manage/MerchantOnboardingScreen';
+import TapToPaySetupScreen  from '../screens/manage/TapToPaySetupScreen';
 import ReportsScreen       from '../screens/manage/ReportsScreen';
 import ReceiptsScreen      from '../screens/manage/ReceiptsScreen';
 import HRScreen            from '../screens/manage/HRScreen';
@@ -88,6 +90,10 @@ export default function ManageStack() {
 
       <Stack.Screen name="Help" component={HelpScreen}
         options={{ headerTitle: () => <HeaderTitle title="Help & Guide" /> }} />
+      <Stack.Screen name="MerchantOnboarding" component={MerchantOnboardingScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Payments setup" /> }} />
+      <Stack.Screen name="TapToPaySetup" component={TapToPaySetupScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Tap to Pay" /> }} />
 
       <Stack.Screen name="Trash" component={TrashScreen}
         options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />

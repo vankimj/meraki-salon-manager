@@ -394,6 +394,24 @@ export async function chatWithReports(messages) {
   const res = await callFn('chatWithReports')({ tenantId: getCurrentTenant(), messages });
   return res?.data || { reply: '' };
 }
+
+// ── Stripe Connect (merchant onboarding / KYC) — wraps the existing backend ──
+export async function getStripeConnectStatus() {
+  const res = await callFn('getStripeConnectStatus')({ tenantId: getCurrentTenant() });
+  return res?.data || { connected: false };
+}
+export async function createExpressAccount() {
+  const res = await callFn('createExpressAccount')({ tenantId: getCurrentTenant() });
+  return res?.data || {};
+}
+export async function createAccountOnboardingLink() {
+  const res = await callFn('createAccountOnboardingLink')({ tenantId: getCurrentTenant() });
+  return res?.data || {};   // { url, expiresAt }
+}
+export async function createExpressLoginLink() {
+  const res = await callFn('createExpressLoginLink')({ tenantId: getCurrentTenant() });
+  return res?.data || {};   // { url, accountType }
+}
 export async function sendEmailToClient(clientId, subject, body) {
   const res = await callFn('sendDirectEmail')({ tenantId: getCurrentTenant(), clientId, subject, body });
   return res?.data || { ok: true };
