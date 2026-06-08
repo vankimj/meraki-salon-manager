@@ -87,6 +87,7 @@ export default function TimeClockKiosk() {
   const [now,        setNow]        = useState(new Date());
   const [picked,     setPicked]     = useState(null);  // employee record
   const [doneInfo,   setDoneInfo]   = useState(null);  // { name, label }
+  const [noPinName,  setNoPinName]  = useState(null);  // tech tapped without a PIN set
   const dateKey = useMemo(() => todayStr(now), [now]);
 
   // Initial employee load. Filtered to active so retired techs don't clog
@@ -143,9 +144,10 @@ export default function TimeClockKiosk() {
             const events = e?.events || [];
             const state = computeState(events);
             const chip  = chipForState(state, events);
+            const noPin = !emp.pinHash;
             return (
               <button key={emp.id}
-                onClick={() => setPicked(emp)}
+                onClick={() => noPin ? setNoPinName(emp.name) : setPicked(emp)}
                 style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
                   padding: '18px 12px 14px',
@@ -158,6 +160,7 @@ export default function TimeClockKiosk() {
                   textAlign: 'center',
                   minHeight: 170,
                   transition: 'transform .1s',
+                  opacity: noPin ? 0.5 : 1,
                 }}
                 onMouseDown={ev => ev.currentTarget.style.transform = 'scale(.97)'}
                 onMouseUp={ev => ev.currentTarget.style.transform = 'scale(1)'}
@@ -165,7 +168,9 @@ export default function TimeClockKiosk() {
               >
                 <EmpAvatar emp={emp} size={64} />
                 <div style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2 }}>{emp.name}</div>
-                {chip ? (
+                {noPin ? (
+                  <div style={{ fontSize: 11, fontWeight: 600, color: '#c98b2e' }}>No PIN set</div>
+                ) : chip ? (
                   <div style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 999, background: chip.bg, color: chip.fg }}>{chip.label}</div>
                 ) : (
                   <div style={{ fontSize: 11, color: '#7a6a9a' }}>Not clocked in</div>
@@ -192,6 +197,33 @@ export default function TimeClockKiosk() {
           onDismiss={() => setDoneInfo(null)}
         />
       )}
+
+      {noPinName && (
+        <NoPinOverlay name={noPinName} onDismiss={() => setNoPinName(null)} />
+      )}
+    </div>
+  );
+}
+
+// Tech tapped a tile but has no PIN configured. Kiosk clock-in is impossible
+// until an admin sets one in Employees — tell them plainly instead of opening a
+// keypad that can only fail.
+function NoPinOverlay({ name, onDismiss }) {
+  useEffect(() => {
+    const t = setTimeout(onDismiss, 4000);
+    return () => clearTimeout(t);
+  }, [onDismiss]);
+  return (
+    <div onClick={onDismiss}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(20,12,4,.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 250, color: '#fff', textAlign: 'center', cursor: 'pointer', padding: 24 }}>
+      <div>
+        <div style={{ fontSize: 72, marginBottom: 12 }}>🔒</div>
+        <div style={{ fontSize: 28, fontWeight: 700, marginBottom: 8 }}>No PIN set</div>
+        <div style={{ fontSize: 17, opacity: 0.85, maxWidth: 420 }}>
+          {name} doesn’t have a clock-in PIN yet. Ask an admin to set one in Employees, then try again.
+        </div>
+        <div style={{ marginTop: 24, fontSize: 12, opacity: 0.6, letterSpacing: '.05em' }}>Tap anywhere to dismiss</div>
+      </div>
     </div>
   );
 }

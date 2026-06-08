@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
 import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance } from '../../lib/firestore';
+import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
@@ -450,6 +451,23 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
         alert('Pick an existing client from the search box, or use "+ Create new client contact" to add one. Anonymous appointments are no longer allowed — every client needs a phone number.');
         return;
       }
+
+      // Clock-in gate: a tech editing their own calendar while the salon is open
+      // ("on shift") must be clocked in. Off shift (salon closed) they can edit
+      // freely so they can plan from home. Admins/schedulers manage schedules as
+      // their job and aren't gated. Workflow guard — server still authorizes.
+      if (isTech && !isAdmin && isSalonOpenNow(settings)) {
+        try {
+          const att = await fetchAttendance(attendanceKey());
+          const inSet = clockedInNameSet(att);
+          if (myTechName && !inSet.has(String(myTechName).trim().toLowerCase())) {
+            const msg = 'Clock in at the Time Clock before changing your schedule during open hours.';
+            showToast ? showToast(msg, 6000) : alert(msg);
+            return;
+          }
+        } catch { /* attendance unreadable → fail open */ }
+      }
+
       const dur = appt.services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0) || 60;
       // Out-of-hours warning is now surfaced inline in ApptModal's Review
       // panel before the user clicks Save (one consolidated review surface

@@ -6,8 +6,9 @@ import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, fetchGiftCardsByContact, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
-  setCheckoutSession,
+  setCheckoutSession, fetchAttendance,
 } from '../../lib/firestore';
+import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
@@ -26,12 +27,13 @@ const TIP_PCTS = [15, 18, 20, 25];
 // is Slice 2 — the Card button is present but disabled. Writes the same
 // receipt shape (done appt + payment) the web does, so Reports/Earnings update.
 export default function CheckoutScreen({ navigation }) {
-  const { email } = useTenantAccess();
+  const { email, isAdmin } = useTenantAccess();
   const { isTablet } = useResponsive();
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const pageMax = isTablet ? 920 : undefined;
   const [settings, setSettings] = useState(null);
+  const [attendance, setAttendance] = useState(null);
   const [tab] = useState(() => getCurrentTab());
 
   // Flatten appt services into editable lines.
@@ -77,6 +79,9 @@ export default function CheckoutScreen({ navigation }) {
   const online = useOnline();
 
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
+  // Clock-in gate: load today's attendance so we can block checkout while the
+  // salon is open if any credited tech isn't clocked in (admins exempt).
+  useEffect(() => { fetchAttendance(attendanceKey()).then(setAttendance).catch(() => setAttendance({ entries: [] })); }, []);
   // Sync anything stranded offline whenever checkout opens online.
   useEffect(() => { syncOfflineSales().catch(() => {}); }, []);
 
@@ -100,6 +105,14 @@ export default function CheckoutScreen({ navigation }) {
 
   const lines = lines0.map((l, i) => ({ ...l, price: Number(prices[i]) || 0 }));
   const productsTotal = products.reduce((s, it) => s + (Number(it.product.price) || 0) * it.qty, 0);
+
+  // Clock-in gate: while the salon is open, every tech credited on this sale
+  // must be clocked in. Admins exempt; off-shift (closed) no gate. We only block
+  // once attendance + settings have loaded so we never block during the fetch.
+  const offClock = (!isAdmin && settings && attendance && isSalonOpenNow(settings))
+    ? offClockTechNames(lines.map(l => l.techName), attendance)
+    : [];
+  const gateBlocked = offClock.length > 0;
 
   // Service revenue per tech → the optional per-tech tip fields (2+ techs only).
   const techRevenue = useMemo(() => {
@@ -236,6 +249,10 @@ export default function CheckoutScreen({ navigation }) {
   function settle(method, opts = {}) {
     if (paid) return;
     if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to check out.'); return; }
+    if (gateBlocked) {
+      Alert.alert('Clock in required', `${offClock.join(', ')} ${offClock.length > 1 ? 'are' : 'is'} not clocked in. They must clock in at the Time Clock before checkout.`);
+      return;
+    }
     setPaid({ method, opts });
     doRecord({ method, ...opts }, false);
   }
@@ -249,6 +266,10 @@ export default function CheckoutScreen({ navigation }) {
   async function sendToFrontDesk() {
     if (paid) return;
     if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to send.'); return; }
+    if (gateBlocked) {
+      Alert.alert('Clock in required', `${offClock.join(', ')} ${offClock.length > 1 ? 'are' : 'is'} not clocked in. They must clock in at the Time Clock before checkout.`);
+      return;
+    }
     setSaving(true);
     try {
       const appts = (tab.appts || []).map((a, apptIdx) => ({
@@ -490,6 +511,11 @@ export default function CheckoutScreen({ navigation }) {
               <Text style={styles.offlineText}>📴 Offline — take cash or store credit now; the receipt syncs automatically when you're back online. Card needs a live connection.</Text>
             </View>
           )}
+          {gateBlocked && (
+            <View style={styles.gateNote}>
+              <Text style={styles.gateText}>🔒 {offClock.join(', ')} {offClock.length > 1 ? 'are' : 'is'} not clocked in. They must clock in at the Time Clock before checkout.</Text>
+            </View>
+          )}
           {/* Card / Tap to Pay first — req 5.2 keeps it at the top of the
               payment options, accessible without scrolling. */}
           {!online ? (
@@ -503,17 +529,17 @@ export default function CheckoutScreen({ navigation }) {
               merchantName={settings?.salonName || settings?.name || 'Salon'}
               preferReader={isTablet}
               idempotencyKey={saleId}
-              disabled={saving || (lines.length === 0 && products.length === 0)}
+              disabled={saving || gateBlocked || (lines.length === 0 && products.length === 0)}
               onPaid={(piId, card) => settle('card', { stripePaymentIntentId: piId, cardBrand: card?.brand || null, cardLast4: card?.last4 || null })}
             />
           ) : (
             <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
           )}
-          <TouchableOpacity style={[styles.payBtn, saving && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving}>
+          <TouchableOpacity style={[styles.payBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving || gateBlocked}>
             <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
           </TouchableOpacity>
           {online && (
-            <TouchableOpacity style={[styles.deskBtn, saving && { opacity: 0.6 }]} onPress={sendToFrontDesk} disabled={saving} activeOpacity={0.85}>
+            <TouchableOpacity style={[styles.deskBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={sendToFrontDesk} disabled={saving || gateBlocked} activeOpacity={0.85}>
               <Text style={styles.deskBtnText}>🏪  Send to front desk</Text>
               <Text style={styles.deskBtnSub}>Client adds the tip + pays at the kiosk — this exact total &amp; all discounts carry over</Text>
             </TouchableOpacity>
@@ -599,6 +625,8 @@ const makeStyles = (t) => StyleSheet.create({
   clearText: { color: t.green, fontWeight: '800', fontSize: 13 },
   offlineNote:{ backgroundColor: t.warnBg || t.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.warn || t.borderStrong },
   offlineText:{ fontSize: 12.5, color: t.text, lineHeight: 18 },
+  gateNote:  { backgroundColor: t.warnBg || t.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.warn || t.borderStrong },
+  gateText:  { fontSize: 12.5, color: t.text, lineHeight: 18, fontWeight: '600' },
   creditRow:  { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12, backgroundColor: t.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.border },
   creditRowOn:{ borderColor: t.green, backgroundColor: t.greenSoft },
   creditLabel:{ fontSize: 14, fontWeight: '700', color: t.text },
