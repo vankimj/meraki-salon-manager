@@ -188,7 +188,10 @@ export default function ScheduleScreen({ navigation }) {
   const [appts,   setAppts]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showAll, setShowAll] = useState(false); // admins / floor-view toggle
+  // Role-aware tech filter. EMPTY set = "Everyone" (admins only). Non-admins
+  // are hard-scoped to their own techName below and never see this control.
+  const [selectedTechs, setSelectedTechs] = useState(() => new Set());  // names; EMPTY = "Everyone" (admins only)
+  const [filterOpen, setFilterOpen] = useState(false);
   const [detail,  setDetail]  = useState(null);  // selected appt for the modal
   const [refundAppt, setRefundAppt] = useState(null);  // appt being refunded
   const [view,    setView]    = useState('day'); // 'day' | 'week' | 'month'
@@ -285,10 +288,26 @@ export default function ScheduleScreen({ navigation }) {
     return shiftDate(delta);
   }
 
+  // ── Role-aware tech scoping ──────────────────────────
+  // Non-admins (techs) are HARD-SCOPED to their own techName in every view —
+  // they never see another tech's appointments and get no filter control.
+  // Admins default to "Everyone" (empty set) and can narrow to a subset.
+  const everyone = isAdmin && selectedTechs.size === 0;
+  const visibleTechs = useMemo(() => {
+    if (!isAdmin) return techName ? [techName] : [];
+    if (!selectedTechs.size) return allTechs;
+    return allTechs.filter(t => selectedTechs.has(t));
+  }, [isAdmin, techName, allTechs, selectedTechs]);
+  const visibleSet = useMemo(() => new Set(visibleTechs), [visibleTechs]);
+  const ownOnly = visibleTechs.length === 1 && visibleTechs[0] === techName;
+  // Keep the name `showAll` so the views' prop wiring stays; it means
+  // "multi-tech layout" — true unless we're scoped to exactly the user's own.
+  const showAll = !ownOnly;
+
   const filtered = useMemo(() => {
-    if (showAll || !techName) return appts;
-    return appts.filter(a => (a.techName || '') === techName);
-  }, [appts, showAll, techName]);
+    if (everyone) return appts;                 // admin viewing everyone — include blank-tech appts too
+    return appts.filter(a => visibleSet.has(a.techName || ''));
+  }, [appts, everyone, visibleSet]);
 
   const isToday = date === todayStr();
   const displayDate = (() => {
@@ -318,7 +337,7 @@ export default function ScheduleScreen({ navigation }) {
           {view === 'day' && (
             <Text style={styles.apptCount}>
               {filtered.length} appt{filtered.length !== 1 ? 's' : ''}
-              {!showAll && techName ? ` · ${techName}` : ''}
+              {everyone ? '' : (ownOnly ? ' · Just me' : ` · ${visibleTechs.join(', ')}`)}
             </Text>
           )}
         </View>
@@ -358,13 +377,14 @@ export default function ScheduleScreen({ navigation }) {
             <Text style={styles.chipBlueText}>Today</Text>
           </TouchableOpacity>
         )}
-        {techName && (
+        {/* Tech filter — admins only. Non-admins are locked to their own schedule. */}
+        {isAdmin && (
           <TouchableOpacity
-            style={[styles.chip, showAll ? styles.chipBlue : styles.chipMuted]}
-            onPress={() => setShowAll(v => !v)}
+            style={[styles.chip, everyone ? styles.chipBlue : styles.chipMuted]}
+            onPress={() => setFilterOpen(true)}
           >
-            <Text style={showAll ? styles.chipBlueText : styles.chipMutedText}>
-              {showAll ? '👥 All techs' : '👤 Just me'}
+            <Text style={everyone ? styles.chipBlueText : styles.chipMutedText}>
+              {everyone ? '👥 All techs' : ownOnly ? '👤 Just me' : `👥 ${visibleTechs.length} techs`}
             </Text>
           </TouchableOpacity>
         )}
@@ -375,6 +395,7 @@ export default function ScheduleScreen({ navigation }) {
           date={date}
           techName={techName}
           showAll={showAll}
+          allTechs={everyone ? allTechs : visibleTechs}
           onPickDay={(d) => { setDate(d); setView('day'); }}
         />
       )}
@@ -384,7 +405,7 @@ export default function ScheduleScreen({ navigation }) {
           date={date}
           techName={techName}
           showAll={showAll}
-          allTechs={allTechs}
+          allTechs={everyone ? allTechs : visibleTechs}
           clientsById={clientsById}
           workDays={employee?.workDays}
           timeOff={timeOff}
@@ -400,7 +421,7 @@ export default function ScheduleScreen({ navigation }) {
         ) : (isTablet && showAll) ? (
           <DayGridView
             appts={filtered}
-            allTechs={allTechs}
+            allTechs={everyone ? allTechs : visibleTechs}
             clientsById={clientsById}
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); setTimeout(() => setRefreshing(false), 600); }}
@@ -418,7 +439,7 @@ export default function ScheduleScreen({ navigation }) {
             appts={filtered}
             date={date}
             showAll={showAll}
-            allTechs={allTechs}
+            allTechs={everyone ? allTechs : visibleTechs}
             clientsById={clientsById}
             workDays={employee?.workDays}
             timeOff={timeOff}
@@ -485,7 +506,97 @@ export default function ScheduleScreen({ navigation }) {
 
       <TabModal open={tabOpen} tab={tabSnap} onClose={() => setTabOpen(false)}
         onCheckout={() => { setTabOpen(false); navigation.navigate('Checkout'); }} />
+
+      <TechFilterModal
+        open={isAdmin && filterOpen}
+        allTechs={allTechs}
+        selected={selectedTechs}
+        myTech={techName}
+        onEveryone={() => setSelectedTechs(new Set())}
+        onJustMe={() => setSelectedTechs(new Set(techName ? [techName] : []))}
+        onToggle={(name) => setSelectedTechs(prev => {
+          const next = new Set(prev);
+          if (next.has(name)) next.delete(name); else next.add(name);
+          return next;
+        })}
+        onClose={() => setFilterOpen(false)}
+      />
     </View>
+  );
+}
+
+// ── Tech filter modal (admins only) ────────────────────
+// Bottom-sheet that lets an admin choose whose schedule to view:
+// Everyone (all techs), Just me, or an arbitrary multi-select subset.
+// Non-admins never see this — they're hard-scoped to their own techName.
+function TechFilterModal({ open, allTechs, selected, myTech, onEveryone, onJustMe, onToggle, onClose }) {
+  const styles = useThemedStyles(makeStyles);
+  if (!open) return null;
+  const isEveryone = selected.size === 0;
+  const isJustMe = !!myTech && selected.size === 1 && selected.has(myTech);
+
+  return (
+    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalSheet, { height: '70%' }]}>
+          <View style={styles.modalHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.modalTitle}>Show schedule for</Text>
+            </View>
+            <TouchableOpacity onPress={onClose} style={styles.modalClose}>
+              <Text style={styles.modalCloseText}>×</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+            <TouchableOpacity
+              style={[styles.techFilterRow, isEveryone && styles.techFilterRowActive]}
+              onPress={onEveryone}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.techFilterLabel}>👥 Everyone</Text>
+              {isEveryone && <Text style={styles.techFilterCheck}>✓</Text>}
+            </TouchableOpacity>
+
+            {!!myTech && (
+              <TouchableOpacity
+                style={[styles.techFilterRow, isJustMe && styles.techFilterRowActive]}
+                onPress={onJustMe}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.techFilterLabel}>👤 Just me</Text>
+                {isJustMe && <Text style={styles.techFilterCheck}>✓</Text>}
+              </TouchableOpacity>
+            )}
+
+            <View style={styles.techFilterDivider} />
+
+            {(allTechs || []).map(name => {
+              const checked = selected.has(name);
+              return (
+                <TouchableOpacity
+                  key={name}
+                  style={styles.techFilterRow}
+                  onPress={() => onToggle(name)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.techFilterLabel}>{name}</Text>
+                  <View style={[styles.techFilterBox, checked && styles.techFilterBoxChecked]}>
+                    {checked && <Text style={styles.techFilterBoxCheck}>✓</Text>}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <View style={{ paddingHorizontal: 16, paddingTop: 8 }}>
+            <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={onClose}>
+              <Text style={styles.primaryBtnText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -795,7 +906,7 @@ function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, ti
       .then(list => {
         if (cancelled) return;
         const filtered = (showAll || !techName)
-          ? list
+          ? list.filter(a => !allTechs || allTechs.includes(a.techName || ''))
           : list.filter(a => (a.techName || '') === techName);
         const map = {};
         filtered.forEach(a => {
@@ -809,7 +920,7 @@ function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, ti
       .catch(() => { if (!cancelled) setByDay({}); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [startIso, endIso, techName, showAll]);
+  }, [startIso, endIso, techName, showAll, (allTechs || []).join('|')]);
 
   const today = todayStr();
 
@@ -1349,7 +1460,7 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
 // when you drill in).
 const WEEKDAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
-function MonthView({ date, techName, showAll, onPickDay }) {
+function MonthView({ date, techName, showAll, allTechs, onPickDay }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { contentMaxWidth } = useResponsive();
@@ -1370,7 +1481,7 @@ function MonthView({ date, techName, showAll, onPickDay }) {
       .then(list => {
         if (cancelled) return;
         const filtered = (showAll || !techName)
-          ? list
+          ? list.filter(a => !allTechs || allTechs.includes(a.techName || ''))
           : list.filter(a => (a.techName || '') === techName);
         const map = {};
         filtered.forEach(a => { if (a.date) map[a.date] = (map[a.date] || 0) + 1; });
@@ -1379,7 +1490,7 @@ function MonthView({ date, techName, showAll, onPickDay }) {
       .catch(() => { if (!cancelled) setByDay({}); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [monthStartIso, monthEndIso, techName, showAll]);
+  }, [monthStartIso, monthEndIso, techName, showAll, (allTechs || []).join('|')]);
 
   // Build a 6-row × 7-col grid. Pad with prev/next-month blanks so
   // weekday columns stay aligned.
@@ -1909,6 +2020,24 @@ const makeStyles = (t) => StyleSheet.create({
   viewSwitchBtnActive:  { backgroundColor: t.surface, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.10, shadowRadius: 2, elevation: 2 },
   viewSwitchText:       { fontSize: 14, color: t.textMuted, fontWeight: '500' },
   viewSwitchTextActive: { color: t.text, fontWeight: '700' },
+
+  // Tech filter modal rows
+  techFilterRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 14, minHeight: 52,
+    borderRadius: 12, marginBottom: 8, borderWidth: 1, borderColor: t.border,
+    backgroundColor: t.surface,
+  },
+  techFilterRowActive: { backgroundColor: t.blueSoft, borderColor: t.blue },
+  techFilterLabel: { fontSize: 15, fontWeight: '600', color: t.text },
+  techFilterCheck: { fontSize: 18, fontWeight: '700', color: t.blue },
+  techFilterDivider: { height: 1, backgroundColor: t.border, marginVertical: 10 },
+  techFilterBox: {
+    width: 24, height: 24, borderRadius: 6, borderWidth: 2, borderColor: t.borderStrong,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: t.surface,
+  },
+  techFilterBoxChecked: { backgroundColor: t.blue, borderColor: t.blue },
+  techFilterBoxCheck: { color: '#fff', fontSize: 14, fontWeight: '700' },
 
   // Day timeline
   dayTimelineRow:     { flexDirection: 'row', borderBottomWidth: 0.5, borderBottomColor: t.border },
