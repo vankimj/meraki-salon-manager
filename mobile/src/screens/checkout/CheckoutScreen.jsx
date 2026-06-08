@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
-  fetchSettings, fetchPromoByCode, fetchGiftCardByCode, updateAppointment,
+  fetchSettings, fetchPromoByCode, fetchGiftCardByCode, fetchGiftCardsByContact, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
   setCheckoutSession,
 } from '../../lib/firestore';
@@ -54,6 +54,10 @@ export default function CheckoutScreen({ navigation }) {
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
+  const [gcSearchOpen, setGcSearchOpen] = useState(false);
+  const [gcQ, setGcQ]             = useState('');
+  const [gcResults, setGcResults] = useState(null);
+  const [gcSearching, setGcSearching] = useState(false);
   const [giftCard, setGiftCard]   = useState(null);
   const [tipMode, setTipMode]     = useState('none');   // none | pct | custom | perTech
   const [tipPct, setTipPct]       = useState(null);
@@ -167,11 +171,22 @@ export default function CheckoutScreen({ navigation }) {
     if (p.active === false) { Alert.alert('Promo inactive'); return; }
     setPromo(p);
   }
-  async function applyGiftCard() {
-    const g = await fetchGiftCardByCode(gcCode).catch(() => null);
+  function applyFoundGiftCard(g) {
     if (!g) { Alert.alert('Gift card not found'); return; }
     if ((g.balance || 0) <= 0) { Alert.alert('Gift card has no balance'); return; }
-    setGiftCard(g);
+    setGiftCard(g); setGcCode(g.code || '');
+    setGcSearchOpen(false); setGcQ(''); setGcResults(null);
+  }
+  async function applyGiftCard() {
+    applyFoundGiftCard(await fetchGiftCardByCode(gcCode).catch(() => null));
+  }
+  async function searchGiftCards() {
+    const q = gcQ.trim();
+    if (q.length < 2) return;
+    setGcSearching(true);
+    try { setGcResults(await fetchGiftCardsByContact(q)); }
+    catch { setGcResults([]); }
+    finally { setGcSearching(false); }
   }
 
   function confirmCash() {
@@ -351,8 +366,46 @@ export default function CheckoutScreen({ navigation }) {
         <TextInput style={[styles.input, { flex: 1 }]} value={gcCode} onChangeText={setGcCode} autoCapitalize="characters" placeholder="GC-XXXX" placeholderTextColor={theme.placeholder} editable={!giftCard} />
         {giftCard
           ? <TouchableOpacity onPress={() => { setGiftCard(null); setGcCode(''); }} style={styles.clearBtn}><Text style={styles.clearText}>✕ -{money(totals.gcApply)}</Text></TouchableOpacity>
-          : <TouchableOpacity onPress={applyGiftCard} style={styles.applyBtn}><Text style={styles.applyText}>Apply</Text></TouchableOpacity>}
+          : <>
+              <TouchableOpacity onPress={() => { setGcSearchOpen(true); setGcQ(''); setGcResults(null); }} style={styles.findBtn}><Text style={styles.findText}>Find</Text></TouchableOpacity>
+              <TouchableOpacity onPress={applyGiftCard} style={styles.applyBtn}><Text style={styles.applyText}>Apply</Text></TouchableOpacity>
+            </>}
       </View>
+
+      <Modal visible={gcSearchOpen} transparent animationType="slide" onRequestClose={() => setGcSearchOpen(false)}>
+        <View style={styles.gcBackdrop}>
+          <View style={styles.gcSheet}>
+            <View style={styles.gcHead}>
+              <Text style={styles.gcTitle}>Find a gift card</Text>
+              <TouchableOpacity onPress={() => setGcSearchOpen(false)}><Text style={styles.gcClose}>✕</Text></TouchableOpacity>
+            </View>
+            <Text style={styles.gcSub}>Search by recipient name, phone, or email.</Text>
+            <View style={styles.applyRow}>
+              <TextInput style={[styles.input, { flex: 1 }]} value={gcQ} onChangeText={setGcQ} placeholder="Name, phone, or email" placeholderTextColor={theme.placeholder} autoCapitalize="none" onSubmitEditing={searchGiftCards} returnKeyType="search" />
+              <TouchableOpacity onPress={searchGiftCards} style={styles.applyBtn}><Text style={styles.applyText}>{gcSearching ? '…' : 'Search'}</Text></TouchableOpacity>
+            </View>
+            {gcResults !== null && (gcResults.length === 0 ? (
+              <Text style={styles.gcEmpty}>No matching gift cards with a balance.</Text>
+            ) : (
+              <FlatList
+                data={gcResults}
+                keyExtractor={(g) => g.id}
+                style={{ maxHeight: 340, marginTop: 8 }}
+                keyboardShouldPersistTaps="handled"
+                renderItem={({ item }) => (
+                  <TouchableOpacity style={styles.gcResult} onPress={() => applyFoundGiftCard(item)}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.gcResultName} numberOfLines={1}>{item.recipientName || item.code}</Text>
+                      <Text style={styles.gcResultSub} numberOfLines={1}>{item.code}{item.recipientPhone ? ` · ${item.recipientPhone}` : ''}{item.recipientEmail ? ` · ${item.recipientEmail}` : ''}</Text>
+                    </View>
+                    <Text style={styles.gcResultBal}>{money(item.balance)}</Text>
+                  </TouchableOpacity>
+                )}
+              />
+            ))}
+          </View>
+        </View>
+      </Modal>
 
       {clientCredit > 0 && (
         <TouchableOpacity activeOpacity={0.7} onPress={() => setApplyCredit(v => !v)} style={[styles.creditRow, applyCredit && styles.creditRowOn]}>
@@ -527,6 +580,19 @@ const makeStyles = (t) => StyleSheet.create({
   input:     { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   applyBtn:  { backgroundColor: t.blue, borderRadius: 10, paddingHorizontal: 18, justifyContent: 'center' },
   applyText: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  findBtn:   { backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.border, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
+  findText:  { color: t.text, fontWeight: '800', fontSize: 14 },
+  gcBackdrop:{ flex: 1, backgroundColor: t.overlay, justifyContent: 'flex-end' },
+  gcSheet:   { backgroundColor: t.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 18, paddingBottom: 28 },
+  gcHead:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  gcTitle:   { fontSize: 18, fontWeight: '800', color: t.text },
+  gcClose:   { fontSize: 20, color: t.textMuted, paddingHorizontal: 6 },
+  gcSub:     { fontSize: 13, color: t.textMuted, marginTop: 2, marginBottom: 12 },
+  gcEmpty:   { fontSize: 14, color: t.textFaint, paddingVertical: 16, textAlign: 'center' },
+  gcResult:  { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: t.border },
+  gcResultName:{ fontSize: 15, fontWeight: '700', color: t.text },
+  gcResultSub: { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  gcResultBal: { fontSize: 16, fontWeight: '800', color: t.green },
   clearBtn:  { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 10, paddingHorizontal: 14, justifyContent: 'center' },
   clearText: { color: t.green, fontWeight: '800', fontSize: 13 },
   offlineNote:{ backgroundColor: t.warnBg || t.surfaceAlt, borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.warn || t.borderStrong },

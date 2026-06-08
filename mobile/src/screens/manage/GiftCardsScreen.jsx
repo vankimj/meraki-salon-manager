@@ -20,6 +20,9 @@ const CARD_FIELDS = [
   { key: 'code',    label: 'Code',        type: 'text',   required: true },
   { key: 'value',   label: 'Value ($)',   type: 'number', placeholder: '50' },
   { key: 'balance', label: 'Balance ($)', type: 'number', placeholder: '50' },
+  { key: 'recipientName',  label: 'Recipient name',  type: 'text', placeholder: 'For lookup by name' },
+  { key: 'recipientPhone', label: 'Recipient phone', type: 'text', placeholder: 'For lookup by phone' },
+  { key: 'recipientEmail', label: 'Recipient email', type: 'text', placeholder: 'For lookup / emailing the code' },
   { key: 'active',  label: 'Active',      type: 'bool' },
   { key: 'voided',  label: 'Void this card', type: 'bool' },
 ];
@@ -55,7 +58,7 @@ export default function GiftCardsScreen({ navigation }) {
           save={(id, d) => updateGiftCard(id, d.voided ? { ...d, balance: 0, active: false, voidedAt: new Date().toISOString() } : d)}
           remove={deleteGiftCard}
           canEdit={isAdmin}
-          blank={() => ({ code: genCode('GC'), value: 0, balance: 0, active: true, voided: false })}
+          blank={() => ({ code: genCode('GC'), value: 0, balance: 0, recipientName: '', recipientPhone: '', recipientEmail: '', active: true, voided: false })}
           fields={CARD_FIELDS}
           titleOf={(c) => c.code}
           subtitleOf={(c) => c.voided ? `VOIDED · was $${c.value ?? 0}` : `$${c.balance ?? c.value ?? 0} of $${c.value ?? 0}${c.active === false ? ' · inactive' : ''}`}
