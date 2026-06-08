@@ -176,6 +176,19 @@ describe('computeMetrics — byTech', () => {
     expect(m.byTech.Yasmin.count).toBe(1);
     expect(m.byTech.Tess.count).toBe(1);
   });
+  it('transfers redo revenue from the original tech to the redo tech (salon net $0)', () => {
+    const m = computeMetrics([
+      tx({
+        techName: 'Yasmin',
+        services: [{ name: 'Manicure', price: 40, techName: 'Yasmin' }],
+        payment: { techSplit: [{ techName: 'Yasmin', revenue: 40 }], total: 40, subtotal: 40 },
+        redos: [{ services: [{ name: 'Manicure', amount: 40, fromTech: 'Yasmin' }], toTech: 'Tess', amount: 40, reason: 'chip' }],
+      }),
+    ], TODAY);
+    expect(m.byTech.Yasmin.revenue).toBe(0);   // original tech loses the redone service
+    expect(m.byTech.Tess.revenue).toBe(40);    // redo tech gains it
+    expect(m.totalRevenue).toBe(40);           // salon total unchanged
+  });
   it('counts unique clients per tech', () => {
     const m = computeMetrics([
       tx({ techName: 'Yasmin', clientId: 'c1' }),

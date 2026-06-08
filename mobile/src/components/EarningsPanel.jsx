@@ -29,7 +29,7 @@ const fmtDateShort = (s) => { if (!s) return ''; const d = new Date(s + (s.lengt
 // Honors techSplit when present so multi-tech checkouts attribute correctly.
 function computeTechSlice(receipts, appointments, techName) {
   let revenue = 0, tips = 0, serviceCount = 0;
-  const clientIds = new Set(), tipEntries = [], services = {}, byDay = {};
+  const clientIds = new Set(), tipEntries = [], redoEntries = [], services = {}, byDay = {};
   receipts.forEach(r => {
     const p = r.payment || {};
     const refundList = Array.isArray(r.refunds) ? r.refunds : (r.refund ? [r.refund] : []);
@@ -59,6 +59,14 @@ function computeTechSlice(receipts, appointments, techName) {
         if (treat === 'withhold') { const dock = (myRev / totalRev) * (Number(rf.amount) || 0); revenue -= dock; rTake -= dock; }
       });
     }
+    // Redo transfer: the original tech loses the redone service's revenue; the
+    // redo tech gains it. Captured as audit lines so the tech sees why pay moved.
+    (Array.isArray(r.redos) ? r.redos : []).forEach(rd => {
+      (rd.services || []).forEach(it => {
+        if (it.fromTech === techName) { const d = Number(it.amount) || 0; revenue -= d; rTake -= d; redoEntries.push({ date: rd.redoneAt || r.date, dir: 'out', amount: d, label: it.name, other: rd.toTech, reason: rd.reason, client: r.clientName || 'Walk-in' }); }
+      });
+      if (rd.toTech === techName) { const d = Number(rd.amount) || 0; revenue += d; rTake += d; redoEntries.push({ date: rd.redoneAt || r.date, dir: 'in', amount: d, label: (rd.services || []).map(s => s.name).join(', '), other: [...new Set((rd.services || []).map(s => s.fromTech).filter(Boolean))].join(', '), reason: rd.reason, client: r.clientName || 'Walk-in' }); }
+    });
     if (rTake !== 0 && r.date) byDay[r.date] = (byDay[r.date] || 0) + rTake;
     if (r.clientId && !legacyNeg && (r.techName === techName || (p.techSplit || []).some(s => s.techName === techName))) clientIds.add(r.clientId);
   });
@@ -73,8 +81,9 @@ function computeTechSlice(receipts, appointments, techName) {
     if ((a.services || []).length === 0) serviceCount += 1;
   });
   tipEntries.sort((a, b) => `${b.date}`.localeCompare(`${a.date}`));
+  redoEntries.sort((a, b) => `${b.date}`.localeCompare(`${a.date}`));
   const serviceList = Object.entries(services).map(([name, v]) => ({ name, ...v })).sort((a, b) => b.count - a.count);
-  return { revenue, tips, serviceCount, clientCount: clientIds.size, tipEntries, serviceList, byDay };
+  return { revenue, tips, serviceCount, clientCount: clientIds.size, tipEntries, redoEntries, serviceList, byDay };
 }
 
 const RANGES = [{ id: 'today', label: 'Today' }, { id: 'week', label: 'This week' }, { id: 'month', label: 'This month' }];
@@ -83,7 +92,7 @@ export default function EarningsPanel({ techName }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [range, setRange] = useState('week');
-  const [data, setData] = useState({ revenue: 0, tips: 0, serviceCount: 0, clientCount: 0, tipEntries: [], serviceList: [], byDay: {} });
+  const [data, setData] = useState({ revenue: 0, tips: 0, serviceCount: 0, clientCount: 0, tipEntries: [], redoEntries: [], serviceList: [], byDay: {} });
   const [loading, setLoading] = useState(false);
 
   const { startDate, endDate } = useMemo(() => {
@@ -210,6 +219,27 @@ export default function EarningsPanel({ techName }) {
                     <Text style={styles.tipDate}>{fmtDateShort(t.date)}</Text>
                     <Text style={styles.tipClient} numberOfLines={1}>{t.clientName}</Text>
                     <Text style={styles.tipAmount}>{fmtMoneyExact(t.amount)}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {(data.redoEntries || []).length > 0 && (
+            <View style={{ marginTop: 16 }}>
+              <Text style={styles.sectionLabel}>Redo adjustments</Text>
+              <View style={styles.card}>
+                {data.redoEntries.slice(0, 12).map((rd, i) => (
+                  <View key={`${rd.date}-${i}`} style={[styles.tipRow, i > 0 && styles.tipRowDivider]}>
+                    <Text style={styles.tipDate}>{fmtDateShort(rd.date)}</Text>
+                    <Text style={styles.tipClient} numberOfLines={2}>
+                      {rd.dir === 'in'
+                        ? `Redid ${rd.client}'s ${rd.label} (orig. ${rd.other || 'another tech'})`
+                        : `${rd.client}'s ${rd.label} redone by ${rd.other || 'another tech'}`}
+                    </Text>
+                    <Text style={[styles.tipAmount, { color: rd.dir === 'in' ? '#2D7A5F' : '#C0392B' }]}>
+                      {rd.dir === 'in' ? '+' : '−'}{fmtMoneyExact(rd.amount)}
+                    </Text>
                   </View>
                 ))}
               </View>

@@ -2717,6 +2717,16 @@ export async function refreshGoogleReviewsCache(placeId) {
   return res.data;
 }
 
+// ── Service redo (commission transfer, no money refunded) ─
+// Records a redo on a sale: the commission for the selected service(s) moves
+// from the original tech to the redo tech. Mirrors refundSale's callable
+// shape. `services` is [{ name, amount, techName }] (techName = original tech);
+// `idempotencyKey` (stable per attempt) makes a retry safe — no double redo.
+export async function redoService({ receiptId, services, redoTech, reason, idempotencyKey, notify }) {
+  const res = await callFn('redoService')({ tenantId: TENANT_ID, receiptId, services, redoTech, reason, idempotencyKey, notify });
+  return res?.data || {};
+}
+
 // ── Google Business Profile OAuth + full review sync ────
 export function subscribeGoogleBusinessAuth(callback) {
   return onSnapshot(tenantDoc('googleBusinessAuth'), s => callback(s.exists() ? s.data() : null));
