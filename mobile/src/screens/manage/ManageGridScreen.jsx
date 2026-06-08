@@ -136,6 +136,18 @@ export default function ManageGridScreen({ navigation }) {
           <Text style={styles.tileDesc} numberOfLines={2}>Resend a receipt by text or email</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity
+          style={[styles.tile, { width: tileW }]}
+          activeOpacity={0.7}
+          onPress={() => navigation.navigate('Help')}
+        >
+          <View style={styles.iconWrap}>
+            <Icon name="sparkles" size={26} color={theme.green} />
+          </View>
+          <Text style={styles.tileLabel} numberOfLines={1}>Help & Guide</Text>
+          <Text style={styles.tileDesc} numberOfLines={2}>How-tos for every tool</Text>
+        </TouchableOpacity>
+
         {isAdmin && (
           <TouchableOpacity
             style={[styles.tile, styles.adminTile, { width: tileW }]}
