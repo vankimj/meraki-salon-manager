@@ -73,7 +73,7 @@ export default function RootNav() {
   return (
     <NavigationContainer key={tenantId} theme={navTheme}>
       <Tab.Navigator
-        initialRouteName="Schedule"
+        initialRouteName="Dashboard"
         screenOptions={({ route }) => ({
           headerStyle:     { backgroundColor: theme.headerBg },
           headerTintColor: theme.green,
@@ -89,8 +89,8 @@ export default function RootNav() {
           tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
         })}
       >
-        <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Appointments' }} />
         <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
+        <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Appointments' }} />
         <Tab.Screen
           name="Clients"
           component={ClientsStack}
