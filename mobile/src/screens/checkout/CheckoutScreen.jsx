@@ -6,8 +6,9 @@ import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, fetchGiftCardsByContact, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
-  setCheckoutSession, fetchAttendance, fetchEmployees,
+  setCheckoutSession, subscribeCheckoutSession, fetchAttendance, fetchEmployees,
 } from '../../lib/firestore';
+import KioskCheckout from '../kiosk/KioskCheckout';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
@@ -74,6 +75,8 @@ export default function CheckoutScreen({ navigation }) {
   const [allProducts, setAllProducts] = useState(null);
   const [showPicker, setShowPicker]   = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [localSession, setLocalSession] = useState(null); // non-null → run the customer-facing checkout on THIS device
+  const [sent, setSent]           = useState(null);   // {summary, sessionId} → "sent to front desk" live-status screen
   const [paid, setPaid]           = useState(null);   // {method,opts} once money is CAPTURED — blocks re-charge
   const [done, setDone]           = useState(null);   // {total,method,queued,note} once the receipt is written
   const [recordErr, setRecordErr] = useState('');
@@ -296,51 +299,115 @@ export default function CheckoutScreen({ navigation }) {
     doRecord({ method, ...opts }, false);
   }
 
-  // Hand the FULLY-PRICED sale to the front-desk kiosk so the client adds a tip
-  // and pays there. The edited line prices are baked into the cart and every
-  // adjustment the tech set (discount / promo / gift card / store credit / issued
-  // credit) rides along on the session as `priced: true`, so the kiosk honors
-  // them exactly instead of re-deriving from raw service prices. The tip is left
-  // off on purpose — the customer chooses it at the kiosk.
-  async function sendToFrontDesk() {
-    if (paid) return;
-    if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', 'Nothing to send.'); return; }
+  // Build the FULLY-PRICED hand-off the customer-facing checkout (front-desk
+  // kiosk OR this device) consumes. The edited line prices are baked into the
+  // cart and every adjustment the tech set (discount / promo / gift card / store
+  // credit) rides along as `priced: true`, so the checkout honors them exactly
+  // instead of re-deriving from raw service prices. The tip is left off on
+  // purpose — the customer chooses it. A `sessionId` lets the tech's "sent"
+  // screen recognize when this exact hand-off is paid at the kiosk.
+  function buildHandoff() {
+    const appts = (tab.appts || []).map((a, apptIdx) => ({
+      ...a,
+      services: (a.services || []).map((s, svcIdx) => {
+        const li = lines0.findIndex(l => l.apptIdx === apptIdx && l.svcIdx === svcIdx);
+        return li >= 0 ? { ...s, price: Number(prices[li]) || 0, techName: lines[li].techName } : s;
+      }),
+    }));
+    const clientName = Array.from(new Set((tab.appts || []).map(a => a.clientName || 'Walk-in').filter(Boolean))).join(' + ') || 'Walk-in';
+    const sessionId = genReceiptToken(16);
+    const payload = {
+      sessionId,
+      cart: { appts, products },
+      priced: true,
+      clientId: primaryClientId || null,
+      clientName,
+      createdBy: email || null,
+      discType,
+      discVal: Number(discVal) || 0,
+      promo: promo || null,
+      giftCard: giftCard || null,
+      applyCredit: !!applyCredit,
+      receiptPhone: receiptPhone || null,
+    };
+    // A pre-tip snapshot of the bill for the tech's "sent" summary.
+    const summaryTotals = computeTotals({
+      lines, productsTotal,
+      discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
+      promo: normalizePromo(promo), taxRate: Number(settings?.taxRate) || 0,
+      ccFeePct: 0, ccFeeFlat: 0, method: 'cash', noCardTips: false,
+      tip: { custom: true, amount: 0, pct: null },
+      giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
+      clientCredit, applyCredit: applyCredit && clientCredit > 0,
+    });
+    const discountLabel = discType === 'member' ? `★ Member (${Number(discVal) || 0}%)`
+      : discType === 'amount' ? 'Discount'
+      : discType === 'percent' ? `Discount (${Number(discVal) || 0}%)` : null;
+    const summary = {
+      clientName,
+      lines: lines.map(l => ({ name: l.name, price: l.price, techName: l.techName })),
+      products: products.map(it => ({ name: it.product.name, qty: it.qty, price: (Number(it.product.price) || 0) * it.qty })),
+      totals: summaryTotals, discountLabel, promoCode: promo?.code || null,
+    };
+    return { payload, summary, sessionId };
+  }
+
+  function preflight(verb) {
+    if (paid) return false;
+    if (lines.length === 0 && products.length === 0) { Alert.alert('Empty', `Nothing to ${verb}.`); return false; }
     if (gateBlocked) {
       Alert.alert('Clock in required', `${offClock.join(', ')} ${offClock.length > 1 ? 'are' : 'is'} not clocked in. They must clock in at the Time Clock before checkout.`);
-      return;
+      return false;
     }
+    return true;
+  }
+
+  // Send the hand-off to the shared front-desk kiosk, then show the tech a live
+  // billing summary that updates to "Paid" once the client finishes at the kiosk.
+  async function sendToFrontDesk() {
+    if (!preflight('send')) return;
     setSaving(true);
     try {
-      const appts = (tab.appts || []).map((a, apptIdx) => ({
-        ...a,
-        services: (a.services || []).map((s, svcIdx) => {
-          const li = lines0.findIndex(l => l.apptIdx === apptIdx && l.svcIdx === svcIdx);
-          return li >= 0 ? { ...s, price: Number(prices[li]) || 0, techName: lines[li].techName } : s;
-        }),
-      }));
-      const clientName = Array.from(new Set((tab.appts || []).map(a => a.clientName || 'Walk-in').filter(Boolean))).join(' + ') || 'Walk-in';
-      await setCheckoutSession({
-        cart: { appts, products },
-        priced: true,
-        clientId: primaryClientId || null,
-        clientName,
-        createdBy: email || null,
-        discType,
-        discVal: Number(discVal) || 0,
-        promo: promo || null,
-        giftCard: giftCard || null,
-        applyCredit: !!applyCredit,
-        receiptPhone: receiptPhone || null,
-      });
+      const { payload, summary, sessionId } = buildHandoff();
+      await setCheckoutSession(payload);
       await clearTab();
-      Alert.alert('Sent to front desk', 'The client can add a tip and pay at the kiosk.', [{ text: 'Done', onPress: () => navigation.goBack() }]);
+      setSaving(false);
+      setSent({ summary, sessionId });
     } catch (e) {
       setSaving(false);
       Alert.alert("Couldn't send", e?.message || 'Try again.');
     }
   }
 
+  // Run the same customer-facing checkout on THIS device — for techs who'd
+  // rather hand the client their own phone/iPad than walk them to the front
+  // desk. No shared session is written; the sale records identically.
+  function checkoutHere() {
+    if (!preflight('check out')) return;
+    const { payload } = buildHandoff();
+    setLocalSession({ status: 'pending', createdAt: payload.sessionId, ...payload });
+  }
+
   if (settings === null) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
+
+  // Run the customer-facing checkout right here on the tech's device.
+  if (localSession) {
+    return (
+      <KioskCheckout
+        session={localSession}
+        settings={settings}
+        email={email}
+        local
+        onCancel={() => setLocalSession(null)}
+        onComplete={() => { clearTab().catch(() => {}); navigation.goBack(); }}
+      />
+    );
+  }
+
+  // After "Send to front desk": show what was sent + live payment status.
+  if (sent) {
+    return <SentStatus sent={sent} styles={styles} theme={theme} onDone={() => navigation.goBack()} />;
+  }
 
   if (done) {
     return (
@@ -625,6 +692,10 @@ export default function CheckoutScreen({ navigation }) {
               <Text style={styles.deskBtnSub}>Client adds the tip + pays at the kiosk — this exact total &amp; all discounts carry over</Text>
             </TouchableOpacity>
           )}
+          <TouchableOpacity style={[styles.hereBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={checkoutHere} disabled={saving || gateBlocked} activeOpacity={0.85}>
+            <Text style={styles.hereBtnText}>📱  Check out on this device</Text>
+            <Text style={styles.hereBtnSub}>Hand the client your device to add a tip &amp; pay — same flow as the front desk</Text>
+          </TouchableOpacity>
         </>
       )}
       </View>
@@ -661,6 +732,81 @@ function Row({ label, value, big }) {
       <Text style={[styles.totLabel, big && styles.totLabelBig]}>{label}</Text>
       <Text style={[styles.totValue, big && styles.totValueBig]}>{value}</Text>
     </View>
+  );
+}
+
+// Shown to the tech after "Send to front desk": the bill they sent (pre-tip)
+// plus a live status that flips to "Paid" the moment the client finishes at the
+// kiosk. Watches the shared session and only reacts to OUR hand-off (sessionId).
+function SentStatus({ sent, styles, theme, onDone }) {
+  const { summary, sessionId } = sent;
+  const t = summary.totals;
+  const [info, setInfo] = useState({ kind: 'waiting' }); // waiting | paying | paid | canceled | superseded
+  useEffect(() => {
+    let latched = false;
+    const unsub = subscribeCheckoutSession((doc) => {
+      if (latched) return;
+      if (!doc) { setInfo({ kind: 'canceled' }); return; }
+      if (doc.paid && doc.sessionId === sessionId) { latched = true; setInfo({ kind: 'paid', paid: doc.paid }); return; }
+      if (doc.sessionId !== sessionId) { setInfo({ kind: 'superseded' }); return; }
+      if (doc.status === 'paying') { setInfo({ kind: 'paying' }); return; }
+      if (doc.status === 'idle') { setInfo({ kind: 'canceled' }); return; }
+      setInfo({ kind: 'waiting' });
+    });
+    return unsub;
+  }, [sessionId]);
+
+  const banner = {
+    waiting:    { mark: '⏳', title: 'Waiting at the front desk', sub: 'The client adds a tip and pays at the kiosk.', color: theme.blue, bg: theme.blueSoft },
+    paying:     { mark: '💳', title: 'Client is paying…', sub: 'Payment in progress at the kiosk.', color: theme.blue, bg: theme.blueSoft },
+    paid:       { mark: '✓', title: `Paid ${money(info.paid?.total)}`, sub: `Completed at the front desk${info.paid?.method ? ` · ${info.paid.method}` : ''}.`, color: theme.success, bg: theme.greenSoft },
+    canceled:   { mark: '✕', title: 'Canceled at the front desk', sub: 'The checkout was cleared without payment.', color: theme.danger, bg: theme.surfaceAlt },
+    superseded: { mark: '↪', title: 'Taken over at the front desk', sub: 'Another checkout is now active at the kiosk.', color: theme.textMuted, bg: theme.surfaceAlt },
+  }[info.kind];
+
+  return (
+    <ScrollView style={styles.wrap} contentContainerStyle={{ padding: 16, paddingBottom: 40, maxWidth: 720, width: '100%', alignSelf: 'center' }}>
+      <View style={[styles.sentBanner, { backgroundColor: banner.bg, borderColor: banner.color }]}>
+        {info.kind === 'waiting' || info.kind === 'paying'
+          ? <ActivityIndicator color={banner.color} style={{ marginBottom: 6 }} />
+          : <Text style={[styles.sentMark, { color: banner.color }]}>{banner.mark}</Text>}
+        <Text style={[styles.sentTitle, { color: banner.color }]}>{banner.title}</Text>
+        <Text style={styles.sentSub}>{banner.sub}</Text>
+      </View>
+
+      <Text style={styles.section}>Sent for {summary.clientName}</Text>
+      {summary.lines.map((l, i) => (
+        <View key={`l${i}`} style={styles.lineRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.lineName}>{l.name}</Text>
+            <Text style={styles.lineTech}>{l.techName || '—'}</Text>
+          </View>
+          <Text style={styles.lineName}>{money(l.price)}</Text>
+        </View>
+      ))}
+      {summary.products.map((p, i) => (
+        <View key={`p${i}`} style={styles.lineRow}>
+          <View style={{ flex: 1 }}><Text style={styles.lineName}>{p.name} × {p.qty}</Text></View>
+          <Text style={styles.lineName}>{money(p.price)}</Text>
+        </View>
+      ))}
+
+      <View style={styles.totals}>
+        <Row label="Subtotal" value={money(t.subtotal)} />
+        {t.discountAmount > 0 && <Row label={summary.discountLabel || 'Discount'} value={`-${money(t.discountAmount)}`} />}
+        {t.promoAmount > 0 && <Row label={`Promo ${summary.promoCode || ''}`} value={`-${money(t.promoAmount)}`} />}
+        {t.taxAmt > 0 && <Row label="Tax" value={money(t.taxAmt)} />}
+        {t.gcApply > 0 && <Row label="Gift card" value={`-${money(t.gcApply)}`} />}
+        {t.creditApply > 0 && <Row label="Store credit" value={`-${money(t.creditApply)}`} />}
+        <View style={styles.divider} />
+        <Row label="Total before tip" value={money(t.total)} big />
+      </View>
+      <Text style={styles.muted}>The client adds their tip at the kiosk, so the final total may be higher.</Text>
+
+      <TouchableOpacity style={styles.doneBtn} onPress={onDone} activeOpacity={0.85}>
+        <Text style={styles.doneBtnText}>Done</Text>
+      </TouchableOpacity>
+    </ScrollView>
   );
 }
 
@@ -746,6 +892,13 @@ const makeStyles = (t) => StyleSheet.create({
   deskBtn:   { marginTop: 12, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 14, alignItems: 'center', borderWidth: 1, borderColor: t.blue, backgroundColor: t.blueSoft },
   deskBtnText:{ color: t.blue, fontWeight: '800', fontSize: 15 },
   deskBtnSub:{ color: t.textMuted, fontWeight: '600', fontSize: 11.5, marginTop: 3, textAlign: 'center' },
+  hereBtn:   { marginTop: 12, borderRadius: 14, paddingVertical: 14, paddingHorizontal: 14, alignItems: 'center', borderWidth: 1, borderColor: t.border, backgroundColor: t.surface },
+  hereBtnText:{ color: t.text, fontWeight: '800', fontSize: 15 },
+  hereBtnSub:{ color: t.textMuted, fontWeight: '600', fontSize: 11.5, marginTop: 3, textAlign: 'center' },
+  sentBanner:{ alignItems: 'center', borderRadius: 16, padding: 22, borderWidth: 1, marginTop: 8 },
+  sentMark:  { fontSize: 46, fontWeight: '800', marginBottom: 4 },
+  sentTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  sentSub:   { fontSize: 13.5, color: t.textMuted, marginTop: 6, textAlign: 'center', lineHeight: 19 },
   settling:  { marginTop: 22, backgroundColor: t.surface, borderRadius: 14, padding: 18, borderWidth: 1, borderColor: t.border, alignItems: 'center', gap: 8 },
   settlingText:{ fontSize: 15, fontWeight: '700', color: t.text },
   settlingErr: { fontSize: 14, fontWeight: '800', color: t.danger, textAlign: 'center' },
