@@ -6058,6 +6058,107 @@ exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
   return out;
 });
 
+// Redo a service from a past sale. A redo is NOT a refund — no money moves. It
+// TRANSFERS the redone service's revenue attribution (and the commission it
+// drives) from the original tech to the redo tech: the original loses that
+// service's credit, the redo tech gains it (salon net $0 beyond any pay-rate
+// difference, which metrics handle per-tech). Fully auditable: records a redos[]
+// entry on the receipt + mirrors onto appointments + notifies both techs, so
+// each can see exactly why their pay changed. Idempotent via a stable key.
+exports.redoService = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, services, redoTech, reason, idempotencyKey, notify } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+
+  const db = getFirestore();
+  await requireTenantStaff(db, tenantId, request);
+  const issuerEmail = await callerEmail(request);
+
+  if (!receiptId || typeof receiptId !== 'string') throw new HttpsError('invalid-argument', 'receiptId required');
+  const idemKey = String(idempotencyKey || '');
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(idemKey)) throw new HttpsError('invalid-argument', 'idempotencyKey required');
+  const toTech = String(redoTech || '').trim().slice(0, 120);
+  if (!toTech) throw new HttpsError('invalid-argument', 'A redo tech is required');
+  const reasonStr = String(reason || '').trim().slice(0, 500);
+  if (!reasonStr) throw new HttpsError('invalid-argument', 'A reason is required');
+  // services: the redone service(s) from the original sale. Each carries the
+  // ORIGINAL tech (whose credit is withheld) + the amount transferred.
+  const items = (Array.isArray(services) ? services : [])
+    .map(s => ({
+      name:     String(s?.name || '').slice(0, 200),
+      amount:   Math.round((Number(s?.amount) || 0) * 100) / 100,
+      fromTech: String(s?.techName || s?.fromTech || '').trim().slice(0, 120),
+    }))
+    .filter(s => s.name && s.amount > 0 && s.fromTech);
+  if (!items.length) throw new HttpsError('invalid-argument', 'Select at least one service to redo');
+
+  const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+  const recSnap = await recRef.get();
+  if (!recSnap.exists) throw new HttpsError('not-found', 'Sale not found');
+  const rec = recSnap.data();
+  const priorRedos = Array.isArray(rec.redos) ? rec.redos : [];
+  if (priorRedos.some(r => r && r.key === idemKey)) return { ok: true, alreadyRecorded: true };
+
+  const totalAmt = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+  const redoEntry = {
+    key: idemKey,
+    services: items,            // [{ name, amount, fromTech }]
+    toTech,
+    amount: totalAmt,
+    reason: reasonStr,
+    issuedBy: issuerEmail || null,
+    redoneAt: new Date().toISOString(),
+  };
+
+  // Record idempotently inside a txn so concurrent/retried writes converge.
+  let added = false;
+  await db.runTransaction(async (tx) => {
+    const s = await tx.get(recRef);
+    const d = s.exists ? s.data() : {};
+    const existing = Array.isArray(d.redos) ? d.redos : [];
+    if (existing.some(r => r && r.key === idemKey)) return;
+    tx.set(recRef, { redos: [...existing, redoEntry], updatedAt: new Date().toISOString() }, { merge: true });
+    added = true;
+  });
+
+  if (added) {
+    for (const aId of (rec.apptIds || [])) {
+      try { await db.doc(`tenants/${tenantId}/appointments/${aId}`).set({ redo: redoEntry, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) { /* best-effort */ }
+    }
+    if (notify !== false) notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }).catch(e => console.error('[redo] notify failed:', e?.message));
+  }
+  return { ok: true, amount: totalAmt, alreadyRecorded: !added };
+});
+
+// Tell the affected techs about a redo so the pay change is never a surprise:
+// the ORIGINAL tech(s) ("your work was redone, commission moved") and the REDO
+// tech ("you were credited for the redo"). Push + email where we can map the
+// tech's name → their employee email. All best-effort.
+async function notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }) {
+  const emailByName = {};
+  try {
+    const emps = await db.collection(`tenants/${tenantId}/employees`).get();
+    emps.docs.forEach(d => { const e = d.data() || {}; if (e.name && e.email) emailByName[String(e.name).trim().toLowerCase()] = String(e.email).toLowerCase(); });
+  } catch (e) { /* best-effort */ }
+  const brand  = await tenantBranding(db, tenantId);
+  const client = rec.clientName || 'a client';
+  const svc    = redoEntry.services.map(s => s.name).join(', ');
+  const amtStr = `$${Number(redoEntry.amount || 0).toFixed(2)}`;
+  const fromTechs = [...new Set(redoEntry.services.map(s => s.fromTech).filter(Boolean))];
+
+  const send = async (name, title, line) => {
+    const em = emailByName[String(name).trim().toLowerCase()];
+    if (!em) return;
+    try { await sendPushToEmail(db, tenantId, em, { title, body: line, data: { type: 'redo', receiptId: rec.viewToken || null } }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+  };
+  await Promise.all([
+    ...fromTechs.map(t => send(t, 'A service was redone', `${client}'s ${svc} was redone by ${redoEntry.toTech}. ${amtStr} in commission moved from you to them${redoEntry.reason ? ` — "${redoEntry.reason}"` : ''}.`)),
+    send(redoEntry.toTech, 'You were credited for a redo', `You were credited ${amtStr} for redoing ${client}'s ${svc} (originally ${fromTechs.join(', ') || 'another tech'}).`),
+  ]);
+}
+
 // Stripe Terminal connection token — required by @stripe/stripe-terminal-react-
 // native to talk to readers / Tap to Pay. Minted on the PLATFORM account
 // (matching the destination-charge model: readers live on the platform, funds
