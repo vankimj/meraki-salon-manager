@@ -8,6 +8,10 @@ import { useThemedStyles } from '../../theme/ThemeContext';
 // below is guaranteed available when this mounts.
 let SDK = null;
 try { SDK = require('@stripe/stripe-terminal-react-native'); } catch { SDK = null; }
+// req 5.5 — Apple requires the SF Symbol "wave.3.right.circle" on the Tap to Pay
+// button. expo-symbols renders it on iOS; falls back to a glyph elsewhere.
+let SymbolView = null;
+try { SymbolView = require('expo-symbols').SymbolView; } catch { SymbolView = null; }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // Android grants reader permissions at RUNTIME (iOS uses Info.plist strings the
@@ -48,6 +52,16 @@ export default function CardPayButton({ amountCents, description, locationId, on
   });
 
   const method = preferReader ? 'bluetoothScan' : 'tapToPay';
+
+  // req 1.5 / 5.6 — warm up Tap to Pay as soon as the checkout opens so the
+  // reader UI appears in <1s when the cashier taps the button. Best-effort:
+  // failures are swallowed (the pay flow re-connects if needed).
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || method !== 'tapToPay' || simulated || !locationId || connectedRef.current) return;
+    let alive = true;
+    (async () => { try { if (alive) await ensureConnected(); } catch { /* warm-up best-effort */ } })();
+    return () => { alive = false; };
+  }, [simulated, locationId, method]);
 
   async function waitForReader(ms = 20000) {
     const start = Date.now();
@@ -136,8 +150,15 @@ export default function CardPayButton({ amountCents, description, locationId, on
     <TouchableOpacity style={[styles.btn, (busy || disabled) && { opacity: 0.6 }]} onPress={pay} disabled={busy || disabled} activeOpacity={0.85}>
       {busy ? (
         <Text style={styles.txt}>{phase || 'Working…'}</Text>
+      ) : preferReader ? (
+        <Text style={styles.txt}>💳  Card — tap / insert on reader{simulated ? '  (test)' : ''}</Text>
       ) : (
-        <Text style={styles.txt}>{preferReader ? '💳  Card — tap / insert on reader' : '〰️  Tap to Pay'}{simulated ? '  (test)' : ''}</Text>
+        <>
+          {SymbolView
+            ? <SymbolView name="wave.3.right.circle.fill" size={22} tintColor="#ffffff" style={{ width: 22, height: 22 }} />
+            : <Text style={styles.txt}>〰️</Text>}
+          <Text style={styles.txt}>Tap to Pay{simulated ? '  (test)' : ''}</Text>
+        </>
       )}
     </TouchableOpacity>
   );

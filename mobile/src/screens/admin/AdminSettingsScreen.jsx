@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, Switch, Alert } from 'react-native';
 import { fetchSettings, updateSettings, setKioskPin, hasKioskPin } from '../../lib/firestore';
+import { getBioLockEnabled, setBioLockEnabled, isBiometricAvailable } from '../../lib/biometricLock';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 const RECEIPT_MODES = [
   { value: 'auto', label: 'Auto' }, { value: 'email', label: 'Email' },
@@ -36,6 +37,8 @@ export default function AdminSettingsScreen() {
   const [kPin, setKPin]       = useState('');
   const [kHas, setKHas]       = useState(false);
   const [kSaving, setKSaving] = useState(false);
+  const [bioLock, setBioLock] = useState(false);
+  const [bioAvail, setBioAvail] = useState(false);
 
   async function saveKioskPin() {
     if (!/^\d{4}$/.test(kPin)) { Alert.alert('PIN must be 4 digits'); return; }
@@ -54,6 +57,7 @@ export default function AdminSettingsScreen() {
     setReceipt(s.receiptDelivery || 'auto');
     setRefundDefault(s.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
     hasKioskPin().then(r => setKHas(!!r.hasPin)).catch(() => {});
+    isBiometricAvailable().then(v => { setBioAvail(!!v); if (v) getBioLockEnabled().then(setBioLock); }).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -134,6 +138,16 @@ export default function AdminSettingsScreen() {
           <Text style={styles.saveText}>{kSaving ? '…' : kHas ? 'Change' : 'Set'}</Text>
         </TouchableOpacity>
       </View>
+
+      {bioAvail && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18 }}>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+            <Text style={styles.fieldLabel}>Require Face ID to open the app</Text>
+            <Text style={styles.note}>Locks this device with Face ID / Touch ID on launch.</Text>
+          </View>
+          <Switch value={bioLock} onValueChange={async (v) => { setBioLock(v); await setBioLockEnabled(v); }} trackColor={{ true: theme.green }} />
+        </View>
+      )}
 
       <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={save} disabled={saving}>
         <Text style={styles.saveText}>{saving ? 'Saving…' : 'Save settings'}</Text>

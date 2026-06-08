@@ -48,6 +48,10 @@
     "plugins": [
       "expo-apple-authentication",
       [
+        "expo-local-authentication",
+        { "faceIDPermission": "Unlock Plume Nexus with Face ID." }
+      ],
+      [
         "expo-build-properties",
         {
           "ios": {

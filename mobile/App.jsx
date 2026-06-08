@@ -13,6 +13,8 @@ import RootNav    from './src/navigation/RootNav';
 import TerminalProvider from './src/components/TerminalProvider';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import KioskLockGate from './src/components/KioskLockGate';
+import BiometricGate from './src/components/BiometricGate';
+import { getBioLockEnabled, isBiometricAvailable } from './src/lib/biometricLock';
 import { loadInitialKioskLock, isKioskLocked, subscribeKioskLock } from './src/lib/kioskLock';
 import { ThemeProvider } from './src/theme/ThemeContext';
 
@@ -52,6 +54,7 @@ export default function App() {
   const [user,    setUser]    = useState(undefined); // undefined = loading
   const [loading, setLoading] = useState(true);
   const [kioskLocked, setKioskLockedState] = useState(false);
+  const [bioLocked, setBioLocked] = useState(false);   // Face ID app-lock (opt-in)
 
   useEffect(() => {
     // Load persisted state from AsyncStorage BEFORE any Firestore
@@ -64,6 +67,7 @@ export default function App() {
       await loadInitialPrefs();
       await loadInitialKioskLock();
       setKioskLockedState(isKioskLocked());
+      if (await getBioLockEnabled() && await isBiometricAvailable()) setBioLocked(true);
       unsub = onAuthStateChanged(auth, u => {
         setUser(u);
         setLoading(false);
@@ -95,7 +99,9 @@ export default function App() {
         <View style={{ flex: 1 }} onTouchStart={resetIdle}>
           <ErrorBoundary>
             {user
-              ? (kioskLocked ? <KioskLockGate /> : <TerminalProvider><RootNav /></TerminalProvider>)
+              ? (bioLocked
+                  ? <BiometricGate onUnlock={() => setBioLocked(false)} />
+                  : kioskLocked ? <KioskLockGate /> : <TerminalProvider><RootNav /></TerminalProvider>)
               : <AuthScreen />}
           </ErrorBoundary>
         </View>
