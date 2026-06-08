@@ -158,7 +158,7 @@ export default function ManageGridScreen({ navigation }) {
               <Icon name="dollar" size={26} color={theme.green} />
             </View>
             <Text style={styles.tileLabel} numberOfLines={1}>Payments</Text>
-            <Text style={styles.tileDesc} numberOfLines={2}>Set up cards & Tap to Pay</Text>
+            <Text style={styles.tileDesc} numberOfLines={2}>Set up cards & Tap to Pay on iPhone</Text>
           </TouchableOpacity>
         )}
 

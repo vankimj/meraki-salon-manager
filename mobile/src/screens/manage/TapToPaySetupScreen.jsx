@@ -26,7 +26,7 @@ export default function TapToPaySetupScreen() {
     return (
       <View style={styles.center}>
         <Icon name="phone" size={48} color={theme.textFaint} />
-        <Text style={styles.gateTitle}>Tap to Pay runs on iPhone</Text>
+        <Text style={styles.gateTitle}>Tap to Pay on iPhone</Text>
         <Text style={styles.gateBody}>Tap to Pay on iPhone requires an iPhone XS or later. Open the iPhone app to set it up; this device can use a connected card reader instead.</Text>
       </View>
     );
@@ -48,17 +48,17 @@ export default function TapToPaySetupScreen() {
       {SDK
         ? <EnableTapToPay isAdmin={isAdmin} settings={settings} />
         : (
-          <TouchableOpacity style={styles.primary} onPress={() => Alert.alert('Update the app', 'Tap to Pay needs the latest iPhone build. Install it, then return here to set up.')}>
-            <Text style={styles.primaryText}>Set up Tap to Pay</Text>
+          <TouchableOpacity style={styles.primary} onPress={() => Alert.alert('Update the app', 'Tap to Pay on iPhone needs the latest app build. Install it, then return here to set up.')}>
+            <Text style={styles.primaryText}>Set up Tap to Pay on iPhone</Text>
           </TouchableOpacity>
         )}
 
       {/* Merchant education — req §4. [TTP-ASSET] use the Apple-approved education
           content (or ProximityReaderDiscovery on iOS 18+). */}
       <Text style={styles.section}>How it works</Text>
-      <Edu title="Accept a contactless card" body="At checkout, choose Tap to Pay, then have your customer hold their card or phone near the top of your iPhone." />
+      <Edu title="Accept a contactless card" body="At checkout, choose Tap to Pay on iPhone, then have your customer hold their card or phone near the top of your iPhone." />
       <Edu title="Apple Pay & digital wallets" body="Customers can pay with Apple Pay, Google Pay, and other wallets the same way — a tap near the top of the iPhone." />
-      <Edu title="Find this again anytime" body="You can re-open this guide and re-enable Tap to Pay from Manage → Admin → Settings." />
+      <Edu title="Find this again anytime" body="You can re-open this guide and re-enable Tap to Pay on iPhone from Manage → Admin → Settings." />
 
       <Text style={styles.foot}>Setup, Terms & Conditions, and verification are handled securely by Apple and Stripe on your device.</Text>
     </ScrollView>
@@ -76,7 +76,7 @@ function EnableTapToPay({ isAdmin, settings }) {
   });
 
   async function enable() {
-    if (!isAdmin) { Alert.alert('Admins only', 'Only an admin can accept the Tap to Pay Terms & Conditions. Ask your salon owner/admin to enable it.'); return; }
+    if (!isAdmin) { Alert.alert('Admins only', 'Only an admin can accept the Tap to Pay on iPhone Terms & Conditions. Ask your salon owner/admin to enable it.'); return; }
     const locationId = settings?.terminalLocationId || null;
     if (!locationId) { Alert.alert('Set a Terminal Location', 'Add your Stripe Terminal Location ID in Admin → Settings first.'); return; }
     setBusy(true); setPhase('initializing');
@@ -88,29 +88,29 @@ function EnableTapToPay({ isAdmin, settings }) {
       while (Date.now() - start < 20000 && readersRef.current.length === 0) { await new Promise(r => setTimeout(r, 400)); }
       const reader = readersRef.current[0];
       try { await term.cancelDiscovering?.(); } catch {}
-      if (!reader) throw new Error('Tap to Pay is unavailable on this device (needs iPhone XS or later).');
+      if (!reader) throw new Error('Tap to Pay on iPhone is unavailable on this device (needs iPhone XS or later).');
       setPhase('connecting');
       const { error: cErr } = await term.connectReader({ discoveryMethod: 'tapToPay', reader, locationId, merchantDisplayName: settings?.salonName || 'Salon' });
       if (cErr) throw new Error(cErr.message);
       setPhase('ready');
     } catch (e) {
       setPhase('');
-      Alert.alert('Could not enable Tap to Pay', e?.message || 'Please try again on a supported iPhone.');
+      Alert.alert('Could not enable Tap to Pay on iPhone', e?.message || 'Please try again on a supported iPhone.');
     } finally { setBusy(false); }
   }
 
   if (phase === 'ready') {
-    return <View style={[styles.statusCard, styles.statusOk]}><Text style={styles.statusOkText}>✓ Tap to Pay is ready on this iPhone.</Text></View>;
+    return <View style={[styles.statusCard, styles.statusOk]}><Text style={styles.statusOkText}>✓ Tap to Pay on iPhone is ready.</Text></View>;
   }
   return (
     <>
       {!isAdmin && (
-        <View style={styles.statusCard}><Text style={styles.statusText}>Only an admin can enable Tap to Pay. Ask your salon owner or an admin to set it up.</Text></View>
+        <View style={styles.statusCard}><Text style={styles.statusText}>Only an admin can enable Tap to Pay on iPhone. Ask your salon owner or an admin to set it up.</Text></View>
       )}
       <TouchableOpacity style={[styles.primary, (busy || !isAdmin) && { opacity: 0.6 }]} onPress={enable} disabled={busy || !isAdmin}>
         {busy
           ? <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}><ActivityIndicator color="#fff" /><Text style={styles.primaryText}>{phase === 'connecting' ? 'Setting up…' : 'Initializing…'}</Text></View>
-          : <Text style={styles.primaryText}>Set up Tap to Pay</Text>}
+          : <Text style={styles.primaryText}>Set up Tap to Pay on iPhone</Text>}
       </TouchableOpacity>
       {busy && <Text style={styles.progressNote}>Preparing Tap to Pay on iPhone — this can take a moment the first time.</Text>}
     </>

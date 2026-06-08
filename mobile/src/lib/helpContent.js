@@ -11,7 +11,7 @@ export const HELP_GENERAL = [
     steps: [
       'Manage tab = every tool (tap a tile). Home/Schedule is your day view.',
       'Tap a client or appointment to open it; “Add to tab” collects items for checkout.',
-      'Checkout takes cash, card (reader / Tap to Pay), and records tips + receipts.',
+      'Checkout takes cash, card (reader / Tap to Pay on iPhone), and records tips + receipts.',
       'Admins set everything up in Manage → Admin → Settings (deeper config is on the web app).',
     ],
     tip: 'Most lists support pull-to-refresh and a search box up top.',
