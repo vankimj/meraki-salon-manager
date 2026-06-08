@@ -7,8 +7,9 @@ import {
   subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes,
   fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
   fetchTimeOff, createClient, updateAppointment, fetchClient, softDeleteAppointment,
-  softDeleteRecurringSeries,
+  softDeleteRecurringSeries, fetchSettings, fetchAttendance,
 } from '../lib/firestore';
+import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../lib/shiftGate';
 import { notifyAffectedTechs } from '../lib/notifications';
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
@@ -195,8 +196,25 @@ export default function ScheduleScreen({ navigation }) {
   const [editAppt, setEditAppt] = useState(null);            // existing appt being edited or null
   const [tabOpen,  setTabOpen]  = useState(false);
   const [tabSnap,  setTabSnap]  = useState(getCurrentTab()); // re-rendered on tab change
+  const [settings, setSettings] = useState(null);
+  const [attendance, setAttendance] = useState(null);
 
   useEffect(() => subscribeTab(setTabSnap), []);
+  // Clock-in gate inputs: a tech editing their own calendar while the salon is
+  // open must be clocked in (off shift / closed → free; admins exempt).
+  useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
+  useEffect(() => { fetchAttendance(attendanceKey()).then(setAttendance).catch(() => setAttendance({ entries: [] })); }, []);
+
+  // Returns true (and alerts) when the current tech must clock in before they
+  // can change the schedule. Admins, non-techs, and off-shift edits pass.
+  function clockGateBlocked() {
+    if (isAdmin || !techName || !settings || !attendance) return false;
+    if (!isSalonOpenNow(settings)) return false;
+    const inSet = clockedInNameSet(attendance);
+    if (inSet.has(String(techName).trim().toLowerCase())) return false;
+    Alert.alert('Clock in required', 'Clock in at the Time Clock before changing your schedule during open hours.');
+    return true;
+  }
   const [allTechs, setAllTechs] = useState([]);  // ordered tech-name list for color assignment
   const [timeOff,  setTimeOff]  = useState([]);  // [{ techName, startDate, endDate }]
   // Map of clientId → minimal client snapshot ({ allergies }). Used by
@@ -389,6 +407,7 @@ export default function ScheduleScreen({ navigation }) {
             onTapAppt={(a) => setDetail(a)}
             onTapEmpty={(startTime, tech) => setCreatePrefill({ date, startTime, techName: tech ?? '' })}
             onReschedule={async (a, patch) => {
+              if (clockGateBlocked()) return;
               setAppts(prev => prev.map(x => x.id === a.id ? { ...x, ...patch } : x));
               try { await updateAppointment(a.id, patch); notifyAffectedTechs(a, { ...a, ...patch }).catch(() => {}); }
               catch (e) { Alert.alert('Couldn\'t move', e?.message || 'Try again.'); setAppts(prev => prev.map(x => x.id === a.id ? { ...x, startTime: a.startTime, techName: a.techName } : x)); }
@@ -409,6 +428,7 @@ export default function ScheduleScreen({ navigation }) {
             onTapAppt={(a) => setDetail(a)}
             onTapEmpty={(startTime) => setCreatePrefill({ date, startTime, techName: showAll ? '' : (techName || '') })}
             onReschedule={async (a, patch) => {
+              if (clockGateBlocked()) return;
               setAppts(prev => prev.map(x => x.id === a.id ? { ...x, ...patch } : x));
               try { await updateAppointment(a.id, patch); notifyAffectedTechs(a, { ...a, ...patch }).catch(() => {}); }
               catch (e) { Alert.alert('Couldn\'t move', e?.message || 'Try again.'); setAppts(prev => prev.map(x => x.id === a.id ? { ...x, startTime: a.startTime, techName: a.techName } : x)); }
@@ -458,6 +478,7 @@ export default function ScheduleScreen({ navigation }) {
       <CreateApptModal
         prefill={createPrefill}
         editAppt={editAppt}
+        gateBlocked={clockGateBlocked}
         onClose={() => { setCreatePrefill(null); setEditAppt(null); }}
         onCreated={() => { setCreatePrefill(null); setEditAppt(null); }}
       />
@@ -931,7 +952,7 @@ function WeekView({ date, techName, showAll, allTechs, clientsById, workDays, ti
 // in edit mode. The two are mutually exclusive — caller picks which.
 // In edit mode the title/CTA flip to "Edit appointment" / "Save changes"
 // and save goes through updateAppointment instead of createAppointment.
-function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
+function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated }) {
   // CRITICAL: every hook below runs on every render regardless of
   // open state. Conditional rendering is INSIDE the JSX, never via
   // an early return between hook calls.
@@ -1084,6 +1105,7 @@ function CreateApptModal({ prefill, editAppt, onClose, onCreated }) {
       Alert.alert('Start time not valid', 'Use 24-hour HH:MM format (e.g. 14:30).');
       return;
     }
+    if (gateBlocked && gateBlocked()) return;
     setWorking(true);
     try {
       if (isEdit) {

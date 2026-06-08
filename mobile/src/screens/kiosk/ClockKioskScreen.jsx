@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, Modal, ScrollView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ActivityIndicator, Modal, ScrollView, Platform, Alert } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { fetchEmployees, fetchAttendance, clockEvent } from '../../lib/firestore';
 import PinPad from '../../components/PinPad';
@@ -109,14 +109,23 @@ export default function ClockKioskScreen({ navigation }) {
           <ScrollView contentContainerStyle={styles.grid}>
             {emps.map(e => {
               const on = stateOf(e.id) === 'in';
+              const noPin = !e.pinHash;
               return (
-                <TouchableOpacity key={e.id} style={styles.tile} activeOpacity={0.8} onPress={() => { setErr(''); setSel(e); }}>
+                <TouchableOpacity key={e.id} style={[styles.tile, noPin && styles.tileNoPin]} activeOpacity={0.8}
+                  onPress={() => {
+                    setErr('');
+                    if (noPin) {
+                      Alert.alert('No PIN set', `${shortName(e.name)} has no clock-in PIN yet. Ask an admin to set one in Employees before clocking in.`);
+                      return;
+                    }
+                    setSel(e);
+                  }}>
                   {e.photo
                     ? <Image source={{ uri: e.photo }} style={styles.avatar} />
                     : <View style={[styles.avatar, styles.avatarFallback]}><Text style={styles.avatarInit}>{initials(e.name)}</Text></View>}
                   <Text style={styles.tileName} numberOfLines={1}>{shortName(e.name)}</Text>
-                  <View style={[styles.badge, on ? styles.badgeIn : styles.badgeOut]}>
-                    <Text style={[styles.badgeText, on ? styles.badgeTextIn : styles.badgeTextOut]}>{on ? 'Clocked in' : 'Clocked out'}</Text>
+                  <View style={[styles.badge, noPin ? styles.badgeOut : on ? styles.badgeIn : styles.badgeOut]}>
+                    <Text style={[styles.badgeText, noPin ? styles.badgeTextOut : on ? styles.badgeTextIn : styles.badgeTextOut]}>{noPin ? 'No PIN set' : on ? 'Clocked in' : 'Clocked out'}</Text>
                   </View>
                 </TouchableOpacity>
               );
@@ -174,6 +183,7 @@ const makeStyles = (t) => StyleSheet.create({
   empty:   { color: t.textMuted, fontSize: 15 },
   grid:    { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 16, padding: 16 },
   tile:    { width: 150, alignItems: 'center', backgroundColor: t.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: t.border },
+  tileNoPin: { opacity: 0.55 },
   avatar:  { width: 84, height: 84, borderRadius: 42 },
   avatarFallback: { backgroundColor: t.greenSoft, alignItems: 'center', justifyContent: 'center' },
   avatarInit: { fontSize: 30, fontWeight: '800', color: t.green },

@@ -3,7 +3,8 @@ import { saveAppointment, fetchClient, saveClient,
          fetchGiftCardByCode, fetchGiftCardsByContact, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
          fetchProducts, saveProduct, createReviewRequest,
-         fetchClientMembership } from '../../lib/firestore';
+         fetchClientMembership, fetchAttendance } from '../../lib/firestore';
+import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { logActivity } from '../../lib/logger';
 import { subscribeLocations, currentLocationId, locationTaxRate } from '../../lib/locations';
 import { applyTurnCredit } from '../../lib/turnCredit';
@@ -45,7 +46,7 @@ export default function CheckoutModal(props) {
 }
 
 function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
-  const { settings, isOnline } = useApp();
+  const { settings, isOnline, isAdmin, showToast } = useApp();
   // Tax follows the location the sale is rung up at (the current-location
   // switcher); falls back to the tenant-wide rate for single-location tenants
   // or a location with no override. While locations load, the fallback applies.
@@ -130,6 +131,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [saving,       setSaving]       = useState(false);
   const [receipt,      setReceipt]      = useState(null);
   const [cardError,    setCardError]    = useState('');
+  const [gateError,    setGateError]    = useState('');
 
   useEffect(() => {
     if (primaryClient?.id) {
@@ -297,6 +299,29 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   async function complete() {
     setSaving(true);
     setCardError('');
+    setGateError('');
+
+    // Clock-in gate: while the salon is open ("on shift"), every tech credited
+    // on this sale must be clocked in before the sale can be rung up. Admins are
+    // exempt; off-shift (salon closed) the gate doesn't apply. Workflow guard,
+    // not a security boundary — the server still authorizes the writes.
+    if (!isAdmin && isSalonOpenNow(settings)) {
+      try {
+        const att = await fetchAttendance(attendanceKey());
+        const missing = offClockTechNames(techNames, att);
+        if (missing.length) {
+          const msg = `Not clocked in: ${missing.join(', ')}. ${missing.length > 1 ? 'These techs' : 'This tech'} must clock in at the Time Clock before checkout.`;
+          setGateError(msg);
+          showToast && showToast(msg, 6000);
+          setSaving(false);
+          return;
+        }
+      } catch {
+        // If attendance can't be read, fail open rather than block a paying
+        // customer at the register — the gate is a workflow nudge, not security.
+      }
+    }
+
     let stripePaymentIntentId = null;
 
     // Build a friendly description for Stripe + the receipt header.
@@ -1005,6 +1030,11 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 
         {/* Footer */}
         <div style={{ padding: '12px 18px', borderTop: '1px solid var(--pn-border)', flexShrink: 0 }}>
+          {gateError && (
+            <div style={{ marginBottom: 10, fontSize: 12, fontWeight: 600, color: '#b45309', background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 10, padding: '8px 12px' }}>
+              🔒 {gateError}
+            </div>
+          )}
           <button onClick={complete} disabled={saving}
             style={{ width: '100%', background: saving ? 'var(--pn-surface-muted)' : 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Processing…' : `Complete Checkout · $${total.toFixed(2)}`}
