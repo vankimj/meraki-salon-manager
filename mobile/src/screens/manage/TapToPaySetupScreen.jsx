@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Platform, Alert } from 'react-native';
 import { fetchSettings } from '../../lib/firestore';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import Icon from '../../components/Icon';
@@ -34,12 +34,11 @@ export default function TapToPaySetupScreen() {
 
   return (
     <ScrollView style={styles.wrap} contentContainerStyle={styles.content}>
-      {/* Awareness moment — req 3.1/3.2. [TTP-ASSET] replace with the approved
-          Tap to Pay Marketing Toolkit splash image + copy. */}
-      <View style={styles.assetBox}>
-        <Text style={styles.assetTag}>[ Apple-approved Tap to Pay asset ]</Text>
-        <Text style={styles.assetHint}>Drop the Marketing-Toolkit splash image + copy here</Text>
-      </View>
+      {/* Awareness moment — req 3.1/3.2. [TTP-ASSET] To use Apple's approved
+          splash, just replace mobile/assets/ttp/splash.png (same filename) with
+          the Marketing-Toolkit image — no code change. Hint shows in dev only. */}
+      <Image source={require('../../../assets/ttp/splash.png')} style={styles.splash} resizeMode="cover" />
+      {__DEV__ && <Text style={styles.assetHint}>Placeholder — replace mobile/assets/ttp/splash.png with Apple's approved splash</Text>}
 
       <Text style={styles.title}>Accept payments with just your iPhone</Text>
       <Text style={styles.sub}>Take contactless cards, Apple Pay, and digital wallets right on your iPhone — no extra hardware or reader needed.</Text>
@@ -134,9 +133,8 @@ const makeStyles = (t) => StyleSheet.create({
   center:  { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg, padding: 32 },
   gateTitle:{ fontSize: 18, fontWeight: '800', color: t.text, marginTop: 14, textAlign: 'center' },
   gateBody:{ fontSize: 14, color: t.textMuted, marginTop: 8, textAlign: 'center', lineHeight: 20 },
-  assetBox:{ backgroundColor: t.surfaceAlt, borderRadius: 16, borderWidth: 1, borderColor: t.border, borderStyle: 'dashed', alignItems: 'center', justifyContent: 'center', paddingVertical: 40, marginBottom: 18 },
-  assetTag:{ fontSize: 14, fontWeight: '800', color: t.textMuted },
-  assetHint:{ fontSize: 12, color: t.textFaint, marginTop: 6 },
+  splash:  { width: '100%', aspectRatio: 5 / 3, borderRadius: 16, backgroundColor: t.surfaceAlt, marginBottom: 8 },
+  assetHint:{ fontSize: 12, color: t.textFaint, marginBottom: 14, textAlign: 'center' },
   title:   { fontSize: 22, fontWeight: '800', color: t.text },
   sub:     { fontSize: 14, color: t.textMuted, marginTop: 8, lineHeight: 20, marginBottom: 18 },
   statusCard:{ backgroundColor: t.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.border, marginBottom: 12 },
