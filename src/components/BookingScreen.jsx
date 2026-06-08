@@ -695,7 +695,22 @@ export default function BookingScreen() {
             const r = await fetchTurnRoster(today).catch(() => null);
             turnRoster = (r && r.roster) || [];
           }
-          const result = pickTech({ method, freeTechs: free, dayAppts, weekAppts, turnRoster, roundRobinIndex: rrIdx });
+          // #222: for SAME-DAY no-preference bookings, prefer techs who are
+          // actually clocked in right now (don't auto-assign to someone who
+          // hasn't shown up). turnQueue already does this via its roster. Fall
+          // back to the full free pool if nobody eligible is clocked in yet —
+          // the day-of clock-in reassignment (#219) corrects it as techs arrive.
+          let freePool = free;
+          if (cartDate === today && method !== 'turnQueue') {
+            const inSet = await callFn('getClockedInTechNames')({ tenantId: TENANT_ID })
+              .then(r => new Set((r?.data?.names || []).map(n => String(n).trim().toLowerCase())))
+              .catch(() => null);
+            if (inSet && inSet.size) {
+              const onClock = free.filter(t => inSet.has(String(t.name).trim().toLowerCase()));
+              if (onClock.length) freePool = onClock;
+            }
+          }
+          const result = pickTech({ method, freeTechs: freePool, dayAppts, weekAppts, turnRoster, roundRobinIndex: rrIdx });
           assigned = result.tech || firstFreeTech(elig, startSlot, cartTotalDuration(items, removalDur), dayAppts);
           rrIdx = result.nextRoundRobinIndex;
         }

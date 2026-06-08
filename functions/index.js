@@ -152,6 +152,7 @@ const {
   verifyPin:          tcVerifyPin,
   isValidPinFormat:   tcIsValidPin,
 } = require('./lib/timeclock');
+const { planReassignments: tcPlanReassign, nowMinutesInTz: tcNowMinsInTz } = require('./lib/reassign');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -1645,6 +1646,29 @@ exports.getPublicAvailability = onCall({ cors: true }, async (request) => {
   return { appts };
 });
 
+// Public callable: names of techs currently clocked in today (tenant tz). The
+// public booking page uses this to prefer on-the-clock techs for same-day
+// "no preference" bookings (#222). Attendance isn't public-readable, so this
+// returns only display names — no clock times, no PII. Rate-limited.
+exports.getClockedInTechNames = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 240)) {
+    throw new HttpsError('resource-exhausted', 'Too many checks. Try again in a few minutes.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const db = getFirestore();
+  const tz = await tenantTimezone(db, tenantId);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+  const snap = await db.doc(`tenants/${tenantId}/attendance/${today}`).get();
+  if (!snap.exists) return { names: [] };
+  const entries = Array.isArray(snap.data().entries) ? snap.data().entries : [];
+  const names = entries
+    .filter(en => tcCurrentState(Array.isArray(en.events) ? en.events : []) === TC_STATES.IN)
+    .map(en => en.employeeName)
+    .filter(Boolean);
+  return { names };
+});
+
 // Public callable for the check-in flow (a client clicks the link in
 // their booking confirmation email). Returns the minimal display info
 // for the check-in screen — date, time, tech name, services (just name
@@ -2408,8 +2432,106 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
     console.warn(`[clockEvent] admin notify failed for tenant=${tenantId}:`, e?.message);
   }
 
+  // Day-of reassignment: when a tech clocks IN, re-distribute today's still-
+  // unclaimed no-preference bookings to the techs now on the clock, in clock-in
+  // order (earliest gets first pick). Best-effort and post-commit — a failure
+  // here must never undo the clock event the tech already saw confirmed.
+  if (kind === 'in' && !result?.duplicate) {
+    try { await reassignNoPrefOnClockIn(db, tenantId, date); }
+    catch (e) { console.warn(`[clockEvent] reassign failed for tenant=${tenantId}:`, e?.message); }
+  }
+
   return result;
 });
+
+// Read today's attendance + employees + appointments, plan the no-preference
+// reassignment (pure planner in lib/reassign.js), batch-write the moves, and
+// push-notify the affected techs + admins. dateKey is the tenant-tz YYYY-MM-DD
+// the clock event landed on.
+async function reassignNoPrefOnClockIn(db, tenantId, dateKey) {
+  const attSnap = await db.doc(`tenants/${tenantId}/attendance/${dateKey}`).get();
+  if (!attSnap.exists) return;
+  const entries = Array.isArray(attSnap.data().entries) ? attSnap.data().entries : [];
+
+  // Currently clocked-in techs, each tagged with their first clock-in time.
+  const clockedIn = entries.map(en => {
+    const events = Array.isArray(en.events) ? en.events : [];
+    if (tcCurrentState(events) !== TC_STATES.IN) return null;       // 'in' or back from break
+    const firstIn = events.find(ev => ev && ev.kind === 'in');
+    return { employeeId: en.employeeId, employeeName: en.employeeName, clockInAt: (firstIn && firstIn.at) || en.clockInAt || null };
+  }).filter(Boolean);
+  if (!clockedIn.length) return;
+
+  const empSnap = await db.collection(`tenants/${tenantId}/employees`).get();
+  const empById = {};
+  empSnap.docs.forEach(d => { empById[d.id] = { id: d.id, ...d.data() }; });
+
+  const clockedInTechs = clockedIn.map(c => {
+    const e = empById[c.employeeId] || {};
+    return { id: c.employeeId, name: c.employeeName || e.name || '', email: e.email || '', serviceIds: e.serviceIds || [], clockInAt: c.clockInAt };
+  }).filter(t => t.name && empById[t.id]?.active !== false);
+  if (!clockedInTechs.length) return;
+
+  const apSnap = await db.collection(`tenants/${tenantId}/appointments`).where('date', '==', dateKey).get();
+  const appts = apSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+  const tz = await tenantTimezone(db, tenantId);
+  const nowMins = tcNowMinsInTz(tz);
+
+  const changes = tcPlanReassign({ appts, clockedInTechs, nowMins });
+  if (!changes.length) return;
+
+  const batch = db.batch();
+  const nowIso = new Date().toISOString();
+  changes.forEach(ch => {
+    batch.update(db.doc(`tenants/${tenantId}/appointments/${ch.apptId}`), {
+      techId: ch.toTechId, techName: ch.toTechName,
+      reassignedAt: nowIso, reassignedByClockIn: true, updatedAt: nowIso,
+    });
+  });
+  await batch.commit();
+
+  await notifyReassignments(db, tenantId, changes, empById);
+}
+
+// Push the techs who gained / lost appointments on a reassignment pass, plus a
+// summary to all admins. Aggregated per person so a pass that moves several
+// appts sends one push each, not one per appt.
+async function notifyReassignments(db, tenantId, changes, empById) {
+  const gained = {}, lost = {};
+  changes.forEach(ch => {
+    const toEmail = String(empById[ch.toTechId]?.email || '').toLowerCase();
+    if (toEmail) (gained[toEmail] = gained[toEmail] || { name: ch.toTechName, n: 0 }).n++;
+    if (ch.fromTechId) {
+      const fromEmail = String(empById[ch.fromTechId]?.email || '').toLowerCase();
+      if (fromEmail) (lost[fromEmail] = lost[fromEmail] || { name: ch.fromTechName, n: 0 }).n++;
+    }
+  });
+  const appts = (n) => `${n} appointment${n === 1 ? '' : 's'}`;
+
+  await Promise.all([
+    ...Object.entries(gained).map(([email, g]) =>
+      sendPushToEmail(db, tenantId, email, {
+        title: 'New appointments assigned',
+        body:  `${appts(g.n)} assigned to you today now that you're clocked in.`,
+        data:  { type: 'appt_reassigned', kind: 'gained' },
+      }).catch(() => {})),
+    ...Object.entries(lost).map(([email, l]) =>
+      sendPushToEmail(db, tenantId, email, {
+        title: 'Appointments reassigned',
+        body:  `${appts(l.n)} moved to a clocked-in teammate.`,
+        data:  { type: 'appt_reassigned', kind: 'lost' },
+      }).catch(() => {})),
+  ]);
+
+  try {
+    await notifyTenantAdmins(db, tenantId, {
+      title: 'Appointments reassigned',
+      line:  `${appts(changes.length)} reassigned to clocked-in techs by clock-in order.`,
+      data:  { type: 'appt_reassigned' },
+    });
+  } catch { /* best-effort */ }
+}
 
 // Admin sets / resets a 4-digit PIN for an employee. Stored as scrypt(salt+pin)
 // so a stolen DB doesn't reveal PINs to a buddy-puncher trying to clock for
@@ -5935,6 +6057,107 @@ exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
   }
   return out;
 });
+
+// Redo a service from a past sale. A redo is NOT a refund — no money moves. It
+// TRANSFERS the redone service's revenue attribution (and the commission it
+// drives) from the original tech to the redo tech: the original loses that
+// service's credit, the redo tech gains it (salon net $0 beyond any pay-rate
+// difference, which metrics handle per-tech). Fully auditable: records a redos[]
+// entry on the receipt + mirrors onto appointments + notifies both techs, so
+// each can see exactly why their pay changed. Idempotent via a stable key.
+exports.redoService = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, services, redoTech, reason, idempotencyKey, notify } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+
+  const db = getFirestore();
+  await requireTenantStaff(db, tenantId, request);
+  const issuerEmail = await callerEmail(request);
+
+  if (!receiptId || typeof receiptId !== 'string') throw new HttpsError('invalid-argument', 'receiptId required');
+  const idemKey = String(idempotencyKey || '');
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(idemKey)) throw new HttpsError('invalid-argument', 'idempotencyKey required');
+  const toTech = String(redoTech || '').trim().slice(0, 120);
+  if (!toTech) throw new HttpsError('invalid-argument', 'A redo tech is required');
+  const reasonStr = String(reason || '').trim().slice(0, 500);
+  if (!reasonStr) throw new HttpsError('invalid-argument', 'A reason is required');
+  // services: the redone service(s) from the original sale. Each carries the
+  // ORIGINAL tech (whose credit is withheld) + the amount transferred.
+  const items = (Array.isArray(services) ? services : [])
+    .map(s => ({
+      name:     String(s?.name || '').slice(0, 200),
+      amount:   Math.round((Number(s?.amount) || 0) * 100) / 100,
+      fromTech: String(s?.techName || s?.fromTech || '').trim().slice(0, 120),
+    }))
+    .filter(s => s.name && s.amount > 0 && s.fromTech);
+  if (!items.length) throw new HttpsError('invalid-argument', 'Select at least one service to redo');
+
+  const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+  const recSnap = await recRef.get();
+  if (!recSnap.exists) throw new HttpsError('not-found', 'Sale not found');
+  const rec = recSnap.data();
+  const priorRedos = Array.isArray(rec.redos) ? rec.redos : [];
+  if (priorRedos.some(r => r && r.key === idemKey)) return { ok: true, alreadyRecorded: true };
+
+  const totalAmt = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+  const redoEntry = {
+    key: idemKey,
+    services: items,            // [{ name, amount, fromTech }]
+    toTech,
+    amount: totalAmt,
+    reason: reasonStr,
+    issuedBy: issuerEmail || null,
+    redoneAt: new Date().toISOString(),
+  };
+
+  // Record idempotently inside a txn so concurrent/retried writes converge.
+  let added = false;
+  await db.runTransaction(async (tx) => {
+    const s = await tx.get(recRef);
+    const d = s.exists ? s.data() : {};
+    const existing = Array.isArray(d.redos) ? d.redos : [];
+    if (existing.some(r => r && r.key === idemKey)) return;
+    tx.set(recRef, { redos: [...existing, redoEntry], updatedAt: new Date().toISOString() }, { merge: true });
+    added = true;
+  });
+
+  if (added) {
+    for (const aId of (rec.apptIds || [])) {
+      try { await db.doc(`tenants/${tenantId}/appointments/${aId}`).set({ redo: redoEntry, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) { /* best-effort */ }
+    }
+    if (notify !== false) notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }).catch(e => console.error('[redo] notify failed:', e?.message));
+  }
+  return { ok: true, amount: totalAmt, alreadyRecorded: !added };
+});
+
+// Tell the affected techs about a redo so the pay change is never a surprise:
+// the ORIGINAL tech(s) ("your work was redone, commission moved") and the REDO
+// tech ("you were credited for the redo"). Push + email where we can map the
+// tech's name → their employee email. All best-effort.
+async function notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }) {
+  const emailByName = {};
+  try {
+    const emps = await db.collection(`tenants/${tenantId}/employees`).get();
+    emps.docs.forEach(d => { const e = d.data() || {}; if (e.name && e.email) emailByName[String(e.name).trim().toLowerCase()] = String(e.email).toLowerCase(); });
+  } catch (e) { /* best-effort */ }
+  const brand  = await tenantBranding(db, tenantId);
+  const client = rec.clientName || 'a client';
+  const svc    = redoEntry.services.map(s => s.name).join(', ');
+  const amtStr = `$${Number(redoEntry.amount || 0).toFixed(2)}`;
+  const fromTechs = [...new Set(redoEntry.services.map(s => s.fromTech).filter(Boolean))];
+
+  const send = async (name, title, line) => {
+    const em = emailByName[String(name).trim().toLowerCase()];
+    if (!em) return;
+    try { await sendPushToEmail(db, tenantId, em, { title, body: line, data: { type: 'redo', receiptId: rec.viewToken || null } }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+  };
+  await Promise.all([
+    ...fromTechs.map(t => send(t, 'A service was redone', `${client}'s ${svc} was redone by ${redoEntry.toTech}. ${amtStr} in commission moved from you to them${redoEntry.reason ? ` — "${redoEntry.reason}"` : ''}.`)),
+    send(redoEntry.toTech, 'You were credited for a redo', `You were credited ${amtStr} for redoing ${client}'s ${svc} (originally ${fromTechs.join(', ') || 'another tech'}).`),
+  ]);
+}
 
 // Stripe Terminal connection token — required by @stripe/stripe-terminal-react-
 // native to talk to readers / Tap to Pay. Minted on the PLATFORM account
