@@ -1646,6 +1646,29 @@ exports.getPublicAvailability = onCall({ cors: true }, async (request) => {
   return { appts };
 });
 
+// Public callable: names of techs currently clocked in today (tenant tz). The
+// public booking page uses this to prefer on-the-clock techs for same-day
+// "no preference" bookings (#222). Attendance isn't public-readable, so this
+// returns only display names — no clock times, no PII. Rate-limited.
+exports.getClockedInTechNames = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 240)) {
+    throw new HttpsError('resource-exhausted', 'Too many checks. Try again in a few minutes.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const db = getFirestore();
+  const tz = await tenantTimezone(db, tenantId);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+  const snap = await db.doc(`tenants/${tenantId}/attendance/${today}`).get();
+  if (!snap.exists) return { names: [] };
+  const entries = Array.isArray(snap.data().entries) ? snap.data().entries : [];
+  const names = entries
+    .filter(en => tcCurrentState(Array.isArray(en.events) ? en.events : []) === TC_STATES.IN)
+    .map(en => en.employeeName)
+    .filter(Boolean);
+  return { names };
+});
+
 // Public callable for the check-in flow (a client clicks the link in
 // their booking confirmation email). Returns the minimal display info
 // for the check-in screen — date, time, tech name, services (just name
