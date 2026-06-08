@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { saveAppointment, fetchClient, saveClient,
-         fetchGiftCardByCode, updateGiftCard, createGiftCard,
+         fetchGiftCardByCode, fetchGiftCardsByContact, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
          fetchProducts, saveProduct, createReviewRequest,
          fetchClientMembership } from '../../lib/firestore';
@@ -105,6 +105,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [gcErr,        setGcErr]        = useState('');
   const [gcLoading,    setGcLoading]    = useState(false);
   const [applyGC,      setApplyGC]      = useState(true);
+  const [gcSearchOpen, setGcSearchOpen] = useState(false);
+  const [gcQ,          setGcQ]          = useState('');
+  const [gcResults,    setGcResults]    = useState(null);
+  const [gcSearching,  setGcSearching]  = useState(false);
   const [clientCredit, setClientCredit] = useState(0);
   const [membership,   setMembership]   = useState(null);   // active membership for primaryClient (or null)
   const [memberDiscountApplied, setMemberDiscountApplied] = useState(false);
@@ -267,18 +271,27 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     finally  { setPromoLoading(false); }
   }
 
+  function applyFoundGiftCard(gc) {
+    if (!gc)             { setGcErr('Gift card not found.'); return; }
+    if (gc.balance <= 0) { setGcErr('Gift card has no remaining balance.'); return; }
+    setGiftCard(gc); setApplyGC(true); setGcInput(gc.code || ''); setGcErr('');
+    setGcSearchOpen(false); setGcQ(''); setGcResults(null);
+  }
   async function applyGiftCard() {
     const code = gcInput.trim();
     if (!code) return;
     setGcLoading(true); setGcErr(''); setGiftCard(null);
-    try {
-      const gc = await fetchGiftCardByCode(code);
-      if (!gc)             { setGcErr('Gift card not found.'); return; }
-      if (gc.balance <= 0) { setGcErr('Gift card has no remaining balance.'); return; }
-      setGiftCard(gc);
-      setApplyGC(true);
-    } catch { setGcErr('Lookup failed.'); }
+    try { applyFoundGiftCard(await fetchGiftCardByCode(code)); }
+    catch { setGcErr('Lookup failed.'); }
     finally  { setGcLoading(false); }
+  }
+  async function searchGiftCards() {
+    const q = gcQ.trim();
+    if (q.length < 2) return;
+    setGcSearching(true);
+    try { setGcResults(await fetchGiftCardsByContact(q)); }
+    catch { setGcResults([]); }
+    finally { setGcSearching(false); }
   }
 
   async function complete() {
@@ -801,17 +814,52 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 </label>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <input value={gcInput} onChange={e => { setGcInput(e.target.value); setGcErr(''); }}
-                  onKeyDown={e => e.key === 'Enter' && applyGiftCard()}
-                  placeholder="Gift card code…"
-                  style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', textTransform: 'uppercase' }}
-                />
-                <button onClick={applyGiftCard} disabled={gcLoading || !gcInput.trim()}
-                  style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#3D95CE', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: (!gcInput.trim() || gcLoading) ? .5 : 1 }}>
-                  {gcLoading ? '…' : 'Apply'}
-                </button>
-              </div>
+              <>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={gcInput} onChange={e => { setGcInput(e.target.value); setGcErr(''); }}
+                    onKeyDown={e => e.key === 'Enter' && applyGiftCard()}
+                    placeholder="Gift card code…"
+                    style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', textTransform: 'uppercase' }}
+                  />
+                  <button onClick={applyGiftCard} disabled={gcLoading || !gcInput.trim()}
+                    style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#3D95CE', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: (!gcInput.trim() || gcLoading) ? .5 : 1 }}>
+                    {gcLoading ? '…' : 'Apply'}
+                  </button>
+                  <button onClick={() => { setGcSearchOpen(o => !o); setGcResults(null); setGcQ(''); }}
+                    style={{ padding: '7px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                    Find
+                  </button>
+                </div>
+                {gcSearchOpen && (
+                  <div style={{ marginTop: 8, padding: 10, border: '1px solid var(--pn-border)', borderRadius: 8, background: 'var(--pn-bg)' }}>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <input value={gcQ} onChange={e => setGcQ(e.target.value)} onKeyDown={e => e.key === 'Enter' && searchGiftCards()}
+                        placeholder="Recipient name, phone, or email…"
+                        style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-surface)' }} />
+                      <button onClick={searchGiftCards} disabled={gcSearching || gcQ.trim().length < 2}
+                        style={{ padding: '7px 14px', borderRadius: 8, border: 'none', background: '#3D95CE', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', opacity: (gcSearching || gcQ.trim().length < 2) ? .5 : 1 }}>
+                        {gcSearching ? '…' : 'Search'}
+                      </button>
+                    </div>
+                    {gcResults !== null && (gcResults.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 8 }}>No matching gift cards with a balance.</div>
+                    ) : (
+                      <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
+                        {gcResults.map(g => (
+                          <button key={g.id} onClick={() => applyFoundGiftCard(g)}
+                            style={{ display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 10px', border: 'none', borderBottom: '1px solid var(--pn-border)', background: 'none', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                            <span style={{ flex: 1, minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.recipientName || g.code}</span>
+                              <span style={{ display: 'block', fontSize: 11, color: 'var(--pn-text-muted)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.code}{g.recipientPhone ? ` · ${g.recipientPhone}` : ''}{g.recipientEmail ? ` · ${g.recipientEmail}` : ''}</span>
+                            </span>
+                            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-success)' }}>${(Number(g.balance) || 0).toFixed(2)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             {gcErr && <div style={{ fontSize: 11, color: '#ef4444', marginTop: 4 }}>{gcErr}</div>}
           </Section>

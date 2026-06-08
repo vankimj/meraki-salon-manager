@@ -1128,6 +1128,27 @@ export async function fetchGiftCardByCode(code) {
   return { id: d.id, ...d.data() };
 }
 
+// Find redeemable gift cards by recipient name / phone / email (or code) — the
+// "customer forgot their code" lookup. Active, non-voided, positive balance only.
+export async function fetchGiftCardsByContact(qRaw) {
+  const q = String(qRaw || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  const digits = (q.match(/\d/g) || []).join('');
+  const snap = await getDocs(GIFT_CARDS_COL);
+  const out = [];
+  snap.docs.forEach(dd => {
+    const g = { id: dd.id, ...dd.data() };
+    if (g.voided || !(Number(g.balance) > 0)) return;
+    const name  = String(g.recipientName || '').toLowerCase();
+    const email = String(g.recipientEmail || '').toLowerCase();
+    const code  = String(g.code || '').toLowerCase();
+    const gPhone = (String(g.recipientPhone || '').match(/\d/g) || []).join('');
+    const phoneHit = digits.length >= 7 && gPhone && gPhone.slice(-10) === digits.slice(-10);
+    if (name.includes(q) || email.includes(q) || code.includes(q) || phoneHit) out.push(g);
+  });
+  return out.slice(0, 25);
+}
+
 export async function createGiftCard(data) {
   const ref = await addDoc(GIFT_CARDS_COL, { ...data, createdAt: new Date().toISOString() });
   return ref.id;
