@@ -64,9 +64,12 @@ async function registerForPushNotificationsAsync() {
 
   if (Platform.OS === 'android') {
     try {
+      // HIGH importance → heads-up banner + sound (DEFAULT lands silently in the
+      // tray). Android locks a channel's importance after creation, so a fresh
+      // install picks this up; existing installs keep their prior level.
       await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.DEFAULT,
+        name: 'Notifications',
+        importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#2D7A5F',
       });
