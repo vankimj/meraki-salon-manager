@@ -488,6 +488,7 @@ function GiftCardModal({ onSave, onClose }) {
   const [code,           setCode]           = useState(genCode());
   const [recipientName,  setRecipientName]  = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
+  const [recipientPhone, setRecipientPhone] = useState('');
   const [note,           setNote]           = useState('');
   const [saving,         setSaving]         = useState(false);
 
@@ -508,6 +509,7 @@ function GiftCardModal({ onSave, onClose }) {
       // kept populated for backward-compat with existing UI references.
       recipientName:  recipientName.trim() || null,
       recipientEmail: recipientEmail.trim(),
+      recipientPhone: recipientPhone.trim() || null,
       issuedTo:       recipientName.trim() || null,
       note:           note.trim() || null,
       voided:         false,
@@ -550,6 +552,13 @@ function GiftCardModal({ onSave, onClose }) {
               ? "Enter a valid email — we'll send the code here."
               : "We'll email the code + balance to this address."}
           </div>
+        </Field>
+
+        <Field label="Recipient phone (optional)">
+          <input value={recipientPhone} onChange={e => setRecipientPhone(e.target.value)}
+            placeholder="(555) 123-4567" inputMode="tel"
+            style={inputStyle} />
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>Lets staff look this card up by phone at checkout.</div>
         </Field>
 
         <Field label="Note (optional)">
