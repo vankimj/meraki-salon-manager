@@ -4,6 +4,7 @@ import { callFn } from '../../lib/firebase';
 import { TENANT_ID } from '../../lib/tenant';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
+import RedoModal from '../checkout/RedoModal';
 
 // Web Sales & Receipts — parity with the mobile ReceiptsScreen. Browse recent
 // sales (range presets), search a client by name across all time, expand a sale
@@ -55,6 +56,7 @@ export default function ReceiptsAdmin() {
   const [allTime, setAllTime] = useState(null);   // { name, results }
   const [searching, setSearching] = useState(false);
   const [refundReceipt, setRefundReceipt] = useState(null);
+  const [redoReceipt, setRedoReceipt] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -96,6 +98,12 @@ export default function ReceiptsAdmin() {
     setRefundReceipt(null);
     if (allTime) searchAllTime(); else load();
     if (msg) showToast(msg + ' — admins notified.');
+  }
+
+  function afterRedo(msg) {
+    setRedoReceipt(null);
+    if (allTime) searchAllTime(); else load();
+    if (msg) showToast(msg + ' — techs notified.');
   }
 
   return (
@@ -145,22 +153,26 @@ export default function ReceiptsAdmin() {
         filtered.map(item => (
           <ReceiptCard key={item.id} item={item} open={openId === item.id}
             onToggle={() => setOpenId(openId === item.id ? null : item.id)}
-            canWrite={canWrite} showToast={showToast} onRefund={() => setRefundReceipt(item)} />
+            canWrite={canWrite} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
         ))
       )}
 
       {refundReceipt && (
         <RefundModal receipt={refundReceipt} onClose={() => setRefundReceipt(null)} onDone={afterRefund} showToast={showToast} commissionDefault={settings?.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold'} />
       )}
+      {redoReceipt && (
+        <RedoModal receipt={redoReceipt} onClose={() => setRedoReceipt(null)} onDone={afterRedo} showToast={showToast} />
+      )}
     </div>
   );
 }
 
-function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund }) {
+function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund, onRedo }) {
   const pay = item.payment || {};
   const refunded = Number(item.refundedAmount) || 0;
   const remaining = Math.max(0, (Number(pay.total) || 0) - refunded);
   const method = pay.method || '';
+  const redos = Array.isArray(item.redos) ? item.redos : [];
   return (
     <div style={{ border: '1px solid var(--pn-border)', borderRadius: 12, background: 'var(--pn-surface)', marginBottom: 10, overflow: 'hidden' }}>
       <div onClick={onToggle} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, cursor: 'pointer' }}>
@@ -171,6 +183,7 @@ function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund }) {
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--pn-text)', textDecoration: refunded > 0 ? 'line-through' : 'none' }}>{money(pay.total)}</div>
           {refunded > 0 && <div style={{ fontSize: 10.5, color: 'var(--pn-danger)', fontWeight: 700 }}>−{money(refunded)} refunded</div>}
+          {redos.length > 0 && <div style={{ fontSize: 10.5, color: '#2D7A5F', fontWeight: 700 }}>↻ Redone</div>}
         </div>
         <span style={{ color: 'var(--pn-text-muted)', width: 14, textAlign: 'center' }}>{open ? '▾' : '▸'}</span>
       </div>
@@ -197,6 +210,12 @@ function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund }) {
               <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>−{money(r.amount)}</span>
             </div>
           ))}
+          {redos.map((r, i) => (
+            <div key={`rd${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: i === 0 ? 6 : 0 }}>
+              <span style={{ fontSize: 12.5, color: '#2D7A5F', fontWeight: 700 }}>↻ Redone by {r.toTech || '—'}{r.reason ? ` · ${r.reason}` : ''}</span>
+              <span style={{ fontSize: 12.5, color: '#2D7A5F', fontWeight: 700 }}>{money(r.amount)}</span>
+            </div>
+          ))}
 
           {canWrite && (
             <>
@@ -205,14 +224,20 @@ function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund }) {
                 ? <Recipients receipt={item} showToast={showToast} />
                 : <ResendRow receipt={item} defaultContact={item.clientPhone || item.clientEmail || ''} showToast={showToast} />}
 
-              {remaining > 0 ? (
-                <button onClick={onRefund}
-                  style={{ marginTop: 14, padding: '10px 16px', fontWeight: 800, fontSize: 13.5, borderRadius: 10, border: '1px solid var(--pn-danger)', background: 'transparent', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  ↩ Refund{refunded > 0 ? ` (${money(remaining)} left)` : ''}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
+                {remaining > 0 ? (
+                  <button onClick={onRefund}
+                    style={{ padding: '10px 16px', fontWeight: 800, fontSize: 13.5, borderRadius: 10, border: '1px solid var(--pn-danger)', background: 'transparent', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ↩ Refund{refunded > 0 ? ` (${money(remaining)} left)` : ''}
+                  </button>
+                ) : (
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text-faint)' }}>Fully refunded</div>
+                )}
+                <button onClick={onRedo}
+                  style={{ padding: '10px 16px', fontWeight: 800, fontSize: 13.5, borderRadius: 10, border: '1px solid #2D7A5F', background: 'transparent', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  ↻ Redo
                 </button>
-              ) : (
-                <div style={{ marginTop: 14, fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text-faint)' }}>Fully refunded</div>
-              )}
+              </div>
             </>
           )}
         </div>

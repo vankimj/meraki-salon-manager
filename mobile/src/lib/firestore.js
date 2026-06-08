@@ -568,6 +568,14 @@ export async function refundSale({ receiptId, amountCents, reason, refundTo = 'm
   const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, refundTo, commissionByTech, idempotencyKey });
   return res?.data || { ok: false };
 }
+// Record a service redo: moves the commission for the selected service(s) from
+// the original tech to `redoTech`. No money is refunded. Staff (admin or tech)
+// may call it; the server notifies the affected techs. `idempotencyKey` (stable
+// per attempt) makes a retry safe — no double-recorded redo.
+export async function redoService({ receiptId, services, redoTech, reason, idempotencyKey, notify }) {
+  const res = await callFn('redoService')({ tenantId: getCurrentTenant(), receiptId, services, redoTech, reason, idempotencyKey, notify });
+  return res?.data || {};
+}
 // Manually add/remove a client's store credit (admin or tech). deltaCents is
 // signed (+add / −remove). Server is atomic, audit-logged, alerts all admins.
 export async function adjustClientCredit({ clientId, deltaCents, reason, idempotencyKey }) {

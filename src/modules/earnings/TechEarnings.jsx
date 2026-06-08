@@ -55,6 +55,7 @@ function computeTechSlice(receipts, appointments, techName) {
   const clientIds = new Set();
   const clientNames = {}; // for display fallback when no clientId
   const tipEntries = []; // { date, amount, clientName }
+  const redoEntries = []; // { date, dir:'in'|'out', amount, label, other, reason, clientName }
   const services = {};   // { name: { count, revenue } }
 
   // Revenue + tips come from receipts
@@ -91,6 +92,14 @@ function computeTechSlice(receipts, appointments, techName) {
         if (treat === 'withhold') revenue -= (myRev / totalRev) * (Number(rf.amount) || 0);
       });
     }
+    // Redo transfer: the original tech loses the redone service's revenue; the
+    // redo tech gains it. Audit lines let the tech see exactly why pay moved.
+    (Array.isArray(r.redos) ? r.redos : []).forEach(rd => {
+      (rd.services || []).forEach(it => {
+        if (it.fromTech === techName) { const d = Number(it.amount) || 0; revenue -= d; redoEntries.push({ date: rd.redoneAt || r.date, dir: 'out', amount: d, label: it.name, other: rd.toTech, reason: rd.reason, clientName: r.clientName || 'Walk-in' }); }
+      });
+      if (rd.toTech === techName) { const d = Number(rd.amount) || 0; revenue += d; redoEntries.push({ date: rd.redoneAt || r.date, dir: 'in', amount: d, label: (rd.services || []).map(s => s.name).join(', '), other: [...new Set((rd.services || []).map(s => s.fromTech).filter(Boolean))].join(', '), reason: rd.reason, clientName: r.clientName || 'Walk-in' }); }
+    });
   });
 
   // Service counts come from done appointments (or receipts with services)
@@ -132,6 +141,7 @@ function computeTechSlice(receipts, appointments, techName) {
     avgTip: serviceCount ? tips / serviceCount : 0,
     services,
     tipEntries: tipEntries.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
+    redoEntries: redoEntries.sort((a, b) => (b.date || '').localeCompare(a.date || '')),
   };
 }
 
@@ -331,6 +341,28 @@ export default function TechEarnings() {
                 </div>
               )}
             </Panel>
+
+            {data.month.redoEntries?.length > 0 && (
+              <Panel title="Redo adjustments">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {data.month.redoEntries.slice(0, 8).map((e, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', background: 'var(--pn-bg)', borderRadius: 8 }}>
+                      <div style={{ minWidth: 0, paddingRight: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
+                          {e.dir === 'in' ? `Redid ${e.clientName}'s ${e.label}` : `${e.clientName}'s ${e.label} redone by ${e.other || 'another tech'}`}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
+                          {new Date((e.date || '').slice(0, 10) + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          {e.dir === 'in' && e.other ? ` · orig. ${e.other}` : ''}
+                          {e.reason ? ` · "${e.reason}"` : ''}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: e.dir === 'in' ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>{e.dir === 'in' ? '+' : '−'}{fmtMoneyExact(e.amount)}</div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
 
             <Panel title="Coming up">
               {data.todayRemaining.length === 0 && data.nextSevenDays.length === 0 ? (

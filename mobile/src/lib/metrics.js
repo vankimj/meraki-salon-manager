@@ -198,6 +198,13 @@ export function computeMetrics(transactions, today = todayStr()) {
       });
     }
   });
+  // Redo transfer: a redone service moves its revenue (and the commission it
+  // drives) from the original tech to the redo tech. Salon total is unchanged
+  // (net $0) — this only re-attributes between techs.
+  done.forEach(a => (Array.isArray(a.redos) ? a.redos : []).forEach(rd => {
+    (rd.services || []).forEach(it => { if (byTech[it.fromTech]) byTech[it.fromTech].revenue -= Number(it.amount) || 0; });
+    if (rd.toTech) { ensureTech(rd.toTech); byTech[rd.toTech].revenue += Number(rd.amount) || 0; }
+  }));
   Object.values(byTech).forEach(t => { t.clientCount = t.clients.size; delete t.clients; });
 
   const byService = {};

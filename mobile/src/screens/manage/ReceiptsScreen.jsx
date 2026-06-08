@@ -3,6 +3,7 @@ import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, Activity
 import { fetchReceiptsByRange, fetchReceiptsByClientName, fetchAppointmentsByIds, fetchClient, fetchSettings } from '../../lib/firestore';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
 import RefundSheet from '../../components/RefundSheet';
+import RedoSheet from '../../components/RedoSheet';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -43,6 +44,7 @@ export default function ReceiptsScreen() {
   const [allTime, setAllTime] = useState(null);   // {name, results} when an all-time name search is active
   const [searching, setSearching] = useState(false);
   const [refundReceipt, setRefundReceipt] = useState(null);
+  const [redoReceipt, setRedoReceipt] = useState(null);
   const [commissionDefault, setCommissionDefault] = useState('withhold');
   useEffect(() => { fetchSettings().then(s => { if (s?.refundCommissionDefault === 'goodwill') setCommissionDefault('goodwill'); }).catch(() => {}); }, []);
 
@@ -95,6 +97,8 @@ export default function ReceiptsScreen() {
     const method  = pay.method || '';
     const refunded = Number(item.refundedAmount) || 0;
     const remaining = Math.max(0, (Number(pay.total) || 0) - refunded);
+    const redos = Array.isArray(item.redos) ? item.redos : [];
+    const hasRedo = redos.length > 0;
     return (
       <View style={styles.card}>
         <TouchableOpacity style={styles.row} activeOpacity={0.7} onPress={() => setOpenId(open ? null : item.id)}>
@@ -105,6 +109,7 @@ export default function ReceiptsScreen() {
           <View style={{ alignItems: 'flex-end' }}>
             <Text style={[styles.total, refunded > 0 && { textDecorationLine: 'line-through', color: theme.textMuted }]}>{money(pay.total)}</Text>
             {refunded > 0 && <Text style={styles.refundedTag}>−{money(refunded)} refunded</Text>}
+            {hasRedo && <Text style={styles.redoneTag}>↻ Redone</Text>}
           </View>
           <Text style={styles.chev}>{open ? '▾' : '▸'}</Text>
         </TouchableOpacity>
@@ -137,18 +142,30 @@ export default function ReceiptsScreen() {
               </View>
             ))}
 
+            {redos.map((r, i) => (
+              <View key={`rd${i}`} style={[styles.liRow, i === 0 && { marginTop: 6 }]}>
+                <Text style={styles.redoLine} numberOfLines={1}>↻ Redone by {r.toTech || '—'}{r.reason ? ` · ${r.reason}` : ''}</Text>
+                <Text style={styles.redoLine}>{money(r.amount)}</Text>
+              </View>
+            ))}
+
             <Text style={styles.expandLabel}>Resend receipt</Text>
             {(item.apptIds || []).length > 1
               ? <ReceiptRecipients receipt={item} theme={theme} styles={styles} />
               : <ResendReceiptRow receiptId={item.id} viewToken={item.viewToken || null} defaultContact={contact} compact />}
 
-            {remaining > 0 ? (
-              <TouchableOpacity style={styles.refundBtn} onPress={() => setRefundReceipt(item)} activeOpacity={0.85}>
-                <Text style={styles.refundBtnText}>↩ Refund{refunded > 0 ? ` (${money(remaining)} left)` : ''}</Text>
+            <View style={styles.actionRow}>
+              {remaining > 0 ? (
+                <TouchableOpacity style={[styles.refundBtn, { flex: 1 }]} onPress={() => setRefundReceipt(item)} activeOpacity={0.85}>
+                  <Text style={styles.refundBtnText}>↩ Refund{refunded > 0 ? ` (${money(remaining)} left)` : ''}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={[styles.fullyRefunded, { flex: 1 }]}>Fully refunded</Text>
+              )}
+              <TouchableOpacity style={[styles.redoBtn, { flex: 1 }]} onPress={() => setRedoReceipt(item)} activeOpacity={0.85}>
+                <Text style={styles.redoBtnText}>↻ Redo</Text>
               </TouchableOpacity>
-            ) : (
-              <Text style={styles.fullyRefunded}>Fully refunded</Text>
-            )}
+            </View>
           </View>
         )}
       </View>
@@ -159,6 +176,12 @@ export default function ReceiptsScreen() {
     setRefundReceipt(null);
     if (allTime) searchAllTime(); else load();
     if (info?.message) Alert.alert('Refund issued', `${info.message}\nAll admins have been notified.`);
+  }
+
+  function afterRedo(info) {
+    setRedoReceipt(null);
+    if (allTime) searchAllTime(); else load();
+    if (info?.message) Alert.alert('Redo recorded', `${info.message}\nThe techs involved have been notified.`);
   }
 
   const header = (
@@ -218,6 +241,7 @@ export default function ReceiptsScreen() {
         renderItem={renderItem}
       />
       <RefundSheet receipt={refundReceipt} onClose={() => setRefundReceipt(null)} onDone={afterRefund} commissionDefault={commissionDefault} />
+      <RedoSheet receipt={redoReceipt} onClose={() => setRedoReceipt(null)} onDone={afterRedo} />
     </>
   );
 }
@@ -293,6 +317,7 @@ const makeStyles = (t) => StyleSheet.create({
   meta:    { fontSize: 12, color: t.textMuted, marginTop: 2 },
   total:   { fontSize: 16, fontWeight: '800', color: t.text },
   refundedTag:{ fontSize: 10.5, color: t.danger, fontWeight: '700', marginTop: 2 },
+  redoneTag:{ fontSize: 10.5, color: t.green, fontWeight: '700', marginTop: 2 },
   chev:    { fontSize: 14, color: t.textMuted, width: 16, textAlign: 'center' },
   expand:  { paddingHorizontal: 14, paddingBottom: 14, paddingTop: 10, borderTopWidth: 1, borderTopColor: t.border },
   liRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 3 },
@@ -301,10 +326,14 @@ const makeStyles = (t) => StyleSheet.create({
   liMuted: { fontSize: 12.5, color: t.textMuted },
   liTotal: { borderTopWidth: 1, borderTopColor: t.border, marginTop: 5, paddingTop: 6 },
   refundLine: { fontSize: 12.5, color: t.danger, fontWeight: '700' },
+  redoLine: { fontSize: 12.5, color: t.green, fontWeight: '700' },
   expandLabel:{ fontSize: 12, fontWeight: '800', color: t.textMuted, marginTop: 14, textTransform: 'uppercase', letterSpacing: 0.3 },
   recipientsHint:{ fontSize: 12, color: t.textMuted, marginTop: 4, marginBottom: 2 },
   recipientName:{ fontSize: 13.5, fontWeight: '700', color: t.text, marginBottom: 4 },
-  refundBtn:{ marginTop: 14, borderWidth: 1, borderColor: t.danger, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  actionRow:{ flexDirection: 'row', gap: 8, marginTop: 14, alignItems: 'center' },
+  refundBtn:{ borderWidth: 1, borderColor: t.danger, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
   refundBtnText:{ color: t.danger, fontWeight: '800', fontSize: 14 },
-  fullyRefunded:{ marginTop: 14, textAlign: 'center', color: t.textFaint, fontSize: 12.5, fontWeight: '700' },
+  redoBtn:{ borderWidth: 1, borderColor: t.green, borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  redoBtnText:{ color: t.green, fontWeight: '800', fontSize: 14 },
+  fullyRefunded:{ textAlign: 'center', color: t.textFaint, fontSize: 12.5, fontWeight: '700' },
 });
