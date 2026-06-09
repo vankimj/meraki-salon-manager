@@ -636,6 +636,16 @@ export default function BookingScreen() {
             setSubmitting(false);
             return;
           }
+          if (res?.data?.disposableEmail) {
+            setBookingError('Please use a permanent email address to book online — temporary/disposable email providers aren\'t accepted.');
+            setSubmitting(false);
+            return;
+          }
+          if (res?.data?.velocityBlocked) {
+            setBookingError("We've received a lot of booking activity from your connection. Please try again later or call the salon.");
+            setSubmitting(false);
+            return;
+          }
           bookingDeposit = res?.data?.bookingDeposit || null;
           if (res?.data?.cardRequired) {
             // Booking-card policy (first-time / all-bookings): collect a card
@@ -845,6 +855,11 @@ export default function BookingScreen() {
       });
       if (subRes?.data?.banned) {
         setBookingError("We're not able to accept this booking online. Please call the salon to discuss.");
+        setSubmitting(false);
+        return;
+      }
+      if (subRes?.data?.velocityBlocked) {
+        setBookingError("We've received a lot of booking activity from your connection. Please try again later or call the salon.");
         setSubmitting(false);
         return;
       }

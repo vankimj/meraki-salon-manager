@@ -1819,6 +1819,15 @@ function apptLost(a) {
   return (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
 }
 
+function fraudReasonLabel(type) {
+  return {
+    honeypot:          'Honeypot (bot)',
+    disposable_email:  'Disposable email',
+    velocity_newclient:'Too many new accounts',
+    velocity_booking:  'Too many bookings',
+  }[type] || (type || 'Blocked');
+}
+
 function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [appts,   setAppts]   = useState(null);
   const [clients, setClients] = useState(null);
@@ -2056,13 +2065,14 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
       {!loading && fraudSorted.length > 0 && (
         <Card title={`🤖 Blocked booking attempts — ${fraudSorted.length}`} style={{ marginTop: 12 }}>
           <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 8, lineHeight: 1.5 }}>
-            Automated/bot submissions caught by the booking form&apos;s hidden honeypot. No client or appointment was created.
+            Suspicious/automated submissions caught by the anti-bot checks (honeypot, disposable-email filter, velocity caps). No client or appointment was created.
           </div>
           <div className="scroll-x" style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 640 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 700 }}>
               <thead>
                 <tr>
                   <Th left>When</Th>
+                  <Th left>Reason</Th>
                   <Th left>Submitted name</Th>
                   <Th left>Submitted contact</Th>
                   <Th left>IP</Th>
@@ -2073,10 +2083,11 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                 {fraudSorted.map(f => (
                   <tr key={f.id} style={{ borderTop: '1px solid var(--pn-border)' }}>
                     <Td>{String(f.createdAt || '').replace('T', ' ').slice(0, 16) || f.date || '—'}</Td>
+                    <Td muted>{fraudReasonLabel(f.type)}</Td>
                     <Td>{f.name || '—'}</Td>
                     <Td muted>{[f.phone, f.email].filter(Boolean).join(' · ') || '—'}</Td>
                     <Td muted>{f.ip || '—'}</Td>
-                    <Td muted><span title={f.userAgent} style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.userAgent || '—'}</span></Td>
+                    <Td muted><span title={f.userAgent} style={{ display: 'inline-block', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.userAgent || '—'}</span></Td>
                   </tr>
                 ))}
               </tbody>

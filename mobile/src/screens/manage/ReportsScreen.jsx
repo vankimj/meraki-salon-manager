@@ -502,10 +502,15 @@ export default function ReportsScreen({ navigation }) {
           {fraudBlocks.length > 0 && (
             <>
               <Text style={styles.section}>🤖 Blocked booking attempts ({fraudBlocks.length})</Text>
-              <Text style={styles.note}>Bot submissions caught by the booking form honeypot — no client or appointment was created.</Text>
+              <Text style={styles.note}>Suspicious/automated submissions caught by the anti-bot checks (honeypot, disposable-email, velocity) — no client or appointment was created.</Text>
               {fraudBlocks.map(f => (
                 <View key={f.id} style={styles.cxCard}>
-                  <Text style={styles.cxName} numberOfLines={1}>{f.name || '(no name)'}</Text>
+                  <View style={styles.cxHead}>
+                    <Text style={styles.cxName} numberOfLines={1}>{f.name || '(no name)'}</Text>
+                    <View style={[styles.cxBadge, { backgroundColor: '#E5E7EB' }]}>
+                      <Text style={[styles.cxBadgeText, { color: '#374151' }]}>{fraudReasonLabel(f.type)}</Text>
+                    </View>
+                  </View>
                   <Text style={styles.cxLine}>{String(f.createdAt || '').replace('T', ' ').slice(0, 16) || f.date}</Text>
                   {(f.phone || f.email) && <Text style={styles.cxLine}>{[f.phone, f.email].filter(Boolean).join('  ·  ')}</Text>}
                   {!!f.ip && <Text style={styles.cxLineFaint}>IP {f.ip}</Text>}
@@ -594,6 +599,15 @@ export default function ReportsScreen({ navigation }) {
       </Modal>
     </View>
   );
+}
+
+function fraudReasonLabel(type) {
+  return {
+    honeypot:           'Bot',
+    disposable_email:   'Temp email',
+    velocity_newclient: 'Too many accts',
+    velocity_booking:   'Too many bookings',
+  }[type] || (type || 'Blocked');
 }
 
 function cxLabel(a) {

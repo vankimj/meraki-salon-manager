@@ -1492,6 +1492,16 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new HttpsError('invalid-argument', 'email is invalid');
   }
+  // Disposable / throwaway email → refuse online booking (a common fake-booking
+  // vector). Logged for the report; the UI asks for a permanent address.
+  if (email && isDisposableEmail(email)) {
+    await logFraudBlock(getFirestore(), tenantId, {
+      type: 'disposable_email', ip, email: email.slice(0, 200),
+      name: name.slice(0, 120),
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { disposableEmail: true };
+  }
 
   // Phone normalize (mirrors client-side normalizePhone).
   let phoneDigits = phone.replace(/\D/g, '');
@@ -1639,6 +1649,19 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
     return { id: existingId, matched: true, bookingMeta, bookingDeposit };
   }
 
+  // New-client velocity cap: a bot creating many distinct fake clients from one
+  // IP trips this (separate bucket from the per-call rate limit). 8/hr is
+  // generous for legit use (a family booking several people) but stops bulk
+  // fake-account creation.
+  if (!checkRate(`nc:${ip}`, Date.now(), 60 * 60 * 1000, 8)) {
+    await logFraudBlock(getFirestore(), tenantId, {
+      type: 'velocity_newclient', ip,
+      name: name.slice(0, 120), email: email.slice(0, 200),
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { velocityBlocked: true };
+  }
+
   // Sanitize the optional `extra` payload — strip any keys that try to
   // bypass the field guards above or inject server-only fields.
   const safeExtra = {};
@@ -1746,6 +1769,16 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   }
   const tenantId = String(request.data?.tenantId || TENANT_ID);
   const db = getFirestore();
+
+  // Daily booking velocity cap per IP — stops one connection from submitting a
+  // flood of bookings (separate 24h bucket from the per-call rate limit above).
+  if (!checkRate(`bk:${ip}`, Date.now(), 24 * 60 * 60 * 1000, 25)) {
+    await logFraudBlock(db, tenantId, {
+      type: 'velocity_booking', stage: 'submit', ip,
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { velocityBlocked: true };
+  }
 
   // Honeypot (mirrors findOrCreateClient): record + silently no-op for bots.
   const hpValue = String(request.data?.hp || '').trim();
@@ -7055,6 +7088,21 @@ function requireAppCheck(request, label) {
   }
   // Monitor mode: log the miss so we can confirm coverage before enforcing.
   console.warn(`[AppCheck] missing token (monitor) on ${label || 'callable'} ip=${request.rawRequest?.ip || '?'}`);
+}
+
+const { isDisposableEmail } = require('./lib/abuse');
+
+// Record a blocked/abusive booking attempt to the fraudBlocks collection
+// (surfaced in the Cancellations & No-Shows report). Best-effort, never throws.
+async function logFraudBlock(db, tenantId, fields) {
+  try {
+    const now = new Date();
+    await db.collection(`tenants/${tenantId}/fraudBlocks`).add({
+      date: now.toISOString().slice(0, 10),
+      createdAt: now.toISOString(),
+      ...fields,
+    });
+  } catch (e) { console.warn('[fraudBlock] log failed:', e?.message); }
 }
 
 const {
