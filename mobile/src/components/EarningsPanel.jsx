@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { fetchReceiptsByRange, fetchAppointmentsByRange } from '../lib/firestore';
 import Icon from './Icon';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+
+const HIDE_KEY = 'pn_earnings_hidden';
 
 // Earnings body extracted from the old Earnings tab so it can live inside the
 // Dashboard. Self-contained (fetches its own data) but takes `techName` from the
@@ -94,6 +97,16 @@ export default function EarningsPanel({ techName }) {
   const [range, setRange] = useState('week');
   const [data, setData] = useState({ revenue: 0, tips: 0, serviceCount: 0, clientCount: 0, tipEntries: [], redoEntries: [], serviceList: [], byDay: {} });
   const [loading, setLoading] = useState(false);
+  // Earnings masked by default (shoulder-surf privacy); tap the eye to reveal.
+  // Preference persists on the device.
+  const [hidden, setHidden] = useState(true);
+  useEffect(() => {
+    AsyncStorage.getItem(HIDE_KEY).then(v => { if (v === '0') setHidden(false); }).catch(() => {});
+  }, []);
+  function toggleHidden() {
+    setHidden(h => { const next = !h; AsyncStorage.setItem(HIDE_KEY, next ? '1' : '0').catch(() => {}); return next; });
+  }
+  const show = (s) => (hidden ? '••••' : s);
 
   const { startDate, endDate } = useMemo(() => {
     const today = todayStr();
@@ -149,16 +162,19 @@ export default function EarningsPanel({ techName }) {
       </View>
 
       <View style={styles.hero}>
+        <TouchableOpacity onPress={toggleHidden} style={styles.eyeBtn} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+          <Text style={styles.eyeIcon}>{hidden ? '👁' : '🙈'}</Text>
+        </TouchableOpacity>
         <Text style={styles.heroLabel}>YOUR TAKE-HOME</Text>
-        <Text style={styles.heroAmount}>{fmtMoneyExact(total)}</Text>
-        <Text style={styles.heroSub}>{RANGES.find(r => r.id === range)?.label} · {techName}</Text>
+        <Text style={styles.heroAmount}>{show(fmtMoneyExact(total))}</Text>
+        <Text style={styles.heroSub}>{RANGES.find(r => r.id === range)?.label} · {techName}{hidden ? ' · tap 👁 to show' : ''}</Text>
       </View>
 
       {loading ? <ActivityIndicator style={{ marginVertical: 30 }} color={theme.blue} /> : (
         <>
           <View style={styles.statGrid}>
-            <Stat label="Revenue"  value={fmtMoney(data.revenue)}    accent="#2D7A5F" />
-            <Stat label="Tips"     value={fmtMoney(data.tips)}       accent="#3D9E8A" />
+            <Stat label="Revenue"  value={show(fmtMoney(data.revenue))} accent="#2D7A5F" />
+            <Stat label="Tips"     value={show(fmtMoney(data.tips))}    accent="#3D9E8A" />
             <Stat label="Services" value={String(data.serviceCount)} accent="#3D95CE" />
             <Stat label="Clients"  value={String(data.clientCount)}  accent="#6a4fa0" />
           </View>
@@ -180,7 +196,7 @@ export default function EarningsPanel({ techName }) {
                     );
                   })}
                 </View>
-                <Text style={styles.chartCaption}>Best day {fmtMoney(trendBest)}</Text>
+                <Text style={styles.chartCaption}>Best day {show(fmtMoney(trendBest))}</Text>
               </View>
             </View>
           )}
@@ -203,7 +219,7 @@ export default function EarningsPanel({ techName }) {
                       <Text style={styles.serviceName} numberOfLines={1}>{s.name}</Text>
                       <Text style={styles.serviceCount}>{s.count}× this {range === 'today' ? 'day' : range === 'week' ? 'week' : 'month'}</Text>
                     </View>
-                    <Text style={styles.serviceRevenue}>{fmtMoney(s.revenue)}</Text>
+                    <Text style={styles.serviceRevenue}>{show(fmtMoney(s.revenue))}</Text>
                   </View>
                 ))}
               </View>
@@ -218,7 +234,7 @@ export default function EarningsPanel({ techName }) {
                   <View key={`${t.date}-${i}`} style={[styles.tipRow, i > 0 && styles.tipRowDivider]}>
                     <Text style={styles.tipDate}>{fmtDateShort(t.date)}</Text>
                     <Text style={styles.tipClient} numberOfLines={1}>{t.clientName}</Text>
-                    <Text style={styles.tipAmount}>{fmtMoneyExact(t.amount)}</Text>
+                    <Text style={styles.tipAmount}>{show(fmtMoneyExact(t.amount))}</Text>
                   </View>
                 ))}
               </View>
@@ -238,7 +254,7 @@ export default function EarningsPanel({ techName }) {
                         : `${rd.client}'s ${rd.label} redone by ${rd.other || 'another tech'}`}
                     </Text>
                     <Text style={[styles.tipAmount, { color: rd.dir === 'in' ? '#2D7A5F' : '#C0392B' }]}>
-                      {rd.dir === 'in' ? '+' : '−'}{fmtMoneyExact(rd.amount)}
+                      {hidden ? '••••' : `${rd.dir === 'in' ? '+' : '−'}${fmtMoneyExact(rd.amount)}`}
                     </Text>
                   </View>
                 ))}
@@ -268,6 +284,8 @@ const makeStyles = (t) => StyleSheet.create({
   rangeBtnText: { fontSize: 13, color: t.textMuted, fontWeight: '500' },
   rangeBtnTextActive: { color: '#fff', fontWeight: '700' },
   hero:      { backgroundColor: '#0f1923', borderRadius: 16, padding: 22, marginBottom: 14, alignItems: 'center' },
+  eyeBtn:    { position: 'absolute', top: 12, right: 14, padding: 4 },
+  eyeIcon:   { fontSize: 18 },
   heroLabel: { fontSize: 11, color: 'rgba(255,255,255,.5)', letterSpacing: 1.2, fontWeight: '700' },
   heroAmount:{ fontSize: 42, fontWeight: '800', color: '#fff', marginTop: 6, letterSpacing: -1 },
   heroSub:   { fontSize: 12, color: 'rgba(255,255,255,.6)', marginTop: 4 },
