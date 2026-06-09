@@ -279,6 +279,9 @@ async function tenantFromAddress(db, tenantId) {
 // Reply-To or it black-holes. Returns '' when the tenant has no contact email
 // configured — callers should then drop the "reply" affordance. Cached.
 const _replyToCache = new Map();
+// Dedupe SES self-heal-failure platform alerts to once per tenant per instance,
+// so a tenant whose heal keeps failing doesn't alert on every single send.
+const _sesHealAlerted = new Set();
 async function tenantReplyTo(db, tenantId) {
   if (_replyToCache.has(tenantId)) return _replyToCache.get(tenantId);
   let addr = '';
@@ -650,8 +653,19 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
         return { data: { id }, error: null };
       } catch (e2) {
         // Heal itself failed — this is the real "tenant cannot send email"
-        // condition. Loud error so it's visible in logs/alerting.
+        // condition. Loud error + a one-time platform-admin alert (account-level
+        // email, so it isn't itself blocked by the broken tenant's SES). Deduped
+        // per tenant per instance to avoid alert spam on every send.
         console.error(`[sendEmail] SES self-heal FAILED for tenant=${tenantId}: ${e2?.message} (original: ${e?.message})`);
+        if (!_sesHealAlerted.has(tenantId)) {
+          _sesHealAlerted.add(tenantId);
+          notifyPlatformAdmins(db, {
+            subject: `⚠️ SES email broken for tenant ${tenantId}`,
+            html: `<p>A transactional email to <b>${normalizeEmailAddr(to)}</b> failed and the automatic SES-tenant self-heal also failed, so <b>${tenantId}</b> currently cannot send any email.</p>
+                   <p>Heal error: ${e2?.message || 'unknown'}<br/>Original send error: ${e?.message || 'unknown'}</p>
+                   <p>Fix: run the Admin → Settings → "Repair email delivery (SES)" button for this tenant, or check the SES identity/config-set association in AWS.</p>`,
+          }).catch(() => {});
+        }
         return { data: null, error: { message: e2?.message || 'send_failed', name: e2?.name || 'SendError', sesHealFailed: true } };
       }
     }
