@@ -211,6 +211,7 @@ export function PrivacyScreen() {
           <li><strong>Payment information:</strong> card details are entered directly into Stripe's secure payment fields and are not stored on our servers. We retain only a record of the transaction (amount, date, last four digits, payment method).</li>
           <li><strong>Communications preferences:</strong> whether you've opted into marketing messages, when, and through which channel.</li>
           <li><strong>Sign-in information:</strong> if you sign in with Google, we receive your email and name from Google.</li>
+          <li><strong>Device & location:</strong> when you book online we record the IP address of the device used and an approximate location (such as city and region) derived from it. We use this only to help prevent fraud, no-shows, and abuse of online booking.</li>
         </ul>
 
         <h2 style={H2}>2. How We Use Your Information</h2>
@@ -221,6 +222,7 @@ export function PrivacyScreen() {
           <li>To process payments via Stripe.</li>
           <li>To remember your preferences and visit history so service is better the next time you come in.</li>
           <li>To improve our services and salon operations (analytics, capacity planning).</li>
+          <li>To detect and prevent fraud, no-shows, and abuse of online booking (including device IP address and approximate location).</li>
           <li>To comply with our legal obligations (tax records, dispute resolution).</li>
         </ul>
 
@@ -232,6 +234,7 @@ export function PrivacyScreen() {
           <li><strong>Amazon Web Services (AWS SES)</strong> — sending transactional and marketing emails.</li>
           <li><strong>Twilio</strong> — sending transactional and marketing text messages.</li>
           <li><strong>Google Sign-In</strong> — authenticating you when you choose to log in with Google.</li>
+          <li><strong>IP geolocation</strong> — when you book online, your device's IP address is checked against an IP-geolocation service to estimate an approximate location (city/region), used only to help prevent fraud and no-shows.</li>
         </ul>
         <p>Each of these services has its own privacy policy governing its handling of your data. We do not sell your information to anyone.</p>
 

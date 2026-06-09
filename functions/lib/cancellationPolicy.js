@@ -99,10 +99,55 @@ function evaluateCancellationPolicy(appointments, settings, client, now) {
   return out;
 }
 
+// ── Booking-time card requirement (twin of src/lib/cancellationPolicy.js) ──
+const DEPOSIT_MODES = Object.freeze(['store', 'authorize', 'charge']);
+
+const DEFAULT_BOOKING_CARD_POLICY = Object.freeze({
+  firstTimeRequireCard:   false,
+  allBookingsRequireCard: false,
+  depositMode:            'store',
+  depositPct:             0,
+});
+
+function resolveBookingCardPolicy(settings) {
+  const s = (settings && settings.bookingCardPolicy) || {};
+  const pct = Number(s.depositPct);
+  return {
+    firstTimeRequireCard:   s.firstTimeRequireCard   === true,
+    allBookingsRequireCard: s.allBookingsRequireCard === true,
+    depositMode:            DEPOSIT_MODES.includes(s.depositMode) ? s.depositMode : 'store',
+    depositPct:             Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0,
+  };
+}
+
+function evaluateBookingCardRequirement(settings, ctx) {
+  const p = resolveBookingCardPolicy(settings);
+  const isFirstTime = ctx && ctx.isFirstTime === true;
+  const hasCard     = ctx && ctx.hasCard === true;
+  const triggered = p.allBookingsRequireCard || (p.firstTimeRequireCard && isFirstTime);
+  return {
+    triggered,
+    required:    triggered && !hasCard,
+    depositMode: p.depositMode,
+    depositPct:  p.depositPct,
+  };
+}
+
+function depositAmount(total, depositPct) {
+  const t = Number(total) || 0;
+  const pct = Number(depositPct) || 0;
+  return Math.round(t * pct) / 100;
+}
+
 module.exports = {
   DEFAULT_POLICY,
   resolveCancellationPolicy,
   countRelevantCancellations,
   hasUsableCardOnFile,
   evaluateCancellationPolicy,
+  DEPOSIT_MODES,
+  DEFAULT_BOOKING_CARD_POLICY,
+  resolveBookingCardPolicy,
+  evaluateBookingCardRequirement,
+  depositAmount,
 };

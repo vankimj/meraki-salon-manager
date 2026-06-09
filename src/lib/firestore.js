@@ -2040,6 +2040,16 @@ export async function fetchServiceRatingsByRange(startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
+// Blocked booking attempts (honeypot / bot signals) in a date range. Stamped
+// with a YYYY-MM-DD `date` field server-side so a string range query works.
+export async function fetchFraudBlocksByRange(startDate, endDate) {
+  const snap = await getDocs(query(tenantCol('fraudBlocks'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // ── Notification center ────────────────────────────────
 const NOTIFS_COL   = tenantCol('notifications');
 

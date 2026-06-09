@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange } from '../../lib/firestore';
 import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
@@ -143,11 +143,12 @@ const PERIODS = [
 ];
 
 const TABS = [
-  { id: 'overview',     label: 'Overview' },
-  { id: 'transactions', label: 'Transactions' },
-  { id: 'ratings',      label: 'Service Ratings' },
-  { id: 'tax',          label: 'IRS / Tax Report' },
-  { id: 'ask',          label: 'Ask AI' },
+  { id: 'overview',      label: 'Overview' },
+  { id: 'transactions',  label: 'Transactions' },
+  { id: 'cancellations', label: 'Cancellations & No-Shows' },
+  { id: 'ratings',       label: 'Service Ratings' },
+  { id: 'tax',           label: 'IRS / Tax Report' },
+  { id: 'ask',           label: 'Ask AI' },
 ];
 
 export default function ReportsAdmin() {
@@ -309,6 +310,16 @@ export default function ReportsAdmin() {
         <TaxReport />
       ) : activeTab === 'transactions' ? (
         <TransactionsReport
+          startDate={isCustom ? customStart : startOf(periodDays)}
+          endDate={isCustom ? customEnd : todayStr()}
+          isCustom={isCustom}
+          periodDays={periodDays}
+          setPeriodDays={setPeriodDays}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd}     setCustomEnd={setCustomEnd}
+        />
+      ) : activeTab === 'cancellations' ? (
+        <CancellationsReport
           startDate={isCustom ? customStart : startOf(periodDays)}
           endDate={isCustom ? customEnd : todayStr()}
           isCustom={isCustom}
@@ -1780,6 +1791,306 @@ function RatingsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays
           <RecentFeedback lowFeedback={stats.lowFeedback} />
           <RecentAllRatings ratings={filtered} />
         </>
+      )}
+    </>
+  );
+}
+
+// ── Cancellations & No-Shows ───────────────────────────────────────────────
+// A dedicated, row-level report of every cancelled / no-show appointment in
+// the period with the full customer record attached (joined from the clients
+// collection by clientId, falling back to the snapshot fields stamped on the
+// appointment). Includes the booking IP + geo captured at booking time for
+// online bookings (see submitOnlineBooking). CSV export carries every column.
+function cancelStatusLabel(a) {
+  if (a.status === 'no_show') return 'No-show';
+  if (a.cancelledBy === 'salon')  return 'Cancelled (salon)';
+  if (a.cancelledBy === 'client') return 'Cancelled (client)';
+  return 'Cancelled';
+}
+
+function geoString(a) {
+  const g = a.bookingGeo || null;
+  if (!g) return '';
+  return [g.city, g.region, g.country].filter(Boolean).join(', ');
+}
+
+function apptLost(a) {
+  return (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+}
+
+function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const [appts,   setAppts]   = useState(null);
+  const [clients, setClients] = useState(null);
+  const [fraud,   setFraud]   = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [kind,    setKind]    = useState('all');      // 'all' | 'cancelled' | 'no_show'
+  const [techFilter, setTechFilter] = useState('all');
+  const [modalClient, setModalClient] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetchAppointmentsByRange(startDate, endDate),
+      fetchClients().catch(() => []),
+      fetchFraudBlocksByRange(startDate, endDate).catch(() => []),
+    ])
+      .then(([as, cs, fb]) => { setAppts(as); setClients(cs); setFraud(fb); })
+      .catch(() => { setAppts([]); setClients([]); setFraud([]); })
+      .finally(() => setLoading(false));
+  }, [startDate, endDate]);
+
+  const fraudSorted = useMemo(
+    () => [...(fraud || [])].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))),
+    [fraud],
+  );
+
+  const clientMap = useMemo(() => {
+    const m = {};
+    (clients || []).forEach(c => { m[c.id] = c; });
+    return m;
+  }, [clients]);
+
+  // Cancelled + no-show rows, enriched with the joined client record, newest
+  // first (by cancelledAt when present, else the appointment date/time).
+  const rows = useMemo(() => {
+    const list = (appts || [])
+      .filter(a => a.status === 'cancelled' || a.status === 'no_show')
+      .map(a => {
+        const c = a.clientId ? clientMap[a.clientId] : null;
+        return {
+          ...a,
+          _client: c,
+          _name:    a.clientName || c?.name  || (a.clientId ? '(unknown)' : 'Walk-in'),
+          _phone:   c?.phone || a.clientPhone || '',
+          _email:   c?.email || a.clientEmail || '',
+          _address: c?.address || '',
+          _lost:    apptLost(a),
+          _sortKey: a.cancelledAt || `${a.date}T${a.startTime || '00:00'}`,
+        };
+      });
+    return list.sort((x, y) => String(y._sortKey).localeCompare(String(x._sortKey)));
+  }, [appts, clientMap]);
+
+  const allTechs = useMemo(() => {
+    const set = new Set();
+    rows.forEach(r => { if (r.techName) set.add(r.techName); });
+    return Array.from(set).sort();
+  }, [rows]);
+
+  const filtered = useMemo(() => rows.filter(r => {
+    if (kind !== 'all' && r.status !== kind) return false;
+    if (techFilter !== 'all' && r.techName !== techFilter) return false;
+    return true;
+  }), [rows, kind, techFilter]);
+
+  const summary = useMemo(() => {
+    let cancelled = 0, noShow = 0, lost = 0;
+    filtered.forEach(r => {
+      if (r.status === 'no_show') noShow++; else cancelled++;
+      lost += r._lost;
+    });
+    return { cancelled, noShow, lost, total: filtered.length };
+  }, [filtered]);
+
+  function exportCsv() {
+    const header = [
+      'Date', 'Time', 'Status', 'Cancelled at', 'Client', 'Phone', 'Email', 'Address',
+      'Tech', 'Services', 'Lost revenue', 'Source', 'Booking IP', 'Booking location',
+      'Deposit mode', 'Deposit amount', 'Deposit status', 'Client ID', 'Appointment ID',
+    ];
+    const body = filtered.map(r => [
+      r.date || '',
+      r.startTime || '',
+      cancelStatusLabel(r),
+      r.cancelledAt || '',
+      r._name,
+      r._phone,
+      r._email,
+      r._address,
+      r.techName || '',
+      (r.services || []).map(s => s.name).join('; '),
+      r._lost ? r._lost.toFixed(2) : '0.00',
+      r.source || '',
+      r.bookingIp || '',
+      geoString(r),
+      r.deposit?.mode || '',
+      r.deposit?.amountCents ? (r.deposit.amountCents / 100).toFixed(2) : '',
+      r.deposit?.status || '',
+      r.clientId || '',
+      r.id || '',
+    ]);
+    dlCSV(`cancellations_${startDate}_to_${endDate}.csv`, [header, ...body]);
+  }
+
+  return (
+    <>
+      {/* Period + filters toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {PERIODS.map(p => (
+            <PillBtn key={p.days} active={periodDays === p.days} onClick={() => setPeriodDays(p.days)}>
+              {p.label}
+            </PillBtn>
+          ))}
+          <PillBtn active={isCustom} onClick={() => setPeriodDays('custom')}>Custom</PillBtn>
+          {isCustom && (
+            <>
+              <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
+              <input type="date" value={customEnd} min={customStart} max={todayStr()} onChange={e => setCustomEnd(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', outline: 'none' }} />
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select value={kind} onChange={e => setKind(e.target.value)}
+            style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-surface)', color: 'var(--pn-text)' }}>
+            <option value="all">Cancelled + No-shows</option>
+            <option value="cancelled">Cancelled only</option>
+            <option value="no_show">No-shows only</option>
+          </select>
+          {allTechs.length > 0 && (
+            <select value={techFilter} onChange={e => setTechFilter(e.target.value)}
+              style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-surface)', color: 'var(--pn-text)' }}>
+              <option value="all">All techs</option>
+              {allTechs.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+          <button onClick={exportCsv} disabled={loading || filtered.length === 0}
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: filtered.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
+            ⤓ Export CSV
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 64, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-faint)', fontSize: 14 }}>
+          No cancellations or no-shows in this period.
+        </div>
+      ) : (
+        <>
+          <div className="kpi-grid" style={{ marginBottom: 12 }}>
+            <KpiTile label="Cancelled"    big={summary.cancelled.toLocaleString()} sub="appointments" color="#F59E0B" />
+            <KpiTile label="No-shows"     big={summary.noShow.toLocaleString()}    sub="appointments" color="#EF4444" />
+            <KpiTile label="Total"        big={summary.total.toLocaleString()}     sub="cancelled + no-show" color="#6B7280" />
+            <KpiTile label="Lost revenue" big={fmt$(summary.lost)}                 sub="booked service value" color="#9333EA" />
+          </div>
+
+          <Card title={`Detail — ${filtered.length} record${filtered.length === 1 ? '' : 's'}`}>
+            <div className="scroll-x" style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 920 }}>
+                <thead>
+                  <tr>
+                    <Th left>Date / Time</Th>
+                    <Th left>Status</Th>
+                    <Th left>Client</Th>
+                    <Th left>Contact</Th>
+                    <Th left>Tech</Th>
+                    <Th left>Services</Th>
+                    <Th>Lost</Th>
+                    <Th left>Source</Th>
+                    <Th left>Booked from</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(r => (
+                    <tr key={r.id} style={{ borderTop: '1px solid var(--pn-border)' }}>
+                      <Td>
+                        <div style={{ fontWeight: 600 }}>{r.date}</div>
+                        <div style={{ color: 'var(--pn-text-faint)' }}>{r.startTime || '—'}</div>
+                      </Td>
+                      <Td>
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
+                          background: r.status === 'no_show' ? '#FEE2E2' : '#FEF3C7',
+                          color: r.status === 'no_show' ? '#991B1B' : '#92400E',
+                        }}>{cancelStatusLabel(r)}</span>
+                        {r.cancelledAt && (
+                          <div style={{ color: 'var(--pn-text-faint)', marginTop: 2 }}>{String(r.cancelledAt).slice(0, 10)}</div>
+                        )}
+                        {r.deposit?.amountCents > 0 && (
+                          <div style={{ marginTop: 3, fontSize: 10.5, color: '#9333EA', fontWeight: 600 }}>
+                            {r.deposit.mode === 'authorize' ? 'Hold' : 'Deposit'} ${(r.deposit.amountCents / 100).toFixed(0)}
+                            {r.deposit.status ? ` · ${r.deposit.status === 'requires_capture' ? 'held' : r.deposit.status}` : ''}
+                          </div>
+                        )}
+                      </Td>
+                      <Td>
+                        {r.clientId ? (
+                          <button onClick={() => setModalClient({ id: r.clientId, name: r._name })}
+                            style={{ background: 'none', border: 'none', padding: 0, color: '#3D95CE', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, fontWeight: 600, textAlign: 'left' }}>
+                            {r._name}
+                          </button>
+                        ) : (
+                          <span style={{ fontWeight: 600 }}>{r._name}</span>
+                        )}
+                        {r._client?.banned && (
+                          <span style={{ marginLeft: 6, fontSize: 10, color: '#EF4444', fontWeight: 700 }}>BANNED</span>
+                        )}
+                      </Td>
+                      <Td>
+                        {r._phone && <div>{r._phone}</div>}
+                        {r._email && <div style={{ color: 'var(--pn-text-faint)' }}>{r._email}</div>}
+                        {!r._phone && !r._email && <span style={{ color: 'var(--pn-text-faint)' }}>—</span>}
+                      </Td>
+                      <Td>{r.techName || '—'}</Td>
+                      <Td>{(r.services || []).map(s => s.name).join(', ') || '—'}</Td>
+                      <Td bold>{r._lost ? fmt$(r._lost) : '—'}</Td>
+                      <Td muted>{r.source || '—'}</Td>
+                      <Td muted>
+                        {geoString(r) ? <div>{geoString(r)}</div> : <span style={{ color: 'var(--pn-text-faint)' }}>—</span>}
+                        {r.bookingIp && <div style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>{r.bookingIp}</div>}
+                      </Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+
+      {!loading && fraudSorted.length > 0 && (
+        <Card title={`🤖 Blocked booking attempts — ${fraudSorted.length}`} style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 8, lineHeight: 1.5 }}>
+            Automated/bot submissions caught by the booking form&apos;s hidden honeypot. No client or appointment was created.
+          </div>
+          <div className="scroll-x" style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: 640 }}>
+              <thead>
+                <tr>
+                  <Th left>When</Th>
+                  <Th left>Submitted name</Th>
+                  <Th left>Submitted contact</Th>
+                  <Th left>IP</Th>
+                  <Th left>Device</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {fraudSorted.map(f => (
+                  <tr key={f.id} style={{ borderTop: '1px solid var(--pn-border)' }}>
+                    <Td>{String(f.createdAt || '').replace('T', ' ').slice(0, 16) || f.date || '—'}</Td>
+                    <Td>{f.name || '—'}</Td>
+                    <Td muted>{[f.phone, f.email].filter(Boolean).join(' · ') || '—'}</Td>
+                    <Td muted>{f.ip || '—'}</Td>
+                    <Td muted><span title={f.userAgent} style={{ display: 'inline-block', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.userAgent || '—'}</span></Td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {modalClient && (
+        <ClientVisitsModal
+          clientId={modalClient.id}
+          clientName={modalClient.name}
+          onClose={() => setModalClient(null)}
+        />
       )}
     </>
   );
