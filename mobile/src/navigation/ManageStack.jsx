@@ -18,6 +18,7 @@ import WalkinScreen        from '../screens/manage/WalkinScreen';
 import HelpScreen          from '../screens/manage/HelpScreen';
 import MerchantOnboardingScreen from '../screens/manage/MerchantOnboardingScreen';
 import TapToPaySetupScreen  from '../screens/manage/TapToPaySetupScreen';
+import ReaderSetupScreen    from '../screens/manage/ReaderSetupScreen';
 import ReportsScreen       from '../screens/manage/ReportsScreen';
 import ReceiptsScreen      from '../screens/manage/ReceiptsScreen';
 import HRScreen            from '../screens/manage/HRScreen';
@@ -95,6 +96,8 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Payments setup" /> }} />
       <Stack.Screen name="TapToPaySetup" component={TapToPaySetupScreen}
         options={{ headerTitle: () => <HeaderTitle title="Tap to Pay on iPhone" /> }} />
+      <Stack.Screen name="ReaderSetup" component={ReaderSetupScreen}
+        options={{ headerTitle: () => <HeaderTitle title="Card Reader Setup" /> }} />
 
       <Stack.Screen name="Trash" component={TrashScreen}
         options={{ headerTitle: () => <HeaderTitle title="Trash" /> }} />

@@ -6794,6 +6794,80 @@ exports.createTerminalConnectionToken = onCall({ secrets: [stripeKey] }, async (
   return { secret: token.secret, testMode: key.startsWith('sk_test') };
 });
 
+// Admin-gated: create (or reuse) a Stripe Terminal Location for this tenant and
+// save its id to settings.terminalLocationId. Bluetooth/M2 readers MUST connect
+// against a Location, so this removes the manual Stripe-Dashboard step from the
+// in-app reader-setup wizard. The Location lives on the PLATFORM account (same
+// as connection tokens); funds still route to the salon's Connect account via
+// the PaymentIntent's on_behalf_of/transfer_data. Idempotent: reuses an
+// existing, still-valid location id.
+exports.setupTerminalLocation = onCall({ secrets: [stripeKey] }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
+  const stripe = require('stripe')(key);
+
+  const sRef  = db.doc(`tenants/${tenantId}/data/settings`);
+  const sSnap = await sRef.get();
+  const s = sSnap.exists ? (sSnap.data() || {}) : {};
+
+  // Reuse an existing, still-valid location rather than piling up duplicates.
+  const existing = String(s.terminalLocationId || '').trim();
+  if (existing) {
+    try {
+      const loc = await stripe.terminal.locations.retrieve(existing);
+      if (loc && !loc.deleted) return { locationId: loc.id, created: false, displayName: loc.display_name || '' };
+    } catch (e) { /* deleted/invalid — fall through and create a fresh one */ }
+  }
+
+  const displayName = String(s.salonName || s.brandLegalName || s.brandName || 'Salon').slice(0, 100);
+  const address = {
+    line1:       String(s.brandAddress || displayName).slice(0, 200) || 'N/A',
+    country:     'US',
+  };
+  if (s.brandCity)  address.city        = String(s.brandCity).slice(0, 100);
+  if (s.brandState) address.state       = String(s.brandState).slice(0, 100);
+  if (s.brandZip)   address.postal_code = String(s.brandZip).slice(0, 20);
+
+  let loc;
+  try {
+    loc = await stripe.terminal.locations.create({ display_name: displayName, address });
+  } catch (e) {
+    throw new HttpsError('failed-precondition', `Could not create Terminal Location: ${e?.message || 'unknown error'}`);
+  }
+  await sRef.set({ terminalLocationId: loc.id, updatedAt: new Date().toISOString() }, { merge: true });
+  return { locationId: loc.id, created: true, displayName: loc.display_name || displayName };
+});
+
+// Admin-gated readiness snapshot for the Card Reader setup wizard (web + mobile).
+exports.getTerminalSetupStatus = onCall({ secrets: [stripeKey] }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const [sSnap, tSnap] = await Promise.all([
+    db.doc(`tenants/${tenantId}/data/settings`).get(),
+    db.doc(`tenants/${tenantId}`).get(),
+  ]);
+  const s = sSnap.exists ? (sSnap.data() || {}) : {};
+  const t = tSnap.exists ? (tSnap.data() || {}) : {};
+  const key = stripeKey.value() || '';
+  const connectAccountId = t.stripeConnectAccountId || s.stripeConnect?.accountId || s.connectAccountId || s.stripeAccountId || '';
+  return {
+    hasLocation:      !!String(s.terminalLocationId || '').trim(),
+    locationId:       String(s.terminalLocationId || '').trim() || null,
+    connectReady:     !!connectAccountId && s.stripeConnect?.chargesEnabled !== false,
+    connectAccountId: connectAccountId || null,
+    testMode:         key.startsWith('sk_test'),
+  };
+});
+
 // Tracks when a client clicks the review link in their email, then redirects to Google.
 exports.trackReviewClick = onRequest({ cors: false }, async (req, res) => {
   const reqId = String(req.query.r || '');
