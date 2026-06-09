@@ -567,6 +567,12 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Anti-abuse rate counters (fsRateAllow). Server-only — Admin SDK reads +
+      // increments them; no client access. Purged nightly by purgeOldTombstones.
+      match /rateCounters/{counterId} {
+        allow read, write: if false;
+      }
+
       // Client chat threads. Chat docs are keyed by clientId and store the
       // client's email in `clientEmail`. Staff get full access; the portal
       // client whose email matches owns the chat.

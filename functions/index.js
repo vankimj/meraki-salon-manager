@@ -1649,12 +1649,13 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
     return { id: existingId, matched: true, bookingMeta, bookingDeposit };
   }
 
-  // New-client velocity cap: a bot creating many distinct fake clients from one
-  // IP trips this (separate bucket from the per-call rate limit). 8/hr is
-  // generous for legit use (a family booking several people) but stops bulk
-  // fake-account creation.
-  if (!checkRate(`nc:${ip}`, Date.now(), 60 * 60 * 1000, 8)) {
-    await logFraudBlock(getFirestore(), tenantId, {
+  // New-client velocity cap (HARD, Firestore-backed): a bot creating many
+  // distinct fake clients from one IP trips this. 8/hr is generous for legit use
+  // (a family booking several people) but stops bulk fake-account creation. The
+  // hour bucket is in the counter key so it resets cleanly.
+  const ncBucket = `nc_${ipKeyPart(ip)}_${new Date().toISOString().slice(0, 13).replace(/[-T:]/g, '')}`;
+  if (!(await fsRateAllow(db, tenantId, ncBucket, 8, 2 * 60 * 60 * 1000))) {
+    await logFraudBlock(db, tenantId, {
       type: 'velocity_newclient', ip,
       name: name.slice(0, 120), email: email.slice(0, 200),
       userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
@@ -1770,9 +1771,10 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const tenantId = String(request.data?.tenantId || TENANT_ID);
   const db = getFirestore();
 
-  // Daily booking velocity cap per IP — stops one connection from submitting a
-  // flood of bookings (separate 24h bucket from the per-call rate limit above).
-  if (!checkRate(`bk:${ip}`, Date.now(), 24 * 60 * 60 * 1000, 25)) {
+  // Daily booking velocity cap per IP (HARD, Firestore-backed) — stops one
+  // connection from submitting a flood of bookings. Day bucket in the key.
+  const bkBucket = `bk_${ipKeyPart(ip)}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+  if (!(await fsRateAllow(db, tenantId, bkBucket, 25, 48 * 60 * 60 * 1000))) {
     await logFraudBlock(db, tenantId, {
       type: 'velocity_booking', stage: 'submit', ip,
       userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
@@ -3313,6 +3315,69 @@ exports.notifyOnCheckIn = onDocumentUpdated(
       createdAt:   new Date().toISOString(),
       sent:        false,
     });
+  }
+);
+
+// Settle a booking deposit HOLD when the appointment reaches a terminal state.
+// Only acts on `authorize`-mode deposits still in `requires_capture` (a Stripe
+// auth hold placed at booking by chargeBookingDeposit):
+//   - status -> no_show            → CAPTURE the hold (collect the deposit).
+//   - status -> done/completed/cancelled → CANCEL the hold (release the funds).
+// 'charge'-mode deposits are already settled at booking, so they're ignored
+// here (an admin refunds manually if a charged deposit needs reversing). The
+// status guard makes this idempotent — once the deposit leaves requires_capture
+// (e.g. we set it to 'captured'), a re-fire returns immediately.
+//
+// ⚠️ Real money movement — verify in Stripe TEST MODE (capture + release paths,
+// connected-account routing, already-captured/expired errors) before any tenant
+// enables depositMode='authorize'.
+exports.settleBookingDeposit = onDocumentUpdated(
+  { document: `tenants/{tenantId}/appointments/{apptId}`, secrets: [stripeKey] },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after  = event.data?.after?.data()  || {};
+    const dep = after.deposit;
+    if (!dep || dep.mode !== 'authorize' || dep.status !== 'requires_capture' || !dep.paymentIntentId) return;
+    if (before.status === after.status) return; // only act on a real transition
+
+    const isNoShow   = after.status === 'no_show';
+    const isResolved = after.status === 'done' || after.status === 'completed' || after.status === 'cancelled';
+    if (!isNoShow && !isResolved) return;
+
+    const tenantId = event.params?.tenantId;
+    const apptId   = event.params?.apptId;
+    const db  = getFirestore();
+    const ref = db.doc(`tenants/${tenantId}/appointments/${apptId}`);
+
+    const key = stripeKey.value();
+    if (!key) { console.warn('[settleBookingDeposit] Stripe not configured'); return; }
+    const stripe = require('stripe')(key);
+
+    try {
+      if (isNoShow) {
+        const pi = await stripe.paymentIntents.capture(dep.paymentIntentId);
+        await ref.set({
+          deposit: { ...dep, status: pi.status === 'succeeded' ? 'captured' : pi.status, capturedAt: new Date().toISOString() },
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        console.log(`[settleBookingDeposit] captured ${dep.paymentIntentId} for no-show ${apptId}`);
+      } else {
+        await stripe.paymentIntents.cancel(dep.paymentIntentId);
+        await ref.set({
+          deposit: { ...dep, status: 'released', releasedAt: new Date().toISOString() },
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        console.log(`[settleBookingDeposit] released ${dep.paymentIntentId} for ${after.status} ${apptId}`);
+      }
+    } catch (e) {
+      // Don't throw — a permanent error (already captured/canceled/expired) would
+      // otherwise retry forever. Record it on the appt for admin follow-up.
+      console.error(`[settleBookingDeposit] ${apptId} -> ${after.status} failed:`, e?.message);
+      await ref.set({
+        deposit: { ...dep, settleError: String(e?.message || e).slice(0, 300), settleErrorAt: new Date().toISOString() },
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {});
+    }
   }
 );
 
@@ -7103,6 +7168,35 @@ async function logFraudBlock(db, tenantId, fields) {
       ...fields,
     });
   } catch (e) { console.warn('[fraudBlock] log failed:', e?.message); }
+}
+
+// Durable (cross-instance) rate limiter backed by Firestore. The in-memory
+// checkRate() resets on cold starts and isn't shared between concurrent
+// instances, so it's only a soft speed bump; this is the HARD cap. The time
+// bucket is baked into `key` (e.g. per-hour / per-day) so counters reset
+// naturally and old docs simply stop being read. Each doc carries `expiresAt`
+// for the nightly purge. Fail-OPEN on infra error — never block a legit booking
+// because a counter write hiccuped.
+function ipKeyPart(ip) {
+  return String(ip || 'noip').replace(/[^0-9a-fA-F:.\-]/g, '').slice(0, 64) || 'noip';
+}
+async function fsRateAllow(db, tenantId, key, max, ttlMs) {
+  const ref = db.doc(`tenants/${tenantId}/rateCounters/${key}`);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const count = (snap.exists ? (snap.data().count || 0) : 0) + 1;
+      tx.set(ref, {
+        count,
+        expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      return count <= max;
+    });
+  } catch (e) {
+    console.warn('[fsRateAllow] tx failed, allowing:', e?.message);
+    return true;
+  }
 }
 
 const {
@@ -12080,6 +12174,22 @@ exports.purgeOldTombstones = onSchedule(
         } catch (e) {
           console.error(`[PurgeTombstones] tenant=${tenantId} ${coll} failed:`, e?.message);
         }
+      }
+      // Expired anti-abuse rate counters (fsRateAllow writes `expiresAt`).
+      // Hard-delete in batches; they hold no business data.
+      try {
+        const nowIso = new Date().toISOString();
+        const snap = await db.collection(`tenants/${tenantId}/rateCounters`)
+          .where('expiresAt', '<', nowIso).limit(400).get();
+        if (!snap.empty) {
+          const batch = db.batch();
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+          totalPurged += snap.size;
+          console.log(`[PurgeTombstones] tenant=${tenantId} rateCounters: purged ${snap.size}`);
+        }
+      } catch (e) {
+        console.error(`[PurgeTombstones] tenant=${tenantId} rateCounters failed:`, e?.message);
       }
     });
 
