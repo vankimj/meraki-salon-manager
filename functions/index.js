@@ -153,6 +153,7 @@ const {
   isValidPinFormat:   tcIsValidPin,
 } = require('./lib/timeclock');
 const { planReassignments: tcPlanReassign, nowMinutesInTz: tcNowMinsInTz } = require('./lib/reassign');
+const { shouldSendCancelNotice, buildCancelSms } = require('./lib/cancelNotice');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -3315,6 +3316,125 @@ exports.notifyOnCheckIn = onDocumentUpdated(
       createdAt:   new Date().toISOString(),
       sent:        false,
     });
+  }
+);
+
+// Cancellation email template for the client. Deliberately NO rating/review
+// affordance (that only belongs on a completed visit) — just an apology/confirm
+// line and a clear "Book again" button.
+function buildCancelHtml(appt, brand, rebookUrl, selfService) {
+  const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
+  const services  = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Your appointment';
+  const firstName = String(appt.clientName || '').trim().split(/\s+/)[0] || 'there';
+  const intro = selfService
+    ? `Your appointment below has been cancelled, as requested. We hope to see you again soon!`
+    : `We're sorry — your appointment below has been cancelled. We'd love to find you a new time whenever you're ready.`;
+  return `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
+    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
+      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">${esc(brand.salonName)}</div>
+      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Appointment Cancelled</div>
+    </div>
+    <div style="padding:24px;">
+      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)},</p>
+      <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">${intro}</p>
+      <div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
+        <div style="font-size:13px;color:#333;margin-bottom:8px;"><span>📅</span> <strong style="text-decoration:line-through;color:#999;">${dateStr}</strong></div>
+        <div style="font-size:13px;color:#333;margin-bottom:8px;"><span>💅</span> ${esc(services)}</div>
+        ${appt.techName && appt.techName !== 'TBD' ? `<div style="font-size:13px;color:#333;"><span>👩‍💼</span> with ${esc(appt.techName)}</div>` : ''}
+      </div>
+      ${rebookUrl ? `<div style="text-align:center;margin:20px 0 0;">
+        <a href="${esc(rebookUrl)}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:14px;font-weight:700;padding:12px 28px;border-radius:10px;text-decoration:none;">
+          Book again
+        </a>
+      </div>` : ''}
+      <p style="font-size:11px;color:#aaa;margin:16px 0 0;text-align:center;">Questions? Just reply to this email.</p>
+    </div>
+    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
+      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+// Customer cancellation notice: when an appointment transitions to 'cancelled',
+// email + text the client a courtesy notice with a rebook link (NO rating
+// prompt — that only belongs on a completed visit). Catches every cancel path
+// uniformly: client self-service (manageAppointment), web staff (status
+// dropdown), mobile staff (setAppointmentStatus). Soft-deletes (_deleted) don't
+// flip status, so they don't fire this — and shouldn't, since they can be
+// restored from the Trash.
+//
+// Toggles on tenants/{tid}/data/settings:
+//   cancelNotifyCustomer     (default true)  — notify the client on a STAFF cancel
+//   cancelConfirmSelfService (default false) — also confirm a client's own cancel
+exports.notifyCustomerOnCancel = onDocumentUpdated(
+  `tenants/{tenantId}/appointments/{apptId}`,
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after  = event.data?.after?.data()  || {};
+    if (before.status === 'cancelled' || after.status !== 'cancelled') return; // only the transition
+    if (after._deleted) return;                                                // a delete, not a cancel
+    const tenantId = event.params?.tenantId;
+    const apptId   = event.params?.apptId;
+    const db = getFirestore();
+
+    try {
+      const sSnap    = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings = sSnap.exists ? (sSnap.data() || {}) : {};
+      const selfService = after.cancelledBy === 'client_self_service';
+      if (!shouldSendCancelNotice(settings, after.cancelledBy)) return;
+
+      // Contact + email preference: prefer what's on the appt, fall back to the
+      // client doc. SMS opt-out is enforced inside sendSms via clientId.
+      let email = after.clientEmail || '';
+      let phone = after.clientPhone || '';
+      let emailOk = true;
+      if (after.clientId) {
+        try {
+          const cSnap = await db.doc(`tenants/${tenantId}/clients/${after.clientId}`).get();
+          const c = cSnap.exists ? cSnap.data() : null;
+          if (c) {
+            email = email || c.email || '';
+            phone = phone || c.phone || '';
+            if (c.commPreferences?.appointmentEmail === false) emailOk = false;
+          }
+        } catch { /* best-effort */ }
+      }
+      if (!email && !phone) return;
+
+      const brand     = await tenantBranding(db, tenantId);
+      const baseUrl   = (await tenantBaseUrl(db, tenantId)) || '';
+      const rebookUrl = settings.bookingUrl || (baseUrl ? `${baseUrl.replace(/\/+$/, '')}/book` : '');
+      const firstName = String(after.clientName || '').trim().split(/\s+/)[0] || 'there';
+      const dateShort = fmtDate(after.date);
+      const timeShort = fmtTime(after.startTime);
+
+      if (email && emailOk) {
+        try {
+          await sendEmail({
+            from:    await tenantFromAddress(db, tenantId),
+            to:      email,
+            subject: `Your appointment at ${brand.salonName} was cancelled`,
+            html:    buildCancelHtml(after, brand, rebookUrl, selfService),
+            tenantId,
+            tags:    [{ name: 'kind', value: 'transactional' }],
+          });
+        } catch (e) { console.warn(`[notifyCustomerOnCancel] email failed tenant=${tenantId}:`, e?.message); }
+      }
+
+      if (phone) {
+        const body = buildCancelSms({ firstName, dateShort, timeShort, rebookUrl, selfService });
+        try {
+          await sendSms({ to: phone, body, tenantId, kind: 'transactional', clientId: after.clientId || null });
+        } catch (e) { console.warn(`[notifyCustomerOnCancel] sms failed tenant=${tenantId}:`, e?.message); }
+      }
+    } catch (e) {
+      console.warn(`[notifyCustomerOnCancel] failed tenant=${tenantId} appt=${apptId}:`, e?.message);
+    }
   }
 );
 

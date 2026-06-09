@@ -3312,6 +3312,18 @@ function CancellationPolicySection({ settings, updateSettings }) {
   const [saving,         setSaving]         = useState(false);
   const [savedAt,        setSavedAt]        = useState(null);
 
+  // Customer cancellation notice (separate top-level settings keys; the server
+  // trigger notifyCustomerOnCancel reads these). Staff-cancel notice defaults
+  // ON; self-service confirmation defaults OFF (the client already knows).
+  const [notifyCustomer,  setNotifyCustomer]  = useState(settings.cancelNotifyCustomer !== false);
+  const [confirmSelf,     setConfirmSelf]     = useState(settings.cancelConfirmSelfService === true);
+  const [noticeSavedAt,   setNoticeSavedAt]   = useState(null);
+  async function saveNotice(patch) {
+    await updateSettings({ ...settings, ...patch });
+    setNoticeSavedAt(Date.now());
+    setTimeout(() => setNoticeSavedAt(null), 2200);
+  }
+
   async function save(patch) {
     setSaving(true);
     try {
@@ -3379,6 +3391,24 @@ function CancellationPolicySection({ settings, updateSettings }) {
 
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
           Salon-initiated cancellations (e.g. tech called in sick) don't count against the client.
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--pn-border)', marginTop: 16, paddingTop: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>Tell the customer when an appointment is cancelled</div>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
+            Sends the client a courtesy email + text with a link to book again (no rating prompt). SMS opt-outs are always respected.
+            {noticeSavedAt && <span style={{ color: '#22c55e', marginLeft: 8 }}>✓ Saved</span>}
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 8, fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>
+            <input type="checkbox" checked={notifyCustomer}
+              onChange={e => { setNotifyCustomer(e.target.checked); saveNotice({ cancelNotifyCustomer: e.target.checked }); }} />
+            Notify the client when the salon cancels their appointment
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>
+            <input type="checkbox" checked={confirmSelf}
+              onChange={e => { setConfirmSelf(e.target.checked); saveNotice({ cancelConfirmSelfService: e.target.checked }); }} />
+            Also send a confirmation when a client cancels their own appointment
+          </label>
         </div>
       </div>
     </Section>
