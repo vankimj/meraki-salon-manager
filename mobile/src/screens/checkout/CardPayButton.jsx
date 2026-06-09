@@ -45,6 +45,11 @@ export default function CardPayButton({ amountCents, description, locationId, on
   const term = useStripeTerminal({
     onUpdateDiscoveredReaders: (list) => { readersRef.current = list || []; },
     onDidChangeConnectionStatus: (status) => { connectedRef.current = status === 'connected'; },
+    // First connect on a new reader often installs a required update — show
+    // progress so a multi-minute update doesn't look like a frozen spinner.
+    onDidStartInstallingUpdate: () => setPhase('Updating reader… 0%'),
+    onDidReportReaderSoftwareUpdateProgress: (p) => setPhase(`Updating reader… ${Math.round((Number(p) || 0) * 100)}%`),
+    onDidFinishInstallingUpdate: () => setPhase('Reader updated — finishing…'),
   });
 
   const method = preferReader ? 'bluetoothScan' : 'tapToPay';
@@ -76,17 +81,26 @@ export default function CardPayButton({ amountCents, description, locationId, on
       }
     }
     readersRef.current = [];
-    const { error: dErr } = await term.discoverReaders({ discoveryMethod: method, simulated: useSimulated });
-    if (dErr) throw new Error(dErr.message);
+    // discoverReaders() is LONG-RUNNING: its promise only resolves when
+    // discovery STOPS (after connect/cancel). Discovered readers arrive via the
+    // onUpdateDiscoveredReaders callback. So we must NOT await it before we poll
+    // — awaiting here hangs forever on "Searching" because discovery never
+    // stops. Fire it, react to the callback, then cancel to settle it.
+    let discErr = null;
+    const discovering = term.discoverReaders({ discoveryMethod: method, simulated: useSimulated });
+    discovering.then(r => { if (r?.error) discErr = r.error; }).catch(e => { discErr = e; });
     const reader = await waitForReader();
-    try { await term.cancelDiscovering(); } catch {}
     if (!reader) {
+      try { await term.cancelDiscovering(); } catch {}
+      await discovering.catch(() => {});
+      if (discErr) throw new Error(discErr.message || String(discErr));
       const tapDevice = Platform.OS === 'android' ? 'an NFC-capable Android device (Android 11+)' : 'an iPhone XS or later';
       throw new Error(method === 'tapToPay'
         ? `Tap to Pay on iPhone is unavailable on this device (needs ${tapDevice}).`
         : 'No card reader found. Make sure it is powered on and nearby.');
     }
     setPhase('Connecting…');
+    try { await term.cancelDiscovering(); } catch {}
     // The simulated reader carries its own test location; fall back to it when
     // no real Terminal Location is configured (sandbox).
     const locId = locationId || reader?.location?.id || undefined;
