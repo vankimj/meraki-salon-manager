@@ -130,14 +130,15 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
 
   async function connect() {
     if (busy) return;
-    setBusy(true); setPhase(testMode ? 'Preparing test reader…' : 'Searching for reader…');
+    setBusy(true); setPhase('Searching for reader…');
     try {
-      if (!testMode) {
-        const ok = await ensureAndroidPermissions();
-        if (!ok) throw new Error('Bluetooth and location permission are required to connect a reader.');
-      }
+      // Always discover the PHYSICAL M2 (even in test mode — a real reader on a
+      // test connection token runs in test mode). The simulated reader is only
+      // for no-hardware Tap-to-Pay testing, which isn't this flow.
+      const ok = await ensureAndroidPermissions();
+      if (!ok) throw new Error('Bluetooth and location permission are required to connect a reader.');
       readersRef.current = [];
-      const { error: dErr } = await term.discoverReaders({ discoveryMethod: 'bluetoothScan', simulated: !!testMode });
+      const { error: dErr } = await term.discoverReaders({ discoveryMethod: 'bluetoothScan', simulated: false });
       if (dErr) throw new Error(dErr.message);
       const reader = await waitForReader();
       try { await term.cancelDiscovering(); } catch {}
@@ -160,14 +161,14 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
       if (!pi0?.clientSecret) throw new Error('Could not start the test charge.');
       const { paymentIntent: pi, error: rErr } = await term.retrievePaymentIntent(pi0.clientSecret);
       if (rErr) throw new Error(rErr.message);
-      setPhase(testMode ? 'Simulating a tap…' : 'Present a card on the reader…');
+      setPhase('Present a card on the reader…');
       const { paymentIntent: pi2, error: colErr } = await term.collectPaymentMethod({ paymentIntent: pi });
       if (colErr) throw new Error(colErr.message);
       setPhase('Processing…');
       const { paymentIntent: pi3, error: conErr } = await term.confirmPaymentIntent({ paymentIntent: pi2 });
       if (conErr) throw new Error(conErr.message);
       if (pi3?.status !== 'succeeded') throw new Error(`Charge ${pi3?.status || 'did not complete'}.`);
-      setCharged(testMode ? '✓ Test charge succeeded (simulated — no money moved).' : '✓ $1.00 charged successfully. Refund it from Stripe when done.');
+      setCharged(testMode ? '✓ Test charge succeeded (test mode — no real money moved).' : '✓ $1.00 charged successfully. Refund it from Stripe when done.');
     } catch (e) {
       Alert.alert('Test charge failed', e?.message || 'Try again.');
     } finally { setBusy(false); setPhase(''); }
@@ -194,9 +195,9 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>4 · Test charge</Text>
-        <Text style={styles.cardBody}>{testMode ? 'Runs a free simulated charge to confirm the whole flow works.' : 'Runs a real $1.00 charge (refundable) to confirm the reader works.'}</Text>
+        <Text style={styles.cardBody}>{testMode ? 'Test mode — present a Stripe test card on the reader to confirm the flow (no real money moves).' : 'Runs a real $1.00 charge (refundable) to confirm the reader works.'}</Text>
         <TouchableOpacity style={[styles.btn, (busy || !connected) && { opacity: 0.5 }]} onPress={testCharge} disabled={busy || !connected} activeOpacity={0.85}>
-          <Text style={styles.btnText}>{busy ? (phase || 'Working…') : (testMode ? 'Run test charge (simulated)' : 'Run $1.00 test charge')}</Text>
+          <Text style={styles.btnText}>{busy ? (phase || 'Working…') : (testMode ? 'Run test charge' : 'Run $1.00 test charge')}</Text>
         </TouchableOpacity>
         {!connected ? <Text style={styles.hint}>Connect a reader first.</Text> : null}
         {!!charged && <Text style={[styles.msg, { color: theme.green }]}>{charged}</Text>}

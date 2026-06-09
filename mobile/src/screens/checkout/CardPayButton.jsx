@@ -48,6 +48,11 @@ export default function CardPayButton({ amountCents, description, locationId, on
   });
 
   const method = preferReader ? 'bluetoothScan' : 'tapToPay';
+  // The simulated reader is only useful when there's NO hardware — i.e. testing
+  // Tap to Pay on iPhone without a physical card. When a Bluetooth reader (M2)
+  // is expected, always discover the REAL reader, even in test mode (a physical
+  // reader on a test connection token runs in test mode and takes test cards).
+  const useSimulated = simulated && method === 'tapToPay';
 
   async function waitForReader(ms = 20000) {
     const start = Date.now();
@@ -60,18 +65,18 @@ export default function CardPayButton({ amountCents, description, locationId, on
 
   async function ensureConnected() {
     if (connectedRef.current) return;
-    if (!locationId && !simulated) {
-      throw new Error('No Terminal Location set. Create one in Stripe → Terminal → Locations and add its ID to salon settings (terminalLocationId).');
+    if (!locationId && !useSimulated) {
+      throw new Error('No Terminal Location set yet. Use Manage → Card Reader Setup to create one (or set terminalLocationId in settings).');
     }
-    setPhase(simulated ? 'Preparing test reader…' : (method === 'tapToPay' ? 'Preparing Tap to Pay on iPhone…' : 'Searching for reader…'));
-    if (!simulated) {
+    setPhase(useSimulated ? 'Preparing test reader…' : (method === 'tapToPay' ? 'Preparing Tap to Pay on iPhone…' : 'Searching for reader…'));
+    if (!useSimulated) {
       const granted = await ensureAndroidPermissions(method === 'bluetoothScan');
       if (!granted) {
         throw new Error('Location' + (method === 'bluetoothScan' ? ' and Bluetooth' : '') + ' permission is required to take card payments. Enable it in Settings and try again.');
       }
     }
     readersRef.current = [];
-    const { error: dErr } = await term.discoverReaders({ discoveryMethod: method, simulated });
+    const { error: dErr } = await term.discoverReaders({ discoveryMethod: method, simulated: useSimulated });
     if (dErr) throw new Error(dErr.message);
     const reader = await waitForReader();
     try { await term.cancelDiscovering(); } catch {}
@@ -103,7 +108,7 @@ export default function CardPayButton({ amountCents, description, locationId, on
       if (!pi0?.clientSecret) throw new Error('Could not start the payment.');
       const { paymentIntent: pi, error: rErr } = await term.retrievePaymentIntent(pi0.clientSecret);
       if (rErr) throw new Error(rErr.message);
-      setPhase(simulated ? 'Simulating a test tap…' : (method === 'tapToPay' ? 'Ask the client to tap…' : 'Present card on the reader…'));
+      setPhase(useSimulated ? 'Simulating a test tap…' : (method === 'tapToPay' ? 'Ask the client to tap…' : 'Present card on the reader…'));
       const { paymentIntent: pi2, error: colErr } = await term.collectPaymentMethod({ paymentIntent: pi });
       if (colErr) throw new Error(colErr.message);
       setPhase('Processing…');
