@@ -787,6 +787,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <ModulesSection />
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
             <div data-anchor="payments"><StripeConnectSection onOpenWizard={onOpenWizard} /></div>
+            <TerminalReaderSection />
             <UpgradeSection settings={settings} gUser={gUser} />
             {ALLOWED_EMAILS.includes(gUser?.email) && <SesRepairSection />}
             <DisputesSection />
@@ -3311,6 +3312,59 @@ function TechRemindersSection({ settings, updateSettings }) {
 // any tenant where that best-effort step failed — without it, sendViaSES fails
 // with "Tenant <id> not found" and all transactional email silently breaks.
 // Idempotent; safe to re-run.
+// Card Reader (Stripe Terminal) setup — readiness + one-tap Location creation.
+// Physical reader pairing happens on the iPad app (Bluetooth needs the device);
+// this web section just removes the Stripe-Dashboard step for the Location.
+function TerminalReaderSection() {
+  const [status, setStatus] = useState(null);
+  const [busy,   setBusy]   = useState(false);
+  const [msg,    setMsg]    = useState('');
+  async function load() {
+    try { setStatus(await callFn('getTerminalSetupStatus', { tenantId: TENANT_ID })); }
+    catch (e) { setStatus({ error: friendlyFnError(e) }); }
+  }
+  useEffect(() => { load(); }, []);
+  async function createLocation() {
+    setBusy(true); setMsg('');
+    try {
+      const r = await callFn('setupTerminalLocation', { tenantId: TENANT_ID });
+      setMsg(r.created ? `✓ Created reader location (${r.locationId})` : `✓ Using existing location (${r.locationId})`);
+      await load();
+    } catch (e) { setMsg(`Error: ${friendlyFnError(e)}`); }
+    finally { setBusy(false); }
+  }
+  const st = status || {};
+  const Row = ({ ok, children }) => (
+    <div style={{ fontSize: 13, color: ok ? '#166534' : 'var(--pn-text-muted)', marginBottom: 4 }}>{ok ? '✓' : '○'} {children}</div>
+  );
+  return (
+    <Section title="💳 Card Reader (Stripe Terminal)">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+          In-person card payments (Bluetooth reader / Tap to Pay). Create the Terminal Location here — then pair the physical reader from the iPad app → <strong>Manage → Card Reader Setup</strong>.
+        </div>
+        {status === null ? (
+          <div style={{ fontSize: 13, color: 'var(--pn-text-muted)' }}>Checking…</div>
+        ) : st.error ? (
+          <div style={{ fontSize: 13, color: '#b91c1c' }}>Couldn’t load status: {st.error}</div>
+        ) : (
+          <>
+            <Row ok={st.connectReady}>Stripe Connect {st.connectReady ? 'ready' : '— finish onboarding to take payments'}</Row>
+            <Row ok={st.hasLocation}>Terminal Location {st.hasLocation ? `set` : '— not created yet'}{st.locationId ? ` (${st.locationId})` : ''}</Row>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', margin: '6px 0 12px' }}>
+              Mode: <strong>{st.testMode ? 'TEST — simulated reader + test cards' : 'LIVE — real cards'}</strong>
+            </div>
+            <Btn onClick={createLocation} color="#2D7A5F" disabled={busy}>
+              {busy ? 'Working…' : (st.hasLocation ? 'Verify / re-create location' : 'Create reader location')}
+            </Btn>
+            {msg && <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600, color: msg.startsWith('Error') ? '#b91c1c' : '#166534' }}>{msg}</div>}
+          </>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 function SesRepairSection() {
   const [busy, setBusy]     = useState(false);
   const [result, setResult] = useState(null);

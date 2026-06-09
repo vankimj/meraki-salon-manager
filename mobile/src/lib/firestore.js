@@ -672,6 +672,15 @@ export async function createCardPaymentIntent(amountCents, description, idempote
   const res = await callFn('createPaymentIntent')({ tenantId: getCurrentTenant(), amountCents, description, paymentMethodType: 'card_present', idempotencyKey });
   return res?.data || null; // { clientSecret, paymentIntentId }
 }
+// Card-reader setup wizard: readiness + auto-create the Stripe Terminal Location.
+export async function getTerminalSetupStatus() {
+  const res = await callFn('getTerminalSetupStatus')({ tenantId: getCurrentTenant() });
+  return res?.data || {};
+}
+export async function setupTerminalLocation() {
+  const res = await callFn('setupTerminalLocation')({ tenantId: getCurrentTenant() });
+  return res?.data || {};
+}
 
 // Charge a client's saved card off-session (card on file). Admin-only on the
 // server (requireTenantAdmin). Returns { paymentIntentId, status, amountCharged }.

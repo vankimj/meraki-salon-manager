@@ -164,6 +164,20 @@ export default function ManageGridScreen({ navigation }) {
 
         {isAdmin && (
           <TouchableOpacity
+            style={[styles.tile, { width: tileW }]}
+            activeOpacity={0.7}
+            onPress={() => navigation.navigate('ReaderSetup')}
+          >
+            <View style={styles.iconWrap}>
+              <Icon name="dollar" size={26} color={theme.blue} />
+            </View>
+            <Text style={styles.tileLabel} numberOfLines={1}>Card Reader Setup</Text>
+            <Text style={styles.tileDesc} numberOfLines={2}>Create location & pair the card reader</Text>
+          </TouchableOpacity>
+        )}
+
+        {isAdmin && (
+          <TouchableOpacity
             style={[styles.tile, styles.adminTile, { width: tileW }]}
             activeOpacity={0.7}
             onPress={() => navigation.navigate('AdminHome')}
