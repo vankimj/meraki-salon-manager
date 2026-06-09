@@ -65,10 +65,6 @@ service cloud.firestore {
     function canEditSchedule(tenantId) {
       return isTenantStaff(tenantId) && !isScheduleViewOnly(tenantId);
     }
-    // Public field length caps for unauthenticated submissions.
-    function isShortString(v, maxLen) {
-      return v is string && v.size() <= maxLen;
-    }
 
     // ── Legacy path (read-only for migration) ────────────
     match /salon/{document} {
