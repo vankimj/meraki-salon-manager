@@ -15,6 +15,7 @@ import CardPayButton from '../checkout/CardPayButton';
 import ResendReceiptRow from '../../components/ResendReceiptRow';
 import TechTipInputs from '../../components/TechTipInputs';
 import useResponsive from '../../hooks/useResponsive';
+import useCurrentEmployee from '../../hooks/useCurrentEmployee';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
@@ -76,7 +77,10 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
   const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
-  const [stage, setStage]       = useState('review'); // review | cash | done
+  const [stage, setStage]       = useState('review'); // review | handback | cash | done
+  // Logged-in staff name, for the "hand the device back to {name}" step when a
+  // client picks cash on the staff's own device (local "check out on this device").
+  const { techName: staffName } = useCurrentEmployee();
   const [cashStr, setCashStr]   = useState('');
   const [saving, setSaving]     = useState(false);
   const [paidMsg, setPaidMsg]   = useState('');
@@ -112,7 +116,13 @@ export default function KioskCheckout({ session, settings, email, local = false,
   useEffect(() => {
     let alive = true;
     if (session.clientId) {
-      fetchClient(session.clientId).then(c => { if (alive) setClient(c); }).catch(() => {});
+      fetchClient(session.clientId).then(c => {
+        if (!alive) return;
+        setClient(c);
+        // Prefill the receipt contact from the client profile (phone preferred,
+        // then email) so the receipt fields aren't blank — staff/client can edit.
+        setReceiptPhone(prev => prev || c?.phone || c?.email || '');
+      }).catch(() => {});
       fetchClientMembership(session.clientId).then(m => {
         if (alive && m && m.status === 'active' && Number(m.discountPct) > 0) setMembership(m);
       }).catch(() => {});
@@ -358,11 +368,6 @@ export default function KioskCheckout({ session, settings, email, local = false,
             <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
               <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
             </TouchableOpacity>
-            {venmoTechs.length > 0 && (
-              <TouchableOpacity style={[styles.tipMethod, tipMethod === 'venmo' && styles.tipMethodOn]} onPress={() => setTipMethod('venmo')}>
-                <Text style={[styles.tipMethodText, tipMethod === 'venmo' && styles.tipMethodTextOn]}>💸 Venmo</Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity style={[styles.tipMethod, tipMethod === 'cash' && styles.tipMethodOn]} onPress={() => setTipMethod('cash')}>
               <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
             </TouchableOpacity>
@@ -399,30 +404,9 @@ export default function KioskCheckout({ session, settings, email, local = false,
                 <TechTipInputs techRevenue={techRevenue} values={perTechTips} photoByTech={photoByTech} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
               )}
               {multiTech && tipMode !== 'perTech' && selectedTipAmt > 0 && (
-                <Text style={styles.splitNote}>{tipMethod === 'venmo' ? 'Each tech gets their share by service amount.' : 'Split across techs by service amount. Tap "Tip each tech" to set them individually.'}</Text>
+                <Text style={styles.splitNote}>Split across techs by service amount. Tap "Tip each tech" to set them individually.</Text>
               )}
             </>
-          )}
-
-          {tipMethod === 'venmo' && venmoTechs.length > 0 && (
-            <View style={styles.venmoInline}>
-              <Text style={styles.venmoNote}>Scan to tip your tech directly with Venmo — this is not added to your bill.</Text>
-              {venmoTechs.map(t => {
-                const amt = venmoTipFor(t);
-                const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
-                const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
-                return (
-                  <View key={t} style={styles.venmoQrItem}>
-                    <View style={styles.venmoQrHead}>
-                      <TechAvatar name={t} photo={photoByTech[t]} size={32} />
-                      <Text style={styles.venmoQrName}>{t}</Text>
-                    </View>
-                    <QRCode value={url} size={180} />
-                    <Text style={styles.venmoQrHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
-                  </View>
-                );
-              })}
-            </View>
           )}
 
           {!hasPhoneOnFile && (
@@ -506,10 +490,21 @@ export default function KioskCheckout({ session, settings, email, local = false,
           ) : (
             <View style={styles.cardDisabled}><Text style={styles.cardDisabledText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
           )}
-          <TouchableOpacity style={styles.cashBtn} onPress={() => { setCashStr(''); setStage('cash'); }} disabled={saving}>
+          <TouchableOpacity style={styles.cashBtn} onPress={() => { setCashStr(''); setStage(local ? 'handback' : 'cash'); }} disabled={saving}>
             <Text style={styles.cashBtnText}>💵 Pay with cash</Text>
           </TouchableOpacity>
         </>
+      )}
+
+      {stage === 'handback' && !paid && (
+        <View style={styles.handback}>
+          <Text style={styles.handbackEmoji}>🙏</Text>
+          <Text style={styles.handbackTitle}>Thank you!</Text>
+          <Text style={styles.handbackBody}>Please hand the device back to {staffName || 'the staff member'} to finish your cash payment.</Text>
+          <TouchableOpacity style={styles.handbackBtn} onPress={() => setStage('cash')} activeOpacity={0.85}>
+            <Text style={styles.handbackBtnText}>OK</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       {stage === 'cash' && !paid && (() => {
@@ -602,6 +597,12 @@ const makeStyles = (t) => StyleSheet.create({
   cashBtn:  { marginTop: 12, backgroundColor: t.surface, borderRadius: 14, paddingVertical: 17, alignItems: 'center', borderWidth: 1, borderColor: t.border },
   cashBtnText:{ color: t.text, fontWeight: '800', fontSize: 16 },
   cashPane: { marginTop: 18 },
+  handback:      { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 },
+  handbackEmoji: { fontSize: 56, marginBottom: 12 },
+  handbackTitle: { fontSize: 26, fontWeight: '800', color: t.text, marginBottom: 8 },
+  handbackBody:  { fontSize: 16, color: t.textMuted, textAlign: 'center', lineHeight: 23, marginBottom: 28 },
+  handbackBtn:   { backgroundColor: t.green, borderRadius: 14, paddingVertical: 15, paddingHorizontal: 56, alignItems: 'center' },
+  handbackBtnText:{ color: '#fff', fontWeight: '800', fontSize: 17 },
   cashInputRow:{ flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 14, paddingHorizontal: 16, borderWidth: 1, borderColor: t.border },
   cashDollar:{ fontSize: 26, color: t.textMuted, fontWeight: '700' },
   cashInput:{ flex: 1, fontSize: 30, fontWeight: '800', color: t.text, paddingVertical: 14, marginLeft: 6 },
