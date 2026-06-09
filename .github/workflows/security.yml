@@ -75,4 +75,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The Vitest suite also runs functions/lib/*.test.js, which require
+      # firebase-admin from functions/node_modules — install those too.
+      - run: npm ci --prefix functions
       - run: npm test
+        # Some React tests read VITE_* at import time (e.g. ConnectEmbedded reads
+        # the Stripe key before the test can stub it). Locally .env supplies these;
+        # CI has none, so provide dummy values here. These are NOT real secrets.
+        env:
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_ci_dummy
