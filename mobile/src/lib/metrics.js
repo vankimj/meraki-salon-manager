@@ -345,3 +345,32 @@ export function computeRefundBreakdown(receipts) {
   });
   return { refunded, withheld, goodwill, count };
 }
+
+// Per-tech PAYROLL adjustment from receipts: the attributed revenue a tech LOSES
+// to withheld refunds + redos they gave away, and GAINS from redos received.
+// Mirrors the tech-dashboard math so payroll (commission) matches what each tech
+// sees. Returns gross-dollar adjustments; the caller nets them against the tech's
+// service revenue before applying their commission %.
+export function techPayAdjust(receipts, techName) {
+  let refundWithheld = 0, redoOut = 0, redoIn = 0;
+  (receipts || []).forEach(r => {
+    const p = r.payment || {};
+    const split = Array.isArray(p.techSplit) ? p.techSplit : null;
+    const totalRev = split ? split.reduce((a, s) => a + (Number(s.revenue) || 0), 0) : 0;
+    const myRev = split
+      ? split.filter(s => s.techName === techName).reduce((a, s) => a + (Number(s.revenue) || 0), 0)
+      : (r.techName === techName ? (Number(p.subtotal) || (r.services || []).reduce((x, sv) => x + (Number(sv.price) || 0), 0)) : 0);
+    const refundList = Array.isArray(r.refunds) ? r.refunds : (r.refund ? [r.refund] : []);
+    if (myRev > 0 && totalRev > 0) {
+      refundList.forEach(rf => {
+        const treat = (rf.commissionByTech && rf.commissionByTech[techName]) || 'withhold';
+        if (treat === 'withhold') refundWithheld += (myRev / totalRev) * (Number(rf.amount) || 0);
+      });
+    }
+    (Array.isArray(r.redos) ? r.redos : []).forEach(rd => {
+      (rd.services || []).forEach(it => { if (it.fromTech === techName) redoOut += Number(it.amount) || 0; });
+      if (rd.toTech === techName) redoIn += Number(rd.amount) || 0;
+    });
+  });
+  return { refundWithheld, redoOut, redoIn };
+}

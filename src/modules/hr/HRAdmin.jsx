@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../../lib/firebase';
 import {
-  fetchEmployeesWithComp, fetchAppointmentsByRange,
+  fetchEmployeesWithComp, fetchAppointmentsByRange, fetchReceiptsByRange,
   fetchBonuses, createBonus, deleteBonus,
   fetchPayrollRuns, createPayrollRun, savePayrollRun,
   fetchReviews, saveReview, deleteReview,
@@ -15,6 +15,7 @@ import { logActivity } from '../../lib/logger';
 import { useApp } from '../../context/AppContext';
 import TrashButton from '../../components/TrashButton';
 import { escapeHtml } from '../../utils/helpers';
+import { techPayAdjust } from '../reports/metrics';
 
 const gustoGetAuthUrlFn    = httpsCallable(functions, 'gustoGetAuthUrl');
 const gustoSyncEmployeesFn = httpsCallable(functions, 'gustoSyncEmployees');
@@ -61,6 +62,7 @@ export default function HRAdmin() {
   const [periodDays,   setPeriodDays]   = useState(14);
   const [employees,    setEmployees]    = useState([]);
   const [appts,        setAppts]        = useState(null);
+  const [receipts,     setReceipts]     = useState([]);   // for refund-withhold + redo-transfer payroll adjustments
   const [bonuses,      setBonuses]      = useState([]);
   const [payrollRuns,  setPayrollRuns]  = useState([]);
   const [reviews,      setReviews]      = useState([]);
@@ -86,8 +88,14 @@ export default function HRAdmin() {
 
   async function loadAppts() {
     setLoading(true);
-    try { setAppts(await fetchAppointmentsByRange(startDate, endDate)); }
-    catch { setAppts([]); }
+    try {
+      const [a, r] = await Promise.all([
+        fetchAppointmentsByRange(startDate, endDate),
+        fetchReceiptsByRange(startDate, endDate).catch(() => []),
+      ]);
+      setAppts(a); setReceipts(r || []);
+    }
+    catch { setAppts([]); setReceipts([]); }
     finally { setLoading(false); }
   }
 
@@ -232,13 +240,18 @@ export default function HRAdmin() {
             ? a.payment.techSplit.some(t => t.techName === emp.name)
             : a.techName === emp.name
         );
-        const serviceRevenue = techAppts.reduce((s, a) => {
+        const grossRevenue = techAppts.reduce((s, a) => {
           if (a.payment?.techSplit) {
             const split = a.payment.techSplit.find(t => t.techName === emp.name);
             return s + (split?.revenue || 0);
           }
           return s + (a.services || []).reduce((t, sv) => t + (Number(sv.price) || 0), 0);
         }, 0);
+        // Net withheld refunds + redo transfers (mirrors the tech dashboards) so
+        // payroll commission matches what each tech sees. Clamp at 0 — payroll
+        // never goes negative even if a tech's period was fully refunded/redone.
+        const adj = techPayAdjust(receipts, emp.name);
+        const serviceRevenue = Math.max(0, Math.round((grossRevenue - adj.refundWithheld - adj.redoOut + adj.redoIn) * 100) / 100);
         const commissionPct = Number(emp.commissionPct) || 0;
         const commissionAmt = commissionPct
           ? Math.round(serviceRevenue * commissionPct / 100 * 100) / 100
@@ -249,9 +262,9 @@ export default function HRAdmin() {
         const isHourly   = emp.rateType === 'hourly';
         const earned     = isHourly ? null : commissionAmt;
         const total      = (earned || 0) + bonusTotal;
-        return { emp, techAppts, serviceRevenue, commissionPct, commissionAmt, periodBonuses, bonusTotal, earned, isHourly, total };
+        return { emp, techAppts, serviceRevenue, grossRevenue, adj, commissionPct, commissionAmt, periodBonuses, bonusTotal, earned, isHourly, total };
       });
-  }, [employees, appts, bonuses, startDate]);
+  }, [employees, appts, receipts, bonuses, startDate]);
 
   const grandTotal = payrollRows.reduce((s, r) => s + r.total, 0);
 
@@ -462,7 +475,23 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
                     )}
                   </div>
                   <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--pn-text-muted)' }}>{row.techAppts.length}</span>
-                  <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--pn-text-muted)' }}>{fmt$(row.serviceRevenue)}</span>
+                  <span style={{ textAlign: 'right', fontSize: 13, color: 'var(--pn-text-muted)' }}>
+                    {fmt$(row.serviceRevenue)}
+                    {(() => {
+                      const delta = Math.round((row.serviceRevenue - row.grossRevenue) * 100) / 100;
+                      if (Math.abs(delta) < 0.005) return null;
+                      const parts = [
+                        row.adj.refundWithheld > 0 ? `−${fmt$(row.adj.refundWithheld)} withheld refunds` : '',
+                        row.adj.redoOut > 0 ? `−${fmt$(row.adj.redoOut)} redos given` : '',
+                        row.adj.redoIn > 0 ? `+${fmt$(row.adj.redoIn)} redos received` : '',
+                      ].filter(Boolean).join(' · ');
+                      return (
+                        <div title={`Gross ${fmt$(row.grossRevenue)} · ${parts}`} style={{ fontSize: 10, color: delta < 0 ? '#ef4444' : '#22c55e' }}>
+                          {delta < 0 ? '' : '+'}{fmt$(delta)} adj
+                        </div>
+                      );
+                    })()}
+                  </span>
                   <span style={{ textAlign: 'right', fontSize: 12, color: 'var(--pn-text-muted)' }}>
                     {row.commissionPct ? `${row.commissionPct}%` : row.isHourly ? `$${row.emp.hourlyRate}/hr` : '—'}
                   </span>

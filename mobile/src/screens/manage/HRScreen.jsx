@@ -7,8 +7,9 @@ import {
   fetchBonuses, createBonus, deleteBonus,
   fetchReviews, saveReview, deleteReview,
   fetchPayrollRuns, fetchSettings, getGustoAuthUrl,
-  fetchEmployeesWithComp, fetchAppointmentsByRange, createPayrollRun, gustoSubmitPayroll,
+  fetchEmployeesWithComp, fetchAppointmentsByRange, fetchReceiptsByRange, createPayrollRun, gustoSubmitPayroll,
 } from '../../lib/firestore';
+import { techPayAdjust } from '../../lib/metrics';
 import OAuthConnect from '../../components/OAuthConnect';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
@@ -20,16 +21,19 @@ function lastNDays(n) {
 }
 // Port of the web payrollRows computation (commission on service revenue +
 // period bonuses). Only techs with a positive total are included.
-function computePayroll(employees, appts, bonuses, startDate) {
+function computePayroll(employees, appts, receipts, bonuses, startDate) {
   const done = appts.filter(a => a.status === 'done');
   return employees.filter(e => e.active !== false).map(emp => {
     const techAppts = done.filter(a => a.payment?.techSplit
       ? a.payment.techSplit.some(t => t.techName === emp.name)
       : a.techName === emp.name);
-    const serviceRevenue = techAppts.reduce((s, a) => {
+    const grossRevenue = techAppts.reduce((s, a) => {
       if (a.payment?.techSplit) { const sp = a.payment.techSplit.find(t => t.techName === emp.name); return s + (sp?.revenue || 0); }
       return s + (a.services || []).reduce((t, sv) => t + (Number(sv.price) || 0), 0);
     }, 0);
+    // Net withheld refunds + redo transfers so commission matches the tech dashboards.
+    const adj = techPayAdjust(receipts, emp.name);
+    const serviceRevenue = Math.max(0, Math.round((grossRevenue - adj.refundWithheld - adj.redoOut + adj.redoIn) * 100) / 100);
     const commissionPct = Number(emp.commissionPct) || 0;
     const commissionAmt = commissionPct ? Math.round(serviceRevenue * commissionPct / 100 * 100) / 100 : 0;
     const bonusTotal = bonuses.filter(b => b.techName === emp.name && (b.createdAt || '').slice(0, 10) >= startDate)
@@ -115,10 +119,11 @@ function PayrollList() {
     setBusy(true);
     try {
       const { startDate, endDate } = lastNDays(14);
-      const [emps, appts, bonuses] = await Promise.all([
-        fetchEmployeesWithComp(), fetchAppointmentsByRange(startDate, endDate), fetchBonuses(),
+      const [emps, appts, receipts, bonuses] = await Promise.all([
+        fetchEmployeesWithComp(), fetchAppointmentsByRange(startDate, endDate),
+        fetchReceiptsByRange(startDate, endDate).catch(() => []), fetchBonuses(),
       ]);
-      const rows = computePayroll(emps, appts, bonuses, startDate);
+      const rows = computePayroll(emps, appts, receipts || [], bonuses, startDate);
       if (rows.length === 0) { Alert.alert('Nothing to pay', 'No commission or bonuses in the last 14 days.'); return; }
       const grandTotal = rows.reduce((s, r) => s + r.total, 0);
       Alert.alert(
