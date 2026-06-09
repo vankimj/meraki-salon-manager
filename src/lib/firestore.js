@@ -353,6 +353,24 @@ export const saveUsers = async (users) => {
 // ── Settings ───────────────────────────────────────────
 export const saveSettings = (settings) => setDoc(SETTINGS_REF, settings);
 
+// ── Front-desk kiosk handoff (shared with the mobile kiosk) ────────────
+// The web checkout writes a 'pending' session here; an iPad running in kiosk
+// mode (mobile KioskScreen) picks it up and takes the card on the M2 reader,
+// then writes back { status:'paying', paid:{...} }. Shape MUST match the
+// mobile setCheckoutSession/buildHandoff so KioskCheckout renders it correctly.
+export async function setCheckoutSession(data) {
+  await setDoc(tenantDoc('checkoutSession'),
+    { status: 'pending', createdAt: new Date().toISOString(), ...data, updatedAt: new Date().toISOString() });
+}
+export async function clearCheckoutSession() {
+  try { await setDoc(tenantDoc('checkoutSession'), { status: 'idle', updatedAt: new Date().toISOString() }, { merge: true }); } catch (_) {}
+}
+export function subscribeCheckoutSession(cb) {
+  return onSnapshot(tenantDoc('checkoutSession'),
+    (snap) => cb(snap.exists() ? snap.data() : null),
+    () => cb(null));
+}
+
 // ── Logs ───────────────────────────────────────────────
 export const addLog       = (entry)    => addDoc(LOGS_COL, entry);
 
