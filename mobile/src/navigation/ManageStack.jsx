@@ -26,6 +26,7 @@ import TrashScreen         from '../screens/manage/TrashScreen';
 import AdminHomeScreen     from '../screens/admin/AdminHomeScreen';
 import AdminLogsScreen     from '../screens/admin/AdminLogsScreen';
 import AdminSettingsScreen from '../screens/admin/AdminSettingsScreen';
+import AdminTipFlowScreen  from '../screens/admin/AdminTipFlowScreen';
 import AdminUsersScreen    from '../screens/admin/AdminUsersScreen';
 import AdminFeedbackScreen from '../screens/admin/AdminFeedbackScreen';
 import AdminIntegrityScreen from '../screens/admin/AdminIntegrityScreen';
@@ -104,6 +105,8 @@ export default function ManageStack() {
         options={{ headerTitle: () => <HeaderTitle title="Activity Log" /> }} />
       <Stack.Screen name="AdminSettings" component={AdminSettingsScreen}
         options={{ headerTitle: () => <HeaderTitle title="Settings" /> }} />
+      <Stack.Screen name="AdminTipFlow" component={AdminTipFlowScreen}
+        options={{ headerTitle: () => <HeaderTitle title="TipFlow Slides" /> }} />
       <Stack.Screen name="AdminUsers" component={AdminUsersScreen}
         options={{ headerTitle: () => <HeaderTitle title="Users & Roles" /> }} />
       <Stack.Screen name="AdminFeedback" component={AdminFeedbackScreen}

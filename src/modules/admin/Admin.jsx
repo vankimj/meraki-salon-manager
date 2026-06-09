@@ -31,6 +31,7 @@ import { subscribeOnboarding, completedCount, isOnboardingComplete, phaseStatus,
 import CsvImportSection from '../../components/CsvImportSection';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 import LocationsTab from './LocationsTab';
+import SlideModal from '../tipflow/SlideModal';
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
@@ -678,6 +679,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 })}>Save</Btn>
               </div>
             </Section>
+            <TipFlowSection />
             <Section title="💰 Financial">
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -778,6 +780,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             />
             <TechRemindersSection settings={settings} updateSettings={updateSettings} />
             <CancellationPolicySection settings={settings} updateSettings={updateSettings} />
+            <BookingCardPolicySection settings={settings} updateSettings={updateSettings} />
             <PauseSection settings={settings} updateSettings={updateSettings} />
             <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
             <ModulesSection />
@@ -805,6 +808,66 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// TipFlow kiosk slide manager. Slides show on the front-desk kiosk (web /tipflow
+// and the mobile kiosk idle screen) — a tech headshot + a Venmo/social QR a
+// waiting client can tip with. Editing lives here in Admin; the /tipflow view is
+// display-only.
+function TipFlowSection() {
+  const { slides, def, deleteSlide, setDefault, showToast } = useApp();
+  const [showModal, setShowModal] = useState(false);
+  const [editIndex, setEditIndex] = useState(-1);
+
+  function add()  { setEditIndex(-1); setShowModal(true); }
+  function edit(i){ setEditIndex(i);  setShowModal(true); }
+  async function remove(i) {
+    const name = slides[i]?.name || 'unnamed';
+    await deleteSlide(i);
+    logActivity('slide_deleted', name);
+    showToast('Slide deleted');
+  }
+  async function makeDefault(i) {
+    await setDefault(i);
+    logActivity('default_set', slides[i]?.name || `slide ${i + 1}`);
+    showToast('Default slide set');
+  }
+
+  return (
+    <>
+      <Section title="💅 TipFlow Kiosk Slides" action={<Btn color="#3D95CE" onClick={add}>+ Add slide</Btn>}>
+        <div style={{ padding: '8px 16px 14px' }}>
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8, lineHeight: 1.5 }}>
+            Slides show on the front-desk kiosk while it's idle — each tech's photo with a Venmo or social QR a waiting client can scan to tip.
+          </div>
+          {slides.length === 0
+            ? <Empty>No slides yet</Empty>
+            : slides.map((s, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--pn-border)' : 'none' }}>
+                {s.img
+                  ? <img src={s.img} alt="" style={{ width: 46, height: 58, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', flexShrink: 0 }} />
+                  : <div style={{ width: 46, height: 58, borderRadius: 8, background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc', flexShrink: 0 }}>✦</div>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>
+                    {s.name || 'Untitled'}
+                    {i === def && <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: '#2D7A5F' }}>★ DEFAULT</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 2 }}>
+                    {[s.vu && `venmo @${s.vu}`, s.iu && `ig @${s.iu}`, s.fu && `fb @${s.fu}`, s.hu && 'web'].filter(Boolean).join(' · ') || 'No links'}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                  {i !== def && <Btn onClick={() => makeDefault(i)}>★ Default</Btn>}
+                  <Btn onClick={() => edit(i)}>Edit</Btn>
+                  <Btn color="#ef4444" onClick={() => remove(i)}>Delete</Btn>
+                </div>
+              </div>
+            ))}
+        </div>
+      </Section>
+      {showModal && <SlideModal editIndex={editIndex} onClose={() => setShowModal(false)} />}
+    </>
   );
 }
 
@@ -3316,6 +3379,104 @@ function CancellationPolicySection({ settings, updateSettings }) {
 
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
           Salon-initiated cancellations (e.g. tech called in sick) don't count against the client.
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+// ── Booking-time card requirement ─────────────────────────────────────────
+// Independent of the cancellation-history policy: require a card on file at
+// booking time for first-time clients and/or every online booking, with a
+// configurable deposit percentage. Schema lives on settings.bookingCardPolicy
+// — see src/lib/cancellationPolicy.js (resolveBookingCardPolicy). Enforced
+// server-side in submitOnlineBooking and surfaced in BookingScreen.
+function BookingCardPolicySection({ settings, updateSettings }) {
+  const cfg = settings.bookingCardPolicy || {};
+  const [firstTime,  setFirstTime]  = useState(cfg.firstTimeRequireCard   === true);
+  const [allBookings, setAllBookings] = useState(cfg.allBookingsRequireCard === true);
+  const [depositMode, setDepositMode] = useState(cfg.depositMode || 'store');
+  const [depositPct,  setDepositPct]  = useState(cfg.depositPct ?? 0);
+  const [saving,      setSaving]      = useState(false);
+  const [savedAt,     setSavedAt]     = useState(null);
+
+  async function save(patch) {
+    setSaving(true);
+    try {
+      const next = {
+        firstTimeRequireCard:   firstTime,
+        allBookingsRequireCard: allBookings,
+        depositMode,
+        depositPct: Math.min(100, Math.max(0, Math.round(Number(depositPct) || 0))),
+        ...patch,
+      };
+      await updateSettings({ ...settings, bookingCardPolicy: next });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 2200);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const anyOn = firstTime || allBookings;
+  const modeBlurb = {
+    store:     'Save the card on file. Nothing is charged at booking — you can charge the deposit % only if the client late-cancels or no-shows.',
+    authorize: 'Place an authorization hold for the deposit % at booking. Captured on a no-show, released otherwise. Holds expire in ~7 days, so this suits near-term bookings.',
+    charge:    'Charge the deposit % as a deposit at booking, credited toward the final bill at checkout.',
+  };
+
+  return (
+    <Section title="💳 Card on file for booking">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+          Require online-booking clients to put a card on file before they can confirm. Clients who already have a card aren&apos;t prompted again. This is separate from the cancellation-history policy above.
+        </div>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
+          <input type="checkbox" checked={firstTime}
+            onChange={e => { setFirstTime(e.target.checked); save({ firstTimeRequireCard: e.target.checked }); }} disabled={saving} />
+          <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>Require a card for first-time clients</span>
+          {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto' }}>✓ Saved</span>}
+        </label>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 12 }}>
+          <input type="checkbox" checked={allBookings}
+            onChange={e => { setAllBookings(e.target.checked); save({ allBookingsRequireCard: e.target.checked }); }} disabled={saving} />
+          <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>Require a card on all online bookings</span>
+        </label>
+
+        <div style={{ opacity: anyOn ? 1 : 0.5, pointerEvents: anyOn ? 'auto' : 'none' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+            <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'block' }}>
+              <div style={{ marginBottom: 4, fontWeight: 600 }}>Deposit handling</div>
+              <select value={depositMode}
+                onChange={e => { setDepositMode(e.target.value); save({ depositMode: e.target.value }); }}
+                disabled={saving}
+                style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)', fontSize: 13, fontFamily: 'inherit', background: 'var(--pn-surface)' }}>
+                <option value="store">Store card — charge only on no-show</option>
+                <option value="authorize">Authorize a hold at booking</option>
+                <option value="charge">Charge a deposit at booking</option>
+              </select>
+            </label>
+            <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'block' }}>
+              <div style={{ marginBottom: 4, fontWeight: 600 }}>Deposit percentage</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <input
+                  type="number" min={0} max={100} step={1}
+                  value={depositPct}
+                  onChange={e => setDepositPct(e.target.value)}
+                  onBlur={() => save({ depositPct: Math.min(100, Math.max(0, Math.round(Number(depositPct) || 0))) })}
+                  disabled={saving}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)', fontSize: 13, fontFamily: 'inherit' }}
+                />
+                <span style={{ fontSize: 13, color: 'var(--pn-text-muted)' }}>%</span>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>of the appointment total</div>
+            </label>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
+            {modeBlurb[depositMode]}
+          </div>
         </div>
       </div>
     </Section>
