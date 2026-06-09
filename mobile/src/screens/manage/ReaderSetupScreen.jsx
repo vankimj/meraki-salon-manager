@@ -118,8 +118,13 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
   const [charged,   setCharged]   = useState('');
 
   const term = useStripeTerminal({
-    onUpdateDiscoveredReaders: (list) => { readersRef.current = list || []; },
+    onUpdateDiscoveredReaders: (list) => { readersRef.current = list || []; if (list?.length) setPhase('Found reader — connecting…'); },
     onDidChangeConnectionStatus: (s) => { if (s !== 'connected') setConnected(null); },
+    // A new M2 usually installs a required update on first connect (can take a
+    // few minutes) — surface it so it doesn't look frozen.
+    onDidStartInstallingUpdate: () => setPhase('Updating reader… 0%'),
+    onDidReportReaderSoftwareUpdateProgress: (p) => setPhase(`Updating reader… ${Math.round((Number(p) || 0) * 100)}%`),
+    onDidFinishInstallingUpdate: () => setPhase('Reader updated — finishing…'),
   });
 
   async function waitForReader(ms = 20000) {
@@ -138,12 +143,20 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
       const ok = await ensureAndroidPermissions();
       if (!ok) throw new Error('Bluetooth and location permission are required to connect a reader.');
       readersRef.current = [];
-      const { error: dErr } = await term.discoverReaders({ discoveryMethod: 'bluetoothScan', simulated: false });
-      if (dErr) throw new Error(dErr.message);
+      // discoverReaders() is long-running — its promise only resolves when
+      // discovery STOPS. Readers stream in via onUpdateDiscoveredReaders. Do NOT
+      // await it before polling, or it hangs forever on "Searching".
+      let discErr = null;
+      const discovering = term.discoverReaders({ discoveryMethod: 'bluetoothScan', simulated: false });
+      discovering.then(r => { if (r?.error) discErr = r.error; }).catch(e => { discErr = e; });
       const reader = await waitForReader();
-      try { await term.cancelDiscovering(); } catch {}
-      if (!reader) throw new Error('No reader found. Power it on, keep it next to the iPad, and make sure Bluetooth is on.');
+      if (!reader) {
+        try { await term.cancelDiscovering(); } catch {}
+        await discovering.catch(() => {});
+        throw new Error(discErr?.message || 'No reader found. Power it on, keep it next to the iPad, and make sure Bluetooth is on.');
+      }
       setPhase('Connecting…');
+      try { await term.cancelDiscovering(); } catch {}
       const locId = locationId || reader?.location?.id || undefined;
       const { reader: cr, error: cErr } = await term.connectReader({ discoveryMethod: 'bluetoothScan', reader, locationId: locId });
       if (cErr) throw new Error(cErr.message);
