@@ -3379,64 +3379,104 @@ exports.notifyCustomerOnCancel = onDocumentUpdated(
     if (before.status === 'cancelled' || after.status !== 'cancelled') return; // only the transition
     if (after._deleted) return;                                                // a delete, not a cancel
     const tenantId = event.params?.tenantId;
-    const apptId   = event.params?.apptId;
-    const db = getFirestore();
-
     try {
+      const db = getFirestore();
       const sSnap    = await db.doc(`tenants/${tenantId}/data/settings`).get();
       const settings = sSnap.exists ? (sSnap.data() || {}) : {};
-      const selfService = after.cancelledBy === 'client_self_service';
       if (!shouldSendCancelNotice(settings, after.cancelledBy)) return;
-
-      // Contact + email preference: prefer what's on the appt, fall back to the
-      // client doc. SMS opt-out is enforced inside sendSms via clientId.
-      let email = after.clientEmail || '';
-      let phone = after.clientPhone || '';
-      let emailOk = true;
-      if (after.clientId) {
-        try {
-          const cSnap = await db.doc(`tenants/${tenantId}/clients/${after.clientId}`).get();
-          const c = cSnap.exists ? cSnap.data() : null;
-          if (c) {
-            email = email || c.email || '';
-            phone = phone || c.phone || '';
-            if (c.commPreferences?.appointmentEmail === false) emailOk = false;
-          }
-        } catch { /* best-effort */ }
-      }
-      if (!email && !phone) return;
-
-      const brand     = await tenantBranding(db, tenantId);
-      const baseUrl   = (await tenantBaseUrl(db, tenantId)) || '';
-      const rebookUrl = settings.bookingUrl || (baseUrl ? `${baseUrl.replace(/\/+$/, '')}/book` : '');
-      const firstName = String(after.clientName || '').trim().split(/\s+/)[0] || 'there';
-      const dateShort = fmtDate(after.date);
-      const timeShort = fmtTime(after.startTime);
-
-      if (email && emailOk) {
-        try {
-          await sendEmail({
-            from:    await tenantFromAddress(db, tenantId),
-            to:      email,
-            subject: `Your appointment at ${brand.salonName} was cancelled`,
-            html:    buildCancelHtml(after, brand, rebookUrl, selfService),
-            tenantId,
-            tags:    [{ name: 'kind', value: 'transactional' }],
-          });
-        } catch (e) { console.warn(`[notifyCustomerOnCancel] email failed tenant=${tenantId}:`, e?.message); }
-      }
-
-      if (phone) {
-        const body = buildCancelSms({ firstName, dateShort, timeShort, rebookUrl, selfService });
-        try {
-          await sendSms({ to: phone, body, tenantId, kind: 'transactional', clientId: after.clientId || null });
-        } catch (e) { console.warn(`[notifyCustomerOnCancel] sms failed tenant=${tenantId}:`, e?.message); }
-      }
+      await sendCancelNoticeForAppt(db, tenantId, after, {
+        selfService: after.cancelledBy === 'client_self_service',
+        settings,
+      });
     } catch (e) {
-      console.warn(`[notifyCustomerOnCancel] failed tenant=${tenantId} appt=${apptId}:`, e?.message);
+      console.warn(`[notifyCustomerOnCancel] failed tenant=${tenantId}:`, e?.message);
     }
   }
 );
+
+// Shared sender for the customer cancellation notice (email + SMS, rebook link,
+// no rating). Used by the status->'cancelled' trigger and by the staff-initiated
+// notifyAppointmentCancelled callable (the trash/delete flow). Caller owns the
+// decision to send; this just resolves contact + consent and dispatches.
+// Best-effort: never throws. Returns { email, sms } booleans for what went out.
+async function sendCancelNoticeForAppt(db, tenantId, appt, { selfService = false, settings = null } = {}) {
+  const out = { email: false, sms: false };
+  try {
+    const s = settings || (await db.doc(`tenants/${tenantId}/data/settings`).get().then(d => d.exists ? d.data() : {}).catch(() => ({})));
+    let email = appt.clientEmail || '';
+    let phone = appt.clientPhone || '';
+    let emailOk = true;
+    if (appt.clientId) {
+      try {
+        const cSnap = await db.doc(`tenants/${tenantId}/clients/${appt.clientId}`).get();
+        const c = cSnap.exists ? cSnap.data() : null;
+        if (c) {
+          email = email || c.email || '';
+          phone = phone || c.phone || '';
+          if (c.commPreferences?.appointmentEmail === false) emailOk = false;
+        }
+      } catch { /* best-effort */ }
+    }
+    if (!email && !phone) return out;
+
+    const brand     = await tenantBranding(db, tenantId);
+    const baseUrl   = (await tenantBaseUrl(db, tenantId)) || '';
+    const rebookUrl = (s && s.bookingUrl) || (baseUrl ? `${baseUrl.replace(/\/+$/, '')}/book` : '');
+    const firstName = String(appt.clientName || '').trim().split(/\s+/)[0] || 'there';
+    const dateShort = fmtDate(appt.date);
+    const timeShort = fmtTime(appt.startTime);
+
+    if (email && emailOk) {
+      try {
+        const r = await sendEmail({
+          from:    await tenantFromAddress(db, tenantId),
+          to:      email,
+          subject: `Your appointment at ${brand.salonName} was cancelled`,
+          html:    buildCancelHtml(appt, brand, rebookUrl, selfService),
+          tenantId,
+          tags:    [{ name: 'kind', value: 'transactional' }],
+        });
+        out.email = !r?.error;
+      } catch (e) { console.warn(`[cancelNotice] email failed tenant=${tenantId}:`, e?.message); }
+    }
+    if (phone) {
+      try {
+        const r = await sendSms({
+          to: phone,
+          body: buildCancelSms({ firstName, dateShort, timeShort, rebookUrl, selfService }),
+          tenantId, kind: 'transactional', clientId: appt.clientId || null,
+        });
+        out.sms = !!r?.ok;
+      } catch (e) { console.warn(`[cancelNotice] sms failed tenant=${tenantId}:`, e?.message); }
+    }
+  } catch (e) {
+    console.warn(`[cancelNotice] send failed tenant=${tenantId}:`, e?.message);
+  }
+  return out;
+}
+
+// Staff-initiated cancellation notice — used by the schedule's delete/trash
+// flow, which soft-deletes (doesn't flip status) and so doesn't fire the
+// onUpdate trigger. The staff member is explicitly choosing to notify, so this
+// bypasses the cancelNotifyCustomer toggle (client SMS/email opt-outs are still
+// respected inside sendSms/sendEmail). Admin or scheduler role required.
+exports.notifyAppointmentCancelled = onCall({ cors: true }, async (request) => {
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const apptId   = String(request.data?.apptId || '').trim();
+  if (!apptId) throw new HttpsError('invalid-argument', 'apptId required');
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const db = getFirestore();
+  if (!(await isBootstrapAdmin(request))) {
+    const role = await callerRole(db, tenantId, request);
+    if (role !== 'admin' && role !== 'scheduler') {
+      throw new HttpsError('permission-denied', 'admin or scheduler role required');
+    }
+  }
+  const snap = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Appointment not found');
+  const result = await sendCancelNoticeForAppt(db, tenantId, snap.data() || {}, { selfService: false });
+  return { ok: true, ...result };
+});
 
 // Settle a booking deposit HOLD when the appointment reaches a terminal state.
 // Only acts on `authorize`-mode deposits still in `requires_capture` (a Stripe

@@ -3,6 +3,7 @@ import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter
 import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance } from '../../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
+import { callFn } from '../../lib/firebase';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
@@ -547,12 +548,30 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     } catch (e) { console.error('[Schedule] save failed:', e); }
   }
 
+  // Deleting (trash) soft-deletes the appt — it doesn't flip status to
+  // 'cancelled', so the server's cancellation-notice trigger won't fire. For a
+  // real, upcoming client appointment, offer to text/email them it's cancelled.
+  // Walk-ins, past appts, and already-cancelled/done appts skip the prompt.
+  async function maybeNotifyClientOfCancel(appt) {
+    if (!appt?.clientId) return;
+    if (appt.status === 'cancelled' || appt.status === 'done') return;
+    if ((appt.date || '') < attendanceKey()) return; // past appointment
+    if (!confirm(`Let ${appt.clientName || 'the client'} know by text/email that this appointment is cancelled?`)) return;
+    try {
+      await callFn('notifyAppointmentCancelled')({ tenantId: TENANT_ID, apptId: appt.id });
+      showToast?.('Cancellation notice sent to the client');
+    } catch (e) {
+      showToast?.(`Couldn't send cancellation notice: ${e?.message || 'try again'}`);
+    }
+  }
+
   async function handleDelete(appt) {
     if (appt.recurringGroupId) {
       setDeleteDialog(appt);
       return;
     }
     if (!confirm(`Delete this appointment for ${appt.clientName || 'walk-in'}?`)) return;
+    await maybeNotifyClientOfCancel(appt);
     await deleteAppointment(appt.id);
     const svcNames = (appt.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ') || 'no services';
     logActivity('appt_deleted', `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} — ${svcNames}`);
@@ -561,6 +580,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   }
 
   async function handleDeleteOne(appt) {
+    await maybeNotifyClientOfCancel(appt);
     await deleteAppointment(appt.id);
     logActivity('appt_deleted', `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} (series ${appt.recurringIndex}/${appt.recurringTotal})`);
     setAppts(a => a.filter(x => x.id !== appt.id));

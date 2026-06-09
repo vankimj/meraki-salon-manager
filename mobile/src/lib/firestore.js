@@ -578,6 +578,13 @@ export async function refundSale({ receiptId, amountCents, reason, refundTo = 'm
   const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, refundTo, commissionByTech, idempotencyKey });
   return res?.data || { ok: false };
 }
+// Staff-initiated customer cancellation notice (email + SMS, rebook link, no
+// rating). Used by the schedule delete flow, which soft-deletes and so doesn't
+// fire the server's status->cancelled trigger.
+export async function notifyAppointmentCancelled(apptId) {
+  const res = await callFn('notifyAppointmentCancelled')({ tenantId: getCurrentTenant(), apptId });
+  return res?.data || { ok: false };
+}
 // Record a service redo: moves the commission for the selected service(s) from
 // the original tech to `redoTech`. No money is refunded. Staff (admin or tech)
 // may call it; the server notifies the affected techs. `idempotencyKey` (stable

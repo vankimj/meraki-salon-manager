@@ -7,7 +7,7 @@ import {
   subscribeAppointments, setAppointmentStatus, checkInAppointment, setAppointmentNotes,
   fetchAppointmentsByRange, createAppointment, fetchClients, fetchServices, fetchEmployees,
   fetchTimeOff, createClient, updateAppointment, fetchClient, softDeleteAppointment,
-  softDeleteRecurringSeries, fetchSettings, fetchAttendance,
+  softDeleteRecurringSeries, fetchSettings, fetchAttendance, notifyAppointmentCancelled,
 } from '../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../lib/shiftGate';
 import { notifyAffectedTechs } from '../lib/notifications';
@@ -217,6 +217,26 @@ export default function ScheduleScreen({ navigation }) {
     if (inSet.has(String(techName).trim().toLowerCase())) return false;
     Alert.alert('Clock in required', 'Clock in at the Time Clock before changing your schedule during open hours.');
     return true;
+  }
+
+  // Deleting soft-deletes (doesn't flip status), so the server cancellation
+  // notice doesn't fire. For a real, upcoming client appt, offer to text/email
+  // them. Walk-ins, past, and done/cancelled appts skip the prompt.
+  function maybeNotifyClientOfCancel(a) {
+    return new Promise((resolve) => {
+      if (!a?.clientId || a.status === 'cancelled' || a.status === 'done' || (a.date || '') < todayStr()) {
+        resolve(); return;
+      }
+      Alert.alert(
+        'Notify the client?',
+        `Text/email ${a.clientName || 'the client'} that this appointment is cancelled?`,
+        [
+          { text: "Don't notify", style: 'cancel', onPress: () => resolve() },
+          { text: 'Notify', onPress: async () => { try { await notifyAppointmentCancelled(a.id); } catch {} resolve(); } },
+        ],
+        { cancelable: false },
+      );
+    });
   }
   const [allTechs, setAllTechs] = useState([]);  // ordered tech-name list for color assignment
   const [timeOff,  setTimeOff]  = useState([]);  // [{ techName, startDate, endDate }]
@@ -466,6 +486,7 @@ export default function ScheduleScreen({ navigation }) {
         onEdit={(a) => { setDetail(null); setEditAppt(a); }}
         onAddToTab={(a) => addApptToTab(a)}
         onDelete={async (a) => {
+          await maybeNotifyClientOfCancel(a);
           await softDeleteAppointment(a.id, email);
           notifyAffectedTechs(a, { ...a, status: 'cancelled' }).catch(() => {});
           removeApptFromTab(a.id);
