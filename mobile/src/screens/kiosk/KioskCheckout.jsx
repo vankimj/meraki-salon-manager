@@ -368,6 +368,11 @@ export default function KioskCheckout({ session, settings, email, local = false,
             <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
               <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
             </TouchableOpacity>
+            {venmoTechs.length > 0 && (
+              <TouchableOpacity style={[styles.tipMethod, tipMethod === 'venmo' && styles.tipMethodOn]} onPress={() => setTipMethod('venmo')}>
+                <Text style={[styles.tipMethodText, tipMethod === 'venmo' && styles.tipMethodTextOn]}>💸 Venmo</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={[styles.tipMethod, tipMethod === 'cash' && styles.tipMethodOn]} onPress={() => setTipMethod('cash')}>
               <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
             </TouchableOpacity>
@@ -404,9 +409,30 @@ export default function KioskCheckout({ session, settings, email, local = false,
                 <TechTipInputs techRevenue={techRevenue} values={perTechTips} photoByTech={photoByTech} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
               )}
               {multiTech && tipMode !== 'perTech' && selectedTipAmt > 0 && (
-                <Text style={styles.splitNote}>Split across techs by service amount. Tap "Tip each tech" to set them individually.</Text>
+                <Text style={styles.splitNote}>{tipMethod === 'venmo' ? 'Each tech gets their share by service amount.' : 'Split across techs by service amount. Tap "Tip each tech" to set them individually.'}</Text>
               )}
             </>
+          )}
+
+          {tipMethod === 'venmo' && venmoTechs.length > 0 && (
+            <View style={styles.venmoInline}>
+              <Text style={styles.venmoNote}>Scan to tip your tech directly with Venmo — this is not added to your bill.</Text>
+              {venmoTechs.map(t => {
+                const amt = venmoTipFor(t);
+                const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
+                const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
+                return (
+                  <View key={t} style={styles.venmoQrItem}>
+                    <View style={styles.venmoQrHead}>
+                      <TechAvatar name={t} photo={photoByTech[t]} size={32} />
+                      <Text style={styles.venmoQrName}>{t}</Text>
+                    </View>
+                    <QRCode value={url} size={180} />
+                    <Text style={styles.venmoQrHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
+                  </View>
+                );
+              })}
+            </View>
           )}
 
           {!hasPhoneOnFile && (
