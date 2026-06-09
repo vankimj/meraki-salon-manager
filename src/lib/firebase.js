@@ -1,4 +1,5 @@
 import { initializeApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 import {
   getFirestore,
   initializeFirestore,
@@ -25,6 +26,30 @@ const FIREBASE_CONFIG = {
 };
 
 const app = initializeApp(FIREBASE_CONFIG);
+
+// App Check — attaches an attestation token to every Firestore + callable
+// request so abusive/bot traffic (esp. against the PUBLIC booking callables:
+// findOrCreateClient / submitOnlineBooking / createBookingSetupIntent / etc.)
+// can be rejected server-side. Guarded on VITE_RECAPTCHA_SITE_KEY so builds
+// without App Check configured keep working unchanged. Enforcement is OFF by
+// default server-side (monitor mode) — flip it on only after confirming legit
+// traffic carries tokens (see APP_CHECK_ENFORCE in functions). Skipped under
+// emulators. A debug token (VITE_APPCHECK_DEBUG_TOKEN) lets local/dev builds
+// pass enforcement without a real reCAPTCHA.
+const RECAPTCHA_SITE_KEY = typeof import.meta !== 'undefined' && import.meta.env
+  ? import.meta.env.VITE_RECAPTCHA_SITE_KEY : '';
+if (RECAPTCHA_SITE_KEY && !USE_EMULATORS && typeof window !== 'undefined') {
+  try {
+    const dbgTok = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
+    if (dbgTok) self.FIREBASE_APPCHECK_DEBUG_TOKEN = dbgTok === 'true' ? true : dbgTok;
+    initializeAppCheck(app, {
+      provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+      isTokenAutoRefreshEnabled: true,
+    });
+  } catch (e) {
+    console.warn('[AppCheck] init failed:', e?.message);
+  }
+}
 
 // Offline-first POS: enable IndexedDB persistence so writes queue locally
 // when the network drops and sync automatically when it returns. Default

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share, Modal } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { fetchReceiptsByRange, fetchAppointmentsByRange, fetchServiceRatingsByRange, fetchHistoricalClientIds, fetchClients, fetchClientAppointments } from '../../lib/firestore';
+import { fetchReceiptsByRange, fetchAppointmentsByRange, fetchServiceRatingsByRange, fetchHistoricalClientIds, fetchClients, fetchClientAppointments, fetchFraudBlocksByRange } from '../../lib/firestore';
 import { buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown } from '../../lib/metrics';
 import AskAIChat from '../../components/AskAIChat';
 import useTenantAccess from '../../hooks/useTenantAccess';
@@ -97,6 +97,10 @@ export default function ReportsScreen({ navigation }) {
   const [referrals, setReferrals] = useState([]);
   const [visitClient, setVisitClient] = useState(null);// { id, name } for the visits modal
   const [visits, setVisits] = useState(null);
+  const [rawAppts, setRawAppts] = useState(null);     // unbuilt appts for the cancellations list
+  const [clientList, setClientList] = useState(null);  // clients for joining full contact info
+  const [cxKind, setCxKind] = useState('all');         // all | cancelled | no_show
+  const [fraudBlocks, setFraudBlocks] = useState([]);  // honeypot/bot blocks
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
   // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
@@ -113,7 +117,7 @@ export default function ReportsScreen({ navigation }) {
       const prevEnd = new Date(s.getTime() - 86400000);
       const prevStart = new Date(prevEnd.getTime() - (e - s));
       const pIso = (d) => d.toISOString().slice(0, 10);
-      const [receipts, appts, pReceipts, pAppts, svcRatings, priorIds, clients] = await Promise.all([
+      const [receipts, appts, pReceipts, pAppts, svcRatings, priorIds, clients, fraud] = await Promise.all([
         fetchReceiptsByRange(startDate, endDate).catch(() => []),
         fetchAppointmentsByRange(startDate, endDate).catch(() => []),
         fetchReceiptsByRange(pIso(prevStart), pIso(prevEnd)).catch(() => []),
@@ -121,10 +125,14 @@ export default function ReportsScreen({ navigation }) {
         fetchServiceRatingsByRange(startDate, endDate).catch(() => []),
         fetchHistoricalClientIds(startDate).catch(() => new Set()),
         fetchClients().catch(() => []),
+        fetchFraudBlocksByRange(startDate, endDate).catch(() => []),
       ]);
+      setFraudBlocks((fraud || []).slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))));
       const txns = buildTransactions(receipts, appts);
       setMetrics(computeMetrics(txns));
       setCancels(computeCancellations(appts, receipts));
+      setRawAppts(appts);
+      setClientList(clients);
       setPrev(computeMetrics(buildTransactions(pReceipts, pAppts)));
       setRatings(computeRatings(svcRatings));
       setRefundBreak(computeRefundBreakdown(receipts));
@@ -143,7 +151,7 @@ export default function ReportsScreen({ navigation }) {
         if (rb && rb.id) { (refMap[rb.id] || (refMap[rb.id] = { name: rb.name || 'Someone', names: [] })).names.push(c.name || 'Client'); }
       });
       setReferrals(Object.values(refMap).map(r => ({ name: r.name, count: r.names.length, names: r.names })).sort((a, b) => b.count - a.count).slice(0, 10));
-    } catch { setMetrics(null); setCancels(null); setPrev(null); setRatings(null); setRefundBreak(null); setRetention(null); setReferrals([]); }
+    } catch { setMetrics(null); setCancels(null); setPrev(null); setRatings(null); setRefundBreak(null); setRetention(null); setReferrals([]); setRawAppts([]); setClientList([]); setFraudBlocks([]); }
     finally { setLoading(false); }
   }, [custom, days, cStart, cEnd]);
   useEffect(() => { load(); }, [load]);
@@ -173,10 +181,47 @@ export default function ReportsScreen({ navigation }) {
   }
   const topClients = metrics ? Object.entries(metrics.byClient || {}).map(([id, c]) => ({ id, ...c })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) : [];
 
+  // Cancelled + no-show rows, joined with the client record for full contact
+  // info, newest first. Respects the active tech filter + the kind toggle.
+  const clientById = (clientList || []).reduce((m, c) => { m[c.id] = c; return m; }, {});
+  const cxRows = (rawAppts || [])
+    .filter(a => a.status === 'cancelled' || a.status === 'no_show')
+    .filter(a => cxKind === 'all' || a.status === cxKind)
+    .filter(a => !techFilter || a.techName === techFilter)
+    .map(a => {
+      const c = a.clientId ? clientById[a.clientId] : null;
+      return {
+        ...a,
+        _name:  a.clientName || c?.name || (a.clientId ? '(unknown)' : 'Walk-in'),
+        _phone: c?.phone || a.clientPhone || '',
+        _email: c?.email || a.clientEmail || '',
+        _lost:  (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0),
+        _geo:   [a.bookingGeo?.city, a.bookingGeo?.region, a.bookingGeo?.country].filter(Boolean).join(', '),
+        _sort:  a.cancelledAt || `${a.date}T${a.startTime || '00:00'}`,
+      };
+    })
+    .sort((x, y) => String(y._sort).localeCompare(String(x._sort)));
+  const cxLost = cxRows.reduce((s, r) => s + r._lost, 0);
+  const cxCancelled = cxRows.filter(r => r.status === 'cancelled').length;
+  const cxNoShow = cxRows.filter(r => r.status === 'no_show').length;
+
+  async function shareCancellations() {
+    const L = [`Plume Nexus — Cancellations & No-Shows (${periodLabel(custom, days, range)})`,
+      `${cxCancelled} cancelled · ${cxNoShow} no-show · ${money(cxLost)} lost`, ''];
+    cxRows.forEach(r => {
+      L.push(`${r.date}${r.startTime ? ' ' + r.startTime : ''} — ${cxLabel(r)}`);
+      L.push(`  ${r._name}${r._phone ? ' · ' + r._phone : ''}${r._email ? ' · ' + r._email : ''}`);
+      L.push(`  ${r.techName || '—'} · ${(r.services || []).map(s => s.name).join(', ') || '—'} · ${money(r._lost)}`);
+      if (r.deposit?.amountCents > 0) L.push(`  ${r.deposit.mode === 'authorize' ? 'Hold' : 'Deposit'}: ${money(r.deposit.amountCents / 100)}${r.deposit.status ? ' · ' + r.deposit.status : ''}`);
+      if (r._geo || r.bookingIp) L.push(`  Booked from: ${[r._geo, r.bookingIp].filter(Boolean).join(' · ')}`);
+    });
+    try { await Share.share({ message: L.join('\n') }); } catch {}
+  }
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <View style={styles.sectionTabs}>
-        {[['overview', 'Overview'], ['ratings', 'Ratings'], ['ask', 'Ask AI']].map(([id, label]) => (
+        {[['overview', 'Overview'], ['cancellations', 'Cancels'], ['ratings', 'Ratings'], ['ask', 'Ask AI']].map(([id, label]) => (
           <TouchableOpacity key={id} onPress={() => setSection(id)} style={[styles.sectionTab, section === id && styles.sectionTabOn]}>
             <Text style={[styles.sectionTabText, section === id && styles.sectionTabTextOn]}>{label}</Text>
           </TouchableOpacity>
@@ -395,6 +440,88 @@ export default function ReportsScreen({ navigation }) {
         </>
       ))}
 
+      {section === 'cancellations' && (loading ? (
+        <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
+      ) : (
+        <>
+          {techs.filter(t => t.name).length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }} contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
+              <TouchableOpacity onPress={() => setTechFilter('')} style={[styles.tFilter, !techFilter && styles.tFilterOn]}>
+                <Text style={[styles.tFilterText, !techFilter && styles.tFilterTextOn]}>All techs</Text>
+              </TouchableOpacity>
+              {techs.filter(t => t.name).map(t => (
+                <TouchableOpacity key={t.name} onPress={() => setTechFilter(t.name)} style={[styles.tFilter, techFilter === t.name && styles.tFilterOn]}>
+                  <Text style={[styles.tFilterText, techFilter === t.name && styles.tFilterTextOn]} numberOfLines={1}>{t.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+          <View style={styles.tabs}>
+            {[['all', 'All'], ['cancelled', 'Cancelled'], ['no_show', 'No-shows']].map(([id, label]) => (
+              <TouchableOpacity key={id} onPress={() => setCxKind(id)} style={[styles.tab, cxKind === id && styles.tabOn]}>
+                <Text style={[styles.tabText, cxKind === id && styles.tabTextOn]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.kpis}>
+            <Kpi label="Cancelled" value={cxCancelled} colW={colW} />
+            <Kpi label="No-shows" value={cxNoShow} colW={colW} />
+            <Kpi label="Total" value={cxRows.length} colW={colW} />
+            <Kpi label="Lost revenue" value={money(cxLost)} colW={colW} />
+          </View>
+
+          {cxRows.length === 0 ? (
+            <Text style={styles.empty}>No cancellations or no-shows in this period.</Text>
+          ) : (
+            <>
+              {cxRows.map(r => (
+                <TouchableOpacity key={r.id} style={styles.cxCard} activeOpacity={r.clientId ? 0.7 : 1}
+                  onPress={() => r.clientId && openVisits(r.clientId, r._name)}>
+                  <View style={styles.cxHead}>
+                    <Text style={styles.cxName} numberOfLines={1}>{r._name}</Text>
+                    <View style={[styles.cxBadge, { backgroundColor: r.status === 'no_show' ? '#FEE2E2' : '#FEF3C7' }]}>
+                      <Text style={[styles.cxBadgeText, { color: r.status === 'no_show' ? '#991B1B' : '#92400E' }]}>{cxLabel(r)}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.cxLine}>{r.date}{r.startTime ? ` · ${r.startTime}` : ''}{r.techName ? `  ·  ${r.techName}` : ''}</Text>
+                  {(r._phone || r._email) && <Text style={styles.cxLine}>{[r._phone, r._email].filter(Boolean).join('  ·  ')}</Text>}
+                  <Text style={styles.cxLine}>{(r.services || []).map(s => s.name).join(', ') || '—'}  ·  {money(r._lost)} lost</Text>
+                  {r.deposit?.amountCents > 0 && (
+                    <Text style={styles.cxLineFaint}>{r.deposit.mode === 'authorize' ? 'Hold' : 'Deposit'} {money(r.deposit.amountCents / 100)}{r.deposit.status ? `  ·  ${r.deposit.status === 'requires_capture' ? 'held' : r.deposit.status}` : ''}</Text>
+                  )}
+                  {(r._geo || r.bookingIp) && <Text style={styles.cxLineFaint}>Booked from {[r._geo, r.bookingIp].filter(Boolean).join('  ·  ')}</Text>}
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={shareCancellations} style={styles.shareBtn} activeOpacity={0.85}>
+                <Text style={styles.shareBtnText}>⤴  Share / export list</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
+          {fraudBlocks.length > 0 && (
+            <>
+              <Text style={styles.section}>🤖 Blocked booking attempts ({fraudBlocks.length})</Text>
+              <Text style={styles.note}>Suspicious/automated submissions caught by the anti-bot checks (honeypot, disposable-email, velocity) — no client or appointment was created.</Text>
+              {fraudBlocks.map(f => (
+                <View key={f.id} style={styles.cxCard}>
+                  <View style={styles.cxHead}>
+                    <Text style={styles.cxName} numberOfLines={1}>{f.name || '(no name)'}</Text>
+                    <View style={[styles.cxBadge, { backgroundColor: '#E5E7EB' }]}>
+                      <Text style={[styles.cxBadgeText, { color: '#374151' }]}>{fraudReasonLabel(f.type)}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.cxLine}>{String(f.createdAt || '').replace('T', ' ').slice(0, 16) || f.date}</Text>
+                  {(f.phone || f.email) && <Text style={styles.cxLine}>{[f.phone, f.email].filter(Boolean).join('  ·  ')}</Text>}
+                  {!!f.ip && <Text style={styles.cxLineFaint}>IP {f.ip}</Text>}
+                  {!!f.userAgent && <Text style={styles.cxLineFaint} numberOfLines={1}>{f.userAgent}</Text>}
+                </View>
+              ))}
+            </>
+          )}
+        </>
+      ))}
+
       {section === 'ratings' && (loading ? (
         <View style={styles.center}><ActivityIndicator color={theme.green} /></View>
       ) : !ratings || ratings.count === 0 ? (
@@ -472,6 +599,22 @@ export default function ReportsScreen({ navigation }) {
       </Modal>
     </View>
   );
+}
+
+function fraudReasonLabel(type) {
+  return {
+    honeypot:           'Bot',
+    disposable_email:   'Temp email',
+    velocity_newclient: 'Too many accts',
+    velocity_booking:   'Too many bookings',
+  }[type] || (type || 'Blocked');
+}
+
+function cxLabel(a) {
+  if (a.status === 'no_show') return 'No-show';
+  if (a.cancelledBy === 'salon')  return 'Cancelled (salon)';
+  if (a.cancelledBy === 'client') return 'Cancelled (client)';
+  return 'Cancelled';
 }
 
 function pctDelta(cur, prev) {
@@ -601,4 +744,11 @@ const makeStyles = (t) => StyleSheet.create({
   note:     { fontSize: 12, color: t.textFaint, marginTop: 16, lineHeight: 17 },
   shareBtn: { marginTop: 22, borderRadius: 12, paddingVertical: 13, alignItems: 'center', backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green },
   shareBtnText: { color: t.green, fontWeight: '800', fontSize: 14 },
+  cxCard:    { backgroundColor: t.surface, borderRadius: 12, padding: 13, marginBottom: 8, borderWidth: 1, borderColor: t.border },
+  cxHead:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 },
+  cxName:    { flex: 1, fontSize: 15, fontWeight: '800', color: t.text },
+  cxBadge:   { borderRadius: 10, paddingHorizontal: 8, paddingVertical: 2 },
+  cxBadgeText:{ fontSize: 11, fontWeight: '700' },
+  cxLine:    { fontSize: 12.5, color: t.textMuted, marginTop: 2 },
+  cxLineFaint:{ fontSize: 11.5, color: t.textFaint, marginTop: 2 },
 });

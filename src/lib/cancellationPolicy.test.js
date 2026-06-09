@@ -5,6 +5,9 @@ import {
   countRelevantCancellations,
   hasUsableCardOnFile,
   evaluateCancellationPolicy,
+  resolveBookingCardPolicy,
+  evaluateBookingCardRequirement,
+  depositAmount,
 } from './cancellationPolicy.js';
 
 // Anchor "now" so date math is deterministic across CI runs.
@@ -220,5 +223,56 @@ describe('evaluateCancellationPolicy', () => {
     expect(result.cancellationCount).toBe(2);
     expect(result.thresholdCount).toBe(3);
     expect(result.windowDays).toBe(90);
+  });
+});
+
+describe('resolveBookingCardPolicy', () => {
+  it('defaults to all-off / store / 0%', () => {
+    const p = resolveBookingCardPolicy({});
+    expect(p).toEqual({ firstTimeRequireCard: false, allBookingsRequireCard: false, depositMode: 'store', depositPct: 0 });
+  });
+  it('clamps depositPct to 0–100 and validates mode', () => {
+    expect(resolveBookingCardPolicy({ bookingCardPolicy: { depositPct: 250 } }).depositPct).toBe(100);
+    expect(resolveBookingCardPolicy({ bookingCardPolicy: { depositPct: -5 } }).depositPct).toBe(0);
+    expect(resolveBookingCardPolicy({ bookingCardPolicy: { depositMode: 'bogus' } }).depositMode).toBe('store');
+    expect(resolveBookingCardPolicy({ bookingCardPolicy: { depositMode: 'charge' } }).depositMode).toBe('charge');
+  });
+});
+
+describe('evaluateBookingCardRequirement', () => {
+  const firstTimeOnly = { bookingCardPolicy: { firstTimeRequireCard: true, depositMode: 'store', depositPct: 25 } };
+  const allBookings   = { bookingCardPolicy: { allBookingsRequireCard: true } };
+
+  it('does nothing when policy is off', () => {
+    expect(evaluateBookingCardRequirement({}, { isFirstTime: true, hasCard: false }).required).toBe(false);
+  });
+  it('first-time policy requires a card for first-timers without a card', () => {
+    const r = evaluateBookingCardRequirement(firstTimeOnly, { isFirstTime: true, hasCard: false });
+    expect(r.triggered).toBe(true);
+    expect(r.required).toBe(true);
+    expect(r.depositMode).toBe('store');
+    expect(r.depositPct).toBe(25);
+  });
+  it('first-time policy does NOT trigger for returning clients', () => {
+    expect(evaluateBookingCardRequirement(firstTimeOnly, { isFirstTime: false, hasCard: false }).triggered).toBe(false);
+  });
+  it('triggered but satisfied when a card is already on file', () => {
+    const r = evaluateBookingCardRequirement(firstTimeOnly, { isFirstTime: true, hasCard: true });
+    expect(r.triggered).toBe(true);
+    expect(r.required).toBe(false);
+  });
+  it('all-bookings policy requires a card for everyone without one', () => {
+    expect(evaluateBookingCardRequirement(allBookings, { isFirstTime: false, hasCard: false }).required).toBe(true);
+    expect(evaluateBookingCardRequirement(allBookings, { isFirstTime: false, hasCard: true }).required).toBe(false);
+  });
+});
+
+describe('depositAmount', () => {
+  it('computes a rounded-to-cents percentage of the total', () => {
+    expect(depositAmount(100, 25)).toBe(25);
+    expect(depositAmount(80, 50)).toBe(40);
+    expect(depositAmount(33.33, 10)).toBeCloseTo(3.33, 2);
+    expect(depositAmount(0, 25)).toBe(0);
+    expect(depositAmount(100, 0)).toBe(0);
   });
 });

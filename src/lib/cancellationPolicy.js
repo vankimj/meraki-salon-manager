@@ -176,3 +176,67 @@ export function evaluateCancellationPolicy(appointments, settings, client, now =
   out.message  = `${cancellationCount} cancellations in the last ${policy.windowDays} days. A card on file is required before booking again.`;
   return out;
 }
+
+// ── Booking-time card requirement ──────────────────────────────────────────
+// Independent of the cancellation-history policy above. Lets a tenant require
+// a card on file at booking time for:
+//   - first-time clients only, and/or
+//   - every online booking.
+// The configured percentage is the deposit amount, interpreted per depositMode:
+//   'store'     — save the card only; charge depositPct% of the total ONLY on a
+//                 late-cancel / no-show (default; nothing charged at booking).
+//   'authorize' — place a Stripe auth hold for depositPct% at booking; capture
+//                 on no-show, release otherwise.
+//   'charge'    — charge depositPct% as a deposit at booking, credited at checkout.
+//
+// Schema on tenants/{tid}/data/settings:
+//   bookingCardPolicy: {
+//     firstTimeRequireCard:   false,
+//     allBookingsRequireCard: false,
+//     depositMode:            'store' | 'authorize' | 'charge',
+//     depositPct:             0,        // 0–100
+//   }
+export const DEPOSIT_MODES = Object.freeze(['store', 'authorize', 'charge']);
+
+export const DEFAULT_BOOKING_CARD_POLICY = Object.freeze({
+  firstTimeRequireCard:   false,
+  allBookingsRequireCard: false,
+  depositMode:            'store',
+  depositPct:             0,
+});
+
+export function resolveBookingCardPolicy(settings) {
+  const s = settings?.bookingCardPolicy || {};
+  const pct = Number(s.depositPct);
+  return {
+    firstTimeRequireCard:   s.firstTimeRequireCard   === true,
+    allBookingsRequireCard: s.allBookingsRequireCard === true,
+    depositMode:            DEPOSIT_MODES.includes(s.depositMode) ? s.depositMode : 'store',
+    depositPct:             Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0,
+  };
+}
+
+// Decide whether a card must be collected for THIS booking.
+//   ctx = { isFirstTime: boolean, hasCard: boolean }
+// Returns { triggered, required, depositMode, depositPct }.
+//   triggered — the policy applies to this booking
+//   required  — a card must be collected now (triggered AND no card on file)
+export function evaluateBookingCardRequirement(settings, ctx = {}) {
+  const p = resolveBookingCardPolicy(settings);
+  const isFirstTime = ctx.isFirstTime === true;
+  const hasCard     = ctx.hasCard === true;
+  const triggered = p.allBookingsRequireCard || (p.firstTimeRequireCard && isFirstTime);
+  return {
+    triggered,
+    required:    triggered && !hasCard,
+    depositMode: p.depositMode,
+    depositPct:  p.depositPct,
+  };
+}
+
+// Dollar amount of the deposit for a given appointment total, rounded to cents.
+export function depositAmount(total, depositPct) {
+  const t = Number(total) || 0;
+  const pct = Number(depositPct) || 0;
+  return Math.round(t * pct) / 100;
+}
