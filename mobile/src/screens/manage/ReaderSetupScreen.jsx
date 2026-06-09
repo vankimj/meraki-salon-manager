@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Platform, PermissionsAndroid, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { getTerminalSetupStatus, setupTerminalLocation, createCardPaymentIntent } from '../../lib/firestore';
@@ -72,7 +72,8 @@ export default function ReaderSetupScreen() {
             <Text style={styles.cardTitle}>1 · Readiness</Text>
             <Row ok={st.connectReady}>Stripe payments {st.connectReady ? 'connected' : '— finish onboarding (Payments tile)'}</Row>
             <Row ok={st.hasLocation}>Reader location {st.hasLocation ? 'created' : '— create below'}</Row>
-            <Row ok={termBuilt}>Reader software {termBuilt ? 'installed' : '— update the app build'}</Row>
+            <Row ok={termBuilt}>This app supports card readers {termBuilt ? '' : '— update the app build'}</Row>
+            <Text style={styles.subtle}>(The reader itself connects in step 3 below.)</Text>
             <Text style={styles.mode}>Mode: {st.testMode ? 'TEST — simulated reader, test cards only' : 'LIVE — real cards'}</Text>
           </View>
 
@@ -114,7 +115,8 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
   const readersRef = useRef([]);
   const [connected, setConnected] = useState(null);
   const [phase,     setPhase]     = useState('');
-  const [busy,      setBusy]      = useState(false);
+  const [busyAction, setBusyAction] = useState(null); // 'connect' | 'charge' | null — drives per-button progress
+  const busy = !!busyAction;
   const [charged,   setCharged]   = useState('');
 
   const term = useStripeTerminal({
@@ -127,6 +129,13 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
     onDidFinishInstallingUpdate: () => setPhase('Reader updated — finishing…'),
   });
 
+  // Reflect a connection made elsewhere (e.g. a prior pairing or checkout) — the
+  // SDK holds one connection app-wide.
+  useEffect(() => {
+    const r = term.connectedReader;
+    if (r) setConnected(r.serialNumber || r.deviceType || 'Reader');
+  }, [term.connectedReader]);
+
   async function waitForReader(ms = 20000) {
     const start = Date.now();
     while (Date.now() - start < ms) { if (readersRef.current.length) return readersRef.current[0]; await sleep(400); }
@@ -135,7 +144,14 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
 
   async function connect() {
     if (busy) return;
-    setBusy(true); setPhase('Searching for reader…');
+    // Already connected (here or in checkout)? Reuse it — re-discovering throws
+    // "Already connected to a reader".
+    if (term.connectedReader) {
+      const r = term.connectedReader;
+      setConnected(r.serialNumber || r.deviceType || 'Reader');
+      return;
+    }
+    setBusyAction('connect'); setPhase('Searching for reader…');
     try {
       // Always discover the PHYSICAL M2 (even in test mode — a real reader on a
       // test connection token runs in test mode). The simulated reader is only
@@ -163,12 +179,12 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
       setConnected(cr?.serialNumber || cr?.deviceType || 'Reader');
     } catch (e) {
       Alert.alert('Could not connect', e?.message || 'Try again.');
-    } finally { setBusy(false); setPhase(''); }
+    } finally { setBusyAction(null); setPhase(''); }
   }
 
   async function runCharge() {
     if (busy) return;
-    setBusy(true); setCharged(''); setPhase('Starting test charge…');
+    setBusyAction('charge'); setCharged(''); setPhase('Starting test charge…');
     try {
       const pi0 = await createCardPaymentIntent(100, 'Card reader test', `readertest_${Date.now()}`);
       if (!pi0?.clientSecret) throw new Error('Could not start the test charge.');
@@ -183,8 +199,14 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
       if (pi3?.status !== 'succeeded') throw new Error(`Charge ${pi3?.status || 'did not complete'}.`);
       setCharged(testMode ? '✓ Test charge succeeded (test mode — no real money moved).' : '✓ $1.00 charged successfully. Refund it from Stripe when done.');
     } catch (e) {
-      Alert.alert('Test charge failed', e?.message || 'Try again.');
-    } finally { setBusy(false); setPhase(''); }
+      // In test mode a REAL card is always declined — that's expected, not a
+      // reader problem. Make that explicit instead of a scary failure.
+      if (testMode) {
+        Alert.alert('Expected in test mode', `This decline is normal in TEST mode — only Stripe test cards work here, so a real card is always declined. The reader is fine.\n\nTo take a real card, switch to LIVE mode (deploy a live Stripe key).\n\nDetails: ${e?.message || 'declined'}`);
+      } else {
+        Alert.alert('Test charge failed', e?.message || 'Try again.');
+      }
+    } finally { setBusyAction(null); setPhase(''); }
   }
 
   function testCharge() {
@@ -202,7 +224,7 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
         <Text style={styles.cardBody}>Power on your Stripe Reader M2, keep it next to this iPad with Bluetooth on, then connect.</Text>
         {connected ? <Text style={[styles.msg, { color: theme.green }]}>✓ Connected: {connected}</Text> : null}
         <TouchableOpacity style={[styles.btn, busy && { opacity: 0.6 }]} onPress={connect} disabled={busy} activeOpacity={0.85}>
-          <Text style={styles.btnText}>{busy && !charged ? (phase || 'Working…') : (connected ? 'Reconnect reader' : 'Find & connect reader')}</Text>
+          <Text style={styles.btnText}>{busyAction === 'connect' ? (phase || 'Working…') : (connected ? 'Reconnect reader' : 'Find & connect reader')}</Text>
         </TouchableOpacity>
       </View>
 
@@ -210,7 +232,7 @@ function ReaderPairing({ locationId, testMode, styles, theme }) {
         <Text style={styles.cardTitle}>4 · Test charge</Text>
         <Text style={styles.cardBody}>{testMode ? 'Test mode — present a Stripe test card on the reader to confirm the flow (no real money moves).' : 'Runs a real $1.00 charge (refundable) to confirm the reader works.'}</Text>
         <TouchableOpacity style={[styles.btn, (busy || !connected) && { opacity: 0.5 }]} onPress={testCharge} disabled={busy || !connected} activeOpacity={0.85}>
-          <Text style={styles.btnText}>{busy ? (phase || 'Working…') : (testMode ? 'Run test charge' : 'Run $1.00 test charge')}</Text>
+          <Text style={styles.btnText}>{busyAction === 'charge' ? (phase || 'Charging…') : (testMode ? 'Run test charge' : 'Run $1.00 test charge')}</Text>
         </TouchableOpacity>
         {!connected ? <Text style={styles.hint}>Connect a reader first.</Text> : null}
         {!!charged && <Text style={[styles.msg, { color: theme.green }]}>{charged}</Text>}
@@ -231,6 +253,7 @@ const makeStyles = (t) => StyleSheet.create({
   rowMark:   { fontSize: 15, fontWeight: '800', width: 20 },
   rowText:   { flex: 1, fontSize: 13.5, color: t.text, lineHeight: 19 },
   mode:      { fontSize: 12, color: t.textFaint, marginTop: 8 },
+  subtle:    { fontSize: 11.5, color: t.textFaint, marginTop: 4, marginLeft: 20, fontStyle: 'italic' },
   btn:       { backgroundColor: t.green, borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
   btnText:   { color: '#fff', fontWeight: '800', fontSize: 14.5 },
   msg:       { fontSize: 13, fontWeight: '700', marginTop: 10 },

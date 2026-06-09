@@ -70,6 +70,10 @@ export default function CardPayButton({ amountCents, description, locationId, on
 
   async function ensureConnected() {
     if (connectedRef.current) return;
+    // The SDK holds ONE connection app-wide — the reader may already be connected
+    // (paired in the Card Reader Setup wizard, or a prior sale). Reuse it instead
+    // of discovering again, which throws "Already connected to a reader".
+    if (term.connectedReader) { connectedRef.current = true; return; }
     if (!locationId && !useSimulated) {
       throw new Error('No Terminal Location set yet. Use Manage → Card Reader Setup to create one (or set terminalLocationId in settings).');
     }
@@ -139,6 +143,9 @@ export default function CardPayButton({ amountCents, description, locationId, on
       const msg = String(e?.message || '');
       if (/osVersionNotSupported|os version|update.*ios|ios.*update/i.test(msg)) {
         Alert.alert('Update iOS to use Tap to Pay on iPhone', 'Tap to Pay on iPhone needs a newer version of iOS. Update this iPhone in Settings → General → Software Update, then try again.');
+      } else if (simulated && /declin|card_declin|not.*support|test/i.test(msg)) {
+        // In test mode a REAL card is always declined — expected, not a fault.
+        Alert.alert('Expected in test mode', `In TEST mode only Stripe test cards work, so a real card is always declined — the reader is fine. To take real cards, switch to LIVE mode (deploy a live Stripe key).\n\nDetails: ${msg}`);
       } else {
         Alert.alert('Card payment failed', msg || 'Please try again.');
       }
