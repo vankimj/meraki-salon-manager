@@ -74,6 +74,13 @@ describe('buildKioskHandoff', () => {
     expect(p.cart.products[0]).toEqual({ product: { id: 'p1', name: 'Polish', price: 12, taxable: true }, qty: 2 });
   });
 
+  it('defaults flow to card, and honors cashReview', () => {
+    const base = { appts, serviceLines, prices: ['35', '40'], techNames: ['Tess D', 'Tess D'], sessionId: 'SID' };
+    expect(buildKioskHandoff(base).flow).toBe('card');
+    expect(buildKioskHandoff({ ...base, flow: 'cashReview' }).flow).toBe('cashReview');
+    expect(buildKioskHandoff({ ...base, flow: 'bogus' }).flow).toBe('card');
+  });
+
   it('falls back to walk-in client name when no primary client', () => {
     const p = buildKioskHandoff({
       appts: [{ clientName: 'Walk-in', services: [{ name: 'Polish change', price: 0 }] }],

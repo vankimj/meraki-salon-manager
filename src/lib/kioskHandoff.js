@@ -48,6 +48,10 @@ export function buildKioskHandoff({
   createdBy = null,
   receiptPhone = null,
   sessionId,
+  // 'card' = kiosk takes the card on the M2 + records the sale.
+  // 'cashReview' = kiosk shows the bill + tip + "Is this correct?", then the WEB
+  // finalizes the cash sale (the desk collects the cash).
+  flow = 'card',
 }) {
   const apptsPayload = appts.map((a, ai) => ({
     clientName: a.clientName || 'Walk-in',
@@ -83,6 +87,7 @@ export function buildKioskHandoff({
 
   return {
     sessionId,
+    flow: flow === 'cashReview' ? 'cashReview' : 'card',
     cart: { appts: apptsPayload, products },
     priced: true,
     clientId: primaryClient?.id || null,

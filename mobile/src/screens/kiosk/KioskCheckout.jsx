@@ -77,7 +77,11 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
   const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
-  const [stage, setStage]       = useState('review'); // review | handback | cash | done
+  const [stage, setStage]       = useState('review'); // review | handback | cash | done | confirmed
+  // Cash-review handoff from the WEB: the client reviews the bill + adds a tip
+  // and taps "Is this correct?"; the WEB then collects the cash + records it.
+  // The kiosk takes no payment in this mode.
+  const cashReview = session?.flow === 'cashReview';
   // Logged-in staff name, for the "hand the device back to {name}" step when a
   // client picks cash on the staff's own device (local "check out on this device").
   const { techName: staffName } = useCurrentEmployee();
@@ -269,6 +273,23 @@ export default function KioskCheckout({ session, settings, email, local = false,
     doRecord(method, opts, false);
   }
 
+  // Cash-review handoff: the client confirms the bill + tip; send the chosen tip
+  // back so the WEB collects the cash + records the sale. No payment taken here.
+  async function confirmCashReview() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await updateCheckoutSession({
+        status: 'confirmed',
+        confirmedTip: { amount: selectedTipAmt || 0, byTech: tipByTech || null },
+        confirmedAt: new Date().toISOString(),
+      });
+      setStage('confirmed');
+    } catch (e) {
+      Alert.alert('Could not confirm', e?.message || 'Please try again.');
+    } finally { setSaving(false); }
+  }
+
   async function payCardOnFile() {
     if (saving || !savedPm) return;
     setSaving(true);
@@ -305,6 +326,17 @@ export default function KioskCheckout({ session, settings, email, local = false,
         <Text style={styles.idleMark}>🧾</Text>
         <Text style={styles.idleTitle}>Checking out…</Text>
         <Text style={styles.idleSub}>This sale is being completed at another station.</Text>
+      </View>
+    );
+  }
+
+  if (stage === 'confirmed') {
+    return (
+      <View style={styles.idle}>
+        <Text style={styles.doneMark}>✓</Text>
+        <Text style={styles.idleTitle}>Thank you!</Text>
+        <Text style={styles.idleSub}>Your total{selectedTipAmt > 0 ? ' (with tip)' : ''} is confirmed. Please pay with cash at the front desk to finish.</Text>
+        <Text style={[styles.idleTitle, { marginTop: 14, color: theme.green }]}>{money(cashTotals.total)}</Text>
       </View>
     );
   }
@@ -364,6 +396,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
       {stage === 'review' && (
         <>
           <Text style={styles.section}>Add a tip?</Text>
+          {!cashReview && (
           <View style={styles.tipMethodRow}>
             <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
               <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
@@ -377,6 +410,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
               <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
             </TouchableOpacity>
           </View>
+          )}
 
           {tipMethod === 'cash' ? (
             <View style={styles.tipCashNote}>
@@ -489,7 +523,16 @@ export default function KioskCheckout({ session, settings, email, local = false,
         </View>
       )}
 
-      {stage === 'review' && !paid && (
+      {stage === 'review' && !paid && cashReview && (
+        <>
+          <Text style={styles.confirmHint}>Review your bill above and add a tip, then confirm. You'll pay with cash at the front desk.</Text>
+          <TouchableOpacity style={[styles.okBtn, saving && { opacity: 0.6 }]} onPress={confirmCashReview} disabled={saving} activeOpacity={0.85}>
+            <Text style={styles.okBtnText}>{saving ? 'One sec…' : `Is this correct? · ${money(cashTotals.total)}`}</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {stage === 'review' && !paid && !cashReview && (
         <>
           {!online && (
             <View style={styles.offlineNote}><Text style={styles.offlineText}>📴 Offline — pay with cash for now. Your receipt syncs automatically once we're back online.</Text></View>
@@ -638,6 +681,9 @@ const makeStyles = (t) => StyleSheet.create({
   backBtnText:{ color: t.textMuted, fontWeight: '800', fontSize: 15 },
   confirmBtn:{ flex: 1, backgroundColor: t.green, borderRadius: 14, paddingVertical: 16, alignItems: 'center' },
   confirmBtnText:{ color: '#fff', fontWeight: '800', fontSize: 17 },
+  okBtn:    { marginTop: 14, backgroundColor: t.green, borderRadius: 14, paddingVertical: 18, alignItems: 'center' },
+  okBtnText:{ color: '#fff', fontWeight: '800', fontSize: 18 },
+  confirmHint:{ fontSize: 13, color: t.textMuted, textAlign: 'center', marginTop: 6, lineHeight: 19, paddingHorizontal: 8 },
   doneBtn:  { marginTop: 26, backgroundColor: t.green, borderRadius: 24, paddingVertical: 13, paddingHorizontal: 44 },
   doneBtnText:{ color: '#fff', fontWeight: '800', fontSize: 16 },
   resendBox:{ width: '100%', maxWidth: 380, marginTop: 22 },
