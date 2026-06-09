@@ -567,69 +567,8 @@ export default function CheckoutScreen({ navigation }) {
       )}
       <TextInput style={styles.input} value={receiptPhone} onChangeText={setReceiptPhone} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} placeholder={hasPhoneOnFile ? 'Different phone or email (optional)' : 'Phone or email (optional)'} placeholderTextColor={theme.placeholder} maxLength={60} />
 
-      <Text style={styles.section}>Tip</Text>
-      <View style={styles.tipMethodRow}>
-        <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
-          <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
-        </TouchableOpacity>
-        {venmoTechs.length > 0 && (
-          <TouchableOpacity style={[styles.tipMethod, tipMethod === 'venmo' && styles.tipMethodOn]} onPress={() => setTipMethod('venmo')}>
-            <Text style={[styles.tipMethodText, tipMethod === 'venmo' && styles.tipMethodTextOn]}>💸 Venmo</Text>
-          </TouchableOpacity>
-        )}
-        <TouchableOpacity style={[styles.tipMethod, tipMethod === 'cash' && styles.tipMethodOn]} onPress={() => setTipMethod('cash')}>
-          <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
-        </TouchableOpacity>
-      </View>
-
-      {tipMethod === 'cash' ? (
-        <View style={styles.tipCashNote}>
-          <Text style={styles.tipCashText}>No tip added to the bill — the client hands their tip in cash directly to the tech. 💚</Text>
-        </View>
-      ) : (
-        <>
-          <View style={styles.chips}>
-            <TouchableOpacity onPress={() => { setTipMode('none'); setTipPct(null); }} style={[styles.chip, tipMode === 'none' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'none' && styles.chipTextOn]}>None</Text></TouchableOpacity>
-            {TIP_PCTS.map(p => (
-              <TouchableOpacity key={p} onPress={() => { setTipMode('pct'); setTipPct(p); }} style={[styles.chip, tipMode === 'pct' && tipPct === p && styles.chipOn]}>
-                <Text style={[styles.chipText, tipMode === 'pct' && tipPct === p && styles.chipTextOn]}>{p}%</Text>
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity onPress={() => setTipMode('custom')} style={[styles.chip, tipMode === 'custom' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'custom' && styles.chipTextOn]}>$</Text></TouchableOpacity>
-            {tipMode === 'custom' && <TextInput style={styles.smallInput} value={tipAmtStr} onChangeText={setTipAmtStr} keyboardType="decimal-pad" placeholder="0" placeholderTextColor={theme.placeholder} />}
-            {multiTech && (
-              <TouchableOpacity onPress={() => setTipMode('perTech')} style={[styles.chip, tipMode === 'perTech' && styles.chipOn]}><Text style={[styles.chipText, tipMode === 'perTech' && styles.chipTextOn]}>Per tech</Text></TouchableOpacity>
-            )}
-          </View>
-          {tipMode === 'perTech' && (
-            <TechTipInputs techRevenue={techRevenue} values={perTechTips} photoByTech={photoByTech} onChange={(t, v) => setPerTechTips(prev => ({ ...prev, [t]: v }))} />
-          )}
-          {multiTech && tipMode !== 'perTech' && selectedTipAmt > 0 && (
-            <Text style={styles.muted}>{tipMethod === 'venmo' ? 'Each tech gets their share by service amount.' : 'Split across techs by service amount — tap "Per tech" to set each.'}</Text>
-          )}
-        </>
-      )}
-
-      {tipMethod === 'venmo' && venmoTechs.length > 0 && (
-        <View style={styles.venmoInline}>
-          <Text style={styles.venmoNote}>Have the client scan to tip the tech directly with Venmo — not added to the bill.</Text>
-          {venmoTechs.map(t => {
-            const amt = venmoTipFor(t);
-            const handle = String(venmoByTech[t] || '').replace(/^@/, '').trim();
-            const url = `https://venmo.com/u/${encodeURIComponent(handle)}?txn=pay${amt > 0 ? `&amount=${amt.toFixed(2)}` : ''}&note=${encodeURIComponent('Tip — thank you!')}`;
-            return (
-              <View key={t} style={styles.venmoQrItem}>
-                <View style={styles.venmoQrHead}>
-                  <TechAvatar name={t} photo={photoByTech[t]} size={32} />
-                  <Text style={styles.venmoQrName}>{t}</Text>
-                </View>
-                <QRCode value={url} size={180} />
-                <Text style={styles.venmoQrHandle}>@{handle}{amt > 0 ? `  ·  ${money(amt)}` : ''}</Text>
-              </View>
-            );
-          })}
-        </View>
-      )}
+      {/* Tip + final payment happen on the customer-facing checkout
+          ("Check out on this device" or front desk), not on this staff screen. */}
 
       </View>
       <View style={isTablet ? styles.colRight : styles.colFull}>
@@ -680,38 +619,18 @@ export default function CheckoutScreen({ navigation }) {
               <Text style={styles.gateText}>🔒 {offClock.join(', ')} {offClock.length > 1 ? 'are' : 'is'} not clocked in. They must clock in at the Time Clock before checkout.</Text>
             </View>
           )}
-          {/* Card / Tap to Pay first — req 5.2 keeps it at the top of the
-              payment options, accessible without scrolling. */}
-          {!online ? (
-            <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — needs a live connection</Text></View>
-          ) : isTerminalAvailable() ? (
-            <CardPayButton
-              amountCents={Math.round((cardTotals.total || 0) * 100)}
-              description={(tab.appts?.[0]?.clientName) || 'Walk-in'}
-              locationId={settings?.terminalLocationId || null}
-              onBehalfOf={settings?.stripeConnect?.accountId || settings?.connectAccountId || settings?.stripeAccountId || undefined}
-              merchantName={settings?.salonName || settings?.name || 'Salon'}
-              preferReader={isTablet}
-              idempotencyKey={saleId}
-              disabled={saving || gateBlocked || (lines.length === 0 && products.length === 0)}
-              onPaid={(piId, card) => settle('card', { stripePaymentIntentId: piId, cardBrand: card?.brand || null, cardLast4: card?.last4 || null })}
-            />
-          ) : (
-            <View style={styles.cardBtn}><Text style={styles.cardText}>💳 Card — available after the Terminal rebuild</Text></View>
-          )}
-          <TouchableOpacity style={[styles.payBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={confirmCash} disabled={saving || gateBlocked}>
-            <Text style={styles.payText}>{saving ? 'Processing…' : `Take cash · ${money(totals.total)}`}</Text>
+          {/* Payment happens on the customer-facing checkout. Staff either hands
+              this device to the client, or sends it to the front-desk kiosk. */}
+          <TouchableOpacity style={[styles.hereBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={checkoutHere} disabled={saving || gateBlocked} activeOpacity={0.85}>
+            <Text style={styles.hereBtnText}>📱  Check out on this device</Text>
+            <Text style={styles.hereBtnSub}>Hand the client your device to tip &amp; pay (card or cash)</Text>
           </TouchableOpacity>
           {online && (
             <TouchableOpacity style={[styles.deskBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={sendToFrontDesk} disabled={saving || gateBlocked} activeOpacity={0.85}>
               <Text style={styles.deskBtnText}>🏪  Send to front desk</Text>
-              <Text style={styles.deskBtnSub}>Client adds the tip + pays at the kiosk — this exact total &amp; all discounts carry over</Text>
+              <Text style={styles.deskBtnSub}>Client tips + pays at the kiosk — this exact total &amp; all discounts carry over</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity style={[styles.hereBtn, (saving || gateBlocked) && { opacity: 0.6 }]} onPress={checkoutHere} disabled={saving || gateBlocked} activeOpacity={0.85}>
-            <Text style={styles.hereBtnText}>📱  Check out on this device</Text>
-            <Text style={styles.hereBtnSub}>Hand the client your device to add a tip &amp; pay — same flow as the front desk</Text>
-          </TouchableOpacity>
         </>
       )}
       </View>
