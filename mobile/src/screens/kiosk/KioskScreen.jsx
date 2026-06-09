@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Image } from 'react-native';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, Image, FlatList, useWindowDimensions } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { subscribeCheckoutSession, fetchSettings, fetchSlides } from '../../lib/firestore';
 import QRCode from '../../components/QRCode';
@@ -57,12 +57,52 @@ function tipItems(slide) {
   return r;
 }
 
+// One full-screen TipFlow slide page (so the carousel can page/swipe). The
+// headshot dominates: in LANDSCAPE it fills the left side (photo | tip), in
+// PORTRAIT it fills the top ~3/4 (photo over tip).
+function TipSlide({ slide, width, height, styles, theme }) {
+  const landscape = width > height;
+  const items = tipItems(slide);
+  const item = items[0] || null;
+  const photoStyle = landscape
+    ? { width: Math.round(width * 0.55), height }
+    : { width, height: Math.round(height * 0.75) };
+  const infoStyle = landscape
+    ? { width: width - Math.round(width * 0.55), height, alignItems: 'center', justifyContent: 'center', padding: 24 }
+    : { width, height: height - Math.round(height * 0.75), alignItems: 'center', justifyContent: 'center', padding: 16 };
+  const qrSize = landscape ? Math.min(220, Math.round(height * 0.34)) : Math.min(160, Math.round(height * 0.18));
+  return (
+    <View style={{ width, height, flexDirection: landscape ? 'row' : 'column', backgroundColor: theme.bg }}>
+      {slide.img
+        ? <Image source={{ uri: slide.img }} style={photoStyle} resizeMode="cover" />
+        : <View style={[photoStyle, { alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceAlt }]}><Text style={styles.tipPhotoMark}>✦</Text></View>}
+      <View style={infoStyle}>
+        {!!slide.name && <Text style={styles.tipName} numberOfLines={1}>{slide.name}</Text>}
+        {item && (
+          <View style={styles.tipQrBox}>
+            <View style={styles.tipQr}><QRCode value={item.url} size={qrSize} /></View>
+            <Text style={styles.tipQrLabel}>{item.label}</Text>
+            <Text style={styles.tipHandle}>{item.handle}</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
 function KioskIdle({ styles, theme }) {
   // Cycle the TipFlow slides as the idle screen. Keep any slide with a photo or
   // a tip/social link — a headshot alone is still a nice waiting display, and a
   // link alone still lets a client tip.
+  const { width, height: winH } = useWindowDimensions();
   const [slides, setSlides] = useState(null);
   const [idx, setIdx] = useState(0);
+  const [listH, setListH] = useState(0);
+  const idxRef = useRef(0);
+  const listRef = useRef(null);
+  // Pause auto-advance briefly after a manual swipe so it doesn't yank the page.
+  const lastTouchRef = useRef(0);
+
   useEffect(() => {
     let alive = true;
     fetchSlides()
@@ -70,11 +110,17 @@ function KioskIdle({ styles, theme }) {
       .catch(() => { if (alive) setSlides([]); });
     return () => { alive = false; };
   }, []);
+
   useEffect(() => {
     if (!slides || slides.length < 2) return;
-    const id = setInterval(() => setIdx(i => (i + 1) % slides.length), 8000);
+    const id = setInterval(() => {
+      if (Date.now() - lastTouchRef.current < 12000) return; // recently swiped — leave it
+      const next = (idxRef.current + 1) % slides.length;
+      idxRef.current = next; setIdx(next);
+      listRef.current?.scrollToOffset({ offset: next * width, animated: true });
+    }, 8000);
     return () => clearInterval(id);
-  }, [slides]);
+  }, [slides, width]);
 
   // Exit is via the admin-PIN KioskExitButton overlay (rendered by KioskScreen).
   if (!slides || slides.length === 0) {
@@ -86,30 +132,29 @@ function KioskIdle({ styles, theme }) {
       </View>
     );
   }
-  const s = slides[idx % slides.length];
-  const items = tipItems(s);
-  const item = items[0] || null;
   return (
-    <ScrollView style={styles.tipFlowWrap} contentContainerStyle={styles.tipFlowContent}>
-      <View style={styles.tipCard}>
-        {s.img
-          ? <Image source={{ uri: s.img }} style={styles.tipPhoto} resizeMode="cover" />
-          : <View style={[styles.tipPhoto, styles.tipPhotoEmpty]}><Text style={styles.tipPhotoMark}>✦</Text></View>}
-        {!!s.name && <Text style={styles.tipName}>{s.name}</Text>}
-        {item && (
-          <View style={styles.tipQrBox}>
-            <View style={styles.tipQr}><QRCode value={item.url} size={188} /></View>
-            <Text style={styles.tipQrLabel}>{item.label}</Text>
-            <Text style={styles.tipHandle}>{item.handle}</Text>
-          </View>
-        )}
-      </View>
+    <View style={styles.tipFlowWrap} onLayout={e => setListH(e.nativeEvent.layout.height)}>
+      <FlatList
+        ref={listRef}
+        data={slides}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        keyExtractor={(_, i) => String(i)}
+        getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+        onScrollBeginDrag={() => { lastTouchRef.current = Date.now(); }}
+        onMomentumScrollEnd={e => {
+          const i = Math.round(e.nativeEvent.contentOffset.x / width);
+          idxRef.current = i; setIdx(i); lastTouchRef.current = Date.now();
+        }}
+        renderItem={({ item }) => <TipSlide slide={item} width={width} height={listH || winH} styles={styles} theme={theme} />}
+      />
       {slides.length > 1 && (
-        <View style={styles.dots}>
-          {slides.map((_, j) => <View key={j} style={[styles.dot, j === (idx % slides.length) && styles.dotOn]} />)}
+        <View style={styles.dotsOverlay} pointerEvents="none">
+          {slides.map((_, j) => <View key={j} style={[styles.dot, j === idx && styles.dotOn]} />)}
         </View>
       )}
-    </ScrollView>
+    </View>
   );
 }
 
@@ -126,12 +171,13 @@ const makeStyles = (t) => StyleSheet.create({
   tipPhoto: { width: 200, height: 240, borderRadius: 18, backgroundColor: t.surfaceAlt },
   tipPhotoEmpty:{ alignItems: 'center', justifyContent: 'center' },
   tipPhotoMark:{ fontSize: 56, color: t.green },
-  tipName:  { fontSize: 26, fontWeight: '800', color: t.text, marginTop: 18, textAlign: 'center' },
-  tipQrBox: { alignItems: 'center', marginTop: 18 },
+  tipName:  { fontSize: 30, fontWeight: '800', color: t.text, marginBottom: 14, textAlign: 'center' },
+  tipQrBox: { alignItems: 'center' },
   tipQr:    { backgroundColor: '#fff', padding: 12, borderRadius: 14 },
   tipQrLabel:{ fontSize: 16, fontWeight: '800', color: t.green, marginTop: 14 },
   tipHandle:{ fontSize: 15, fontWeight: '700', color: '#3D95CE', marginTop: 4 },
   dots:     { flexDirection: 'row', gap: 7, marginTop: 22 },
-  dot:      { width: 7, height: 7, borderRadius: 4, backgroundColor: t.border },
-  dotOn:    { backgroundColor: t.green },
+  dotsOverlay: { position: 'absolute', bottom: 14, left: 0, right: 0, flexDirection: 'row', gap: 8, justifyContent: 'center' },
+  dot:      { width: 8, height: 8, borderRadius: 4, backgroundColor: t.border },
+  dotOn:    { backgroundColor: t.green, width: 22 },
 });
