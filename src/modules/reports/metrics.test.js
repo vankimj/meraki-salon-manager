@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics,
+  apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, techPayAdjust,
 } from './metrics';
 
 const TODAY = '2026-05-04';
@@ -263,5 +263,29 @@ describe('computeMetrics — byMethod with $0 receipts', () => {
     ], TODAY);
     expect(m.byMethod.cash.total).toBe(0);
     expect(m.byMethod.cash.count).toBe(0);
+  });
+});
+
+describe('techPayAdjust — payroll refund + redo adjustments', () => {
+  it("withholds a tech's revenue share of a withheld refund", () => {
+    const a = techPayAdjust([{
+      payment: { techSplit: [{ techName: 'Yasmin', revenue: 40 }, { techName: 'Tess', revenue: 60 }] },
+      refunds: [{ amount: 50, commissionByTech: { Yasmin: 'withhold', Tess: 'goodwill' } }],
+    }], 'Yasmin');
+    expect(a.refundWithheld).toBe(20); // (40/100) * 50
+  });
+  it('leaves a goodwill refund alone', () => {
+    const a = techPayAdjust([{
+      payment: { techSplit: [{ techName: 'Tess', revenue: 60 }] },
+      refunds: [{ amount: 30, commissionByTech: { Tess: 'goodwill' } }],
+    }], 'Tess');
+    expect(a.refundWithheld).toBe(0);
+  });
+  it('counts redos given (out) and received (in)', () => {
+    const recs = [{ redos: [{ services: [{ amount: 40, fromTech: 'Yasmin' }], toTech: 'Tess', amount: 40 }] }];
+    expect(techPayAdjust(recs, 'Yasmin').redoOut).toBe(40);
+    expect(techPayAdjust(recs, 'Yasmin').redoIn).toBe(0);
+    expect(techPayAdjust(recs, 'Tess').redoIn).toBe(40);
+    expect(techPayAdjust(recs, 'Tess').redoOut).toBe(0);
   });
 });
