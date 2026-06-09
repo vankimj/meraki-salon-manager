@@ -497,23 +497,42 @@ async function ensureSesTenant(tenantId) {
 // SES Tenant so the tenant can use it as a sending source. Without the
 // association, SendEmailCommand with TenantName=X will fail because
 // the identity is not assigned to tenant X. Idempotent.
-async function associateSesIdentityToTenant(tenantId, identityArn) {
-  const arn = identityArn || awsSesSharedIdentityArn.value();
-  if (!tenantId || !arn) return false;
+async function associateSesResourceToTenant(ses, tenantId, resourceArn) {
   try {
-    const ses = getSesClient();
     await ses.send(new CreateTenantResourceAssociationCommand({
       TenantName:  tenantId,
-      ResourceArn: arn,
+      ResourceArn: resourceArn,
     }));
     return true;
   } catch (e) {
     if (e?.name === 'AlreadyExistsException' || /already exists|associated/i.test(e?.message || '')) {
       return true;
     }
-    console.error(`[associateSesIdentityToTenant] failed for ${tenantId}/${arn}:`, e?.message);
+    console.error(`[associateSesResourceToTenant] failed for ${tenantId}/${resourceArn}:`, e?.message);
     return false;
   }
+}
+
+// Associate the resources a tenant's sends reference: the shared sending
+// identity AND the configuration set. Both are required — SendEmail with
+// TenantName + ConfigurationSetName fails with "Tenant not associated with
+// resources [...configuration-set/...]" if the config set isn't associated too.
+// The config-set ARN is derived from the identity ARN (same region + account)
+// so we never hardcode the AWS account id. Idempotent.
+async function associateSesIdentityToTenant(tenantId, identityArn) {
+  const arn = identityArn || awsSesSharedIdentityArn.value();
+  if (!tenantId || !arn) return false;
+  const ses = getSesClient();
+  let ok = await associateSesResourceToTenant(ses, tenantId, arn);
+  const configSet = awsSesConfigSet.value();
+  if (configSet) {
+    const p = String(arn).split(':'); // arn:aws:ses:REGION:ACCOUNT:identity/NAME
+    if (p.length >= 5) {
+      const configArn = `arn:aws:ses:${p[3]}:${p[4]}:configuration-set/${configSet}`;
+      ok = (await associateSesResourceToTenant(ses, tenantId, configArn)) && ok;
+    }
+  }
+  return ok;
 }
 
 // Delete the SES Tenant resource. Called by deleteTenant. AWS deletes
