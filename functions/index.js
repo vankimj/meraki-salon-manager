@@ -3898,7 +3898,7 @@ function buildReminderHtml(appt, client, tenantId, brand, manageLink, replyTo) {
           <span>💅</span><span>${esc(services)}${duration ? ` <span style="color:#aaa">(${esc(duration)})</span>` : ''}</span>
         </div>
         <div style="font-size:13px;color:#333;margin-bottom:8px;display:flex;gap:10px;">
-          <span>👩‍💼</span><span>with ${esc(appt.techName)}</span>
+          <span>👩‍💼</span><span>with ${appt.techRequestType === 'auto' ? 'a member of our team' : esc(appt.techName)}</span>
         </div>
         ${brand.addressLine ? `<div style="font-size:13px;color:#333;display:flex;gap:10px;">
           <span>📍</span><span>${esc(brand.addressLine)}</span>
@@ -4173,7 +4173,8 @@ exports.sendDailyReminders = onSchedule(
           // tap it to confirm/reschedule/cancel in the browser. Replaces the
           // legacy "Reply C to confirm" reply-handler path, which can't
           // disambiguate tenant on a shared inbound number.
-          const techShort  = appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '';
+          const techShort  = appt.techRequestType === 'auto' ? ' with a member of our team'
+            : (appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '');
           const smsBody    = manageLink
             ? `${brand.salonName}: Hi ${firstName}! Your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}. Confirm/reschedule: ${manageLink}`
             : `${brand.salonName}: Hi ${firstName}! Reminder: your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}.`;
@@ -4465,7 +4466,13 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const firstName = (appt.clientName || 'there').split(' ')[0];
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
-    const techLine  = appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist';
+    // No-preference bookings (techRequestType 'auto') don't promise a specific
+    // person — the day-of clock-in reassignment may move them — so we present
+    // "a member of our team" instead of a name the customer never chose. Named
+    // requests + scheduler-set appts keep the real tech name.
+    const noPrefBooking = appt.techRequestType === 'auto';
+    const techLine  = noPrefBooking ? 'a member of our team'
+      : (appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist');
     const tenantTz   = await tenantTimezone(db, tenantId);
     const manageLink = await apptManageUrl(db, tenantId, event.params?.apptId || snap.id, apptExpUnix(appt, tenantTz));
     const locationLine = brand.addressLine
@@ -4545,7 +4552,8 @@ exports.sendBookingConfirmation = onDocumentCreated(
       const manageShort  = await apptManageUrl(db, tenantId, apptIdForSms, apptExpUnix(appt, tenantTz));
       const dateShort    = fmtDate(appt.date).replace(/,.*/, '');
       const timeShort    = fmtTime(appt.startTime);
-      const techShort    = appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '';
+      const techShort    = noPrefBooking ? 'with a member of our team'
+        : (appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '');
       const smsBody =
         `Hi ${firstName}! Your ${svcName} at ${brand.salonName} is booked for ${dateShort} at ${timeShort}${techShort ? ' ' + techShort : ''}.`
         + (manageShort ? ` Manage: ${manageShort}` : '');
