@@ -1454,11 +1454,35 @@ exports.processUnsubscribe = onCall({ cors: true, secrets: [unsubscribeSecret] }
 // endpoint. Only fills missing fields, so a phone match can't be
 // abused to overwrite an existing customer's email.
 exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
+  requireAppCheck(request, 'findOrCreateClient');
   const ip = request.rawRequest?.ip || '';
   if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
     throw new HttpsError('resource-exhausted', 'Too many booking attempts. Try again later.');
   }
   const tenantId = String(request.data?.tenantId || TENANT_ID);
+  // Honeypot: a hidden form field no human ever fills. A bot that scrapes the
+  // form and submits every input trips it. We record the blocked attempt to the
+  // fraudBlocks collection (surfaced in the Cancellations & No-Shows report) and
+  // pretend to succeed — return a throwaway id so the bot can't tell it was
+  // filtered — but never create a client or appointment.
+  const hpValue = String(request.data?.hp || '').trim();
+  if (hpValue) {
+    try {
+      const now = new Date();
+      await getFirestore().collection(`tenants/${tenantId}/fraudBlocks`).add({
+        type:      'honeypot',
+        ip,
+        userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+        name:      String(request.data?.name  || '').slice(0, 120),
+        email:     String(request.data?.email || '').slice(0, 200),
+        phone:     String(request.data?.phone || '').slice(0, 40),
+        honeypot:  hpValue.slice(0, 200),
+        date:      now.toISOString().slice(0, 10),
+        createdAt: now.toISOString(),
+      });
+    } catch (e) { console.warn('[findOrCreateClient] fraudBlock log failed:', e?.message); }
+    return { id: 'hp_blocked', matched: false, bot: true };
+  }
   const name     = String(request.data?.name  || '').trim().slice(0, 80);
   const phone    = String(request.data?.phone || '').trim().slice(0, 32);
   const email    = String(request.data?.email || '').trim().slice(0, 200);
@@ -1467,6 +1491,16 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
   if (!phone && !email) throw new HttpsError('invalid-argument', 'phone or email is required');
   if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
     throw new HttpsError('invalid-argument', 'email is invalid');
+  }
+  // Disposable / throwaway email → refuse online booking (a common fake-booking
+  // vector). Logged for the report; the UI asks for a permanent address.
+  if (email && isDisposableEmail(email)) {
+    await logFraudBlock(getFirestore(), tenantId, {
+      type: 'disposable_email', ip, email: email.slice(0, 200),
+      name: name.slice(0, 120),
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { disposableEmail: true };
   }
 
   // Phone normalize (mirrors client-side normalizePhone).
@@ -1480,6 +1514,17 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
 
   const db         = getFirestore();
   const clientsRef = db.collection(`tenants/${tenantId}/clients`);
+  // IP only here (cheap). The authoritative geo lookup happens once in
+  // submitOnlineBooking (the write path), so we don't pay for it on every
+  // findOrCreateClient call / card-capture retry.
+  const bookingMeta = extractBookingMeta(request.rawRequest);
+
+  // Load settings once — used by both the cancellation-history gate and the
+  // booking-time card requirement below.
+  const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
+  const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
+  const bcp = resolveBookingCardPolicy(settings);
+  const bookingCardOn = bcp.firstTimeRequireCard || bcp.allBookingsRequireCard;
 
   let existingId   = null;
   let existingData = null;
@@ -1525,6 +1570,8 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
       return { banned: true };
     }
 
+    let bookingDeposit = null;
+
     // Cancellation-history policy: if the tenant has enabled the
     // card-required-after-N-cancellations policy, refuse the booking
     // unless the client has a card on file. This is the server-side
@@ -1532,14 +1579,14 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
     // modal Cards tab. Returns a structured payload (cardRequired flag)
     // so the public booking UI can render a friendly inline message.
     try {
-      const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
-      const settings = settingsSnap.exists ? settingsSnap.data() : {};
       const policy = settings && settings.cancellationPolicy;
-      // Cheap exit: only run the (potentially N-doc) appointment fetch when
-      // the tenant actually has the policy turned on OR the client has an
-      // explicit admin override that affects the gate.
+      // Cheap exit: only run the (potentially N-doc) appointment fetch when a
+      // gate that needs appointment history is active — the cancellation-history
+      // policy, an explicit per-client override, OR the booking-time card
+      // requirement (which needs history to tell first-time from returning).
       const overrideMatters = existingData.cardRequiredOverride === true || existingData.cardRequiredOverride === false;
-      if ((policy && policy.enabled === true) || overrideMatters) {
+      const needAppts = (policy && policy.enabled === true) || overrideMatters || bookingCardOn;
+      if (needAppts) {
         const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`)
           .where('clientId', '==', existingId).get().catch(() => null);
         const appts = apptsSnap ? apptsSnap.docs.map(d => d.data()) : [];
@@ -1552,7 +1599,35 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
             windowDays:        verdict.windowDays,
             reason:            verdict.reason,
             existingId,
+            bookingMeta,
           };
+        }
+
+        // Booking-time card requirement (first-time / all-bookings). An existing
+        // client is "first-time" only if they have no real (non-cancelled,
+        // non-no-show) appointment yet.
+        if (bookingCardOn) {
+          const isFirstTime = appts.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').length === 0;
+          const bookReq = evaluateBookingCardRequirement(settings, {
+            isFirstTime,
+            hasCard: hasUsableCardOnFileFn(existingData),
+          });
+          if (bookReq.required) {
+            return {
+              cardRequired: true,
+              reason:       'booking_policy',
+              firstTime:    isFirstTime,
+              depositMode:  bookReq.depositMode,
+              depositPct:   bookReq.depositPct,
+              id:           existingId,
+              bookingMeta,
+            };
+          }
+          // Triggered + already has a card: no capture needed, but if the tenant
+          // takes a deposit (authorize/charge), tell the client to collect it.
+          if (bookReq.triggered && bookReq.depositMode !== 'store' && bookReq.depositPct > 0) {
+            bookingDeposit = { depositMode: bookReq.depositMode, depositPct: bookReq.depositPct };
+          }
         }
       }
     } catch (e) {
@@ -1571,7 +1646,21 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
       updates.updatedAt = new Date().toISOString();
       await clientsRef.doc(existingId).set(updates, { merge: true });
     }
-    return { id: existingId, matched: true };
+    return { id: existingId, matched: true, bookingMeta, bookingDeposit };
+  }
+
+  // New-client velocity cap (HARD, Firestore-backed): a bot creating many
+  // distinct fake clients from one IP trips this. 8/hr is generous for legit use
+  // (a family booking several people) but stops bulk fake-account creation. The
+  // hour bucket is in the counter key so it resets cleanly.
+  const ncBucket = `nc_${ipKeyPart(ip)}_${new Date().toISOString().slice(0, 13).replace(/[-T:]/g, '')}`;
+  if (!(await fsRateAllow(db, tenantId, ncBucket, 8, 2 * 60 * 60 * 1000))) {
+    await logFraudBlock(db, tenantId, {
+      type: 'velocity_newclient', ip,
+      name: name.slice(0, 120), email: email.slice(0, 200),
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { velocityBlocked: true };
   }
 
   // Sanitize the optional `extra` payload — strip any keys that try to
@@ -1593,7 +1682,187 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
     instagramTags: safeExtra.instagramTags || [],
     googleReviews: safeExtra.googleReviews || [],
   });
-  return { id: newDoc.id, matched: false };
+
+  // Brand-new client is always first-time and has no card on file yet. If the
+  // tenant requires a card for first-time clients (or all bookings), tell the
+  // UI to collect one before the booking can confirm. The client doc already
+  // exists, so the card-capture step saves to newDoc.id and re-submits.
+  if (bookingCardOn) {
+    const bookReq = evaluateBookingCardRequirement(settings, { isFirstTime: true, hasCard: false });
+    if (bookReq.required) {
+      return {
+        cardRequired: true,
+        reason:       'booking_policy',
+        firstTime:    true,
+        depositMode:  bookReq.depositMode,
+        depositPct:   bookReq.depositPct,
+        id:           newDoc.id,
+        matched:      false,
+        bookingMeta,
+      };
+    }
+  }
+
+  return { id: newDoc.id, matched: false, bookingMeta };
+});
+
+// Whitelist + clamp a client-supplied online-booking appointment payload. Drops
+// any field not in the allow-list (so a caller can't inject _demo / _deleted /
+// payment totals / arbitrary status). clientId is forced to the server-validated
+// value; source / status / IP / geo / deposit / timestamps are set by the caller
+// of this helper, not trusted from the client.
+function sanitizeBookingAppt(a, { clientId }) {
+  const str = (v, n) => (v == null ? null : String(v).slice(0, n));
+  const num = (v, d = 0) => { const x = Number(v); return Number.isFinite(x) ? x : d; };
+  const out = {
+    date:            /^\d{4}-\d{2}-\d{2}$/.test(String(a && a.date)) ? String(a.date) : null,
+    startTime:       /^\d{2}:\d{2}$/.test(String(a && a.startTime)) ? String(a.startTime) : null,
+    duration:        Math.max(0, Math.min(600, Math.round(num(a && a.duration, 60)))),
+    techId:          a && a.techId ? str(a.techId, 64) : null,
+    techName:        str(a && a.techName, 80) || 'TBD',
+    techRequestType: a && a.techRequestType ? str(a.techRequestType, 32) : null,
+    clientId:        clientId || '',
+    clientName:      str(a && a.clientName, 80) || '',
+    clientPhone:     str(a && a.clientPhone, 32) || '',
+    clientEmail:     a && a.clientEmail ? str(a.clientEmail, 120) : null,
+    notes:           a && a.notes ? str(a.notes, 500) : null,
+    services:        Array.isArray(a && a.services) ? a.services.slice(0, 20).map(sv => ({
+      id:         sv && sv.id ? str(sv.id, 64) : null,
+      name:       str(sv && sv.name, 120) || '',
+      price:      Math.max(0, num(sv && sv.price, 0)),
+      duration:   Math.max(0, Math.min(600, Math.round(num(sv && sv.duration, 0)))),
+      optionId:   sv && sv.optionId ? str(sv.optionId, 64) : null,
+      optionName: sv && sv.optionName ? str(sv.optionName, 120) : null,
+      taxable:    !(sv && sv.taxable === false),
+      ...(sv && sv.isRemoval ? { isRemoval: true } : {}),
+    })) : [],
+  };
+  if (a && a.endTime && /^\d{2}:\d{2}$/.test(String(a.endTime))) out.endTime = String(a.endTime);
+  if (a && a.bookingGroupId) out.bookingGroupId = str(a.bookingGroupId, 64);
+  if (a && a.lane)           out.lane = str(a.lane, 32);
+  if (a && a.laneShape)      out.laneShape = str(a.laneShape, 32);
+  return out;
+}
+
+function sanitizeDepositRecord(d) {
+  if (!d || typeof d !== 'object') return null;
+  return {
+    mode:            ['authorize', 'charge', 'store'].includes(d.mode) ? d.mode : 'store',
+    pct:             Math.max(0, Math.min(100, Number(d.pct) || 0)),
+    amountCents:     Math.max(0, Math.round(Number(d.amountCents) || 0)),
+    paymentIntentId: d.paymentIntentId ? String(d.paymentIntentId).slice(0, 64) : null,
+    status:          d.status ? String(d.status).slice(0, 40) : null,
+    capturedAt:      d.capturedAt ? String(d.capturedAt).slice(0, 40) : null,
+  };
+}
+
+// Server-authoritative online-booking write. The public booking page calls this
+// INSTEAD of writing appointments to Firestore directly (firestore.rules denies
+// public appointment creates). It re-runs the banned / cancellation-history /
+// booking-card gates so they can't be bypassed, re-checks the honeypot, stamps
+// authoritative source / status / IP / geo / deposit, and writes via the Admin
+// SDK. Idempotent on idempotencyKey so a retry can't double-book.
+exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
+  requireAppCheck(request, 'submitOnlineBooking');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many booking attempts. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const db = getFirestore();
+
+  // Daily booking velocity cap per IP (HARD, Firestore-backed) — stops one
+  // connection from submitting a flood of bookings. Day bucket in the key.
+  const bkBucket = `bk_${ipKeyPart(ip)}_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`;
+  if (!(await fsRateAllow(db, tenantId, bkBucket, 25, 48 * 60 * 60 * 1000))) {
+    await logFraudBlock(db, tenantId, {
+      type: 'velocity_booking', stage: 'submit', ip,
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { velocityBlocked: true };
+  }
+
+  // Honeypot (mirrors findOrCreateClient): record + silently no-op for bots.
+  const hpValue = String(request.data?.hp || '').trim();
+  if (hpValue) {
+    try {
+      const now = new Date();
+      await db.collection(`tenants/${tenantId}/fraudBlocks`).add({
+        type: 'honeypot', stage: 'submit', ip,
+        userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+        honeypot: hpValue.slice(0, 200),
+        date: now.toISOString().slice(0, 10), createdAt: now.toISOString(),
+      });
+    } catch (_) {}
+    return { bot: true, ids: [] };
+  }
+
+  const clientId = String(request.data?.clientId || '').slice(0, 64);
+  const apptsIn = Array.isArray(request.data?.appointments) ? request.data.appointments : [];
+  if (!apptsIn.length)   throw new HttpsError('invalid-argument', 'No appointments to create.');
+  if (apptsIn.length > 4) throw new HttpsError('invalid-argument', 'Too many appointments in one booking.');
+  const idempotencyKey = String(request.data?.idempotencyKey || '').slice(0, 160);
+
+  // Idempotency: a retried submit (network blip / double-tap) returns the
+  // already-written appointments instead of duplicating them.
+  if (idempotencyKey) {
+    const dup = await db.collection(`tenants/${tenantId}/appointments`)
+      .where('bookingIdempotencyKey', '==', idempotencyKey).limit(4).get().catch(() => null);
+    if (dup && !dup.empty) return { ids: dup.docs.map(d => d.id), idempotent: true };
+  }
+
+  // Resolve the client + re-run the gates server-side (authoritative).
+  let clientData = null;
+  if (clientId) {
+    const cs = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get().catch(() => null);
+    if (cs && cs.exists) clientData = cs.data();
+  }
+  if (clientData && clientData.banned) return { banned: true };
+
+  const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
+  const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
+  const bcp = resolveBookingCardPolicy(settings);
+  const cxEnabled = settings?.cancellationPolicy?.enabled === true;
+  const overrideMatters = clientData && (clientData.cardRequiredOverride === true || clientData.cardRequiredOverride === false);
+  if (clientId && clientData && (cxEnabled || overrideMatters || bcp.firstTimeRequireCard || bcp.allBookingsRequireCard)) {
+    const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`)
+      .where('clientId', '==', clientId).get().catch(() => null);
+    const past = apptsSnap ? apptsSnap.docs.map(d => d.data()) : [];
+    const cx = evaluateCancellationPolicy(past, settings, clientData);
+    if (cx.required) {
+      return { cardRequired: true, reason: cx.reason, cancellationCount: cx.cancellationCount, thresholdCount: cx.thresholdCount, windowDays: cx.windowDays };
+    }
+    const isFirstTime = past.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').length === 0;
+    const bookReq = evaluateBookingCardRequirement(settings, { isFirstTime, hasCard: hasUsableCardOnFileFn(clientData) });
+    if (bookReq.required) {
+      return { cardRequired: true, reason: 'booking_policy', firstTime: isFirstTime, depositMode: bookReq.depositMode, depositPct: bookReq.depositPct };
+    }
+  }
+
+  // Authoritative IP + geo (never trust client-sent values).
+  const meta = extractBookingMeta(request.rawRequest);
+  if (!meta.geo && meta.ip) meta.geo = await lookupIpGeo(meta.ip);
+  const deposit = sanitizeDepositRecord(request.data?.deposit);
+
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  const ids = [];
+  apptsIn.forEach((a, i) => {
+    const ref = db.collection(`tenants/${tenantId}/appointments`).doc();
+    const clean = sanitizeBookingAppt(a, { clientId });
+    clean.source    = 'online_booking';
+    clean.status    = 'scheduled';
+    clean.bookingIp = meta.ip || '';
+    if (meta.geo) clean.bookingGeo = meta.geo;
+    if (deposit && i === 0) clean.deposit = deposit;   // stamp once, on the primary appt
+    if (idempotencyKey) clean.bookingIdempotencyKey = idempotencyKey;
+    clean.createdAt = now;
+    clean.updatedAt = now;
+    batch.set(ref, clean);
+    ids.push(ref.id);
+  });
+  await batch.commit();
+  return { ids };
 });
 
 // Send a branded "you've been invited to your salon's Plume Nexus account"
@@ -1605,6 +1874,7 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
 // rule (`appointments` had `read: if true`). After tightening the
 // rule to staff-only, the public page calls this instead.
 exports.getPublicAvailability = onCall({ cors: true }, async (request) => {
+  requireAppCheck(request, 'getPublicAvailability');
   const ip = request.rawRequest?.ip || '';
   if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 240)) {
     throw new HttpsError('resource-exhausted', 'Too many availability checks. Try again in a few minutes.');
@@ -3045,6 +3315,69 @@ exports.notifyOnCheckIn = onDocumentUpdated(
       createdAt:   new Date().toISOString(),
       sent:        false,
     });
+  }
+);
+
+// Settle a booking deposit HOLD when the appointment reaches a terminal state.
+// Only acts on `authorize`-mode deposits still in `requires_capture` (a Stripe
+// auth hold placed at booking by chargeBookingDeposit):
+//   - status -> no_show            → CAPTURE the hold (collect the deposit).
+//   - status -> done/completed/cancelled → CANCEL the hold (release the funds).
+// 'charge'-mode deposits are already settled at booking, so they're ignored
+// here (an admin refunds manually if a charged deposit needs reversing). The
+// status guard makes this idempotent — once the deposit leaves requires_capture
+// (e.g. we set it to 'captured'), a re-fire returns immediately.
+//
+// ⚠️ Real money movement — verify in Stripe TEST MODE (capture + release paths,
+// connected-account routing, already-captured/expired errors) before any tenant
+// enables depositMode='authorize'.
+exports.settleBookingDeposit = onDocumentUpdated(
+  { document: `tenants/{tenantId}/appointments/{apptId}`, secrets: [stripeKey] },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after  = event.data?.after?.data()  || {};
+    const dep = after.deposit;
+    if (!dep || dep.mode !== 'authorize' || dep.status !== 'requires_capture' || !dep.paymentIntentId) return;
+    if (before.status === after.status) return; // only act on a real transition
+
+    const isNoShow   = after.status === 'no_show';
+    const isResolved = after.status === 'done' || after.status === 'completed' || after.status === 'cancelled';
+    if (!isNoShow && !isResolved) return;
+
+    const tenantId = event.params?.tenantId;
+    const apptId   = event.params?.apptId;
+    const db  = getFirestore();
+    const ref = db.doc(`tenants/${tenantId}/appointments/${apptId}`);
+
+    const key = stripeKey.value();
+    if (!key) { console.warn('[settleBookingDeposit] Stripe not configured'); return; }
+    const stripe = require('stripe')(key);
+
+    try {
+      if (isNoShow) {
+        const pi = await stripe.paymentIntents.capture(dep.paymentIntentId);
+        await ref.set({
+          deposit: { ...dep, status: pi.status === 'succeeded' ? 'captured' : pi.status, capturedAt: new Date().toISOString() },
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        console.log(`[settleBookingDeposit] captured ${dep.paymentIntentId} for no-show ${apptId}`);
+      } else {
+        await stripe.paymentIntents.cancel(dep.paymentIntentId);
+        await ref.set({
+          deposit: { ...dep, status: 'released', releasedAt: new Date().toISOString() },
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        console.log(`[settleBookingDeposit] released ${dep.paymentIntentId} for ${after.status} ${apptId}`);
+      }
+    } catch (e) {
+      // Don't throw — a permanent error (already captured/canceled/expired) would
+      // otherwise retry forever. Record it on the appt for admin follow-up.
+      console.error(`[settleBookingDeposit] ${apptId} -> ${after.status} failed:`, e?.message);
+      await ref.set({
+        deposit: { ...dep, settleError: String(e?.message || e).slice(0, 300), settleErrorAt: new Date().toISOString() },
+        updatedAt: new Date().toISOString(),
+      }, { merge: true }).catch(() => {});
+    }
   }
 );
 
@@ -6058,6 +6391,107 @@ exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
   return out;
 });
 
+// Redo a service from a past sale. A redo is NOT a refund — no money moves. It
+// TRANSFERS the redone service's revenue attribution (and the commission it
+// drives) from the original tech to the redo tech: the original loses that
+// service's credit, the redo tech gains it (salon net $0 beyond any pay-rate
+// difference, which metrics handle per-tech). Fully auditable: records a redos[]
+// entry on the receipt + mirrors onto appointments + notifies both techs, so
+// each can see exactly why their pay changed. Idempotent via a stable key.
+exports.redoService = onCall(async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, services, redoTech, reason, idempotencyKey, notify } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+
+  const db = getFirestore();
+  await requireTenantStaff(db, tenantId, request);
+  const issuerEmail = await callerEmail(request);
+
+  if (!receiptId || typeof receiptId !== 'string') throw new HttpsError('invalid-argument', 'receiptId required');
+  const idemKey = String(idempotencyKey || '');
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(idemKey)) throw new HttpsError('invalid-argument', 'idempotencyKey required');
+  const toTech = String(redoTech || '').trim().slice(0, 120);
+  if (!toTech) throw new HttpsError('invalid-argument', 'A redo tech is required');
+  const reasonStr = String(reason || '').trim().slice(0, 500);
+  if (!reasonStr) throw new HttpsError('invalid-argument', 'A reason is required');
+  // services: the redone service(s) from the original sale. Each carries the
+  // ORIGINAL tech (whose credit is withheld) + the amount transferred.
+  const items = (Array.isArray(services) ? services : [])
+    .map(s => ({
+      name:     String(s?.name || '').slice(0, 200),
+      amount:   Math.round((Number(s?.amount) || 0) * 100) / 100,
+      fromTech: String(s?.techName || s?.fromTech || '').trim().slice(0, 120),
+    }))
+    .filter(s => s.name && s.amount > 0 && s.fromTech);
+  if (!items.length) throw new HttpsError('invalid-argument', 'Select at least one service to redo');
+
+  const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+  const recSnap = await recRef.get();
+  if (!recSnap.exists) throw new HttpsError('not-found', 'Sale not found');
+  const rec = recSnap.data();
+  const priorRedos = Array.isArray(rec.redos) ? rec.redos : [];
+  if (priorRedos.some(r => r && r.key === idemKey)) return { ok: true, alreadyRecorded: true };
+
+  const totalAmt = Math.round(items.reduce((s, i) => s + i.amount, 0) * 100) / 100;
+  const redoEntry = {
+    key: idemKey,
+    services: items,            // [{ name, amount, fromTech }]
+    toTech,
+    amount: totalAmt,
+    reason: reasonStr,
+    issuedBy: issuerEmail || null,
+    redoneAt: new Date().toISOString(),
+  };
+
+  // Record idempotently inside a txn so concurrent/retried writes converge.
+  let added = false;
+  await db.runTransaction(async (tx) => {
+    const s = await tx.get(recRef);
+    const d = s.exists ? s.data() : {};
+    const existing = Array.isArray(d.redos) ? d.redos : [];
+    if (existing.some(r => r && r.key === idemKey)) return;
+    tx.set(recRef, { redos: [...existing, redoEntry], updatedAt: new Date().toISOString() }, { merge: true });
+    added = true;
+  });
+
+  if (added) {
+    for (const aId of (rec.apptIds || [])) {
+      try { await db.doc(`tenants/${tenantId}/appointments/${aId}`).set({ redo: redoEntry, updatedAt: new Date().toISOString() }, { merge: true }); } catch (e) { /* best-effort */ }
+    }
+    if (notify !== false) notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }).catch(e => console.error('[redo] notify failed:', e?.message));
+  }
+  return { ok: true, amount: totalAmt, alreadyRecorded: !added };
+});
+
+// Tell the affected techs about a redo so the pay change is never a surprise:
+// the ORIGINAL tech(s) ("your work was redone, commission moved") and the REDO
+// tech ("you were credited for the redo"). Push + email where we can map the
+// tech's name → their employee email. All best-effort.
+async function notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }) {
+  const emailByName = {};
+  try {
+    const emps = await db.collection(`tenants/${tenantId}/employees`).get();
+    emps.docs.forEach(d => { const e = d.data() || {}; if (e.name && e.email) emailByName[String(e.name).trim().toLowerCase()] = String(e.email).toLowerCase(); });
+  } catch (e) { /* best-effort */ }
+  const brand  = await tenantBranding(db, tenantId);
+  const client = rec.clientName || 'a client';
+  const svc    = redoEntry.services.map(s => s.name).join(', ');
+  const amtStr = `$${Number(redoEntry.amount || 0).toFixed(2)}`;
+  const fromTechs = [...new Set(redoEntry.services.map(s => s.fromTech).filter(Boolean))];
+
+  const send = async (name, title, line) => {
+    const em = emailByName[String(name).trim().toLowerCase()];
+    if (!em) return;
+    try { await sendPushToEmail(db, tenantId, em, { title, body: line, data: { type: 'redo', receiptId: rec.viewToken || null } }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+  };
+  await Promise.all([
+    ...fromTechs.map(t => send(t, 'A service was redone', `${client}'s ${svc} was redone by ${redoEntry.toTech}. ${amtStr} in commission moved from you to them${redoEntry.reason ? ` — "${redoEntry.reason}"` : ''}.`)),
+    send(redoEntry.toTech, 'You were credited for a redo', `You were credited ${amtStr} for redoing ${client}'s ${svc} (originally ${fromTechs.join(', ') || 'another tech'}).`),
+  ]);
+}
+
 // Stripe Terminal connection token — required by @stripe/stripe-terminal-react-
 // native to talk to readers / Tap to Pay. Minted on the PLATFORM account
 // (matching the destination-charge model: readers live on the platform, funds
@@ -6644,7 +7078,127 @@ const {
   extractCardMetadata, buildOffSessionChargeRequest, buildPosChargeRequest,
 } = require('./lib/billing');
 
-const { evaluateCancellationPolicy } = require('./lib/cancellationPolicy');
+const {
+  evaluateCancellationPolicy,
+  evaluateBookingCardRequirement,
+  resolveBookingCardPolicy,
+  hasUsableCardOnFile: hasUsableCardOnFileFn,
+} = require('./lib/cancellationPolicy');
+
+// Pull the booking IP + (best-effort) geo off the raw HTTP request. The IP is
+// reliable (Express req.ip — already used for rate-limiting). The geo fields
+// only populate when the request traversed Cloudflare with the "visitor
+// location headers" managed transform enabled; absent that they're blank and
+// we simply store the IP. NOTE: callables hit *.cloudfunctions.net directly
+// today, so CF geo headers won't arrive until that path is fronted by CF.
+function extractBookingMeta(rawRequest) {
+  const h = (rawRequest && rawRequest.headers) || {};
+  const get = (k) => { const v = h[k]; return String(Array.isArray(v) ? v[0] : (v || '')).trim(); };
+  const xff = get('x-forwarded-for').split(',')[0].trim();
+  const ip = String((rawRequest && rawRequest.ip) || xff || '').slice(0, 64);
+  const city    = get('cf-ipcity');
+  const region  = get('cf-region') || get('cf-region-code');
+  const country = get('cf-ipcountry');
+  const lat = get('cf-iplatitude'), lng = get('cf-iplongitude');
+  const geo = (city || region || (country && country !== 'XX')) ? {
+    city, region, country,
+    ...(lat && lng ? { lat: Number(lat), lng: Number(lng) } : {}),
+  } : null;
+  return { ip, geo };
+}
+
+// Reverse-geocode an IP to coarse city/region/country. Used as the geo source
+// because callables hit *.cloudfunctions.net directly today, so Cloudflare's
+// visitor-location headers never arrive (extractBookingMeta returns geo:null).
+// Uses ip-api.com (free, no key, ~45 req/min) — well within booking volume.
+// Best-effort + fully non-blocking: any failure returns null and the booking
+// still proceeds with just the IP recorded. Private/loopback IPs are skipped.
+async function lookupIpGeo(ip) {
+  try {
+    if (!ip || typeof fetch !== 'function') return null;
+    if (/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|::1|fc|fd|169\.254\.)/i.test(ip)) return null;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 2500);
+    const res = await fetch(
+      `http://ip-api.com/json/${encodeURIComponent(ip)}?fields=status,country,countryCode,regionName,city,lat,lon`,
+      { signal: ctrl.signal },
+    ).catch(() => null);
+    clearTimeout(timer);
+    if (!res || !res.ok) return null;
+    const j = await res.json().catch(() => null);
+    if (!j || j.status !== 'success') return null;
+    return {
+      city:    String(j.city || ''),
+      region:  String(j.regionName || ''),
+      country: String(j.countryCode || j.country || ''),
+      ...(Number.isFinite(j.lat) && Number.isFinite(j.lon) ? { lat: j.lat, lng: j.lon } : {}),
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+// App Check soft-enforcement. The web client attaches an App Check token to
+// every callable request; v2 onCall auto-verifies it when present and populates
+// request.app (undefined when missing/invalid). We only REJECT when
+// APP_CHECK_ENFORCE=true — so we can deploy in MONITOR mode first, confirm legit
+// booking traffic carries tokens (watch the logged misses), then flip the env
+// flag to enforce without any client redeploy. Apply only to PUBLIC booking
+// callables (staff callables are auth-gated already).
+const APP_CHECK_ENFORCE = process.env.APP_CHECK_ENFORCE === 'true';
+function requireAppCheck(request, label) {
+  if (request.app) return;                       // valid token present
+  if (APP_CHECK_ENFORCE) {
+    throw new HttpsError('failed-precondition', 'This request could not be verified. Please reload and try again.');
+  }
+  // Monitor mode: log the miss so we can confirm coverage before enforcing.
+  console.warn(`[AppCheck] missing token (monitor) on ${label || 'callable'} ip=${request.rawRequest?.ip || '?'}`);
+}
+
+const { isDisposableEmail } = require('./lib/abuse');
+
+// Record a blocked/abusive booking attempt to the fraudBlocks collection
+// (surfaced in the Cancellations & No-Shows report). Best-effort, never throws.
+async function logFraudBlock(db, tenantId, fields) {
+  try {
+    const now = new Date();
+    await db.collection(`tenants/${tenantId}/fraudBlocks`).add({
+      date: now.toISOString().slice(0, 10),
+      createdAt: now.toISOString(),
+      ...fields,
+    });
+  } catch (e) { console.warn('[fraudBlock] log failed:', e?.message); }
+}
+
+// Durable (cross-instance) rate limiter backed by Firestore. The in-memory
+// checkRate() resets on cold starts and isn't shared between concurrent
+// instances, so it's only a soft speed bump; this is the HARD cap. The time
+// bucket is baked into `key` (e.g. per-hour / per-day) so counters reset
+// naturally and old docs simply stop being read. Each doc carries `expiresAt`
+// for the nightly purge. Fail-OPEN on infra error — never block a legit booking
+// because a counter write hiccuped.
+function ipKeyPart(ip) {
+  return String(ip || 'noip').replace(/[^0-9a-fA-F:.\-]/g, '').slice(0, 64) || 'noip';
+}
+async function fsRateAllow(db, tenantId, key, max, ttlMs) {
+  const ref = db.doc(`tenants/${tenantId}/rateCounters/${key}`);
+  try {
+    return await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const count = (snap.exists ? (snap.data().count || 0) : 0) + 1;
+      tx.set(ref, {
+        count,
+        expiresAt: new Date(Date.now() + ttlMs).toISOString(),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      return count <= max;
+    });
+  } catch (e) {
+    console.warn('[fsRateAllow] tx failed, allowing:', e?.message);
+    return true;
+  }
+}
+
 const {
   buildOAuthState, verifyOAuthState,
   summariseAccountStatus, normaliseAccountType,
@@ -7157,6 +7711,199 @@ exports.savePaymentMethod = onCall({ cors: true, secrets: [stripeKey] }, async (
 
   await clientRef.set(update, { merge: true });
   return { paymentMethod: meta, isDefault: !!update.defaultPaymentMethodId && update.defaultPaymentMethodId === meta.id };
+});
+
+// ── Public booking-page card capture (caller-scoped, NOT admin) ────────────
+// The two functions above require tenant-admin auth, so the public booking
+// page can't use them. These twins let a signed-in BOOKING client add a card
+// to THEIR OWN record only: we resolve the client strictly from the verified
+// auth-token email/phone (never a caller-supplied clientId), so one client can
+// never attach a card to another client's record.
+async function resolveCallerClient(db, tenantId, request) {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const token      = request.auth.token || {};
+  const tokenEmail = String(token.email || '').toLowerCase();
+  const tokenPhone = String(token.phone_number || '');
+  if (!tokenEmail && !tokenPhone) {
+    throw new HttpsError('failed-precondition', 'Auth token has no verified email or phone.');
+  }
+  let phoneDigits = tokenPhone.replace(/\D/g, '');
+  if (phoneDigits.length === 11 && phoneDigits.startsWith('1')) phoneDigits = phoneDigits.slice(1);
+
+  const clientsRef = db.collection(`tenants/${tenantId}/clients`);
+  if (tokenEmail) {
+    for (const v of new Set([tokenEmail, token.email].filter(Boolean))) {
+      const snap = await clientsRef.where('email', '==', v).limit(1).get().catch(() => null);
+      if (snap && !snap.empty) return { id: snap.docs[0].id, data: snap.docs[0].data() };
+    }
+  }
+  if (phoneDigits.length === 10) {
+    const allSnap = await clientsRef.limit(5000).get().catch(() => null);
+    if (allSnap) {
+      for (const d of allSnap.docs) {
+        let c = String(d.data().phone || '').replace(/\D/g, '');
+        if (c.length === 11 && c.startsWith('1')) c = c.slice(1);
+        if (c === phoneDigits) return { id: d.id, data: d.data() };
+      }
+    }
+  }
+  return null;
+}
+
+exports.createBookingSetupIntent = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  requireAppCheck(request, 'createBookingSetupIntent');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many attempts. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const db = getFirestore();
+  const caller = await resolveCallerClient(db, tenantId, request);
+  if (!caller) throw new HttpsError('not-found', 'No client record for this sign-in yet.');
+  if (caller.data.banned) throw new HttpsError('permission-denied', 'This account cannot add a card online.');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const { customerId } = await ensureClientStripeCustomer(stripe, db, tenantId, caller.id);
+  const setupIntent = await stripe.setupIntents.create({
+    customer: customerId,
+    payment_method_types: ['card'],
+    usage: 'off_session',
+    metadata: { tenantId, clientId: caller.id, source: 'online_booking' },
+  });
+  return { clientSecret: setupIntent.client_secret, clientId: caller.id };
+});
+
+exports.saveBookingPaymentMethod = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  requireAppCheck(request, 'saveBookingPaymentMethod');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many attempts. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const paymentMethodId = String(request.data?.paymentMethodId || '');
+  if (!paymentMethodId) throw new HttpsError('invalid-argument', 'paymentMethodId required');
+
+  const db = getFirestore();
+  const caller = await resolveCallerClient(db, tenantId, request);
+  if (!caller) throw new HttpsError('not-found', 'No client record for this sign-in yet.');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  // Guard: the PaymentMethod must belong to THIS client's Stripe customer
+  // (it was just minted via createBookingSetupIntent above). Refuse anything
+  // attached to a different customer.
+  const pm = await stripe.paymentMethods.retrieve(paymentMethodId);
+  const meta = extractCardMetadata(pm);
+  if (!meta) throw new HttpsError('invalid-argument', 'PaymentMethod is not a card');
+  const expectedCustomer = caller.data.stripeCustomerId;
+  if (expectedCustomer && pm.customer && pm.customer !== expectedCustomer) {
+    throw new HttpsError('permission-denied', 'PaymentMethod does not belong to this client.');
+  }
+
+  const clientRef = db.doc(`tenants/${tenantId}/clients/${caller.id}`);
+  const existing = (caller.data.paymentMethods || []).filter(p => p.id !== meta.id);
+  const next = [...existing, meta];
+  const update = { paymentMethods: next, updatedAt: new Date().toISOString() };
+  if (next.length === 1) update.defaultPaymentMethodId = meta.id;
+  await clientRef.set(update, { merge: true });
+  return { paymentMethod: meta, ok: true };
+});
+
+// Take a booking deposit off the caller's own card-on-file. Called by the
+// booking page when the tenant's bookingCardPolicy.depositMode is 'authorize'
+// (place a hold, captured later on a no-show) or 'charge' (charge now, credited
+// at checkout). The deposit % is applied SERVER-SIDE to the client-supplied
+// appointment total, so the tenant's configured percentage is authoritative.
+// Routes funds to the salon's connected account (never the platform).
+//
+// ⚠️ Money movement — verify in Stripe TEST MODE (test cards, both modes,
+// connected-account routing, the requires-action/declined paths) before any
+// tenant flips depositMode off 'store'.
+exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  requireAppCheck(request, 'chargeBookingDeposit');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many attempts. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const totalCents = Math.round(Number(request.data?.appointmentTotalCents) || 0);
+  const idempotencyKey = String(request.data?.idempotencyKey || '');
+
+  const db = getFirestore();
+  const caller = await resolveCallerClient(db, tenantId, request);
+  if (!caller) throw new HttpsError('not-found', 'No client record for this sign-in yet.');
+
+  // Server decides whether a deposit applies + how much — never trust the client.
+  const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
+  const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
+  const bcp = resolveBookingCardPolicy(settings);
+  if (bcp.depositMode === 'store' || bcp.depositPct <= 0) return { skipped: true, reason: 'no_deposit' };
+
+  const amount = Math.round((totalCents * bcp.depositPct) / 100);
+  if (!totalCents || amount < 50) return { skipped: true, reason: 'amount_too_small' };
+
+  const pmId = caller.data.defaultPaymentMethodId
+    || (Array.isArray(caller.data.paymentMethods) && caller.data.paymentMethods[0]?.id);
+  if (!pmId) throw new HttpsError('failed-precondition', 'No card on file to charge.');
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  const ten = tenSnap.exists ? tenSnap.data() : {};
+  if (!ten.stripeConnectAccountId) {
+    throw new HttpsError('failed-precondition', 'Salon has not finished payment setup — deposits can\'t be taken yet.');
+  }
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const { customerId } = await ensureClientStripeCustomer(stripe, db, tenantId, caller.id);
+
+  let chargeReq;
+  try {
+    chargeReq = buildOffSessionChargeRequest({
+      amount, currency: 'usd', customerId, paymentMethodId: pmId,
+      connectAccountId: ten.stripeConnectAccountId,
+      tenantId, clientId: caller.id,
+      description: `${ten.name || tenantId} booking deposit`,
+      applicationFeeAmount: 0,
+    });
+  } catch (e) {
+    throw new HttpsError('invalid-argument', e.message);
+  }
+  // 'authorize' = hold now, capture later (on no-show); 'charge' = settle now.
+  chargeReq.capture_method = bcp.depositMode === 'authorize' ? 'manual' : 'automatic';
+  chargeReq.metadata = { ...chargeReq.metadata, kind: 'booking_deposit', mode: bcp.depositMode };
+
+  const idemOpts = /^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)
+    ? { idempotencyKey: `dep_${tenantId}_${idempotencyKey}` } : undefined;
+
+  let pi;
+  try {
+    pi = await stripe.paymentIntents.create(chargeReq, idemOpts);
+  } catch (e) {
+    // Off-session SCA / decline: surface a clean message; booking should abort.
+    const msg = e?.code === 'authentication_required'
+      ? 'Your bank needs to verify this card. Please use a different card or call the salon.'
+      : (e?.raw?.message || e?.message || 'Your card was declined.');
+    throw new HttpsError('failed-precondition', msg);
+  }
+
+  return {
+    ok: true,
+    deposit: {
+      mode:            bcp.depositMode,
+      pct:             bcp.depositPct,
+      amountCents:     amount,
+      paymentIntentId: pi.id,
+      status:          pi.status,          // 'requires_capture' (authorize) | 'succeeded' (charge)
+      capturedAt:      bcp.depositMode === 'charge' ? new Date().toISOString() : null,
+    },
+  };
 });
 
 // Detach a PaymentMethod from the Stripe Customer + remove from the
@@ -11427,6 +12174,22 @@ exports.purgeOldTombstones = onSchedule(
         } catch (e) {
           console.error(`[PurgeTombstones] tenant=${tenantId} ${coll} failed:`, e?.message);
         }
+      }
+      // Expired anti-abuse rate counters (fsRateAllow writes `expiresAt`).
+      // Hard-delete in batches; they hold no business data.
+      try {
+        const nowIso = new Date().toISOString();
+        const snap = await db.collection(`tenants/${tenantId}/rateCounters`)
+          .where('expiresAt', '<', nowIso).limit(400).get();
+        if (!snap.empty) {
+          const batch = db.batch();
+          snap.docs.forEach(d => batch.delete(d.ref));
+          await batch.commit();
+          totalPurged += snap.size;
+          console.log(`[PurgeTombstones] tenant=${tenantId} rateCounters: purged ${snap.size}`);
+        }
+      } catch (e) {
+        console.error(`[PurgeTombstones] tenant=${tenantId} rateCounters failed:`, e?.message);
       }
     });
 

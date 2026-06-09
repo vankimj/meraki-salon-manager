@@ -2040,6 +2040,16 @@ export async function fetchServiceRatingsByRange(startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
+// Blocked booking attempts (honeypot / bot signals) in a date range. Stamped
+// with a YYYY-MM-DD `date` field server-side so a string range query works.
+export async function fetchFraudBlocksByRange(startDate, endDate) {
+  const snap = await getDocs(query(tenantCol('fraudBlocks'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // ── Notification center ────────────────────────────────
 const NOTIFS_COL   = tenantCol('notifications');
 
@@ -2715,6 +2725,16 @@ export function subscribeGoogleReviews(callback) {
 export async function refreshGoogleReviewsCache(placeId) {
   const res = await callFn('refreshGoogleReviews')({ tenantId: TENANT_ID, placeId });
   return res.data;
+}
+
+// ── Service redo (commission transfer, no money refunded) ─
+// Records a redo on a sale: the commission for the selected service(s) moves
+// from the original tech to the redo tech. Mirrors refundSale's callable
+// shape. `services` is [{ name, amount, techName }] (techName = original tech);
+// `idempotencyKey` (stable per attempt) makes a retry safe — no double redo.
+export async function redoService({ receiptId, services, redoTech, reason, idempotencyKey, notify }) {
+  const res = await callFn('redoService')({ tenantId: TENANT_ID, receiptId, services, redoTech, reason, idempotencyKey, notify });
+  return res?.data || {};
 }
 
 // ── Google Business Profile OAuth + full review sync ────

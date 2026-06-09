@@ -1,0 +1,86 @@
+# Security checks for pull requests (and pushes to main). No CI existed before
+# this — deploys stay manual. These jobs are gates/observability only; they
+# don't deploy anything.
+#
+#   secret-scan  — gitleaks scans the repo + PR diff for committed credentials.
+#                  (Free for personal repos; GitHub ORGS need a GITLEAKS_LICENSE
+#                  secret — add one if this repo ever moves under an org.)
+#   codeql       — GitHub's SAST for JS/TS (injection, unsafe patterns, etc.).
+#   audit        — npm audit for the app + Cloud Functions deps (report-only so
+#                  a transitive advisory doesn't block every PR; secret-scan and
+#                  codeql are the hard gates).
+#   tests        — the Vitest unit suite (incl. cancellation/booking-policy tests).
+name: Security checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  codeql:
+    name: CodeQL (SAST)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+
+  audit:
+    name: Dependency audit (report-only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Audit app dependencies
+        run: npm audit --omit=dev --audit-level=high
+        continue-on-error: true
+      - name: Audit functions dependencies
+        run: npm audit --omit=dev --audit-level=high --prefix functions
+        continue-on-error: true
+
+  tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The Vitest suite also runs functions/lib/*.test.js, which require
+      # firebase-admin from functions/node_modules — install those too.
+      - run: npm ci --prefix functions
+      - run: npm test
+        # Some React tests read VITE_* at import time (e.g. ConnectEmbedded reads
+        # the Stripe key before the test can stub it). Locally .env supplies these;
+        # CI has none, so provide dummy values here. These are NOT real secrets.
+        env:
+          VITE_STRIPE_PUBLISHABLE_KEY: pk_test_ci_dummy

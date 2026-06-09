@@ -65,10 +65,6 @@ service cloud.firestore {
     function canEditSchedule(tenantId) {
       return isTenantStaff(tenantId) && !isScheduleViewOnly(tenantId);
     }
-    // Public field length caps for unauthenticated submissions.
-    function isShortString(v, maxLen) {
-      return v is string && v.size() <= maxLen;
-    }
 
     // ── Legacy path (read-only for migration) ────────────
     match /salon/{document} {
@@ -379,20 +375,14 @@ service cloud.firestore {
       // also stays so the booking confirmation link works without auth.
       match /appointments/{apptId} {
         allow read:           if isTenantStaff(tenantId);
-        // Create is open to the public online-booking path (length-capped so
-        // it can't be abused as an XSS/oversized sink) and to edit-capable
-        // staff. A view-only tech is staff, so they fall through the public
-        // branch's `!isTenantStaff` guard and are denied — they can't add
-        // appointments from the app either.
-        allow create:         if canEditSchedule(tenantId) || (
-          !isTenantStaff(tenantId) &&
-          (!('clientName'  in request.resource.data) || isShortString(request.resource.data.clientName, 80)) &&
-          (!('clientPhone' in request.resource.data) || isShortString(request.resource.data.clientPhone, 32)) &&
-          (!('clientEmail' in request.resource.data) || request.resource.data.clientEmail == null ||
-              isShortString(request.resource.data.clientEmail, 120)) &&
-          (!('notes'       in request.resource.data) || request.resource.data.notes == null ||
-              isShortString(request.resource.data.notes, 500))
-        );
+        // Create is STAFF-ONLY. Public online bookings no longer write here
+        // directly — they go through the submitOnlineBooking Cloud Function,
+        // which re-runs the banned / cancellation / booking-card / honeypot
+        // gates and writes via the Admin SDK (which bypasses these rules). This
+        // makes those gates a hard server boundary instead of a workflow guard.
+        // (A view-only tech is staff but lacks canEditSchedule, so they're
+        // denied here too.)
+        allow create:         if canEditSchedule(tenantId);
         allow delete:         if canEditSchedule(tenantId);
         // Public update is single-shot only: a check-in can fire at most
         // once per appointment. Without this, a public caller (knowing
@@ -563,6 +553,20 @@ service cloud.firestore {
       // Marketing campaigns: admin creates/reads; Cloud Function updates status via admin SDK
       match /campaigns/{campaignId} {
         allow read, write: if isTenantAdmin(tenantId);
+      }
+
+      // Blocked booking attempts (honeypot / bot signals). Written server-only by
+      // findOrCreateClient via the Admin SDK; staff read them in the
+      // Cancellations & No-Shows report. No client writes.
+      match /fraudBlocks/{blockId} {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if false;
+      }
+
+      // Anti-abuse rate counters (fsRateAllow). Server-only — Admin SDK reads +
+      // increments them; no client access. Purged nightly by purgeOldTombstones.
+      match /rateCounters/{counterId} {
+        allow read, write: if false;
       }
 
       // Client chat threads. Chat docs are keyed by clientId and store the

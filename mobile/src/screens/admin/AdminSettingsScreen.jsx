@@ -6,6 +6,12 @@ const RECEIPT_MODES = [
   { value: 'auto', label: 'Auto' }, { value: 'email', label: 'Email' },
   { value: 'sms',  label: 'SMS' },  { value: 'both',  label: 'Both' },
 ];
+const DEPOSIT_MODES = [
+  { value: 'store',     label: 'Store card' },
+  { value: 'authorize', label: 'Authorize hold' },
+  { value: 'charge',    label: 'Charge deposit' },
+];
+const DEFAULT_BCP = { firstTimeRequireCard: false, allBookingsRequireCard: false, depositMode: 'store', depositPct: 0 };
 
 // Field-driven settings editor — the most-used editable settings. The full
 // web Settings catalog (booking flow, themes, geo check-in, Stripe, demo
@@ -25,13 +31,14 @@ const FIELDS = [
   { key: 'ein',            label: 'Business EIN',            type: 'text' },
 ];
 
-export default function AdminSettingsScreen() {
+export default function AdminSettingsScreen({ navigation }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const [settings, setSettings] = useState(null);
   const [draft,    setDraft]    = useState({});
   const [receipt,  setReceipt]  = useState('auto');
   const [refundDefault, setRefundDefault] = useState('withhold');
+  const [bcp, setBcp] = useState(DEFAULT_BCP);   // bookingCardPolicy draft
   const [saving,   setSaving]   = useState(false);
   const [kPin, setKPin]       = useState('');
   const [kHas, setKHas]       = useState(false);
@@ -53,6 +60,7 @@ export default function AdminSettingsScreen() {
     setDraft(d);
     setReceipt(s.receiptDelivery || 'auto');
     setRefundDefault(s.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
+    setBcp({ ...DEFAULT_BCP, ...(s.bookingCardPolicy || {}) });
     hasKioskPin().then(r => setKHas(!!r.hasPin)).catch(() => {});
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -60,7 +68,16 @@ export default function AdminSettingsScreen() {
   async function save() {
     setSaving(true);
     try {
-      const payload = { receiptDelivery: receipt, refundCommissionDefault: refundDefault };
+      const payload = {
+        receiptDelivery: receipt,
+        refundCommissionDefault: refundDefault,
+        bookingCardPolicy: {
+          firstTimeRequireCard:   !!bcp.firstTimeRequireCard,
+          allBookingsRequireCard: !!bcp.allBookingsRequireCard,
+          depositMode:            DEPOSIT_MODES.some(m => m.value === bcp.depositMode) ? bcp.depositMode : 'store',
+          depositPct:             Math.min(100, Math.max(0, Math.round(Number(bcp.depositPct) || 0))),
+        },
+      };
       FIELDS.forEach(f => {
         if (f.type === 'number') payload[f.key] = Number(draft[f.key]) || 0;
         else if (f.type === 'bool') payload[f.key] = !!draft[f.key];
@@ -101,6 +118,46 @@ export default function AdminSettingsScreen() {
         </View>
       ))}
 
+      <Text style={styles.section}>Card on file for booking</Text>
+      <Text style={styles.note}>Require online-booking clients to put a card on file before confirming. Separate from the cancellation-history policy.</Text>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Require for first-time clients</Text>
+        <Switch value={!!bcp.firstTimeRequireCard} onValueChange={v => setBcp({ ...bcp, firstTimeRequireCard: v })} trackColor={{ true: theme.green }} />
+      </View>
+      <View style={styles.toggleRow}>
+        <Text style={styles.toggleLabel}>Require on all online bookings</Text>
+        <Switch value={!!bcp.allBookingsRequireCard} onValueChange={v => setBcp({ ...bcp, allBookingsRequireCard: v })} trackColor={{ true: theme.green }} />
+      </View>
+      {(bcp.firstTimeRequireCard || bcp.allBookingsRequireCard) && (
+        <>
+          <Text style={styles.fieldLabel}>Deposit handling</Text>
+          <View style={styles.chips}>
+            {DEPOSIT_MODES.map(m => {
+              const on = bcp.depositMode === m.value;
+              return (
+                <TouchableOpacity key={m.value} onPress={() => setBcp({ ...bcp, depositMode: m.value })} style={[styles.chip, on && styles.chipOn]}>
+                  <Text style={[styles.chipText, on && styles.chipTextOn]}>{m.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          <Text style={styles.fieldLabel}>Deposit percentage (of total)</Text>
+          <TextInput
+            style={styles.input}
+            value={String(bcp.depositPct ?? 0)}
+            onChangeText={v => setBcp({ ...bcp, depositPct: v.replace(/[^0-9]/g, '').slice(0, 3) })}
+            keyboardType="number-pad"
+            placeholder="0"
+            placeholderTextColor={theme.placeholder}
+          />
+          <Text style={styles.note}>
+            {bcp.depositMode === 'store'     ? 'Card is saved; nothing charged at booking — charge the % only on a no-show.' :
+             bcp.depositMode === 'authorize' ? 'Authorization hold for the % at booking; captured on no-show, released otherwise.' :
+                                               'Charge the % as a deposit at booking, credited at checkout.'}
+          </Text>
+        </>
+      )}
+
       <Text style={styles.fieldLabel}>Receipt delivery</Text>
       <View style={styles.chips}>
         {RECEIPT_MODES.map(m => {
@@ -125,6 +182,15 @@ export default function AdminSettingsScreen() {
         })}
       </View>
       <Text style={styles.note}>Default for new refunds — staff can override per tech at refund time.</Text>
+
+      <Text style={styles.section}>Front-desk kiosk</Text>
+      <TouchableOpacity style={styles.navRow} onPress={() => navigation?.navigate('AdminTipFlow')}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.navRowLabel}>TipFlow slides</Text>
+          <Text style={styles.navRowSub}>Tech photos + tip QR shown on the kiosk while idle</Text>
+        </View>
+        <Text style={styles.navRowChevron}>›</Text>
+      </TouchableOpacity>
 
       <Text style={styles.fieldLabel}>Kiosk exit PIN</Text>
       <Text style={styles.note}>{kHas ? 'A PIN is set. Enter a new 4-digit PIN to change it.' : 'Set a 4-digit PIN. Required to lock + leave the clock and front-desk kiosks.'}</Text>
@@ -160,4 +226,10 @@ const makeStyles = (t) => StyleSheet.create({
   saveBtn:   { marginTop: 24, backgroundColor: t.blue, borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   saveText:  { color: '#fff', fontWeight: '800', fontSize: 15 },
   note:      { fontSize: 12, color: t.textFaint, marginTop: 14, lineHeight: 17 },
+  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  toggleLabel:{ flex: 1, fontSize: 14, color: t.text, fontWeight: '600', paddingRight: 12 },
+  navRow:    { flexDirection: 'row', alignItems: 'center', backgroundColor: t.surface, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: t.border, marginTop: 6 },
+  navRowLabel:{ fontSize: 15, fontWeight: '700', color: t.text },
+  navRowSub: { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  navRowChevron:{ fontSize: 22, color: t.textFaint, marginLeft: 8 },
 });

@@ -8,11 +8,17 @@ function appleProvider() {
   p.addScope('email'); p.addScope('name');
   return p;
 }
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, CardElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { auth, callFn } from '../lib/firebase';
 import { TENANT_ID } from '../lib/tenant';
+
+const bookingStripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY)
+  : null;
 import {
   fetchServices, fetchEmployees, fetchBookingConfig, fetchWebfrontConfig,
-  fetchAppointments, fetchAppointmentsByRange, createAppointment, createClient,
+  fetchAppointments, fetchAppointmentsByRange, createClient,
   saveBookingConfig, fetchTurnRoster, callMyClientRecord,
 } from '../lib/firestore';
 import { getTheme, detectAutoTheme } from '../lib/themes';
@@ -209,9 +215,13 @@ export default function BookingScreen() {
   const [cartSlot, setCartSlot] = useState(null);
   // Per-date appointment cache for the slot picker.
   const [apptsByDate, setApptsByDate] = useState({});
-  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false });
+  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
   const [submitting,      setSubmitting]      = useState(false);
   const [bookingError,    setBookingError]    = useState('');
+  // Card-on-file capture prompt — set when the tenant's booking-card policy
+  // requires a card before this booking can confirm. { clientId, depositMode,
+  // depositPct, firstTime }. Cleared once a card is saved + the booking retries.
+  const [cardPrompt,      setCardPrompt]      = useState(null);
   const [confirmed,       setConfirmed]       = useState(null);
   const [emailLinkState,  setEmailLinkState]  = useState(null); // null|'sending'|'sent'|'error'
   const [emailLinkDevice, setEmailLinkDevice] = useState(false); // cross-device: need email to finish
@@ -563,7 +573,7 @@ export default function BookingScreen() {
     setClient(null);
     setPendingFirstInitial(null);
     resetOtp();
-    setForm({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false });
+    setForm({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
   }
 
   async function handleBook() {
@@ -585,14 +595,22 @@ export default function BookingScreen() {
       // client's id or a freshly minted one — preventing duplicate
       // records like Sonny / Son and blocking banned-customer booking
       // even if they try a different email or sign-in method.
+      // Resolve the client server-side on EVERY booking (not just new ones) so
+      // the booking-card policy + IP/geo capture apply uniformly — a returning
+      // client must also satisfy an "all online bookings require a card" rule.
       let clientId = client?.id || '';
-      if (!clientId && form.name.trim() && (form.phone.trim() || form.email.trim() || gUser?.email)) {
+      let bookingDeposit = null;
+      const resolveName  = form.name.trim()  || client?.name  || '';
+      const resolvePhone = form.phone.trim() || client?.phone || '';
+      const resolveEmail = form.email.trim() || gUser?.email  || client?.email || '';
+      if (resolveName && (resolvePhone || resolveEmail)) {
         try {
           const res = await callFn('findOrCreateClient')({
             tenantId: TENANT_ID,
-            name:     form.name.trim(),
-            phone:    form.phone.trim(),
-            email:    form.email.trim() || gUser?.email || '',
+            name:     resolveName,
+            phone:    resolvePhone,
+            email:    resolveEmail,
+            hp:       form.hp || '',   // honeypot — must stay empty
             extra: {
               picture: gUser?.photoURL || '',
               commPreferences: {
@@ -618,10 +636,32 @@ export default function BookingScreen() {
             setSubmitting(false);
             return;
           }
-          // Cancellation-history gate: when the tenant has enabled the
-          // card-required-after-N-cancellations policy, the server refuses
-          // bookings for clients above the threshold without a card on file.
+          if (res?.data?.disposableEmail) {
+            setBookingError('Please use a permanent email address to book online — temporary/disposable email providers aren\'t accepted.');
+            setSubmitting(false);
+            return;
+          }
+          if (res?.data?.velocityBlocked) {
+            setBookingError("We've received a lot of booking activity from your connection. Please try again later or call the salon.");
+            setSubmitting(false);
+            return;
+          }
+          bookingDeposit = res?.data?.bookingDeposit || null;
           if (res?.data?.cardRequired) {
+            // Booking-card policy (first-time / all-bookings): collect a card
+            // inline via Stripe Elements, then the modal re-runs handleBook.
+            if (res.data.reason === 'booking_policy' && res.data.id) {
+              setCardPrompt({
+                clientId:    res.data.id,
+                depositMode: res.data.depositMode || 'store',
+                depositPct:  Number(res.data.depositPct) || 0,
+                firstTime:   res.data.firstTime === true,
+              });
+              setSubmitting(false);
+              return;
+            }
+            // Cancellation-history gate: client is over the threshold with no
+            // card on file. We don't collect online here — direct them to call.
             const { cancellationCount, thresholdCount, windowDays } = res.data;
             setBookingError(
               `Because of recent cancellations (${cancellationCount} in the last ${windowDays} days, threshold ${thresholdCount}), this salon requires a card on file before your next booking. Please call us to add one — your card will not be charged unless you cancel late or no-show.`
@@ -629,13 +669,39 @@ export default function BookingScreen() {
             setSubmitting(false);
             return;
           }
-          clientId = res?.data?.id || '';
+          clientId = res?.data?.id || clientId;
         } catch (e) { console.error('[Booking] findOrCreateClient failed:', e); }
       }
-
       const removalDur = 15;
       const removalPrice = Number(cfg?.removalPrice ?? 15);
       const dayAppts = apptsByDate[cartDate] || [];
+
+      // Deposit (authorize/charge modes only — server returns a directive when
+      // the tenant takes one and the client has a card on file). We charge
+      // BEFORE writing any appointment so a decline aborts the whole booking.
+      // The resulting deposit record is passed to submitOnlineBooking, which
+      // stamps it server-side (IP/geo are stamped there too — not by us).
+      let depositResult = null;
+      if (bookingDeposit && bookingDeposit.depositMode && bookingDeposit.depositMode !== 'store') {
+        const baseDollars = cart.reduce((s, item) => {
+          const { price } = resolveServicePricing(item.service, item.option);
+          const rm = (item.removal && item.service?.canRequireRemoval) ? removalPrice : 0;
+          return s + (Number(price) || 0) + rm;
+        }, 0);
+        try {
+          const dep = await callFn('chargeBookingDeposit')({
+            tenantId: TENANT_ID,
+            appointmentTotalCents: Math.round(baseDollars * 100),
+            idempotencyKey: `${clientId}_${cartDate}_${cartSlot}`,
+          });
+          if (dep?.data?.deposit) depositResult = dep.data.deposit;
+        } catch (e) {
+          console.error('[Booking] deposit failed:', e);
+          setBookingError(e?.message || 'We couldn\'t process the booking deposit. Please try another card or call the salon.');
+          setSubmitting(false);
+          return;
+        }
+      }
 
       // Builds the merged services[] array (with legacy-flag removal lines
       // appended). Used per-lane in the multi-lane case and once for the
@@ -745,7 +811,7 @@ export default function BookingScreen() {
       // appointment runs first from cartSlot; the pedi appointment starts
       // immediately after the mani's duration. Linked via a shared
       // bookingGroupId so reports can recognize them as one client visit.
-      const writtenAppts = [];
+      const apptsToWrite = [];
       let primaryTech = null;
       let primaryAppt = null;
       if (isMultiLane(cart)) {
@@ -762,20 +828,48 @@ export default function BookingScreen() {
         const groupId = `bg_${Date.now()}_${Math.floor(Math.random()*9999)}`;
         const maniAppt = { ...makeApptForLane(maniItems, maniTech, maniReq, cartSlot), bookingGroupId: groupId, lane: 'Manicures', laneShape: flowCfg.multiLaneShape };
         const pediAppt = { ...makeApptForLane(pediItems, pediTech, pediReq, pediStart), bookingGroupId: groupId, lane: 'Pedicures', laneShape: flowCfg.multiLaneShape };
-        await createAppointment(maniAppt);
-        await createAppointment(pediAppt);
-        writtenAppts.push(maniAppt, pediAppt);
+        apptsToWrite.push(maniAppt, pediAppt);
         primaryTech = maniTech;
         primaryAppt = maniAppt;
       } else {
         // Single-lane: original flow, one tech, one appointment.
         const { tech, requestType } = await resolveTechForItems(cart, cartTech, cartSlot);
         const appt = makeApptForLane(cart, tech, requestType, cartSlot);
-        await createAppointment(appt);
-        writtenAppts.push(appt);
+        apptsToWrite.push(appt);
         primaryTech = tech;
         primaryAppt = appt;
       }
+
+      // Server-authoritative write: the public booking page no longer writes
+      // appointments to Firestore directly (firestore.rules denies that). This
+      // callable re-runs the banned/cancellation/booking-card gates, stamps the
+      // authoritative source/IP/geo/deposit, and writes via the Admin SDK so the
+      // checks can't be bypassed. Honeypot is re-checked here too.
+      const subRes = await callFn('submitOnlineBooking')({
+        tenantId:     TENANT_ID,
+        clientId,
+        appointments: apptsToWrite,
+        deposit:      depositResult || null,
+        hp:           form.hp || '',
+        idempotencyKey: `${clientId || resolvePhone || resolveEmail}_${cartDate}_${cartSlot}`,
+      });
+      if (subRes?.data?.banned) {
+        setBookingError("We're not able to accept this booking online. Please call the salon to discuss.");
+        setSubmitting(false);
+        return;
+      }
+      if (subRes?.data?.velocityBlocked) {
+        setBookingError("We've received a lot of booking activity from your connection. Please try again later or call the salon.");
+        setSubmitting(false);
+        return;
+      }
+      if (subRes?.data?.cardRequired) {
+        setBookingError('This salon requires a card on file before booking. Please refresh and try again, or call us.');
+        setSubmitting(false);
+        return;
+      }
+      const newIds = subRes?.data?.ids || [];
+      const writtenAppts = apptsToWrite.map((a, i) => ({ ...a, id: newIds[i] }));
 
       // Persist round-robin counter so the next booking continues the cycle.
       if (rrIdx !== startingRrIdx && cfg) {
@@ -783,7 +877,7 @@ export default function BookingScreen() {
         catch (e) { console.warn('[Booking] roundRobin persist failed:', e); }
       }
 
-      setConfirmed({ ...primaryAppt, _tech: primaryTech, _cartItems: cart, _allAppts: writtenAppts });
+      setConfirmed({ ...primaryAppt, id: writtenAppts[0]?.id, _tech: primaryTech, _cartItems: cart, _allAppts: writtenAppts });
     } catch (e) {
       console.error('[Booking] failed:', e);
       alert('Booking failed. Please try again or call us.');
@@ -815,6 +909,14 @@ export default function BookingScreen() {
 
       {emailLinkDevice && (
         <CrossDevicePrompt onDone={() => setEmailLinkDevice(false)} />
+      )}
+
+      {cardPrompt && (
+        <BookingCardCapture
+          prompt={cardPrompt}
+          onCancel={() => setCardPrompt(null)}
+          onSaved={() => { setCardPrompt(null); handleBook(); }}
+        />
       )}
 
       {pendingFirstInitial && (
@@ -1703,6 +1805,14 @@ function Step4Info({
 
   const formCard = (
     <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, overflow: 'hidden', marginBottom: 16 }}>
+      {/* Honeypot — hidden from humans, tempting to form-filling bots. Kept off
+          screen (not display:none, which bots skip) and out of the tab order /
+          autofill. A non-empty value server-side flags the submission as a bot. */}
+      <input
+        type="text" name="company" tabIndex={-1} autoComplete="off" aria-hidden="true"
+        value={form.hp || ''} onChange={e => onChange({ hp: e.target.value })}
+        style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
+      />
       {[
         { key: 'name',  label: 'Name',  type: 'text',  placeholder: 'Your full name',                 required: true  },
         { key: 'phone', label: 'Phone', type: 'tel',   placeholder: '(555) 000-0000',                 required: true  },
@@ -2346,6 +2456,94 @@ function RemovalSuggestionModal({ svcName, removalPrice, editorial, onYes, onNo 
 // transparency-only: it tells the visitor we recognized the number, asks
 // them to manually re-enter their info, and links them to their history
 // at book-submit time via the existing server-side dedup.
+// ── Booking-time card-on-file capture ─────────────────────────────────────
+// Shown when the tenant's booking-card policy requires a card before the
+// booking can confirm. Tokenizes the card in the browser via Stripe Elements
+// and saves it to the caller's OWN client record through the public
+// createBookingSetupIntent / saveBookingPaymentMethod callables. On success it
+// re-runs handleBook, which now passes the server gate.
+function BookingCardCapture({ prompt, onCancel, onSaved }) {
+  const mode = prompt.depositMode || 'store';
+  const pct  = Number(prompt.depositPct) || 0;
+  const blurb = mode === 'authorize' && pct > 0
+    ? `A temporary authorization hold of ${pct}% of your appointment total will be placed when you book and released after your visit. You're only charged if you no-show or cancel late.`
+    : mode === 'charge' && pct > 0
+      ? `A ${pct}% deposit of your appointment total will be charged when you book and credited toward your final bill.`
+      : "Your card won't be charged now — it's only kept on file and charged if you no-show or cancel late.";
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>
+      <div style={{ background: '#fff', borderRadius: 20, padding: '26px 22px', width: '100%', maxWidth: 400, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 30, textAlign: 'center', marginBottom: 8 }}>💳</div>
+        <div style={{ fontSize: 17, fontWeight: 700, textAlign: 'center', marginBottom: 6 }}>
+          Add a card to confirm
+        </div>
+        <div style={{ fontSize: 13, color: '#666', lineHeight: 1.5, textAlign: 'center', marginBottom: 18 }}>
+          {prompt.firstTime ? 'As a first-time guest, ' : ''}this salon asks for a card on file before booking online. {blurb}
+        </div>
+        {bookingStripePromise ? (
+          <Elements stripe={bookingStripePromise}>
+            <BookingCardForm prompt={prompt} onCancel={onCancel} onSaved={onSaved} />
+          </Elements>
+        ) : (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 13, color: '#b00', marginBottom: 16 }}>
+              Card capture isn&apos;t available right now. Please call the salon to book.
+            </div>
+            <button onClick={onCancel} style={btnGhost}>Close</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const btnGhost = { width: '100%', padding: '11px', borderRadius: 10, border: '1px solid #ddd', background: '#fff', color: '#444', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+
+function BookingCardForm({ prompt, onCancel, onSaved }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleSubmit(e) {
+    e?.preventDefault?.();
+    if (!stripe || !elements) return;
+    setBusy(true); setError('');
+    try {
+      const { data } = await callFn('createBookingSetupIntent')({ tenantId: TENANT_ID, clientId: prompt.clientId });
+      const clientSecret = data?.clientSecret;
+      if (!clientSecret) throw new Error('Could not start card setup.');
+
+      const { setupIntent, error: stripeErr } = await stripe.confirmCardSetup(clientSecret, {
+        payment_method: { card: elements.getElement(CardElement) },
+      });
+      if (stripeErr) throw new Error(stripeErr.message || 'Card declined.');
+      if (!setupIntent?.payment_method) throw new Error('No payment method returned.');
+
+      await callFn('saveBookingPaymentMethod')({ tenantId: TENANT_ID, paymentMethodId: setupIntent.payment_method });
+      onSaved();
+    } catch (err) {
+      setError(err.message || 'Failed to save card.');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div style={{ border: '1px solid #ddd', borderRadius: 10, padding: '12px 12px', marginBottom: 12 }}>
+        <CardElement options={{ style: { base: { fontSize: '15px', color: '#1a1a1a' } } }} />
+      </div>
+      {error && <div style={{ fontSize: 12.5, color: '#b00', marginBottom: 10 }}>{error}</div>}
+      <button type="submit" disabled={!stripe || busy}
+        style={{ width: '100%', padding: '12px', borderRadius: 10, border: 'none', background: 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 15, fontWeight: 700, cursor: busy ? 'wait' : 'pointer', fontFamily: 'inherit', marginBottom: 8, opacity: busy ? 0.7 : 1 }}>
+        {busy ? 'Saving…' : 'Save card & continue'}
+      </button>
+      <button type="button" onClick={onCancel} disabled={busy} style={btnGhost}>Cancel</button>
+    </form>
+  );
+}
+
 function IdentityConfirmPrompt({ firstInitial, onDismiss }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 20 }}>

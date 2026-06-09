@@ -278,6 +278,16 @@ export async function fetchAppointmentsByRange(startDate, endDate) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
 }
 
+// Blocked booking attempts (honeypot / bot signals) in a date range.
+export async function fetchFraudBlocksByRange(startDate, endDate) {
+  const snap = await getDocs(query(
+    tenantCol('fraudBlocks'),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
 // Time off — used by ScheduleScreen to mark days where the tech is
 // out so the gap calculator skips them entirely. Same shape as the
 // web fetchTimeOff: each entry has { techName, startDate, endDate, ... }.
@@ -568,6 +578,14 @@ export async function refundSale({ receiptId, amountCents, reason, refundTo = 'm
   const res = await callFn('refundSale')({ tenantId: getCurrentTenant(), receiptId, amountCents, reason, refundTo, commissionByTech, idempotencyKey });
   return res?.data || { ok: false };
 }
+// Record a service redo: moves the commission for the selected service(s) from
+// the original tech to `redoTech`. No money is refunded. Staff (admin or tech)
+// may call it; the server notifies the affected techs. `idempotencyKey` (stable
+// per attempt) makes a retry safe — no double-recorded redo.
+export async function redoService({ receiptId, services, redoTech, reason, idempotencyKey, notify }) {
+  const res = await callFn('redoService')({ tenantId: getCurrentTenant(), receiptId, services, redoTech, reason, idempotencyKey, notify });
+  return res?.data || {};
+}
 // Manually add/remove a client's store credit (admin or tech). deltaCents is
 // signed (+add / −remove). Server is atomic, audit-logged, alerts all admins.
 export async function adjustClientCredit({ clientId, deltaCents, reason, idempotencyKey }) {
@@ -808,10 +826,25 @@ export async function claimCheckoutSession(kioskId) {
   }
 }
 
-// TipFlow slides (data/slides.slides[]) — used by the kiosk idle slideshow.
+// TipFlow slides (data/slides.slides[]) — used by the kiosk idle TipFlow.
 export async function fetchSlides() {
   try { const snap = await getDoc(tenantDoc('slides')); return snap.exists() ? (snap.data().slides || []) : []; }
   catch (_) { return []; }
+}
+// Full slides doc (slides[] + default index) for the slide manager.
+export async function fetchSlidesDoc() {
+  try {
+    const snap = await getDoc(tenantDoc('slides'));
+    const d = snap.exists() ? snap.data() : {};
+    return { slides: Array.isArray(d.slides) ? d.slides : [], def: Number(d.def) || 0 };
+  } catch (_) { return { slides: [], def: 0 }; }
+}
+// Persist the slide array + default index. Mirrors the web saveSlides — the
+// kiosk idle reads slides[]; def marks which slide the web TipFlow rests on.
+export async function saveSlides(slides, def = 0) {
+  const arr = Array.isArray(slides) ? slides : [];
+  const safeDef = Math.max(0, Math.min(arr.length - 1, Number(def) || 0));
+  await setDoc(tenantDoc('slides'), { slides: arr, def: arr.length ? safeDef : 0, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 // Rich users[] from data/usersFull (admin-only doc). Read-only on mobile
