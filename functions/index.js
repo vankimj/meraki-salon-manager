@@ -274,6 +274,27 @@ async function tenantFromAddress(db, tenantId) {
   return addr;
 }
 
+// Best reply-to inbox for a tenant. Transactional emails are sent from
+// noreply@send.plumenexus.com, so any "reply to this email" copy needs a real
+// Reply-To or it black-holes. Returns '' when the tenant has no contact email
+// configured — callers should then drop the "reply" affordance. Cached.
+const _replyToCache = new Map();
+async function tenantReplyTo(db, tenantId) {
+  if (_replyToCache.has(tenantId)) return _replyToCache.get(tenantId);
+  let addr = '';
+  try {
+    const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+    const s = sSnap.exists ? (sSnap.data() || {}) : {};
+    addr = s.replyToEmail || s.contactEmail || s.ownerEmail || s.email || '';
+    if (!addr) {
+      const tSnap = await db.doc(`tenants/${tenantId}`).get();
+      addr = (tSnap.exists ? tSnap.data().ownerEmail : '') || '';
+    }
+  } catch (e) { console.warn(`[tenantReplyTo] ${tenantId} lookup failed:`, e?.message); }
+  _replyToCache.set(tenantId, addr);
+  return addr;
+}
+
 // ── Per-tenant brand fields (for email body / footer copy) ───────────────────
 // Returns the strings that show up inside outbound email templates, sourced
 // from the tenant doc + their public webfront config:
@@ -3826,7 +3847,7 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10);
 }
 
-function buildReminderHtml(appt, client, tenantId, brand, manageLink) {
+function buildReminderHtml(appt, client, tenantId, brand, manageLink, replyTo) {
   const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
@@ -3863,7 +3884,7 @@ function buildReminderHtml(appt, client, tenantId, brand, manageLink) {
         </a>
       </div>` : ''}
       <p style="font-size:11px;color:#aaa;margin:14px 0 0;line-height:1.5;text-align:center;">
-        Need help? Reply to this email or call the salon.
+        ${replyTo ? 'Need help? Reply to this email or call the salon.' : 'Need help? Give the salon a call.'}
       </p>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
@@ -4102,11 +4123,13 @@ exports.sendDailyReminders = onSchedule(
 
         if (wantsEmail) {
           try {
+            const replyTo = await tenantReplyTo(db, tenantId);
             const { error } = await sendEmail({
               from:    fromAddr,
               to:      email,
+              replyTo: replyTo || undefined,
               subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
-              html:    buildReminderHtml(appt, client, tenantId, brand, manageLink),
+              html:    buildReminderHtml(appt, client, tenantId, brand, manageLink, replyTo),
               tenantId,
             });
             if (error) throw new Error(error.message || JSON.stringify(error));
@@ -4423,6 +4446,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
       ? `${brand.salonName}, ${brand.addressLine}`
       : brand.salonName;
 
+    const replyTo = await tenantReplyTo(db, tenantId);
     const clientHtml = `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
@@ -4447,7 +4471,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
           Reschedule or cancel
         </a>
       </div>` : ''}
-      <p style="font-size:11px;color:#aaa;margin:14px 0 0;text-align:center;">Or reply to this email — we'll take care of you.</p>
+      ${replyTo ? `<p style="font-size:11px;color:#aaa;margin:14px 0 0;text-align:center;">Or reply to this email — we'll take care of you.</p>` : ''}
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
       <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
@@ -4470,6 +4494,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
         await sendEmail({
           from:    await tenantFromAddress(db, tenantId),
           to:      appt.clientEmail,
+          replyTo: replyTo || undefined,
           subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
           html:    clientHtml,
           tenantId,
