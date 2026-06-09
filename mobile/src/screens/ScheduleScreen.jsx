@@ -30,14 +30,20 @@ const SLOT_COUNT    = (DAY_END_MIN - DAY_START_MIN) / SLOT_MINUTES;
 
 // Resolve a service's effective price + duration for the performing tech.
 // Mirrors the web techServicePrice / techServiceDuration (serviceHelpers.js):
+// Resolve a service's price, tolerant of the catalog schema: services now store
+// `basePrice` (with optional priceFrom), older ones stored `price`. Reading only
+// `price` made every newer service resolve to $0 on appointment creation.
+export function servicePrice(svc) {
+  return Number(svc?.basePrice ?? svc?.price ?? 0) || 0;
+}
+
 // tech.servicePrices[svcId] / serviceDurations[svcId] override the service's
-// flat price/duration when set (price >= 0 valid incl. $0 comp; duration > 0).
-// Mobile services are flat (no options/basePrice), so resolution is direct.
+// price/duration when set (price >= 0 valid incl. $0 comp; duration > 0).
 function resolveTechSvc(svc, tech) {
   const p = tech?.servicePrices?.[svc?.id];
   const d = tech?.serviceDurations?.[svc?.id];
   return {
-    price:    (typeof p === 'number' && p >= 0) ? p : (Number(svc?.price) || 0),
+    price:    (typeof p === 'number' && p >= 0) ? p : servicePrice(svc),
     duration: (typeof d === 'number' && d > 0) ? d : (svc?.duration || 30),
   };
 }

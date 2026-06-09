@@ -6,7 +6,7 @@ import { getCurrentTab, clearTab } from '../../lib/currentTab';
 import {
   fetchSettings, fetchPromoByCode, fetchGiftCardByCode, fetchGiftCardsByContact, updateAppointment,
   updateGiftCard, savePromoCode, fetchProducts, saveProduct, createReceipt, fetchClient, fetchClientMembership,
-  setCheckoutSession, subscribeCheckoutSession, fetchAttendance, fetchEmployees,
+  setCheckoutSession, subscribeCheckoutSession, fetchAttendance, fetchEmployees, fetchServices,
 } from '../../lib/firestore';
 import KioskCheckout from '../kiosk/KioskCheckout';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
@@ -37,20 +37,36 @@ export default function CheckoutScreen({ navigation }) {
   const pageMax = isTablet ? 920 : undefined;
   const [settings, setSettings] = useState(null);
   const [attendance, setAttendance] = useState(null);
+  const [svcPriceById, setSvcPriceById] = useState(null); // catalog id → basePrice fallback
   const [tab] = useState(() => getCurrentTab());
+
+  // Catalog price fallback: appointments created before the basePrice fix stored
+  // service price=0, so default any 0-priced line to the catalog's basePrice
+  // (staff can still edit). Keyed by service id.
+  useEffect(() => {
+    fetchServices()
+      .then(list => { const m = {}; (list || []).forEach(s => { if (s.id) m[s.id] = Number(s.basePrice ?? s.price ?? 0) || 0; }); setSvcPriceById(m); })
+      .catch(() => setSvcPriceById({}));
+  }, []);
 
   // Flatten appt services into editable lines.
   const lines0 = useMemo(() => {
     const out = [];
+    const cat = svcPriceById || {};
     (tab.appts || []).forEach((a, apptIdx) => {
       (a.services || []).forEach((s, svcIdx) => {
-        out.push({ apptIdx, svcIdx, name: s.name || '—', price: Number(s.price) || 0, techName: s.techName || a.techName || '', taxable: s.taxable !== false });
+        const price = (Number(s.price) || 0) || (s.id ? (cat[s.id] || 0) : 0);
+        out.push({ apptIdx, svcIdx, name: s.name || '—', price, techName: s.techName || a.techName || '', taxable: s.taxable !== false });
       });
     });
     return out;
-  }, [tab]);
+  }, [tab, svcPriceById]);
 
   const [prices, setPrices] = useState(() => lines0.map(l => String(l.price)));
+  // The price inputs are seeded from lines0 at mount (before the catalog loads),
+  // so re-seed them once the basePrice fallback resolves — otherwise 0-priced
+  // appts would still show $0 in the editable fields. Runs once on catalog load.
+  useEffect(() => { if (svcPriceById) setPrices(lines0.map(l => String(l.price))); }, [svcPriceById]); // eslint-disable-line react-hooks/exhaustive-deps
   const [discType, setDiscType]   = useState('none');   // none | percent | amount | member
   const [discVal, setDiscVal]     = useState('');
   const [membership, setMembership] = useState(null);   // primary client's active membership
