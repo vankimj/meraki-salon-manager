@@ -2786,11 +2786,14 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
     console.warn(`[clockEvent] admin notify failed for tenant=${tenantId}:`, e?.message);
   }
 
-  // Day-of reassignment: when a tech clocks IN, re-distribute today's still-
-  // unclaimed no-preference bookings to the techs now on the clock, in clock-in
-  // order (earliest gets first pick). Best-effort and post-commit — a failure
-  // here must never undo the clock event the tech already saw confirmed.
-  if (kind === 'in' && !result?.duplicate) {
+  // Day-of reassignment of today's still-unclaimed no-preference bookings to the
+  // techs on the clock, in clock-in order (earliest gets first pick).
+  //   - on clock IN: a newly-arrived tech can absorb unstaffed appts.
+  //   - on clock OUT: a departing tech's remaining no-pref appts get covered by
+  //     whoever is still on the floor (they fall into the pool since their tech
+  //     is no longer present).
+  // Best-effort and post-commit — a failure here must never undo the clock event.
+  if ((kind === 'in' || kind === 'out') && !result?.duplicate) {
     try { await reassignNoPrefOnClockIn(db, tenantId, date); }
     catch (e) { console.warn(`[clockEvent] reassign failed for tenant=${tenantId}:`, e?.message); }
   }
@@ -2807,10 +2810,13 @@ async function reassignNoPrefOnClockIn(db, tenantId, dateKey) {
   if (!attSnap.exists) return;
   const entries = Array.isArray(attSnap.data().entries) ? attSnap.data().entries : [];
 
-  // Currently clocked-in techs, each tagged with their first clock-in time.
+  // Techs currently present (on the floor), each tagged with their first clock-in
+  // time. "Present" = anything except clocked OUT — a tech ON BREAK is still on
+  // shift, so their appts must NOT be pooled away and they stay eligible to
+  // receive. Only a clock-out makes a tech's no-pref appts available to others.
   const clockedIn = entries.map(en => {
     const events = Array.isArray(en.events) ? en.events : [];
-    if (tcCurrentState(events) !== TC_STATES.IN) return null;       // 'in' or back from break
+    if (tcCurrentState(events) === TC_STATES.OUT) return null;      // present unless clocked out
     const firstIn = events.find(ev => ev && ev.kind === 'in');
     return { employeeId: en.employeeId, employeeName: en.employeeName, clockInAt: (firstIn && firstIn.at) || en.clockInAt || null };
   }).filter(Boolean);
