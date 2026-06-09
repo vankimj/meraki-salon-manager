@@ -3,7 +3,9 @@ import { saveAppointment, fetchClient, saveClient,
          fetchGiftCardByCode, fetchGiftCardsByContact, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
          fetchProducts, saveProduct, createReviewRequest,
-         fetchClientMembership, fetchAttendance } from '../../lib/firestore';
+         fetchClientMembership, fetchAttendance,
+         setCheckoutSession, subscribeCheckoutSession, clearCheckoutSession } from '../../lib/firestore';
+import { buildKioskHandoff, kioskHandoffAvailable, genSessionToken } from '../../lib/kioskHandoff';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { logActivity } from '../../lib/logger';
 import { subscribeLocations, currentLocationId, locationTaxRate } from '../../lib/locations';
@@ -44,7 +46,7 @@ export default function CheckoutModal(props) {
 }
 
 function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
-  const { settings, isOnline, isAdmin, showToast } = useApp();
+  const { settings, isOnline, isAdmin, showToast, gUser } = useApp();
   // Tax follows the location the sale is rung up at (the current-location
   // switcher); falls back to the tenant-wide rate for single-location tenants
   // or a location with no override. While locations load, the fallback applies.
@@ -130,6 +132,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [receipt,      setReceipt]      = useState(null);
   const [cardError,    setCardError]    = useState('');
   const [gateError,    setGateError]    = useState('');
+  const [keyedCard,    setKeyedCard]    = useState(false);   // card: type here instead of kiosk handoff
+  const [sent,         setSent]         = useState(null);    // { sessionId, total } while waiting at the kiosk
 
   useEffect(() => {
     if (primaryClient?.id) {
@@ -214,6 +218,13 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     ? Math.round((total * ccFeePct / 100 + ccFeeFlat) * 100) / 100
     : 0;
 
+  // Card on web is taken at the front-desk kiosk (the iPad/M2 reader) — the web
+  // can't run the Bluetooth reader. Default to the kiosk handoff; keep keyed
+  // entry as a fallback (and force it when promo/gift cards are present, which
+  // don't round-trip to the kiosk yet).
+  const kioskAvail   = kioskHandoffAvailable({ promo, giftCard, gcSales });
+  const cardViaKiosk = method === 'card' && kioskAvail && !keyedCard;
+
   // ── Product cart ───────────────────────────────────────
   async function openProductPicker() {
     if (!allProducts) {
@@ -292,6 +303,37 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     try { setGcResults(await fetchGiftCardsByContact(q)); }
     catch { setGcResults([]); }
     finally { setGcSearching(false); }
+  }
+
+  // Hand a card sale off to the front-desk kiosk: write a pending checkoutSession
+  // (the iPad picks it up + takes the card on the M2), then wait for it to pay.
+  async function sendToKiosk() {
+    if (saving) return;
+    setSaving(true); setGateError('');
+    if (!isAdmin && isSalonOpenNow(settings)) {
+      try {
+        const att = await fetchAttendance(attendanceKey());
+        const missing = offClockTechNames(techNames, att);
+        if (missing.length) {
+          const msg = `Not clocked in: ${missing.join(', ')}. ${missing.length > 1 ? 'These techs' : 'This tech'} must clock in at the Time Clock before checkout.`;
+          setGateError(msg); showToast && showToast(msg, 6000); setSaving(false); return;
+        }
+      } catch { /* fail open — workflow nudge, not security */ }
+    }
+    try {
+      const sessionId = genSessionToken(16);
+      const payload = buildKioskHandoff({
+        appts, serviceLines, prices, techNames, cartItems,
+        discountAmount, applyCredit, primaryClient,
+        createdBy: gUser?.email || null, sessionId,
+      });
+      await setCheckoutSession(payload);
+      setSaving(false);
+      setSent({ sessionId, total });
+    } catch (e) {
+      setSaving(false);
+      showToast && showToast('Could not send to the kiosk: ' + (e?.message || 'try again'));
+    }
   }
 
   async function complete() {
@@ -580,6 +622,14 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 
   // ── Receipt screen ─────────────────────────────────────
   if (receipt) return <ReceiptScreen receipt={receipt} onDone={onComplete} />;
+  if (sent) return (
+    <KioskWaiting
+      sessionId={sent.sessionId}
+      total={sent.total}
+      onPaid={() => { onComplete?.(); }}
+      onCancel={() => { clearCheckoutSession().catch(() => {}); setSent(null); }}
+    />
+  );
 
   // ── Render ─────────────────────────────────────────────
   return (
@@ -934,12 +984,35 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 Card payments are off until Stripe is set up — <strong>Admin → Settings → Payments</strong>. Cash & other methods still work.
               </div>
             )}
-            {method === 'card' && stripePromise && charged > 0 && (
+            {method === 'card' && cardViaKiosk && (
+              <div style={{ border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', background: 'var(--pn-info-bg)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-info)' }}>🏪 The client pays by card at the front-desk kiosk</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+                  Tap “Send to front-desk kiosk” below — the iPad reader takes the card and the client adds a tip there. This exact total &amp; all discounts carry over.
+                </div>
+                <button onClick={() => setKeyedCard(true)}
+                  style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Type the card here instead
+                </button>
+              </div>
+            )}
+            {method === 'card' && !cardViaKiosk && stripePromise && charged > 0 && (
               <div>
+                {!kioskAvail && (
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 6 }}>
+                    Promo / gift-card sales are taken here (they don’t hand off to the kiosk yet).
+                  </div>
+                )}
                 <div style={{ border: '1px solid var(--pn-border-strong)', borderRadius: 10, padding: '11px 12px', background: 'var(--pn-bg)' }}>
                   <CardElement options={{ style: { base: { fontSize: '14px', fontFamily: '-apple-system, sans-serif', color: '#1a1a1a', '::placeholder': { color: '#aaa' } }, invalid: { color: '#ef4444' } } }} />
                 </div>
                 {cardError && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>{cardError}</div>}
+                {kioskAvail && keyedCard && (
+                  <button onClick={() => setKeyedCard(false)}
+                    style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ← Send to the front-desk kiosk instead
+                  </button>
+                )}
               </div>
             )}
           </Section>
@@ -973,12 +1046,78 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               🔒 {gateError}
             </div>
           )}
-          <button onClick={complete} disabled={saving}
+          <button onClick={cardViaKiosk ? sendToKiosk : complete} disabled={saving}
             style={{ width: '100%', background: saving ? 'var(--pn-surface-muted)' : 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-            {saving ? 'Processing…' : `Complete Checkout · $${total.toFixed(2)}`}
+            {saving ? 'Processing…' : cardViaKiosk ? `🏪 Send to front-desk kiosk · $${total.toFixed(2)}` : `Complete Checkout · $${total.toFixed(2)}`}
           </button>
         </div>
 
+      </div>
+    </div>
+  );
+}
+
+// ── Waiting for the front-desk kiosk to take the card ──────────────────
+function KioskWaiting({ sessionId, total, onPaid, onCancel }) {
+  const [stage, setStage]       = useState('waiting'); // waiting | paying | paid | gone
+  const [paidInfo, setPaidInfo] = useState(null);
+
+  useEffect(() => {
+    const unsub = subscribeCheckoutSession((d) => {
+      if (!d) return;
+      // A different handoff replaced ours (another sale sent to the kiosk).
+      if (d.sessionId && d.sessionId !== sessionId) {
+        if (d.status !== 'idle') setStage('gone');
+        return;
+      }
+      if (d.paid) { setPaidInfo(d.paid); setStage('paid'); return; }
+      if (d.status === 'paying') setStage('paying');
+    });
+    return () => { try { unsub && unsub(); } catch { /* noop */ } };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (stage !== 'paid') return;
+    const t = setTimeout(() => onPaid?.(paidInfo), 1600);
+    return () => clearTimeout(t);
+  }, [stage]); // eslint-disable-line
+
+  const paidTotal = paidInfo?.total != null ? paidInfo.total : total;
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '92%', maxWidth: 380, padding: '30px 24px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        {stage === 'paid' ? (
+          <>
+            <div style={{ fontSize: 46, color: '#2D7A5F', marginBottom: 8 }}>✓</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--pn-text)' }}>${Number(paidTotal || 0).toFixed(2)} paid</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginTop: 6 }}>Paid at the kiosk{paidInfo?.method ? ` by ${paidInfo.method}` : ''}. The receipt was sent from there.</div>
+          </>
+        ) : stage === 'gone' ? (
+          <>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>↪️</div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: 'var(--pn-text)' }}>Taken over by another checkout</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginTop: 6 }}>A newer sale was sent to the kiosk, so this one was replaced.</div>
+            <button onClick={onCancel}
+              style={{ marginTop: 18, width: '100%', padding: '12px', borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
+              Close
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pn-text)' }}>{stage === 'paying' ? 'Taking payment…' : 'Sent to the front-desk kiosk'}</div>
+            <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
+              {stage === 'paying'
+                ? 'The client is paying at the kiosk — hang tight.'
+                : `Waiting for the client to pay $${Number(total || 0).toFixed(2)} at the kiosk (tap/insert on the reader). Make sure an iPad is open in kiosk mode.`}
+            </div>
+            <div style={{ marginTop: 16, fontSize: 12, color: 'var(--pn-text-faint)' }}>● ● ● listening for payment…</div>
+            <button onClick={onCancel} disabled={stage === 'paying'}
+              style={{ marginTop: 18, width: '100%', padding: '12px', borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 14, fontWeight: 600, cursor: stage === 'paying' ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)', opacity: stage === 'paying' ? .5 : 1 }}>
+              Cancel &amp; take it back
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
