@@ -23,8 +23,6 @@ const stripePromise = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY
 const PAYMENT_METHODS = [
   { id: 'cash',  label: 'Cash',  icon: '💵' },
   { id: 'card',  label: 'Card',  icon: '💳' },
-  { id: 'venmo', label: 'Venmo', icon: '🅥' },
-  { id: 'zelle', label: 'Zelle', icon: 'Z'  },
 ];
 
 const DISCOUNT_TYPES = [
@@ -902,69 +900,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             </Section>
           )}
 
-          {/* Tip — hidden when card tips are disabled */}
-          {!tipsDisabled && (
-            <Section title="Tip">
-              <div style={{ display: 'flex', gap: 6, marginBottom: (customTip || perTechMode) ? 10 : 0, flexWrap: 'wrap' }}>
-                {QUICK_TIP_PCTS.map(pct => {
-                  const active = !customTip && !perTechMode && tipPct === pct;
-                  const amt    = subtotal * pct / 100;
-                  return (
-                    <button key={pct} onClick={() => pickTipPct(pct)}
-                      style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`, background: active ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: active ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{pct}%</span>
-                      <span style={{ fontSize: 10, opacity: .7 }}>${amt.toFixed(2)}</span>
-                    </button>
-                  );
-                })}
-                <button onClick={pickCustomTip}
-                  style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${customTip && !perTechMode ? '#2D7A5F' : 'var(--pn-border)'}`, background: customTip && !perTechMode ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: customTip && !perTechMode ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700 }}>Other</span>
-                  <span style={{ fontSize: 10, opacity: .7 }}>custom $</span>
-                </button>
-                {multiTech && (
-                  <button onClick={pickPerTech}
-                    style={{ flex: 1, padding: '8px 4px', fontSize: 12, fontWeight: 600, borderRadius: 8, border: `1.5px solid ${perTechMode ? '#2D7A5F' : 'var(--pn-border)'}`, background: perTechMode ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: perTechMode ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, lineHeight: 1.2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>Per tech</span>
-                    <span style={{ fontSize: 10, opacity: .7 }}>set each</span>
-                  </button>
-                )}
-              </div>
-              {customTip && !perTechMode && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
-                  <input type="number" min={0} value={tip} onChange={e => setTip(e.target.value)}
-                    placeholder="0" autoFocus
-                    style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)' }}
-                  />
-                </div>
-              )}
-              {perTechMode ? (
-                <div>
-                  {Object.entries(techRevenue).map(([t, rev]) => (
-                    <div key={t || '—'} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0' }}>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{t || '—'}</div>
-                        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>${rev.toFixed(2)} in services</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
-                        <input type="number" min={0} value={perTechTips[t] || ''} onChange={e => setPerTechTips(p => ({ ...p, [t]: e.target.value }))}
-                          placeholder="0"
-                          style={{ width: 84, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', textAlign: 'right' }}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700, color: 'var(--pn-text-muted)', marginTop: 4 }}>
-                    <span>Total tip</span><span>${tipAmt.toFixed(2)}</span>
-                  </div>
-                </div>
-              ) : (
-                <TipSplitPreview tipAmt={tipAmt} serviceLines={serviceLines} prices={prices} techNames={techNames} />
-              )}
-            </Section>
-          )}
+          {/* Tip is collected on the customer-facing checkout (the front-desk
+              kiosk for card; cash tips are handed to the tech directly), so the
+              web checkout no longer shows a tip section. */}
 
           {/* Payment method */}
           <Section title="Payment Method">
