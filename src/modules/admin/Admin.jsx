@@ -4,6 +4,7 @@ import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
 import { buildExportBundle } from '../../lib/exportBundle';
 import JSZip from 'jszip';
 import { TENANT_ID, currentSubdomain } from '../../lib/tenant';
+import { ALLOWED_EMAILS } from '../../lib/firebase';
 import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          fetchFeedback, updateFeedbackStatus,
          fetchNotificationCenter,
@@ -787,6 +788,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
             <div data-anchor="payments"><StripeConnectSection onOpenWizard={onOpenWizard} /></div>
             <UpgradeSection settings={settings} gUser={gUser} />
+            {ALLOWED_EMAILS.includes(gUser?.email) && <SesRepairSection />}
             <DisputesSection />
             <BackupRestoreSection />
             <Section title="📦 Data Imports">
@@ -3303,6 +3305,52 @@ function TechRemindersSection({ settings, updateSettings }) {
 // Schema lives on settings.cancellationPolicy — see src/lib/cancellationPolicy.js
 // for the full evaluator. The booking page (BookingScreen.handleBook) calls
 // evaluateCancellationPolicy() before allowing a new appointment.
+// Platform-admin-only repair: (re)create this tenant's SES Tenant resource +
+// shared-identity association via the healSesTenant callable. Needed for legacy
+// tenants (e.g. merakinailstudio) that predate provisionTenant's SES step, or
+// any tenant where that best-effort step failed — without it, sendViaSES fails
+// with "Tenant <id> not found" and all transactional email silently breaks.
+// Idempotent; safe to re-run.
+function SesRepairSection() {
+  const [busy, setBusy]     = useState(false);
+  const [result, setResult] = useState(null);
+  async function run() {
+    setBusy(true); setResult(null);
+    try {
+      const data = await callFn('healSesTenant', { tenantId: TENANT_ID });
+      setResult(data || {});
+    } catch (e) {
+      setResult({ error: friendlyFnError(e) });
+    } finally { setBusy(false); }
+  }
+  return (
+    <Section title="🛠️ Email delivery repair (SES)">
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
+          Platform-admin only. Creates this tenant&apos;s SES Tenant resource and identity association so transactional
+          email (receipts, reminders, cancellation notices) can send. Safe to re-run — idempotent.
+        </div>
+        <button onClick={run} disabled={busy}
+          style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 700, cursor: busy ? 'default' : 'pointer',
+            background: busy ? 'var(--pn-surface-muted)' : '#2D7A5F', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '9px 16px' }}>
+          {busy ? 'Repairing…' : 'Repair email delivery'}
+        </button>
+        {result && (
+          <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 600,
+            color: result.error ? '#b91c1c' : (result.ok ? '#166534' : '#b45309') }}>
+            {result.error
+              ? `Error: ${result.error}`
+              : (result.ok
+                  ? `✓ Email delivery ready (tenant created/associated).`
+                  : `Partial: created=${String(result.created)}, associated=${String(result.associated)}, identityConfigured=${String(result.identityConfigured)} — check SES config.`)}
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 function CancellationPolicySection({ settings, updateSettings }) {
   const cfg = settings.cancellationPolicy || {};
   const [enabled,        setEnabled]        = useState(cfg.enabled === true);

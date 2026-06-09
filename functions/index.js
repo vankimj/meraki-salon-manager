@@ -534,6 +534,29 @@ async function deleteSesTenant(tenantId) {
   }
 }
 
+// Admin heal: (re)create the SES Tenant resource + shared-identity association
+// for an EXISTING tenant. Legacy tenants created before provisionTenant's SES
+// step (e.g. merakinailstudio), or tenants where that best-effort step failed,
+// have no SES Tenant — so sendViaSES (which sets TenantName=tenantId) fails with
+// "Tenant <id> ... not found" and ALL their email silently breaks. Idempotent
+// (AlreadyExists is treated as success). Bootstrap/platform admin only.
+exports.healSesTenant = onCall({ cors: true }, async (request) => {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (!(await isBootstrapAdmin(request))) {
+    throw new HttpsError('permission-denied', 'platform admin required');
+  }
+  const tenantId = String(request.data?.tenantId || '').trim();
+  if (!tenantId) throw new HttpsError('invalid-argument', 'tenantId required');
+  const created    = await ensureSesTenant(tenantId);
+  const associated = created ? await associateSesIdentityToTenant(tenantId) : false;
+  return {
+    ok:                created && associated,
+    created,
+    associated,
+    identityConfigured: !!awsSesSharedIdentityArn.value(),
+  };
+});
+
 // Main entry point — every email-sending site in the codebase calls
 // sendEmail(). Provider routing + suppression precheck + tenant
 // attribution all happen here.
