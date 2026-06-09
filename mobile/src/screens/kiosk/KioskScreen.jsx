@@ -64,13 +64,16 @@ function TipSlide({ slide, width, height, styles, theme }) {
   const landscape = width > height;
   const items = tipItems(slide);
   const item = items[0] || null;
+  // Portrait: photo takes the top ~62% so the name + QR below have room and
+  // don't get overlapped. Landscape: photo fills the left ~55%.
+  const photoFrac = landscape ? 0.55 : 0.62;
   const photoStyle = landscape
-    ? { width: Math.round(width * 0.55), height }
-    : { width, height: Math.round(height * 0.75) };
+    ? { width: Math.round(width * photoFrac), height }
+    : { width, height: Math.round(height * photoFrac) };
   const infoStyle = landscape
-    ? { width: width - Math.round(width * 0.55), height, alignItems: 'center', justifyContent: 'center', padding: 24 }
-    : { width, height: height - Math.round(height * 0.75), alignItems: 'center', justifyContent: 'center', padding: 16 };
-  const qrSize = landscape ? Math.min(220, Math.round(height * 0.34)) : Math.min(160, Math.round(height * 0.18));
+    ? { width: width - Math.round(width * photoFrac), height, alignItems: 'center', justifyContent: 'center', padding: 24 }
+    : { width, height: height - Math.round(height * photoFrac), alignItems: 'center', justifyContent: 'center', padding: 16 };
+  const qrSize = landscape ? Math.min(220, Math.round(height * 0.34)) : Math.min(170, Math.round(height * 0.2));
   return (
     <View style={{ width, height, flexDirection: landscape ? 'row' : 'column', backgroundColor: theme.bg }}>
       {slide.img
