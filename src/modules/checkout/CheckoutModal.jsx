@@ -136,6 +136,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [cashHere,     setCashHere]     = useState(false);   // cash: take it here instead of the kiosk
   const [sent,         setSent]         = useState(null);    // { sessionId, total, flow } while waiting at the kiosk
   const [cashConfirmed,setCashConfirmed]= useState(false);   // kiosk confirmed the cash bill+tip → finalize on web
+  const [kioskReceiptContact, setKioskReceiptContact] = useState(null); // receipt phone/email the client typed at the kiosk
 
   useEffect(() => {
     if (primaryClient?.id) {
@@ -162,6 +163,16 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   useEffect(() => {
     if (receipt && cashConfirmed) clearCheckoutSession().catch(() => {});
   }, [receipt]); // eslint-disable-line
+
+  // While finalizing a cash-review sale, keep listening for the receipt contact
+  // the client types at the kiosk, so complete() can send the receipt there.
+  useEffect(() => {
+    if (!cashConfirmed) return;
+    const unsub = subscribeCheckoutSession((d) => {
+      if (d && d.confirmedReceiptPhone) setKioskReceiptContact(d.confirmedReceiptPhone);
+    });
+    return () => { try { unsub && unsub(); } catch { /* noop */ } };
+  }, [cashConfirmed]);
 
   // ── Math ───────────────────────────────────────────────
   const productsTotal = cartItems.reduce((s, item) => s + (item.product.price || 0) * item.qty, 0);
@@ -594,7 +605,15 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       }
       // clientPhone: walk-in tmpPhone OR primary appt's stored phone.
       // Drives sendReceiptSms — without it, SMS receipt silently no-ops.
-      const clientPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || null;
+      let clientPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || null;
+
+      // Cash-review handoff: the client typed where to send their receipt at the
+      // kiosk — honor it (email if it has an @, otherwise treat as a phone).
+      if (kioskReceiptContact) {
+        const c = String(kioskReceiptContact).trim();
+        if (c.includes('@')) clientEmail = c;
+        else { const digits = c.replace(/[^\d+]/g, ''); if (digits) clientPhone = digits; }
+      }
 
       // Opaque view token for the hosted /r/{token} receipt page.
       // 22 chars URL-safe ≈ 130 bits; computationally infeasible to guess.
@@ -1205,6 +1224,14 @@ function KioskWaiting({ sessionId, total, flow, onPaid, onCashConfirmed, onCance
 
 // ── Cash finalize: the kiosk confirmed the bill + tip; collect the cash ────
 function CashFinalize({ total, tipAmt, saving, gateError, onComplete, onCancel }) {
+  const due = Number(total || 0);
+  const [tenderedStr, setTenderedStr] = useState('');
+  const tendered = Number(tenderedStr) || 0;
+  const change = tendered - due;
+  // Quick bills: exact, then the next round denominations above the total.
+  const quick = Array.from(new Set([
+    Math.ceil(due / 5) * 5, Math.ceil(due / 10) * 10, Math.ceil(due / 20) * 20, 50, 100,
+  ].filter(v => v >= due))).sort((a, b) => a - b).slice(0, 4);
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
       <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '92%', maxWidth: 380, padding: '28px 24px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
@@ -1219,8 +1246,31 @@ function CashFinalize({ total, tipAmt, saving, gateError, onComplete, onCancel }
           )}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>Total due</span>
-            <span style={{ fontSize: 24, fontWeight: 800, color: '#2D7A5F' }}>${Number(total || 0).toFixed(2)}</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: '#2D7A5F' }}>${due.toFixed(2)}</span>
           </div>
+        </div>
+        {/* Cash calculator: tendered → change due (an aid; not required to complete) */}
+        <div style={{ marginTop: 12, textAlign: 'left' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Cash received</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
+            {quick.map(v => (
+              <button key={v} onClick={() => setTenderedStr(String(v))}
+                style={{ flex: '1 0 auto', minWidth: 56, padding: '8px 6px', borderRadius: 8, border: `1.5px solid ${tendered === v ? '#2D7A5F' : 'var(--pn-border)'}`, background: tendered === v ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: tendered === v ? 'var(--pn-success)' : 'var(--pn-text-muted)', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+                ${v}
+              </button>
+            ))}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 14, color: 'var(--pn-text-faint)' }}>$</span>
+            <input type="number" min={0} inputMode="decimal" value={tenderedStr} onChange={e => setTenderedStr(e.target.value)} placeholder="Amount tendered"
+              style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '9px 11px', fontSize: 14, background: 'var(--pn-bg)' }} />
+          </div>
+          {tenderedStr !== '' && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 14, fontWeight: 700, color: change < 0 ? '#ef4444' : 'var(--pn-text)' }}>
+              <span>{change < 0 ? 'Still owed' : 'Change due'}</span>
+              <span>${Math.abs(change).toFixed(2)}</span>
+            </div>
+          )}
         </div>
         {gateError && (
           <div style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: '#b45309', background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 10, padding: '8px 12px' }}>🔒 {gateError}</div>

@@ -86,6 +86,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // client picks cash on the staff's own device (local "check out on this device").
   const { techName: staffName } = useCurrentEmployee();
   const [cashStr, setCashStr]   = useState('');
+  const [rcptSaved, setRcptSaved] = useState(false); // cash-review: client's receipt contact sent back to the web
   const [saving, setSaving]     = useState(false);
   const [paidMsg, setPaidMsg]   = useState('');
   const [client, setClient]     = useState(null);
@@ -279,15 +280,30 @@ export default function KioskCheckout({ session, settings, email, local = false,
     if (saving) return;
     setSaving(true);
     try {
+      // Only an "on bill" (card) tip is recorded on the cash sale. Venmo / cash
+      // tips go straight to the tech (QR / hand), so the recorded tip is 0.
       await updateCheckoutSession({
         status: 'confirmed',
-        confirmedTip: { amount: selectedTipAmt || 0, byTech: tipByTech || null },
+        confirmedTip: { amount: cashTotals.tipAmt || 0, byTech: tipMethod === 'card' ? (tipByTech || null) : null },
         confirmedAt: new Date().toISOString(),
       });
       setStage('confirmed');
     } catch (e) {
       Alert.alert('Could not confirm', e?.message || 'Please try again.');
     } finally { setSaving(false); }
+  }
+
+  // Cash-review: the client enters where to send their receipt; pass it back so
+  // the WEB sends it when it records the sale.
+  async function saveReceiptContact() {
+    const v = (receiptPhone || '').trim();
+    if (!v) return;
+    try {
+      await updateCheckoutSession({ confirmedReceiptPhone: v });
+      setRcptSaved(true);
+    } catch (e) {
+      Alert.alert('Could not save', e?.message || 'Please try again.');
+    }
   }
 
   async function payCardOnFile() {
@@ -332,12 +348,35 @@ export default function KioskCheckout({ session, settings, email, local = false,
 
   if (stage === 'confirmed') {
     return (
-      <View style={styles.idle}>
+      <ScrollView style={styles.wrap} contentContainerStyle={styles.idle}>
         <Text style={styles.doneMark}>✓</Text>
         <Text style={styles.idleTitle}>Thank you!</Text>
-        <Text style={styles.idleSub}>Your total{selectedTipAmt > 0 ? ' (with tip)' : ''} is confirmed. Please pay with cash at the front desk to finish.</Text>
+        <Text style={styles.idleSub}>Your total{cashTotals.tipAmt > 0 ? ' (with tip)' : ''} is confirmed. Please pay with cash at the front desk to finish.</Text>
         <Text style={[styles.idleTitle, { marginTop: 14, color: theme.green }]}>{money(cashTotals.total)}</Text>
-      </View>
+        <View style={styles.resendBox}>
+          {rcptSaved ? (
+            <Text style={styles.resendLabel}>We'll send your receipt to {receiptPhone}. 💚</Text>
+          ) : (
+            <>
+              <Text style={styles.resendLabel}>Want your receipt? Enter a phone or email.</Text>
+              <TextInput
+                style={styles.receiptInput}
+                value={receiptPhone}
+                onChangeText={setReceiptPhone}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Phone or email"
+                placeholderTextColor={theme.placeholder}
+                maxLength={60}
+              />
+              <TouchableOpacity style={[styles.okBtn, !(receiptPhone || '').trim() && { opacity: 0.5 }]} onPress={saveReceiptContact} disabled={!(receiptPhone || '').trim()} activeOpacity={0.85}>
+                <Text style={styles.okBtnText}>Send my receipt</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </ScrollView>
     );
   }
 
@@ -396,10 +435,9 @@ export default function KioskCheckout({ session, settings, email, local = false,
       {stage === 'review' && (
         <>
           <Text style={styles.section}>Add a tip?</Text>
-          {!cashReview && (
           <View style={styles.tipMethodRow}>
             <TouchableOpacity style={[styles.tipMethod, tipMethod === 'card' && styles.tipMethodOn]} onPress={() => setTipMethod('card')}>
-              <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>💳 Card</Text>
+              <Text style={[styles.tipMethodText, tipMethod === 'card' && styles.tipMethodTextOn]}>{cashReview ? '🧾 On bill' : '💳 Card'}</Text>
             </TouchableOpacity>
             {venmoTechs.length > 0 && (
               <TouchableOpacity style={[styles.tipMethod, tipMethod === 'venmo' && styles.tipMethodOn]} onPress={() => setTipMethod('venmo')}>
@@ -410,7 +448,6 @@ export default function KioskCheckout({ session, settings, email, local = false,
               <Text style={[styles.tipMethodText, tipMethod === 'cash' && styles.tipMethodTextOn]}>💵 Cash</Text>
             </TouchableOpacity>
           </View>
-          )}
 
           {tipMethod === 'cash' ? (
             <View style={styles.tipCashNote}>
