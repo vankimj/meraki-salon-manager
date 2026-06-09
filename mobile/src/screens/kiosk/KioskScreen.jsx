@@ -31,7 +31,9 @@ export default function KioskScreen({ navigation }) {
     return () => parent?.setOptions({ tabBarStyle: undefined });
   }, [navigation]));
 
-  const active = session && (session.status === 'pending' || session.status === 'paying');
+  // 'confirmed' = a cash-review handoff the client OK'd; keep the kiosk on the
+  // "pay at the front desk" screen until the web records it and clears the session.
+  const active = session && (session.status === 'pending' || session.status === 'paying' || session.status === 'confirmed');
 
   if (session === undefined || settings === null) {
     return <View style={styles.center}><ActivityIndicator color={theme.green} size="large" /></View>;

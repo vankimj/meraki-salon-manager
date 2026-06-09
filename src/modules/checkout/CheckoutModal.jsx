@@ -133,7 +133,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [cardError,    setCardError]    = useState('');
   const [gateError,    setGateError]    = useState('');
   const [keyedCard,    setKeyedCard]    = useState(false);   // card: type here instead of kiosk handoff
-  const [sent,         setSent]         = useState(null);    // { sessionId, total } while waiting at the kiosk
+  const [cashHere,     setCashHere]     = useState(false);   // cash: take it here instead of the kiosk
+  const [sent,         setSent]         = useState(null);    // { sessionId, total, flow } while waiting at the kiosk
+  const [cashConfirmed,setCashConfirmed]= useState(false);   // kiosk confirmed the cash bill+tip → finalize on web
 
   useEffect(() => {
     if (primaryClient?.id) {
@@ -153,6 +155,13 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       }).catch(() => {});
     }
   }, [primaryClient?.id]); // eslint-disable-line
+
+  // When a cash-review sale records on the web (receipt shown), clear the kiosk
+  // session so the iPad returns to its idle TipFlow from the "pay at front desk"
+  // screen. Only for the kiosk-confirmed path — never touch an unrelated session.
+  useEffect(() => {
+    if (receipt && cashConfirmed) clearCheckoutSession().catch(() => {});
+  }, [receipt]); // eslint-disable-line
 
   // ── Math ───────────────────────────────────────────────
   const productsTotal = cartItems.reduce((s, item) => s + (item.product.price || 0) * item.qty, 0);
@@ -224,6 +233,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   // don't round-trip to the kiosk yet).
   const kioskAvail   = kioskHandoffAvailable({ promo, giftCard, gcSales });
   const cardViaKiosk = method === 'card' && kioskAvail && !keyedCard;
+  // Cash also routes through the kiosk so the client reviews the bill + adds a
+  // tip; the kiosk confirms and the WEB collects the cash + records the sale.
+  const cashViaKiosk = method === 'cash' && kioskAvail && !cashHere;
+  const viaKiosk     = cardViaKiosk || cashViaKiosk;
 
   // ── Product cart ───────────────────────────────────────
   async function openProductPicker() {
@@ -305,9 +318,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     finally { setGcSearching(false); }
   }
 
-  // Hand a card sale off to the front-desk kiosk: write a pending checkoutSession
-  // (the iPad picks it up + takes the card on the M2), then wait for it to pay.
-  async function sendToKiosk() {
+  // Hand a sale off to the front-desk kiosk. flow='card' → the iPad takes the
+  // card on the M2 and records the sale. flow='cashReview' → the iPad shows the
+  // bill + tip + "Is this correct?", then the WEB finalizes the cash sale.
+  async function sendToKiosk(flow = 'card') {
     if (saving) return;
     setSaving(true); setGateError('');
     if (!isAdmin && isSalonOpenNow(settings)) {
@@ -325,15 +339,34 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       const payload = buildKioskHandoff({
         appts, serviceLines, prices, techNames, cartItems,
         discountAmount, applyCredit, primaryClient,
-        createdBy: gUser?.email || null, sessionId,
+        createdBy: gUser?.email || null, sessionId, flow,
       });
       await setCheckoutSession(payload);
       setSaving(false);
-      setSent({ sessionId, total });
+      setSent({ sessionId, total, flow });
     } catch (e) {
       setSaving(false);
       showToast && showToast('Could not send to the kiosk: ' + (e?.message || 'try again'));
     }
+  }
+
+  // Kiosk confirmed the cash bill + tip → apply that tip to the web's totals so
+  // complete() records it, then show the "collect the cash" finalize screen.
+  function handleCashConfirmed(confirmedTip) {
+    const amt = Math.max(0, Number(confirmedTip?.amount) || 0);
+    const byTech = Array.isArray(confirmedTip?.byTech) ? confirmedTip.byTech : null;
+    if (byTech && byTech.length > 1) {
+      setPerTechMode(true);
+      const m = {};
+      byTech.forEach(t => { if (t && t.techName != null) m[t.techName] = String(Number(t.amount) || 0); });
+      setPerTechTips(m);
+    } else {
+      setPerTechMode(false);
+      setCustomTip(true);
+      setTip(String(amt));
+    }
+    setSent(null);
+    setCashConfirmed(true);
   }
 
   async function complete() {
@@ -622,11 +655,26 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 
   // ── Receipt screen ─────────────────────────────────────
   if (receipt) return <ReceiptScreen receipt={receipt} onDone={onComplete} />;
+  if (cashConfirmed) return (
+    <CashFinalize
+      total={total}
+      tipAmt={tipAmt}
+      saving={saving}
+      gateError={gateError}
+      onComplete={complete}
+      onCancel={() => {
+        clearCheckoutSession().catch(() => {});
+        setCashConfirmed(false); setCustomTip(false); setTip(''); setPerTechMode(false); setPerTechTips({});
+      }}
+    />
+  );
   if (sent) return (
     <KioskWaiting
       sessionId={sent.sessionId}
       total={sent.total}
+      flow={sent.flow}
       onPaid={() => { onComplete?.(); }}
+      onCashConfirmed={handleCashConfirmed}
       onCancel={() => { clearCheckoutSession().catch(() => {}); setSent(null); }}
     />
   );
@@ -1015,6 +1063,28 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                 )}
               </div>
             )}
+            {method === 'cash' && cashViaKiosk && (
+              <div style={{ border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', background: 'var(--pn-info-bg)' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-info)' }}>🏪 The client reviews the bill &amp; adds a tip at the kiosk</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 4, lineHeight: 1.4 }}>
+                  Tap “Send to front-desk kiosk” below. The client confirms the bill and picks a tip; then you collect the cash and tap Complete here.
+                </div>
+                <button onClick={() => setCashHere(true)}
+                  style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Take cash here instead
+                </button>
+              </div>
+            )}
+            {method === 'cash' && !cashViaKiosk && (
+              <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.4 }}>
+                Completing the cash sale here. {kioskAvail && (
+                  <button onClick={() => setCashHere(false)}
+                    style={{ background: 'none', border: 'none', padding: 0, color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    Send to the kiosk for a tip instead
+                  </button>
+                )}
+              </div>
+            )}
           </Section>
 
           {/* Total summary */}
@@ -1046,9 +1116,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               🔒 {gateError}
             </div>
           )}
-          <button onClick={cardViaKiosk ? sendToKiosk : complete} disabled={saving}
+          <button onClick={viaKiosk ? () => sendToKiosk(cashViaKiosk ? 'cashReview' : 'card') : complete} disabled={saving}
             style={{ width: '100%', background: saving ? 'var(--pn-surface-muted)' : 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-            {saving ? 'Processing…' : cardViaKiosk ? `🏪 Send to front-desk kiosk · $${total.toFixed(2)}` : `Complete Checkout · $${total.toFixed(2)}`}
+            {saving ? 'Processing…' : viaKiosk ? `🏪 Send to front-desk kiosk · $${total.toFixed(2)}` : `Complete Checkout · $${total.toFixed(2)}`}
           </button>
         </div>
 
@@ -1057,8 +1127,12 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   );
 }
 
-// ── Waiting for the front-desk kiosk to take the card ──────────────────
-function KioskWaiting({ sessionId, total, onPaid, onCancel }) {
+// ── Waiting for the front-desk kiosk ───────────────────────────────────
+// flow 'card' → wait for the kiosk to take the card (paid). flow 'cashReview'
+// → wait for the client to confirm the bill + tip (status:'confirmed'), then
+// hand the tip back so the web finalizes the cash sale.
+function KioskWaiting({ sessionId, total, flow, onPaid, onCashConfirmed, onCancel }) {
+  const isCash = flow === 'cashReview';
   const [stage, setStage]       = useState('waiting'); // waiting | paying | paid | gone
   const [paidInfo, setPaidInfo] = useState(null);
 
@@ -1070,11 +1144,15 @@ function KioskWaiting({ sessionId, total, onPaid, onCancel }) {
         if (d.status !== 'idle') setStage('gone');
         return;
       }
+      if (isCash) {
+        if (d.status === 'confirmed') onCashConfirmed?.(d.confirmedTip || { amount: 0 });
+        return;
+      }
       if (d.paid) { setPaidInfo(d.paid); setStage('paid'); return; }
       if (d.status === 'paying') setStage('paying');
     });
     return () => { try { unsub && unsub(); } catch { /* noop */ } };
-  }, [sessionId]);
+  }, [sessionId]); // eslint-disable-line
 
   useEffect(() => {
     if (stage !== 'paid') return;
@@ -1107,17 +1185,54 @@ function KioskWaiting({ sessionId, total, onPaid, onCancel }) {
             <div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pn-text)' }}>{stage === 'paying' ? 'Taking payment…' : 'Sent to the front-desk kiosk'}</div>
             <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginTop: 8, lineHeight: 1.5 }}>
-              {stage === 'paying'
-                ? 'The client is paying at the kiosk — hang tight.'
-                : `Waiting for the client to pay $${Number(total || 0).toFixed(2)} at the kiosk (tap/insert on the reader). Make sure an iPad is open in kiosk mode.`}
+              {isCash
+                ? 'Waiting for the client to review the bill and add a tip at the kiosk, then you’ll collect the cash here. Make sure an iPad is open in kiosk mode.'
+                : stage === 'paying'
+                  ? 'The client is paying at the kiosk — hang tight.'
+                  : `Waiting for the client to pay $${Number(total || 0).toFixed(2)} at the kiosk (tap/insert on the reader). Make sure an iPad is open in kiosk mode.`}
             </div>
-            <div style={{ marginTop: 16, fontSize: 12, color: 'var(--pn-text-faint)' }}>● ● ● listening for payment…</div>
+            <div style={{ marginTop: 16, fontSize: 12, color: 'var(--pn-text-faint)' }}>● ● ● {isCash ? 'waiting for the client to confirm…' : 'listening for payment…'}</div>
             <button onClick={onCancel} disabled={stage === 'paying'}
               style={{ marginTop: 18, width: '100%', padding: '12px', borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 14, fontWeight: 600, cursor: stage === 'paying' ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)', opacity: stage === 'paying' ? .5 : 1 }}>
               Cancel &amp; take it back
             </button>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Cash finalize: the kiosk confirmed the bill + tip; collect the cash ────
+function CashFinalize({ total, tipAmt, saving, gateError, onComplete, onCancel }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '92%', maxWidth: 380, padding: '28px 24px', textAlign: 'center', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ fontSize: 40, marginBottom: 8 }}>💵</div>
+        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--pn-text)' }}>Client confirmed — collect the cash</div>
+        <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginTop: 6 }}>They reviewed the bill and chose a tip at the kiosk.</div>
+        <div style={{ marginTop: 16, background: 'var(--pn-bg)', borderRadius: 12, padding: '14px 16px' }}>
+          {tipAmt > 0 && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 6 }}>
+              <span>Tip</span><span>+${Number(tipAmt).toFixed(2)}</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>Total due</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: '#2D7A5F' }}>${Number(total || 0).toFixed(2)}</span>
+          </div>
+        </div>
+        {gateError && (
+          <div style={{ marginTop: 12, fontSize: 12, fontWeight: 600, color: '#b45309', background: 'var(--pn-warning-bg)', border: '1px solid #fcd34d', borderRadius: 10, padding: '8px 12px' }}>🔒 {gateError}</div>
+        )}
+        <button onClick={onComplete} disabled={saving}
+          style={{ marginTop: 16, width: '100%', background: saving ? 'var(--pn-surface-muted)' : 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+          {saving ? 'Recording…' : `Cash received · Complete $${Number(total || 0).toFixed(2)}`}
+        </button>
+        <button onClick={onCancel} disabled={saving}
+          style={{ marginTop: 8, width: '100%', padding: '11px', borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)', opacity: saving ? .5 : 1 }}>
+          Cancel
+        </button>
       </div>
     </div>
   );
