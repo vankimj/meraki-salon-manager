@@ -3364,7 +3364,7 @@ exports.notifyOnCheckIn = onDocumentUpdated(
 // Cancellation email template for the client. Deliberately NO rating/review
 // affordance (that only belongs on a completed visit) — just an apology/confirm
 // line and a clear "Book again" button.
-function buildCancelHtml(appt, brand, rebookUrl, selfService) {
+function buildCancelHtml(appt, brand, rebookUrl, selfService, replyTo) {
   const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services  = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Your appointment';
   const firstName = String(appt.clientName || '').trim().split(/\s+/)[0] || 'there';
@@ -3392,7 +3392,7 @@ function buildCancelHtml(appt, brand, rebookUrl, selfService) {
           Book again
         </a>
       </div>` : ''}
-      <p style="font-size:11px;color:#aaa;margin:16px 0 0;text-align:center;">Questions? Just reply to this email.</p>
+      ${replyTo ? `<p style="font-size:11px;color:#aaa;margin:16px 0 0;text-align:center;">Questions? Just reply to this email.</p>` : ''}
     </div>
     <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
       <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
@@ -3467,14 +3467,19 @@ async function sendCancelNoticeForAppt(db, tenantId, appt, { selfService = false
     const firstName = String(appt.clientName || '').trim().split(/\s+/)[0] || 'there';
     const dateShort = fmtDate(appt.date);
     const timeShort = fmtTime(appt.startTime);
+    // The from address is noreply@; route replies to a real salon inbox so the
+    // "reply to this email" copy is truthful. If none is configured, the email
+    // template drops that line rather than inviting replies into a black hole.
+    const replyTo = (s && (s.replyToEmail || s.contactEmail || s.ownerEmail || s.email)) || '';
 
     if (email && emailOk) {
       try {
         const r = await sendEmail({
           from:    await tenantFromAddress(db, tenantId),
           to:      email,
+          replyTo: replyTo || undefined,
           subject: `Your appointment at ${brand.salonName} was cancelled`,
-          html:    buildCancelHtml(appt, brand, rebookUrl, selfService),
+          html:    buildCancelHtml(appt, brand, rebookUrl, selfService, replyTo),
           tenantId,
           tags:    [{ name: 'kind', value: 'transactional' }],
         });
