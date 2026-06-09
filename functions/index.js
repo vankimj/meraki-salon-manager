@@ -623,18 +623,38 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
     console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)} tenant=${tenantId || 'n/a'}`);
     return { data: null, error: { message: 'address_suppressed', suppressed: true } };
   }
+  const logUsage = (id) => {
+    if (!tenantId) return;
+    const kindTag = Array.isArray(tags) ? tags.find(t => t && t.name === 'kind') : null;
+    usageLog.logEmailUsage(db, tenantId, { kind: kindTag?.value || 'transactional', to, messageId: id }).catch(() => {});
+  };
   try {
     const id = await sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl });
-    if (tenantId) {
-      const kindTag = Array.isArray(tags) ? tags.find(t => t && t.name === 'kind') : null;
-      usageLog.logEmailUsage(db, tenantId, {
-        kind:      kindTag?.value || 'transactional',
-        to,
-        messageId: id,
-      }).catch(() => {});
-    }
+    logUsage(id);
     return { data: { id }, error: null };
   } catch (e) {
+    // Self-heal: a legacy or failed-provision tenant has no (or an incomplete)
+    // SES Tenant resource, which makes EVERY send fail with "Tenant <id> not
+    // found" / "not associated with resources [...]". Create+associate the
+    // tenant resources and retry once, so the tenant auto-corrects on its first
+    // send instead of silently losing all email until someone notices. This
+    // makes the whole class of SES-Tenant gaps self-correcting (no manual
+    // backfill). ensureSesTenant/associate are idempotent; retry is single-shot.
+    if (tenantId && /tenant\s.*not\sfound|not\sassociated\swith\sresources/i.test(e?.message || '')) {
+      try {
+        await ensureSesTenant(tenantId);
+        await associateSesIdentityToTenant(tenantId);
+        const id = await sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, unsubscribeUrl });
+        console.warn(`[sendEmail] SELF-HEALED SES tenant for ${tenantId} (was missing/incomplete); send retried OK`);
+        logUsage(id);
+        return { data: { id }, error: null };
+      } catch (e2) {
+        // Heal itself failed — this is the real "tenant cannot send email"
+        // condition. Loud error so it's visible in logs/alerting.
+        console.error(`[sendEmail] SES self-heal FAILED for tenant=${tenantId}: ${e2?.message} (original: ${e?.message})`);
+        return { data: null, error: { message: e2?.message || 'send_failed', name: e2?.name || 'SendError', sesHealFailed: true } };
+      }
+    }
     console.error(`[sendEmail] to=${to} failed:`, e?.message);
     return { data: null, error: { message: e?.message || 'send_failed', name: e?.name || 'SendError' } };
   }
