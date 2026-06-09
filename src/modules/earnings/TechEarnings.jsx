@@ -152,6 +152,18 @@ export default function TechEarnings() {
   const [techList, setTechList] = useState([]);
   const [loading, setLoading]   = useState(true);
   const [data, setData]         = useState(null);
+  // Earnings are masked by default so a glance over the shoulder doesn't reveal
+  // pay; the eye toggle reveals them. Preference persists per device.
+  const [hidden, setHidden] = useState(() => {
+    try { return localStorage.getItem('pn_earnings_hidden') !== '0'; } catch { return true; }
+  });
+  function toggleHidden() {
+    setHidden(h => {
+      const next = !h;
+      try { localStorage.setItem('pn_earnings_hidden', next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+  }
 
   // Load tech list (admin/scheduler view)
   useEffect(() => {
@@ -258,12 +270,20 @@ export default function TechEarnings() {
           <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Earnings dashboard</div>
           <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--pn-text)' }}>{techName}</div>
         </div>
-        {canPickTech && techList.length > 1 && (
-          <select value={techName} onChange={e => setTechName(e.target.value)}
-            style={{ fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', outline: 'none' }}>
-            {techList.map(t => <option key={t} value={t}>{t}</option>)}
-          </select>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button onClick={toggleHidden}
+            title={hidden ? 'Show earnings' : 'Hide earnings'}
+            style={{ fontFamily: 'inherit', fontSize: 13, fontWeight: 600, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 14 }}>{hidden ? '👁' : '🙈'}</span>
+            {hidden ? 'Show earnings' : 'Hide earnings'}
+          </button>
+          {canPickTech && techList.length > 1 && (
+            <select value={techName} onChange={e => setTechName(e.target.value)}
+              style={{ fontFamily: 'inherit', fontSize: 13, padding: '8px 12px', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', outline: 'none' }}>
+              {techList.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       {loading && (
@@ -286,6 +306,7 @@ export default function TechEarnings() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14, marginBottom: 22 }}>
             <StatCard
               title="Today"
+              hidden={hidden}
               accent="#3D95CE"
               services={data.today.serviceCount}
               revenue={data.today.revenue}
@@ -297,6 +318,7 @@ export default function TechEarnings() {
             />
             <StatCard
               title="This week"
+              hidden={hidden}
               accent="#2D7A5F"
               services={data.week.serviceCount}
               revenue={data.week.revenue}
@@ -308,6 +330,7 @@ export default function TechEarnings() {
             />
             <StatCard
               title="This month"
+              hidden={hidden}
               accent="#6a4fa0"
               services={data.month.serviceCount}
               revenue={data.month.revenue}
@@ -335,7 +358,7 @@ export default function TechEarnings() {
                           {e.services?.length ? ` · ${e.services.map(s => s.name || s).filter(Boolean).slice(0, 2).join(', ')}` : ''}
                         </div>
                       </div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>+{fmtMoneyExact(e.amount)}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e' }}>{hidden ? '••••' : `+${fmtMoneyExact(e.amount)}`}</div>
                     </div>
                   ))}
                 </div>
@@ -357,7 +380,7 @@ export default function TechEarnings() {
                           {e.reason ? ` · "${e.reason}"` : ''}
                         </div>
                       </div>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: e.dir === 'in' ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>{e.dir === 'in' ? '+' : '−'}{fmtMoneyExact(e.amount)}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: e.dir === 'in' ? '#22c55e' : '#ef4444', whiteSpace: 'nowrap' }}>{hidden ? '••••' : `${e.dir === 'in' ? '+' : '−'}${fmtMoneyExact(e.amount)}`}</div>
                     </div>
                   ))}
                 </div>
@@ -402,7 +425,7 @@ export default function TechEarnings() {
                       </div>
                       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                         <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{c.visits} visit{c.visits === 1 ? '' : 's'}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>{fmtMoney(c.spend)}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>{hidden ? '••••' : fmtMoney(c.spend)}</span>
                       </div>
                     </div>
                   ))}
@@ -424,7 +447,7 @@ export default function TechEarnings() {
                         <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>{name}</div>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>×{s.count}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: '#6a4fa0' }}>{fmtMoney(s.revenue)}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: '#6a4fa0' }}>{hidden ? '••••' : fmtMoney(s.revenue)}</span>
                         </div>
                       </div>
                     ))}
@@ -438,8 +461,9 @@ export default function TechEarnings() {
   );
 }
 
-function StatCard({ title, accent, services, revenue, tips, avgTip, clients, compareLabel, compareDelta }) {
+function StatCard({ title, accent, services, revenue, tips, avgTip, clients, compareLabel, compareDelta, hidden }) {
   const total = revenue + tips;
+  const mask = (s) => (hidden ? '••••' : s);
   const trendColor = compareDelta == null ? '#888' : compareDelta > 0 ? '#22c55e' : compareDelta < 0 ? '#ef4444' : '#888';
   const trendArrow = compareDelta == null ? '·' : compareDelta > 0 ? '▲' : compareDelta < 0 ? '▼' : '—';
   return (
@@ -453,12 +477,12 @@ function StatCard({ title, accent, services, revenue, tips, avgTip, clients, com
           </div>
         )}
       </div>
-      <div style={{ fontSize: 32, fontWeight: 700, color: accent, lineHeight: 1.1, marginBottom: 4 }}>{fmtMoney(total)}</div>
+      <div style={{ fontSize: 32, fontWeight: 700, color: accent, lineHeight: 1.1, marginBottom: 4 }}>{mask(fmtMoney(total))}</div>
       <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Total: services + tips</div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 14 }}>
-        <Stat label="Services" value={fmtMoney(revenue)} sub={`${services} done`} />
-        <Stat label="Tips" value={fmtMoney(tips)} sub={services ? `avg ${fmtMoneyExact(avgTip)}` : '—'} />
+        <Stat label="Services" value={mask(fmtMoney(revenue))} sub={`${services} done`} />
+        <Stat label="Tips" value={mask(fmtMoney(tips))} sub={services ? (hidden ? 'avg ••••' : `avg ${fmtMoneyExact(avgTip)}`) : '—'} />
       </div>
       <div style={{ marginTop: 8, fontSize: 11, color: 'var(--pn-text-muted)' }}>
         {clients} unique client{clients === 1 ? '' : 's'}
