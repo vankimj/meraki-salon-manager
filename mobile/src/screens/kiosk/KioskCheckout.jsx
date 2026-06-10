@@ -656,9 +656,14 @@ export default function KioskCheckout({ session, settings, email, local = false,
           ) : (
             <View style={styles.cardDisabled}><Text style={styles.cardDisabledText}>💳 Card — connect a reader (Stripe Terminal)</Text></View>
           )}
-          <TouchableOpacity style={styles.cashBtn} onPress={() => { setCashStr(''); setStage(local ? 'handback' : 'cash'); }} disabled={saving}>
-            <Text style={styles.cashBtnText}>💵 Pay with cash</Text>
-          </TouchableOpacity>
+          {/* A dedicated customer-facing kiosk is CARD-ONLY: cash is collected by
+              staff at the desk, never run on the customer's iPad. (cashReview
+              handoffs still confirm bill+tip here, then the desk takes the cash.) */}
+          {!isKioskSession && (
+            <TouchableOpacity style={styles.cashBtn} onPress={() => { setCashStr(''); setStage(local ? 'handback' : 'cash'); }} disabled={saving}>
+              <Text style={styles.cashBtnText}>💵 Pay with cash</Text>
+            </TouchableOpacity>
+          )}
         </>
       )}
 
