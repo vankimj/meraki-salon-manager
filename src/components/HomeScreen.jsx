@@ -34,7 +34,7 @@ function splitBrandName(name) {
 const WELCOME_STYLES = ['centered', 'hairlineSplit', 'stacked', 'photo', 'photoSplit', 'merakiSite'];
 
 export default function HomeScreen({ onNavigate, onAdmin }) {
-  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
+  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, role, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [webCfg,       setWebCfg]       = useState(null);
@@ -230,7 +230,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           <>
             <SectionLabel>Manage</SectionLabel>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-              {getVisibleModules(settings, { isAdmin, hiddenTiles: settings?.hiddenTiles }).map(m => (
+              {getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles }).map(m => (
                 <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
               ))}
             </div>
