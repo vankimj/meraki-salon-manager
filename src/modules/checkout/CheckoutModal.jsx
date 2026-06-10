@@ -594,10 +594,12 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
 
       // Client-side bookkeeping (credit + receipt email) for the primary client.
       let clientEmail = walkInClient?.email?.trim() || '';
+      let clientPhoneOnFile = '';
       if (primaryClient?.id) {
         const c = await fetchClient(primaryClient.id);
         if (c) {
           clientEmail = c.email?.trim() || clientEmail;
+          clientPhoneOnFile = (c.phone || '').trim();
           if (creditApply > 0) {
             const newCredit = Math.max((c.credit || 0) - creditApply, 0);
             const { id: cid, createdAt: cc, ...cd } = c;
@@ -605,9 +607,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           }
         }
       }
-      // clientPhone: walk-in tmpPhone OR primary appt's stored phone.
-      // Drives sendReceiptSms — without it, SMS receipt silently no-ops.
-      let clientPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || null;
+      // clientPhone: walk-in tmpPhone OR primary appt's stored phone OR the
+      // client record's phone (the appt doesn't always carry it).
+      // Drives sendReceiptSms + the receipt screen's prefilled phone field.
+      let clientPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || clientPhoneOnFile || null;
 
       // Cash-review handoff: the client typed where to send their receipt at the
       // kiosk (phone and/or email) — honor both so it sends to each.
