@@ -95,6 +95,24 @@ export const auth      = getAuth(app);
 if (typeof window !== 'undefined') window.__plumeAuth = auth;
 export const functions = getFunctions(app);
 
+// Performance Monitoring — auto-captures app start, page loads, and network
+// (fetch/XHR, incl. Cloud Function callables); custom traces via startTrace()
+// cover Firestore-heavy ops (WebChannel isn't auto-captured). Browser-only,
+// skipped under emulators, lazy-loaded so it never blocks startup. Data shows
+// in Firebase console → Performance (p50/p95 over time).
+let _perf = null, _trace = null;
+if (typeof window !== 'undefined' && !USE_EMULATORS) {
+  import('firebase/performance')
+    .then(({ getPerformance, trace }) => { try { _perf = getPerformance(app); _trace = trace; } catch (_) {} })
+    .catch(() => {});
+}
+// Returns a started trace ({ stop(), putAttribute(), putMetric() }) or null.
+// Safe to call before Perf finishes loading — just returns null then.
+export function startTrace(name) {
+  if (!_perf || !_trace) return null;
+  try { const t = _trace(_perf, name); t.start(); return t; } catch (_) { return null; }
+}
+
 if (USE_EMULATORS) {
   connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
   connectFirestoreEmulator(_db, 'localhost', 8080);
