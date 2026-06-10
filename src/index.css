@@ -32,10 +32,10 @@
   --pn-surface-alt: #232b34;
   --pn-surface-muted:#2a323c;
   --pn-text:        #f1f3f5;
-  --pn-text-muted:  #9aa3ad;
-  --pn-text-faint:  #6b7480;
-  --pn-border:      #2a323c;
-  --pn-border-strong:#3a434e;
+  --pn-text-muted:  #b4bcc6;   /* brighter — #9aa3ad read too dim on the dark bg */
+  --pn-text-faint:  #8e97a3;   /* brighter — #6b7480 was ~3.9:1, below readable */
+  --pn-border:      #2f3742;
+  --pn-border-strong:#3f4954;
   --pn-danger:      #ef5350;
   --pn-danger-bg:   #3a1f1d;
   --pn-success:     #34d27e;
