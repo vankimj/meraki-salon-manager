@@ -5,6 +5,10 @@
    flips with the data-theme attribute on <html> (set by lib/colorMode.js).
    Brand colors stay on the separate --tm-* vars from ThemeProvider. */
 :root {
+  /* Tell the browser to theme NATIVE controls (select/option, inputs, date
+     pickers, scrollbars) — without this, dark mode renders black select text
+     on the dark background. */
+  color-scheme: light;
   --pn-bg:          #f8f9fa;
   --pn-surface:     #ffffff;
   --pn-surface-alt: #f5f7fa;
@@ -27,6 +31,7 @@
   --pn-frame:       #1a1a1a;   /* desktop body frame behind the card */
 }
 :root[data-theme="dark"] {
+  color-scheme: dark;   /* native select/input/scrollbar text → light on dark */
   --pn-bg:          #0f1419;
   --pn-surface:     #1a2027;
   --pn-surface-alt: #232b34;
@@ -50,6 +55,12 @@
 }
 
 html, body { overflow-x: hidden; }
+
+/* Form controls inherit the theme text color. Many <select>/<input> set only a
+   dark `background` inline (no color), so without this the native default text
+   renders near-black on the dark surface — unreadable in dark mode. */
+select, input, textarea { color: var(--pn-text); }
+select option { background: var(--pn-surface); color: var(--pn-text); }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
