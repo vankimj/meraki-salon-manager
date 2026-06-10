@@ -66,15 +66,17 @@ export default function App() {
       await loadInitialPrefs();
       await loadInitialKioskLock();
       setKioskLockedState(isKioskLocked());
-      unsub = onAuthStateChanged(auth, async u => {
+      unsub = onAuthStateChanged(auth, u => {
         setUser(u);
-        // Detect a dedicated kiosk identity (custom-token claim) so we render the
-        // kiosk-only root, not the tabbed app or the admin PIN gate.
-        if (u) {
-          try { const r = await u.getIdTokenResult(); setKioskClaim(r.claims?.kiosk === true); }
-          catch { setKioskClaim(false); }
-        } else setKioskClaim(false);
-        setLoading(false);
+        if (!u) { setKioskClaim(false); setLoading(false); return; }
+        // Detect a dedicated kiosk identity (custom-token claim) to pick the
+        // kiosk-only root. NEVER block the app on this token call — clear loading
+        // on resolve, reject, OR a hard timeout, so a slow/stalled getIdTokenResult
+        // can't leave the app spinning forever.
+        let done = false;
+        const finish = (claim) => { if (done) return; done = true; setKioskClaim(claim); setLoading(false); };
+        u.getIdTokenResult().then(r => finish(r.claims?.kiosk === true)).catch(() => finish(false));
+        setTimeout(() => finish(false), 4000);
       });
     })();
     return () => { if (unsub) unsub(); };
