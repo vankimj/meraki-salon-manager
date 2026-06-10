@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
 import { TENANT_ID } from './lib/tenant';
+import { startConnHealth, subscribeConnHealth, pingConn } from './lib/connHealth';
 import { useStripeConnectOAuthCallback } from './hooks/useStripeConnectOAuthCallback';
 import { recordNav } from './lib/diagnostics';
 import Splash from './components/Splash';
@@ -370,10 +371,25 @@ function AppShell({ initialView = 'home' }) {
 }
 
 function VersionBadge() {
+  const [conn, setConn] = useState({ status: 'unknown', latencyMs: null });
+  useEffect(() => { startConnHealth(); return subscribeConnHealth(setConn); }, []);
+  const COLOR = { good: '#22c55e', slow: '#f59e0b', bad: '#ef4444', offline: '#ef4444', error: '#ef4444', unknown: '#9ca3af' };
+  const color = COLOR[conn.status] || COLOR.unknown;
+  const lat = conn.latencyMs != null ? `${conn.latencyMs}ms`
+    : conn.status === 'offline' ? 'offline'
+    : conn.status === 'error'   ? 'conn err'
+    : '…';
+  const pill = { fontSize: 10, color: '#777', fontWeight: 500, letterSpacing: '.03em', background: 'rgba(255,255,255,.85)', padding: '3px 8px', borderRadius: 8, backdropFilter: 'blur(4px)', border: '1px solid rgba(0,0,0,.06)', cursor: 'pointer' };
   return (
-    <div style={{ position: 'fixed', bottom: 'calc(6px + env(safe-area-inset-bottom, 0px))', right: 10, zIndex: 9999 }}>
+    <div style={{ position: 'fixed', bottom: 'calc(6px + env(safe-area-inset-bottom, 0px))', right: 10, zIndex: 9999, display: 'flex', gap: 6, alignItems: 'center' }}>
+      <span onClick={() => pingConn()}
+        title={`Firestore round-trip latency (click to re-test). Green < 1.2s, amber < 3s, red = slow/offline.${conn.latencyMs != null ? ` Last: ${conn.latencyMs}ms` : ''}`}
+        style={{ ...pill, display: 'flex', alignItems: 'center', gap: 5, fontWeight: 600 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 4, background: color, flexShrink: 0 }} />
+        {lat}
+      </span>
       <span title="Click to copy" onClick={() => { navigator.clipboard?.writeText(BUILD_LABEL); }}
-        style={{ fontSize: 10, color: '#777', fontWeight: 500, letterSpacing: '.03em', background: 'rgba(255,255,255,.85)', padding: '3px 8px', borderRadius: 8, backdropFilter: 'blur(4px)', border: '1px solid rgba(0,0,0,.06)', cursor: 'pointer', userSelect: 'all' }}>
+        style={{ ...pill, userSelect: 'all' }}>
         {BUILD_LABEL}
       </span>
     </div>
