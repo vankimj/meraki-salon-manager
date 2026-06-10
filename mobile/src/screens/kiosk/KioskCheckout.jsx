@@ -453,7 +453,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
             <View style={styles.tipCashNote}>
               <Text style={styles.tipCashText}>No tip added to your bill — please hand your tip in cash directly to your nail tech. Thank you! 💚</Text>
             </View>
-          ) : (
+          ) : tipMethod === 'venmo' ? null : (
             <>
               <View style={styles.tipRow}>
                 {TIP_PCTS.map(p => {
