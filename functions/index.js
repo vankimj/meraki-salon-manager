@@ -14,6 +14,7 @@ const {
 const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
 const { roleCan }          = require('./lib/rbac');
+const kioskSaleLib         = require('./lib/kioskSale');
 
 initializeApp();
 
@@ -3037,6 +3038,187 @@ exports.revokeKioskLogin = onCall({ cors: true }, async (request) => {
     devices: { [kid]: { revoked: true, revokedAt: new Date().toISOString() } },
   }, { merge: true });
   return { ok: true };
+});
+
+// RBAC #8 — the server-funnel for kiosk sales. A dedicated kiosk identity has NO
+// direct write access to receipts/clients/products; instead it calls this. The
+// server RECOMPUTES the bill from the tech-authored checkoutSession (never trusts
+// kiosk-sent amounts), VERIFIES the card payment really captured that amount for
+// THIS tenant, then writes the receipt + bounded side effects with the Admin SDK.
+// Kiosk carts never carry promo/gift-card redemption (kioskHandoffAvailable), so
+// those side effects don't exist here. Idempotent: one session → one receipt.
+function genServerReceiptToken(len = 22) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+  const b = crypto.randomBytes(len); let s = '';
+  for (let i = 0; i < len; i++) s += alphabet[b[i] & 63];
+  return s;
+}
+exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (request) => {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const d = request.data || {};
+  const tenantId = String(d.tenantId || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+
+  // Caller must be a kiosk identity for THIS tenant, or staff (lets the existing
+  // staff-session kiosk migrate onto this funnel too).
+  const tok = request.auth.token || {};
+  const isKioskCaller = tok.kiosk === true && tok.tenantId === tenantId;
+  if (!isKioskCaller) await requireTenantStaff(db, tenantId, request);
+
+  const method = d.method === 'card' ? 'card' : 'cash';
+  const piId   = method === 'card' ? String(d.stripePaymentIntentId || '') : null;
+  const tipIn  = (d.tip && typeof d.tip === 'object') ? d.tip : { custom: false, amount: 0, pct: null };
+  const cashTendered = d.cashTendered != null ? Number(d.cashTendered) : null;
+  const tipByTech = Array.isArray(d.tipByTech) ? d.tipByTech : null;
+  const cardBrand = d.cardBrand ? String(d.cardBrand).slice(0, 20) : null;
+  const cardLast4 = d.cardLast4 ? String(d.cardLast4).slice(0, 4) : null;
+  const contactPhone = String(d.receiptContact?.phone || '').trim().slice(0, 40);
+  const contactEmail = String(d.receiptContact?.email || '').trim().slice(0, 120);
+
+  // 1. The tech-authored session is the source of truth for the cart.
+  const sessRef  = db.doc(`tenants/${tenantId}/data/checkoutSession`);
+  const sessSnap = await sessRef.get();
+  const session  = sessSnap.exists ? sessSnap.data() : null;
+  if (!session || !session.cart) throw new HttpsError('failed-precondition', 'No open checkout session to record');
+  if (d.sessionId && session.sessionId && String(d.sessionId) !== String(session.sessionId)) {
+    throw new HttpsError('failed-precondition', 'Checkout session changed — refusing to record a stale sale');
+  }
+  const saleId = String(session.sessionId || d.sessionId || genServerReceiptToken(16)).slice(0, 64);
+  // Idempotency: a session records exactly one receipt (keyed by saleId).
+  if ((await db.doc(`tenants/${tenantId}/receipts/${saleId}`).get()).exists) {
+    return { ok: true, alreadyRecorded: true, saleId };
+  }
+
+  // 2. Recompute the bill server-side.
+  const settings = (await db.doc(`tenants/${tenantId}/data/settings`).get()).data() || {};
+  const appts    = session.cart.appts || [];
+  const products = session.cart.products || [];
+  const lines    = kioskSaleLib.linesFromCart(session.cart);
+  const productsTotal = products.reduce((s, p) => s + (Number(p.product?.price) || 0) * (Number(p.qty) || 1), 0);
+  let clientCredit = 0;
+  if (session.applyCredit && session.clientId) {
+    clientCredit = Number((await db.doc(`tenants/${tenantId}/clients/${session.clientId}`).get()).data()?.credit) || 0;
+  }
+  const discount = (session.discType === 'amount' && Number(session.discVal) > 0)
+    ? { value: Number(session.discVal), isPercent: false } : null;
+  const safeTip = {
+    custom: !!tipIn.custom,
+    amount: Math.max(0, Number(tipIn.amount) || 0),
+    pct: tipIn.pct != null ? Math.max(0, Math.min(100, Number(tipIn.pct) || 0)) : null,
+  };
+  const totals = kioskSaleLib.computeTotals({
+    lines, productsTotal, discount,
+    taxRate: Number(settings.taxRate) || 0,
+    ccFeePct: Number(settings.ccFeePct) || 0, ccFeeFlat: Number(settings.ccFeeFlat) || 0,
+    method, noCardTips: !!settings.noCardTips, tip: safeTip,
+    clientCredit, applyCredit: !!session.applyCredit,
+  });
+  // Anti-abuse: tip can't exceed the bill itself (a sane cap; blocks a compromised
+  // kiosk skewing a tip split into a payout).
+  if (totals.tipAmt > totals.billBeforeTip + 0.01 && totals.billBeforeTip > 0) {
+    throw new HttpsError('invalid-argument', 'Tip exceeds the bill');
+  }
+
+  // 3. Card: the PaymentIntent must have actually captured the recomputed total
+  //    for THIS tenant. This is what stops a kiosk recording an unpaid/short sale.
+  if (method === 'card') {
+    if (!/^pi_[A-Za-z0-9]+$/.test(piId)) throw new HttpsError('invalid-argument', 'Valid stripePaymentIntentId required');
+    const key = stripeKey.value();
+    if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured');
+    const pi = await require('stripe')(key).paymentIntents.retrieve(piId);
+    if (pi.status !== 'succeeded') throw new HttpsError('failed-precondition', `Payment not captured (status: ${pi.status})`);
+    if ((pi.metadata?.tenantId || '') !== tenantId) throw new HttpsError('failed-precondition', 'Payment does not belong to this salon');
+    const got = pi.amount_received || pi.amount || 0;
+    if (Math.abs(got - Math.round(totals.total * 100)) > 2) {
+      throw new HttpsError('failed-precondition', `Captured $${(got / 100).toFixed(2)} ≠ bill $${totals.total.toFixed(2)}`);
+    }
+  }
+
+  // 4. Build the receipt payload (mirrors mobile completeSale so receipts are identical).
+  const sp = kioskSaleLib.buildTechSplit(lines, totals.tipAmt, tipByTech);
+  const retailProducts = products.length > 0
+    ? products.map(it => ({ id: it.product?.id || null, name: it.product?.name || '—', price: Number(it.product?.price) || 0, qty: Number(it.qty) || 1 }))
+    : null;
+  const changeDue = (method === 'cash' && cashTendered != null) ? Math.max(0, cashTendered - totals.total) : null;
+  const apptIds = appts.map(a => a.id).filter(Boolean);
+  const payment = {
+    retailProducts,
+    subtotal: totals.subtotal,
+    discountType: session.discType === 'none' ? null : session.discType,
+    discountValue: Number(session.discVal) || 0,
+    discountAmount: totals.discountAmount,
+    promoCode: null, promoAmount: 0,
+    tax: totals.taxAmt, taxRate: Number(settings.taxRate) || 0,
+    giftCard: null,
+    creditApplied: totals.creditApply,
+    charged: totals.charged, tip: totals.tipAmt, total: totals.total,
+    method, ccFee: totals.ccFee,
+    ccFeePct: Number(settings.ccFeePct) || 0, ccFeeFlat: Number(settings.ccFeeFlat) || 0,
+    stripePaymentIntentId: piId || null,
+    ...(cardBrand ? { cardBrand, cardLast4: cardLast4 || null } : {}),
+    ...(cashTendered != null ? { cashTendered, changeDue } : {}),
+    techSplit: sp,
+    apptIds,
+    paidAt: new Date().toISOString(), paidBy: 'kiosk',
+  };
+
+  // 5. Bounded side effects (Admin SDK), best-effort — money is already captured.
+  const sideEffectErrors = [];
+  for (const it of products) {
+    if (!it.product?.id) continue;
+    const pr = db.doc(`tenants/${tenantId}/products/${it.product.id}`);
+    await db.runTransaction(async tx => {
+      const cur = Number((await tx.get(pr)).data()?.stock) || 0;
+      tx.set(pr, { stock: Math.max(0, cur - (Number(it.qty) || 1)) }, { merge: true });
+    }).catch(e => sideEffectErrors.push('stock: ' + (e?.message || 'failed')));
+  }
+  if (totals.creditApply > 0 && session.clientId) {
+    const cr = db.doc(`tenants/${tenantId}/clients/${session.clientId}`);
+    await db.runTransaction(async tx => {
+      const cur = Number((await tx.get(cr)).data()?.credit) || 0;
+      tx.set(cr, { credit: Math.max(0, cur - totals.creditApply) }, { merge: true });
+    }).catch(e => sideEffectErrors.push('credit: ' + (e?.message || 'failed')));
+  }
+
+  // 6. Mark each appt done (idempotent merge) — only those carrying an id.
+  const primaryAppt = appts[0] || null;
+  for (const a of appts) {
+    if (!a.id) continue;
+    const apptSubtotal = (a.services || []).reduce((s, x) => s + (Number(x.price) || 0), 0);
+    await db.doc(`tenants/${tenantId}/appointments/${a.id}`)
+      .set({ status: 'done', payment: { ...payment, amountForThisAppt: apptSubtotal }, updatedAt: new Date().toISOString() }, { merge: true })
+      .catch(e => sideEffectErrors.push('appt: ' + (e?.message || 'failed')));
+  }
+
+  // 7. The canonical receipt (keyed by saleId = idempotent).
+  let clientEmail = contactEmail || null;
+  if (!clientEmail && session.clientId) {
+    try { clientEmail = (await db.doc(`tenants/${tenantId}/clients/${session.clientId}`).get()).data()?.email || null; } catch (_) {}
+  }
+  const clientNames = Array.from(new Set(appts.map(a => a.clientName || 'Walk-in').filter(Boolean)));
+  await db.doc(`tenants/${tenantId}/receipts/${saleId}`).set({
+    sent: false,
+    clientId:    session.clientId || primaryAppt?.clientId || null,
+    clientName:  clientNames.join(' + ') || session.clientName || 'Walk-in',
+    clientPhone: contactPhone || primaryAppt?.clientPhone || session.receiptPhone || null,
+    clientEmail,
+    viewToken:   saleId,
+    techName:    sp ? sp.map(s => s.techName).join(', ') : (lines[0]?.techName || ''),
+    date:        primaryAppt?.date || new Date().toISOString().slice(0, 10),
+    startTime:   primaryAppt?.startTime || '',
+    services:    lines.map(l => ({ name: l.name, price: l.price, techName: l.techName })),
+    retailProducts,
+    payment,
+    apptIds,
+    createdAt:   new Date().toISOString(),
+  }, { merge: true });
+
+  // 8. Mark the session paid so the tech's device + the kiosk both settle.
+  await sessRef.set({ status: 'paid', recordedSaleId: saleId, paidAt: new Date().toISOString() }, { merge: true })
+    .catch(() => {});
+
+  return { ok: true, saleId, total: totals.total, changeDue, sideEffectErrors };
 });
 
 // Verify the CALLER's own kiosk-exit PIN (to leave a locked kiosk). request.auth
