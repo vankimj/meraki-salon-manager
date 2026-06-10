@@ -136,7 +136,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [cashHere,     setCashHere]     = useState(false);   // cash: take it here instead of the kiosk
   const [sent,         setSent]         = useState(null);    // { sessionId, total, flow } while waiting at the kiosk
   const [cashConfirmed,setCashConfirmed]= useState(false);   // kiosk confirmed the cash bill+tip → finalize on web
-  const [kioskReceiptContact, setKioskReceiptContact] = useState(null); // receipt phone/email the client typed at the kiosk
+  const [kioskReceiptPhone, setKioskReceiptPhone] = useState(null); // receipt contact the client typed at the kiosk
+  const [kioskReceiptEmail, setKioskReceiptEmail] = useState(null);
 
   useEffect(() => {
     if (primaryClient?.id) {
@@ -169,7 +170,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   useEffect(() => {
     if (!cashConfirmed) return;
     const unsub = subscribeCheckoutSession((d) => {
-      if (d && d.confirmedReceiptPhone) setKioskReceiptContact(d.confirmedReceiptPhone);
+      if (d && d.confirmedReceiptPhone) setKioskReceiptPhone(d.confirmedReceiptPhone);
+      if (d && d.confirmedReceiptEmail) setKioskReceiptEmail(d.confirmedReceiptEmail);
     });
     return () => { try { unsub && unsub(); } catch { /* noop */ } };
   }, [cashConfirmed]);
@@ -608,12 +610,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       let clientPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || null;
 
       // Cash-review handoff: the client typed where to send their receipt at the
-      // kiosk — honor it (email if it has an @, otherwise treat as a phone).
-      if (kioskReceiptContact) {
-        const c = String(kioskReceiptContact).trim();
-        if (c.includes('@')) clientEmail = c;
-        else { const digits = c.replace(/[^\d+]/g, ''); if (digits) clientPhone = digits; }
-      }
+      // kiosk (phone and/or email) — honor both so it sends to each.
+      if (kioskReceiptPhone) { const digits = String(kioskReceiptPhone).replace(/[^\d+]/g, ''); if (digits) clientPhone = digits; }
+      if (kioskReceiptEmail) { const em = String(kioskReceiptEmail).trim(); if (em.includes('@')) clientEmail = em; }
 
       // Opaque view token for the hosted /r/{token} receipt page.
       // 22 chars URL-safe ≈ 130 bits; computationally infeasible to guess.
