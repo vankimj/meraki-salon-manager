@@ -187,7 +187,10 @@ export default function ScheduleScreen({ navigation }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { employee, techName, loading: empLoading } = useCurrentEmployee();
-  const { isAdmin, canEditSchedule, email } = useTenantAccess();
+  const { isAdmin, role, canEditSchedule, email } = useTenantAccess();
+  // Who may view the WHOLE salon's schedule (RBAC schedule_all): owner/manager/
+  // scheduler. A plain tech stays scoped to their own. (admin === owner.)
+  const canSeeAll = isAdmin || role === 'manager' || role === 'scheduler';
   const { isTablet } = useResponsive();
   useTrashHeader(navigation, ['appointments', 'timeOff'], isAdmin);
   const [date,    setDate]    = useState(todayStr());
@@ -318,12 +321,12 @@ export default function ScheduleScreen({ navigation }) {
   // Non-admins (techs) are HARD-SCOPED to their own techName in every view —
   // they never see another tech's appointments and get no filter control.
   // Admins default to "Everyone" (empty set) and can narrow to a subset.
-  const everyone = isAdmin && selectedTechs.size === 0;
+  const everyone = canSeeAll && selectedTechs.size === 0;
   const visibleTechs = useMemo(() => {
-    if (!isAdmin) return techName ? [techName] : [];
+    if (!canSeeAll) return techName ? [techName] : [];   // plain tech → own only
     if (!selectedTechs.size) return allTechs;
     return allTechs.filter(t => selectedTechs.has(t));
-  }, [isAdmin, techName, allTechs, selectedTechs]);
+  }, [canSeeAll, techName, allTechs, selectedTechs]);
   const visibleSet = useMemo(() => new Set(visibleTechs), [visibleTechs]);
   const ownOnly = visibleTechs.length === 1 && visibleTechs[0] === techName;
   // Keep the name `showAll` so the views' prop wiring stays; it means
@@ -403,16 +406,32 @@ export default function ScheduleScreen({ navigation }) {
             <Text style={styles.chipBlueText}>Today</Text>
           </TouchableOpacity>
         )}
-        {/* Tech filter — admins only. Non-admins are locked to their own schedule. */}
-        {isAdmin && (
-          <TouchableOpacity
-            style={[styles.chip, everyone ? styles.chipBlue : styles.chipMuted]}
-            onPress={() => setFilterOpen(true)}
-          >
-            <Text style={everyone ? styles.chipBlueText : styles.chipMutedText}>
-              {everyone ? '👥 All techs' : ownOnly ? '👤 Just me' : `👥 ${visibleTechs.length} techs`}
-            </Text>
-          </TouchableOpacity>
+        {/* Tech filter — owner/manager/scheduler. Plain techs are locked to their own. */}
+        {canSeeAll && (
+          <>
+            <TouchableOpacity
+              style={[styles.chip, everyone ? styles.chipBlue : styles.chipMuted]}
+              onPress={() => setSelectedTechs(new Set())}
+            >
+              <Text style={everyone ? styles.chipBlueText : styles.chipMutedText}>👥 Everyone</Text>
+            </TouchableOpacity>
+            {!!techName && (
+              <TouchableOpacity
+                style={[styles.chip, ownOnly ? styles.chipBlue : styles.chipMuted]}
+                onPress={() => setSelectedTechs(new Set([techName]))}
+              >
+                <Text style={ownOnly ? styles.chipBlueText : styles.chipMutedText}>👤 Just me</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.chip, (!everyone && !ownOnly) ? styles.chipBlue : styles.chipMuted]}
+              onPress={() => setFilterOpen(true)}
+            >
+              <Text style={(!everyone && !ownOnly) ? styles.chipBlueText : styles.chipMutedText}>
+                {(!everyone && !ownOnly) ? `👥 ${visibleTechs.length}` : '⚙︎'}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
