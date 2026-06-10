@@ -2055,8 +2055,12 @@ export async function fetchAppointmentsByIds(ids = []) {
 const SERVICE_RATINGS_COL = tenantCol('serviceRatings');
 
 export async function fetchServiceRatingsByRange(startDate, endDate) {
-  const startISO = `${startDate}T00:00:00.000Z`;
-  const endISO   = `${endDate}T23:59:59.999Z`;
+  // submittedAt is a UTC ISO timestamp; build the range from the viewer's LOCAL
+  // day boundaries (not UTC midnight) so an evening rating — e.g. 9:41 PM local =
+  // 01:41 UTC the next day — still lands inside "today". Omitting the trailing Z
+  // makes new Date() parse in local time, then toISOString() converts to UTC.
+  const startISO = new Date(`${startDate}T00:00:00`).toISOString();
+  const endISO   = new Date(`${endDate}T23:59:59.999`).toISOString();
   const snap = await getDocs(query(SERVICE_RATINGS_COL,
     where('submittedAt', '>=', startISO),
     where('submittedAt', '<=', endISO),
