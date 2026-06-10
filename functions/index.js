@@ -3238,6 +3238,25 @@ exports.verifyKioskPin = onCall({ cors: true }, async (request) => {
   return { ok: tcVerifyPin(cleanPin, rec.salt, rec.hash) };
 });
 
+// RBAC #8 — a DEDICATED kiosk identity (no admin PIN of its own) verifies its
+// EXIT against ANY admin's kiosk PIN for the tenant. Without this, the kiosk could
+// only leave by signing out — and a cached Google session re-logs straight back
+// in with no challenge, so exit was no barrier. Now leaving needs the salon PIN.
+exports.verifyKioskExitPin = onCall({ cors: true }, async (request) => {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, pin } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const tok = request.auth.token || {};
+  if (!(tok.kiosk === true && tok.tenantId === tenantId)) throw new HttpsError('permission-denied', 'Kiosk only');
+  const cleanPin = String(pin || '').trim();
+  if (!tcIsValidPin(cleanPin)) return { ok: false };
+  const snap = await getFirestore().doc(`tenants/${tenantId}/data/kioskAuth`).get();
+  const pins = (snap.exists ? snap.data().pins : {}) || {};
+  const ok = Object.values(pins).some(p => p && p.salt && p.hash && tcVerifyPin(cleanPin, p.salt, p.hash));
+  return { ok };
+});
+
 // Whether the CALLER has a kiosk-exit PIN set (so the UI can prompt to set one
 // before entering kiosk mode).
 exports.hasKioskPin = onCall({ cors: true }, async (request) => {
