@@ -91,6 +91,9 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   }
 
   function navigate(viewId) {
+    // Admin isn't a routed view — it's a full-screen settings overlay. Open it
+    // via onAdmin() so the tile behaves like the mobile Admin tile.
+    if (viewId === 'admin') { onAdmin?.(); return; }
     const mod = MODULES.find(m => m.id === viewId);
     if (mod && !isModuleAvailableForPlan(mod, plan)) {
       const tierLabel = mod.plan.charAt(0).toUpperCase() + mod.plan.slice(1);
@@ -130,12 +133,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           </div>
         </div>
         <div className="ms-topnav-right" style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          {isAdmin && (
-            <button onClick={onAdmin} title="Admin Settings" className="ms-action-btn"
-              style={{ height: 40, borderRadius: 20, border: 'none', background: 'var(--tm-primary, #2D7A5F)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 16px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.25)' }}>
-              <IconSettings size={16} /> <span className="ms-action-label">Admin</span>
-            </button>
-          )}
+          {/* Admin moved to a home tile (matches the mobile app) — see the
+              Admin tile in the grid below. */}
           {realIsAdmin && viewAs && (
             <button onClick={() => setViewAs(null)} title={`Exit preview: ${previewLabel(viewAs)}`}
               style={{ height: 40, borderRadius: 20, border: 'none', background: '#f59e0b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: '0 14px', fontSize: 13, fontWeight: 700, color: '#fff', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.2)' }}>

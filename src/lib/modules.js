@@ -42,6 +42,10 @@ export const MODULES = [
   { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'pro',     adminOnly: true  },
   { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'pro',     adminOnly: true  },
   { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'pro',     adminOnly: true  },
+
+  // Admin opens the settings overlay (not a routed view) — surfaced as a tile to
+  // match the mobile app. Always available to admins (no plan gate).
+  { id: 'admin',       label: 'Admin',            desc: 'Users, settings, logs & trash',     plan: 'starter', adminOnly: true  },
 ];
 
 // Tenants without an explicit plan field are treated as pro — preserves
