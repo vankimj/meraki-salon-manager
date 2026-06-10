@@ -342,7 +342,7 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
 // Add / remove store credit on a client's account (admin or tech). Backed by the
 // adjustClientCredit callable (atomic, audit-logged, alerts all admins). Replaces
 // the old "issue store credit" field that used to live on checkout.
-function CreditAdjuster({ client, onReload, showToast }) {
+function CreditAdjuster({ client, onReload, onChange, showToast }) {
   const [balance, setBalance] = useState(Number(client.credit) || 0);
   const [open, setOpen] = useState(false);
   const [amt, setAmt] = useState('');
@@ -367,6 +367,7 @@ function CreditAdjuster({ client, onReload, showToast }) {
       const res = await callFn('adjustClientCredit')({ tenantId: TENANT_ID, clientId: client.id, deltaCents: cents, reason: reason.trim(), idempotencyKey: idem });
       if (!res.data?.ok) throw new Error(res.data?.error || 'Failed');
       setBalance(Number(res.data.credit) || 0);
+      onChange?.({ credit: Number(res.data.credit) || 0 });   // refresh the open profile's displayed balance (the save already persisted)
       setOpen(false);
       showToast(`Store credit updated — balance $${(Number(res.data.credit) || 0).toFixed(2)}`);
       onReload?.();
@@ -588,7 +589,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               </div>
 
               {(isAdmin || isTech)
-                ? <CreditAdjuster client={client} onReload={onReload} showToast={showToast} />
+                ? <CreditAdjuster client={client} onReload={onReload} onChange={onChange} showToast={showToast} />
                 : Number(client.credit) > 0 && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', marginBottom: 14, borderRadius: 8, background: 'var(--pn-success-bg)', border: '1px solid #2D7A5F' }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: '#2D7A5F' }}>💳 Store credit balance</span>
