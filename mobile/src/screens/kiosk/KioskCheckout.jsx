@@ -77,6 +77,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
   const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
+  const [receiptEmail, setReceiptEmail] = useState('');
   // Restore the right screen if the kiosk reloads onto an in-flight session
   // (e.g. a cash-review that's already 'confirmed' → show the thank-you again).
   const [stage, setStage]       = useState(session?.status === 'confirmed' ? 'confirmed' : 'review'); // review | handback | cash | done | confirmed
@@ -134,7 +135,8 @@ export default function KioskCheckout({ session, settings, email, local = false,
         setClient(c);
         // Prefill the receipt contact from the client profile (phone preferred,
         // then email) so the receipt fields aren't blank — staff/client can edit.
-        setReceiptPhone(prev => prev || c?.phone || c?.email || '');
+        setReceiptPhone(prev => prev || c?.phone || '');
+        setReceiptEmail(prev => prev || c?.email || '');
       }).catch(() => {});
       fetchClientMembership(session.clientId).then(m => {
         if (alive && m && m.status === 'active' && Number(m.discountPct) > 0) setMembership(m);
@@ -311,13 +313,14 @@ export default function KioskCheckout({ session, settings, email, local = false,
     return () => clearTimeout(t);
   }, [stage]);
 
-  // Cash-review: the client enters where to send their receipt; pass it back so
-  // the WEB sends it when it records the sale.
+  // Cash-review: the client enters where to send their receipt (phone and/or
+  // email); pass both back so the WEB sends it when it records the sale.
   async function saveReceiptContact() {
-    const v = (receiptPhone || '').trim();
-    if (!v) return;
+    const ph = (receiptPhone || '').trim();
+    const em = (receiptEmail || '').trim();
+    if (!ph && !em) return;
     try {
-      await updateCheckoutSession({ confirmedReceiptPhone: v });
+      await updateCheckoutSession({ confirmedReceiptPhone: ph || null, confirmedReceiptEmail: em || null });
       setRcptSaved(true);
     } catch (e) {
       Alert.alert('Could not save', e?.message || 'Please try again.');
@@ -373,22 +376,31 @@ export default function KioskCheckout({ session, settings, email, local = false,
         <Text style={[styles.idleTitle, { marginTop: 14, color: theme.green }]}>{money(cashTotals.total)}</Text>
         <View style={styles.resendBox}>
           {rcptSaved ? (
-            <Text style={styles.resendLabel}>We'll send your receipt to {receiptPhone}. 💚</Text>
+            <Text style={styles.resendLabel}>We'll send your receipt to {[receiptPhone, receiptEmail].filter(Boolean).join(' and ')}. 💚</Text>
           ) : (
             <>
-              <Text style={styles.resendLabel}>Want your receipt? Enter a phone or email.</Text>
+              <Text style={styles.resendLabel}>Want your receipt? We'll send it here.</Text>
               <TextInput
                 style={styles.receiptInput}
                 value={receiptPhone}
                 onChangeText={setReceiptPhone}
+                keyboardType="phone-pad"
+                placeholder="Phone"
+                placeholderTextColor={theme.placeholder}
+                maxLength={40}
+              />
+              <TextInput
+                style={[styles.receiptInput, { marginTop: 8 }]}
+                value={receiptEmail}
+                onChangeText={setReceiptEmail}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Phone or email"
+                placeholder="Email"
                 placeholderTextColor={theme.placeholder}
                 maxLength={60}
               />
-              <TouchableOpacity style={[styles.okBtn, !(receiptPhone || '').trim() && { opacity: 0.5 }]} onPress={saveReceiptContact} disabled={!(receiptPhone || '').trim()} activeOpacity={0.85}>
+              <TouchableOpacity style={[styles.okBtn, !((receiptPhone || '').trim() || (receiptEmail || '').trim()) && { opacity: 0.5 }]} onPress={saveReceiptContact} disabled={!((receiptPhone || '').trim() || (receiptEmail || '').trim())} activeOpacity={0.85}>
                 <Text style={styles.okBtnText}>Send my receipt</Text>
               </TouchableOpacity>
             </>
