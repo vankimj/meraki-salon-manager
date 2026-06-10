@@ -542,6 +542,15 @@ service cloud.firestore {
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
+      // Post-checkout service ratings (one row per receipt+tech). Written only by
+      // the submitServiceRating Cloud Function (Admin SDK, bypasses rules); the
+      // Reports → Service Ratings tab reads them. Without this rule the read was
+      // denied by default and the report was always empty.
+      match /serviceRatings/{ratingId} {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if false;
+      }
+
       // Idempotency markers for a sale's non-idempotent side effects (keyed by
       // saleId). Staff claim one per checkout so an offline-queue replay can't
       // double-apply store credit / gift-card debits / stock. No sensitive data
