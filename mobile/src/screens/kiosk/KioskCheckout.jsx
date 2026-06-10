@@ -9,6 +9,9 @@ import TechAvatar from '../../components/TechAvatar';
 import { computeTotals, buildTechSplit, genReceiptToken, parseReceiptContact, normalizePromo } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
+import { callFn } from '../../lib/firebase';
+import { getCurrentTenant } from '../../lib/currentTenant';
+import useTenantAccess from '../../hooks/useTenantAccess';
 import { isTerminalAvailable } from '../../lib/terminal';
 import useOnline from '../../hooks/useOnline';
 import CardPayButton from '../checkout/CardPayButton';
@@ -31,6 +34,7 @@ const TIP_PCTS = [0, 15, 18, 20, 25];
 // change) or Card. On success it writes the canonical receipt (via completeSale)
 // the same way every other checkout does, so Reports/Earnings stay in sync.
 export default function KioskCheckout({ session, settings, email, local = false, onCancel, onComplete }) {
+  const { isKioskSession } = useTenantAccess();   // dedicated kiosk identity → route sales through recordKioskSale
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
   const { isTablet } = useResponsive();
@@ -129,6 +133,13 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // customer never has to ask — same as the web checkout).
   useEffect(() => {
     let alive = true;
+    // A dedicated kiosk identity can't read clients (rules deny it — that's the
+    // point). Prefill the receipt contact from the session (tech-supplied) and
+    // skip the client read; recordKioskSale applies any store credit server-side.
+    if (isKioskSession) {
+      if (session.receiptPhone) setReceiptPhone(prev => prev || session.receiptPhone);
+      return () => { alive = false; };
+    }
     if (session.clientId) {
       fetchClient(session.clientId).then(c => {
         if (!alive) return;
@@ -245,10 +256,26 @@ export default function KioskCheckout({ session, settings, email, local = false,
         ...adj,
         ...opts,
       };
-      // Card already charged online → record directly. Cash goes through
-      // recordSale so a dropped connection just queues the receipt to sync later.
+      // A dedicated KIOSK identity has no write access to receipts/clients —
+      // it routes the sale through recordKioskSale, which recomputes the bill
+      // from the session + verifies the payment server-side. A staff session
+      // keeps the direct path (offline-resilient for cash).
       let sideEffectErrors = []; let wasQueued = false;
-      if (method === 'card') {
+      if (isKioskSession) {
+        const r = await callFn('recordKioskSale')({
+          tenantId: getCurrentTenant(),
+          sessionId: session.sessionId || null,
+          method,
+          tip: { custom: true, amount: Number(t.tipAmt) || 0 },
+          stripePaymentIntentId: opts.stripePaymentIntentId || null,
+          cashTendered: opts.cashTendered != null ? Number(opts.cashTendered) : null,
+          receiptContact: parseReceiptContact(receiptPhone),
+          tipByTech,
+          cardBrand: opts.cardBrand || null,
+          cardLast4: opts.cardLast4 || null,
+        });
+        sideEffectErrors = r?.data?.sideEffectErrors || [];
+      } else if (method === 'card') {
         const r = await completeSale(args); sideEffectErrors = r.sideEffectErrors || [];
       } else {
         const r = await recordSale(args);

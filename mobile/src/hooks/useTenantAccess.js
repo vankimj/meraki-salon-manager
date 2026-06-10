@@ -24,11 +24,22 @@ export default function useTenantAccess() {
   const { tenants, current } = useMyTenants();
   const [granular, setGranular] = useState(null);
   const [loading,  setLoading]  = useState(true);
+  const [kiosk,    setKiosk]    = useState(null);   // { tenantId, kioskId } | null
 
   useEffect(() => {
     let cancelled = false;
     async function refetch() {
       const user = auth.currentUser;
+      // A dedicated kiosk identity has NO email (custom token). Detect its claim
+      // so the app renders the kiosk instead of treating it as "no access", and
+      // skip getMyTenantRole (it has no staff role on purpose).
+      if (user) {
+        try {
+          const r = await user.getIdTokenResult();
+          if (!cancelled) setKiosk(r.claims?.kiosk === true ? { tenantId: r.claims.tenantId || null, kioskId: r.claims.kioskId || null } : null);
+        } catch { if (!cancelled) setKiosk(null); }
+      } else if (!cancelled) setKiosk(null);
+
       if (!user?.email) { setGranular(null); setLoading(false); return; }
       setLoading(true);
       try {
@@ -58,5 +69,5 @@ export default function useTenantAccess() {
   const canEditSchedule =
     isAdmin || ((role === 'tech' || role === 'scheduler') && scheduleAccess !== 'view');
 
-  return { isAdmin, role, techName, scheduleAccess, plan, canEditSchedule, email, loading };
+  return { isAdmin, role, techName, scheduleAccess, plan, canEditSchedule, email, loading, isKioskSession: !!kiosk, kiosk };
 }
