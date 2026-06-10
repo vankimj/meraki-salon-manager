@@ -111,6 +111,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [gcResults,    setGcResults]    = useState(null);
   const [gcSearching,  setGcSearching]  = useState(false);
   const [clientCredit, setClientCredit] = useState(0);
+  const [savedPm,      setSavedPm]      = useState(null);   // client's card on file (Stripe pm), if any
+  const [saleId]       = useState(() => genUrlSafeToken(24)); // stable idempotency key for a card-on-file charge
   const [membership,   setMembership]   = useState(null);   // active membership for primaryClient (or null)
   const [memberDiscountApplied, setMemberDiscountApplied] = useState(false);
   const [applyCredit,  setApplyCredit]  = useState(false);
@@ -145,6 +147,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         const cr = Number(c?.credit) || 0;
         setClientCredit(cr);
         if (cr > 0) setApplyCredit(true);
+        setSavedPm(c?.paymentMethods?.find(p => p.id === c.defaultPaymentMethodId) || c?.paymentMethods?.[0] || null);
       }).catch(() => {});
       fetchClientMembership(primaryClient.id).then(m => {
         setMembership(m);
@@ -382,7 +385,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
     setCashConfirmed(true);
   }
 
-  async function complete() {
+  async function complete(opts = {}) {
     setSaving(true);
     setCardError('');
     setGateError('');
@@ -416,7 +419,21 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       : Array.from(new Set(appts.map(a => a.clientName || 'Walk-in').filter(Boolean)));
     const combinedClientLabel = clientNames.join(' + ');
 
-    if (method === 'card' && charged > 0 && stripe && elements) {
+    if (method === 'card' && charged > 0 && opts.onFile && savedPm) {
+      // Charge the client's card on file (off-session) instead of a keyed/kiosk card.
+      try {
+        const res = await callFn('chargeStoredCard')({
+          tenantId: TENANT_ID, clientId: primaryClient?.id, amount: Math.round(total * 100),
+          description: combinedClientLabel, paymentMethodId: savedPm.id, idempotencyKey: saleId,
+        });
+        if (res.data?.status !== 'succeeded') {
+          setCardError(`Card on file ${res.data?.status || 'declined'}.`); setSaving(false); return;
+        }
+        stripePaymentIntentId = res.data.paymentIntentId;
+      } catch (e) {
+        setCardError(e?.message || 'Card on file failed.'); setSaving(false); return;
+      }
+    } else if (method === 'card' && charged > 0 && stripe && elements) {
       try {
         const res = await callFn('createPaymentIntent')({
           tenantId: TENANT_ID,
@@ -1052,6 +1069,12 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               <div style={{ fontSize: 11, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fed7aa', borderRadius: 8, padding: '7px 10px', marginBottom: 8 }}>
                 Card payments are off until Stripe is set up — <strong>Admin → Settings → Payments</strong>. Cash & other methods still work.
               </div>
+            )}
+            {method === 'card' && savedPm && (
+              <button onClick={() => complete({ onFile: true })} disabled={saving}
+                style={{ width: '100%', marginBottom: 10, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--pn-success)', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 13.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                💳 Charge card on file · {(savedPm.brand || 'card')} •••• {savedPm.last4 || '••••'}
+              </button>
             )}
             {method === 'card' && cardViaKiosk && (
               <div style={{ border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', background: 'var(--pn-info-bg)' }}>
