@@ -1071,10 +1071,37 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               </div>
             )}
             {method === 'card' && savedPm && (
-              <button onClick={() => complete({ onFile: true })} disabled={saving}
-                style={{ width: '100%', marginBottom: 10, padding: '12px 14px', borderRadius: 10, border: '1px solid var(--pn-success)', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 13.5, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
-                💳 Charge card on file · {(savedPm.brand || 'card')} •••• {savedPm.last4 || '••••'}
-              </button>
+              <div style={{ marginBottom: 10, border: '1px solid var(--pn-success)', borderRadius: 10, padding: '12px 14px', background: 'var(--pn-success-bg)' }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text)' }}>💳 Card on file · {(savedPm.brand || 'card')} •••• {savedPm.last4 || '••••'}</div>
+                {!tipsDisabled && (
+                  <>
+                    <div style={{ fontSize: 11.5, color: 'var(--pn-text-muted)', margin: '8px 0 6px' }}>Add a tip (charged off-session, so set it now):</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {[0, 15, 18, 20, 25].map(p => {
+                        const on = p === 0 ? (!tipPct && !customTip) : (tipPct === p && !customTip);
+                        return (
+                          <button key={p} onClick={() => (p === 0 ? pickTipPct(null) : pickTipPct(p))}
+                            style={{ flex: '1 0 auto', padding: '7px 10px', borderRadius: 8, border: `1px solid ${on ? 'var(--pn-success)' : 'var(--pn-border-strong)'}`, background: on ? 'var(--pn-success)' : 'var(--pn-bg)', color: on ? '#fff' : 'var(--pn-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                            {p === 0 ? 'No tip' : `${p}%`}
+                          </button>
+                        );
+                      })}
+                      <button onClick={pickCustomTip}
+                        style={{ flex: '1 0 auto', padding: '7px 10px', borderRadius: 8, border: `1px solid ${customTip ? 'var(--pn-success)' : 'var(--pn-border-strong)'}`, background: customTip ? 'var(--pn-success)' : 'var(--pn-bg)', color: customTip ? '#fff' : 'var(--pn-text)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Custom
+                      </button>
+                    </div>
+                    {customTip && (
+                      <input value={tip} onChange={e => setTip(e.target.value)} placeholder="Tip amount $" inputMode="decimal"
+                        style={{ width: '100%', marginTop: 8, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text)', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }} />
+                    )}
+                  </>
+                )}
+                <button onClick={() => complete({ onFile: true })} disabled={saving}
+                  style={{ width: '100%', marginTop: 10, padding: '12px', borderRadius: 10, border: 'none', background: saving ? 'var(--pn-surface-muted)' : 'var(--pn-success)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                  {saving ? 'Charging…' : `Charge $${total.toFixed(2)}${tipAmt > 0 ? ` (incl. $${tipAmt.toFixed(2)} tip)` : ''}`}
+                </button>
+              </div>
             )}
             {method === 'card' && cardViaKiosk && (
               <div style={{ border: '1px solid #bfdbfe', borderRadius: 10, padding: '12px 14px', background: 'var(--pn-info-bg)' }}>
