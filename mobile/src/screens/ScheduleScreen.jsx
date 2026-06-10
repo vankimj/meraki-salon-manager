@@ -708,56 +708,61 @@ function DayTimelineView({ appts, date, showAll, allTechs, clientsById, workDays
         const slotMin = DAY_START_MIN + idx * SLOT_MINUTES;
         const startTime = minToHHMM(slotMin);
         const inWorkWindow = slotMin >= window.startMin && slotMin < window.endMin;
-        const slotAppt = (slotAppts[idx] || [])[0];   // primary appt — overlap UI deferred
-        const overlapCount = (slotAppts[idx] || []).length;
+        const slotList = slotAppts[idx] || [];   // ALL appts starting this slot — rendered side-by-side
         const isHourMark = slotMin % 60 === 0;
         return (
           <TouchableOpacity
             key={idx}
             onPress={() => {
               if (moving) { onReschedule?.(moving, { startTime, techName: moving.techName }); setMoving(null); }
-              else if (slotAppt) onTapAppt(slotAppt);
-              else onTapEmpty(startTime);
+              else if (!slotList.length) onTapEmpty(startTime);   // empty cells add; each appt handles its own tap below
             }}
-            onLongPress={() => { if (onReschedule && slotAppt && !moving) setMoving(slotAppt); }}
             delayLongPress={300}
-            activeOpacity={0.6}
-            disabled={!moving && !inWorkWindow && !slotAppt}
+            activeOpacity={moving ? 0.6 : 1}
+            disabled={!moving && !inWorkWindow && !slotList.length}
             style={[styles.dayTimelineRow, { height: SLOT_PX }, !inWorkWindow && styles.dayTimelineRowOff, moving && styles.dayTimelineRowDrop]}
           >
             <View style={styles.dayTimeLabel}>
               {isHourMark && <Text style={[styles.dayTimeLabelText, !inWorkWindow && { color: theme.textFaint }]}>{fmtTime(startTime)}</Text>}
             </View>
             <View style={[styles.dayTimelineSlot, isHourMark && styles.dayTimelineSlotHour]}>
-              {slotAppt ? (() => {
-                const c = colorsForAppt(slotAppt, allTechs, theme);
-                return (
-                  <View style={[
-                    styles.dayApptBlock,
-                    {
-                      height: Math.max(SLOT_PX - 4, ((slotAppt.duration || 30) / SLOT_MINUTES) * SLOT_PX - 4),
-                      backgroundColor: c.bg,
-                      borderLeftColor: c.border,
-                      opacity: moving?.id === slotAppt.id ? 0.4 : (c.faded ? 0.65 : 1),
-                    },
-                  ]}>
-                    <Text style={[styles.dayApptClient, { color: c.text }]} numberOfLines={1}>
-                      {slotAppt.techRequestType === 'specific' && (
-                        <Text style={styles.requestStar}>★ </Text>
-                      )}
-                      {!!clientsById?.[slotAppt.clientId]?.allergies && (
-                        <Text style={styles.allergyWarn}>⚠ </Text>
-                      )}
-                      {slotAppt.clientName || 'Walk-in'}
-                      {overlapCount > 1 ? ` +${overlapCount - 1}` : ''}
-                    </Text>
-                    <Text style={[styles.dayApptMeta, { color: c.text, opacity: 0.75 }]} numberOfLines={1}>
-                      {showAll ? `${slotAppt.techName} · ` : ''}
-                      {(slotAppt.services || []).map(s => s.name).filter(Boolean).join(', ') || ''}
-                    </Text>
-                  </View>
-                );
-              })() : (
+              {slotList.length ? (
+                <View style={{ flexDirection: 'row', flex: 1, gap: 3 }}>
+                  {slotList.map((a, ai) => {
+                    const c = colorsForAppt(a, allTechs, theme);
+                    return (
+                      <TouchableOpacity
+                        key={a.id || ai}
+                        style={{ flex: 1 }}
+                        activeOpacity={0.6}
+                        onPress={() => onTapAppt(a)}
+                        onLongPress={() => { if (onReschedule && !moving) setMoving(a); }}
+                        delayLongPress={300}
+                      >
+                        <View style={[
+                          styles.dayApptBlock,
+                          {
+                            height: Math.max(SLOT_PX - 4, ((a.duration || 30) / SLOT_MINUTES) * SLOT_PX - 4),
+                            backgroundColor: c.bg,
+                            borderLeftColor: c.border,
+                            opacity: moving?.id === a.id ? 0.4 : (c.faded ? 0.65 : 1),
+                          },
+                        ]}>
+                          <Text style={[styles.dayApptClient, { color: c.text }]} numberOfLines={1}>
+                            {a.techRequestType === 'specific' && <Text style={styles.requestStar}>★ </Text>}
+                            {!!clientsById?.[a.clientId]?.allergies && <Text style={styles.allergyWarn}>⚠ </Text>}
+                            {a.clientName || 'Walk-in'}
+                          </Text>
+                          <Text style={[styles.dayApptMeta, { color: c.text, opacity: 0.75 }]} numberOfLines={1}>
+                            {showAll ? `${a.techName} · ` : ''}
+                            {(a.services || []).map(s => s.name).filter(Boolean).join(', ') || ''}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              ) : (
                 <Text style={styles.dayEmptyHint}>＋</Text>
               )}
             </View>
