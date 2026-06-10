@@ -22,6 +22,17 @@ export default function KioskScreen({ navigation }) {
   useEffect(() => { fetchSettings().then(setSettings).catch(() => setSettings({})); }, []);
   useEffect(() => subscribeCheckoutSession(setSession), []);
 
+  // Safety net: never spin forever on the initial load. If settings/session
+  // haven't arrived in 8s (slow/flaky Firestore), fall through to the idle
+  // TipFlow — the realtime listener still updates session when it catches up.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSettings(s => (s === null ? {} : s));
+      setSession(s => (s === undefined ? null : s));
+    }, 8000);
+    return () => clearTimeout(t);
+  }, []);
+
   // Kiosk lock: hide the bottom tab bar while the kiosk is focused (the header
   // is hidden + back gesture disabled in ManageStack), so a customer can't
   // navigate away. Staff exit via a long-press on the idle screen.
