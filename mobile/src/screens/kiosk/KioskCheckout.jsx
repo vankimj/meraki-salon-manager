@@ -77,7 +77,9 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // Walk-ins have no phone on file, so the receipt SMS/email triggers have
   // nothing to fire on. Let them opt into a texted receipt at the kiosk.
   const [receiptPhone, setReceiptPhone] = useState(session.receiptPhone || '');
-  const [stage, setStage]       = useState('review'); // review | handback | cash | done | confirmed
+  // Restore the right screen if the kiosk reloads onto an in-flight session
+  // (e.g. a cash-review that's already 'confirmed' → show the thank-you again).
+  const [stage, setStage]       = useState(session?.status === 'confirmed' ? 'confirmed' : 'review'); // review | handback | cash | done | confirmed
   // Cash-review handoff from the WEB: the client reviews the bill + adds a tip
   // and taps "Is this correct?"; the WEB then collects the cash + records it.
   // The kiosk takes no payment in this mode.
@@ -102,13 +104,19 @@ export default function KioskCheckout({ session, settings, email, local = false,
   // the claim shows pay buttons; the other shows a read-only "handled elsewhere".
   // A local (on-device) checkout never shares a session, so it always owns it.
   const [kioskId] = useState(() => genReceiptToken(12));
-  const [claimState, setClaimState] = useState(local ? 'mine' : 'checking'); // checking | mine | other
+  const [claimState, setClaimState] = useState((local || cashReview) ? 'mine' : 'checking'); // checking | mine | other
   useEffect(() => {
-    if (local) return;
+    // No claim/lock for local or cash-review: cash-review takes NO payment on
+    // the kiosk, and a 'confirmed' session isn't claimable (claim only accepts
+    // pending/paying) — claiming it would spin on "checking" forever. Skip it.
+    // The .catch also keeps a rejected/slow claim from pinning the spinner.
+    if (local || cashReview) return;
     let alive = true;
-    claimCheckoutSession(kioskId).then(ok => { if (alive) setClaimState(ok ? 'mine' : 'other'); });
+    claimCheckoutSession(kioskId)
+      .then(ok => { if (alive) setClaimState(ok ? 'mine' : 'other'); })
+      .catch(() => { if (alive) setClaimState('mine'); });
     return () => { alive = false; };
-  }, [kioskId, local]);
+  }, [kioskId, local]); // eslint-disable-line
 
   // Finish helpers: a shared session clears back to idle; a local checkout hands
   // control back to the parent (which pops to the schedule / checkout editor).
