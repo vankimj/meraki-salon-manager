@@ -199,4 +199,5 @@ export const MODULE_ICONS = {
   queue:     IconChair,
   home:      IconHome,
   settings:  IconSettings,
+  admin:     IconSettings,
 };
