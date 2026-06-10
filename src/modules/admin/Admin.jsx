@@ -244,17 +244,18 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <select value={u.role} onChange={e => grantAccess(u.email, e.target.value, u.techName)}
                       style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' }}>
-                      <option value="readonly">View only</option>
-                      <option value="tech">Tech</option>
+                      <option value="admin">Owner</option>
+                      <option value="manager">Manager</option>
+                      <option value="tech">Staff (tech)</option>
                       <option value="scheduler">Front desk</option>
-                      <option value="admin">Admin</option>
+                      <option value="readonly">View only</option>
                       <option value="denied">Denied</option>
                     </select>
-                    {/* Tech-name picker — required for 'tech' role, optional
-                        for admin/scheduler/readonly so an owner who's also
-                        a working tech can flip into their own tech view via
-                        the HomeScreen "My tech view" toggle. */}
-                    {(u.role === 'tech' || u.role === 'admin' || u.role === 'scheduler' || u.role === 'readonly') && (
+                    {/* Tech-name picker — required for 'tech' role, optional for
+                        owner/manager/scheduler/readonly so someone who's also a
+                        working tech can flip into their own tech view. Hidden for
+                        kiosk (not a person-role) and denied. */}
+                    {(u.role === 'tech' || u.role === 'admin' || u.role === 'manager' || u.role === 'scheduler' || u.role === 'readonly') && (
                       <select value={u.techName || ''} onChange={async e => {
                         const newTechName = e.target.value || null;
                         grantAccess(u.email, u.role, newTechName);
@@ -1478,10 +1479,11 @@ function PendingRow({ req, employees, onGrant }) {
   return (
     <UserRow user={req}>
       <select value={role} onChange={e => setRole(e.target.value)} style={sel}>
-        <option value="readonly">View only</option>
-        <option value="tech">Tech</option>
+        <option value="admin">Owner</option>
+        <option value="manager">Manager</option>
+        <option value="tech">Staff (tech)</option>
         <option value="scheduler">Front desk</option>
-        <option value="admin">Admin</option>
+        <option value="readonly">View only</option>
       </select>
       {role === 'tech' && (
         <>
