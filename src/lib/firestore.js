@@ -370,6 +370,12 @@ export function subscribeCheckoutSession(cb) {
     (snap) => cb(snap.exists() ? snap.data() : null),
     () => cb(null));
 }
+// One-shot read — a manual fallback for when the realtime listener misses an
+// update (backgrounded tab, flaky socket).
+export async function getCheckoutSession() {
+  try { const s = await getDoc(tenantDoc('checkoutSession')); return s.exists() ? s.data() : null; }
+  catch (_) { return null; }
+}
 
 // ── Logs ───────────────────────────────────────────────
 export const addLog       = (entry)    => addDoc(LOGS_COL, entry);

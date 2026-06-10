@@ -4,7 +4,7 @@ import { saveAppointment, fetchClient, saveClient,
          fetchPromoByCode, savePromoCode, createReceipt,
          fetchProducts, saveProduct, createReviewRequest,
          fetchClientMembership, fetchAttendance,
-         setCheckoutSession, subscribeCheckoutSession, clearCheckoutSession } from '../../lib/firestore';
+         setCheckoutSession, subscribeCheckoutSession, clearCheckoutSession, getCheckoutSession } from '../../lib/firestore';
 import { buildKioskHandoff, kioskHandoffAvailable, genSessionToken } from '../../lib/kioskHandoff';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { logActivity } from '../../lib/logger';
@@ -1154,22 +1154,33 @@ function KioskWaiting({ sessionId, total, flow, onPaid, onCashConfirmed, onCance
   const isCash = flow === 'cashReview';
   const [stage, setStage]       = useState('waiting'); // waiting | paying | paid | gone
   const [paidInfo, setPaidInfo] = useState(null);
+  const [checking, setChecking] = useState(false);
+
+  // Apply a session snapshot — used by BOTH the realtime listener and the manual
+  // "check now" fallback, so a missed realtime update can't strand the sale.
+  function processSnap(d) {
+    if (!d) return;
+    // A different handoff replaced ours (another sale sent to the kiosk).
+    if (d.sessionId && d.sessionId !== sessionId) {
+      if (d.status !== 'idle') setStage('gone');
+      return;
+    }
+    if (isCash) {
+      if (d.status === 'confirmed') onCashConfirmed?.(d.confirmedTip || { amount: 0 });
+      return;
+    }
+    if (d.paid) { setPaidInfo(d.paid); setStage('paid'); return; }
+    if (d.status === 'paying') setStage('paying');
+  }
+
+  async function checkNow() {
+    setChecking(true);
+    try { processSnap(await getCheckoutSession()); } catch { /* noop */ }
+    setChecking(false);
+  }
 
   useEffect(() => {
-    const unsub = subscribeCheckoutSession((d) => {
-      if (!d) return;
-      // A different handoff replaced ours (another sale sent to the kiosk).
-      if (d.sessionId && d.sessionId !== sessionId) {
-        if (d.status !== 'idle') setStage('gone');
-        return;
-      }
-      if (isCash) {
-        if (d.status === 'confirmed') onCashConfirmed?.(d.confirmedTip || { amount: 0 });
-        return;
-      }
-      if (d.paid) { setPaidInfo(d.paid); setStage('paid'); return; }
-      if (d.status === 'paying') setStage('paying');
-    });
+    const unsub = subscribeCheckoutSession(processSnap);
     return () => { try { unsub && unsub(); } catch { /* noop */ } };
   }, [sessionId]); // eslint-disable-line
 
@@ -1211,8 +1222,12 @@ function KioskWaiting({ sessionId, total, flow, onPaid, onCashConfirmed, onCance
                   : `Waiting for the client to pay $${Number(total || 0).toFixed(2)} at the kiosk (tap/insert on the reader). Make sure an iPad is open in kiosk mode.`}
             </div>
             <div style={{ marginTop: 16, fontSize: 12, color: 'var(--pn-text-faint)' }}>● ● ● {isCash ? 'waiting for the client to confirm…' : 'listening for payment…'}</div>
+            <button onClick={checkNow} disabled={checking}
+              style={{ marginTop: 16, width: '100%', padding: '12px', borderRadius: 12, border: 'none', background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: checking ? 'default' : 'pointer', fontFamily: 'inherit', opacity: checking ? .6 : 1 }}>
+              {checking ? 'Checking…' : (isCash ? 'Already confirmed at the kiosk? Check now' : 'Already paid at the kiosk? Check now')}
+            </button>
             <button onClick={onCancel} disabled={stage === 'paying'}
-              style={{ marginTop: 18, width: '100%', padding: '12px', borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 14, fontWeight: 600, cursor: stage === 'paying' ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)', opacity: stage === 'paying' ? .5 : 1 }}>
+              style={{ marginTop: 8, width: '100%', padding: '12px', borderRadius: 12, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 14, fontWeight: 600, cursor: stage === 'paying' ? 'default' : 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)', opacity: stage === 'paying' ? .5 : 1 }}>
               Cancel &amp; take it back
             </button>
           </>

@@ -293,6 +293,16 @@ export default function KioskCheckout({ session, settings, email, local = false,
     } finally { setSaving(false); }
   }
 
+  // Return to the idle TipFlow once the sale is done. Primary trigger: the web
+  // records the cash sale and clears the session (status→idle) → KioskScreen
+  // drops to idle on its own. This is a backstop so an abandoned confirmation
+  // can't pin the kiosk on the "thank you" screen forever.
+  useEffect(() => {
+    if (stage !== 'confirmed') return;
+    const t = setTimeout(() => { clearCheckoutSession().catch(() => {}); }, 4 * 60 * 1000);
+    return () => clearTimeout(t);
+  }, [stage]);
+
   // Cash-review: the client enters where to send their receipt; pass it back so
   // the WEB sends it when it records the sale.
   async function saveReceiptContact() {
