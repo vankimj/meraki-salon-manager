@@ -49,6 +49,17 @@ service cloud.firestore {
             .data.get('staffEmails', [])
       );
     }
+    // A dedicated kiosk device, signed in via a custom token carrying the
+    // { kiosk: true, tenantId } claims (provisionKioskLogin CF). RBAC #8: a
+    // kiosk identity is NOT staff — its direct access is intentionally tiny
+    // (the checkoutSession handoff + a few already-public reads). All money
+    // writes go through the recordKioskSale CF (server-validated), so even a
+    // kiosk that breaks out of the lock can't mutate receipts/credit/gift cards.
+    function isKiosk(tenantId) {
+      return isAuthenticated()
+        && request.auth.token.kiosk == true
+        && request.auth.token.tenantId == tenantId;
+    }
     // A tech explicitly set to view-only schedule access (Admin → Users).
     // Maintained by saveUsers as the `scheduleViewOnlyEmails` projection on
     // data/users. Admins/owners are never in this list.
@@ -194,8 +205,11 @@ service cloud.firestore {
       // the kiosk iPad subscribes (read); both ends update/clear it. Both are
       // staff devices and it holds only the in-flight cart + client name —
       // nothing sensitive (no card data; charges run through Cloud Functions).
+      // A dedicated kiosk identity may read/write ONLY this doc directly (the
+      // in-flight cart handoff). Everything money-related goes through
+      // recordKioskSale (server-validated) — see isKiosk().
       match /data/checkoutSession {
-        allow read, write: if isTenantStaff(tenantId);
+        allow read, write: if isTenantStaff(tenantId) || isKiosk(tenantId);
       }
       // Slim user projections — staff readable. Holds ONLY:
       //   staffEmails  (array of every staff email; rules use this for
@@ -218,7 +232,7 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
       match /data/settings {
-        allow read:  if isTenantStaff(tenantId);
+        allow read:  if isTenantStaff(tenantId) || isKiosk(tenantId);  // kiosk needs taxRate/ccFee/terminal cfg
         allow write: if isTenantAdmin(tenantId);
       }
       // Sensitive credentials (OAuth tokens, third-party API keys cached
@@ -227,6 +241,13 @@ service cloud.firestore {
       // / Stripe / Twilio credentials from the JS console.
       match /data/settingsPrivate {
         allow read, write: if isTenantAdmin(tenantId);
+      }
+      // Kiosk device registry + exit PINs. Owner-readable (to list/revoke
+      // kiosks); written only by the kiosk CFs via Admin SDK. A kiosk identity
+      // must NOT read this (it holds every device's uid) — isKiosk ≠ admin.
+      match /data/kioskAuth {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
       }
       match /data/handbook {
         allow read:  if isTenantStaff(tenantId);
