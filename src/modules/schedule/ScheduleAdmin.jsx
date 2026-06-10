@@ -543,8 +543,11 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
       }
 
       notifyAffectedTechs(original, full, gUser).catch(e => console.error('[Notif]', e));
-      if (viewMode === 'week') { await loadWeek(); } else { await load(); }
+      // The write is done — close the modal now. Refresh the calendar in the
+      // BACKGROUND so a slow Firestore read doesn't pin "Saving…". The real-time
+      // subscription surfaces the change anyway; this is a belt-and-suspenders sync.
       setModal(null);
+      (viewMode === 'week' ? loadWeek() : load()).catch(e => console.error('[Schedule] refresh failed', e));
     } catch (e) {
       console.error('[Schedule] save failed:', e);
       const msg = `Couldn't save the appointment: ${e?.message || 'unknown error'}`;
