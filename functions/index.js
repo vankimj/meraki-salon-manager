@@ -1056,7 +1056,11 @@ async function deliverReceiptEmail(db, tenantId, ref, data) {
     const apiKey = awsAccessKey.value();
     if (!apiKey) { await ref.update({ error: 'email_not_configured' }); return { ok: false, error: 'email_not_configured' }; }
 
-    const { clientName, clientEmail, techName, date, startTime, services = [], retailProducts = [], payment = {}, viewToken } = data;
+    const { clientName, clientEmail, techName, date, startTime, payment = {}, viewToken } = data;
+    // Coerce to arrays — a stored `null` (not undefined) skips the destructure
+    // default and would crash on `.length`/`.map` below.
+    const services = Array.isArray(data.services) ? data.services : [];
+    const retailProducts = Array.isArray(data.retailProducts) ? data.retailProducts : [];
     if (!clientEmail) { await ref.update({ error: 'no_email' }); return { ok: false, error: 'no_email' }; }
 
     // Read Google review URL + email rating style from settings (best-effort).
