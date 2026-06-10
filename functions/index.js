@@ -3,6 +3,7 @@ const { onSchedule }       = require('firebase-functions/v2/scheduler');
 const { onCall, onRequest, HttpsError }= require('firebase-functions/v2/https');
 const { initializeApp }    = require('firebase-admin/app');
 const { getFirestore }     = require('firebase-admin/firestore');
+const { getAuth }          = require('firebase-admin/auth');
 const { defineString, defineSecret } = require('firebase-functions/params');
 const Anthropic            = require('@anthropic-ai/sdk');
 const {
@@ -2980,6 +2981,60 @@ exports.setKioskPin = onCall({ cors: true }, async (request) => {
   const hash  = tcHashPin(cleanPin, salt);
   await db.doc(`tenants/${tenantId}/data/kioskAuth`).set({
     pins: { [uid]: { salt, hash, email, setAt: new Date().toISOString() } },
+  }, { merge: true });
+  return { ok: true };
+});
+
+// RBAC #8 — provision a DEDICATED kiosk login (owner-only). Mints a Firebase
+// custom token for a per-device kiosk uid carrying { kiosk:true, tenantId,
+// kioskId } claims. The device redeems it once via signInWithCustomToken and
+// thereafter runs as a near-zero-privilege identity (see isKiosk() in the rules
+// + recordKioskSale for money writes). Claims are ALSO persisted via
+// setCustomUserClaims so they survive ID-token refresh, not just the one-time
+// custom token. Returns the token (the owner shows it as a QR / pairing code).
+exports.provisionKioskLogin = onCall({ cors: true }, async (request) => {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, label } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);   // owner/admin only
+
+  const kioskId = crypto.randomBytes(8).toString('hex');
+  const uid     = `kiosk_${tenantId}_${kioskId}`.slice(0, 128);
+  const claims  = { kiosk: true, tenantId, kioskId };
+
+  await getAuth().createUser({ uid, disabled: false })
+    .catch(e => { if (e.code !== 'auth/uid-already-exists') throw e; });
+  await getAuth().setCustomUserClaims(uid, claims);   // persists across refresh
+
+  await db.doc(`tenants/${tenantId}/data/kioskAuth`).set({
+    devices: { [kioskId]: {
+      uid, label: String(label || 'Kiosk').slice(0, 60),
+      createdAt: new Date().toISOString(), createdBy: await callerEmail(request), revoked: false,
+    } },
+  }, { merge: true });
+
+  const token = await getAuth().createCustomToken(uid, claims);   // one-time pairing secret
+  return { ok: true, kioskId, token };
+});
+
+// Revoke a kiosk device (owner-only): disable its uid + revoke refresh tokens so
+// a lost/stolen kiosk iPad can't keep its session. Marks it revoked in the registry.
+exports.revokeKioskLogin = onCall({ cors: true }, async (request) => {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, kioskId } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const kid = String(kioskId || '').trim();
+  if (!/^[a-f0-9]{8,32}$/.test(kid)) throw new HttpsError('invalid-argument', 'Invalid kioskId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const uid = `kiosk_${tenantId}_${kid}`.slice(0, 128);
+  await getAuth().updateUser(uid, { disabled: true }).catch(() => {});
+  await getAuth().revokeRefreshTokens(uid).catch(() => {});
+  await db.doc(`tenants/${tenantId}/data/kioskAuth`).set({
+    devices: { [kid]: { revoked: true, revokedAt: new Date().toISOString() } },
   }, { merge: true });
   return { ok: true };
 });
