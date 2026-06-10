@@ -2055,17 +2055,29 @@ export async function fetchAppointmentsByIds(ids = []) {
 const SERVICE_RATINGS_COL = tenantCol('serviceRatings');
 
 export async function fetchServiceRatingsByRange(startDate, endDate) {
-  // submittedAt is a UTC ISO timestamp; build the range from the viewer's LOCAL
-  // day boundaries (not UTC midnight) so an evening rating — e.g. 9:41 PM local =
-  // 01:41 UTC the next day — still lands inside "today". Omitting the trailing Z
-  // makes new Date() parse in local time, then toISOString() converts to UTC.
-  const startISO = new Date(`${startDate}T00:00:00`).toISOString();
-  const endISO   = new Date(`${endDate}T23:59:59.999`).toISOString();
+  // submittedAt is a UTC ISO timestamp, but the report range is LOCAL days — and
+  // Firestore can't convert timezones in a query. So query a PADDED UTC window
+  // (±1 day, which covers any timezone offset) and then filter to the exact
+  // local [startDate, endDate] client-side. Bulletproof regardless of the
+  // viewer's timezone (an evening rating = next-day UTC was being dropped).
+  const shiftDay = (ds, delta) => {
+    const d = new Date(`${ds}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + delta);
+    return d.toISOString().slice(0, 10);
+  };
+  const startISO = `${shiftDay(startDate, -1)}T00:00:00.000Z`;
+  const endISO   = `${shiftDay(endDate, 1)}T23:59:59.999Z`;
+  const localDay = (iso) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
   const snap = await getDocs(query(SERVICE_RATINGS_COL,
     where('submittedAt', '>=', startISO),
     where('submittedAt', '<=', endISO),
   ));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
+    .filter(r => { const ld = r.submittedAt ? localDay(r.submittedAt) : null; return ld && ld >= startDate && ld <= endDate; });
 }
 
 // Blocked booking attempts (honeypot / bot signals) in a date range. Stamped
