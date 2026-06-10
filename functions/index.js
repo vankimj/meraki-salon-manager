@@ -12,6 +12,7 @@ const {
 } = require('@aws-sdk/client-sesv2');
 const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
+const { roleCan }          = require('./lib/rbac');
 
 initializeApp();
 
@@ -233,6 +234,16 @@ async function callerRole(db, tenantId, request) {
   const users = (fullDoc.exists ? (fullDoc.data().users || []) : []);
   const u = users.find(x => (x.email || '').toLowerCase() === email);
   return u?.role || null;
+}
+// RBAC server enforcement: throw unless the caller's role has `cap` (see
+// lib/rbac.js — kept in sync with src/lib/rbac.js). The UI hides the control;
+// this is what actually blocks a forged/replayed request.
+async function requireCap(db, tenantId, request, cap) {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const role = await callerRole(db, tenantId, request);
+  if (!roleCan(role, cap)) {
+    throw new HttpsError('permission-denied', `This action requires the "${cap}" permission.`);
+  }
 }
 
 // ── Per-tenant outbound email sender ──────────────────────────────────────────
@@ -6422,7 +6433,7 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
 
   const db = getFirestore();
-  await requireTenantStaff(db, tenantId, request);   // admins + techs
+  await requireCap(db, tenantId, request, 'refund');   // owner + manager only (RBAC)
   const issuerEmail = await callerEmail(request);
 
   if (!receiptId || typeof receiptId !== 'string') throw new HttpsError('invalid-argument', 'receiptId required');

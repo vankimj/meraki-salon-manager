@@ -113,3 +113,13 @@ describe('matrix integrity', () => {
     for (const r of Object.keys(ROLE_CAPS)) expect(Array.isArray(ROLE_CAPS[r])).toBe(true);
   });
 });
+
+describe('server matrix is in sync (functions/lib/rbac.js)', () => {
+  it('ROLE_CAPS identical to the web copy — server is the security boundary', async () => {
+    const server = await import('../../functions/lib/rbac.js');
+    expect(Object.keys(server.ROLE_CAPS).sort()).toEqual(Object.keys(ROLE_CAPS).sort());
+    for (const r of Object.keys(ROLE_CAPS)) {
+      expect(server.ROLE_CAPS[r].slice().sort()).toEqual(ROLE_CAPS[r].slice().sort());
+    }
+  });
+});
