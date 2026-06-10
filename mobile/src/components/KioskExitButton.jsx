@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet, BackHandler } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet, BackHandler, Alert } from 'react-native';
+import { signOut } from 'firebase/auth';
 import PinPad from './PinPad';
 import { verifyKioskPin } from '../lib/firestore';
 import { clearKioskLocked } from '../lib/kioskLock';
+import { getKioskClaim } from '../lib/kioskSession';
+import { auth } from '../lib/firebase';
 import { useThemedStyles } from '../theme/ThemeContext';
 
 // Locked-kiosk exit. The app stays signed in as the admin who entered kiosk mode,
@@ -14,11 +17,25 @@ export default function KioskExitButton({ onExit, label = 'Exit kiosk' }) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr]   = useState('');
+  const [dedicated, setDedicated] = useState(false);   // a dedicated kiosk identity (RBAC #8)?
 
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => true); // block
+    getKioskClaim().then(c => setDedicated(!!c)).catch(() => {});
     return () => sub.remove();
   }, []);
+
+  // A dedicated kiosk has no admin session, so the admin-PIN exit can't apply.
+  // Exiting signs out → the login screen (an owner must sign in to use the app),
+  // which is harmless: the kiosk session held no data to begin with.
+  function exitDedicated() {
+    Alert.alert('Exit kiosk', 'This signs the iPad out. An owner must sign in to use the app again.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: async () => {
+          try { await clearKioskLocked(); await signOut(auth); onExit?.(); } catch (_) {}
+        } },
+    ]);
+  }
 
   async function submit(pin) {
     setBusy(true); setErr('');
@@ -35,7 +52,7 @@ export default function KioskExitButton({ onExit, label = 'Exit kiosk' }) {
 
   return (
     <>
-      <TouchableOpacity style={styles.btn} onPress={() => { setErr(''); setOpen(true); }} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.btn} onPress={() => { setErr(''); dedicated ? exitDedicated() : setOpen(true); }} activeOpacity={0.7}>
         <Text style={styles.btnText}>🔒 {label}</Text>
       </TouchableOpacity>
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>

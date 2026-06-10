@@ -6,6 +6,7 @@ import useResponsive from '../../hooks/useResponsive';
 import { getVisibleModules, moduleMeta } from '../../lib/modules';
 import { fetchSettings, hasKioskPin } from '../../lib/firestore';
 import { setKioskLocked } from '../../lib/kioskLock';
+import { becomeKiosk } from '../../lib/kioskSession';
 import { subscribeTenant } from '../../lib/currentTenant';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
@@ -55,6 +56,25 @@ export default function ManageGridScreen({ navigation }) {
         Alert.alert(
           'Set a kiosk PIN first',
           'Kiosks lock once open — you exit with your admin PIN. Set it in Manage → Admin → Settings → "Kiosk exit PIN", then try again.',
+        );
+        return;
+      }
+      // Checkout kiosk → offer the SECURE (dedicated-identity) mode: signs this
+      // device out of your account and onto a near-zero-privilege kiosk login, so
+      // breaking out of the lock can't reach clients/reports/admin (RBAC #8). The
+      // ClockKiosk keeps the legacy PIN lock (it needs staff-side clock writes).
+      if (screen === 'Kiosk') {
+        Alert.alert(
+          'Lock to checkout kiosk',
+          'Secure kiosk signs this iPad out of your account and runs it as a limited kiosk — even breaking out of the lock can\'t reach your data. You sign back in to exit. (Card payments still work via the funnel.)',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'PIN lock only', onPress: async () => { await setKioskLocked(screen); navigation.navigate(screen); } },
+            { text: 'Secure kiosk', style: 'default', onPress: async () => {
+                try { await becomeKiosk('Front desk'); navigation.navigate(screen); }
+                catch (e) { Alert.alert('Could not set up secure kiosk', e?.message || 'Please try again.'); }
+              } },
+          ],
         );
         return;
       }

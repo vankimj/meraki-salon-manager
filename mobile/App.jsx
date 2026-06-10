@@ -13,6 +13,7 @@ import RootNav    from './src/navigation/RootNav';
 import TerminalProvider from './src/components/TerminalProvider';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import KioskLockGate from './src/components/KioskLockGate';
+import KioskRoot from './src/navigation/KioskRoot';
 import { loadInitialKioskLock, isKioskLocked, subscribeKioskLock } from './src/lib/kioskLock';
 import { ThemeProvider } from './src/theme/ThemeContext';
 
@@ -52,6 +53,7 @@ export default function App() {
   const [user,    setUser]    = useState(undefined); // undefined = loading
   const [loading, setLoading] = useState(true);
   const [kioskLocked, setKioskLockedState] = useState(false);
+  const [kioskClaim,  setKioskClaim]       = useState(false); // dedicated kiosk identity (RBAC #8)?
 
   useEffect(() => {
     // Load persisted state from AsyncStorage BEFORE any Firestore
@@ -64,8 +66,14 @@ export default function App() {
       await loadInitialPrefs();
       await loadInitialKioskLock();
       setKioskLockedState(isKioskLocked());
-      unsub = onAuthStateChanged(auth, u => {
+      unsub = onAuthStateChanged(auth, async u => {
         setUser(u);
+        // Detect a dedicated kiosk identity (custom-token claim) so we render the
+        // kiosk-only root, not the tabbed app or the admin PIN gate.
+        if (u) {
+          try { const r = await u.getIdTokenResult(); setKioskClaim(r.claims?.kiosk === true); }
+          catch { setKioskClaim(false); }
+        } else setKioskClaim(false);
         setLoading(false);
       });
     })();
@@ -95,7 +103,10 @@ export default function App() {
         <View style={{ flex: 1 }} onTouchStart={resetIdle}>
           <ErrorBoundary>
             {user
-              ? (kioskLocked ? <KioskLockGate /> : <TerminalProvider><RootNav /></TerminalProvider>)
+              ? (kioskClaim
+                  ? <TerminalProvider><KioskRoot /></TerminalProvider>   // dedicated kiosk: claim-driven, never the PIN gate
+                  : kioskLocked ? <KioskLockGate />
+                  : <TerminalProvider><RootNav /></TerminalProvider>)
               : <AuthScreen />}
           </ErrorBoundary>
         </View>
