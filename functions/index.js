@@ -6601,7 +6601,30 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
     throw new HttpsError('invalid-argument', 'Invalid tenantId');
   }
-  await requireTenantStaff(getFirestore(), tenantId, request);
+  // A dedicated kiosk identity may create a card_present PaymentIntent, but ONLY
+  // for an amount that matches the open checkoutSession (server-recomputed) — so a
+  // compromised kiosk can't overcharge a tapped card. Range = charged-before-tip
+  // up to + the bill (tip capped at the bill, matching recordKioskSale).
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const ptok = request.auth.token || {};
+  if (ptok.kiosk === true && ptok.tenantId === tenantId) {
+    const db = getFirestore();
+    const session = (await db.doc(`tenants/${tenantId}/data/checkoutSession`).get()).data();
+    if (!session?.cart) throw new HttpsError('failed-precondition', 'No open checkout session');
+    const s = (await db.doc(`tenants/${tenantId}/data/settings`).get()).data() || {};
+    const lines = kioskSaleLib.linesFromCart(session.cart);
+    const productsTotal = (session.cart.products || []).reduce((a, p) => a + (Number(p.product?.price) || 0) * (Number(p.qty) || 1), 0);
+    let credit = 0;
+    if (session.applyCredit && session.clientId) credit = Number((await db.doc(`tenants/${tenantId}/clients/${session.clientId}`).get()).data()?.credit) || 0;
+    const discount = (session.discType === 'amount' && Number(session.discVal) > 0) ? { value: Number(session.discVal), isPercent: false } : null;
+    const base = kioskSaleLib.computeTotals({ lines, productsTotal, discount, taxRate: Number(s.taxRate) || 0, method: 'card', clientCredit: credit, applyCredit: !!session.applyCredit, tip: { custom: true, amount: 0 } });
+    const amt = Math.round(Number(amountCents) || 0);
+    const minC = Math.round(base.charged * 100) - 2;
+    const maxC = Math.round((base.charged + base.billBeforeTip) * 100) + 2;   // tip ≤ the bill
+    if (amt < minC || amt > maxC) throw new HttpsError('invalid-argument', 'Charge amount does not match the open sale');
+  } else {
+    await requireTenantStaff(getFirestore(), tenantId, request);
+  }
 
   if (!amountCents || amountCents < 50) throw new HttpsError('invalid-argument', 'Amount must be at least $0.50');
 
@@ -7033,7 +7056,11 @@ exports.createTerminalConnectionToken = onCall({ secrets: [stripeKey] }, async (
   const { tenantId: tid } = request.data || {};
   const tenantId = String(tid || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
-  await requireTenantStaff(getFirestore(), tenantId, request);
+  // A dedicated kiosk identity needs a connection token to take cards on the M2.
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const tok = request.auth.token || {};
+  const isKioskCaller = tok.kiosk === true && tok.tenantId === tenantId;
+  if (!isKioskCaller) await requireTenantStaff(getFirestore(), tenantId, request);
 
   const key = stripeKey.value();
   if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured on this server');
