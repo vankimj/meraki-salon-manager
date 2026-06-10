@@ -41,10 +41,11 @@
   ],
   "fieldOverrides": [
     {
-      "//": "getReceiptByToken — single-field equality on viewToken across the receipts collection group. Single-field CG queries need fieldOverrides (not a composite); Firestore rejects the composite form with 'this index is not necessary'.",
+      "//": "viewToken equality lookups: getReceiptByToken uses a COLLECTION_GROUP query (hosted /r/{token} page); resendReceiptSms/resendReceiptEmail use a per-tenant COLLECTION query. A fieldOverride REPLACES the automatic single-field index, so BOTH scopes must be listed or the COLLECTION resend query fails with FAILED_PRECONDITION.",
       "collectionGroup": "receipts",
       "fieldPath":       "viewToken",
       "indexes": [
+        {"order": "ASCENDING", "queryScope": "COLLECTION"},
         {"order": "ASCENDING", "queryScope": "COLLECTION_GROUP"}
       ]
     },
