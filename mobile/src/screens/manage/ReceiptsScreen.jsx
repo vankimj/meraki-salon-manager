@@ -280,7 +280,9 @@ function ReceiptRecipients({ receipt, theme, styles }) {
   if (people === null) return <ActivityIndicator color={theme.green} style={{ marginTop: 12 }} />;
   if (people.length <= 1) {
     const only = people[0];
-    return <ResendReceiptRow receiptId={receipt.id} viewToken={receipt.viewToken || null} defaultContact={only?.contact || receipt.clientPhone || receipt.clientEmail || ''} compact />;
+    return <ResendReceiptRow receiptId={receipt.id} viewToken={receipt.viewToken || null}
+      defaultPhone={receipt.clientPhone || ''} defaultEmail={receipt.clientEmail || ''}
+      defaultContact={only?.contact || ''} compact />;
   }
   return (
     <View>

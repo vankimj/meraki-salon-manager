@@ -1315,9 +1315,11 @@ function ReceiptScreen({ receipt, onDone }) {
   // optionally to a different number. Disabled if no phone on the receipt.
   const [smsSent,    setSmsSent]    = useState(false);
   const [smsSending, setSmsSending] = useState(false);
-  const [smsPhoneEdit, setSmsPhoneEdit] = useState(false);
   const [smsPhone,   setSmsPhone]   = useState(clientPhone || '');
-  const canTextReceipt = Boolean(clientPhone || smsPhone);
+  // Email twin — prefilled from the client profile so staff usually just tap Send.
+  const [emailSent,    setEmailSent]    = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailAddr,    setEmailAddr]    = useState(clientEmail || '');
 
   async function sendTextReceipt() {
     if (!receipt._receiptId && !receipt.viewToken) {
@@ -1344,6 +1346,34 @@ function ReceiptScreen({ receipt, onDone }) {
       showToast('Send failed: ' + (e?.message || 'unknown error'));
     } finally {
       setSmsSending(false);
+    }
+  }
+
+  async function sendEmailReceipt() {
+    if (!receipt._receiptId && !receipt.viewToken) {
+      showToast('Receipt still saving — try again in a moment.');
+      return;
+    }
+    const addr = (emailAddr || clientEmail || '').trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr)) { showToast('Enter a valid email address.'); return; }
+    setEmailSending(true);
+    try {
+      const res = await callFn('resendReceiptEmail')({
+        tenantId: TENANT_ID,
+        receiptId: receipt._receiptId || null,
+        viewToken: receipt.viewToken,
+        email: addr,
+      });
+      if (res.data?.ok || res.data?.sandboxed) {
+        setEmailSent(true);
+        showToast('Receipt emailed!');
+      } else {
+        showToast('Couldn’t send: ' + (res.data?.error || 'unknown error'));
+      }
+    } catch (e) {
+      showToast('Send failed: ' + (e?.message || 'unknown error'));
+    } finally {
+      setEmailSending(false);
     }
   }
 
@@ -1477,17 +1507,26 @@ function ReceiptScreen({ receipt, onDone }) {
           </div>
         </div>
 
-        {smsPhoneEdit && (
-          <div style={{ padding: '8px 18px 0', display: 'flex', gap: 6, alignItems: 'center' }}>
-            <input value={smsPhone} onChange={e => setSmsPhone(e.target.value)} placeholder="Phone (e.g., 614-555-0123)"
-              inputMode="tel" autoFocus
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 12, fontFamily: 'inherit' }} />
-            <button onClick={() => setSmsPhoneEdit(false)} disabled={smsSending}
-              style={{ padding: '8px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
-              Cancel
+        {/* Send the receipt — phone + email, prefilled from the client profile. */}
+        <div style={{ padding: '10px 18px 0' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>Send the receipt</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input value={smsPhone} onChange={e => { setSmsPhone(e.target.value); setSmsSent(false); }} placeholder="Phone (e.g., 614-555-0123)" inputMode="tel"
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 13, fontFamily: 'inherit', background: 'var(--pn-bg)' }} />
+            <button onClick={!smsSending && smsPhone.trim() ? sendTextReceipt : undefined} disabled={smsSending || !smsPhone.trim()}
+              style={{ minWidth: 84, padding: '9px 12px', borderRadius: 8, border: `1px solid ${smsSent ? '#bbf7d0' : '#bfdbfe'}`, background: smsSent ? 'var(--pn-success-bg)' : 'var(--pn-info-bg)', fontSize: 12, fontWeight: 700, cursor: (smsSending || !smsPhone.trim()) ? 'default' : 'pointer', fontFamily: 'inherit', color: smsSent ? 'var(--pn-success)' : 'var(--pn-info)', opacity: smsPhone.trim() ? 1 : .5 }}>
+              {smsSent ? '✓ Texted' : smsSending ? 'Sending…' : '💬 Text'}
             </button>
           </div>
-        )}
+          <div style={{ display: 'flex', gap: 6 }}>
+            <input value={emailAddr} onChange={e => { setEmailAddr(e.target.value); setEmailSent(false); }} placeholder="Email" inputMode="email" autoCapitalize="none" autoCorrect="off"
+              style={{ flex: 1, padding: '9px 11px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', fontSize: 13, fontFamily: 'inherit', background: 'var(--pn-bg)' }} />
+            <button onClick={!emailSending && emailAddr.trim() ? sendEmailReceipt : undefined} disabled={emailSending || !emailAddr.trim()}
+              style={{ minWidth: 84, padding: '9px 12px', borderRadius: 8, border: `1px solid ${emailSent ? '#bbf7d0' : '#bfdbfe'}`, background: emailSent ? 'var(--pn-success-bg)' : 'var(--pn-info-bg)', fontSize: 12, fontWeight: 700, cursor: (emailSending || !emailAddr.trim()) ? 'default' : 'pointer', fontFamily: 'inherit', color: emailSent ? 'var(--pn-success)' : 'var(--pn-info)', opacity: emailAddr.trim() ? 1 : .5 }}>
+              {emailSent ? '✓ Emailed' : emailSending ? 'Sending…' : '✉️ Email'}
+            </button>
+          </div>
+        </div>
 
         {/* Footer buttons */}
         <div style={{ display: 'flex', gap: 8, padding: '12px 18px', borderTop: '1px solid var(--pn-border)', flexShrink: 0, flexWrap: 'wrap' }}>
@@ -1495,14 +1534,6 @@ function ReceiptScreen({ receipt, onDone }) {
             style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
             🖨 Print
           </button>
-          {canTextReceipt && (
-            <button onClick={!smsSent && !smsSending ? (smsPhoneEdit ? sendTextReceipt : sendTextReceipt) : undefined}
-              onContextMenu={(e) => { e.preventDefault(); setSmsPhoneEdit(v => !v); }}
-              title="Long-press or right-click to send to a different number"
-              style={{ flex: 1, minWidth: 80, padding: '10px 0', borderRadius: 10, border: `1px solid ${smsSent ? '#bbf7d0' : '#bfdbfe'}`, background: smsSent ? 'var(--pn-success-bg)' : 'var(--pn-info-bg)', fontSize: 12, fontWeight: 600, cursor: smsSent || smsSending ? 'default' : 'pointer', fontFamily: 'inherit', color: smsSent ? 'var(--pn-success)' : 'var(--pn-info)' }}>
-              {smsSent ? '✓ Texted!' : smsSending ? 'Sending…' : '💬 Text receipt'}
-            </button>
-          )}
           {canReview && (
             <button onClick={!reviewSent && !reviewSending ? sendReviewRequest : undefined}
               style={{ flex: 1, minWidth: 70, padding: '10px 0', borderRadius: 10, border: `1px solid ${reviewSent ? '#bbf7d0' : '#fde68a'}`, background: reviewSent ? 'var(--pn-success-bg)' : 'var(--pn-warning-bg)', fontSize: 12, fontWeight: 600, cursor: reviewSent || reviewSending ? 'default' : 'pointer', fontFamily: 'inherit', color: reviewSent ? 'var(--pn-success)' : 'var(--pn-warning)' }}>
