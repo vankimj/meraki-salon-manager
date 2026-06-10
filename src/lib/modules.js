@@ -16,36 +16,41 @@
 // adminOnly is independent of plan: even a non-admin with a Pro plan
 // won't see HR.
 
+import { roleCan, normalizeRole } from './rbac';
+
 export const PLAN_RANK = { starter: 0, studio: 1, pro: 2, enterprise: 3 };
 
 // Default module catalog. Edit `plan` to move a feature between tiers.
 // `description` shows in the tile-visibility settings panel.
+// `cap` = the RBAC capability required to see the tile (see lib/rbac.js). When a
+// role is known, getVisibleModules gates on cap; adminOnly is the legacy
+// fallback for callers that don't yet pass a role.
 export const MODULES = [
   // ── Starter (core salon operations, free) ───────────────
-  { id: 'schedule',    label: 'Schedule',         desc: 'Appointments & calendar',           plan: 'starter', adminOnly: false },
-  { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'starter', adminOnly: false },
-  { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'starter', adminOnly: false },
-  { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'starter', adminOnly: true  },
-  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'starter', adminOnly: false },
+  { id: 'schedule',    label: 'Schedule',         desc: 'Appointments & calendar',           plan: 'starter', adminOnly: false, cap: 'schedule' },
+  { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'starter', adminOnly: false, cap: 'clients' },
+  { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'starter', adminOnly: false, cap: 'services_edit' },
+  { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'starter', adminOnly: true,  cap: 'employees' },
+  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'starter', adminOnly: false, cap: 'walkin' },
 
   // ── Studio (run your salon better — analytics, inventory, payments) ─
-  { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false },
-  { id: 'receipts',    label: 'Sales & Receipts', desc: 'Browse, search, resend & refund sales', plan: 'studio', adminOnly: false },
-  { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'studio',  adminOnly: false },
-  { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'studio',  adminOnly: true  },
-  { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'studio',  adminOnly: true  },
-  { id: 'meetings',    label: 'Meetings',         desc: 'Internal team meetings',            plan: 'studio',  adminOnly: true  },
-  { id: 'products',    label: 'Products',         desc: 'Retail inventory & stock',          plan: 'studio',  adminOnly: true  },
+  { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false, cap: 'reports' },
+  { id: 'receipts',    label: 'Sales & Receipts', desc: 'Browse, search, resend & refund sales', plan: 'studio', adminOnly: false, cap: 'reports' },
+  { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'studio',  adminOnly: false, cap: 'earnings_own' },
+  { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'studio',  adminOnly: true,  cap: 'attendance' },
+  { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'studio',  adminOnly: true,  cap: 'giftcards_manage' },
+  { id: 'meetings',    label: 'Meetings',         desc: 'Internal team meetings',            plan: 'studio',  adminOnly: true,  cap: 'meetings' },
+  { id: 'products',    label: 'Products',         desc: 'Retail inventory & stock',          plan: 'studio',  adminOnly: true,  cap: 'products_edit' },
 
   // ── Pro (grow your business — outbound comms, payroll, recurring revenue) ─
-  { id: 'chat',        label: 'Communications',   desc: 'SMS, email & in-app messages',      plan: 'pro',     adminOnly: false },
-  { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'pro',     adminOnly: true  },
-  { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'pro',     adminOnly: true  },
-  { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'pro',     adminOnly: true  },
+  { id: 'chat',        label: 'Communications',   desc: 'SMS, email & in-app messages',      plan: 'pro',     adminOnly: false, cap: 'chat' },
+  { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'pro',     adminOnly: true,  cap: 'marketing' },
+  { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'pro',     adminOnly: true,  cap: 'hr' },
+  { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'pro',     adminOnly: true,  cap: 'memberships' },
 
   // Admin opens the settings overlay (not a routed view) — surfaced as a tile to
-  // match the mobile app. Always available to admins (no plan gate).
-  { id: 'admin',       label: 'Admin',            desc: 'Users, settings, logs & trash',     plan: 'starter', adminOnly: true  },
+  // match the mobile app. Owner-only (the 'settings' capability).
+  { id: 'admin',       label: 'Admin',            desc: 'Users, settings, logs & trash',     plan: 'starter', adminOnly: true,  cap: 'settings' },
 ];
 
 // Tenants without an explicit plan field are treated as pro — preserves
@@ -107,12 +112,16 @@ export function modulesLostOnDowngrade(currentPlan, targetPlan) {
 }
 
 // Filter the module list down to what should be visible on the home screen
-// for this user. Combines: plan gate + role gate + owner-disabled + per-tile hide.
-export function getVisibleModules(settings, { isAdmin, hiddenTiles } = {}) {
+// for this user. Combines: plan gate + RBAC capability gate + owner-disabled +
+// per-tile hide. Pass `role` for capability gating; `isAdmin` is the legacy
+// fallback (adminOnly) for callers not yet migrated to roles.
+export function getVisibleModules(settings, { role, isAdmin, hiddenTiles } = {}) {
   const plan = effectivePlan(settings);
   const hidden = new Set(hiddenTiles || settings?.hiddenTiles || []);
+  const r = role ? normalizeRole(role) : null;
   return MODULES.filter(m => {
-    if (m.adminOnly && !isAdmin) return false;
+    if (r) { if (m.cap && !roleCan(r, m.cap)) return false; }   // RBAC capability gate
+    else if (m.adminOnly && !isAdmin) return false;             // legacy fallback
     if (!isModuleAvailableForPlan(m, plan)) return false;
     if (!isModuleEnabled(settings, m.id)) return false;
     if (hidden.has(m.id)) return false;

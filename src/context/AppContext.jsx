@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getTheme, detectAutoTheme } from '../lib/themes';
+import { normalizeRole, roleCan } from '../lib/rbac';
 import { onAuthStateChanged, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
 import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats, subscribeToRecentNotifications, markNotificationRead, ensureStaffEmailsBackfill, healUsersFullIfMissing } from '../lib/firestore';
@@ -646,6 +647,12 @@ export function AppProvider({ children }) {
     : (_rec?.scheduleAccess || 'edit');
   const canEditOwnSchedule = !(isTech && effScheduleAccess === 'view');
 
+  // RBAC: the normalized role + a capability check (lib/rbac.js is the matrix;
+  // the server enforces the same). viewAs preview impersonates a role. The
+  // bootstrap admin resolves to 'owner' (role is forced to 'admin' above).
+  const role = normalizeRole(viewAs?.role || _rec?.role || null);
+  const can  = (cap) => roleCan(role, cap);
+
   // Canary tier + feature flags — see src/lib/featureFlags.js for the
   // resolution chain. Stored on data/settings (already loaded above),
   // so this is essentially free — no extra read. Tier defaults to
@@ -663,6 +670,7 @@ export function AppProvider({ children }) {
       users, settings, setSettings,
       gUser, syncState, toast, toastAction, loaded, isOnline,
       isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
+      role, can,
       isPortalUser, portalClientId,
       showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
       addSlide, updateSlide, deleteSlide, setDefault,
