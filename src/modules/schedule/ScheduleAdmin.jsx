@@ -469,7 +469,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
         } catch { /* attendance unreadable → fail open */ }
       }
 
-      const dur = appt.services.reduce((sum, s) => sum + (Number(s.duration) || 0), 0) || 60;
+      const dur = (appt.services || []).reduce((sum, s) => sum + (Number(s.duration) || 0), 0) || 60;
       // Out-of-hours warning is now surfaced inline in ApptModal's Review
       // panel before the user clicks Save (one consolidated review surface
       // instead of stacking browser confirms). By the time we get here,
@@ -545,7 +545,11 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
       notifyAffectedTechs(original, full, gUser).catch(e => console.error('[Notif]', e));
       if (viewMode === 'week') { await loadWeek(); } else { await load(); }
       setModal(null);
-    } catch (e) { console.error('[Schedule] save failed:', e); }
+    } catch (e) {
+      console.error('[Schedule] save failed:', e);
+      const msg = `Couldn't save the appointment: ${e?.message || 'unknown error'}`;
+      if (showToast) showToast(msg, 7000); else alert(msg);
+    }
   }
 
   // Deleting (trash) soft-deletes the appt — it doesn't flip status to
