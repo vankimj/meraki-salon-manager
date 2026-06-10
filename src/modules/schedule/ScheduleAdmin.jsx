@@ -3,7 +3,7 @@ import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter
 import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance } from '../../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
-import { callFn } from '../../lib/firebase';
+import { callFn, startTrace } from '../../lib/firebase';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../checkout/RefundModal';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
@@ -324,11 +324,14 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   // Real-time day-view subscription — appointment changes from any client appear within ~1s.
   useEffect(() => {
     setLoading(true);
+    const t = startTrace('calendar_day_load'); // time-to-first-appointments (Firebase Perf)
+    let first = true;
     const unsub = subscribeToAppointments(date, list => {
       setAppts(list);
       setLoading(false);
+      if (first) { first = false; t?.stop(); }
     });
-    return unsub;
+    return () => { unsub(); if (first) t?.stop(); };
   }, [date]);
 
   const weekStart = weekStartOf(date);
