@@ -112,7 +112,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', background: 'var(--pn-bg)', overflowY: 'auto' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', background: gUser ? 'var(--pn-bg)' : 'var(--tm-bg, #f8f9fa)', overflowY: 'auto' }}>
 
       {/* Top bar */}
       <div style={{ background: 'var(--pn-surface)', borderBottom: `1px solid var(--tm-border, #ebebeb)`, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%', boxSizing: 'border-box', gap: 8 }}>
