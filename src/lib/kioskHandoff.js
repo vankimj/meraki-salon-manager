@@ -54,6 +54,9 @@ export function buildKioskHandoff({
   flow = 'card',
 }) {
   const apptsPayload = appts.map((a, ai) => ({
+    id: a.id || null,                 // lets recordKioskSale mark the appt done + dedup in Reports
+    date: a.date || null,
+    startTime: a.startTime || null,
     clientName: a.clientName || 'Walk-in',
     clientId: a.clientId || null,
     clientPhone: a.clientPhone || null,
