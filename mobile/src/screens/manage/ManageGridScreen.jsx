@@ -71,7 +71,10 @@ export default function ManageGridScreen({ navigation }) {
             { text: 'Cancel', style: 'cancel' },
             { text: 'PIN lock only', onPress: async () => { await setKioskLocked(screen); navigation.navigate(screen); } },
             { text: 'Secure kiosk', style: 'default', onPress: async () => {
-                try { await becomeKiosk('Front desk'); navigation.navigate(screen); }
+                // No navigate() — signing in as the kiosk identity flips the app
+                // (App.jsx) to the kiosk-only root on its own. Navigating here runs
+                // against the ManageStack as it unmounts and crashes.
+                try { await becomeKiosk('Front desk'); }
                 catch (e) { Alert.alert('Could not set up secure kiosk', e?.message || 'Please try again.'); }
               } },
           ],
