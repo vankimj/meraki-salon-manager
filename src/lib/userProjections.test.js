@@ -30,6 +30,19 @@ describe('buildAdminEmails', () => {
   });
 });
 
+describe('manager role (RBAC)', () => {
+  const WITH_MGR = [...USERS, { email: 'mgr@meraki.com', role: 'manager' }];
+  it('manager is STAFF (data access) but NOT admin (no owner-only writes)', () => {
+    expect(buildStaffEmails(WITH_MGR)).toContain('mgr@meraki.com');
+    expect(buildAdminEmails(WITH_MGR)).not.toContain('mgr@meraki.com');
+  });
+  it('kiosk is neither staff nor admin (blanket access withheld — see RBAC #8)', () => {
+    const withKiosk = [...USERS, { email: 'kiosk@meraki.com', role: 'kiosk' }];
+    expect(buildStaffEmails(withKiosk)).not.toContain('kiosk@meraki.com');
+    expect(buildAdminEmails(withKiosk)).not.toContain('kiosk@meraki.com');
+  });
+});
+
 describe('buildScheduleViewOnlyEmails', () => {
   it('includes only techs explicitly set to view-only', () => {
     expect(buildScheduleViewOnlyEmails(USERS)).toEqual(['ana@meraki.com']);

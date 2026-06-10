@@ -5,7 +5,11 @@
 // on every saveUsers / backfill so role + permission changes take effect at
 // the rules layer immediately.
 
-export const STAFF_ROLES = ['admin', 'readonly', 'tech', 'scheduler'];
+// Roles that get staff-level data access (rules' isTenantStaff). 'manager' is
+// staff (owner-only writes are gated separately by adminEmails = owners). 'kiosk'
+// is intentionally absent — it gets its own limited access (RBAC #8), not blanket
+// staff read.
+export const STAFF_ROLES = ['admin', 'manager', 'readonly', 'tech', 'scheduler'];
 
 export function emailsByRole(users, predicate) {
   return Array.from(new Set(
