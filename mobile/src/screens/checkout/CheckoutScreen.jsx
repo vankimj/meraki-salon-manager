@@ -71,6 +71,7 @@ export default function CheckoutScreen({ navigation }) {
   const [discVal, setDiscVal]     = useState('');
   const [membership, setMembership] = useState(null);   // primary client's active membership
   const [clientCredit, setClientCredit] = useState(0);  // primary client's store-credit balance
+  const [clientEmailOnFile, setClientEmailOnFile] = useState(''); // for the receipt email field
   const [applyCredit, setApplyCredit] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
@@ -131,7 +132,7 @@ export default function CheckoutScreen({ navigation }) {
       setDiscType(prev => (prev === 'none' ? 'member' : prev));
       setDiscVal(prev => (prev === '' ? String(m.discountPct) : prev));
     }).catch(() => {});
-    fetchClient(primaryClientId).then(c => { if (alive) setClientCredit(Number(c?.credit) || 0); }).catch(() => {});
+    fetchClient(primaryClientId).then(c => { if (alive) { setClientCredit(Number(c?.credit) || 0); setClientEmailOnFile(c?.email || ''); } }).catch(() => {});
     return () => { alive = false; };
   }, [primaryClientId]);
 
@@ -436,7 +437,10 @@ export default function CheckoutScreen({ navigation }) {
           {!done.queued && (
             <>
               <Text style={styles.doneSection}>Text or email the receipt</Text>
-              <ResendReceiptRow viewToken={saleId} defaultContact={receiptPhone} />
+              <ResendReceiptRow viewToken={saleId}
+                defaultPhone={(tab.appts || []).map(a => a.clientPhone).find(Boolean) || ''}
+                defaultEmail={clientEmailOnFile}
+                defaultContact={receiptPhone} />
             </>
           )}
           <TouchableOpacity style={styles.doneBtn} onPress={() => navigation.goBack()} activeOpacity={0.85}>

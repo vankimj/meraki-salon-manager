@@ -413,7 +413,10 @@ export default function KioskCheckout({ session, settings, email, local = false,
         {!queued && (
           <View style={styles.resendBox}>
             <Text style={styles.resendLabel}>Want it texted or emailed?</Text>
-            <ResendReceiptRow viewToken={saleId} defaultContact={receiptPhone} />
+            <ResendReceiptRow viewToken={saleId}
+              defaultPhone={client?.phone || (cart.appts || []).map(a => a.clientPhone).find(Boolean) || ''}
+              defaultEmail={client?.email || ''}
+              defaultContact={receiptPhone} />
           </View>
         )}
         <TouchableOpacity style={styles.doneBtn} onPress={finishComplete}>
