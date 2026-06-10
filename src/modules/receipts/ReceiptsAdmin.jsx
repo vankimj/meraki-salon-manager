@@ -45,8 +45,9 @@ function newIdemKey() {
 }
 
 export default function ReceiptsAdmin() {
-  const { isAdmin, isTech, showToast, settings } = useApp();
-  const canWrite = !!(isAdmin || isTech);   // resend + refund (backend also enforces)
+  const { isAdmin, isTech, can, showToast, settings } = useApp();
+  const canWrite = !!(isAdmin || isTech);   // resend a receipt
+  const canRefund = can('refund');          // owner/manager only — server enforces in refundSale
 
   const [rangeDays, setRangeDays] = useState(180);
   const [list, setList]       = useState(null);
@@ -153,7 +154,7 @@ export default function ReceiptsAdmin() {
         filtered.map(item => (
           <ReceiptCard key={item.id} item={item} open={openId === item.id}
             onToggle={() => setOpenId(openId === item.id ? null : item.id)}
-            canWrite={canWrite} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
+            canWrite={canWrite} canRefund={canRefund} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
         ))
       )}
 
@@ -167,7 +168,7 @@ export default function ReceiptsAdmin() {
   );
 }
 
-function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund, onRedo }) {
+function ReceiptCard({ item, open, onToggle, canWrite, canRefund, showToast, onRefund, onRedo }) {
   const pay = item.payment || {};
   const refunded = Number(item.refundedAmount) || 0;
   const remaining = Math.max(0, (Number(pay.total) || 0) - refunded);
@@ -226,10 +227,12 @@ function ReceiptCard({ item, open, onToggle, canWrite, showToast, onRefund, onRe
 
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 14, flexWrap: 'wrap' }}>
                 {remaining > 0 ? (
-                  <button onClick={onRefund}
-                    style={{ padding: '10px 16px', fontWeight: 800, fontSize: 13.5, borderRadius: 10, border: '1px solid var(--pn-danger)', background: 'transparent', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                    ↩ Refund{refunded > 0 ? ` (${money(remaining)} left)` : ''}
-                  </button>
+                  canRefund ? (
+                    <button onClick={onRefund}
+                      style={{ padding: '10px 16px', fontWeight: 800, fontSize: 13.5, borderRadius: 10, border: '1px solid var(--pn-danger)', background: 'transparent', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      ↩ Refund{refunded > 0 ? ` (${money(remaining)} left)` : ''}
+                    </button>
+                  ) : null
                 ) : (
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text-faint)' }}>Fully refunded</div>
                 )}
