@@ -37,8 +37,10 @@ export async function pingConn() {
   }
   const t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   try {
-    // settings is small, always present, and staff-readable. Server read = true RTT.
-    await getDocFromServer(doc(db, 'tenants', TENANT_ID, 'data', 'settings'));
+    // Ping slugs/{tenant}: tiny, PUBLICLY readable (so it works on logged-out
+    // pages like the /r/{token} receipt + ratings page — settings is staff-only,
+    // which made the ping report a false "conn err" there). Server read = true RTT.
+    await getDocFromServer(doc(db, 'slugs', TENANT_ID));
     const ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
     const status = ms > BAD_MS ? 'bad' : ms > SLOW_MS ? 'slow' : 'good';
     set({ latencyMs: ms, status, at: Date.now() });
