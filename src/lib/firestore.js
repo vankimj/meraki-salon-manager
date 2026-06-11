@@ -3029,6 +3029,33 @@ export async function addToWaitlist(data) {
   return addDoc(WAITLIST_COL, { ...data, date: todayDateStr(), addedAt: new Date().toISOString(), status: 'waiting' });
 }
 
+// Public lobby kiosk: phone-first client lookup + create, via a guarded Cloud
+// Function (the anonymous kiosk can't read/write the clients collection — PII).
+// Call with just { phone } to look up; on a miss, re-call with first+last name
+// to create. Returns { matched, clientId, firstName, created, banned?,
+// todayAppt? } only — never another client's data. Returns { error } on failure
+// so the kiosk can show a visible "see the front desk" fallback (no silent swallow).
+export async function kioskRegisterClient({ phone, firstName, lastName, hp } = {}) {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./firebase');
+  try {
+    const res = await httpsCallable(functions, 'kioskRegisterClient')({ tenantId: TENANT_ID, phone, firstName, lastName, hp });
+    return res?.data || { matched: false, clientId: '' };
+  } catch (e) { return { error: e?.message || 'lookup_failed' }; }
+}
+
+// Public lobby kiosk: walk-in availability for a service. Returns
+// { options:[{techName,waitMinutes,startTime}], noPrefEarliest, anyAvailable,
+// salonClosed } computed server-side — no schedule/PII reaches the device.
+export async function kioskWalkinOptions({ serviceId, requestedTechName } = {}) {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./firebase');
+  try {
+    const res = await httpsCallable(functions, 'kioskWalkinOptions')({ tenantId: TENANT_ID, serviceId, requestedTechName });
+    return res?.data || { options: [], noPrefEarliest: null, anyAvailable: false };
+  } catch (e) { return { error: e?.message || 'availability_failed' }; }
+}
+
 export async function fetchTodayQueue() {
   const snap = await getDocs(query(WAITLIST_COL, where('date', '==', todayDateStr()), orderBy('addedAt', 'asc')));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));

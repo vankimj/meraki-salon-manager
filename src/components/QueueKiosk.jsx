@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchServices, fetchEmployees, addToWaitlist, subscribeQueue, fetchWebfrontConfig, fetchClientByPhone, findTodaysAppointmentForClient } from '../lib/firestore';
+import { fetchServices, fetchEmployees, addToWaitlist, subscribeQueue, fetchWebfrontConfig, kioskWalkinOptions, kioskRegisterClient } from '../lib/firestore';
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { IconChair, IconCalendar, IconCheck, IconArrowLeft, IconClock, IconChevronRight } from './Icons';
 
@@ -17,6 +17,23 @@ function formatTimeStr(hhmm) {
   const ampm = h >= 12 ? 'PM' : 'AM';
   const hh   = h > 12 ? h - 12 : h === 0 ? 12 : h;
   return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
+// Phone helpers: we keep `phone` state as raw digits (<=10), format for display.
+function digitsOnly(s) { return String(s || '').replace(/\D/g, '').slice(0, 10); }
+function fmtPhoneInput(d) {
+  d = digitsOnly(d);
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+function fmtPhoneStored(d) { d = digitsOnly(d); return d.length === 10 ? `+1 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : d; }
+function waitLabel(min) {
+  if (min == null) return '';
+  if (min <= 5) return 'now';
+  if (min < 60) return `~${min} min`;
+  const h = Math.floor(min / 60), m = min % 60;
+  return m ? `~${h}h ${m}m` : `~${h}h`;
 }
 
 function CountDown({ secs, onDone }) {
@@ -66,22 +83,25 @@ export default function QueueKiosk() {
   const [theme,      setTheme]      = useState(getTheme('meraki'));
   const [brand,      setBrand]      = useState(null);
 
-  // Walk-in form
-  const [name,     setName]     = useState('');
-  const [phone,    setPhone]    = useState('');
-  const [email,    setEmail]    = useState('');
-  const [svcSel,   setSvcSel]   = useState('');
-  const [techSel,  setTechSel]  = useState('Any');
-  const [working,  setWorking]  = useState(false);
-  const [position, setPosition] = useState(null);
+  // Walk-in flow
+  const [phone,     setPhone]     = useState('');     // raw digits, <=10
+  const [firstName, setFirstName] = useState('');
+  const [lastName,  setLastName]  = useState('');
+  const [identity,  setIdentity]  = useState(null);   // { clientId, firstName, todayAppt }
+  const [svcSel,    setSvcSel]    = useState(null);   // { id, name }
+  const [techSel,   setTechSel]   = useState('Any');  // 'Any' | tech name
+  const [avail,     setAvail]     = useState(null);   // CF result { options, noPrefEarliest, anyAvailable, salonClosed }
+  const [working,   setWorking]   = useState(false);
+  const [position,  setPosition]  = useState(null);
 
-  // Arrival form
-  const [arrName,    setArrName]    = useState('');
+  // Appointment-arrival path (phone-first via the same CF, so it actually
+  // finds appointments — the old direct client/appt reads are blocked for anon).
   const [arrPhone,   setArrPhone]   = useState('');
-  const [arrMatched, setArrMatched] = useState(null);  // { client, appt } or null
+  const [arrMatched, setArrMatched] = useState(null); // { firstName, appt }
 
-  const nameRef = useRef(null);
-  const arrRef  = useRef(null);
+  const phoneRef = useRef(null);
+  const nameRef  = useRef(null);
+  const arrRef   = useRef(null);
 
   // Load static data + theme
   useEffect(() => {
@@ -104,64 +124,202 @@ export default function QueueKiosk() {
   }, []);
 
   useEffect(() => {
-    if (step === 'walkin')   setTimeout(() => nameRef.current?.focus(), 120);
+    if (step === 'phone')    setTimeout(() => phoneRef.current?.focus(), 120);
+    if (step === 'new-name') setTimeout(() => nameRef.current?.focus(), 120);
     if (step === 'arrival')  setTimeout(() => arrRef.current?.focus(), 120);
   }, [step]);
 
   function reset() {
     setStep('welcome');
-    setName(''); setPhone(''); setEmail(''); setSvcSel(''); setTechSel('Any');
-    setArrName(''); setArrPhone(''); setArrMatched(null); setPosition(null); setWorking(false);
+    setPhone(''); setFirstName(''); setLastName(''); setIdentity(null);
+    setSvcSel(null); setTechSel('Any'); setAvail(null); setWorking(false); setPosition(null);
+    setArrPhone(''); setArrMatched(null);
   }
 
-  async function submitWalkIn() {
-    if (!name.trim() || !svcSel) return;
+  const phoneOk = phone.length === 10;
+
+  // Phone-first lookup. The guarded CF returns only { matched, clientId,
+  // firstName, banned?, todayAppt? } — no PII crosses to this anon device.
+  async function lookupPhone() {
+    if (!phoneOk || working) return;
+    setWorking(true);
+    setStep('lookup');
+    try {
+      const res = await kioskRegisterClient({ phone });
+      if (!res || res.error || res.banned) return setStep('frontdesk');
+      if (res.matched) {
+        setIdentity({ clientId: res.clientId, firstName: res.firstName, todayAppt: res.todayAppt || null });
+        setStep('greet');
+      } else {
+        setStep('new-prompt');
+      }
+    } finally { setWorking(false); }
+  }
+
+  async function createClient() {
+    if (!firstName.trim() || !lastName.trim() || working) return;
+    setWorking(true);
+    const res = await kioskRegisterClient({ phone, firstName: firstName.trim(), lastName: lastName.trim() });
+    setWorking(false);
+    if (!res || res.error || res.banned) return setStep('frontdesk');
+    setIdentity({ clientId: res.clientId, firstName: res.firstName || firstName.trim(), todayAppt: res.todayAppt || null });
+    setStep('service');
+  }
+
+  // Selecting a tech (or "No preference") fetches availability server-side.
+  async function chooseTech(t) {
+    if (working) return;
+    setWorking(true);
+    setTechSel(t);
+    setAvail(null);
+    setStep('availability');
+    try {
+      const res = await kioskWalkinOptions({ serviceId: svcSel.id, requestedTechName: t === 'Any' ? '' : t });
+      if (!res || res.error) return setStep('frontdesk');
+      setAvail(res);
+    } finally { setWorking(false); }
+  }
+
+  async function joinQueue({ techName, requestedTechName, waitMin }) {
+    if (working) return;
     setWorking(true);
     try {
       await addToWaitlist({
-        clientName: name.trim(),
-        clientPhone: phone.trim(),
-        clientEmail: email.trim(),
-        serviceName: svcSel,
-        techName: techSel,
-        isWalkIn: true,
-        hasAppointment: false,
+        clientId:    identity?.clientId || '',
+        clientName:  identity?.firstName || 'Guest',
+        clientPhone: fmtPhoneStored(phone),
+        serviceName: svcSel?.name || '',
+        serviceId:   svcSel?.id || '',
+        techName:    techName || 'Any',
+        requestedTechName: requestedTechName || '',
+        estimatedWaitMin:  Number.isFinite(waitMin) ? waitMin : null,
+        isWalkIn:       true,
+        hasAppointment: !!identity?.todayAppt,
       });
       setPosition(queueCount + 1);
       setStep('done-walkin');
-    } catch { setWorking(false); }
+    } catch { setStep('frontdesk'); } finally { setWorking(false); }
   }
 
   async function submitArrival() {
-    if (!arrName.trim() || !arrPhone.trim()) return;
+    if (arrPhone.length !== 10 || working) return;
     setWorking(true);
     try {
-      // Look up the client + their appointment by phone before creating the
-      // waitlist entry, so staff see the matched record on the dashboard.
-      const [client, appt] = await Promise.all([
-        fetchClientByPhone(arrPhone.trim()).catch(() => null),
-        findTodaysAppointmentForClient({ phone: arrPhone.trim() }).catch(() => null),
-      ]);
-      setArrMatched({ client, appt });
-
+      const res = await kioskRegisterClient({ phone: arrPhone });
+      if (!res || res.error || res.banned) return setStep('frontdesk');
+      const appt = res.todayAppt || null;
+      // Await the queue write — only claim "checked in" once the front desk
+      // actually has the arrival. A failed write routes to the front-desk screen.
       await addToWaitlist({
-        clientName:  client?.name || arrName.trim(),
-        clientPhone: arrPhone.trim(),
-        clientEmail: client?.email || '',
-        clientId:    client?.id || '',
-        apptId:      appt?.id || '',
-        serviceName: appt?.services?.[0]?.name || '',
+        clientId:    res.clientId || '',
+        clientName:  res.firstName || 'Guest',
+        clientPhone: fmtPhoneStored(arrPhone),
+        apptId:      appt?.apptId || '',
+        serviceName: appt?.serviceName || '',
         techName:    appt?.techName || 'Any',
-        isWalkIn:    false,
+        isWalkIn:       false,
         hasAppointment: !!appt,
       });
+      setArrMatched({ firstName: res.firstName || '', appt });
       setStep('done-arrival');
-    } catch { setWorking(false); }
+    } catch { setStep('frontdesk'); } finally { setWorking(false); }
   }
 
-  // Shell is rendered via the module-level <Shell> component below — defining it
-  // inside this function would create a brand-new component identity on every
-  // render, remounting all inputs and stealing focus on every keystroke.
+  // Renders the availability step per the wait-time rules. Lives inside the
+  // component so it can read avail/techSel/svcSel and call joinQueue.
+  function renderAvailability() {
+    if (!avail) return <LoadingHero tint={theme.accent} label="Checking availability…" />;
+    if (avail.salonClosed) {
+      return (
+        <>
+          <SuccessHero tint={theme.accent} title="We're closed right now" tagline="Please check our hours and come back during open times." />
+          <DoneFooter onReset={reset} />
+        </>
+      );
+    }
+
+    // No preference → show the soonest clocked-in tech who can do the service.
+    if (techSel === 'Any') {
+      const e = avail.noPrefEarliest;
+      if (!e) return noTechAvailable();
+      return (
+        <>
+          <SectionHeader title="Here's the soonest opening" subtitle={svcSel?.name ? `for your ${svcSel.name}` : ''} />
+          <AvailCard tint={theme.primary} techName={e.techName} wait={e.waitMinutes} note="next available" />
+          <ButtonRow style={{ marginTop: 18 }}>
+            <SecondaryButton onClick={() => setStep('tech')}><IconArrowLeft size={16} /> Back</SecondaryButton>
+            <PrimaryButton onClick={() => joinQueue({ techName: 'Any', requestedTechName: '', waitMin: e.waitMinutes })} disabled={working} tint={theme.primary}>
+              {working ? 'Joining…' : 'Join the queue'}
+            </PrimaryButton>
+          </ButtonRow>
+        </>
+      );
+    }
+
+    // Specific tech requested.
+    const r = avail.options.find(o => o.techName === techSel);
+    if (!r) {
+      // Requested tech not available today at all.
+      const alt = avail.options[0];
+      return (
+        <>
+          <SectionHeader title={`${techSel} isn't available today`} subtitle={alt ? 'Someone else can help you sooner.' : ''} />
+          {alt && <AvailCard tint={theme.primary} techName={alt.techName} wait={alt.waitMinutes} note="available instead" />}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+            {alt && <PrimaryButton onClick={() => joinQueue({ techName: alt.techName, requestedTechName: alt.techName, waitMin: alt.waitMinutes })} disabled={working} tint={theme.primary}>Choose {alt.techName}</PrimaryButton>}
+            <SecondaryButton onClick={() => joinQueue({ techName: techSel, requestedTechName: techSel, waitMin: null })}>Wait for {techSel} anyway</SecondaryButton>
+            <SecondaryButton onClick={() => setStep('tech')}>Pick someone else</SecondaryButton>
+          </div>
+        </>
+      );
+    }
+    if (r.waitMinutes <= 60) {
+      return (
+        <>
+          <SectionHeader title={`${techSel} can see you soon`} />
+          <AvailCard tint={theme.accent} techName={techSel} wait={r.waitMinutes} note="your requested tech" />
+          <ButtonRow style={{ marginTop: 18 }}>
+            <SecondaryButton onClick={() => setStep('tech')}><IconArrowLeft size={16} /> Back</SecondaryButton>
+            <PrimaryButton onClick={() => joinQueue({ techName: techSel, requestedTechName: techSel, waitMin: r.waitMinutes })} disabled={working} tint={theme.accent}>
+              {working ? 'Joining…' : 'Join the queue'}
+            </PrimaryButton>
+          </ButtonRow>
+        </>
+      );
+    }
+    // Requested tech > 1 hr → suggest an immediately-available alternative.
+    const immediate = avail.options.find(o => o.techName !== techSel && o.waitMinutes <= 10);
+    const sooner    = avail.options.find(o => o.techName !== techSel);
+    const suggest   = immediate || sooner;
+    return (
+      <>
+        <SectionHeader title={`${techSel} has a bit of a wait`} subtitle={`About ${waitLabel(r.waitMinutes)}.`} />
+        {suggest && <AvailCard tint={theme.primary} techName={suggest.techName} wait={suggest.waitMinutes} note={immediate ? 'available now' : 'available sooner'} />}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+          {suggest && <PrimaryButton onClick={() => joinQueue({ techName: suggest.techName, requestedTechName: suggest.techName, waitMin: suggest.waitMinutes })} disabled={working} tint={theme.primary}>Switch to {suggest.techName} ({waitLabel(suggest.waitMinutes)})</PrimaryButton>}
+          <SecondaryButton onClick={() => joinQueue({ techName: techSel, requestedTechName: techSel, waitMin: r.waitMinutes })}>Keep {techSel} ({waitLabel(r.waitMinutes)})</SecondaryButton>
+          <SecondaryButton onClick={() => setStep('tech')}>Back</SecondaryButton>
+        </div>
+      </>
+    );
+  }
+
+  function noTechAvailable() {
+    return (
+      <>
+        <SectionHeader title="No tech is open right now" subtitle={`for ${svcSel?.name || 'this service'}`} />
+        <div style={{ fontSize: 14, color: 'rgba(255,255,255,.6)', marginBottom: 16, lineHeight: 1.5 }}>
+          You can still join the queue and we'll fit you in as soon as someone's free.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <PrimaryButton onClick={() => joinQueue({ techName: 'Any', requestedTechName: techSel === 'Any' ? '' : techSel, waitMin: null })} disabled={working} tint={theme.primary}>
+            {working ? 'Joining…' : 'Join the queue anyway'}
+          </PrimaryButton>
+          <SecondaryButton onClick={() => setStep('service')}>Pick a different service</SecondaryButton>
+        </div>
+      </>
+    );
+  }
 
   // ── Welcome ──────────────────────────────────────────────
   if (step === 'welcome') {
@@ -179,93 +337,157 @@ export default function QueueKiosk() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16 }}>
-          <KioskChoice
-            Icon={IconChair}
-            title="Walk in"
-            desc="Add me to the queue"
-            tint={theme.primary}
-            onClick={() => setStep('walkin')}
-          />
-          <KioskChoice
-            Icon={IconCalendar}
-            title="I have an appointment"
-            desc="Let us know you've arrived"
-            tint={theme.accent}
-            onClick={() => setStep('arrival')}
-          />
+          <KioskChoice Icon={IconChair} title="Walk in" desc="Add me to the queue" tint={theme.primary} onClick={() => setStep('phone')} />
+          <KioskChoice Icon={IconCalendar} title="I have an appointment" desc="Let us know you've arrived" tint={theme.accent} onClick={() => setStep('arrival')} />
         </div>
       </Shell>
     );
   }
 
-  // ── Walk-in form ─────────────────────────────────────────
-  if (step === 'walkin') {
-    const canSubmit = name.trim() && svcSel && !working;
+  // ── Walk-in: phone ───────────────────────────────────────
+  if (step === 'phone') {
     return (
       <Shell theme={theme} narrow brand={brand}>
-        <SectionHeader title="Join the Walk-in Queue" subtitle="Tell us a bit about yourself." />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <KInput refEl={nameRef} value={name} onChange={setName} placeholder="Your name *" />
-          <KInput value={phone} onChange={setPhone} placeholder="Phone number (optional)" inputMode="tel" />
-          <KInput value={email} onChange={setEmail} placeholder="Email (optional)" inputMode="email" />
-
-          <Field label="Service *">
-            <PillRow>
-              {services.map(s => (
-                <Pill key={s.id} active={svcSel === s.name} tint={theme.primary} onClick={() => setSvcSel(s.name)}>
-                  {s.name}
-                </Pill>
-              ))}
-            </PillRow>
-          </Field>
-
-          <Field label="Tech preference">
-            <PillRow>
-              {['Any', ...techs.map(t => t.name)].map(t => (
-                <Pill key={t} active={techSel === t} tint={theme.accent} onClick={() => setTechSel(t)}>
-                  {t === 'Any' ? 'No preference' : t}
-                </Pill>
-              ))}
-            </PillRow>
-          </Field>
-
-          <ButtonRow>
-            <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Back</SecondaryButton>
-            <PrimaryButton onClick={submitWalkIn} disabled={!canSubmit} tint={theme.primary}>
-              {working ? 'Adding…' : 'Join Queue'}
-            </PrimaryButton>
-          </ButtonRow>
-        </div>
-      </Shell>
-    );
-  }
-
-  // ── Appointment arrival ─────────────────────────────────
-  if (step === 'arrival') {
-    const canSubmit = arrName.trim() && arrPhone.trim() && !working;
-    return (
-      <Shell theme={theme} narrow brand={brand}>
-        <SectionHeader title="Let us know you're here" subtitle="A couple quick details so we can find your appointment." />
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <KInput refEl={arrRef} value={arrName} onChange={setArrName} placeholder="Your name *" big />
-          <KInput value={arrPhone} onChange={setArrPhone}
-            onKeyDown={e => e.key === 'Enter' && canSubmit && submitArrival()}
-            placeholder="Phone number *" inputMode="tel" big />
-        </div>
-
+        <SectionHeader title="What's your phone number?" subtitle="We'll check if you've been here before." />
+        <KInput refEl={phoneRef} value={fmtPhoneInput(phone)} onChange={v => setPhone(digitsOnly(v))}
+          onKeyDown={e => e.key === 'Enter' && phoneOk && lookupPhone()}
+          placeholder="(555) 555-5555" inputMode="tel" big />
         <ButtonRow style={{ marginTop: 18 }}>
           <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Back</SecondaryButton>
-          <PrimaryButton onClick={submitArrival} disabled={!canSubmit} tint={theme.accent}>
-            {working ? 'Checking in…' : 'Check In'}
-          </PrimaryButton>
+          <PrimaryButton onClick={lookupPhone} disabled={!phoneOk} tint={theme.primary}>Continue</PrimaryButton>
         </ButtonRow>
       </Shell>
     );
   }
 
-  // ── Done: walk-in ───────────────────────────────────────
+  // ── Walk-in: lookup (transient) ──────────────────────────
+  if (step === 'lookup') {
+    return <Shell theme={theme} narrow brand={brand}><LoadingHero tint={theme.primary} label="Looking you up…" /></Shell>;
+  }
+
+  // ── Walk-in: greet returning client ──────────────────────
+  if (step === 'greet') {
+    const appt = identity?.todayAppt;
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SuccessHero
+          tint={theme.primary}
+          title={identity?.firstName ? `Welcome back, ${identity.firstName}!` : 'Welcome back!'}
+          big={appt ? `We see your ${formatTimeStr(appt.startTime)} appointment` : null}
+          detail={appt ? `${appt.techName ? `with ${appt.techName}` : ''}${appt.serviceName ? ` · ${appt.serviceName}` : ''}`.trim() : null}
+          tagline="Let's get you into the walk-in queue."
+        />
+        <ButtonRow style={{ marginTop: 8 }}>
+          <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Start over</SecondaryButton>
+          <PrimaryButton onClick={() => setStep('service')} tint={theme.primary}>Continue</PrimaryButton>
+        </ButtonRow>
+      </Shell>
+    );
+  }
+
+  // ── Walk-in: new client prompt ───────────────────────────
+  if (step === 'new-prompt') {
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SectionHeader title="We don't see that number" subtitle={`Are you new to ${brand?.name || 'the salon'}?`} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <PrimaryButton onClick={() => setStep('new-name')} tint={theme.primary}>Yes, I'm new — sign me up</PrimaryButton>
+          <SecondaryButton onClick={() => { setPhone(''); setStep('phone'); }}>Re-enter my number</SecondaryButton>
+          <SecondaryButton onClick={() => setStep('frontdesk')}>Ask the front desk</SecondaryButton>
+        </div>
+      </Shell>
+    );
+  }
+
+  // ── Walk-in: new client name ─────────────────────────────
+  if (step === 'new-name') {
+    const canSubmit = firstName.trim() && lastName.trim() && !working;
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SectionHeader title="Welcome! What's your name?" subtitle="We'll set up your profile." />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <KInput refEl={nameRef} value={firstName} onChange={setFirstName} placeholder="First name *" big />
+          <KInput value={lastName} onChange={setLastName} placeholder="Last name *" big
+            onKeyDown={e => e.key === 'Enter' && canSubmit && createClient()} />
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,.5)' }}>📱 {fmtPhoneInput(phone)}</div>
+        </div>
+        <ButtonRow style={{ marginTop: 18 }}>
+          <SecondaryButton onClick={() => setStep('new-prompt')}><IconArrowLeft size={16} /> Back</SecondaryButton>
+          <PrimaryButton onClick={createClient} disabled={!canSubmit} tint={theme.primary}>{working ? 'Setting up…' : 'Continue'}</PrimaryButton>
+        </ButtonRow>
+      </Shell>
+    );
+  }
+
+  // ── Walk-in: service ─────────────────────────────────────
+  if (step === 'service') {
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SectionHeader title="What can we do for you?" subtitle="Pick a service." />
+        <PillRow>
+          {services.map(s => (
+            <Pill key={s.id} active={svcSel?.id === s.id} tint={theme.primary} onClick={() => setSvcSel({ id: s.id, name: s.name })}>{s.name}</Pill>
+          ))}
+        </PillRow>
+        <ButtonRow style={{ marginTop: 18 }}>
+          <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Start over</SecondaryButton>
+          <PrimaryButton onClick={() => setStep('tech')} disabled={!svcSel} tint={theme.primary}>Continue</PrimaryButton>
+        </ButtonRow>
+      </Shell>
+    );
+  }
+
+  // ── Walk-in: tech preference ─────────────────────────────
+  if (step === 'tech') {
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SectionHeader title="Any tech preference?" subtitle={svcSel?.name ? `For your ${svcSel.name}` : ''} />
+        <PillRow>
+          <Pill active={false} tint={theme.accent} onClick={() => chooseTech('Any')}>No preference</Pill>
+          {techs.map(t => (
+            <Pill key={t.id} active={false} tint={theme.accent} onClick={() => chooseTech(t.name)}>{t.name}</Pill>
+          ))}
+        </PillRow>
+        <ButtonRow style={{ marginTop: 18 }}>
+          <SecondaryButton onClick={() => setStep('service')}><IconArrowLeft size={16} /> Back</SecondaryButton>
+        </ButtonRow>
+      </Shell>
+    );
+  }
+
+  // ── Walk-in: availability ────────────────────────────────
+  if (step === 'availability') {
+    return <Shell theme={theme} narrow brand={brand}>{renderAvailability()}</Shell>;
+  }
+
+  // ── Front desk fallback (banned / error / opt-out) ───────
+  if (step === 'frontdesk') {
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SuccessHero tint={theme.accent} title="Please see the front desk" tagline="A team member will get you checked in. Thank you!" />
+        <DoneFooter onReset={reset} />
+      </Shell>
+    );
+  }
+
+  // ── Appointment arrival (phone-first) ────────────────────
+  if (step === 'arrival') {
+    const canSubmit = arrPhone.length === 10 && !working;
+    return (
+      <Shell theme={theme} narrow brand={brand}>
+        <SectionHeader title="Let us know you're here" subtitle="Enter the phone number on your appointment." />
+        <KInput refEl={arrRef} value={fmtPhoneInput(arrPhone)} onChange={v => setArrPhone(digitsOnly(v))}
+          onKeyDown={e => e.key === 'Enter' && canSubmit && submitArrival()}
+          placeholder="(555) 555-5555" inputMode="tel" big />
+        <ButtonRow style={{ marginTop: 18 }}>
+          <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Back</SecondaryButton>
+          <PrimaryButton onClick={submitArrival} disabled={!canSubmit} tint={theme.accent}>{working ? 'Checking in…' : 'Check In'}</PrimaryButton>
+        </ButtonRow>
+      </Shell>
+    );
+  }
+
+  // ── Done: walk-in ────────────────────────────────────────
   if (step === 'done-walkin') {
     return (
       <Shell theme={theme} narrow brand={brand}>
@@ -273,7 +495,7 @@ export default function QueueKiosk() {
           tint={theme.primary}
           big={position > 1 ? `You're #${position} in line` : "You're next!"}
           title="You're in the queue!"
-          detail={`${techSel !== 'Any' ? `Requesting ${techSel}` : 'Any available tech'}${svcSel ? ` · ${svcSel}` : ''}`}
+          detail={`${techSel !== 'Any' ? `Requesting ${techSel}` : 'Any available tech'}${svcSel?.name ? ` · ${svcSel.name}` : ''}`}
           tagline="Have a seat — we'll call your name shortly!"
         />
         <DoneFooter onReset={reset} />
@@ -281,12 +503,12 @@ export default function QueueKiosk() {
     );
   }
 
-  // ── Done: arrival ───────────────────────────────────────
+  // ── Done: arrival ────────────────────────────────────────
   if (step === 'done-arrival') {
-    const firstName = (arrMatched?.client?.name || arrName).split(' ')[0];
+    const firstName = arrMatched?.firstName || '';
     const appt = arrMatched?.appt;
     const apptDetail = appt
-      ? `${appt.startTime ? formatTimeStr(appt.startTime) : ''}${appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : ''}${appt.services?.[0]?.name ? ` · ${appt.services[0].name}` : ''}`.trim()
+      ? `${appt.startTime ? formatTimeStr(appt.startTime) : ''}${appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : ''}${appt.serviceName ? ` · ${appt.serviceName}` : ''}`.trim()
       : null;
     return (
       <Shell theme={theme} narrow brand={brand}>
@@ -366,15 +588,6 @@ function KInput({ refEl, value, onChange, placeholder, inputMode, onKeyDown, big
   );
 }
 
-function Field({ label, children }) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,.42)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 10 }}>{label}</div>
-      {children}
-    </div>
-  );
-}
-
 function PillRow({ children }) {
   return <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{children}</div>;
 }
@@ -423,6 +636,35 @@ function PrimaryButton({ onClick, disabled, tint, children }) {
       }}>
       {children}
     </button>
+  );
+}
+
+function LoadingHero({ tint, label }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '56px 8px' }}>
+      <div style={{ width: 64, height: 64, margin: '0 auto 22px', borderRadius: '50%', border: `3px solid ${tint}44`, borderTopColor: tint, animation: 'pnspin .8s linear infinite' }} />
+      <div style={{ fontSize: 16, color: 'rgba(255,255,255,.7)' }}>{label}</div>
+      <style>{`@keyframes pnspin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+}
+
+function AvailCard({ tint, techName, wait, note }) {
+  const initials = String(techName || '?').trim().split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <div style={{ background: 'rgba(255,255,255,.05)', border: `1px solid ${tint}55`, borderRadius: 18, padding: '22px 22px', display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div style={{ width: 56, height: 56, borderRadius: '50%', background: `linear-gradient(135deg,${tint},${tint}cc)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, fontWeight: 700, color: '#fff', flexShrink: 0 }}>
+        {initials}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#fff' }}>{techName}</div>
+        {note && <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', textTransform: 'uppercase', letterSpacing: '.08em', marginTop: 2 }}>{note}</div>}
+      </div>
+      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: tint }}>{waitLabel(wait)}</div>
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,.45)' }}>{wait != null && wait > 5 ? 'est. wait' : 'available'}</div>
+      </div>
+    </div>
   );
 }
 
