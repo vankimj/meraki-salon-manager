@@ -6983,6 +6983,57 @@ exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
   return out;
 });
 
+// Owner-only: change a recorded refund's per-tech commission treatment
+// (withhold ↔ goodwill) after the fact — a refund can swing a tech's pay, so the
+// owner needs to correct it. Logged to the ledger (type 'commission_change',
+// from→to, who, when) so the pay impact stays reconcilable for accounting.
+exports.updateRefundCommission = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const { tenantId: tid, receiptId, refundKey, techName, treatment } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  if (treatment !== 'withhold' && treatment !== 'goodwill') throw new HttpsError('invalid-argument', 'treatment must be withhold|goodwill');
+  if (!receiptId || !refundKey || !techName) throw new HttpsError('invalid-argument', 'receiptId, refundKey, techName required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);   // owner/admin only ("owner or higher")
+  const issuer = await callerEmail(request);
+  const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
+
+  let changed = null;
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(recRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'Sale not found');
+    const rec = snap.data();
+    const refunds = Array.isArray(rec.refunds) ? rec.refunds.map(r => ({ ...r })) : [];
+    const idx = refunds.findIndex(r => r && r.key === refundKey);
+    if (idx < 0) throw new HttpsError('not-found', 'Refund not found on this sale');
+    const rf = refunds[idx];
+    const prev = (rf.commissionByTech && rf.commissionByTech[techName]) || 'withhold';
+    if (prev === treatment) { changed = { noop: true }; return; }
+    rf.commissionByTech = { ...(rf.commissionByTech || {}), [techName]: treatment };
+    refunds[idx] = rf;
+    tx.update(recRef, { refunds, updatedAt: new Date().toISOString() });
+    changed = { prev, refundAmount: Number(rf.amount) || 0, clientName: rec.clientName || 'Walk-in', clientId: rec.clientId || null, viewToken: rec.viewToken || receiptId };
+  });
+
+  if (changed && !changed.noop) {
+    await ledger.appendLedger(db, tenantId, `commchg_${receiptId}_${refundKey}_${techName}_${Date.now()}`, {
+      type: 'commission_change',
+      at: new Date().toISOString(),
+      amount: changed.refundAmount || 0,
+      direction: 'neutral',
+      method: 'commission',
+      clientId: changed.clientId, clientName: changed.clientName, techName,
+      by: issuer || null,
+      reason: `Refund commission ${changed.prev} → ${treatment}`,
+      from: changed.prev, to: treatment,
+      refReceiptId: receiptId, refViewToken: changed.viewToken, refundKey,
+      detail: `Refund commission for ${techName}: ${changed.prev} → ${treatment} (refund $${(changed.refundAmount || 0).toFixed(2)})`,
+    });
+  }
+  return { ok: true, treatment };
+});
+
 // ── Financial ledger triggers ─────────────────────────────────────────────────
 // Capture every sale + refund straight from the receipt, so the ledger is
 // complete regardless of which client/server path recorded the sale. Idempotent

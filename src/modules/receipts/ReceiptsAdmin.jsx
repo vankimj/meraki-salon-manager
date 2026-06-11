@@ -154,7 +154,7 @@ export default function ReceiptsAdmin() {
         filtered.map(item => (
           <ReceiptCard key={item.id} item={item} open={openId === item.id}
             onToggle={() => setOpenId(openId === item.id ? null : item.id)}
-            canWrite={canWrite} canRefund={canRefund} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
+            canWrite={canWrite} canRefund={canRefund} canEditCommission={isAdmin} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
         ))
       )}
 
@@ -168,7 +168,42 @@ export default function ReceiptsAdmin() {
   );
 }
 
-function ReceiptCard({ item, open, onToggle, canWrite, canRefund, showToast, onRefund, onRedo }) {
+// Per-tech refund commission treatment. Owner can flip withheld ↔ goodwill after
+// the fact (a refund swings a tech's pay); the change is logged to the ledger
+// (updateRefundCommission) for reconciliation. Non-owners see it read-only.
+function CommissionToggle({ receiptId, refundKey, tech, treatment, canEdit, showToast }) {
+  const [t, setT] = useState(treatment === 'goodwill' ? 'goodwill' : 'withhold');
+  const [busy, setBusy] = useState(false);
+  async function flip(next) {
+    if (busy || next === t || !canEdit || !refundKey) return;
+    setBusy(true);
+    try {
+      const res = await callFn('updateRefundCommission')({ tenantId: TENANT_ID, receiptId, refundKey, techName: tech, treatment: next });
+      if (res.data?.ok) { setT(next); showToast && showToast(`${tech}: commission ${next === 'withhold' ? 'withheld' : 'goodwill (kept)'}`); }
+      else throw new Error('Failed');
+    } catch (e) { showToast && showToast('Couldn\'t change commission: ' + (e?.message || 'error')); }
+    finally { setBusy(false); }
+  }
+  const btn = (opt, label, onColor) => (
+    <button disabled={!canEdit || busy} onClick={() => flip(opt)}
+      title={canEdit ? `Set ${tech}'s commission to ${label}` : `${tech}: ${t === 'withhold' ? 'withheld' : 'goodwill'}`}
+      style={{ marginLeft: 4, padding: '2px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 700, fontFamily: 'inherit',
+        cursor: canEdit && !busy ? 'pointer' : 'default',
+        background: t === opt ? onColor : 'var(--pn-bg)', color: t === opt ? '#fff' : 'var(--pn-text-muted)',
+        border: `1px solid ${t === opt ? onColor : 'var(--pn-border-strong)'}` }}>
+      {label}
+    </button>
+  );
+  return (
+    <span style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'inline-flex', alignItems: 'center' }}>
+      <span style={{ fontWeight: 600 }}>{tech}</span>
+      {btn('withhold', 'Withheld', '#ef4444')}
+      {btn('goodwill', 'Goodwill', '#16a34a')}
+    </span>
+  );
+}
+
+function ReceiptCard({ item, open, onToggle, canWrite, canRefund, canEditCommission, showToast, onRefund, onRedo }) {
   const pay = item.payment || {};
   const refunded = Number(item.refundedAmount) || 0;
   const remaining = Math.max(0, (Number(pay.total) || 0) - refunded);
@@ -217,9 +252,18 @@ function ReceiptCard({ item, open, onToggle, canWrite, canRefund, showToast, onR
             <Row bold label="Total" value={`${money(pay.total)}${paidWith(pay) ? ' · ' + paidWith(pay) : ''}`} />
           </div>
           {(item.refunds || (item.refund ? [item.refund] : [])).map((r, i) => (
-            <div key={`rf${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: i === 0 ? 6 : 0 }}>
-              <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>↩ {refundTypeLabel(r)} refund{r.reason ? ` · ${r.reason}` : ''}{r.refundedAt ? ` · ${stamp(r.refundedAt)}` : ''}</span>
-              <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>−{money(r.amount)}</span>
+            <div key={`rf${i}`} style={{ padding: '3px 0', marginTop: i === 0 ? 6 : 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>↩ {refundTypeLabel(r)} refund{r.reason ? ` · ${r.reason}` : ''}{r.refundedAt ? ` · ${stamp(r.refundedAt)}` : ''}</span>
+                <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>−{money(r.amount)}</span>
+              </div>
+              {r.commissionByTech && Object.keys(r.commissionByTech).length > 0 && (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4, paddingLeft: 16 }}>
+                  {Object.entries(r.commissionByTech).map(([tech, treat]) => (
+                    <CommissionToggle key={tech} receiptId={item.id} refundKey={r.key} tech={tech} treatment={treat} canEdit={canEditCommission} showToast={showToast} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
           {redos.map((r, i) => (
