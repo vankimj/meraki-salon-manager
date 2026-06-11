@@ -391,7 +391,7 @@ export default function ReportsAdmin() {
                   current={metrics.avgTicket}      prev={showComparison ? priorMetrics?.avgTicket      : undefined} />
                 <KPICard label="Walk-ins"
                   value={`${metrics.walkIns}`}
-                  sub={`${metrics.totalAppts ? Math.round(metrics.walkIns / metrics.totalAppts * 100) : 0}% of total`}
+                  sub={metrics.trackedVisits ? `${Math.round(metrics.walkIns / metrics.trackedVisits * 100)}% of tracked visits` : 'not yet tracked'}
                   current={metrics.walkIns}        prev={showComparison ? priorMetrics?.walkIns        : undefined} />
               </div>
 
@@ -472,31 +472,52 @@ export default function ReportsAdmin() {
 
 // ── Walk-in vs Scheduled ───────────────────────────────
 function WalkInVsScheduled({ metrics }) {
-  const { totalAppts, walkIns, scheduled, anonymous, namedWalkIns } = metrics;
-  const pctWalk = totalAppts ? Math.round(walkIns / totalAppts * 100) : 0;
-  const pctSched = 100 - pctWalk;
+  const { walkIns, scheduledVisits, untrackedVisits, trackedVisits } = metrics;
+  // Percentages are of TRACKED visits only — imported/pre-feature sales can't
+  // be classified, so folding them in would understate both rates.
+  const pctWalk  = trackedVisits ? Math.round(walkIns / trackedVisits * 100) : 0;
+  const pctSched = trackedVisits ? 100 - pctWalk : 0;
 
   const rows = [
-    { label: 'Scheduled (with client record)', count: scheduled,    color: '#3B82F6', pct: pctSched },
-    { label: 'Walk-ins (total)',               count: walkIns,      color: '#F59E0B', pct: pctWalk  },
-    { label: '  ↳ with name recorded',         count: namedWalkIns, color: '#10B981', pct: totalAppts ? Math.round(namedWalkIns / totalAppts * 100) : 0, sub: true },
-    { label: '  ↳ anonymous',                  count: anonymous,    color: '#EF4444', pct: totalAppts ? Math.round(anonymous / totalAppts * 100) : 0, sub: true },
+    { label: 'Scheduled', count: scheduledVisits, color: '#3B82F6', pct: pctSched },
+    { label: 'Walk-ins',  count: walkIns,         color: '#F59E0B', pct: pctWalk  },
   ];
 
   return (
     <div>
-      <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', marginBottom: 16 }}>
-        <div style={{ width: `${pctSched}%`, background: '#3B82F6', transition: 'width .4s' }} />
-        <div style={{ width: `${pctWalk}%`,  background: '#F59E0B', transition: 'width .4s' }} />
-      </div>
-      {rows.map(r => (
-        <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8, paddingLeft: r.sub ? 16 : 0 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-          <span style={{ fontSize: r.sub ? 12 : 13, color: r.sub ? 'var(--pn-text-muted)' : 'var(--pn-text)', flex: 1 }}>{r.label}</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
-          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+      {trackedVisits > 0 ? (
+        <>
+          <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', marginBottom: 16 }}>
+            <div style={{ width: `${pctSched}%`, background: '#3B82F6', transition: 'width .4s' }} />
+            <div style={{ width: `${pctWalk}%`,  background: '#F59E0B', transition: 'width .4s' }} />
+          </div>
+          {rows.map(r => (
+            <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+              <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div style={{ fontSize: 13, color: 'var(--pn-text-faint)', marginBottom: 8 }}>
+          No tracked visits yet in this period.
         </div>
-      ))}
+      )}
+      {untrackedVisits > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: '#94A3B8', flexShrink: 0, marginRight: 8 }} />
+            <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', flex: 1 }}>Not tracked</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text-muted)', marginRight: 12 }}>{untrackedVisits.toLocaleString()}</span>
+            <span style={{ width: 36 }} />
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 6, lineHeight: 1.5 }}>
+            Imported history (and any sale rung up before walk-in tracking) carries no walk-in vs scheduled flag, so it can&apos;t be split. New checkouts are tagged automatically — booked same-day counts as a walk-in.
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shif
 import { logActivity } from '../../lib/logger';
 import { subscribeLocations, currentLocationId, locationTaxRate } from '../../lib/locations';
 import { applyTurnCredit } from '../../lib/turnCredit';
+import { defaultWalkIn } from '../reports/metrics';
 import { useApp } from '../../context/AppContext';
 import { escapeHtml, genUrlSafeToken } from '../../utils/helpers';
 import { TENANT_ID } from '../../lib/tenant';
@@ -90,6 +91,13 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const primaryClient = isWalkInRetail
     ? walkInClient
     : { id: primaryAppt?.clientId, name: primaryAppt?.clientName, email: null };
+
+  // Walk-in vs scheduled — defaulted from the appointment's booking lead time
+  // (booked the same day it happens = walk-in), staff can flip it. Stamped on
+  // the receipt so Reports can count walk-ins. Retail-only sales aren't visits.
+  const hasServiceVisit = appts.length > 0;
+  const [isWalkIn, setIsWalkIn] = useState(() =>
+    hasServiceVisit && defaultWalkIn(primaryAppt?.createdAt, primaryAppt?.date));
 
   const stripe   = useStripe();
   const elements = useElements();
@@ -652,6 +660,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         services:    allUpdatedServices.map(s => ({ name: s.name, price: s.price, techName: s.techName })),
         retailProducts,
         giftCardsSold: giftCardsSold.length > 0 ? giftCardsSold : null,
+        walkIn:      hasServiceVisit ? isWalkIn : false,
         apptIds:     payment.apptIds,
         payment,
       }).catch(() => {});
@@ -751,6 +760,17 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px' }}>
+
+          {/* Walk-in vs scheduled — defaulted by booking lead time, overridable */}
+          {hasServiceVisit && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', marginBottom: 12, borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={isWalkIn} onChange={e => setIsWalkIn(e.target.checked)} style={{ width: 16, height: 16, cursor: 'pointer' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>Walk-in</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flex: 1, textAlign: 'right' }}>
+                {isWalkIn ? 'Counts as a walk-in' : 'Counts as a scheduled visit'}
+              </span>
+            </label>
+          )}
 
           {/* Services — single flat list when one appt, grouped per-appt when multiple */}
           {!isWalkInRetail && (

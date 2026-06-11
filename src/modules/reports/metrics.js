@@ -17,6 +17,35 @@ export function apptRevenue(a) {
   return raw;
 }
 
+// ── Walk-in vs scheduled classification ────────────────
+// A walk-in is a visit booked the same day it happens; a scheduled visit was
+// booked in advance. We derive this from booking lead time (createdAt vs the
+// visit date) rather than asking staff to remember a flag, but checkout can
+// stamp an explicit `walkIn` boolean that overrides the derivation. Imported
+// and demo history has a synthetic createdAt (≈ the visit date), so it can't
+// be classified honestly and is reported separately as "not tracked".
+export function isImportedTxn(a) {
+  return !!(a._importedFrom || a._glossgeniusSource || a._glossgeniusTransactionId || a._demo || a.source === 'imported');
+}
+
+// True = walk-in. Booked on or after the visit day (lead time ≤ 0) is a
+// walk-in; booked earlier is a scheduled appointment.
+export function defaultWalkIn(createdAt, date) {
+  if (!createdAt || !date) return false;
+  return String(createdAt).slice(0, 10) >= String(date).slice(0, 10);
+}
+
+// 'walkin' | 'scheduled' | 'untracked' for a completed sale, or null when the
+// sale isn't a service visit (gift card / retail only — not counted either way).
+// Prefers an explicit `walkIn` flag, falls back to the lead-time derivation.
+export function walkInClass(a) {
+  if (!(a.services?.length > 0)) return null;
+  if (isImportedTxn(a)) return 'untracked';
+  if (typeof a.walkIn === 'boolean') return a.walkIn ? 'walkin' : 'scheduled';
+  if (a.createdAt && a.date) return defaultWalkIn(a.createdAt, a.date) ? 'walkin' : 'scheduled';
+  return 'untracked';
+}
+
 // Build a receipt-shaped row from a done appointment for legacy/demo data
 // without a corresponding receipt. Mirrors Transactions tab behavior so
 // Overview reflects the same unified record set.
@@ -38,6 +67,14 @@ export function apptToSyntheticReceipt(a) {
     giftCardsSold:  null,
     createdAt:    p.paidAt || startISO,
     status:       'done',
+    // Carry import/booking provenance so walk-in classification can run:
+    // walk-in vs scheduled is derived from the appointment's booking lead time
+    // (a.createdAt vs a.date), not the synthetic receipt's payment time.
+    _importedFrom: a._importedFrom || null,
+    _demo:        a._demo || false,
+    walkIn:       typeof a.walkIn === 'boolean'
+      ? a.walkIn
+      : (isImportedTxn(a) ? undefined : defaultWalkIn(a.createdAt, a.date)),
     payment: {
       subtotal:     p.subtotal     ?? sales,
       discountAmount: p.discountAmount ?? 0,
@@ -296,11 +333,17 @@ export function computeMetrics(transactions, today = todayStr()) {
 
   const totalRevenue  = done.reduce((s, a) => s + apptRevenue(a), 0);
   const totalAppts    = done.length;
-  const walkInAppts   = done.filter(a => !a.clientId);
-  const walkIns       = walkInAppts.length;
-  const anonymous     = walkInAppts.filter(a => !a.clientName || a.clientName === 'Walk-in').length;
-  const namedWalkIns  = walkIns - anonymous;
-  const scheduled     = totalAppts - walkIns;
+  // Walk-in vs scheduled, over service visits only. "Untracked" = imported or
+  // pre-feature sales we can't classify (see walkInClass). Counts are distinct
+  // visits, so a salon can read "X walk-ins, Y scheduled, Z not yet tracked".
+  let walkIns = 0, scheduledVisits = 0, untrackedVisits = 0;
+  done.forEach(a => {
+    const k = walkInClass(a);
+    if (k === 'walkin') walkIns++;
+    else if (k === 'scheduled') scheduledVisits++;
+    else if (k === 'untracked') untrackedVisits++;
+  });
+  const trackedVisits = walkIns + scheduledVisits;
   const avgTicket     = totalAppts ? totalRevenue / totalAppts : 0;
 
   const byDay = {};
@@ -450,7 +493,7 @@ export function computeMetrics(transactions, today = todayStr()) {
     }
   });
 
-  return { totalRevenue, totalAppts, walkIns, anonymous, namedWalkIns, scheduled, avgTicket, byDay, byTech, byService, byClient, byMethod, methodTotal,
+  return { totalRevenue, totalAppts, walkIns, scheduledVisits, untrackedVisits, trackedVisits, avgTicket, byDay, byTech, byService, byClient, byMethod, methodTotal,
     ccFeeTotal, cardTxnCount, cardRevenue,
     tipTotal, tipTxnCount, tipsByMethod, tipsByTech,
   };

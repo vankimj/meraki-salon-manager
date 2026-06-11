@@ -1,4 +1,5 @@
 import { buildTechSplit, genReceiptToken } from './checkout';
+import { defaultWalkIn } from './metrics';
 import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient, saveClient, claimSaleSideEffects } from './firestore';
 
 // Writes a completed sale, shared by the tech checkout (CheckoutScreen) and the
@@ -23,7 +24,7 @@ export async function completeSale({
   discType = 'none', discVal = 0, promo = null, giftCard = null,
   cashTendered = null, saleId = null, skipSideEffects = false,
   receiptContact = null, issueCredit = 0, tipByTech = null,
-  cardBrand = null, cardLast4 = null,
+  cardBrand = null, cardLast4 = null, walkIn = null,
 }) {
   const t = totals;
   const sp = buildTechSplit(lines, t.tipAmt, tipByTech);
@@ -129,6 +130,9 @@ export async function completeSale({
     startTime:   primaryAppt?.startTime || '',
     services:    allServices,
     retailProducts,
+    walkIn:      allServices.length > 0
+      ? (walkIn != null ? !!walkIn : defaultWalkIn(primaryAppt?.createdAt, primaryAppt?.date))
+      : false,
     payment,
     apptIds:     (tab.appts || []).map(a => a.id),
   }, saleId);

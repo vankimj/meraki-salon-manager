@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeRetention, techPayAdjust,
-  doneTransactions, txMethodKey, txMethodAmount,
+  doneTransactions, txMethodKey, txMethodAmount, defaultWalkIn, walkInClass,
 } from './metrics';
 
 const TODAY = '2026-05-04';
@@ -131,25 +131,51 @@ describe('computeMetrics — totals', () => {
 });
 
 describe('computeMetrics — walk-ins vs scheduled', () => {
-  it('classifies clientId presence as scheduled', () => {
-    const m = computeMetrics([tx({ clientId: 'c1' })], TODAY);
-    expect(m.scheduled).toBe(1);
+  it('counts a same-day-booked visit as a walk-in', () => {
+    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-05-01T11:00:00Z' })], TODAY);
+    expect(m.walkIns).toBe(1);
+    expect(m.scheduledVisits).toBe(0);
+    expect(m.trackedVisits).toBe(1);
+  });
+  it('counts a visit booked in advance as scheduled', () => {
+    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-04-20T11:00:00Z' })], TODAY);
+    expect(m.scheduledVisits).toBe(1);
     expect(m.walkIns).toBe(0);
   });
-  it('counts no-clientId as walk-in', () => {
-    const m = computeMetrics([tx({ clientId: null, clientName: 'Walk-in' })], TODAY);
+  it('honors an explicit walkIn flag over the lead-time derivation', () => {
+    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-04-20T11:00:00Z', walkIn: true })], TODAY);
     expect(m.walkIns).toBe(1);
-    expect(m.anonymous).toBe(1);
-    expect(m.namedWalkIns).toBe(0);
+    expect(m.scheduledVisits).toBe(0);
   });
-  it('separates anonymous from named walk-ins', () => {
+  it('reports imported history as untracked, not walk-in or scheduled', () => {
+    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-05-01T11:00:00Z', _glossgeniusSource: 'Appointment' })], TODAY);
+    expect(m.untrackedVisits).toBe(1);
+    expect(m.walkIns).toBe(0);
+    expect(m.scheduledVisits).toBe(0);
+    expect(m.trackedVisits).toBe(0);
+  });
+  it('excludes non-service sales (gift card / retail) from walk-in classification', () => {
     const m = computeMetrics([
-      tx({ clientId: null, clientName: 'Walk-in' }),
-      tx({ clientId: null, clientName: 'Sue Phone-In' }),
+      tx({ services: [], giftCardsSold: [{ code: 'X' }], payment: { total: 100, method: 'card' } }),
     ], TODAY);
-    expect(m.walkIns).toBe(2);
-    expect(m.anonymous).toBe(1);
-    expect(m.namedWalkIns).toBe(1);
+    expect(m.walkIns).toBe(0);
+    expect(m.scheduledVisits).toBe(0);
+    expect(m.untrackedVisits).toBe(0);
+  });
+});
+
+describe('walk-in helpers', () => {
+  it('defaultWalkIn: same-day booking is a walk-in, advance booking is not', () => {
+    expect(defaultWalkIn('2026-05-01T09:00:00Z', '2026-05-01')).toBe(true);
+    expect(defaultWalkIn('2026-04-25T09:00:00Z', '2026-05-01')).toBe(false);
+    expect(defaultWalkIn(null, '2026-05-01')).toBe(false);
+  });
+  it('walkInClass: null for non-service sales, untracked for imported, derived otherwise', () => {
+    expect(walkInClass({ services: [] })).toBe(null);
+    expect(walkInClass({ services: [{ price: 1 }], _importedFrom: 'glossgenius', createdAt: '2026-05-01', date: '2026-05-01' })).toBe('untracked');
+    expect(walkInClass({ services: [{ price: 1 }], createdAt: '2026-05-01T10:00:00Z', date: '2026-05-01' })).toBe('walkin');
+    expect(walkInClass({ services: [{ price: 1 }], createdAt: '2026-04-01T10:00:00Z', date: '2026-05-01' })).toBe('scheduled');
+    expect(walkInClass({ services: [{ price: 1 }], walkIn: false, createdAt: '2026-05-01', date: '2026-05-01' })).toBe('scheduled');
   });
 });
 

@@ -17,6 +17,25 @@ export function apptRevenue(a) {
   return raw;
 }
 
+// ── Walk-in vs scheduled classification ────────────────
+// See the web copy in src/modules/reports/metrics.js for the full rationale.
+// Keep them in sync. Walk-in = booked the same day it happens; imported/demo
+// history has a synthetic createdAt so it's reported as "not tracked".
+export function isImportedTxn(a) {
+  return !!(a._importedFrom || a._glossgeniusSource || a._glossgeniusTransactionId || a._demo || a.source === 'imported');
+}
+export function defaultWalkIn(createdAt, date) {
+  if (!createdAt || !date) return false;
+  return String(createdAt).slice(0, 10) >= String(date).slice(0, 10);
+}
+export function walkInClass(a) {
+  if (!(a.services?.length > 0)) return null;
+  if (isImportedTxn(a)) return 'untracked';
+  if (typeof a.walkIn === 'boolean') return a.walkIn ? 'walkin' : 'scheduled';
+  if (a.createdAt && a.date) return defaultWalkIn(a.createdAt, a.date) ? 'walkin' : 'scheduled';
+  return 'untracked';
+}
+
 // Build a receipt-shaped row from a done appointment for legacy/demo data
 // without a corresponding receipt. Mirrors Transactions tab behavior so
 // Overview reflects the same unified record set.
@@ -38,6 +57,11 @@ export function apptToSyntheticReceipt(a) {
     giftCardsSold:  null,
     createdAt:    p.paidAt || startISO,
     status:       'done',
+    _importedFrom: a._importedFrom || null,
+    _demo:        a._demo || false,
+    walkIn:       typeof a.walkIn === 'boolean'
+      ? a.walkIn
+      : (isImportedTxn(a) ? undefined : defaultWalkIn(a.createdAt, a.date)),
     payment: {
       subtotal:     p.subtotal     ?? sales,
       discountAmount: p.discountAmount ?? 0,
@@ -202,11 +226,14 @@ export function computeMetrics(transactions, today = todayStr()) {
 
   const totalRevenue  = done.reduce((s, a) => s + apptRevenue(a), 0);
   const totalAppts    = done.length;
-  const walkInAppts   = done.filter(a => !a.clientId);
-  const walkIns       = walkInAppts.length;
-  const anonymous     = walkInAppts.filter(a => !a.clientName || a.clientName === 'Walk-in').length;
-  const namedWalkIns  = walkIns - anonymous;
-  const scheduled     = totalAppts - walkIns;
+  let walkIns = 0, scheduledVisits = 0, untrackedVisits = 0;
+  done.forEach(a => {
+    const k = walkInClass(a);
+    if (k === 'walkin') walkIns++;
+    else if (k === 'scheduled') scheduledVisits++;
+    else if (k === 'untracked') untrackedVisits++;
+  });
+  const trackedVisits = walkIns + scheduledVisits;
   const avgTicket     = totalAppts ? totalRevenue / totalAppts : 0;
 
   const byDay = {};
@@ -356,7 +383,7 @@ export function computeMetrics(transactions, today = todayStr()) {
     }
   });
 
-  return { totalRevenue, totalAppts, walkIns, anonymous, namedWalkIns, scheduled, avgTicket, byDay, byTech, byService, byClient, byMethod, methodTotal,
+  return { totalRevenue, totalAppts, walkIns, scheduledVisits, untrackedVisits, trackedVisits, avgTicket, byDay, byTech, byService, byClient, byMethod, methodTotal,
     ccFeeTotal, cardTxnCount, cardRevenue,
     tipTotal, tipTxnCount, tipsByMethod, tipsByTech,
   };
