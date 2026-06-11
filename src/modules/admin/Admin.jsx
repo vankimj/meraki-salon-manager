@@ -689,8 +689,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {/* ══ end GROUP 3 ══ */}
 
             {/* ══ GROUP 4 · Receipts & Reviews ══ */}
-            <Section title="🧾 Receipts & Reviews" keywords="receipt ratings review threshold google email sms thank you feedback message tip delivery rating star routing">
-            <Section title="🧾 Receipts & Ratings" keywords="receipt ratings review threshold google email sms thank you feedback message tip delivery rating star routing" nested>
+            <Section title="🧾 Receipts & Reviews" keywords="receipt ratings review threshold google email sms thank you feedback message tip delivery rating star routing policy policies cancellation cancel refund no-show noshow">
+            <Section title="🧾 Receipts & Ratings" keywords="receipt ratings review threshold google email sms thank you feedback message tip delivery rating star routing policy policies cancellation cancel refund no-show noshow" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Receipt delivery</div>
