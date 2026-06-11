@@ -145,7 +145,7 @@ const PERIODS = [
 const TABS = [
   { id: 'overview',      label: 'Overview' },
   { id: 'transactions',  label: 'Transactions' },
-  { id: 'ledger',        label: 'Audit Log' },
+  { id: 'ledger',        label: 'Ledger' },
   { id: 'cancellations', label: 'Cancellations & No-Shows' },
   { id: 'ratings',       label: 'Service Ratings' },
   { id: 'tax',           label: 'IRS / Tax Report' },

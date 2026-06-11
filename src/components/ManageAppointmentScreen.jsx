@@ -169,12 +169,17 @@ function SummaryView({ appt, policy, salon, onReschedule, onCancel }) {
               ✕ Cancel appointment
             </button>
           </div>
-        ) : appt.status !== 'cancelled' && appt.status !== 'done' && (
-          <Banner color="#fffbeb" border="#fcd34d" textColor="#92400e">
-            Changes must be made at least {policy.cancellationLeadHours} hour{policy.cancellationLeadHours === 1 ? '' : 's'} in advance.
-            {salon.phone && <> For last-minute changes, call <a href={`tel:${salon.phone}`} style={{ color: '#92400e', fontWeight: 700 }}>{salon.phone}</a>.</>}
-          </Banner>
-        )}
+        ) : policy.canCancel ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <Banner color="#fffbeb" border="#fcd34d" textColor="#92400e">
+              This is within {policy.cancellationLeadHours} hour{policy.cancellationLeadHours === 1 ? '' : 's'} of your appointment — a cancellation fee may apply per the salon&apos;s policy. To <strong>reschedule</strong>, please call{salon.phone ? <> <a href={`tel:${salon.phone}`} style={{ color: '#92400e', fontWeight: 700 }}>{salon.phone}</a></> : ' the salon'}.
+            </Banner>
+            <button onClick={onCancel}
+              style={{ ...secondaryBtn, color: '#ef4444', borderColor: '#fca5a5' }}>
+              ✕ Cancel appointment
+            </button>
+          </div>
+        ) : null}
 
         {(policy.cancellationPolicyText || '').trim() && (
           <div style={{ marginTop: 18, padding: '12px 14px', background: '#faf8fd', border: '1px solid #ede7f6', borderRadius: 10 }}>
