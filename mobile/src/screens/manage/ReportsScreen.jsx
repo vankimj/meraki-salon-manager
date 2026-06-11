@@ -93,7 +93,8 @@ export default function ReportsScreen({ navigation }) {
   const [section, setSection] = useState('overview');  // overview | ratings | ask
   const [ratings, setRatings] = useState(null);
   const [refundBreak, setRefundBreak] = useState(null);
-  const [retention, setRetention] = useState(null);    // { nw, ret, walk }
+  const [retention, setRetention] = useState(null);
+  const [openBucket, setOpenBucket] = useState(null);  // expanded clientless bucket
   const [referrals, setReferrals] = useState([]);
   const [visitClient, setVisitClient] = useState(null);// { id, name } for the visits modal
   const [visits, setVisits] = useState(null);
@@ -407,9 +408,31 @@ export default function ReportsScreen({ navigation }) {
                     ) : (
                       <View style={styles.statRow}><Text style={styles.statLabel}>No client-linked visits</Text><Text style={styles.statValue}>—</Text></View>
                     )}
-                    {retention.giftRetailCount > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Gift card / retail (no client)</Text><Text style={styles.statValue}>{retention.giftRetailCount}</Text></View>}
-                    {retention.unlinkedCount > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Unmatched history</Text><Text style={styles.statValue}>{retention.unlinkedCount}</Text></View>}
-                    {retention.walkInCount > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Walk-ins (anonymous)</Text><Text style={styles.statValue}>{retention.walkInCount}</Text></View>}
+                    {[
+                      { key: 'gift',     label: 'Gift card / retail (no client)', rows: retention.giftRetailRows || [] },
+                      { key: 'unlinked', label: 'Unmatched history',              rows: retention.unlinkedRows   || [] },
+                      { key: 'walkin',   label: 'Walk-ins (anonymous)',           rows: retention.walkInRows     || [] },
+                    ].filter(b => b.rows.length > 0).map(b => (
+                      <View key={b.key}>
+                        <TouchableOpacity style={styles.statRow} onPress={() => setOpenBucket(openBucket === b.key ? null : b.key)}>
+                          <Text style={styles.statLabel}>{b.label}</Text>
+                          <Text style={[styles.statValue, { color: theme.blue }]}>{b.rows.length} {openBucket === b.key ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {openBucket === b.key && b.rows.map((tx, i) => {
+                          const amt = tx.payment?.total ?? (tx.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
+                          const ggId = tx._glossgeniusTransactionId || tx._glossgeniusChargeId;
+                          return (
+                            <View key={tx.id || i} style={styles.miniRow}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={styles.miniName} numberOfLines={1}>{tx.clientName || '(no name)'}</Text>
+                                <Text style={{ fontSize: 11, color: theme.textFaint }} numberOfLines={1}>{tx.date}{tx.techName ? ` · ${tx.techName}` : ''}{ggId ? ` · GG ${ggId}` : ''}</Text>
+                              </View>
+                              <Text style={styles.miniVal}>{money(amt)}</Text>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    ))}
                   </View>
                 </>
               )}

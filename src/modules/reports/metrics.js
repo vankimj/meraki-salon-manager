@@ -225,7 +225,7 @@ export function computeRetention(transactions, priorClientIds, today = todayStr(
     (!a.transactionType || a.transactionType === 'sale'));
 
   const visitDates = {};
-  let walkInCount = 0, giftRetailCount = 0, unlinkedCount = 0;
+  const walkInRows = [], giftRetailRows = [], unlinkedRows = [];
   rows.forEach(a => {
     if (a.clientId) {
       if (!visitDates[a.clientId]) visitDates[a.clientId] = new Set();
@@ -237,9 +237,9 @@ export function computeRetention(transactions, priorClientIds, today = todayStr(
     const hasSvc    = a.services?.length > 0;
     const name      = String(a.clientName || '').trim().toLowerCase();
     const isWalkName = !name || name === 'walk-in' || name === 'walk in' || name === 'walk-in retail';
-    if (soldGc || (hasRetail && !hasSvc)) giftRetailCount++;
-    else if (isWalkName) walkInCount++;
-    else unlinkedCount++;
+    if (soldGc || (hasRetail && !hasSvc)) giftRetailRows.push(a);
+    else if (isWalkName) walkInRows.push(a);
+    else unlinkedRows.push(a);
   });
 
   let newCount = 0, returningCount = 0;
@@ -248,7 +248,12 @@ export function computeRetention(transactions, priorClientIds, today = todayStr(
     else newCount++;
   });
 
-  return { newCount, returningCount, walkInCount, giftRetailCount, unlinkedCount, clientTotal: newCount + returningCount };
+  return {
+    newCount, returningCount,
+    walkInCount: walkInRows.length, giftRetailCount: giftRetailRows.length, unlinkedCount: unlinkedRows.length,
+    walkInRows, giftRetailRows, unlinkedRows,
+    clientTotal: newCount + returningCount,
+  };
 }
 
 // `today` is parameterized for deterministic tests; production callers can

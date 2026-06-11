@@ -820,8 +820,32 @@ function CancellationsBreakdown({ stats }) {
 }
 
 // ── New vs Returning clients ───────────────────────────
+function ClientlessTxnRow({ t }) {
+  const amount = t.payment?.total ?? apptRevenue(t);
+  const d = t.date ? new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+  const items = (t.services || []).map(s => s.name).filter(Boolean);
+  if (t.retailProducts?.length) items.push(`${t.retailProducts.length} retail item${t.retailProducts.length > 1 ? 's' : ''}`);
+  if (t.giftCardsSold?.length)  items.push(`${t.giftCardsSold.length} gift card${t.giftCardsSold.length > 1 ? 's' : ''}`);
+  const ggId = t._glossgeniusTransactionId || t._glossgeniusChargeId;
+  return (
+    <div style={{ padding: '6px 0', borderTop: '1px solid var(--pn-border)' }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 13, color: 'var(--pn-text)', fontWeight: 500, flex: 1 }}>{t.clientName || '(no name)'}</span>
+        <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>{d}</span>
+        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', minWidth: 64, textAlign: 'right' }}>{fmt$(amount)}</span>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
+        {items.length ? items.join(' · ') : 'no line items'}
+        {t.techName ? ` · ${t.techName}` : ''}
+        {ggId ? ` · GG ${ggId}` : ''}
+      </div>
+    </div>
+  );
+}
+
 function NewVsReturning({ retention }) {
-  const { newCount, returningCount, walkInCount, giftRetailCount, unlinkedCount, clientTotal } = retention;
+  const [openBucket, setOpenBucket] = useState(null);
+  const { newCount, returningCount, walkInRows, giftRetailRows, unlinkedRows, clientTotal } = retention;
   const pctNew = clientTotal ? Math.round(newCount       / clientTotal * 100) : 0;
   const pctRet = clientTotal ? Math.round(returningCount / clientTotal * 100) : 0;
 
@@ -830,12 +854,13 @@ function NewVsReturning({ retention }) {
     { label: 'New clients',       count: newCount,       pct: pctNew, color: '#3D95CE' },
   ];
   // Clientless transactions — kept out of the new/returning percentages above so
-  // a gift-card sale or unmatched import can't distort the retention rate.
+  // a gift-card sale or unmatched import can't distort the retention rate. Each
+  // is expandable so the user can audit exactly which records landed there.
   const otherRows = [
-    { label: 'Gift card / retail (no client)', count: giftRetailCount, color: '#F59E0B' },
-    { label: 'Unmatched history',              count: unlinkedCount,   color: '#A78BFA' },
-    { label: 'Walk-ins (anonymous)',           count: walkInCount,     color: '#94A3B8' },
-  ].filter(r => r.count > 0);
+    { key: 'gift',     label: 'Gift card / retail (no client)', rows: giftRetailRows || [], color: '#F59E0B', hint: 'Sales not attached to a client — gift cards and retail-only purchases.' },
+    { key: 'unlinked', label: 'Unmatched history',              rows: unlinkedRows   || [], color: '#A78BFA', hint: 'Imported transactions with a client name we could not match to a client profile.' },
+    { key: 'walkin',   label: 'Walk-ins (anonymous)',           rows: walkInRows     || [], color: '#94A3B8', hint: 'Service sales recorded without a client.' },
+  ].filter(r => r.rows.length > 0);
 
   const rowStyle = { display: 'flex', alignItems: 'center', marginBottom: 8 };
   const dot = (color) => ({ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, marginRight: 8 });
@@ -868,14 +893,27 @@ function NewVsReturning({ retention }) {
           <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 8, letterSpacing: '.04em', textTransform: 'uppercase' }}>
             Not tied to a client
           </div>
-          {otherRows.map(r => (
-            <div key={r.label} style={rowStyle}>
-              <div style={dot(r.color)} />
-              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
-              <span style={{ width: 36 }} />
-            </div>
-          ))}
+          {otherRows.map(r => {
+            const open = openBucket === r.key;
+            return (
+              <div key={r.key}>
+                <button
+                  onClick={() => setOpenBucket(open ? null : r.key)}
+                  style={{ ...rowStyle, width: '100%', background: 'none', border: 'none', padding: '2px 0', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                  <div style={dot(r.color)} />
+                  <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#3D95CE', marginRight: 8, textDecoration: 'underline', textDecorationStyle: 'dotted' }}>{r.rows.length}</span>
+                  <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', width: 12, textAlign: 'right' }}>{open ? '▾' : '▸'}</span>
+                </button>
+                {open && (
+                  <div style={{ margin: '4px 0 10px 18px', padding: '0 10px', background: 'var(--pn-surface-2, rgba(0,0,0,.03))', borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', padding: '8px 0 2px' }}>{r.hint}</div>
+                    {r.rows.map((t, i) => <ClientlessTxnRow key={t.id || i} t={t} />)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 

@@ -350,6 +350,17 @@ describe('computeRetention', () => {
     expect(computeRetention(rows, NONE, TODAY)).toMatchObject({ newCount: 0, returningCount: 0, clientTotal: 0 });
   });
 
+  it('returns the actual rows for each clientless bucket', () => {
+    const gc   = tx({ id: 'g1', clientId: null, clientName: '', services: [], giftCardsSold: [{ code: 'X' }] });
+    const anon = tx({ id: 'w1', clientId: null, clientName: 'Walk-in' });
+    const named = tx({ id: 'u1', clientId: null, clientName: 'Maria Sanchez' });
+    const r = computeRetention([gc, anon, named], NONE, TODAY);
+    expect(r.giftRetailRows.map(x => x.id)).toEqual(['g1']);
+    expect(r.walkInRows.map(x => x.id)).toEqual(['w1']);
+    expect(r.unlinkedRows.map(x => x.id)).toEqual(['u1']);
+    expect(r.unlinkedCount).toBe(r.unlinkedRows.length);
+  });
+
   it('keeps clientless gift/retail out of the new/returning denominator', () => {
     const rows = [
       tx({ clientId: 'c1' }),
