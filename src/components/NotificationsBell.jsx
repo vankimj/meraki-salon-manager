@@ -129,7 +129,7 @@ export default function NotificationsBell() {
           <div style={{ overflowY: 'auto', flex: 1 }}>
             {totalChatUnread > 0 && (
               <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
-                <div style={{ color: '#1a5f8a', display: 'flex', alignItems: 'center' }}>
+                <div style={{ color: 'var(--pn-info)', display: 'flex', alignItems: 'center' }}>
                   <IconMessage size={16} />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -146,7 +146,7 @@ export default function NotificationsBell() {
                 const { title, body } = formatNotif(n);
                 return (
                   <div key={n.id} onClick={() => markNotifRead(n.id)}
-                    style={{ padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'flex-start', gap: 10, background: '#f8fbfd', cursor: 'pointer' }}>
+                    style={{ padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'flex-start', gap: 10, background: 'var(--pn-info-bg)', cursor: 'pointer' }}>
                     <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#ef4444', marginTop: 6, flexShrink: 0 }} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 2 }}>{title}</div>
