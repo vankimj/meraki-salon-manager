@@ -42,7 +42,7 @@ export default function HandbookModal() {
             <div style={{ fontSize: 28 }}>📋</div>
             <div>
               <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)' }}>
-                {handbookDoc.title || 'Employee Handbook'}
+                {handbookDoc.title || 'Company Policies'}
               </div>
               <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>
                 v{handbookDoc.version || '1.0'}
@@ -51,7 +51,7 @@ export default function HandbookModal() {
             </div>
           </div>
           <div style={{ fontSize: 12, color: 'var(--pn-warning)', marginTop: 10, padding: '8px 12px', background: 'var(--pn-warning-bg)', borderRadius: 8, border: '1px solid #fcd34d' }}>
-            Please read the full handbook and scroll to the bottom to sign.
+            Please read the full company policies and scroll to the bottom to sign.
           </div>
         </div>
 
@@ -85,7 +85,7 @@ export default function HandbookModal() {
               fontFamily: 'inherit',
             }}
           >
-            {signing ? 'Signing…' : atBottom ? '✓ I Acknowledge & Sign' : 'Read handbook to sign'}
+            {signing ? 'Signing…' : atBottom ? '✓ I Acknowledge & Sign' : 'Read policies to sign'}
           </button>
         </div>
       </div>

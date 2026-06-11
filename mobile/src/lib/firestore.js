@@ -708,6 +708,8 @@ const SOFT_DELETED_COLLECTIONS = [
   { key: 'timeOff',         restorable: false },
   { key: 'promoCodes',      restorable: false },
   { key: 'reviews',         restorable: false },
+  { key: 'continuingEducation', restorable: false },
+  { key: 'bonusRules',      restorable: false },
   { key: 'meetings',        restorable: false },
   { key: 'products',        restorable: false },
   { key: 'campaigns',       restorable: false },
@@ -989,6 +991,33 @@ export async function saveReview(id, data) {
   return ref.id;
 }
 export async function deleteReview(id) { await softDelete(doc(tenantCol('reviews'), id)); }
+
+// Continuing education (per-employee CE records). Mirrors web shapes.
+export async function fetchContinuingEducation() {
+  const snap = await getDocs(query(tenantCol('continuingEducation'), orderBy('date', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function saveCE(id, data) {
+  const now = new Date().toISOString();
+  if (id) { await setDoc(doc(tenantCol('continuingEducation'), id), { ...data, updatedAt: now }, { merge: true }); return id; }
+  const ref = await addDoc(tenantCol('continuingEducation'), { ...data, createdAt: now, updatedAt: now });
+  return ref.id;
+}
+export async function deleteCE(id) { await softDelete(doc(tenantCol('continuingEducation'), id)); }
+
+// Structured bonus rules.
+export async function fetchBonusRules() {
+  const snap = await getDocs(query(tenantCol('bonusRules'), orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function saveBonusRule(id, data) {
+  const now = new Date().toISOString();
+  if (id) { await setDoc(doc(tenantCol('bonusRules'), id), { ...data, updatedAt: now }, { merge: true }); return id; }
+  const ref = await addDoc(tenantCol('bonusRules'), { ...data, createdAt: now, updatedAt: now });
+  return ref.id;
+}
+export async function deleteBonusRule(id) { await softDelete(doc(tenantCol('bonusRules'), id)); }
+
 export async function fetchPayrollRuns() {
   const snap = await getDocs(query(tenantCol('payrollRuns'), orderBy('createdAt', 'desc')));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));

@@ -537,6 +537,22 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
+      // Structured bonus rules: admin only (drive payroll bonus previews).
+      match /bonusRules/{ruleId} {
+        allow read, write: if isTenantAdmin(tenantId);
+      }
+
+      // Continuing education: staff can read + manage ONLY their own records
+      // (createdBy == self); admins can read/manage all. UI also scopes the
+      // tech view, but the gate lives here too (not just in the UI).
+      match /continuingEducation/{ceId} {
+        allow read:   if isTenantStaff(tenantId);
+        allow create: if isTenantAdmin(tenantId)
+          || (isTenantStaff(tenantId) && request.resource.data.createdBy == request.auth.uid);
+        allow update, delete: if isTenantAdmin(tenantId)
+          || (isTenantStaff(tenantId) && resource.data.createdBy == request.auth.uid);
+      }
+
       // User preferences (tech overlay, etc.): each user owns their own doc
       match /userPrefs/{userId} {
         allow read, write: if isAuthenticated() && request.auth.uid == userId;

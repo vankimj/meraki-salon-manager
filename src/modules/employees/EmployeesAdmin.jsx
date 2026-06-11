@@ -17,7 +17,7 @@ function blankEmployee() {
   return {
     name: '', photo: '', active: true, sortOrder: 0, notes: '',
     extendedHoursAllowed: false,
-    phone: '', email: '',
+    phone: '', email: '', hireDate: '',
     address: '', city: '', state: '', zip: '',
     tin: '',
     instagram: '', facebook: '', tiktok: '', venmo: '', homepage: '',
@@ -422,6 +422,9 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
               </Field>
               <Field label="Email">
                 <input type="email" value={emp.email || ''} onChange={e => onChange({ email: e.target.value })} placeholder="jane@example.com" style={inp} />
+              </Field>
+              <Field label="Hire date">
+                <input type="date" value={emp.hireDate || ''} onChange={e => onChange({ hireDate: e.target.value })} style={inp} />
               </Field>
               <Field label="Street address">
                 <input value={emp.address || ''} onChange={e => onChange({ address: e.target.value })} placeholder="123 Main St" style={inp} />

@@ -42,7 +42,7 @@ function apptDetail(n) {
 function formatNotif(n) {
   switch (n.changeType) {
     case 'handbook_reminder':
-      return { title: 'Handbook reminder', body: `${n.techName || 'A tech'} needs to sign ${n.handbookTitle || 'the handbook'}` };
+      return { title: 'Company policies reminder', body: `${n.techName || 'A tech'} needs to sign ${n.handbookTitle || 'the company policies'}` };
     case 'access_request':
       return { title: 'New access request', body: n.email || n.name || '' };
     case 'feedback':

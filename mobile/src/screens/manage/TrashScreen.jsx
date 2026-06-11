@@ -20,6 +20,8 @@ function previewLabel(item) {
   if (c === 'timeOff') return `${item.techName || '?'} · ${item.startDate || ''}–${item.endDate || item.startDate || ''}`;
   if (c === 'bonuses') return `${item.techName || '?'} · $${item.amount || 0}`;
   if (c === 'reviews') return `${item.techName || '?'} · ${item.period || ''}`;
+  if (c === 'continuingEducation') return `${item.employeeName || '?'} · ${item.title || ''}`;
+  if (c === 'bonusRules') return item.name || '(rule)';
   if (c === 'meetings') return `${item.subject || '?'}`;
   if (c === 'campaigns') return item.subject || item.name || '?';
   return '(no preview)';

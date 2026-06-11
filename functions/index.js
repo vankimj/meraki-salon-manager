@@ -1018,7 +1018,7 @@ function buildHtml(data, brand) {
 
 function buildHandbookReminderHtml(data, empName, brand) {
   const firstName = (empName || data.techName || 'Team').split(' ')[0];
-  const title     = data.handbookTitle || 'Employee Handbook';
+  const title     = data.handbookTitle || 'Company Policies';
   const version   = data.version || '1.0';
   return `<!DOCTYPE html>
 <html>
@@ -1026,17 +1026,17 @@ function buildHandbookReminderHtml(data, empName, brand) {
   <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
     <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
       <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Employee Handbook</div>
+      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Company Policies</div>
     </div>
     <div style="padding:24px;">
       <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}!</p>
       <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
         The <strong>${esc(title)}</strong> (v${esc(version)}) has been updated and requires your acknowledgment.
-        Please log in to the salon manager app to read and sign the latest handbook.
+        Please log in to the salon manager app to read and sign the latest company policies.
       </p>
       <div style="background:#FEF9EC;border-radius:8px;padding:14px 16px;border:1px solid #fcd34d;">
         <div style="font-size:13px;color:#92400e;font-weight:600;">Action Required</div>
-        <div style="font-size:13px;color:#555;margin-top:4px;">Sign the ${esc(title)} v${esc(version)} under HR → Handbook.</div>
+        <div style="font-size:13px;color:#555;margin-top:4px;">Sign the ${esc(title)} v${esc(version)} under HR → Company Policies.</div>
       </div>
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
@@ -4022,7 +4022,7 @@ exports.sendApptNotification = onDocumentCreated(
       const brand    = await tenantBranding(db, tenantId);
       const isHandbookReminder = data.changeType === 'handbook_reminder';
       const subject  = isHandbookReminder
-        ? `Action required: Sign the ${data.handbookTitle || 'Employee Handbook'}`
+        ? `Action required: Sign the ${data.handbookTitle || 'Company Policies'}`
         : buildSubject(data.changeType, data.clientName, data.date);
       const html     = isHandbookReminder
         ? buildHandbookReminderHtml(data, empSnap.docs[0].data().name, brand)
@@ -4048,7 +4048,7 @@ exports.sendApptNotification = onDocumentCreated(
         await sendPushToEmail(db, tenantId, email, {
           title: subject,
           body:  isHandbookReminder
-            ? `${data.handbookTitle || 'Handbook'} — please sign to acknowledge.`
+            ? `${data.handbookTitle || 'Company Policies'} — please sign to acknowledge.`
             : pushBody(data),
           data:  { type: data.changeType, apptId: data.apptId, notifId: snap.id },
         });
