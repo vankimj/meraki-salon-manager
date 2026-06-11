@@ -584,9 +584,12 @@ export async function fetchAttendance(date) {
 }
 
 export function subscribeAttendance(date, cb) {
-  return onSnapshot(doc(ATTENDANCE_COL, date), s => {
-    cb(s.exists() ? { date, ...s.data() } : { date, entries: [] });
-  });
+  return onSnapshot(doc(ATTENDANCE_COL, date),
+    s => cb(s.exists() ? { date, ...s.data() } : { date, entries: [] }),
+    // Don't swallow a permission-denied silently — that reads as "everyone
+    // clocked out" on the kiosk. Surface it so an auth/rules gap is visible.
+    err => console.warn('[attendance] subscribe error (auth/rules?):', err?.code || err?.message),
+  );
 }
 
 export async function saveAttendance(date, entries) {
