@@ -83,6 +83,13 @@ function txSourceKey(t) {
   if (t._importedFrom === 'glossgenius') return 'imported';
   return t.source || 'in-salon';
 }
+const SOURCE_LABEL = Object.fromEntries(SOURCE_OPTIONS.map(s => [s.id, s.label]));
+// Friendly source label — an appointment with no `source` was entered by staff
+// in the salon (the schedule), so show "In-salon" rather than a blank dash.
+function sourceLabel(t) {
+  const k = txSourceKey(t);
+  return SOURCE_LABEL[k] || k;
+}
 
 function buildFilterOptions(appts) {
   if (!appts) return { techs: [], services: [] };
@@ -2182,7 +2189,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
       r.techName || '',
       (r.services || []).map(s => s.name).join('; '),
       r._lost ? r._lost.toFixed(2) : '0.00',
-      r.source || '',
+      sourceLabel(r),
       r.bookingIp || '',
       geoString(r),
       r.deposit?.mode || '',
@@ -2310,9 +2317,9 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                       <Td>{r.techName || '—'}</Td>
                       <Td>{(r.services || []).map(s => s.name).join(', ') || '—'}</Td>
                       <Td bold>{r._lost ? fmt$(r._lost) : '—'}</Td>
-                      <Td muted>{r.source || '—'}</Td>
+                      <Td muted>{sourceLabel(r)}</Td>
                       <Td muted>
-                        {geoString(r) ? <div>{geoString(r)}</div> : <span style={{ color: 'var(--pn-text-faint)' }}>—</span>}
+                        {geoString(r) ? <div>{geoString(r)}</div> : <span style={{ color: 'var(--pn-text-faint)' }}>{r.source === 'online_booking' ? '—' : 'In-salon'}</span>}
                         {r.bookingIp && <div style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>{r.bookingIp}</div>}
                       </Td>
                     </tr>
