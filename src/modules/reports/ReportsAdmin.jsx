@@ -85,9 +85,11 @@ function txSourceKey(t) {
 }
 const SOURCE_LABEL = Object.fromEntries(SOURCE_OPTIONS.map(s => [s.id, s.label]));
 // Friendly source label — an appointment with no `source` was entered by staff
-// in the salon (the schedule), so show "In-salon" rather than a blank dash.
+// in the salon (the schedule). Show the staff member who booked it when we
+// recorded one, else "In-salon" rather than a blank dash.
 function sourceLabel(t) {
   const k = txSourceKey(t);
+  if (k === 'in-salon' && t.bookedByName) return `Staff · ${t.bookedByName}`;
   return SOURCE_LABEL[k] || k;
 }
 

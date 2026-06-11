@@ -487,6 +487,12 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
         ? log.map(e => e?.text || '').filter(Boolean).join('\n\n')
         : (apptBase.notes || '');
       const full = { ...apptBase, notes: derivedNotes, duration: dur };
+      // Record which staff member entered this booking — surfaced in Reports as
+      // the "source" for in-salon bookings. Only on NEW staff-created appts
+      // (never overwrite on edit; online bookings carry source='online_booking').
+      if (!appt.id && !full.source && !full.bookedByName) {
+        full.bookedByName = gUser?.displayName || (gUser?.email ? gUser.email.split('@')[0] : null);
+      }
       const svcSummary = (full.services || []).map(s => s.name || s.customName).filter(Boolean).join(', ') || 'no services';
       const totalPrice = (full.services || []).reduce((s, sv) => s + Number(sv.price || 0), 0);
       const logDetail  = `${appt.clientName || 'walk-in'} with ${appt.techName} on ${appt.date} at ${appt.startTime} — ${svcSummary}${totalPrice > 0 ? ` ($${totalPrice.toFixed(2)})` : ''}`;

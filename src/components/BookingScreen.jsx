@@ -1999,6 +1999,15 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
     : cartTotalDuration(cart, removalDur, assignedTech);
   const endSlot = (cartSlot ?? 0) + totalDur;
 
+  // "No preference" must stay invisible to the customer — we still resolve a
+  // tech above for an accurate duration/time estimate, but the booking is
+  // shown as "No preference" and gets (re)assigned behind the scenes (and
+  // day-of, to whoever clocked in earliest). Only reveal a name the customer
+  // actually chose.
+  const techDisplay = cartTech === null ? 'No preference' : (assignedTech?.name || 'No preference');
+  const maniDisplay = (cartTechByLane?.Manicures == null) ? 'No preference' : (maniLaneInfo.tech?.name || 'No preference');
+  const pediDisplay = (cartTechByLane?.Pedicures == null) ? 'No preference' : (pediLaneInfo.tech?.name || 'No preference');
+
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
       <StepTitle>Confirm booking</StepTitle>
@@ -2049,12 +2058,12 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
             <div style={{ marginTop: 22, fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontSize: 16, color: '#5a534d' }}>
               {multiLane ? (
                 <>
-                  manicure with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{maniLaneInfo.tech?.name || 'any available stylist'}</span>
+                  manicure with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{maniDisplay}</span>
                   <span style={{ margin: '0 8px', color: '#c19a4a' }}>·</span>
-                  pedicure with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{pediLaneInfo.tech?.name || 'any available stylist'}</span>
+                  pedicure with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{pediDisplay}</span>
                 </>
               ) : (
-                <>with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{assignedTech?.name || 'any available stylist'}</span></>
+                <>with <span style={{ fontStyle: 'normal', color: '#302c29', fontWeight: 500 }}>{techDisplay}</span></>
               )}
             </div>
           </div>
@@ -2074,7 +2083,7 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
                 </div>
               </div>
               <div style={{ marginTop: 14, fontSize: 13, color: 'rgba(255,255,255,.95)' }}>
-                with <strong>{assignedTech?.name || 'any available stylist'}</strong>
+                with <strong>{multiLane ? `${maniDisplay} · ${pediDisplay}` : techDisplay}</strong>
               </div>
             </div>
           </>
@@ -2087,7 +2096,7 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
           <div style={{ borderTop: '1px solid #f0f0f0', background: '#fafafa' }}>
             <LaneBreakdownCard
               eyebrow="Manicure"
-              tech={maniLaneInfo.tech}
+              tech={(cartTechByLane?.Manicures == null) ? null : maniLaneInfo.tech}
               startMins={maniLaneInfo.start}
               endMins={maniLaneInfo.end}
               items={maniLaneInfo.items}
@@ -2096,7 +2105,7 @@ function Step5Confirm({ cart, allTechs, cartTech, cartTechByLane, cartDate, cart
             <div style={{ height: 1, background: 'rgba(193,154,74,.22)', margin: '0 18px' }} />
             <LaneBreakdownCard
               eyebrow="Pedicure"
-              tech={pediLaneInfo.tech}
+              tech={(cartTechByLane?.Pedicures == null) ? null : pediLaneInfo.tech}
               startMins={pediLaneInfo.start}
               endMins={pediLaneInfo.end}
               items={pediLaneInfo.items}
@@ -2194,7 +2203,7 @@ function LaneBreakdownCard({ eyebrow, tech, startMins, endMins, items, editorial
             marginTop: 2,
             fontFamily: editorial ? FONT_SERIF : 'inherit',
           }}>
-            with {tech?.name || 'any available stylist'}
+            with {tech?.name || 'No preference'}
           </div>
         </div>
         <div style={{
@@ -2281,10 +2290,14 @@ function SuccessScreen({ appts, techs, webCfg }) {
               })}
             </div>
           )}
-          {a?.techName && a.techName !== 'TBD' && (
+          {(a?.techRequestType === 'auto' || (a?.techName && a.techName !== 'TBD')) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderTop: '1px solid #f5f5f5' }}>
-              {tech ? <TechAvatar tech={tech} size={28} /> : <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>👩‍💼</span>}
-              <span style={{ fontSize: 12, color: '#666' }}>with {a.techName}</span>
+              {a?.techRequestType === 'auto'
+                ? <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>👩‍💼</span>
+                : (tech ? <TechAvatar tech={tech} size={28} /> : <span style={{ fontSize: 16, width: 22, textAlign: 'center' }}>👩‍💼</span>)}
+              <span style={{ fontSize: 12, color: '#666' }}>
+                {a?.techRequestType === 'auto' ? 'No preference' : `with ${a.techName}`}
+              </span>
             </div>
           )}
         </div>
