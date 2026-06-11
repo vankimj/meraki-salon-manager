@@ -226,6 +226,8 @@ function RatingSection({ data, token }) {
   const highest   = Math.max(0, ...Object.values(picks).map(p => Number(p.rating) || 0));
   const allRated  = techs.length > 0 && techs.every(t => picks[t]?.rating);
   const goPublic  = highest >= threshold;
+  // Locked once the edit window has passed (server enforces this too).
+  const reviewLocked = (data.existingRatings || []).length > 0 && (data.existingRatings || []).some(r => r.locked);
 
   function setRating(tech, rating) {
     setPicks(prev => ({ ...prev, [tech]: { ...(prev[tech] || {}), rating } }));
@@ -280,6 +282,24 @@ function RatingSection({ data, token }) {
       <div style={{ background: '#fff', borderRadius: 12, padding: 24, textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,.06)' }}>
         <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>{(data.feedbackTitle || '').trim() || 'Thanks for letting us know.'}</div>
         <div style={{ fontSize: 13, color: '#888', whiteSpace: 'pre-line' }}>{(data.feedbackMessage || '').trim() || "Your feedback goes straight to the salon owner. We'll do better next time."}</div>
+      </div>
+    );
+  }
+
+  // Past the edit window → show the locked rating read-only, no editing.
+  if (reviewLocked && !result) {
+    return (
+      <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 12px rgba(0,0,0,.06)' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 }}>Your rating</div>
+        {(data.existingRatings || []).map((r, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <span style={{ fontSize: 16, color: '#f5b400', letterSpacing: 1 }}>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+            <span style={{ fontSize: 13, color: '#444' }}>{r.techName}</span>
+          </div>
+        ))}
+        <div style={{ fontSize: 12, color: '#888', marginTop: 12, lineHeight: 1.5 }}>
+          🔒 This rating was submitted more than {data.reviewEditWindowDays || 5} days ago and can no longer be changed. Thanks for your feedback!
+        </div>
       </div>
     );
   }
