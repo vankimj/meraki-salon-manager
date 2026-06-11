@@ -423,17 +423,37 @@ export default function ScheduleScreen({ navigation }) {
                 <Text style={ownOnly ? styles.chipBlueText : styles.chipMutedText}>👤 Just me</Text>
               </TouchableOpacity>
             )}
-            <TouchableOpacity
-              style={[styles.chip, (!everyone && !ownOnly) ? styles.chipBlue : styles.chipMuted]}
-              onPress={() => setFilterOpen(true)}
-            >
-              <Text style={(!everyone && !ownOnly) ? styles.chipBlueText : styles.chipMutedText}>
-                {(!everyone && !ownOnly) ? `👥 ${visibleTechs.length}` : '⚙︎'}
-              </Text>
-            </TouchableOpacity>
           </>
         )}
       </View>
+
+      {/* Per-tech filter — tap any tech to show only them; tap more for a combo;
+          "Everyone" above clears it. Direct, no buried gear/modal. */}
+      {canSeeAll && allTechs.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={{ flexGrow: 0, marginBottom: 6 }}
+          contentContainerStyle={{ gap: 6, paddingHorizontal: 12, alignItems: 'center' }}
+        >
+          {allTechs.map(t => {
+            const on = selectedTechs.has(t);
+            return (
+              <TouchableOpacity
+                key={t}
+                style={[styles.chip, on ? styles.chipBlue : styles.chipMuted]}
+                onPress={() => setSelectedTechs(prev => {
+                  const n = new Set(prev);
+                  if (n.has(t)) n.delete(t); else n.add(t);
+                  return n;
+                })}
+              >
+                <Text style={on ? styles.chipBlueText : styles.chipMutedText}>{t}{t === techName ? ' (me)' : ''}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      )}
 
       {view === 'month' && (
         <MonthView
