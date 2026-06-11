@@ -563,6 +563,15 @@ service cloud.firestore {
         allow read, update, delete: if isTenantAdmin(tenantId);
       }
 
+      // Financial ledger — append-only audit trail of every money movement,
+      // written ONLY by Cloud Functions (triggers + adjustClientCredit) via the
+      // Admin SDK. Owner/admin reads it for reconciliation; never client-writable
+      // (immutable) so the audit log can be trusted.
+      match /ledger/{entryId} {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+
       // Post-checkout service ratings (one row per receipt+tech). Written only by
       // the submitServiceRating Cloud Function (Admin SDK, bypasses rules); the
       // Reports → Service Ratings tab reads them. Without this rule the read was
