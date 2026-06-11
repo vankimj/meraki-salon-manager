@@ -32,8 +32,7 @@ export function walkInClass(a) {
   if (!(a.services?.length > 0)) return null;
   if (isImportedTxn(a)) return 'untracked';
   if (typeof a.walkIn === 'boolean') return a.walkIn ? 'walkin' : 'scheduled';
-  if (a.createdAt && a.date) return defaultWalkIn(a.createdAt, a.date) ? 'walkin' : 'scheduled';
-  return 'untracked';
+  return 'untracked'; // never derive from a receipt's createdAt (= checkout time)
 }
 
 // Build a receipt-shaped row from a done appointment for legacy/demo data

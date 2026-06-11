@@ -37,12 +37,14 @@ export function defaultWalkIn(createdAt, date) {
 
 // 'walkin' | 'scheduled' | 'untracked' for a completed sale, or null when the
 // sale isn't a service visit (gift card / retail only — not counted either way).
-// Prefers an explicit `walkIn` flag, falls back to the lead-time derivation.
+// Trusts ONLY the explicit `walkIn` flag, which is stamped at checkout (and on
+// synthesized receipts) from the APPOINTMENT's booking lead time. We must not
+// derive it here from a receipt's createdAt — that's the checkout time (≈ the
+// visit day), so it would misread every past sale as a same-day walk-in.
 export function walkInClass(a) {
   if (!(a.services?.length > 0)) return null;
   if (isImportedTxn(a)) return 'untracked';
   if (typeof a.walkIn === 'boolean') return a.walkIn ? 'walkin' : 'scheduled';
-  if (a.createdAt && a.date) return defaultWalkIn(a.createdAt, a.date) ? 'walkin' : 'scheduled';
   return 'untracked';
 }
 

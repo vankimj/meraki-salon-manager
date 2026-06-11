@@ -131,24 +131,28 @@ describe('computeMetrics — totals', () => {
 });
 
 describe('computeMetrics — walk-ins vs scheduled', () => {
-  it('counts a same-day-booked visit as a walk-in', () => {
-    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-05-01T11:00:00Z' })], TODAY);
+  it('counts an explicit walk-in flag as a walk-in', () => {
+    const m = computeMetrics([tx({ walkIn: true })], TODAY);
     expect(m.walkIns).toBe(1);
     expect(m.scheduledVisits).toBe(0);
     expect(m.trackedVisits).toBe(1);
   });
-  it('counts a visit booked in advance as scheduled', () => {
-    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-04-20T11:00:00Z' })], TODAY);
+  it('counts an explicit scheduled flag as scheduled', () => {
+    const m = computeMetrics([tx({ walkIn: false })], TODAY);
     expect(m.scheduledVisits).toBe(1);
     expect(m.walkIns).toBe(0);
   });
-  it('honors an explicit walkIn flag over the lead-time derivation', () => {
-    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-04-20T11:00:00Z', walkIn: true })], TODAY);
-    expect(m.walkIns).toBe(1);
+  it('does NOT guess walk-in from a receipt with no flag — that is untracked (regression: checkout-time createdAt is not booking time)', () => {
+    // createdAt same-day as the visit (a receipt is created at checkout) must
+    // NOT be read as a same-day walk-in.
+    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-05-01T11:00:00Z' })], TODAY);
+    expect(m.walkIns).toBe(0);
     expect(m.scheduledVisits).toBe(0);
+    expect(m.untrackedVisits).toBe(1);
+    expect(m.trackedVisits).toBe(0);
   });
   it('reports imported history as untracked, not walk-in or scheduled', () => {
-    const m = computeMetrics([tx({ date: '2026-05-01', createdAt: '2026-05-01T11:00:00Z', _glossgeniusSource: 'Appointment' })], TODAY);
+    const m = computeMetrics([tx({ walkIn: true, _glossgeniusSource: 'Appointment' })], TODAY);
     expect(m.untrackedVisits).toBe(1);
     expect(m.walkIns).toBe(0);
     expect(m.scheduledVisits).toBe(0);
@@ -156,7 +160,7 @@ describe('computeMetrics — walk-ins vs scheduled', () => {
   });
   it('excludes non-service sales (gift card / retail) from walk-in classification', () => {
     const m = computeMetrics([
-      tx({ services: [], giftCardsSold: [{ code: 'X' }], payment: { total: 100, method: 'card' } }),
+      tx({ services: [], walkIn: true, giftCardsSold: [{ code: 'X' }], payment: { total: 100, method: 'card' } }),
     ], TODAY);
     expect(m.walkIns).toBe(0);
     expect(m.scheduledVisits).toBe(0);
@@ -170,12 +174,13 @@ describe('walk-in helpers', () => {
     expect(defaultWalkIn('2026-04-25T09:00:00Z', '2026-05-01')).toBe(false);
     expect(defaultWalkIn(null, '2026-05-01')).toBe(false);
   });
-  it('walkInClass: null for non-service sales, untracked for imported, derived otherwise', () => {
+  it('walkInClass trusts only the explicit flag — never derives from createdAt', () => {
     expect(walkInClass({ services: [] })).toBe(null);
-    expect(walkInClass({ services: [{ price: 1 }], _importedFrom: 'glossgenius', createdAt: '2026-05-01', date: '2026-05-01' })).toBe('untracked');
-    expect(walkInClass({ services: [{ price: 1 }], createdAt: '2026-05-01T10:00:00Z', date: '2026-05-01' })).toBe('walkin');
-    expect(walkInClass({ services: [{ price: 1 }], createdAt: '2026-04-01T10:00:00Z', date: '2026-05-01' })).toBe('scheduled');
-    expect(walkInClass({ services: [{ price: 1 }], walkIn: false, createdAt: '2026-05-01', date: '2026-05-01' })).toBe('scheduled');
+    expect(walkInClass({ services: [{ price: 1 }], walkIn: true, _importedFrom: 'glossgenius' })).toBe('untracked');
+    expect(walkInClass({ services: [{ price: 1 }], walkIn: true })).toBe('walkin');
+    expect(walkInClass({ services: [{ price: 1 }], walkIn: false })).toBe('scheduled');
+    // No flag → untracked, regardless of createdAt vs date.
+    expect(walkInClass({ services: [{ price: 1 }], createdAt: '2026-05-01T10:00:00Z', date: '2026-05-01' })).toBe('untracked');
   });
 });
 
