@@ -6805,17 +6805,29 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
     throw new HttpsError('invalid-argument', 'Store credit needs a client on file — a walk-in can only be refunded to the original payment.');
   }
   const payment = rec.payment || {};
-  const originalCents = Math.round(Number(payment.total || 0) * 100);
-  const priorRefunds  = Array.isArray(rec.refunds) ? rec.refunds : [];
+  // Refundable = the FULL value paid, across every method: card/cash
+  // (payment.total) + store credit + gift card. A sale paid entirely with store
+  // credit has payment.total === 0, so capping at payment.total alone made it
+  // un-refundable ($0). Track money separately so a money refund can never exceed
+  // what was actually charged to card/cash.
+  const moneyPaidCents  = Math.round(Number(payment.total || 0) * 100);
+  const creditPaidCents = Math.round(Number(payment.creditApplied || 0) * 100);
+  const gcPaidCents     = Math.round(Number((payment.giftCard && payment.giftCard.applied) || 0) * 100);
+  const originalCents   = moneyPaidCents + creditPaidCents + gcPaidCents;
+  const priorRefunds    = Array.isArray(rec.refunds) ? rec.refunds : [];
 
   // Idempotent short-circuit: this exact refund attempt already recorded.
   if (priorRefunds.some(r => r && r.key === idemKey)) {
     return { ok: true, alreadyRecorded: true };
   }
-  const alreadyCents = Math.round(priorRefunds.reduce((a, r) => a + (Number(r.amount) || 0), 0) * 100);
-  if (amt > originalCents - alreadyCents + 1) {
+  const alreadyCents      = Math.round(priorRefunds.reduce((a, r) => a + (Number(r.amount) || 0), 0) * 100);
+  const alreadyMoneyCents = Math.round(priorRefunds.filter(r => !(r && r.addedCredit)).reduce((a, r) => a + (Number(r.amount) || 0), 0) * 100);
+  const capCents = dest === 'money'
+    ? Math.min(moneyPaidCents - alreadyMoneyCents, originalCents - alreadyCents)
+    : (originalCents - alreadyCents);
+  if (amt > capCents + 1) {
     throw new HttpsError('invalid-argument',
-      `Refund exceeds the remaining $${((originalCents - alreadyCents) / 100).toFixed(2)} refundable on this sale.`);
+      `Refund exceeds the remaining $${(Math.max(0, capCents) / 100).toFixed(2)} refundable ${dest === 'money' ? 'to the original payment' : 'as store credit'} on this sale.`);
   }
 
   const piId   = payment.stripePaymentIntentId || null;
