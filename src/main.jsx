@@ -7,10 +7,11 @@ import { resolveTenant, getTenantResolveState, TENANT_ID } from './lib/tenant'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from './lib/firebase'
 import { install as installDiagnostics } from './lib/diagnostics'
-import { selfHealIfStale } from './lib/selfHeal'
+import { selfHealIfStale, keepServiceWorkerFresh } from './lib/selfHeal'
 
 installDiagnostics();
-selfHealIfStale();   // stale-cache kill-switch: reloads onto the current build if the SW is serving an old one
+selfHealIfStale();        // stale-cache kill-switch: reloads onto the current build if the SW is serving an old one
+keepServiceWorkerFresh(); // proactively pull new builds so always-on kiosks never need a manual cache clear
 
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
