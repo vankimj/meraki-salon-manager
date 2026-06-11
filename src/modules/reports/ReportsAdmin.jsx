@@ -2095,6 +2095,43 @@ function fmtBookedAt(iso) {
   return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+// Bot / abuse suspicion for a booking, from the signals captured at booking
+// time. Only online bookings are assessed — a staff-entered appointment can't
+// be a bot, so it returns null (shown as "—"). Strong signals (no app-check
+// token, IP that also triggered blocked attempts, automated user-agent) mark a
+// booking "Likely bot"; a foreign IP alone is a soft "Review" flag.
+function bookingRisk(a, fraudIpSet) {
+  if (a.source !== 'online_booking') return null;
+  const flags = [];
+  let strong = 0;
+  if (a.bookingAppCheck === false) { flags.push('No app-verification token'); strong++; }
+  if (a.bookingIp && fraudIpSet && fraudIpSet.has(a.bookingIp)) { flags.push('IP also hit blocked attempts'); strong++; }
+  const ua = a.bookingUserAgent;
+  if (ua !== undefined && (!String(ua).trim() || /bot|crawl|spider|curl|wget|python|headless|scrapy|http-client|axios|okhttp/i.test(String(ua)))) {
+    flags.push('Automated/empty browser signature'); strong++;
+  }
+  const country = a.bookingGeo?.country;
+  if (country && country !== 'US') flags.push(`Foreign IP (${country})`);
+  if (!flags.length) return { level: 'ok', flags };
+  return { level: strong ? 'high' : 'low', flags };
+}
+
+function RiskBadge({ risk }) {
+  if (!risk) return <span style={{ color: 'var(--pn-text-faint)' }}>—</span>;
+  const map = {
+    ok:   { label: '✓ OK',         bg: '#DCFCE7', fg: '#166534' },
+    low:  { label: '⚠ Review',     bg: '#FEF3C7', fg: '#92400E' },
+    high: { label: '🤖 Likely bot', bg: '#FEE2E2', fg: '#991B1B' },
+  };
+  const s = map[risk.level] || map.ok;
+  return (
+    <span title={risk.flags.join(' · ') || 'No suspicious signals'}
+      style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: s.bg, color: s.fg, whiteSpace: 'nowrap' }}>
+      {s.label}
+    </span>
+  );
+}
+
 function apptLost(a) {
   return (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
 }
@@ -2131,6 +2168,12 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
 
   const fraudSorted = useMemo(
     () => [...(fraud || [])].sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))),
+    [fraud],
+  );
+  // IPs that triggered blocked booking attempts — a successful booking from the
+  // same IP is a strong bot signal.
+  const fraudIpSet = useMemo(
+    () => new Set((fraud || []).map(f => f.ip).filter(Boolean)),
     [fraud],
   );
 
@@ -2186,6 +2229,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
     const header = [
       'Date', 'Time', 'Status', 'Cancelled at', 'Client', 'Phone', 'Email', 'Address',
       'Tech', 'Services', 'Lost revenue', 'Source', 'Booking IP', 'Booking location', 'Booked at',
+      'Security', 'Security flags',
       'Deposit mode', 'Deposit amount', 'Deposit status', 'Client ID', 'Appointment ID',
     ];
     const body = filtered.map(r => [
@@ -2204,6 +2248,8 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
       r.bookingIp || '',
       geoString(r),
       fmtBookedAt(r.createdAt),
+      (() => { const rk = bookingRisk(r, fraudIpSet); return rk ? rk.level : ''; })(),
+      (() => { const rk = bookingRisk(r, fraudIpSet); return rk ? rk.flags.join('; ') : ''; })(),
       r.deposit?.mode || '',
       r.deposit?.amountCents ? (r.deposit.amountCents / 100).toFixed(2) : '',
       r.deposit?.status || '',
@@ -2284,6 +2330,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                     <Th left>Source</Th>
                     <Th left>Booked from</Th>
                     <Th left>Booked at</Th>
+                    <Th left>Security</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2336,6 +2383,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                         {r.bookingIp && <div style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>{r.bookingIp}</div>}
                       </Td>
                       <Td muted>{fmtBookedAt(r.createdAt) || '—'}</Td>
+                      <Td><RiskBadge risk={bookingRisk(r, fraudIpSet)} /></Td>
                     </tr>
                   ))}
                 </tbody>

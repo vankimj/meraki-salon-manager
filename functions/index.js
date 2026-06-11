@@ -1953,6 +1953,11 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const meta = extractBookingMeta(request.rawRequest);
   if (!meta.geo && meta.ip) meta.geo = await lookupIpGeo(meta.ip);
   const deposit = sanitizeDepositRecord(request.data?.deposit);
+  // Security signals for the Reports bot-suspicion indicator. App Check runs in
+  // monitor mode, so a legit web client carries a token (request.app set) while
+  // a bot hitting the callable directly does not — the single strongest signal.
+  const bookingUserAgent = String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300);
+  const bookingAppCheck  = !!request.app;
 
   const now = new Date().toISOString();
   const batch = db.batch();
@@ -1963,6 +1968,8 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
     clean.source    = 'online_booking';
     clean.status    = 'scheduled';
     clean.bookingIp = meta.ip || '';
+    clean.bookingUserAgent = bookingUserAgent;
+    clean.bookingAppCheck  = bookingAppCheck;
     if (meta.geo) clean.bookingGeo = meta.geo;
     if (deposit && i === 0) clean.deposit = deposit;   // stamp once, on the primary appt
     if (idempotencyKey) clean.bookingIdempotencyKey = idempotencyKey;
