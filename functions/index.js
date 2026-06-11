@@ -3420,6 +3420,7 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
         canModify: appt.status !== 'cancelled' && appt.status !== 'done' && hUntil >= leadHours,
         hoursUntil: hUntil,
         cancellationPolicyText: typeof settings.cancellationPolicyText === 'string' ? settings.cancellationPolicyText.slice(0, 1000) : null,
+        refundPolicyText:       typeof settings.refundPolicyText       === 'string' ? settings.refundPolicyText.slice(0, 1000)       : null,
       },
       salon: {
         name: settings.salonName || (await tenantBranding(getFirestore(), tid)).salonName,
