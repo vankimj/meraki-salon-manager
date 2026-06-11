@@ -4,7 +4,7 @@
 // the copy = no drift. (functions/lib/* are pure CommonJS with no Node-only
 // APIs, so Vite bundles them into the client cleanly.)
 export {
-  DEFAULT_TEMPLATES, TEMPLATE_GROUPS, renderMessage,
+  DEFAULT_TEMPLATES, TEMPLATE_GROUPS, renderMessage, resolvePhrases,
 } from '../../functions/lib/messageTemplates.js';
 export { segmentInfo, interpolate } from '../../functions/lib/emailShell.js';
 
