@@ -1325,10 +1325,11 @@ function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays,
 
   const stamp = (ts) => ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
   const META = {
-    sale:          { label: 'Sale',   color: '#16a34a', sign: '+' },
-    refund:        { label: 'Refund', color: '#ef4444', sign: '−' },
-    credit_adjust: { label: 'Credit', color: '#2563eb', sign: '' },
-    redo:          { label: 'Redo',   color: '#9333ea', sign: '' },
+    sale:              { label: 'Sale',       color: '#16a34a', sign: '+' },
+    refund:            { label: 'Refund',     color: '#ef4444', sign: '−' },
+    credit_adjust:     { label: 'Credit',     color: '#2563eb', sign: '' },
+    redo:              { label: 'Redo',       color: '#9333ea', sign: '' },
+    commission_change: { label: 'Commission', color: '#d97706', sign: '' },
   };
 
   function exportCSV() {
@@ -1375,7 +1376,7 @@ function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays,
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {['all', 'sale', 'refund', 'credit_adjust', 'redo'].map(t => (
+        {['all', 'sale', 'refund', 'credit_adjust', 'commission_change', 'redo'].map(t => (
           <PillBtn key={t} active={typeFilter === t} onClick={() => setType(t)}>{t === 'all' ? `All (${all.length})` : (META[t]?.label || t)}</PillBtn>
         ))}
       </div>
