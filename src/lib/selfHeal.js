@@ -32,3 +32,28 @@ export async function selfHealIfStale() {
     window.location.reload();
   } catch (_) { /* offline / fetch blocked — leave the app as-is */ }
 }
+
+// Keep an always-on PWA (e.g. the front-desk / time-clock kiosk that's never
+// closed) on the latest build WITHOUT anyone clearing the cache. iOS only
+// checks for a new service worker lazily — on close/reopen or after ~24h — so a
+// kiosk left open sits on the old worker indefinitely. Here we proactively force
+// an SW update check every minute + whenever the screen is foregrounded; when a
+// new worker installs it activates immediately (skipWaiting + clientsClaim in
+// vite.config), takes control, and we reload once onto the fresh build. Net: a
+// deploy auto-applies within ~a minute, no manual intervention ever again.
+export function keepServiceWorkerFresh() {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.ready.then(reg => {
+    const check = () => { if (navigator.onLine !== false) reg.update().catch(() => {}); };
+    setInterval(check, 60 * 1000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    check();
+  }).catch(() => {});
+  // A new worker taking control = a fresh build is live → reload onto it once.
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    reloaded = true;
+    window.location.reload();
+  });
+}
