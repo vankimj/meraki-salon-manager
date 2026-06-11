@@ -75,6 +75,27 @@ function buildRefundEntry(receiptId, r, rf) {
   };
 }
 
+// A sale paid (wholly or partly) with store credit → one 'credit_redeem' entry
+// (value OUT of the client's credit balance). The sale entry already records the
+// gross; this is the matching drawdown so the credit balance has both sides
+// (issued via refund-to-credit / manual add, spent here) and reconciles.
+function buildCreditRedemptionEntry(receiptId, r) {
+  const p = r.payment || {};
+  return {
+    type: 'credit_redeem',
+    at: p.paidAt || r.createdAt || new Date().toISOString(),
+    amount: r2(p.creditApplied),
+    direction: 'out',
+    method: 'store_credit',
+    clientId: r.clientId || null,
+    clientName: r.clientName || 'Walk-in',
+    by: p.paidBy || null,
+    refReceiptId: receiptId,
+    refViewToken: r.viewToken || receiptId,
+    detail: `Store credit redeemed $${r2(p.creditApplied).toFixed(2)} · ${r.clientName || 'Walk-in'} · applied to sale`,
+  };
+}
+
 // A redo (service redone by another tech) → commission moves; record it.
 function buildRedoEntry(receiptId, r, rd, i) {
   return {
@@ -94,4 +115,4 @@ function buildRedoEntry(receiptId, r, rd, i) {
   };
 }
 
-module.exports = { appendLedger, buildSaleEntry, buildRefundEntry, buildRedoEntry, r2 };
+module.exports = { appendLedger, buildSaleEntry, buildRefundEntry, buildRedoEntry, buildCreditRedemptionEntry, r2 };

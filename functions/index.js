@@ -7234,6 +7234,13 @@ exports.ledgerOnReceiptCreated = onDocumentCreated('tenants/{tenantId}/receipts/
   try {
     await ledger.appendLedger(getFirestore(), tenantId, `sale_${receiptId}`, ledger.buildSaleEntry(receiptId, r));
   } catch (e) { console.error('[ledger] sale entry failed:', receiptId, e?.message); }
+  // Store-credit redemption — record the drawdown as its own event so a purchase
+  // paid with store credit shows in the ledger (symmetric with refunds-to-credit).
+  if (Number(r.payment?.creditApplied) > 0) {
+    try {
+      await ledger.appendLedger(getFirestore(), tenantId, `credituse_${receiptId}`, ledger.buildCreditRedemptionEntry(receiptId, r));
+    } catch (e) { console.error('[ledger] credit redemption entry failed:', receiptId, e?.message); }
+  }
 });
 
 exports.ledgerOnReceiptUpdated = onDocumentUpdated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {

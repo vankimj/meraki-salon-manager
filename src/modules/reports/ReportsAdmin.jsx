@@ -1421,6 +1421,23 @@ const QUARTER_MONTHS = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
 // ─── Transactions Report (filterable + per-tech detail) ───────────────
 const METHOD_LABELS = { card: 'Credit card', cash: 'Cash', venmo: 'Venmo', other: 'Other' };
 
+// Display label for how a transaction was actually paid. Store credit is
+// applied as a reduction (payment.creditApplied), with the remainder hitting
+// the selected method — so a sale fully covered by credit still records
+// method:'cash'/'card'. Surface that: "Store credit" when credit covered the
+// whole charge, "Store credit + Cash/Card" for a split, else the plain method.
+function paymentMethodLabel(p = {}) {
+  const base = METHOD_LABELS[p?.method] || p?.method || '—';
+  const credit = Number(p?.creditApplied) || 0;
+  if (credit <= 0) return base;
+  // `charged` = amount that hit cash/card after gift card + store credit.
+  const charged = Number(p?.charged);
+  const remainder = Number.isFinite(charged)
+    ? charged
+    : (Number(p?.total) || 0) - (Number(p?.tip) || 0) - credit - (Number(p?.giftCard?.applied) || 0);
+  return remainder <= 0.005 ? 'Store credit' : `Store credit + ${base}`;
+}
+
 function LedgerSummaryCard({ label, value, color }) {
   return (
     <div style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 12px', background: 'var(--pn-surface)' }}>
@@ -1451,8 +1468,9 @@ function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays,
     if (e.type === 'sale') { a.sales += amt; }
     else if (e.type === 'refund') { if (e.refundDest === 'credit') a.refundCredit += amt; else a.refundMoney += amt; }
     else if (e.type === 'credit_adjust') { if (e.direction === 'in') a.creditAdded += amt; else a.creditRemoved += amt; }
+    else if (e.type === 'credit_redeem') { a.creditRedeemed += amt; }
     return a;
-  }, { sales: 0, refundMoney: 0, refundCredit: 0, creditAdded: 0, creditRemoved: 0 });
+  }, { sales: 0, refundMoney: 0, refundCredit: 0, creditAdded: 0, creditRemoved: 0, creditRedeemed: 0 });
   const netCash = r2(sum.sales - sum.refundMoney);
 
   const stamp = (ts) => ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
@@ -1460,6 +1478,7 @@ function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays,
     sale:              { label: 'Sale',       color: '#16a34a', sign: '+' },
     refund:            { label: 'Refund',     color: '#ef4444', sign: '−' },
     credit_adjust:     { label: 'Credit',     color: '#2563eb', sign: '' },
+    credit_redeem:     { label: 'Credit used', color: '#0891b2', sign: '−' },
     redo:              { label: 'Redo',       color: '#9333ea', sign: '' },
     commission_change: { label: 'Commission', color: '#d97706', sign: '' },
   };
@@ -1505,10 +1524,11 @@ function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays,
         <LedgerSummaryCard label="Net cash" value={money(netCash)} color="var(--pn-text)" />
         <LedgerSummaryCard label="Credit added" value={money(sum.creditAdded)} color="#2563eb" />
         <LedgerSummaryCard label="Credit removed" value={`−${money(sum.creditRemoved)}`} color="#2563eb" />
+        <LedgerSummaryCard label="Credit used (purchases)" value={`−${money(sum.creditRedeemed)}`} color="#0891b2" />
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
-        {['all', 'sale', 'refund', 'credit_adjust', 'commission_change', 'redo'].map(t => (
+        {['all', 'sale', 'refund', 'credit_adjust', 'credit_redeem', 'commission_change', 'redo'].map(t => (
           <PillBtn key={t} active={typeFilter === t} onClick={() => setType(t)}>{t === 'all' ? `All (${all.length})` : (META[t]?.label || t)}</PillBtn>
         ))}
       </div>
@@ -1692,7 +1712,7 @@ function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPerio
         (svcRev + retail).toFixed(2),
         (p.tax || 0).toFixed(2),
         (p.tip || 0).toFixed(2),
-        p.method || '',
+        paymentMethodLabel(p),
         (p.gcSalesTotal || 0).toFixed(2),
         (p.ccFee || 0).toFixed(2),
         (p.total || 0).toFixed(2),
@@ -1881,7 +1901,7 @@ function TransactionList({ receipts }) {
                 <Td>{fmt$(svcRev + retail)}</Td>
                 <Td muted>{fmt$(p.tax || 0)}</Td>
                 <Td muted>{fmt$(p.tip || 0)}</Td>
-                <Td>{METHOD_LABELS[p.method] || p.method || '—'}</Td>
+                <Td>{paymentMethodLabel(p)}</Td>
                 <Td>{p.gcSalesTotal > 0 ? fmt$(p.gcSalesTotal) : '—'}</Td>
                 <Td muted>{p.ccFee > 0 ? fmt$(p.ccFee) : '—'}</Td>
                 <Td bold green>{fmt$(p.total || 0)}</Td>
@@ -3250,7 +3270,7 @@ function ExportMenu({ appts, metrics, startDate, endDate, filtersActive }) {
           (Number(p.discountAmount) || 0).toFixed(2),
           (Number(p.ccFee) || 0).toFixed(2),
           (Number(p.total) || svcRev).toFixed(2),
-          p.method || '',
+          paymentMethodLabel(p),
           a.clientId ? 'Scheduled' : 'Walk-in',
           txSourceKey(a),
         ];
