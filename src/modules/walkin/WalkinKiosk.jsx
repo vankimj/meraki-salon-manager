@@ -262,7 +262,7 @@ export default function WalkinKiosk() {
               <div style={{ fontSize: 36, marginBottom: 8 }}>👥</div>
               <div style={{ fontSize: 18, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)', marginBottom: 6, fontWeight: 600 }}>No techs in rotation today</div>
               <div style={{ fontSize: 13, color: fullscreen ? '#7a6a9a' : 'var(--pn-text-faint)', marginBottom: 14, lineHeight: 1.5, maxWidth: 320, margin: '0 auto 14px' }}>
-                Open <strong>Schedule → Turn rotation</strong> from the side nav to clock techs in. This view updates live as soon as anyone joins the rotation from any device.
+                Techs join the rotation automatically when they <strong>clock in on the time clock</strong> (or add them from <strong>Schedule → Turn rotation</strong>). This view updates live as soon as anyone joins from any device.
               </div>
               <div style={{ fontSize: 11, color: fullscreen ? '#7a6a9a' : 'var(--pn-text-faint)' }}>
                 💡 Leave this page open on an iPad — it auto-refreshes.
