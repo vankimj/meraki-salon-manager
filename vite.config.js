@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { execSync } from 'child_process';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
@@ -41,6 +41,18 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    // Emit /version.json (the current build sha) so the app can self-heal a stale
+    // cache: on load it fetches this (cache-busted), and if its baked-in sha
+    // doesn't match, it unregisters the service worker, clears caches, and reloads.
+    {
+      name: 'write-version-json',
+      closeBundle() {
+        try {
+          mkdirSync('dist', { recursive: true });
+          writeFileSync('dist/version.json', JSON.stringify({ sha: gitSha, version: pkg.version, builtAt: now.toISOString() }));
+        } catch (e) { /* noop */ }
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
@@ -71,6 +83,7 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // Cache the app shell and static assets
         globPatterns: ['**/*.{js,css,html,ico,svg,png,woff2}'],
+        globIgnores: ['version.json'],   // never precache the version probe — it must always hit the network
         // Disable the auto-added NavigationRoute(CacheFirst on index.html).
         // It registers BEFORE any runtimeCaching entry, so our NetworkFirst
         // navigation handler below would never run with the default. We
