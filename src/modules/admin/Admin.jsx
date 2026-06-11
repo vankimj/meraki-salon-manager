@@ -3583,6 +3583,8 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
   const [thresholdCount, setThresholdCount] = useState(cfg.thresholdCount ?? 3);
   const [windowDays,     setWindowDays]     = useState(cfg.windowDays     ?? 90);
   const [countNoShows,   setCountNoShows]   = useState(cfg.countNoShows !== false);
+  const [depositPct,     setDepositPct]     = useState(cfg.depositPct ?? 0);
+  const [depositMode,    setDepositMode]    = useState(cfg.depositMode === 'charge' ? 'charge' : 'authorize');
   const [saving,         setSaving]         = useState(false);
   const [savedAt,        setSavedAt]        = useState(null);
 
@@ -3606,6 +3608,8 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
         thresholdCount: Math.max(1, Math.floor(Number(thresholdCount) || 3)),
         windowDays:     Math.max(1, Math.floor(Number(windowDays)     || 90)),
         countNoShows,
+        depositMode,
+        depositPct:     Math.min(100, Math.max(0, Math.round(Number(depositPct) || 0))),
         ...patch,
       };
       await updateSettings({ ...settings, cancellationPolicy: next });
@@ -3620,7 +3624,7 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
     <Section title="🚫 Cancellation Policy" keywords="cancellation no-show policy fee window booking charge late" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
-          After this many cancellations within the window, the booking page will require the client to have a card on file before they can book again. Clients who already have a card on file aren't affected. Admins can override per-client in the client modal.
+          After this many cancellations within the window, the booking page requires the client to put a card on file before booking again — and, if you set a deposit % below, places a card hold (or charges a deposit) on it. Admins can override per-client in the client modal.
         </div>
 
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
@@ -3665,6 +3669,27 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
 
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
           Salon-initiated cancellations (e.g. tech called in sick) don't count against the client.
+        </div>
+
+        {/* Deposit / card hold once over threshold */}
+        <div style={{ marginTop: 14, padding: '12px', background: 'var(--pn-warning-bg)', borderRadius: 10, border: '1px solid var(--pn-warning)', opacity: enabled ? 1 : 0.5, pointerEvents: enabled ? 'auto' : 'none' }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pn-warning)', marginBottom: 6 }}>Require a deposit once over threshold</div>
+          <div style={{ fontSize: 11, color: 'var(--pn-warning)', marginBottom: 10, lineHeight: 1.5 }}>
+            Once a client passes the threshold, take a % of the booking total as a card hold (released if they show, captured on a no-show) or an upfront charge. Set to 0% to only require a card on file.
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input type="number" min={0} max={100} step={1} value={depositPct}
+              onChange={e => setDepositPct(e.target.value)}
+              onBlur={() => save({ depositPct: Math.min(100, Math.max(0, Math.round(Number(depositPct) || 0))) })}
+              disabled={saving}
+              style={{ width: 72, padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-warning)', fontSize: 13, fontFamily: 'inherit' }} />
+            <span style={{ fontSize: 12, color: 'var(--pn-warning)' }}>% of total, as a</span>
+            <select value={depositMode} onChange={e => { setDepositMode(e.target.value); save({ depositMode: e.target.value }); }} disabled={saving}
+              style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-warning)', fontSize: 13, fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text)' }}>
+              <option value="authorize">card hold (released if they show)</option>
+              <option value="charge">upfront charge (credited at checkout)</option>
+            </select>
+          </div>
         </div>
 
         <div style={{ borderTop: '1px solid var(--pn-border)', marginTop: 16, paddingTop: 14 }}>

@@ -1708,9 +1708,17 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
             thresholdCount:    verdict.thresholdCount,
             windowDays:        verdict.windowDays,
             reason:            verdict.reason,
+            // When a deposit/hold is configured, carry the directive + id so the
+            // client collects a card inline and the re-run places the hold.
+            ...(verdict.depositPct > 0 ? { depositMode: verdict.depositMode, depositPct: verdict.depositPct, id: existingId } : {}),
             existingId,
             bookingMeta,
           };
+        }
+        // Over threshold but a card is already on file: place the configured
+        // deposit/hold on it pre-booking (a repeat no-show pays even with a card).
+        if (verdict.thresholdMet && verdict.depositPct > 0) {
+          bookingDeposit = { depositMode: verdict.depositMode, depositPct: verdict.depositPct };
         }
 
         // Booking-time card requirement (first-time / all-bookings). An existing
@@ -1940,7 +1948,8 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
     const past = apptsSnap ? apptsSnap.docs.map(d => d.data()) : [];
     const cx = evaluateCancellationPolicy(past, settings, clientData);
     if (cx.required) {
-      return { cardRequired: true, reason: cx.reason, cancellationCount: cx.cancellationCount, thresholdCount: cx.thresholdCount, windowDays: cx.windowDays };
+      return { cardRequired: true, reason: cx.reason, cancellationCount: cx.cancellationCount, thresholdCount: cx.thresholdCount, windowDays: cx.windowDays,
+        ...(cx.depositPct > 0 ? { depositMode: cx.depositMode, depositPct: cx.depositPct } : {}) };
     }
     const isFirstTime = past.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').length === 0;
     const bookReq = evaluateBookingCardRequirement(settings, { isFirstTime, hasCard: hasUsableCardOnFileFn(clientData) });
@@ -8114,6 +8123,7 @@ const {
   evaluateCancellationPolicy,
   evaluateBookingCardRequirement,
   resolveBookingCardPolicy,
+  resolveCancellationPolicy,
   hasUsableCardOnFile: hasUsableCardOnFileFn,
 } = require('./lib/cancellationPolicy');
 
@@ -8874,9 +8884,20 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
   const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
   const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
   const bcp = resolveBookingCardPolicy(settings);
-  if (bcp.depositMode === 'store' || bcp.depositPct <= 0) return { skipped: true, reason: 'no_deposit' };
+  // Effective deposit = the stronger of the booking-card policy and the
+  // cancellation-history policy (a repeat no-show pays a hold even when the
+  // tenant takes no deposit on ordinary bookings).
+  let depMode = bcp.depositMode, depPct = bcp.depositMode === 'store' ? 0 : bcp.depositPct;
+  const cxPolicy = resolveCancellationPolicy(settings);
+  if (cxPolicy.enabled && cxPolicy.depositPct > 0) {
+    const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`).where('clientId', '==', caller.id).get().catch(() => null);
+    const past = apptsSnap ? apptsSnap.docs.map(d => d.data()) : [];
+    const cx = evaluateCancellationPolicy(past, settings, caller.data);
+    if (cx.thresholdMet && cx.depositPct > depPct) { depPct = cx.depositPct; depMode = cx.depositMode; }
+  }
+  if (depMode === 'store' || depPct <= 0) return { skipped: true, reason: 'no_deposit' };
 
-  const amount = Math.round((totalCents * bcp.depositPct) / 100);
+  const amount = Math.round((totalCents * depPct) / 100);
   if (!totalCents || amount < 50) return { skipped: true, reason: 'amount_too_small' };
 
   const pmId = caller.data.defaultPaymentMethodId
@@ -8908,8 +8929,8 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
     throw new HttpsError('invalid-argument', e.message);
   }
   // 'authorize' = hold now, capture later (on no-show); 'charge' = settle now.
-  chargeReq.capture_method = bcp.depositMode === 'authorize' ? 'manual' : 'automatic';
-  chargeReq.metadata = { ...chargeReq.metadata, kind: 'booking_deposit', mode: bcp.depositMode };
+  chargeReq.capture_method = depMode === 'authorize' ? 'manual' : 'automatic';
+  chargeReq.metadata = { ...chargeReq.metadata, kind: 'booking_deposit', mode: depMode };
 
   const idemOpts = /^[A-Za-z0-9_-]{8,128}$/.test(idempotencyKey)
     ? { idempotencyKey: `dep_${tenantId}_${idempotencyKey}` } : undefined;
@@ -8928,12 +8949,12 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
   return {
     ok: true,
     deposit: {
-      mode:            bcp.depositMode,
-      pct:             bcp.depositPct,
+      mode:            depMode,
+      pct:             depPct,
       amountCents:     amount,
       paymentIntentId: pi.id,
       status:          pi.status,          // 'requires_capture' (authorize) | 'succeeded' (charge)
-      capturedAt:      bcp.depositMode === 'charge' ? new Date().toISOString() : null,
+      capturedAt:      depMode === 'charge' ? new Date().toISOString() : null,
     },
   };
 });

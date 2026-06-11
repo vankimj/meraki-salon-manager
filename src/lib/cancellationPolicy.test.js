@@ -27,7 +27,7 @@ describe('resolveCancellationPolicy', () => {
     const p = resolveCancellationPolicy({
       cancellationPolicy: { enabled: true, thresholdCount: 5, windowDays: 30, countNoShows: false },
     });
-    expect(p).toEqual({ enabled: true, thresholdCount: 5, windowDays: 30, countNoShows: false });
+    expect(p).toEqual({ enabled: true, thresholdCount: 5, windowDays: 30, countNoShows: false, depositMode: 'authorize', depositPct: 0 });
   });
 
   it('defaults countNoShows=true unless explicitly disabled', () => {
@@ -203,6 +203,31 @@ describe('evaluateCancellationPolicy', () => {
     const result = evaluateCancellationPolicy([], settingsOn, client, NOW);
     expect(result.required).toBe(false);
     expect(result.reason).toBe('override_force_satisfied');
+  });
+
+  it('threshold met + no card + deposit configured → cancellation_deposit with hold info', () => {
+    const s = { cancellationPolicy: { enabled: true, thresholdCount: 3, windowDays: 90, depositPct: 25, depositMode: 'authorize' } };
+    const r = evaluateCancellationPolicy(appts(3), s, {}, NOW);
+    expect(r.required).toBe(true);
+    expect(r.reason).toBe('cancellation_deposit');
+    expect(r.thresholdMet).toBe(true);
+    expect(r.depositPct).toBe(25);
+    expect(r.depositMode).toBe('authorize');
+  });
+
+  it('threshold met + has card + deposit configured → not required, but thresholdMet so the gate places a hold', () => {
+    const s = { cancellationPolicy: { enabled: true, thresholdCount: 3, windowDays: 90, depositPct: 25 } };
+    const client = { paymentMethods: [{ id: 'pm_x', expMonth: 12, expYear: 2030 }] };
+    const r = evaluateCancellationPolicy(appts(4), s, client, NOW);
+    expect(r.required).toBe(false);
+    expect(r.thresholdMet).toBe(true);
+    expect(r.depositPct).toBe(25);
+  });
+
+  it('no deposit configured → depositPct 0, card-on-file behavior unchanged', () => {
+    const r = evaluateCancellationPolicy(appts(3), settingsOn, {}, NOW);
+    expect(r.depositPct).toBe(0);
+    expect(r.reason).toBe('threshold_met_no_card');
   });
 
   it('respects custom threshold + window', () => {

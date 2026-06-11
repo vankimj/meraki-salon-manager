@@ -648,20 +648,25 @@ export default function BookingScreen() {
           }
           bookingDeposit = res?.data?.bookingDeposit || null;
           if (res?.data?.cardRequired) {
-            // Booking-card policy (first-time / all-bookings): collect a card
-            // inline via Stripe Elements, then the modal re-runs handleBook.
-            if (res.data.reason === 'booking_policy' && res.data.id) {
+            const gateId = res.data.id || res.data.existingId;
+            // Collect a card inline (Stripe Elements) whenever the gate carries
+            // an online card/deposit directive — the booking-card policy OR the
+            // cancellation-deposit gate (repeat no-shows → card hold). The modal
+            // re-runs handleBook after the card is saved; the re-run places the
+            // hold via the bookingDeposit directive.
+            if (gateId && (res.data.reason === 'booking_policy' || res.data.reason === 'cancellation_deposit')) {
               setCardPrompt({
-                clientId:    res.data.id,
+                clientId:    gateId,
                 depositMode: res.data.depositMode || 'store',
                 depositPct:  Number(res.data.depositPct) || 0,
                 firstTime:   res.data.firstTime === true,
+                cancellation: res.data.reason === 'cancellation_deposit',
               });
               setSubmitting(false);
               return;
             }
-            // Cancellation-history gate: client is over the threshold with no
-            // card on file. We don't collect online here — direct them to call.
+            // Cancellation-history gate, card-on-file only (no online deposit
+            // configured): we don't collect online — direct them to call.
             const { cancellationCount, thresholdCount, windowDays } = res.data;
             setBookingError(
               `Because of recent cancellations (${cancellationCount} in the last ${windowDays} days, threshold ${thresholdCount}), this salon requires a card on file before your next booking. Please call us to add one — your card will not be charged unless you cancel late or no-show.`

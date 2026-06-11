@@ -32,12 +32,15 @@ export const DEFAULT_POLICY = Object.freeze({
   thresholdCount: 3,
   windowDays:     90,
   countNoShows:   true,
+  depositMode:    'authorize',  // 'authorize' (card hold) | 'charge' (upfront)
+  depositPct:     0,            // 0 = card-on-file only (no deposit/hold)
 });
 
 // Merge stored policy with defaults so callers can rely on every field
 // being present even when the tenant has only set some of them.
 export function resolveCancellationPolicy(settings) {
   const stored = settings?.cancellationPolicy || {};
+  const pct = Number(stored.depositPct);
   return {
     enabled:        stored.enabled === true,
     thresholdCount: Number.isFinite(stored.thresholdCount) && stored.thresholdCount > 0
@@ -47,6 +50,8 @@ export function resolveCancellationPolicy(settings) {
       ? Math.floor(stored.windowDays)
       : DEFAULT_POLICY.windowDays,
     countNoShows:   stored.countNoShows !== false,  // default true unless explicitly disabled
+    depositMode:    stored.depositMode === 'charge' ? 'charge' : 'authorize',
+    depositPct:     Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0,
   };
 }
 
@@ -120,6 +125,9 @@ export function evaluateCancellationPolicy(appointments, settings, client, now =
     cancellationCount,
     hasCard,
     overrideApplied:   null,
+    thresholdMet:      false,
+    depositMode:       policy.depositMode,
+    depositPct:        policy.depositPct,
   };
 
   // Explicit admin force-on
@@ -162,18 +170,26 @@ export function evaluateCancellationPolicy(appointments, settings, client, now =
     return out;
   }
 
-  // Threshold met but they already have a card — gate passes
+  // Threshold met.
+  out.thresholdMet = true;
+  const depositLabel = policy.depositPct > 0
+    ? `a ${policy.depositPct}% ${policy.depositMode === 'charge' ? 'deposit' : 'card hold'}`
+    : 'a card on file';
+
+  // Already has a card — no NEW card must be collected. The gate still places a
+  // deposit/hold on the existing card when one is configured (thresholdMet +
+  // depositPct), so a repeat no-show pays even with a card on file.
   if (hasCard) {
     out.required = false;
     out.reason   = 'threshold_met_card_on_file';
-    out.message  = `${cancellationCount} cancellations in the last ${policy.windowDays} days, but a card is already on file.`;
+    out.message  = `${cancellationCount} cancellations in the last ${policy.windowDays} days; a card is on file${policy.depositPct > 0 ? ` and ${depositLabel} applies` : ''}.`;
     return out;
   }
 
-  // Threshold met, no card → gate
+  // Threshold met, no card → must collect one (and place the deposit/hold if configured).
   out.required = true;
-  out.reason   = 'threshold_met_no_card';
-  out.message  = `${cancellationCount} cancellations in the last ${policy.windowDays} days. A card on file is required before booking again.`;
+  out.reason   = policy.depositPct > 0 ? 'cancellation_deposit' : 'threshold_met_no_card';
+  out.message  = `${cancellationCount} cancellations in the last ${policy.windowDays} days. ${depositLabel.charAt(0).toUpperCase() + depositLabel.slice(1)} is required before booking again.`;
   return out;
 }
 

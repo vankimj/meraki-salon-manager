@@ -12,6 +12,7 @@ const DEFAULT_POLICY = Object.freeze({
 
 function resolveCancellationPolicy(settings) {
   const stored = (settings && settings.cancellationPolicy) || {};
+  const pct = Number(stored.depositPct);
   return {
     enabled:        stored.enabled === true,
     thresholdCount: Number.isFinite(stored.thresholdCount) && stored.thresholdCount > 0
@@ -21,6 +22,8 @@ function resolveCancellationPolicy(settings) {
       ? Math.floor(stored.windowDays)
       : DEFAULT_POLICY.windowDays,
     countNoShows:   stored.countNoShows !== false,
+    depositMode:    stored.depositMode === 'charge' ? 'charge' : 'authorize',
+    depositPct:     Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0,
   };
 }
 
@@ -69,6 +72,9 @@ function evaluateCancellationPolicy(appointments, settings, client, now) {
     windowDays: policy.windowDays,
     hasCard,
     overrideApplied: null,
+    thresholdMet: false,
+    depositMode: policy.depositMode,
+    depositPct: policy.depositPct,
   };
 
   if (client && client.cardRequiredOverride === true) {
@@ -90,12 +96,15 @@ function evaluateCancellationPolicy(appointments, settings, client, now) {
     out.reason = 'under_threshold';
     return out;
   }
+  out.thresholdMet = true;
   if (hasCard) {
+    // No NEW card needed; the gate still places a deposit/hold on the existing
+    // card when one is configured (thresholdMet + depositPct > 0).
     out.reason = 'threshold_met_card_on_file';
     return out;
   }
   out.required = true;
-  out.reason = 'threshold_met_no_card';
+  out.reason = policy.depositPct > 0 ? 'cancellation_deposit' : 'threshold_met_no_card';
   return out;
 }
 
