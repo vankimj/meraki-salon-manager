@@ -2210,8 +2210,9 @@ function ContractorBonusGuidance() {
           <div style={{ marginBottom: 5 }}><strong style={{ color: '#b45309' }}>⚠ Signals “employee” — avoid for 1099s:</strong></div>
           <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
             <li>Recurring monthly/quarterly “performance” bonuses</li>
-            <li>Holiday / year-end / longevity / loyalty bonuses</li>
+            <li>Holiday / year-end / longevity / tenure / anniversary / loyalty bonuses</li>
             <li>Attendance- or hours-based bonuses</li>
+            <li>Salon-paid continuing education / license CE — that's employer training + an employee benefit. A true 1099 funds their own CE (and deducts it); if you want to help, build it into their rate rather than gifting it.</li>
             <li>The <strong>Rule engine’s metrics</strong> (rebooking %, ratings, tenure) are great for W-2 staff but are exactly the discretionary, performance-control signals that make a 1099 look like an employee — for contractors prefer fixed, contract-defined payouts.</li>
           </ul>
           <p style={{ margin: '0 0 8px', color: 'var(--pn-text-muted)' }}>
@@ -2220,6 +2221,47 @@ function ContractorBonusGuidance() {
           <p style={{ margin: 0, fontSize: 11.5, color: 'var(--pn-text-faint)' }}>
             Not tax or legal advice — confirm with a CPA/attorney; for a binding federal answer file IRS Form SS-8.{' '}
             <a href="https://www.irs.gov/businesses/small-businesses-self-employed/independent-contractor-self-employed-or-employee" target="_blank" rel="noopener noreferrer" style={{ color: '#3D95CE', fontWeight: 600 }}>IRS: contractor vs employee ↗</a>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Quick reference: how nail salons typically pay + bonus techs. Numbers are
+// typical ranges (vary by metro/tier/book) — not rules.
+function TypicalBonusStructures() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, marginBottom: 16, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '11px 14px', textAlign: 'left' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text)' }}>💡 Typical nail-salon pay &amp; bonus structures</span>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0, marginLeft: 8 }}>{open ? '▲ hide' : '▼ read'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 14px 14px', fontSize: 12.5, color: 'var(--pn-text)', lineHeight: 1.6 }}>
+          <div style={{ marginBottom: 5 }}><strong>Base pay models</strong> (typical ranges — vary by market):</div>
+          <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
+            <li><strong>Commission</strong> — 40–60% of service revenue to the tech (~50% is most common). The standard model.</li>
+            <li><strong>Tiered / sliding commission</strong> — the % steps up as monthly revenue grows (e.g. 40% → 45% → 50%), often gated on a rebooking-rate target.</li>
+            <li><strong>Hourly</strong> or <strong>hourly + commission</strong> — a base wage (minimum-wage floor) plus a smaller commission; common for newer techs + wage compliance.</li>
+            <li><strong>Whichever is greater</strong> — pay the higher of an hourly guarantee vs. commission earned that period.</li>
+            <li><strong>Booth / chair rental</strong> — the tech keeps their service revenue and pays rent (~$200–600/week); the one model that fits a true 1099.</li>
+          </ul>
+          <div style={{ marginBottom: 5 }}><strong>Common bonuses / incentives</strong>:</div>
+          <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
+            <li><strong>Retail commission</strong> — 10–20% on product they sell (keep ~10–15% to protect margin); nearly universal.</li>
+            <li><strong>Service-revenue milestones</strong> — flat bonus or % bump when they clear a monthly target.</li>
+            <li><strong>Rebooking / retention</strong>, <strong>add-on / upsell</strong>, and <strong>new-client</strong> incentives.</li>
+            <li><strong>Team / salon-goal profit share</strong> — a pooled bonus when the whole salon hits a target.</li>
+            <li>Occasional: per-appointment / productivity, 5-star-review, attendance, referral (client + staff), anniversary / holiday, sign-on — dollar amounts here are salon-specific, no real benchmark.</li>
+          </ul>
+          <p style={{ margin: '0 0 8px', color: 'var(--pn-text-muted)' }}>
+            Sanity check: total service payroll typically lands around <strong>30–35% of revenue</strong> whatever model you pick.
+          </p>
+          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--pn-text-faint)' }}>
+            ⚠️ Most of these (commission, hourly, milestones, retail, attendance, tenure) assume <strong>W-2 employees</strong>. For a <strong>1099</strong>, only booth rental + output/contract-based incentives fit — and commission pay alone does NOT make someone a 1099. See the panel above.
           </p>
         </div>
       )}
@@ -2247,6 +2289,7 @@ function BonusRulesTab({ rules, rows, loading, onNew, onEdit, onToggle, onDelete
       </div>
 
       <ContractorBonusGuidance />
+      <TypicalBonusStructures />
 
       {rules.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>No bonus rules yet. Create one to start rewarding performance.</div>
