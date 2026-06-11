@@ -73,6 +73,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   }, []);
   const [receiptDelivery,        setReceiptDelivery]        = useState(settings.receiptDelivery        || 'auto');
   const [reviewRoutingThreshold, setReviewRoutingThreshold] = useState(settings.reviewRoutingThreshold ?? 4);
+  const [feedbackTitle, setFeedbackTitle] = useState(settings.feedbackThankYouTitle || '');
+  const [feedbackMsg,   setFeedbackMsg]   = useState(settings.feedbackThankYouMsg   || '');
   const [emailRatingStyle,       setEmailRatingStyle]       = useState(settings.emailRatingStyle       || 'both');
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
@@ -672,12 +674,28 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </select>
               </div>
 
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #f7f7f7' }}>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Private feedback thank-you</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>
+                  Shown on the rating page after a guest leaves a below-threshold (private) rating. Leave blank for the default.
+                </div>
+                <input value={feedbackTitle} onChange={e => setFeedbackTitle(e.target.value.slice(0, 120))}
+                  placeholder="Thanks for letting us know."
+                  style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', marginBottom: 6 }} />
+                <textarea value={feedbackMsg} onChange={e => setFeedbackMsg(e.target.value.slice(0, 400))}
+                  placeholder="Your feedback goes straight to the salon owner. We'll do better next time."
+                  rows={2}
+                  style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', resize: 'vertical' }} />
+              </div>
+
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({
                   ...settings,
                   receiptDelivery,
                   reviewRoutingThreshold: Math.max(1, Math.min(5, Math.round(Number(reviewRoutingThreshold) || 4))),
                   emailRatingStyle,
+                  feedbackThankYouTitle: feedbackTitle.trim() || null,
+                  feedbackThankYouMsg:   feedbackMsg.trim()   || null,
                 })}>Save</Btn>
               </div>
             </Section>

@@ -2153,6 +2153,8 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
     },
     googleReviewUrl:        safeUrl(sData?.googleReviewUrl) || null,
     reviewRoutingThreshold: threshold,
+    feedbackTitle:   typeof sData?.feedbackThankYouTitle === 'string' ? sData.feedbackThankYouTitle.slice(0, 120) : null,
+    feedbackMessage: typeof sData?.feedbackThankYouMsg   === 'string' ? sData.feedbackThankYouMsg.slice(0, 400)   : null,
     existingRatings,
   };
 });
