@@ -444,7 +444,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     return bm === dm && bd === dd;
   });
 
-  async function handleSave(appt, original) {
+  async function handleSave(appt, original, pendingSeat) {
     try {
       // No-anonymous-customers rule (2026-05-12): every NEW appointment
       // must reference a real client record. Existing walk-in appts
@@ -552,6 +552,22 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
       }
 
       notifyAffectedTechs(original, full, gUser).catch(e => console.error('[Notif]', e));
+
+      // Queue-seat finalize: now that the appointment is actually saved, pull the
+      // person off the walk-in queue and (only for 🎯 Next) credit the turn to
+      // whoever they ended up seated with. Deferring to here is what makes
+      // cancelling the modal a true no-op — they stay in the queue, no turn moves.
+      if (pendingSeat) {
+        if (pendingSeat.creditTurn && full.techName) {
+          const credited = (turnRoster.roster || []).map(r =>
+            r.techName === full.techName ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
+          );
+          await saveTurnRoster(todayStr(), credited).catch(() => {});
+        }
+        await updateWaitlistEntry(pendingSeat.entryId, { status: 'seated' }).catch(() => {});
+        logActivity('walkin_seated', `${full.clientName || 'walk-in'} → ${full.techName || '—'}`);
+      }
+
       // The write is done — close the modal now. Refresh the calendar in the
       // BACKGROUND so a slow Firestore read doesn't pin "Saving…". The real-time
       // subscription surfaces the change anyway; this is a belt-and-suspenders sync.
@@ -963,22 +979,20 @@ function openNew(techName, slotMins) {
         <QueuePanel
           entries={queueEntries}
           turnRoster={turnRoster.roster || []}
-          onAutoSeatNext={async (entry) => {
+          onAutoSeatNext={(entry) => {
             const next = nextUpInRotation(turnRoster.roster || []);
             if (!next) {
               showToast('No techs in turn rotation. Clock someone in first.', 3500);
               return;
             }
-            // Immediate +1 so the rotation visibly advances at seating time.
-            // Mark the new appt as already-credited so the future checkout
-            // doesn't double-count this same walk-in.
-            const updatedRoster = (turnRoster.roster || []).map(r =>
-              r.techId === next.techId ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
-            );
-            await saveTurnRoster(todayStr(), updatedRoster).catch(() => {});
             setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
+            // Defer the turn credit AND the queue removal until the appointment is
+            // actually saved (handleSave's pendingSeat path). If the user cancels
+            // the modal, nothing happened — they stay in the queue and the rotation
+            // doesn't advance. _turnCredited rides on the appt so a later checkout
+            // won't double-count the turn.
             setModal({
               appt: {
                 ...blankAppt(todayStr(), next.techName, null, entry.clientName, entry.serviceName),
@@ -986,16 +1000,17 @@ function openNew(techName, slotMins) {
               },
               original: null,
               mode: 'edit',
+              pendingSeat: { entryId: entry.id, creditTurn: true },
             });
-            updateWaitlistEntry(entry.id, { status: 'seated' }).catch(() => {});
-            logActivity('walkin_auto_seated', `${entry.clientName} → ${next.techName}`);
           }}
           onSeat={entry => {
             setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
-            setModal({ appt: blankAppt(todayStr(), entry.techName === 'Any' ? '' : entry.techName, null, entry.clientName, entry.serviceName), original: null, mode: 'edit' });
-            updateWaitlistEntry(entry.id, { status: 'seated' }).catch(() => {});
+            // Defer the queue removal until the appointment saves (pendingSeat) so
+            // cancelling the modal leaves the person in the queue. Manual assignment
+            // doesn't pre-credit a turn — it's reconciled at checkout / Recount.
+            setModal({ appt: blankAppt(todayStr(), entry.techName === 'Any' ? '' : entry.techName, null, entry.clientName, entry.serviceName), original: null, mode: 'edit', pendingSeat: { entryId: entry.id } });
           }}
           onRemove={async entry => { await removeWaitlistEntry(entry.id).catch(() => {}); }}
           onDone={async entry => { await updateWaitlistEntry(entry.id, { status: 'done' }).catch(() => {}); }}
@@ -1214,7 +1229,7 @@ function openNew(techName, slotMins) {
           employees={employees}
           onChange={patch => setModal(m => ({ ...m, appt: { ...m.appt, ...patch } }))}
           onSwitchEdit={() => setModal(m => ({ ...m, mode: 'edit' }))}
-          onSave={() => handleSave(modal.appt, modal.original)}
+          onSave={() => handleSave(modal.appt, modal.original, modal.pendingSeat)}
           onDelete={() => handleDelete(modal.appt)}
           onClose={() => setModal(null)}
           onCheckout={appt => { setModal(null); setCheckout({ appts: [appt], walkInClient: null }); }}
@@ -1432,16 +1447,16 @@ function QueuePanel({ entries, turnRoster, onAutoSeatNext, onSeat, onRemove, onD
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                  {entry.isWalkIn && turnRoster && turnRoster.length > 0 && (
+                  {!entry.hasAppointment && turnRoster && turnRoster.length > 0 && (
                     <button onClick={() => onAutoSeatNext(entry)} title={`Auto-seat with the next tech in rotation (${nextUpInRotation(turnRoster)?.techName || ''})`}
                       style={{ padding: '4px 10px', borderRadius: 6, border: 'none', background: 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                       🎯 Next
                     </button>
                   )}
-                  {entry.isWalkIn && (
+                  {!entry.hasAppointment && (
                     <button onClick={() => onSeat(entry)}
                       style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #c6e8d5', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      Seat
+                      Manual assignment
                     </button>
                   )}
                   {canCheckout && (
