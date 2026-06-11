@@ -54,7 +54,7 @@ export default function AuthModal({ onClose, onSuccess }) {
 
         {/* Google */}
         <button onClick={handleGoogleSignIn}
-          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, width: '100%', padding: 12, border: '1px solid #d0d0d0', borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer', background: '#fff', fontFamily: 'inherit', marginBottom: 16 }}>
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, width: '100%', padding: 12, border: '1px solid #d0d0d0', borderRadius: 10, fontSize: 14, fontWeight: 500, cursor: 'pointer', background: '#fff', color: '#3c4043', fontFamily: 'inherit', marginBottom: 16 }}>
           <svg width={18} height={18} viewBox="0 0 18 18">
             <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
             <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
@@ -97,7 +97,7 @@ export default function AuthModal({ onClose, onSuccess }) {
                 onChange={e => setEmail(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSendLink()}
                 placeholder="you@example.com"
-                style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', background: '#fafafa', boxSizing: 'border-box' }}
+                style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', background: '#fafafa', color: '#1a1a1a', boxSizing: 'border-box' }}
               />
             </div>
             <button onClick={handleSendLink} disabled={sending || !email.trim()}
