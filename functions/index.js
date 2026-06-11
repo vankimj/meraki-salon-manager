@@ -4777,12 +4777,25 @@ exports.sendBookingConfirmation = onDocumentCreated(
     const tenantId = event.params.tenantId;
 
     const appt = snap.data();
-    if (!appt || appt.source !== 'online_booking') return;
+    if (!appt) return;
+    // Online-booking-page bookings always confirm. Staff-entered appointments now
+    // confirm too (client gets the same email; admins get a heads-up) — unless the
+    // tenant opts out — but skip blocks/walk-ins (no client) and past-dated entries
+    // so a backfill of history doesn't email a flood.
+    const isOnline = appt.source === 'online_booking';
+    if (!isOnline) {
+      if (!appt.clientId) return;
+      const todayISO = new Date().toISOString().slice(0, 10);
+      if (appt.date && appt.date < todayISO) return;
+      try {
+        const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+        if (sSnap.exists && sSnap.data()?.emailStaffAppts === false) return;
+      } catch { /* default: send */ }
+    }
 
-    // Notify the assigned tech of the new online booking (push via
-    // sendApptNotification). Runs before the email so it fires even if email
-    // isn't configured. The notifications collection won't re-trigger this.
-    if (appt.techName && appt.techName !== 'TBD') {
+    // Notify the assigned tech of a NEW ONLINE booking (push). Staff-entered appts
+    // already notify the tech in-app (notifyAffectedTechs), so only online here.
+    if (isOnline && appt.techName && appt.techName !== 'TBD') {
       try {
         await db.collection(`tenants/${tenantId}/notifications`).add({
           apptId: event.params?.apptId || snap.id, techName: appt.techName,
@@ -4851,28 +4864,31 @@ exports.sendBookingConfirmation = onDocumentCreated(
 </body>
 </html>`;
 
-    // Send to client — honor commPreferences.appointmentEmail if set on
-    // the linked client doc. Defaults to opted-in for legacy/unknown clients.
-    if (appt.clientEmail) {
-      let emailOk = true;
-      if (appt.clientId) {
-        try {
-          const cDoc = await db.doc(`tenants/${tenantId}/clients/${appt.clientId}`).get();
-          if (cDoc.exists && cDoc.data()?.commPreferences?.appointmentEmail === false) emailOk = false;
-        } catch { /* fall through — assume opted-in */ }
-      }
-      if (emailOk) {
-        await sendEmail({
-          from:    await tenantFromAddress(db, tenantId),
-          to:      appt.clientEmail,
-          replyTo: replyTo || undefined,
-          subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
-          html:    clientHtml,
-          tenantId,
-        }).catch(e => console.error('[Booking] Client email failed:', e.message));
-      } else {
-        console.log(`[Booking] Skipped client email — opted out of appointment email`);
-      }
+    // Send to client. Email comes from the booking form (online) or, for a
+    // staff-entered appt, the linked client profile. Honor commPreferences.
+    let clientEmail = appt.clientEmail || null;
+    let emailOk = true;
+    if (appt.clientId) {
+      try {
+        const cDoc = await db.doc(`tenants/${tenantId}/clients/${appt.clientId}`).get();
+        if (cDoc.exists) {
+          const cd = cDoc.data() || {};
+          if (!clientEmail) clientEmail = cd.email || null;
+          if (cd.commPreferences?.appointmentEmail === false) emailOk = false;
+        }
+      } catch { /* fall through — assume opted-in */ }
+    }
+    if (clientEmail && emailOk) {
+      await sendEmail({
+        from:    await tenantFromAddress(db, tenantId),
+        to:      clientEmail,
+        replyTo: replyTo || undefined,
+        subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
+        html:    clientHtml,
+        tenantId,
+      }).catch(e => console.error('[Booking] Client email failed:', e.message));
+    } else if (clientEmail && !emailOk) {
+      console.log(`[Booking] Skipped client email — opted out of appointment email`);
     }
 
     // SMS booking confirmation. Phone may live on the appt itself (legacy
@@ -4921,11 +4937,11 @@ exports.sendBookingConfirmation = onDocumentCreated(
   <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
     <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
       <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">New Online Booking</div>
+      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">${isOnline ? 'New Online Booking' : 'New Appointment'}</div>
     </div>
     <div style="padding:24px;">
       <p style="font-size:14px;line-height:1.65;color:#222;margin:0 0 16px;">
-        A new appointment was booked online.
+        ${isOnline ? 'A new appointment was booked online.' : 'A new appointment was added to the schedule.'}
       </p>
       <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
         <div style="margin-bottom:6px;"><strong>Client:</strong> ${esc(appt.clientName)}${appt.clientPhone ? ' · ' + esc(appt.clientPhone) : ''}</div>
@@ -4944,7 +4960,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
           sendEmail({
             from:    adminFrom,
             to:      a.email,
-            subject: `New online booking — ${appt.clientName} on ${fmtDate(appt.date)}`,
+            subject: `${isOnline ? 'New online booking' : 'New appointment'} — ${appt.clientName} on ${fmtDate(appt.date)}`,
             html:    adminHtml,
           }).catch(e => console.error('[Booking] Admin email failed:', e.message))
         ));
