@@ -2735,6 +2735,32 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 // Date for the attendance doc is computed in the tenant's tz so a 11:50 PM
 // clock-out doesn't roll into tomorrow's doc when interpreted as UTC.
 
+// Keep the walk-in turn rotation (tenants/{tid}/turnRoster/{date}) in sync with
+// the time clock so a tech who clocks in via the kiosk automatically joins the
+// walk-in rotation (and leaves it when they clock out) — without anyone having
+// to also add them by hand on Schedule → Turn rotation. Only 'in'/'out' change
+// roster membership; breaks keep the tech in rotation (still on shift). A
+// re-entry within the same day preserves the existing turnsTaken so they don't
+// jump the queue. Best-effort and run post-commit — a roster hiccup must never
+// fail or roll back the clock event the tech already saw confirmed.
+async function syncTurnRosterForClock(db, tenantId, date, kind, { employeeId, name, at }) {
+  if (kind !== 'in' && kind !== 'out') return;
+  const ref = db.doc(`tenants/${tenantId}/turnRoster/${date}`);
+  await db.runTransaction(async (tx) => {
+    const snap   = await tx.get(ref);
+    const roster = (snap.exists && Array.isArray(snap.data().roster)) ? snap.data().roster.slice() : [];
+    const i = roster.findIndex(r => r && (r.techId === employeeId || (name && r.techName === name)));
+    if (kind === 'in') {
+      if (i !== -1) return;
+      roster.push({ techId: employeeId, techName: name || '', clockInAt: at, turnsTaken: 0 });
+    } else {
+      if (i === -1) return;
+      roster.splice(i, 1);
+    }
+    tx.set(ref, { date, roster, updatedAt: new Date().toISOString() }, { merge: true });
+  });
+}
+
 exports.clockEvent = onCall({ cors: true }, async (request) => {
   const data       = request.data || {};
   const tenantId   = data.tenantId || TENANT_ID;
@@ -2828,6 +2854,12 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
       summary: tcSummarize(newEvents),
     };
   });
+
+  // Join/leave the walk-in turn rotation to match the clock state (best-effort).
+  if (!result?.duplicate) {
+    syncTurnRosterForClock(db, tenantId, date, kind, { employeeId, name: emp.name || '', at })
+      .catch(e => console.warn('[clockEvent] turnRoster sync failed:', e?.message));
+  }
 
   // Post-commit: notify the tech by SMS. Best-effort — a failed SMS must
   // not roll back the clock event the tech already saw confirmed on the
