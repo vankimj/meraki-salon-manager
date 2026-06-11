@@ -12,6 +12,7 @@ import KioskCheckout from '../kiosk/KioskCheckout';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
 import { completeSale } from '../../lib/completeSale';
+import { defaultWalkIn } from '../../lib/metrics';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
 import { isTerminalAvailable } from '../../lib/terminal';
 import CardPayButton from './CardPayButton';
@@ -100,6 +101,12 @@ export default function CheckoutScreen({ navigation }) {
   const [saleId]                  = useState(() => genReceiptToken(24)); // idempotency key + receipt id
   const [receiptPhone, setReceiptPhone] = useState(''); // walk-ins: capture a number for the texted receipt
   const hasPhoneOnFile = (tab.appts || []).some(a => a.clientPhone);
+  // Walk-in vs scheduled — same-day-booked defaults to walk-in; staff can flip.
+  const hasServiceVisit = (tab.appts || []).length > 0;
+  const [isWalkIn, setIsWalkIn] = useState(() => {
+    const a = (tab.appts || [])[0];
+    return hasServiceVisit && defaultWalkIn(a?.createdAt, a?.date);
+  });
 
   const online = useOnline();
 
@@ -282,6 +289,7 @@ export default function CheckoutScreen({ navigation }) {
         method, stripePaymentIntentId, cardBrand, cardLast4, discType, discVal, promo, giftCard,
         saleId, skipSideEffects: isRetry, tipByTech: chargedTipByTech,
         receiptContact: parseReceiptContact(receiptPhone),
+        walkIn: hasServiceVisit ? isWalkIn : false,
       };
       // Card was already charged online — record it directly (retry UI handles a
       // failure). Cash/credit goes through recordSale so it survives no network.
@@ -565,6 +573,16 @@ export default function CheckoutScreen({ navigation }) {
       )}
 
 
+      {hasServiceVisit && (
+        <TouchableOpacity style={styles.walkInRow} onPress={() => setIsWalkIn(v => !v)} activeOpacity={0.7}>
+          <View style={[styles.walkInBox, isWalkIn && { backgroundColor: theme.green, borderColor: theme.green }]}>
+            {isWalkIn && <Text style={styles.walkInCheck}>✓</Text>}
+          </View>
+          <Text style={styles.walkInLabel}>Walk-in</Text>
+          <Text style={styles.walkInHint}>{isWalkIn ? 'Counts as a walk-in' : 'Counts as scheduled'}</Text>
+        </TouchableOpacity>
+      )}
+
       <Text style={styles.section}>Send receipt to</Text>
       {hasPhoneOnFile && (
         <Text style={styles.muted}>Sends to the contact on file — enter a phone or email below to send it somewhere else.</Text>
@@ -758,6 +776,11 @@ const makeStyles = (t) => StyleSheet.create({
   colFull:   { width: '100%' },
   section:   { fontSize: 13, fontWeight: '800', color: t.text, marginTop: 20, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.3 },
   muted:     { color: t.textFaint, fontSize: 13 },
+  walkInRow:   { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 18, paddingVertical: 4 },
+  walkInBox:   { width: 22, height: 22, borderRadius: 6, borderWidth: 1.5, borderColor: t.border, alignItems: 'center', justifyContent: 'center' },
+  walkInCheck: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  walkInLabel: { fontSize: 15, fontWeight: '700', color: t.text },
+  walkInHint:  { fontSize: 12, color: t.textFaint, flex: 1, textAlign: 'right' },
   tipMethodRow:  { flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 10 },
   tipMethod:     { flex: 1, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: t.border, alignItems: 'center', backgroundColor: t.surface },
   tipMethodOn:   { backgroundColor: t.greenSoft, borderColor: t.green },

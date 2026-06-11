@@ -13,6 +13,7 @@ import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../lib/shiftGat
 import { notifyAffectedTechs } from '../lib/notifications';
 import { addApptToTab, removeApptFromTab, getCurrentTab, tabCount, tabTotal, subscribeTab, clearTab } from '../lib/currentTab';
 import useCurrentEmployee from '../hooks/useCurrentEmployee';
+import { auth } from '../lib/firebase';
 import useTenantAccess from '../hooks/useTenantAccess';
 import useResponsive from '../hooks/useResponsive';
 import useTrashHeader from '../hooks/useTrashHeader';
@@ -1140,6 +1141,7 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
   // an early return between hook calls.
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { techName: myStaffName } = useCurrentEmployee();
   const [clients, setClients] = useState([]);
   const [services, setServices] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -1324,6 +1326,9 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
             status:    'scheduled',
             notes:     '',
             techRequestType: 'scheduler',
+            // Records who entered the booking — shown as "Staff · Name" in
+            // Reports (parity with web ScheduleAdmin).
+            bookedByName: myStaffName || auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || null,
             ...(groupId ? { recurringGroupId: groupId, recurring: true } : {}),
           });
           d = stepDate(d, repeat);
