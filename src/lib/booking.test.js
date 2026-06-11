@@ -160,6 +160,18 @@ describe('isTechFreeAt', () => {
     const appts = [{ techName: 'Yasmin', startTime: '10:00', duration: 60 }];
     expect(isTechFreeAt(tech, 600, 60, appts)).toBe(false);
   });
+  it('treats a no-show as free — the slot is rebookable', () => {
+    const appts = [{ techId: 't1', startTime: '10:00', duration: 60, status: 'no_show' }];
+    expect(isTechFreeAt(tech, 600, 60, appts)).toBe(true);
+  });
+  it('treats a cancelled appt as free', () => {
+    const appts = [{ techId: 't1', startTime: '10:00', duration: 60, status: 'cancelled' }];
+    expect(isTechFreeAt(tech, 600, 60, appts)).toBe(true);
+  });
+  it('still blocks for a scheduled (or done/in-progress) appt', () => {
+    expect(isTechFreeAt(tech, 600, 60, [{ techId: 't1', startTime: '10:00', duration: 60, status: 'scheduled' }])).toBe(false);
+    expect(isTechFreeAt(tech, 600, 60, [{ techId: 't1', startTime: '10:00', duration: 60, status: 'in-progress' }])).toBe(false);
+  });
   it('ignores non-overlapping appointments earlier in the day', () => {
     const appts = [{ techId: 't1', startTime: '09:00', duration: 60 }]; // 9–10
     expect(isTechFreeAt(tech, 600, 60, appts)).toBe(true); // 10–11 OK

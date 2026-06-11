@@ -4713,6 +4713,75 @@ exports.sendTechAppointmentReminders = onSchedule(
   }
 );
 
+// Late check-in alert: when a scheduled appointment hasn't been checked in
+// within N minutes of its start (N is per-tenant configurable, default 15),
+// push the assigned tech to either check the client in or mark a no-show.
+// Fires once per appointment (lateCheckinAlertSent dedup). The check-in flips
+// `checkedInAt`; a no-show frees the tech (isTechFreeAt ignores no_show).
+exports.lateCheckinAlerts = onSchedule(
+  { schedule: 'every 5 minutes', timeZone: 'America/New_York' },
+  async () => {
+    const tz = 'America/New_York';
+    const now = new Date();
+    const localToday = now.toLocaleDateString('en-CA', { timeZone: tz });
+    const hm = now.toLocaleTimeString('en-US', { timeZone: tz, hour12: false, hour: '2-digit', minute: '2-digit' });
+    const [h, m] = hm.split(':').map(Number);
+    const nowMins = h * 60 + m;
+    const WINDOW = 120; // don't alert for appts overdue by more than this (avoid a flood for stale/abandoned ones)
+
+    await forEachActiveTenant('LateCheckinAlerts', async (tenantId, tData) => {
+      const db = getFirestore();
+      const sDoc = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const cfg  = ((sDoc.exists ? sDoc.data() : {}).lateCheckinAlert) || {};
+      if (cfg.enabled === false) return;
+      const threshold = Number(cfg.minutes) > 0 ? Number(cfg.minutes) : 15;
+
+      const apptSnap = await db.collection(`tenants/${tenantId}/appointments`)
+        .where('date', '==', localToday).get();
+
+      const due = apptSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => {
+        if (a.status !== 'scheduled') return false;   // in-progress/done/cancelled/no_show already handled
+        if (a.checkedInAt) return false;              // client already arrived
+        if (a.lateCheckinAlertSent) return false;     // fire once
+        if (!a.startTime || !a.techName) return false;
+        const [ah, am] = String(a.startTime).split(':').map(Number);
+        if (!Number.isFinite(ah) || !Number.isFinite(am)) return false;
+        const overdue = nowMins - (ah * 60 + am);
+        return overdue >= threshold && overdue <= threshold + WINDOW;
+      });
+      if (!due.length) return;
+
+      const empSnap = await db.collection(`tenants/${tenantId}/employees`).get();
+      const empByName = {};
+      empSnap.docs.forEach(d => { const e = d.data(); if (e.name) empByName[e.name] = e; });
+
+      let pushed = 0;
+      for (const appt of due) {
+        const emp = empByName[appt.techName];
+        const startLabel = fmtTime(appt.startTime);
+        const clientLabel = appt.clientName || 'the client';
+        const [ah, am] = appt.startTime.split(':').map(Number);
+        const overdueMin = nowMins - (ah * 60 + am);
+        if (emp?.email) {
+          try {
+            await sendPushToEmail(db, tenantId, emp.email, {
+              title: `${clientLabel} hasn't checked in`,
+              body:  `Scheduled ${startLabel} with you — ${overdueMin} min ago. Tap to check them in, or mark a no-show.`,
+              data:  { type: 'late_checkin', apptId: appt.id, tenantId },
+            });
+            pushed++;
+          } catch (e) { console.error(`[LateCheckin] push failed for ${emp.name} (tenant=${tenantId}):`, e.message); }
+        }
+        await db.doc(`tenants/${tenantId}/appointments/${appt.id}`).update({
+          lateCheckinAlertSent: true,
+          lateCheckinAlertSentAt: new Date().toISOString(),
+        });
+      }
+      console.log(`[LateCheckin] tenant=${tenantId} threshold=${threshold}m due=${due.length} pushed=${pushed}`);
+    });
+  }
+);
+
 exports.sendBookingConfirmation = onDocumentCreated(
   { document: `tenants/{tenantId}/appointments/{apptId}`, secrets: [apptManageSecret] },
   async (event) => {

@@ -84,7 +84,7 @@ function planReassignments({ appts, clockedInTechs, nowMins }) {
   const busy = new Map();
   for (const t of techs) {
     const ivals = (appts || [])
-      .filter(a => a && a.status !== 'cancelled' && !poolIds.has(a.id))
+      .filter(a => a && a.status !== 'cancelled' && a.status !== 'no_show' && !poolIds.has(a.id))
       .filter(a => (a.techId && a.techId === t.id) || norm(a.techName) === norm(t.name))
       .map(a => { const s = strToMins(a.startTime); return { s, e: s + apptDuration(a) }; });
     busy.set(t.id, ivals);

@@ -137,4 +137,15 @@ describe('planReassignments', () => {
     const r = planReassignments({ appts: [a], clockedInTechs: [tech('t1', 'Ana', '2026-06-10T13:00:00Z', ['mani'])], nowMins: 540 });
     expect(r).toEqual([]);
   });
+
+  it('a no-show does NOT block the tech — the freed slot takes a pool appt', () => {
+    seq = 0;
+    // Ana has a no-show at 10:00 (freed) and is the only clocked-in tech; the
+    // pool appt at 10:00 should still be assignable to her.
+    const noShow   = appt({ techName: 'Ana', techId: 't1', techRequestType: 'specific', status: 'no_show', startTime: '10:00' });
+    const poolAppt = appt({ startTime: '10:00', techName: 'TBD' });
+    const r = planReassignments({ appts: [noShow, poolAppt], clockedInTechs: [tech('t1', 'Ana', '2026-06-10T13:00:00Z')], nowMins: 540 });
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ apptId: poolAppt.id, toTechName: 'Ana' });
+  });
 });

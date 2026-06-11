@@ -4194,6 +4194,8 @@ function HoursModal({ settings, updateSettings, onClose }) {
   });
   const [apptOpen,  setApptOpen]  = useState(settings.apptHours?.open  || '09:00');
   const [apptClose, setApptClose] = useState(settings.apptHours?.close || '20:00');
+  const [lateEnabled, setLateEnabled] = useState(settings.lateCheckinAlert?.enabled !== false);
+  const [lateMins,    setLateMins]    = useState(String(Number(settings.lateCheckinAlert?.minutes) > 0 ? Number(settings.lateCheckinAlert.minutes) : 15));
   const [saving,    setSaving]    = useState(false);
 
   function patch(day, delta) {
@@ -4203,7 +4205,9 @@ function HoursModal({ settings, updateSettings, onClose }) {
   async function handleSave() {
     setSaving(true);
     try {
-      await updateSettings({ ...settings, storeHours: hours, apptHours: { open: apptOpen, close: apptClose } });
+      const lm = Math.max(1, Math.min(120, parseInt(lateMins, 10) || 15));
+      await updateSettings({ ...settings, storeHours: hours, apptHours: { open: apptOpen, close: apptClose },
+        lateCheckinAlert: { enabled: lateEnabled, minutes: lm } });
       // Mirror to the publicly-readable webfront doc so the public website
       // (which can't read staff-only `settings`) shows the same hours. Best-
       // effort: a webfront write failure shouldn't block the schedule save.
@@ -4257,6 +4261,23 @@ function HoursModal({ settings, updateSettings, onClose }) {
               <span style={{ color: 'var(--pn-text-faint)' }}>–</span>
               <input type="time" value={apptClose} onChange={e => setApptClose(e.target.value)}
                 style={{ fontFamily: 'inherit', border: '1px solid #c7dff7', borderRadius: 8, padding: '6px 8px', fontSize: 12, flex: 1 }} />
+            </div>
+          </div>
+
+          {/* Late check-in alert */}
+          <div style={{ marginTop: 16, padding: '12px', background: 'var(--pn-warning-bg)', borderRadius: 10, border: '1px solid var(--pn-warning)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none' }}>
+              <input type="checkbox" checked={lateEnabled} onChange={e => setLateEnabled(e.target.checked)} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-warning)' }}>Late check-in alert</span>
+            </label>
+            <div style={{ fontSize: 11, color: 'var(--pn-warning)', margin: '8px 0 10px' }}>
+              Push the tech when a client hasn&apos;t checked in this many minutes after their appointment — to check them in or mark a no-show.
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: lateEnabled ? 1 : 0.5 }}>
+              <input type="number" min="1" max="120" value={lateMins} disabled={!lateEnabled}
+                onChange={e => setLateMins(e.target.value)}
+                style={{ fontFamily: 'inherit', border: '1px solid var(--pn-warning)', borderRadius: 8, padding: '6px 8px', fontSize: 12, width: 72 }} />
+              <span style={{ fontSize: 12, color: 'var(--pn-warning)' }}>minutes after start</span>
             </div>
           </div>
         </div>

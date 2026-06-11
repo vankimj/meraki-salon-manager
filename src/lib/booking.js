@@ -41,7 +41,11 @@ export function cartTotalDuration(cart, removalDur = 15, tech) {
 
 // True iff the tech has no overlapping appointment for the given window.
 export function isTechFreeAt(tech, slotMins, durationMins, appts) {
-  const relevant = appts.filter(a => a.techId === tech.id || a.techName === tech.name);
+  // Cancelled and no-show appointments don't occupy the tech — the slot is
+  // free to rebook (a no-show frees the tech for walk-ins / other bookings).
+  const relevant = appts.filter(a =>
+    a.status !== 'cancelled' && a.status !== 'no_show' &&
+    (a.techId === tech.id || a.techName === tech.name));
   const end = slotMins + durationMins;
   return !relevant.some(a => {
     const aStart = strToMins(a.startTime);
