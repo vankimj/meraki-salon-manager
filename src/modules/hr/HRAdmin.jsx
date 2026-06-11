@@ -530,6 +530,10 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
   const [bonusNote,   setBonusNote]   = useState('');
   const [saving,      setSaving]      = useState(false);
   const [expanded,    setExpanded]    = useState({});
+  // A tech with a Tax ID on file is treated as a 1099 contractor — warn that
+  // discretionary bonuses can affect their classification.
+  const addBonusEmp   = addBonusFor ? rows.find(r => r.emp?.name === addBonusFor)?.emp : null;
+  const addBonusIs1099 = !!(addBonusEmp && addBonusEmp.tin);
 
   async function submitBonus() {
     if (!bonusAmt) return;
@@ -702,6 +706,11 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
               <input value={bonusNote} onChange={e => setBonusNote(e.target.value)}
                 placeholder="Holiday, performance, etc." style={inp} />
             </div>
+            {addBonusIs1099 && (
+              <div style={{ marginBottom: 12, fontSize: 11.5, lineHeight: 1.5, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px' }}>
+                ⚠️ {addBonusFor} has a Tax ID on file (treated as a <strong>1099 contractor</strong>). Recurring or discretionary bonuses can reclassify a contractor as a W-2 employee — prefer output-based amounts written into their contract. See the <strong>Bonus Rules</strong> tab for guidance.
+              </div>
+            )}
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={() => setAddBonusFor(null)}
                 style={{ flex: 1, padding: '9px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
@@ -2176,6 +2185,48 @@ function describeRule(rule) {
   return { crit: crit || 'No criteria', pay, ptLabel: pt?.label || '' };
 }
 
+// Collapsible guidance: how to give bonuses to 1099 contractors without
+// accidentally making them look like W-2 employees. (Not tax advice.)
+function ContractorBonusGuidance() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, marginBottom: 16, overflow: 'hidden' }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: '11px 14px', textAlign: 'left' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text)' }}>⚠️ Bonuses to 1099 contractors — keep them contractors, not employees</span>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0, marginLeft: 8 }}>{open ? '▲ hide' : '▼ read'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '0 14px 14px', fontSize: 12.5, color: 'var(--pn-text)', lineHeight: 1.6 }}>
+          <p style={{ margin: '0 0 8px', color: 'var(--pn-text-muted)' }}>
+            The IRS weighs the whole relationship, but <strong>how you pay is a big signal</strong>: employees get a guaranteed regular wage; contractors get a flat fee for the job. Recurring, discretionary “good-worker” bonuses look like wages or benefits and can reclassify a 1099 as a W-2.
+          </p>
+          <div style={{ marginBottom: 5 }}><strong style={{ color: '#16a34a' }}>✓ Safer for a 1099</strong> — write it into their contract, tie it to output, keep real profit/loss:</div>
+          <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
+            <li>Completion bonus per agreed project/scope</li>
+            <li>Volume incentive defined in the contract (“$X after N services this period”)</li>
+            <li>Referral fee for new clients they bring in</li>
+          </ul>
+          <div style={{ marginBottom: 5 }}><strong style={{ color: '#b45309' }}>⚠ Signals “employee” — avoid for 1099s:</strong></div>
+          <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
+            <li>Recurring monthly/quarterly “performance” bonuses</li>
+            <li>Holiday / year-end / longevity / loyalty bonuses</li>
+            <li>Attendance- or hours-based bonuses</li>
+            <li>The <strong>Rule engine’s metrics</strong> (rebooking %, ratings, tenure) are great for W-2 staff but are exactly the discretionary, performance-control signals that make a 1099 look like an employee — for contractors prefer fixed, contract-defined payouts.</li>
+          </ul>
+          <p style={{ margin: '0 0 8px', color: 'var(--pn-text-muted)' }}>
+            Bonus dollars to a contractor still roll into their 1099-NEC total (no withholding, no benefits). <strong>State law may be stricter</strong> (the ABC test, e.g. California AB5) — a nail tech doing nail services is usually a W-2 there regardless of the IRS test. Confirm your state.
+          </p>
+          <p style={{ margin: 0, fontSize: 11.5, color: 'var(--pn-text-faint)' }}>
+            Not tax or legal advice — confirm with a CPA/attorney; for a binding federal answer file IRS Form SS-8.{' '}
+            <a href="https://www.irs.gov/businesses/small-businesses-self-employed/independent-contractor-self-employed-or-employee" target="_blank" rel="noopener noreferrer" style={{ color: '#3D95CE', fontWeight: 600 }}>IRS: contractor vs employee ↗</a>
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BonusRulesTab({ rules, rows, loading, onNew, onEdit, onToggle, onDelete }) {
   // Live "would pay this period" preview, from the current payroll rows.
   const previewByRule = {};
@@ -2194,6 +2245,8 @@ function BonusRulesTab({ rules, rows, loading, onNew, onEdit, onToggle, onDelete
           + New Rule
         </button>
       </div>
+
+      <ContractorBonusGuidance />
 
       {rules.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>No bonus rules yet. Create one to start rewarding performance.</div>
