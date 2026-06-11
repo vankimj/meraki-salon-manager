@@ -2122,18 +2122,24 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
   // the prior selection instead of a blank widget.
   const ratingsSnap = await db.collection(`tenants/${tenantId}/serviceRatings`)
     .where('receiptId', '==', docRef.id).get();
+  const editWindowDays = Number.isFinite(Number(sData?.reviewEditWindowDays))
+    ? Math.max(1, Math.min(60, Number(sData.reviewEditWindowDays))) : 5;
+  const editWindowMs = editWindowDays * 24 * 60 * 60 * 1000;
+  const nowMs = Date.now();
   const existingRatings = ratingsSnap.docs.map(r => {
     const rd = r.data();
-    return { techName: rd.techName, rating: rd.rating, comment: rd.comment || null };
+    const firstAt = rd.firstSubmittedAt || rd.submittedAt || null;
+    const locked = firstAt ? (nowMs - new Date(firstAt).getTime() > editWindowMs) : false;
+    return { techName: rd.techName, rating: rd.rating, comment: rd.comment || null, locked };
   });
 
   // Masked contact for the private-feedback consent checkbox. MASKED, never the raw
   // email/phone — this page is reachable by anyone holding the token, so we surface
   // only enough for the guest to recognize their own contact and opt in.
   let contact = null;
-  if (r.clientId) {
+  if (d.clientId) {
     try {
-      const cSnap = await db.doc(`tenants/${tenantId}/clients/${r.clientId}`).get();
+      const cSnap = await db.doc(`tenants/${tenantId}/clients/${d.clientId}`).get();
       if (cSnap.exists) {
         const c = cSnap.data() || {};
         const maskEmail = (e) => { e = String(e || '').trim(); if (!e.includes('@')) return null; const [u, d] = e.split('@'); return `${u.slice(0, 2)}•••@${d}`; };
@@ -2171,6 +2177,7 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
     },
     googleReviewUrl:        safeUrl(sData?.googleReviewUrl) || null,
     reviewRoutingThreshold: threshold,
+    reviewEditWindowDays: editWindowDays,
     feedbackTitle:   typeof sData?.feedbackThankYouTitle === 'string' ? sData.feedbackThankYouTitle.slice(0, 120) : null,
     feedbackMessage: typeof sData?.feedbackThankYouMsg   === 'string' ? sData.feedbackThankYouMsg.slice(0, 400)   : null,
     contact,
@@ -2218,6 +2225,13 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
   const now        = new Date().toISOString();
   let highest      = 0;
   const lowRatings = [];   // newly-low ratings (< threshold) to alert admins about
+  // Editable window — a guest can revise their stars/comment for this many days
+  // after the FIRST submission; after that the review is locked (can't change it).
+  const editWindowDays = Number.isFinite(Number(sData?.reviewEditWindowDays))
+    ? Math.max(1, Math.min(60, Number(sData.reviewEditWindowDays))) : 5;
+  const editWindowMs = editWindowDays * 24 * 60 * 60 * 1000;
+  const nowMs = Date.now();
+  let lockedAny = false;
 
   // Upsert per techName — one rating row per tech, idempotent.
   for (const raw of ratings) {
@@ -2231,7 +2245,13 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
       .where('receiptId', '==', receiptRef.id)
       .where('techName', '==', techName)
       .limit(1).get();
-    const prevRating = existing.empty ? null : Number(existing.docs[0].data().rating);
+    const exData     = existing.empty ? null : existing.docs[0].data();
+    const prevRating = exData ? Number(exData.rating) : null;
+
+    // Locked once the edit window has elapsed since the FIRST submission — a late
+    // re-tap can't overwrite a settled review.
+    const firstAt = exData ? (exData.firstSubmittedAt || exData.submittedAt) : null;
+    if (firstAt && (nowMs - new Date(firstAt).getTime() > editWindowMs)) { lockedAny = true; continue; }
 
     const techServices = (r.services || []).filter(s => (s.techName || '') === techName)
       .map(s => ({ name: s.name || '', price: Number(s.price) || 0 }));
@@ -2247,6 +2267,7 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
       source:      (source === 'sms' || source === 'email' || source === 'web') ? source : 'web',
       contactConsent,
       submittedAt: now,
+      firstSubmittedAt: (exData && (exData.firstSubmittedAt || exData.submittedAt)) || now,
     };
 
     if (existing.empty) {
@@ -2284,6 +2305,7 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
     ok: true,
     routeToGoogle,
     googleReviewUrl: routeToGoogle ? safeGoogleUrl : null,
+    locked: lockedAny,
   };
 });
 

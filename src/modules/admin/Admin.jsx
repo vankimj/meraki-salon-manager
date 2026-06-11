@@ -78,6 +78,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   }, []);
   const [receiptDelivery,        setReceiptDelivery]        = useState(settings.receiptDelivery        || 'auto');
   const [reviewRoutingThreshold, setReviewRoutingThreshold] = useState(settings.reviewRoutingThreshold ?? 4);
+  const [reviewEditDays, setReviewEditDays] = useState(settings.reviewEditWindowDays ?? 5);
   const [feedbackTitle, setFeedbackTitle] = useState(settings.feedbackThankYouTitle || '');
   const [feedbackMsg,   setFeedbackMsg]   = useState(settings.feedbackThankYouMsg   || '');
   const [emailRatingStyle,       setEmailRatingStyle]       = useState(settings.emailRatingStyle       || 'both');
@@ -721,6 +722,22 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
                 <div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Review edit window</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
+                    Days a guest can revise their rating after first submitting. After this it locks and can't be changed.
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="number" min={1} max={60} step={1}
+                    value={reviewEditDays}
+                    onChange={e => setReviewEditDays(Number(e.target.value))}
+                    style={{ width: 56, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '6px 8px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', textAlign: 'right' }} />
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>days</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
+                <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Email rating CTA</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
                     Stars = one tap from inbox to submitted. Button = opens the rating page. Both = stars on top, button below.
@@ -753,6 +770,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   ...settings,
                   receiptDelivery,
                   reviewRoutingThreshold: Math.max(1, Math.min(5, Math.round(Number(reviewRoutingThreshold) || 4))),
+                  reviewEditWindowDays: Math.max(1, Math.min(60, Math.round(Number(reviewEditDays) || 5))),
                   emailRatingStyle,
                   feedbackThankYouTitle: feedbackTitle.trim() || null,
                   feedbackThankYouMsg:   feedbackMsg.trim()   || null,
