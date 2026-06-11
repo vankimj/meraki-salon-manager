@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchEmployees, subscribeAttendance } from '../../lib/firestore';
+import { fetchEmployees, subscribeAttendance, fetchTenantTimezone } from '../../lib/firestore';
 import { TENANT_ID } from '../../lib/tenant';
 import { EmpAvatar } from '../employees/EmployeesAdmin';
 
@@ -88,13 +88,22 @@ export default function TimeClockKiosk() {
   const [picked,     setPicked]     = useState(null);  // employee record
   const [doneInfo,   setDoneInfo]   = useState(null);  // { name, label }
   const [noPinName,  setNoPinName]  = useState(null);  // tech tapped without a PIN set
-  const dateKey = useMemo(() => todayStr(now), [now]);
+  const [tz,         setTz]         = useState(null);  // tenant timezone (settings)
+  // Date key MUST be computed in the TENANT's timezone so it matches the doc the
+  // server (clockEvent) writes — the iPad's own timezone may differ, which would
+  // otherwise subscribe us to the wrong day's doc and show everyone clocked out
+  // (and "already clocked in" on retry). Falls back to device-local until tz loads.
+  const dateKey = useMemo(() => {
+    try { return now.toLocaleDateString('en-CA', { timeZone: tz || undefined }); }
+    catch { return todayStr(now); }
+  }, [now, tz]);
 
-  // Initial employee load. Filtered to active so retired techs don't clog
-  // the grid.
+  // Initial employee + tenant-timezone load. Filtered to active so retired
+  // techs don't clog the grid.
   useEffect(() => {
     fetchEmployees().then(list => setEmployees(list.filter(e => e.active !== false)))
                     .catch(() => setEmployees([]));
+    fetchTenantTimezone().then(setTz).catch(() => setTz('America/New_York'));
   }, []);
 
   // Live attendance subscription for today.

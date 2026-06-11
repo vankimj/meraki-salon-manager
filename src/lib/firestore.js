@@ -3025,6 +3025,19 @@ function todayDateStr() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+// Tenant's configured timezone (settings.timezone). Surfaces that must agree
+// with the SERVER's tenant-tz date key — e.g. the time-clock kiosk — need this
+// because the viewing device's own timezone can differ from the salon's, which
+// would otherwise make the client subscribe to the wrong day's doc. Falls back
+// to America/New_York. Readable wherever data/settings is (tenant staff/kiosk).
+export async function fetchTenantTimezone() {
+  try {
+    const snap = await getDoc(SETTINGS_REF);
+    const s = snap.exists() ? (snap.data() || {}) : {};
+    return s.timezone || s.timeZone || 'America/New_York';
+  } catch { return 'America/New_York'; }
+}
+
 export async function addToWaitlist(data) {
   return addDoc(WAITLIST_COL, { ...data, date: todayDateStr(), addedAt: new Date().toISOString(), status: 'waiting' });
 }
