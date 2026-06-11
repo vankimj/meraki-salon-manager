@@ -425,6 +425,9 @@ function InstagramPanel({ ctx, item, entry, patchItem }) {
   const daysAgo = last ? daysSince(last) : null;
   return (
     <div style={panel}>
+      <div style={{ fontSize: 11.5, color: 'var(--pn-text-muted)', marginBottom: 8, lineHeight: 1.5 }}>
+        First, in the Instagram app set your account to <strong>Business</strong> or <strong>Creator</strong> (Settings → Account type) and link it to a <strong>Facebook Page</strong> — then connect here. You’ll authorize in a Meta popup; we never see your password.
+      </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Button variant="primary" onClick={connect} style={{ background: '#7c3aed' }}>Connect Instagram</Button>
         <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>or track it manually:</span>

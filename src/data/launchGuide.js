@@ -363,7 +363,7 @@ export const LAUNCH_GROUPS = [
       { id: 'instagram-monitor', flavor: FLAVORS.EXTERNAL,
         title: 'Post consistently on Instagram',
         why: 'Salons that post regularly grow faster. Connect Instagram to track your cadence and get AI suggestions on what to post next.',
-        steps: ['Connect your Instagram business account', 'Aim for ~3 posts/week: before/afters, reels, client features', 'Use the AI coach for caption + post ideas'],
+        steps: ['Make your Instagram a Business or Creator account (IG app → Settings → Account type) and link it to a Facebook Page — required before connecting', 'Click "Connect Instagram" below and authorize in the popup — we never see your password', 'Aim for ~3 posts/week: before/afters, reels, client features', 'Use "Get post ideas" for AI caption + content suggestions'],
         autoStatus: 'instagramConnected',
         ai: { fn: 'suggest', kind: 'postIdeas', label: 'Get post ideas' },
         keywords: 'instagram posting cadence reels content social media coach' },
