@@ -4874,6 +4874,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
         </a>
       </div>` : ''}
       ${typeof sData.cancellationPolicyText === 'string' && sData.cancellationPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:18px 0 0;"><strong style="color:#888;">Cancellation policy:</strong> ${esc(sData.cancellationPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : ''}
+      ${typeof sData.refundPolicyText === 'string' && sData.refundPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:8px 0 0;"><strong style="color:#888;">Refund policy:</strong> ${esc(sData.refundPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : ''}
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
       <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
