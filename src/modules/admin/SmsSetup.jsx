@@ -454,7 +454,7 @@ function inpStyle(err) {
     borderRadius: 8,
     fontFamily: 'inherit',
     outline: 'none',
-    background: err ? '#fef2f2' : 'var(--pn-surface)',
+    background: err ? 'var(--pn-danger-bg)' : 'var(--pn-surface)',
   };
 }
 

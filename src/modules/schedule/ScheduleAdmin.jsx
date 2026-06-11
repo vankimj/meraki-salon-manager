@@ -786,7 +786,7 @@ function openNew(techName, slotMins) {
             <NavBtn onClick={() => setDate(d => addDays(d, 1))}>›</NavBtn>
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>{fmtDate(date)}</span>
             {isTech && (
-              <button onClick={() => setShowAll(v => !v)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer', border: `1px solid ${showAll ? '#3D95CE' : '#d8d8d8'}`, background: showAll ? '#EBF4FB' : 'var(--pn-surface)', color: showAll ? '#1a5f8a' : 'var(--pn-text-muted)', fontWeight: showAll ? 600 : 400 }}>
+              <button onClick={() => setShowAll(v => !v)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer', border: `1px solid ${showAll ? '#3D95CE' : '#d8d8d8'}`, background: showAll ? 'var(--pn-info-bg)' : 'var(--pn-surface)', color: showAll ? 'var(--pn-info)' : 'var(--pn-text-muted)', fontWeight: showAll ? 600 : 400 }}>
                 {showAll ? '👥 All Techs' : '👤 My Column'}
               </button>
             )}
@@ -823,8 +823,8 @@ function openNew(techName, slotMins) {
             <button onClick={() => setShowQueue(v => !v)} style={{
               position: 'relative', fontSize: 12, padding: '5px 10px', borderRadius: 6, flexShrink: 0,
               border: `1px solid ${showQueue ? '#2D7A5F' : '#d8d8d8'}`,
-              background: showQueue ? '#f0faf6' : 'var(--pn-surface)',
-              color: showQueue ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: showQueue ? 600 : 400,
+              background: showQueue ? 'var(--pn-success-bg)' : 'var(--pn-surface)',
+              color: showQueue ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: showQueue ? 600 : 400,
             }}>
               📋 Queue
               {waiting > 0 && (
@@ -1076,7 +1076,7 @@ function openNew(techName, slotMins) {
           <span style={{ fontSize: 16 }}>🎂</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-warning)' }}>Client birthdays today:</span>
           {birthdayClients.map(c => (
-            <span key={c.id} style={{ fontSize: 12, color: 'var(--pn-warning)', background: '#FFEDD5', borderRadius: 20, padding: '2px 10px', border: '1px solid #FED7AA' }}>
+            <span key={c.id} style={{ fontSize: 12, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid #FED7AA' }}>
               {c.name}
             </span>
           ))}
@@ -1089,7 +1089,7 @@ function openNew(techName, slotMins) {
           <span style={{ fontSize: 16 }}>🎊</span>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-success)' }}>Staff birthdays today:</span>
           {birthdayEmployees.map(e => (
-            <span key={e.id} style={{ fontSize: 12, color: 'var(--pn-success)', background: '#DCFCE7', borderRadius: 20, padding: '2px 10px', border: '1px solid #BBF7D0' }}>
+            <span key={e.id} style={{ fontSize: 12, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid #BBF7D0' }}>
               {e.name}
             </span>
           ))}
@@ -1302,7 +1302,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', flex: 1, minWidth: 0 }}>
           🎯 Walk-in turn order
-          {next && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#2D7A5F', background: '#EDFAF3', borderRadius: 20, padding: '2px 10px', border: '1px solid #c6e8d5' }}>Next up: {next.techName}</span>}
+          {next && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid #c6e8d5' }}>Next up: {next.techName}</span>}
         </span>
         <div style={{ position: 'relative' }}>
           <button onClick={() => setShowPicker(o => !o)} disabled={available.length === 0}
@@ -1323,7 +1323,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
         {roster.length > 0 && (
           <button onClick={onRecount}
             title="Rebuild turn counts from today's completed appointments"
-            style={{ fontSize: 11, color: '#1a5f8a', background: '#EBF4FB', border: '1px solid #bfdbfe', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ fontSize: 11, color: 'var(--pn-info)', background: 'var(--pn-info-bg)', border: '1px solid #bfdbfe', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
             ↺ Recount
           </button>
         )}
@@ -1341,8 +1341,8 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 10 }}>
           {sorted.map((r, i) => (
-            <div key={r.techId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? '#EDFAF3' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}` }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? '#2D7A5F' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
+            <div key={r.techId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}` }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
               <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)} · {(r.turnsTaken || 0) % 1 === 0 ? (r.turnsTaken || 0) : (r.turnsTaken || 0).toFixed(1)} turn{(r.turnsTaken || 0) === 1 ? '' : 's'}</span>
               <button onClick={() => onRemoveTech(r.techId)} title="Clock out"
@@ -1392,7 +1392,7 @@ function QueuePanel({ entries, turnRoster, onAutoSeatNext, onSeat, onRemove, onD
             const canCheckout = entry.hasAppointment && entry.apptId;
             return (
               <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: '1px solid var(--pn-border)' }}>
-                <div style={{ width: 22, height: 22, borderRadius: '50%', background: entry.hasAppointment ? '#EBF4FB' : '#f0faf6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: entry.hasAppointment ? '#1a5f8a' : '#2D7A5F', flexShrink: 0 }}>
+                <div style={{ width: 22, height: 22, borderRadius: '50%', background: entry.hasAppointment ? 'var(--pn-info-bg)' : 'var(--pn-success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: entry.hasAppointment ? 'var(--pn-info)' : 'var(--pn-success)', flexShrink: 0 }}>
                   {entry.hasAppointment ? '📅' : i + 1 - arrived.filter((_, j) => j < arrived.indexOf(entry)).length}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1415,18 +1415,18 @@ function QueuePanel({ entries, turnRoster, onAutoSeatNext, onSeat, onRemove, onD
                   )}
                   {entry.isWalkIn && (
                     <button onClick={() => onSeat(entry)}
-                      style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #c6e8d5', background: '#f0faf6', color: '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #c6e8d5', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                       Seat
                     </button>
                   )}
                   {canCheckout && (
                     <button onClick={() => onAddToTicket(entry)}
-                      style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #bfdbfe', background: '#EBF4FB', color: '#1a5f8a', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      style={{ padding: '4px 10px', borderRadius: 6, border: '1px solid #bfdbfe', background: 'var(--pn-info-bg)', color: 'var(--pn-info)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                       🧾 Add to ticket
                     </button>
                   )}
                   <button onClick={() => onRemove(entry)}
-                    style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    style={{ padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>
                     ✕
                   </button>
                 </div>
@@ -1493,10 +1493,10 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
               {/* Day header */}
               <div onClick={() => onDayClick(day)} style={{
                 padding: '7px 8px', cursor: 'pointer', flexShrink: 0,
-                background: isToday ? '#EBF4FB' : 'var(--pn-bg)',
+                background: isToday ? 'var(--pn-info-bg)' : 'var(--pn-bg)',
                 borderBottom: `2px solid ${isToday ? '#3D95CE' : 'var(--pn-border)'}`,
               }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: isToday ? '#1a5f8a' : 'var(--pn-text)' }}>{headerFmt}</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: isToday ? 'var(--pn-info)' : 'var(--pn-text)' }}>{headerFmt}</div>
                 <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 1 }}>
                   {dayAppts.length ? `${dayAppts.length} appt${dayAppts.length !== 1 ? 's' : ''}` : 'open'}
                 </div>
@@ -2369,7 +2369,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                   </span>
                 )}
                 {appt.recurringGroupId && (
-                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#f0f4ff', color: '#3D95CE', border: '1px solid #c7dff7' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', border: '1px solid #c7dff7' }}>
                     🔁 {appt.recurringIndex}/{appt.recurringTotal}
                   </span>
                 )}
@@ -2450,7 +2450,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
           {!isView && !appt.clientId && !newClientOpen && (
             <div style={{ marginBottom: 10 }}>
               <button onClick={openNewClientForm}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px dashed #fde68a', background: '#fffbeb', color: '#92400e', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px dashed #fde68a', background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
                 + Create new client contact
               </button>
             </div>
@@ -2744,7 +2744,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                                 <span style={{ background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', border: '1px solid #fca5a5', borderRadius: 4, padding: '0 6px', fontWeight: 700 }}>★ Requested {v.techName}</span>
                               )}
                               {raw.recurringGroupId && (
-                                <span style={{ background: '#eef2ff', color: '#3730a3', border: '1px solid #c7d2fe', borderRadius: 4, padding: '0 6px', fontWeight: 600 }}>
+                                <span style={{ background: 'var(--pn-info-bg)', color: 'var(--pn-info)', border: '1px solid #c7d2fe', borderRadius: 4, padding: '0 6px', fontWeight: 600 }}>
                                   🔁 Recurring{raw.recurringIndex && raw.recurringTotal ? ` ${raw.recurringIndex}/${raw.recurringTotal}` : ''}
                                 </span>
                               )}
@@ -2826,12 +2826,12 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               {advancedOpen && (
                 <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e5e7eb' }}>
                   {/* "Client asked for this tech" checkbox */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${appt.techRequestType === 'specific' ? '#ef4444' : 'var(--pn-border)'}`, background: appt.techRequestType === 'specific' ? '#fef2f2' : 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${appt.techRequestType === 'specific' ? '#ef4444' : 'var(--pn-border)'}`, background: appt.techRequestType === 'specific' ? 'var(--pn-danger-bg)' : 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
                     <input type="checkbox"
                       checked={appt.techRequestType === 'specific'}
                       onChange={e => onChange({ techRequestType: e.target.checked ? 'specific' : 'scheduler' })}
                       style={{ accentColor: '#ef4444', cursor: 'pointer' }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: appt.techRequestType === 'specific' ? '#991b1b' : 'var(--pn-text-muted)' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: appt.techRequestType === 'specific' ? 'var(--pn-danger)' : 'var(--pn-text-muted)' }}>
                       <span style={{ color: '#ef4444', fontWeight: 700, marginRight: 4 }}>★</span>
                       Client asked for this tech
                     </span>
@@ -2863,13 +2863,13 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
           {isView ? (
             <>
               {!isNew && !viewOnly && (
-                <button onClick={onDelete} style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid #fca5a5', background: '#fef2f2', color: '#ef4444', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                <button onClick={onDelete} style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, whiteSpace: 'nowrap' }}>
                   Delete
                 </button>
               )}
               {appt.id && (
                 <button onClick={copyCheckinLink} title="Copy check-in link for client"
-                  style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: `1px solid ${linkCopied ? '#bbf7d0' : 'var(--pn-border-strong)'}`, background: linkCopied ? '#f0fdf4' : 'var(--pn-surface)', color: linkCopied ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>
+                  style={{ fontSize: 12, padding: '8px 12px', borderRadius: 8, border: `1px solid ${linkCopied ? '#bbf7d0' : 'var(--pn-border-strong)'}`, background: linkCopied ? 'var(--pn-success-bg)' : 'var(--pn-surface)', color: linkCopied ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500, flexShrink: 0, whiteSpace: 'nowrap' }}>
                   {linkCopied ? '✓ Copied!' : '🔗 Check-in'}
                 </button>
               )}
@@ -2886,7 +2886,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               {!viewOnly && appt.id && appt.status !== 'done' && appt.status !== 'cancelled' && (
                 <>
                   <button onClick={() => onAddToTicket(appt)}
-                    style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'var(--pn-surface)', color: '#2D7A5F', border: '1.5px solid #2D7A5F', borderRadius: 8, padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                    style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'var(--pn-surface)', color: 'var(--pn-success)', border: '1.5px solid #2D7A5F', borderRadius: 8, padding: '8px 10px', whiteSpace: 'nowrap' }}>
                     🧾 Add to ticket
                   </button>
                   <button onClick={() => onCheckout(appt)}
@@ -2897,7 +2897,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               )}
               {!viewOnly && appt.id && appt.status === 'done' && !appt.refund && (
                 <button onClick={() => onRefund(appt)}
-                  style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: '#fef2f2', color: '#ef4444', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px' }}>
+                  style={{ flex: 1, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 10px' }}>
                   Refund
                 </button>
               )}
@@ -3034,7 +3034,7 @@ function RecurringDeleteDialog({ appt, onDeleteOne, onDeleteAll, onCancel }) {
             Just this appointment
           </button>
           <button onClick={onDeleteAll}
-            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #fca5a5', background: '#fef2f2', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#ef4444', textAlign: 'left' }}>
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-danger)', textAlign: 'left' }}>
             All {appt.recurringTotal} in this series
           </button>
           <button onClick={onCancel}
@@ -3108,11 +3108,11 @@ function SeriesEditDialog({ appt, onScope, onCancel }) {
             Just this appointment
           </button>
           <button onClick={() => onScope('following')}
-            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #c7dff7', background: '#f0f7ff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1a5f8a', textAlign: 'left' }}>
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #c7dff7', background: 'var(--pn-info-bg)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-info)', textAlign: 'left' }}>
             This and all following
           </button>
           <button onClick={() => onScope('all')}
-            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #c7dff7', background: '#f0f7ff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#1a5f8a', textAlign: 'left' }}>
+            style={{ padding: '11px 14px', borderRadius: 10, border: '1px solid #c7dff7', background: 'var(--pn-info-bg)', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-info)', textAlign: 'left' }}>
             All {appt.recurringTotal || ''} in this series
           </button>
           <button onClick={onCancel}
@@ -3248,12 +3248,12 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 6,
         ...inp, cursor: 'default', paddingTop: 6, paddingBottom: 6,
-        ...(selected.banned ? { background: '#fef2f2', borderColor: '#fca5a5' } : {}),
+        ...(selected.banned ? { background: 'var(--pn-danger-bg)', borderColor: '#fca5a5' } : {}),
       }}>
         {selected.banned && <span title="Banned client" style={{ fontSize: 14 }}>🚫</span>}
         <span style={{
           flex: 1, fontSize: 13,
-          color: selected.banned ? '#b91c1c' : 'var(--pn-text)',
+          color: selected.banned ? 'var(--pn-danger)' : 'var(--pn-text)',
           fontWeight: selected.banned ? 600 : 400,
         }}>{selected.name}{selected.banned && ' · Banned'}</span>
         {selected.phone && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{displayPhone(selected.phone)}</span>}
@@ -3296,21 +3296,21 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
                 padding: '8px 12px', fontSize: 13, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', gap: 8,
                 borderBottom: '1px solid var(--pn-border)',
-                background: c.banned ? '#fef2f2' : 'transparent',
+                background: c.banned ? 'var(--pn-danger-bg)' : 'transparent',
               }}
-              onMouseEnter={e => e.currentTarget.style.background = c.banned ? '#fee2e2' : '#f5f9ff'}
-              onMouseLeave={e => e.currentTarget.style.background = c.banned ? '#fef2f2' : ''}
+              onMouseEnter={e => e.currentTarget.style.background = c.banned ? 'var(--pn-danger-bg)' : 'var(--pn-surface-alt)'}
+              onMouseLeave={e => e.currentTarget.style.background = c.banned ? 'var(--pn-danger-bg)' : ''}
             >
               {c.banned && <span title="Banned client — do not accept bookings" style={{ fontSize: 13 }}>🚫</span>}
               <span style={{
                 flex: 1,
-                color: c.banned ? '#b91c1c' : '#1a1a1a',
+                color: c.banned ? 'var(--pn-danger)' : 'var(--pn-text)',
                 fontWeight: c.banned ? 600 : 400,
               }}>
                 {c.name}
                 {c.banned && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>· Banned</span>}
               </span>
-              {c.phone && <span style={{ fontSize: 11, color: c.banned ? '#dc2626' : 'var(--pn-text-faint)' }}>{displayPhone(c.phone)}</span>}
+              {c.phone && <span style={{ fontSize: 11, color: c.banned ? 'var(--pn-danger)' : 'var(--pn-text-faint)' }}>{displayPhone(c.phone)}</span>}
             </div>
           ))}
           {filtered.length === 0 && query && (
@@ -3461,7 +3461,7 @@ function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdm
             <>
               {canAdd && (
                 <button onClick={() => setShowAdd(true)}
-                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px dashed #2D7A5F', background: '#EDFAF3', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: '#166534', marginBottom: 14 }}>
+                  style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: '1px dashed #2D7A5F', background: 'var(--pn-success-bg)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-success)', marginBottom: 14 }}>
                   + Add time off
                 </button>
               )}
@@ -3687,7 +3687,7 @@ function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmi
             { id: 'personal', label: '🏠 Personal' },
           ].map(opt => (
             <button key={opt.id} onClick={() => setType(opt.id)}
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: type === opt.id ? '1.5px solid #2D7A5F' : '1px solid #d8d8d8', background: type === opt.id ? '#EDFAF3' : 'var(--pn-surface)', fontSize: 13, fontWeight: type === opt.id ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', color: type === opt.id ? '#166534' : 'var(--pn-text-muted)' }}>
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: type === opt.id ? '1.5px solid #2D7A5F' : '1px solid #d8d8d8', background: type === opt.id ? 'var(--pn-success-bg)' : 'var(--pn-surface)', fontSize: 13, fontWeight: type === opt.id ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', color: type === opt.id ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>
               {opt.label}
             </button>
           ))}
@@ -3864,7 +3864,7 @@ function TimeOffConflictView({ affected, draftEntry, techs, employees, services,
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.05em' }}>Conflicts</div>
         <button onClick={autoPickAll} disabled={saving}
-          style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, border: '1px solid #c7dff7', background: '#f0f7ff', color: '#1a5f8a', cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ fontSize: 11, padding: '4px 9px', borderRadius: 6, border: '1px solid #c7dff7', background: 'var(--pn-info-bg)', color: 'var(--pn-info)', cursor: 'pointer', fontFamily: 'inherit' }}>
           Auto-pick all where possible
         </button>
       </div>

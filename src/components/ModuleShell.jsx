@@ -123,7 +123,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
           .ms-home-btn {
             width: 44px !important; height: 44px !important; min-width: 44px !important;
             padding: 0 !important; border-radius: 22px !important;
-            border: 1px solid #e0e0e0 !important; background: #fff !important;
+            border: 1px solid var(--pn-border) !important; background: var(--pn-surface) !important;
           }
           .ms-content { padding: 10px !important; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)) !important; }
         }

@@ -1510,7 +1510,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
               <span style={{ flex: 1 }}>Generate a unique single-use code for each recipient. The code is bound to that client only — others can't redeem it.</span>
             </label>
             {persPromo && (
-              <div style={{ marginTop: 10, padding: '12px 14px', background: '#f0faf6', border: '1px solid #c6e8d5', borderRadius: 8 }}>
+              <div style={{ marginTop: 10, padding: '12px 14px', background: 'var(--pn-success-bg)', border: '1px solid #c6e8d5', borderRadius: 8 }}>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div>
                     <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Code prefix</label>
@@ -1535,7 +1535,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                   <span>day{Number(persExpDays) === 1 ? '' : 's'}</span>
                 </div>
                 <div style={{ marginTop: 10, fontSize: 11, color: 'var(--pn-success)', padding: '6px 10px', background: 'var(--pn-success-bg)', border: '1px dashed #86efac', borderRadius: 6 }}>
-                  Use <code style={{ fontFamily: 'monospace', background: 'var(--pn-success-bg)', padding: '0 4px', borderRadius: 3 }}>{'{promoCode}'}</code> in the {channel === 'sms' ? 'SMS body' : 'email body'} to insert the recipient's unique code. Example: <code style={{ fontFamily: 'monospace', background: '#fff', padding: '0 4px', borderRadius: 3 }}>{persPrefix || 'MERAKI'}-A3F7K9P2</code>
+                  Use <code style={{ fontFamily: 'monospace', background: 'var(--pn-success-bg)', padding: '0 4px', borderRadius: 3 }}>{'{promoCode}'}</code> in the {channel === 'sms' ? 'SMS body' : 'email body'} to insert the recipient's unique code. Example: <code style={{ fontFamily: 'monospace', background: 'var(--pn-surface)', padding: '0 4px', borderRadius: 3 }}>{persPrefix || 'MERAKI'}-A3F7K9P2</code>
                 </div>
               </div>
             )}

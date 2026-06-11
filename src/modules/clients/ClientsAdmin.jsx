@@ -647,7 +647,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                   ? (client.allergies
                       ? <span style={{ color: 'var(--pn-danger)', fontWeight: 700, background: 'var(--pn-danger-bg)', border: '1px solid #fca5a5', padding: '4px 10px', borderRadius: 8, display: 'inline-block', fontSize: 13 }}>⚠ {client.allergies}</span>
                       : <ViewVal>—</ViewVal>)
-                  : <input value={client.allergies || ''} onChange={e => onChange({ allergies: e.target.value })} placeholder="e.g. Latex, acetone, gel" style={{ ...inp, borderColor: client.allergies ? '#f59e0b' : undefined, background: client.allergies ? '#fffbeb' : undefined }} />
+                  : <input value={client.allergies || ''} onChange={e => onChange({ allergies: e.target.value })} placeholder="e.g. Latex, acetone, gel" style={{ ...inp, borderColor: client.allergies ? '#f59e0b' : undefined, background: client.allergies ? 'var(--pn-warning-bg)' : undefined }} />
                 }
               </Field>
               <Field label="Notes">
@@ -795,7 +795,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                     onClick={handleRequestReview}
                     disabled={requestingReview || !settings?.googleReviewUrl}
                     title={!settings?.googleReviewUrl ? 'Set Google Review URL in Admin → Settings first' : ''}
-                    style={{ width: '100%', padding: '8px', borderRadius: 8, border: `1px solid ${settings?.googleReviewUrl ? '#f59e0b' : 'var(--pn-border)'}`, background: settings?.googleReviewUrl ? '#fffbeb' : 'var(--pn-bg)', color: requestingReview ? 'var(--pn-text-faint)' : settings?.googleReviewUrl ? '#92400e' : 'var(--pn-text-faint)', fontSize: 12, fontWeight: 600, cursor: settings?.googleReviewUrl && !requestingReview ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                    style={{ width: '100%', padding: '8px', borderRadius: 8, border: `1px solid ${settings?.googleReviewUrl ? '#f59e0b' : 'var(--pn-border)'}`, background: settings?.googleReviewUrl ? 'var(--pn-warning-bg)' : 'var(--pn-bg)', color: requestingReview ? 'var(--pn-text-faint)' : settings?.googleReviewUrl ? 'var(--pn-warning)' : 'var(--pn-text-faint)', fontSize: 12, fontWeight: 600, cursor: settings?.googleReviewUrl && !requestingReview ? 'pointer' : 'default', fontFamily: 'inherit' }}>
                     {requestingReview ? 'Sending…' : '⭐ Request Google Review'}
                   </button>
                   {!settings?.googleReviewUrl && (
@@ -816,7 +816,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                         <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
                           {[1,2,3,4,5].map(n => (
                             <button key={n} onClick={() => setReviewForm(f => ({ ...f, rating: n }))}
-                              style={{ flex: 1, padding: '6px 0', border: `1px solid ${reviewForm.rating >= n ? '#f59e0b' : 'var(--pn-border)'}`, borderRadius: 6, background: reviewForm.rating >= n ? '#fffbeb' : 'var(--pn-surface)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              style={{ flex: 1, padding: '6px 0', border: `1px solid ${reviewForm.rating >= n ? '#f59e0b' : 'var(--pn-border)'}`, borderRadius: 6, background: reviewForm.rating >= n ? 'var(--pn-warning-bg)' : 'var(--pn-surface)', color: 'var(--pn-text)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>
                               ★
                             </button>
                           ))}
@@ -996,7 +996,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{formatDate(a.date)}</span>
                                 {photoCount > 0 && (
-                                  <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: '#f0f4ff', color: '#3D95CE', border: '1px solid #c7dff7' }}>
+                                  <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', border: '1px solid #c7dff7' }}>
                                     📸 {photoCount}
                                   </span>
                                 )}

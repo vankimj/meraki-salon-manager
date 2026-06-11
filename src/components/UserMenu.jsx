@@ -32,7 +32,7 @@ export default function UserMenu() {
     <div ref={ref} style={{ position: 'relative', flexShrink: 0 }}>
       <button
         onClick={() => setOpen(o => !o)}
-        style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, fontSize: 12, color: '#555', padding: '0 14px 0 6px', borderRadius: 20, border: `1px solid ${open ? '#3D95CE' : '#e8e8e8'}`, background: open ? '#EBF4FB' : '#fff', cursor: 'pointer', fontFamily: 'inherit' }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, height: 40, fontSize: 12, color: 'var(--pn-text-muted)', padding: '0 14px 0 6px', borderRadius: 20, border: `1px solid ${open ? '#3D95CE' : 'var(--pn-border)'}`, background: open ? 'var(--pn-surface-muted)' : 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit' }}
       >
         {gUser.photoURL && (
           <img src={gUser.photoURL} alt="" style={{ width: 28, height: 28, borderRadius: '50%', objectFit: 'cover' }} />
@@ -46,9 +46,9 @@ export default function UserMenu() {
       </button>
 
       {open && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: '#fff', border: '1px solid #e0e0e0', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,.12)', width: 220, zIndex: 200, overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,.12)', width: 220, zIndex: 200, overflow: 'hidden' }}>
           {/* User info header */}
-          <div style={{ padding: '12px 14px', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--pn-border)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {gUser.photoURL
                 ? <img src={gUser.photoURL} alt="" style={{ width: 36, height: 36, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
@@ -57,8 +57,8 @@ export default function UserMenu() {
                   </div>
               }
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
-                <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gUser.email}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{gUser.email}</div>
               </div>
             </div>
           </div>
@@ -106,7 +106,7 @@ function MenuItem({ icon, label, color, onClick }) {
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', background: hover ? '#f8f9fa' : 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: color || '#333', textAlign: 'left' }}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '9px 14px', background: hover ? 'var(--pn-surface-muted)' : 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: color || 'var(--pn-text-muted)', textAlign: 'left' }}
     >
       <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{icon}</span>
       {label}

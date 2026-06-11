@@ -41,7 +41,7 @@ function CardRow({ pm, isDefault, onMakeDefault, onDelete, busy }) {
       padding: '12px 14px', marginBottom: 8,
     }}>
       <div style={{
-        width: 40, height: 28, borderRadius: 6, background: '#f0f4f8',
+        width: 40, height: 28, borderRadius: 6, background: 'var(--pn-surface-alt)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 9, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: 0.5,
         textTransform: 'uppercase', flexShrink: 0,
