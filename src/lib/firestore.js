@@ -464,8 +464,10 @@ export async function fetchClient(id) {
 }
 
 export async function createClient(data) {
+  const pd = _phoneDigits(data.phone);
   const ref = await addDoc(CLIENTS_COL, {
     ...data,
+    ...(pd ? { phoneDigits: pd } : {}),
     visits: data.visits ?? [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -489,8 +491,10 @@ export async function createClientsBatch(arr, onProgress) {
     const batch = writeBatch(db);
     for (const data of chunk) {
       const ref = doc(CLIENTS_COL);
+      const pd = _phoneDigits(data.phone);
       batch.set(ref, {
         ...data,
+        ...(pd ? { phoneDigits: pd } : {}),
         visits: data.visits ?? [],
         createdAt: data.createdAt || now,
         updatedAt: now,
@@ -2349,7 +2353,14 @@ export async function fetchReviewRequests(n = 200) {
 // ── Client portal ──────────────────────────────────────
 export async function fetchClientByPhone(phone) {
   if (!phone) return null;
-  // Normalize: digits only — handles users typing (614) 555-0100 vs 6145550100.
+  // Fast path: indexed lookup on the normalized 10-digit phoneDigits field.
+  const pd = _phoneDigits(phone);
+  if (pd) {
+    const idx = await getDocs(query(CLIENTS_COL, where('phoneDigits', '==', pd)));
+    if (!idx.empty) return { id: idx.docs[0].id, ...idx.docs[0].data() };
+  }
+  // Fallback for un-backfilled docs: digits-only full scan (handles users
+  // typing (614) 555-0100 vs 6145550100).
   const norm = (phone.match(/\d/g) || []).join('');
   if (!norm) return null;
   const snap = await getDocs(CLIENTS_COL);

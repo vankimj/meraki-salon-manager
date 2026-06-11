@@ -1653,6 +1653,12 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
   // Phone match: stored phones are mixed-format, so we scan + filter
   // client-side. Cap at 5000 docs as a safety rail; in practice every
   // tenant we expect to onboard sits well below this.
+  // Fast path: indexed equality on the normalized phoneDigits field (written on
+  // create + backfilled). Falls back to the legacy scan for un-backfilled docs.
+  if (!existingId && validPhone) {
+    const idx = await clientsRef.where('phoneDigits', '==', phoneDigits).limit(1).get().catch(() => null);
+    if (idx && !idx.empty) { existingId = idx.docs[0].id; existingData = idx.docs[0].data(); }
+  }
   if (!existingId && validPhone) {
     const allSnap = await clientsRef.limit(5000).get().catch(() => null);
     if (allSnap) {
@@ -1791,6 +1797,7 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
   const newDoc = await clientsRef.add({
     name,
     phone:  validPhone ? formattedPhone : phone,
+    ...(validPhone ? { phoneDigits } : {}),
     email,
     ...safeExtra,
     source:    'online_booking',
@@ -2264,14 +2271,18 @@ exports.kioskRegisterClient = onCall({ cors: true }, async (request) => {
     return { apptId: a.id, startTime: a.startTime || '', techName: a.techName || '', serviceName: a.services?.[0]?.name || a.serviceName || '' };
   };
 
-  // Dedup scan by phone digits (cap 5000; same as findOrCreateClient).
+  // Dedup: indexed equality on phoneDigits (fast path), legacy scan fallback.
   let existing = null;
-  const allSnap = await clientsRef.limit(5000).get().catch(() => null);
-  if (allSnap) {
-    for (const d of allSnap.docs) {
-      let cd = String(d.data().phone || '').replace(/\D/g, '');
-      if (cd.length === 11 && cd.startsWith('1')) cd = cd.slice(1);
-      if (cd === digits) { existing = { id: d.id, ...d.data() }; break; }
+  const idx = await clientsRef.where('phoneDigits', '==', digits).limit(1).get().catch(() => null);
+  if (idx && !idx.empty) existing = { id: idx.docs[0].id, ...idx.docs[0].data() };
+  if (!existing) {
+    const allSnap = await clientsRef.limit(5000).get().catch(() => null);
+    if (allSnap) {
+      for (const d of allSnap.docs) {
+        let cd = String(d.data().phone || '').replace(/\D/g, '');
+        if (cd.length === 11 && cd.startsWith('1')) cd = cd.slice(1);
+        if (cd === digits) { existing = { id: d.id, ...d.data() }; break; }
+      }
     }
   }
 
@@ -2292,6 +2303,7 @@ exports.kioskRegisterClient = onCall({ cors: true }, async (request) => {
   const ref = await clientsRef.add({
     name: `${firstName} ${lastName}`.trim(),
     phone: formattedPhone,
+    phoneDigits: digits,
     email: '',
     source: 'kiosk_walkin',
     createdAt: now, updatedAt: now,

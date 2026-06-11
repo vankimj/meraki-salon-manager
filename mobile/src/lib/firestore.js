@@ -134,9 +134,19 @@ export async function fetchClient(id) {
   return snap.exists() ? { id: snap.id, ...snap.data() } : null;
 }
 
+// Normalized 10-digit phone for the indexed `phoneDigits` lookup field (matches
+// the server + web normalization). Returns '' when not a 10-digit US number.
+function phoneDigits10(p) {
+  let d = String(p || '').replace(/\D/g, '');
+  if (d.length === 11 && d.startsWith('1')) d = d.slice(1);
+  return d.length === 10 ? d : '';
+}
+
 export async function createClient(data) {
+  const pd = phoneDigits10(data.phone);
   const ref = await addDoc(tenantCol('clients'), {
     ...data,
+    ...(pd ? { phoneDigits: pd } : {}),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   });
@@ -148,6 +158,13 @@ export async function createClient(data) {
 // the client or null. Scans the tenant's clients client-side — fine for a kiosk
 // lookup at salon scale; revisit with a server-side phone index if it grows.
 export async function fetchClientByPhone(phone) {
+  // Fast path: indexed lookup on the normalized phoneDigits field.
+  const pd = phoneDigits10(phone);
+  if (pd) {
+    const idx = await getDocs(query(tenantCol('clients'), where('phoneDigits', '==', pd)));
+    if (!idx.empty) return { id: idx.docs[0].id, ...idx.docs[0].data() };
+  }
+  // Fallback for un-backfilled docs: last-10-digits scan.
   const digits = (String(phone || '').match(/\d/g) || []).join('');
   const last10 = digits.replace(/^1(?=\d{10}$)/, '').slice(-10);
   if (last10.length < 10) return null;
