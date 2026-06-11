@@ -786,7 +786,12 @@ service cloud.firestore {
       // match: a tech reading attendance from the console would expose
       // every coworker's clock-in/clock-out times across every day.
       match /attendance/{date} {
-        allow read, write: if isTenantAdmin(tenantId);
+        // Admin reads the full board (AttendanceAdmin). The locked clock-in
+        // kiosk (isKiosk token) also reads it to render the in/out grid — that
+        // display IS the kiosk's purpose. Writes stay admin-only; the kiosk
+        // clocks in via the clockEvent callable (Admin SDK, bypasses rules).
+        allow read:  if isTenantAdmin(tenantId) || isKiosk(tenantId);
+        allow write: if isTenantAdmin(tenantId);
       }
 
       // AI assistant audit log — every write tool the in-app chatbot
