@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, createContext, useContext } from 'react';
 import { useApp } from '../../context/AppContext';
 import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
 import { buildExportBundle } from '../../lib/exportBundle';
@@ -33,6 +33,11 @@ import CsvImportSection from '../../components/CsvImportSection';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 import LocationsTab from './LocationsTab';
 import SlideModal from '../tipflow/SlideModal';
+
+// Live filter query for the Settings tab. Default '' = no filter, so any
+// <Section> rendered OUTSIDE the settings tab (booking/marketing panels) is
+// unaffected (it always "matches" and behaves as a plain collapsible).
+const SettingsSearchCtx = createContext('');
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
@@ -94,6 +99,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [feedback, setFeedback]  = useState(null);
   const [notifs,   setNotifs]    = useState(null);
   const [tab,          setTab]          = useState(initialTab || 'settings');
+  const [settingsQuery, setSettingsQuery] = useState('');
   const [showFeedback, setShowFeedback] = useState(false);
   const [webfrontCfg,  setWebfrontCfg] = useState(null);
   const [reviewsData,  setReviewsData]  = useState(null);
@@ -335,10 +341,30 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
         {tab === 'settings' && (
           <>
+            {/* Live settings search/filter. Typing forces matching groups +
+                sub-sections open and hides the rest. Empty = normal collapse. */}
+            <div style={{ position: 'sticky', top: 0, zIndex: 1, marginBottom: 14, background: 'var(--pn-bg)' }}>
+              <div style={{ position: 'relative' }}>
+                <input
+                  value={settingsQuery}
+                  onChange={e => setSettingsQuery(e.target.value)}
+                  placeholder="Search settings…"
+                  style={{ background: 'var(--pn-surface)', color: 'var(--pn-text)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '9px 12px', paddingRight: settingsQuery ? 34 : 12, width: '100%', fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box' }}
+                />
+                {settingsQuery && (
+                  <button
+                    onClick={() => setSettingsQuery('')}
+                    aria-label="Clear search"
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, borderRadius: '50%', border: 'none', background: 'var(--pn-border-strong)', color: 'var(--pn-surface)', cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0, fontFamily: 'inherit' }}
+                  >✕</button>
+                )}
+              </div>
+            </div>
+            <SettingsSearchCtx.Provider value={settingsQuery.trim().toLowerCase()}>
             {/* ══ GROUP 1 · Brand & Appearance ══ */}
-            <Section title="🏷 Brand & Appearance" defaultOpen>
+            <Section title="🏷 Brand & Appearance" keywords="brand logo salon name colors theme dark light appearance font welcome tagline splash identity url subdomain" defaultOpen>
             {/* ── Brand & Identity (URL + every brand field, single Save) ── */}
-            <Section title="🌐 Brand & Identity" nested>
+            <Section title="🌐 Brand & Identity" keywords="brand logo salon name colors theme font welcome tagline splash identity url subdomain color" nested>
               {/* Salon URL — read-only display + coming-soon CTA. */}
               <div style={{ padding: '12px 16px' }}>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Your salon URL</div>
@@ -489,8 +515,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             )}
 
             {/* ══ GROUP 2 · General ══ */}
-            <Section title="⚙ General">
-            <Section title="⚙ App Settings" nested>
+            <Section title="⚙ General" keywords="app settings auto logout timeout idle modules tiles visibility notes pin admin reminders birthday lapsed timezone review url google ein pause">
+            <Section title="⚙ App Settings" keywords="auto logout timeout idle admin pin reminders birthday lapsed timezone review url google ein" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Auto-logout timeout</div>
@@ -594,8 +620,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {/* ══ end GROUP 2 ══ */}
 
             {/* ══ GROUP 3 · Scheduling & Booking ══ */}
-            <Section title="📅 Scheduling & Booking">
-            <Section title="🕐 Time Clock" nested>
+            <Section title="📅 Scheduling & Booking" keywords="time clock shift break reminders cancellation no-show booking card policy hours appointment online schedule sms text">
+            <Section title="🕐 Time Clock" keywords="time clock shift break clock-in clock-out sms text reminder warning" nested>
               {/* Break length + warning */}
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -657,8 +683,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {/* ══ end GROUP 3 ══ */}
 
             {/* ══ GROUP 4 · Receipts & Reviews ══ */}
-            <Section title="🧾 Receipts & Reviews">
-            <Section title="🧾 Receipts & Ratings" nested>
+            <Section title="🧾 Receipts & Reviews" keywords="receipt ratings review threshold google email sms thank you feedback message tip delivery rating star routing">
+            <Section title="🧾 Receipts & Ratings" keywords="receipt ratings review threshold google email sms thank you feedback message tip delivery rating star routing" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Receipt delivery</div>
@@ -740,8 +766,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             <BookingSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} />
 
             {/* ══ GROUP 5 · Payments ══ */}
-            <Section title="💳 Payments">
-            <Section title="💰 Financial" nested>
+            <Section title="💳 Payments" keywords="stripe connect payments card reader terminal tap to pay disputes chargeback billing subscription plan upgrade financial tax ein fee tip removal refund commission">
+            <Section title="💰 Financial" keywords="financial tax rate card processing fee removal price tip refund commission" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Sales tax rate</div>
@@ -836,9 +862,9 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {/* ══ end GROUP 5 ══ */}
 
             {/* ══ GROUP 6 · Data ══ */}
-            <Section title="🗄 Data">
+            <Section title="🗄 Data" keywords="data export restore backup import csv glossgenius demo seed sample download zip">
             <BackupRestoreSection nested />
-            <Section title="📦 Data Imports" nested>
+            <Section title="📦 Data Imports" keywords="import csv glossgenius clients appointments upload" nested>
               <div style={{ padding: '12px 14px' }}>
                 <CsvImportSection />
               </div>
@@ -852,11 +878,12 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
             {/* ══ GROUP 7 · Maintenance ══ */}
             {ALLOWED_EMAILS.includes(gUser?.email) && (
-              <Section title="🛠 Maintenance">
+              <Section title="🛠 Maintenance" keywords="ses email repair deliverability maintenance send dns">
                 <SesRepairSection nested />
               </Section>
             )}
             {/* ══ end GROUP 7 ══ */}
+            </SettingsSearchCtx.Provider>
           </>
         )}
 
@@ -895,7 +922,7 @@ function TipFlowSection() {
 
   return (
     <>
-      <Section title="💅 TipFlow Kiosk Slides" action={<Btn color="#3D95CE" onClick={add}>+ Add slide</Btn>}>
+      <Section title="💅 TipFlow Kiosk Slides" keywords="tipflow kiosk slides venmo qr tip front desk ipad" action={<Btn color="#3D95CE" onClick={add}>+ Add slide</Btn>}>
         <div style={{ padding: '8px 16px 14px' }}>
           <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8, lineHeight: 1.5 }}>
             Slides show on the front-desk kiosk while it's idle — each tech's photo with a Venmo or social QR a waiting client can scan to tip.
@@ -979,7 +1006,7 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
 
   return (
     <>
-    <Section title="🌐 Online Booking">
+    <Section title="🌐 Online Booking" keywords="online booking public website self book appointment auto assign deposit">
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div>
           <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Enable online booking</div>
@@ -1144,7 +1171,7 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
   const activeTplId = flow.templateId || 'custom';
 
   return (
-    <Section title="🧭 Booking Flow">
+    <Section title="🧭 Booking Flow" keywords="booking flow steps template appointment form fields questions">
       <div style={{ padding: '12px 16px 6px', fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
         Pick a starting template, then fine-tune. Changes apply to the next page load on the public booking page.
       </div>
@@ -1332,7 +1359,7 @@ function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, savin
   );
 
   return (
-    <Section title="🎨 Appearance" nested={nested}>
+    <Section title="🎨 Appearance" keywords="theme dark light mode colors appearance seasonal holiday font" nested={nested}>
       {/* Auto-seasonal toggle */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ flex: 1 }}>
@@ -1421,8 +1448,16 @@ function AddMissingTechUsersBtn({ employees, users, addTechUsersForEmployees, sh
   );
 }
 
-function Section({ title, children, action, defaultOpen = false, nested = false }) {
+function Section({ title, children, action, defaultOpen = false, nested = false, keywords = '' }) {
   const [open, setOpen] = useState(defaultOpen);
+  // Live Settings-tab search. q is '' everywhere outside the settings tab
+  // (default context value), so these sections behave exactly as before.
+  const q = useContext(SettingsSearchCtx);
+  const matches = !q || (`${title} ${keywords}`).toLowerCase().includes(q);
+  if (q && !matches) return null;
+  // When filtering, force every matching section expanded so the hit is
+  // visible; with no query, fall back to the section's own collapse state.
+  const isOpen = q && matches ? true : open;
   if (nested) {
     // Lighter variant for sub-sections inside a top-level group: no elevated
     // card chrome, smaller title, indented — but still collapsible.
@@ -1433,7 +1468,7 @@ function Section({ title, children, action, defaultOpen = false, nested = false 
           style={{ padding: '10px 16px 10px 28px', fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
         >
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 9, color: 'var(--pn-text-faint)' }}>▶</span>
+            <span style={{ display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 9, color: 'var(--pn-text-faint)' }}>▶</span>
             {title}
           </span>
           {action && (
@@ -1441,7 +1476,7 @@ function Section({ title, children, action, defaultOpen = false, nested = false 
             <span onClick={e => e.stopPropagation()}>{action}</span>
           )}
         </div>
-        {open && <div style={{ borderTop: '1px solid var(--pn-border)' }}>{children}</div>}
+        {isOpen && <div style={{ borderTop: '1px solid var(--pn-border)' }}>{children}</div>}
       </div>
     );
   }
@@ -1449,10 +1484,10 @@ function Section({ title, children, action, defaultOpen = false, nested = false 
     <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', marginBottom: 14, overflow: 'hidden' }}>
       <div
         onClick={() => setOpen(o => !o)}
-        style={{ padding: '12px 16px', borderBottom: open ? '1px solid var(--pn-border)' : 'none', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+        style={{ padding: '12px 16px', borderBottom: isOpen ? '1px solid var(--pn-border)' : 'none', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
       >
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 10, color: 'var(--pn-text-faint)' }}>▶</span>
+          <span style={{ display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 10, color: 'var(--pn-text-faint)' }}>▶</span>
           {title}
         </span>
         {action && (
@@ -1460,7 +1495,7 @@ function Section({ title, children, action, defaultOpen = false, nested = false 
           <span onClick={e => e.stopPropagation()}>{action}</span>
         )}
       </div>
-      {open && children}
+      {isOpen && children}
     </div>
   );
 }
@@ -1964,7 +1999,7 @@ function BackupRestoreSection({ nested = false } = {}) {
   }
 
   return (
-    <Section title="🗄 Your Data — Export &amp; Restore" nested={nested}>
+    <Section title="🗄 Your Data — Export &amp; Restore" keywords="data export restore backup download zip json" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         {/* Principle #8 callout */}
         <div style={{
@@ -2081,7 +2116,7 @@ function DemoSeedSection({ nested = false } = {}) {
   const completedCount = seedState?.completedSteps?.length || 0;
 
   return (
-    <Section title="🧪 Demo Data" nested={nested}>
+    <Section title="🧪 Demo Data" keywords="demo seed sample data clear wipe test" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10 }}>
           One-click populate every module with realistic sample data: clients, appointments, receipts, products, promo codes, memberships, time off, Google reviews, HR bonuses, walk-in queue, and marketing campaigns. Use this to show the platform off without exposing real customer data.
@@ -3359,7 +3394,7 @@ function TechRemindersSection({ settings, updateSettings, nested = false }) {
   }
 
   return (
-    <Section title="🔔 Tech Appointment Reminders" nested={nested}>
+    <Section title="🔔 Tech Appointment Reminders" keywords="tech appointment reminders sms text reminder birthday lapsed hour" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Sends each tech a heads-up before every scheduled appointment. Each tech sets their own lead time and notification channel (email / SMS / push) on their <strong>employee record → Profile → Notifications</strong>. Defaults: 15 min before, email. Runs every 5 minutes server-side; per-appt dedupe.
@@ -3417,7 +3452,7 @@ function TerminalReaderSection({ nested = false } = {}) {
     <div style={{ fontSize: 13, color: ok ? '#166534' : 'var(--pn-text-muted)', marginBottom: 4 }}>{ok ? '✓' : '○'} {children}</div>
   );
   return (
-    <Section title="💳 Card Reader (Stripe Terminal)" nested={nested}>
+    <Section title="💳 Card Reader (Stripe Terminal)" keywords="card reader stripe terminal tap to pay m2 bluetooth hardware" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           In-person card payments (Bluetooth reader / Tap to Pay). Create the Terminal Location here — then pair the physical reader from the iPad app → <strong>Manage → Card Reader Setup</strong>.
@@ -3457,7 +3492,7 @@ function SesRepairSection({ nested = false } = {}) {
     } finally { setBusy(false); }
   }
   return (
-    <Section title="🛠️ Email delivery repair (SES)" nested={nested}>
+    <Section title="🛠️ Email delivery repair (SES)" keywords="ses email repair deliverability send dns maintenance" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
           Platform-admin only. Creates this tenant&apos;s SES Tenant resource and identity association so transactional
@@ -3524,7 +3559,7 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
   }
 
   return (
-    <Section title="🚫 Cancellation Policy" nested={nested}>
+    <Section title="🚫 Cancellation Policy" keywords="cancellation no-show policy fee window booking charge late" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           After this many cancellations within the window, the booking page will require the client to have a card on file before they can book again. Clients who already have a card on file aren't affected. Admins can override per-client in the client modal.
@@ -3637,7 +3672,7 @@ function BookingCardPolicySection({ settings, updateSettings, nested = false }) 
   };
 
   return (
-    <Section title="💳 Card on file for booking" nested={nested}>
+    <Section title="💳 Card on file for booking" keywords="card on file booking policy require deposit hold authorization" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Require online-booking clients to put a card on file before they can confirm. Clients who already have a card aren&apos;t prompted again. This is separate from the cancellation-history policy above.
@@ -3755,7 +3790,7 @@ function PauseSection({ settings, updateSettings, nested = false }) {
   }
 
   return (
-    <Section title="⏸️ Pause / Vacation Mode" nested={nested}>
+    <Section title="⏸️ Pause / Vacation Mode" keywords="pause vacation mode close closed away hold booking" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Temporarily close the salon (vacation, slow season, renovation, etc.). While paused, inbound texts get an auto-reply that says when you reopen — or, if you opt in, get forwarded to your personal phone so you stay reachable for emergencies.
@@ -3863,7 +3898,7 @@ function TileVisibilitySection({ settings, updateSettings, nested = false }) {
   const PLAN_LABEL = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
 
   return (
-    <Section title="🧩 Home Tiles · what shows up on the dashboard" nested={nested}>
+    <Section title="🧩 Home Tiles · what shows up on the dashboard" keywords="home tiles dashboard visibility show hide modules" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
           Toggle off tiles you don't use to keep the dashboard simple.
@@ -3946,7 +3981,7 @@ function ModulesSection({ nested = false } = {}) {
   }
 
   return (
-    <Section title="🧩 Modules · turn features on or off" nested={nested}>
+    <Section title="🧩 Modules · turn features on or off" keywords="modules features turn on off enable disable plan" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
           Turn off features you don't use. Some need cleanup first — Memberships
@@ -3998,7 +4033,7 @@ function ModulesSection({ nested = false } = {}) {
 function NotesPreferenceSection({ settings, updateSettings, nested = false }) {
   const enabled = settings?.clinicalNotes === true;
   return (
-    <Section title="📋 Notes preferences" nested={nested}>
+    <Section title="📋 Notes preferences" keywords="notes preferences client appointment default visibility" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${enabled ? '#c7d2fe' : 'var(--pn-border)'}`, background: enabled ? '#eef2ff' : 'var(--pn-bg)', cursor: 'pointer' }}>
           <input type="checkbox" checked={enabled}
@@ -4044,7 +4079,7 @@ function DisputesSection({ nested = false } = {}) {
   const closed  = disputes.filter(d => !isOpen(d));
 
   return (
-    <Section title={`⚠ Chargebacks${open.length ? ` (${open.length} open)` : ''}`} defaultOpen={open.length > 0} nested={nested}>
+    <Section title={`⚠ Chargebacks${open.length ? ` (${open.length} open)` : ''}`} keywords="chargebacks disputes stripe payments evidence" defaultOpen={open.length > 0} nested={nested}>
       <div style={{ padding: '14px 16px' }}>
         {error && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 10 }}>{error}</div>}
         {open.length > 0 && (
@@ -4217,7 +4252,7 @@ function StripeConnectSection({ onOpenWizard, nested = false }) {
               :              { t: 'Setup incomplete', bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)' };
 
   return (
-    <Section title="💸 Payments · Stripe Connect" nested={nested}>
+    <Section title="💸 Payments · Stripe Connect" keywords="stripe connect payments onboarding merchant account payout" nested={nested}>
       <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -4311,7 +4346,7 @@ function UpgradeSection({ settings, gUser, nested = false }) {
   const currentTier = PLAN_TIERS.find(t => t.id === visiblePlan) || PLAN_TIERS[0];
 
   return (
-    <Section title="💳 Plan &amp; Billing" nested={nested}>
+    <Section title="💳 Plan &amp; Billing" keywords="plan billing subscription upgrade tier pricing trial invoice" nested={nested}>
       <div style={{ padding: '14px 16px' }}>
         {/* Current plan + trial banner */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
