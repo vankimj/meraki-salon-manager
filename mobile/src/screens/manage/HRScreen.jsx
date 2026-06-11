@@ -6,10 +6,15 @@ import useTrashHeader from '../../hooks/useTrashHeader';
 import {
   fetchBonuses, createBonus, deleteBonus,
   fetchReviews, saveReview, deleteReview,
+  fetchContinuingEducation, saveCE, deleteCE,
+  fetchBonusRules, saveBonusRule, deleteBonusRule,
+  fetchServiceRatingsByRange,
   fetchPayrollRuns, fetchSettings, getGustoAuthUrl,
   fetchEmployeesWithComp, fetchAppointmentsByRange, fetchReceiptsByRange, createPayrollRun, gustoSubmitPayroll,
 } from '../../lib/firestore';
 import { techPayAdjust } from '../../lib/metrics';
+import { CE_CATEGORIES } from '../../lib/ceIdeas';
+import { BONUS_METRICS, PAYOUT_TYPES, buildBonusContext, evaluateBonusRules } from '../../lib/bonusRules';
 import OAuthConnect from '../../components/OAuthConnect';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
@@ -20,8 +25,9 @@ function lastNDays(n) {
   return { startDate: iso(start), endDate: iso(end) };
 }
 // Port of the web payrollRows computation (commission on service revenue +
-// period bonuses). Only techs with a positive total are included.
-function computePayroll(employees, appts, receipts, bonuses, startDate) {
+// manual bonuses + structured rule bonuses). Only techs with a positive total.
+function computePayroll(employees, appts, receipts, bonuses, startDate, extra = {}) {
+  const { rules = [], ratings = [], ctxAppts = [], endDate = '' } = extra;
   const done = appts.filter(a => a.status === 'done');
   return employees.filter(e => e.active !== false).map(emp => {
     const techAppts = done.filter(a => a.payment?.techSplit
@@ -38,11 +44,54 @@ function computePayroll(employees, appts, receipts, bonuses, startDate) {
     const commissionAmt = commissionPct ? Math.round(serviceRevenue * commissionPct / 100 * 100) / 100 : 0;
     const bonusTotal = bonuses.filter(b => b.techName === emp.name && (b.createdAt || '').slice(0, 10) >= startDate)
       .reduce((s, b) => s + (Number(b.amount) || 0), 0);
+    const ctx = buildBonusContext({ techName: emp.name, serviceRevenue, techAppts, allAppts: ctxAppts, receipts, ratings, hireDate: emp.hireDate || '', startDate, endDate });
+    const { ruleBonusTotal, ruleBonusLines } = evaluateBonusRules(rules, ctx);
     const isHourly = emp.rateType === 'hourly';
     const earned = isHourly ? null : commissionAmt;
-    const total = (earned || 0) + bonusTotal;
-    return { emp, apptCount: techAppts.length, serviceRevenue, commissionPct, earned, bonusTotal, total };
+    const total = (earned || 0) + bonusTotal + ruleBonusTotal;
+    return { emp, apptCount: techAppts.length, serviceRevenue, commissionPct, earned, bonusTotal, ruleBonusTotal, ruleBonusLines, total };
   }).filter(r => r.total > 0);
+}
+
+const isoToday = () => new Date().toISOString().slice(0, 10);
+
+const CE_FIELDS = [
+  { key: 'employeeName', label: 'Employee', type: 'text', required: true },
+  { key: 'title',    label: 'Course / certification', type: 'text', required: true },
+  { key: 'category', label: 'Category', type: 'select', options: CE_CATEGORIES },
+  { key: 'status',   label: 'Status', type: 'select', options: [{ value: 'planned', label: 'Planned' }, { value: 'completed', label: 'Completed' }] },
+  { key: 'provider', label: 'Provider', type: 'text', placeholder: 'Academy, school…' },
+  { key: 'date',     label: 'Date (YYYY-MM-DD)', type: 'text', placeholder: isoToday() },
+  { key: 'hours',    label: 'Hours', type: 'number', placeholder: '0' },
+  { key: 'credits',  label: 'Credits', type: 'number', placeholder: '0' },
+  { key: 'cost',     label: 'Cost ($)', type: 'number', placeholder: '0' },
+  { key: 'notes',    label: 'Notes', type: 'text', placeholder: 'Takeaways…' },
+];
+
+// Mobile rule editor is a simplified SINGLE-criterion form. Multi-criterion
+// rules created on the web still evaluate fully; editing one here collapses it
+// to its first criterion (documented limitation).
+const RULE_FIELDS = [
+  { key: 'name',        label: 'Rule name', type: 'text', required: true },
+  { key: 'enabled',     label: 'Active', type: 'bool' },
+  { key: '_metric',     label: 'When metric', type: 'select', options: BONUS_METRICS.map(m => ({ value: m.key, label: m.label })) },
+  { key: '_threshold',  label: 'Is at least', type: 'number', placeholder: '0' },
+  { key: 'payoutType',  label: 'Payout', type: 'select', options: PAYOUT_TYPES.map(p => ({ value: p.key, label: p.label })) },
+  { key: 'payoutValue', label: 'Payout amount / %', type: 'number', placeholder: '0' },
+  { key: 'payoutMax',   label: 'Cap ($, 0 = none)', type: 'number', placeholder: '0' },
+];
+
+function ruleToFlat(r) {
+  return { ...r, _metric: r.criteria?.[0]?.metric || 'serviceRevenue', _threshold: r.criteria?.[0]?.value ?? 0 };
+}
+function flatToRule(d) {
+  const { _metric, _threshold, ...rest } = d;
+  return { ...rest, criteria: [{ metric: _metric || 'serviceRevenue', value: Number(_threshold) || 0 }], scopeTechNames: rest.scopeTechNames || [] };
+}
+function ruleSubtitle(r) {
+  const m = BONUS_METRICS.find(x => x.key === (r.criteria?.[0]?.metric)) || {};
+  const pt = PAYOUT_TYPES.find(p => p.key === r.payoutType) || {};
+  return `${r.enabled ? '● ' : '○ '}${m.label || ''} ≥ ${r.criteria?.[0]?.value ?? 0} → ${pt.label || ''} ${r.payoutValue || 0}`;
 }
 
 const BONUS_FIELDS = [
@@ -59,20 +108,45 @@ const REVIEW_FIELDS = [
 
 export default function HRScreen({ navigation }) {
   const { isAdmin } = useTenantAccess();
-  useTrashHeader(navigation, ['bonuses', 'reviews'], isAdmin);
+  useTrashHeader(navigation, ['bonuses', 'reviews', 'continuingEducation', 'bonusRules'], isAdmin);
   const [tab, setTab] = useState('bonuses');
   const styles = useThemedStyles(makeStyles);
 
   return (
     <View style={styles.wrap}>
       <View style={styles.tabs}>
-        {[['bonuses', 'Bonuses'], ['reviews', 'Reviews'], ['payroll', 'Payroll']].map(([id, label]) => (
+        {[['bonuses', 'Bonuses'], ['rules', 'Rules'], ['reviews', 'Reviews'], ['education', 'Education'], ['payroll', 'Payroll']].map(([id, label]) => (
           <TouchableOpacity key={id} onPress={() => setTab(id)} style={[styles.tab, tab === id && styles.tabOn]}>
             <Text style={[styles.tabText, tab === id && styles.tabTextOn]}>{label}</Text>
           </TouchableOpacity>
         ))}
       </View>
-      {tab === 'bonuses' ? (
+      {tab === 'rules' ? (
+        <ManageCrud
+          load={async () => (await fetchBonusRules()).map(ruleToFlat)}
+          create={(d) => saveBonusRule(null, flatToRule(d))}
+          save={(id, d) => saveBonusRule(id, flatToRule(d))}
+          remove={deleteBonusRule}
+          canEdit={isAdmin}
+          blank={() => ({ name: '', enabled: true, _metric: 'serviceRevenue', _threshold: 0, payoutType: 'fixed', payoutValue: 0, payoutMax: 0 })}
+          fields={RULE_FIELDS}
+          titleOf={(r) => r.name}
+          subtitleOf={ruleSubtitle}
+          addLabel="New rule"
+          headerNote={() => 'Bonuses preview on the Payroll tab and are recorded when you run payroll.'}
+        />
+      ) : tab === 'education' ? (
+        <ManageCrud
+          load={fetchContinuingEducation}
+          create={(d) => saveCE(null, d)} save={(id, d) => saveCE(id, d)} remove={deleteCE}
+          canEdit={isAdmin}
+          blank={() => ({ employeeName: '', title: '', category: CE_CATEGORIES[0], status: 'planned', provider: '', date: isoToday(), hours: 0, credits: 0, cost: 0, notes: '' })}
+          fields={CE_FIELDS}
+          titleOf={(r) => r.title}
+          subtitleOf={(r) => `${r.employeeName || '—'} · ${r.status}${(Number(r.hours) || 0) > 0 ? ` · ${r.hours}h` : ''}`}
+          addLabel="Log education"
+        />
+      ) : tab === 'bonuses' ? (
         <ManageCrud
           load={fetchBonuses} create={createBonus} save={() => {}} remove={deleteBonus}
           canEdit={isAdmin}
@@ -119,11 +193,16 @@ function PayrollList() {
     setBusy(true);
     try {
       const { startDate, endDate } = lastNDays(14);
-      const [emps, appts, receipts, bonuses] = await Promise.all([
+      const ctxStart = lastNDays(14 + 365).startDate;
+      const ctxEnd = (() => { const d = new Date(`${endDate}T12:00:00`); d.setDate(d.getDate() + 60); return d.toISOString().slice(0, 10); })();
+      const [emps, appts, receipts, bonuses, rules, ratings, ctxAppts] = await Promise.all([
         fetchEmployeesWithComp(), fetchAppointmentsByRange(startDate, endDate),
         fetchReceiptsByRange(startDate, endDate).catch(() => []), fetchBonuses(),
+        fetchBonusRules().catch(() => []),
+        fetchServiceRatingsByRange(startDate, endDate).catch(() => []),
+        fetchAppointmentsByRange(ctxStart, ctxEnd).catch(() => []),
       ]);
-      const rows = computePayroll(emps, appts, receipts || [], bonuses, startDate);
+      const rows = computePayroll(emps, appts, receipts || [], bonuses, startDate, { rules, ratings, ctxAppts, endDate });
       if (rows.length === 0) { Alert.alert('Nothing to pay', 'No commission or bonuses in the last 14 days.'); return; }
       const grandTotal = rows.reduce((s, r) => s + r.total, 0);
       Alert.alert(
@@ -139,6 +218,7 @@ function PayrollList() {
                   techName: r.emp.name, gustoId: r.emp.gustoId || null,
                   apptCount: r.apptCount, serviceRevenue: r.serviceRevenue,
                   commissionPct: r.commissionPct, earned: r.earned, bonusTotal: r.bonusTotal,
+                  ruleBonusTotal: r.ruleBonusTotal || 0, ruleBonusLines: r.ruleBonusLines || [],
                   total: r.total, method: r.emp.paymentPref || null, paidAt: null,
                 })),
               });

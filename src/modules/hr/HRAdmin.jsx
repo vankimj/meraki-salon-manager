@@ -6,6 +6,9 @@ import {
   fetchBonuses, createBonus, deleteBonus,
   fetchPayrollRuns, createPayrollRun, savePayrollRun,
   fetchReviews, saveReview, deleteReview,
+  fetchContinuingEducation, saveCE, deleteCE,
+  fetchBonusRules, saveBonusRule, deleteBonusRule,
+  fetchServiceRatingsByRange,
   fetchHandbook, saveHandbook, fetchHandbookSigs, sendHandbookReminderNotif,
   fetchTaxForms, fetchTaxFormsByEmail, upsertTaxForm, deleteTaxForm,
   fetchPayrollRunsForYear,
@@ -16,6 +19,9 @@ import { useApp } from '../../context/AppContext';
 import TrashButton from '../../components/TrashButton';
 import { escapeHtml } from '../../utils/helpers';
 import { techPayAdjust } from '../reports/metrics';
+import { POLICIES_TEMPLATE } from './policiesTemplate';
+import { CE_IDEAS, CE_CATEGORIES } from './ceIdeas';
+import { buildBonusContext, evaluateBonusRules, BONUS_METRICS, PAYOUT_TYPES } from './bonusRules';
 
 const gustoGetAuthUrlFn    = httpsCallable(functions, 'gustoGetAuthUrl');
 const gustoSyncEmployeesFn = httpsCallable(functions, 'gustoSyncEmployees');
@@ -26,6 +32,12 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 function startOf(daysAgo) {
   const d = new Date();
   d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().slice(0, 10);
+}
+
+function shiftDay(iso, deltaDays) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + deltaDays);
   return d.toISOString().slice(0, 10);
 }
 
@@ -66,10 +78,16 @@ export default function HRAdmin() {
   const [bonuses,      setBonuses]      = useState([]);
   const [payrollRuns,  setPayrollRuns]  = useState([]);
   const [reviews,      setReviews]      = useState([]);
+  const [ceRecords,    setCeRecords]    = useState([]);
+  const [bonusRules,   setBonusRules]   = useState([]);
+  const [ratings,      setRatings]      = useState([]);   // service ratings in period (bonus-rule metric)
+  const [ctxAppts,     setCtxAppts]     = useState([]);   // wider appt window for rebook/new-client metrics
   const [taxForms,     setTaxForms]     = useState([]);
   const [loading,      setLoading]      = useState(true);
   const [showRunModal, setShowRunModal] = useState(false);
   const [editReview,   setEditReview]   = useState(null); // null = closed, {} = new, {id,...} = edit
+  const [editCE,       setEditCE]       = useState(null);
+  const [editRule,     setEditRule]     = useState(null);
 
   const endDate   = todayStr();
   const startDate = startOf(periodDays);
@@ -77,8 +95,10 @@ export default function HRAdmin() {
   useEffect(() => {
     fetchEmployeesWithComp().then(setEmployees).catch(() => {});
     loadTaxForms();
+    loadCE();
     if (!isTech) {
       loadBonuses();
+      loadBonusRules();
       loadPayrollRuns();
       loadReviews();
     }
@@ -97,10 +117,28 @@ export default function HRAdmin() {
     }
     catch { setAppts([]); setReceipts([]); }
     finally { setLoading(false); }
+    // Bonus-rule metric inputs: service ratings in the period + a wider
+    // appointment window (1y back → 60d forward) so new-client and rebooking
+    // rates can be computed. Best-effort — failures leave the metrics at 0.
+    try { setRatings(await fetchServiceRatingsByRange(startDate, endDate)); } catch { setRatings([]); }
+    try { setCtxAppts(await fetchAppointmentsByRange(startOf(periodDays + 365), shiftDay(endDate, 60))); }
+    catch { setCtxAppts([]); }
   }
 
   async function loadBonuses() {
     try { setBonuses(await fetchBonuses()); }
+    catch {}
+  }
+
+  async function loadBonusRules() {
+    try { setBonusRules(await fetchBonusRules()); }
+    catch {}
+  }
+
+  async function loadCE() {
+    // Non-admin staff may only read their own CE (rules gate on createdBy), so
+    // scope the query to their uid; admins read all.
+    try { setCeRecords(await fetchContinuingEducation(isAdmin ? undefined : gUser?.uid)); }
     catch {}
   }
 
@@ -180,6 +218,36 @@ export default function HRAdmin() {
     setReviews(rs => rs.filter(r => r.id !== id));
   }
 
+  async function handleSaveCE(data) {
+    const id = await saveCE(data.id || null, data);
+    logActivity(data.id ? 'ce_updated' : 'ce_logged', `${data.employeeName} · ${data.title} [${data.status}]`);
+    await loadCE();
+    return id;
+  }
+
+  async function handleDeleteCE(id) {
+    if (!confirm('Delete this education record?')) return;
+    const rec = ceRecords.find(r => r.id === id);
+    await deleteCE(id);
+    logActivity('ce_deleted', rec ? `${rec.employeeName} · ${rec.title}` : id);
+    setCeRecords(rs => rs.filter(r => r.id !== id));
+  }
+
+  async function handleSaveRule(data) {
+    const id = await saveBonusRule(data.id || null, data);
+    logActivity(data.id ? 'bonus_rule_updated' : 'bonus_rule_created', `${data.name} [${data.enabled ? 'on' : 'off'}]`);
+    await loadBonusRules();
+    return id;
+  }
+
+  async function handleDeleteRule(id) {
+    if (!confirm('Delete this bonus rule?')) return;
+    const rule = bonusRules.find(r => r.id === id);
+    await deleteBonusRule(id);
+    logActivity('bonus_rule_deleted', rule ? rule.name : id);
+    setBonusRules(rs => rs.filter(r => r.id !== id));
+  }
+
   async function handleAddBonus(techName, amount, notes) {
     await createBonus({ techName, amount: Number(amount), notes: notes || '' });
     logActivity('bonus_added', `${techName} +$${Number(amount).toFixed(2)}`);
@@ -206,6 +274,8 @@ export default function HRAdmin() {
         commissionPct:  t.commissionPct,
         earned:         t.earned,
         bonusTotal:     t.bonusTotal,
+        ruleBonusTotal: t.ruleBonusTotal || 0,
+        ruleBonusLines: t.ruleBonusLines || [],
         total:          t.total,
         method:         t.method,
         paidAt:         null,
@@ -259,12 +329,19 @@ export default function HRAdmin() {
         const periodBonuses = bonuses.filter(b =>
           b.techName === emp.name && (b.createdAt || '').slice(0, 10) >= startDate);
         const bonusTotal = periodBonuses.reduce((s, b) => s + (Number(b.amount) || 0), 0);
+        // Structured rule bonuses — computed live as a PREVIEW from the current
+        // period metrics; never persisted as bonus docs (no double-pay risk).
+        const ctx = buildBonusContext({
+          techName: emp.name, serviceRevenue, techAppts, allAppts: ctxAppts,
+          receipts, ratings, hireDate: emp.hireDate || '', startDate, endDate,
+        });
+        const { ruleBonusTotal, ruleBonusLines } = evaluateBonusRules(bonusRules, ctx);
         const isHourly   = emp.rateType === 'hourly';
         const earned     = isHourly ? null : commissionAmt;
-        const total      = (earned || 0) + bonusTotal;
-        return { emp, techAppts, serviceRevenue, grossRevenue, adj, commissionPct, commissionAmt, periodBonuses, bonusTotal, earned, isHourly, total };
+        const total      = (earned || 0) + bonusTotal + ruleBonusTotal;
+        return { emp, techAppts, serviceRevenue, grossRevenue, adj, commissionPct, commissionAmt, periodBonuses, bonusTotal, ruleBonusTotal, ruleBonusLines, bonusCtx: ctx, earned, isHourly, total };
       });
-  }, [employees, appts, receipts, bonuses, startDate]);
+  }, [employees, appts, receipts, bonuses, bonusRules, ratings, ctxAppts, startDate, endDate]);
 
   const grandTotal = payrollRows.reduce((s, r) => s + r.total, 0);
 
@@ -284,16 +361,19 @@ export default function HRAdmin() {
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--pn-border)', marginBottom: 20, flexShrink: 0, overflowX: 'auto' }}>
         {(isTech ? [
-          { id: 'handbook', label: 'Handbook' },
-          { id: '1099s',    label: '1099s'    },
+          { id: 'education', label: 'Education', badge: ceRecords.length || null },
+          { id: 'handbook',  label: 'Company Policies' },
+          { id: '1099s',     label: '1099s'    },
         ] : [
-          { id: 'payroll',  label: 'Payroll' },
-          { id: 'history',  label: 'History', badge: payrollRuns.length || null },
-          { id: 'bonuses',  label: 'Bonuses' },
-          { id: 'reviews',  label: 'Reviews', badge: reviews.length || null },
-          { id: 'handbook', label: 'Handbook' },
-          { id: '1099s',    label: '1099s', badge: taxForms.length || null },
-          { id: 'gusto',    label: 'Gusto' },
+          { id: 'payroll',    label: 'Payroll' },
+          { id: 'history',    label: 'History', badge: payrollRuns.length || null },
+          { id: 'bonuses',    label: 'Bonuses' },
+          { id: 'bonusRules', label: 'Bonus Rules', badge: bonusRules.length || null },
+          { id: 'reviews',    label: 'Reviews', badge: reviews.length || null },
+          { id: 'education',  label: 'Education', badge: ceRecords.length || null },
+          { id: 'handbook',   label: 'Company Policies' },
+          { id: '1099s',      label: '1099s', badge: taxForms.length || null },
+          { id: 'gusto',      label: 'Gusto' },
         ]).map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{ padding: '8px 20px', fontFamily: 'inherit', fontSize: 13, fontWeight: tab === t.id ? 600 : 400, color: tab === t.id ? 'var(--pn-text)' : 'var(--pn-text-faint)', background: 'none', border: 'none', borderBottom: tab === t.id ? '2px solid var(--pn-text)' : '2px solid transparent', cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}>
@@ -309,7 +389,7 @@ export default function HRAdmin() {
 
       {tab === 'payroll' && (
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
-          <TrashButton collections={['bonuses', 'reviews']} scope="HR" />
+          <TrashButton collections={['bonuses', 'reviews', 'continuingEducation', 'bonusRules']} scope="HR" />
         </div>
       )}
       {tab === 'payroll' && (
@@ -352,6 +432,29 @@ export default function HRAdmin() {
         />
       )}
 
+      {tab === 'bonusRules' && (
+        <BonusRulesTab
+          rules={bonusRules}
+          rows={payrollRows}
+          loading={loading}
+          onNew={() => setEditRule({})}
+          onEdit={r => setEditRule(r)}
+          onToggle={async r => { await handleSaveRule({ ...r, enabled: !r.enabled }); }}
+          onDelete={handleDeleteRule}
+        />
+      )}
+
+      {tab === 'education' && (
+        <ContinuingEducationTab
+          records={isTech ? ceRecords.filter(r => r.createdBy === gUser?.uid || r.employeeName === myTechName) : ceRecords}
+          employees={employees.filter(e => e.active !== false)}
+          isTech={isTech}
+          onNew={() => setEditCE({})}
+          onEdit={r => setEditCE(r)}
+          onDelete={handleDeleteCE}
+        />
+      )}
+
       {tab === 'handbook' && (
         <HandbookTab employees={employees.filter(e => e.active !== false)} />
       )}
@@ -382,6 +485,27 @@ export default function HRAdmin() {
           employees={employees.filter(e => e.active !== false)}
           onSave={handleSaveReview}
           onClose={() => setEditReview(null)}
+        />
+      )}
+
+      {editCE !== null && (
+        <EditCEModal
+          seed={editCE}
+          employees={employees.filter(e => e.active !== false)}
+          isTech={isTech}
+          myTechName={myTechName}
+          myUid={gUser?.uid}
+          onSave={handleSaveCE}
+          onClose={() => setEditCE(null)}
+        />
+      )}
+
+      {editRule !== null && (
+        <EditRuleModal
+          existing={editRule.id ? editRule : null}
+          employees={employees.filter(e => e.active !== false)}
+          onSave={handleSaveRule}
+          onClose={() => setEditRule(null)}
         />
       )}
 
@@ -500,8 +624,10 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
                       ? fmt$(row.earned)
                       : <span style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>hourly</span>}
                   </span>
-                  <span style={{ textAlign: 'right', fontSize: 13, color: row.bonusTotal > 0 ? '#22c55e' : '#bbb' }}>
-                    {row.bonusTotal > 0 ? fmt$(row.bonusTotal) : '—'}
+                  <span style={{ textAlign: 'right', fontSize: 13, color: (row.bonusTotal + row.ruleBonusTotal) > 0 ? '#22c55e' : '#bbb' }}
+                    title={row.ruleBonusTotal > 0 ? `${fmt$(row.bonusTotal)} manual · ${fmt$(row.ruleBonusTotal)} rule bonuses` : ''}>
+                    {(row.bonusTotal + row.ruleBonusTotal) > 0 ? fmt$(row.bonusTotal + row.ruleBonusTotal) : '—'}
+                    {row.ruleBonusTotal > 0 && <span style={{ fontSize: 9, color: 'var(--pn-text-faint)', display: 'block' }}>incl. rules</span>}
                   </span>
                   <span style={{ textAlign: 'right', fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>{fmt$(row.total)}</span>
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -530,6 +656,12 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
                         <span style={{ width: 72, textAlign: 'right', fontWeight: 500, color: '#22c55e' }}>{fmt$(b.amount)}</span>
                       </div>
                     ))}
+                    {(row.ruleBonusLines || []).map((l, li) => (
+                      <div key={`rule-${li}`} style={{ display: 'flex', alignItems: 'center', padding: '4px 0', fontSize: 12 }}>
+                        <span style={{ flex: 1, color: '#2D7A5F' }}>Rule bonus: {l.name}</span>
+                        <span style={{ width: 72, textAlign: 'right', fontWeight: 500, color: '#2D7A5F' }}>{fmt$(l.amount)}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -545,7 +677,7 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
             </span>
             <span /><span />
             <span style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: '#22c55e' }}>
-              {fmt$(rows.reduce((s, r) => s + r.bonusTotal, 0))}
+              {fmt$(rows.reduce((s, r) => s + r.bonusTotal + (r.ruleBonusTotal || 0), 0))}
             </span>
             <span style={{ textAlign: 'right', fontSize: 16, fontWeight: 800, color: 'var(--pn-text)' }}>{fmt$(grandTotal)}</span>
             <span />
@@ -635,6 +767,7 @@ function RunPayrollModal({ rows, startDate, endDate, grandTotal, onConfirm, onCl
                     {row.techAppts.length} appts
                     {row.earned !== null && ` · ${fmt$(row.earned)} earned`}
                     {row.bonusTotal > 0 && ` · ${fmt$(row.bonusTotal)} bonus`}
+                    {row.ruleBonusTotal > 0 && ` · ${fmt$(row.ruleBonusTotal)} rule bonus`}
                   </div>
                 </div>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--pn-text)', flexShrink: 0, minWidth: 70, textAlign: 'right' }}>
@@ -733,6 +866,7 @@ function HistoryTab({ runs, onMarkPaid }) {
                         {t.apptCount} appts
                         {t.earned != null && ` · ${fmt$(t.earned)} earned`}
                         {t.bonusTotal > 0 && ` · ${fmt$(t.bonusTotal)} bonus`}
+                        {t.ruleBonusTotal > 0 && ` · ${fmt$(t.ruleBonusTotal)} rule bonus`}
                       </span>
                     </div>
                     <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flexShrink: 0 }}>
@@ -1174,7 +1308,7 @@ function NewReviewModal({ existing, employees, onSave, onClose }) {
 // ── Handbook tab ──────────────────────────────────────
 function HandbookTab({ employees }) {
   const { showToast, isTech, gUser } = useApp();
-  const [doc,     setDoc]     = useState({ title: 'Employee Handbook', version: '1.0', content: '' });
+  const [doc,     setDoc]     = useState({ title: 'Company Policies', version: '1.0', content: '' });
   const [sigs,    setSigs]    = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving,  setSaving]  = useState(false);
@@ -1193,7 +1327,7 @@ function HandbookTab({ employees }) {
       <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '20px 24px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)' }}>{doc.title || 'Employee Handbook'}</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--pn-text)' }}>{doc.title || 'Company Policies'}</div>
             <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 2 }}>Version {doc.version}{doc.publishedAt ? ` · Published ${fmtDateFull(doc.publishedAt)}` : ''}</div>
           </div>
           {mySig ? (
@@ -1212,7 +1346,7 @@ function HandbookTab({ employees }) {
           </div>
         ) : (
           <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--pn-text-faint)', fontSize: 13 }}>
-            No handbook content published yet.
+            No company policies published yet.
           </div>
         )}
       </div>
@@ -1226,7 +1360,7 @@ function HandbookTab({ employees }) {
       await saveHandbook(updated);
       setDoc(updated);
       logActivity('handbook_published', `v${doc.version}`);
-      showToast('Handbook published');
+      showToast('Company policies published');
     } catch (e) {
       showToast('Save failed: ' + e.message, 4000);
     } finally { setSaving(false); }
@@ -1270,15 +1404,25 @@ function HandbookTab({ employees }) {
     <>
       {/* Editor */}
       <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '16px 20px', marginBottom: 16 }}>
-        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 14 }}>
-          Handbook Editor
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em' }}>
+            Company Policies Editor
+          </div>
+          <button
+            onClick={() => {
+              if (doc.content && !confirm('Replace the current content with the starter template? This cannot be undone until you publish.')) return;
+              setDoc(d => ({ ...d, content: POLICIES_TEMPLATE }));
+            }}
+            style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            ＋ Insert starter template
+          </button>
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
           <div style={{ flex: 3 }}>
             <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Title</label>
             <input value={doc.title || ''} onChange={e => setDoc(d => ({ ...d, title: e.target.value }))}
-              placeholder="Employee Handbook" style={inp} />
+              placeholder="Company Policies" style={inp} />
           </div>
           <div style={{ width: 90 }}>
             <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 3 }}>Version</label>
@@ -1292,7 +1436,7 @@ function HandbookTab({ employees }) {
           <textarea
             value={doc.content || ''}
             onChange={e => setDoc(d => ({ ...d, content: e.target.value }))}
-            placeholder="Write your employee handbook content here…"
+            placeholder="Write your company policies here — or insert the starter template above…"
             rows={16}
             style={{ ...inp, resize: 'vertical', lineHeight: 1.7 }}
           />
@@ -1304,7 +1448,7 @@ function HandbookTab({ employees }) {
           </span>
           <button onClick={handlePublish} disabled={saving}
             style={{ padding: '9px 20px', borderRadius: 8, border: 'none', background: saving ? 'var(--pn-border-strong)' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
-            {saving ? 'Saving…' : '⬆ Publish Handbook'}
+            {saving ? 'Saving…' : '⬆ Publish Policies'}
           </button>
         </div>
       </div>
@@ -1321,7 +1465,7 @@ function HandbookTab({ employees }) {
             </div>
           </div>
           <button onClick={sendAllReminders} disabled={!!sending || !doc.publishedAt}
-            title={!doc.publishedAt ? 'Publish handbook first' : ''}
+            title={!doc.publishedAt ? 'Publish policies first' : ''}
             style={{ padding: '7px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', cursor: !!sending || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 12, color: !!sending || !doc.publishedAt ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)' }}>
             {sending === 'all' ? 'Sending…' : '📧 Remind All Unsigned'}
           </button>
@@ -1353,7 +1497,7 @@ function HandbookTab({ employees }) {
                 <button
                   onClick={() => sendReminder(emp)}
                   disabled={!!sending || !emp.email || !doc.publishedAt}
-                  title={!emp.email ? 'No email on file' : !doc.publishedAt ? 'Publish handbook first' : ''}
+                  title={!emp.email ? 'No email on file' : !doc.publishedAt ? 'Publish policies first' : ''}
                   style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fcd34d', background: 'var(--pn-warning-bg)', color: !!sending || !emp.email || !doc.publishedAt ? 'var(--pn-text-faint)' : 'var(--pn-warning)', cursor: !!sending || !emp.email || !doc.publishedAt ? 'default' : 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                   {sending === emp.name ? '…' : '📧 Remind'}
                 </button>
@@ -1780,3 +1924,469 @@ function PillBtn({ active, onClick, children }) {
 }
 
 const inp = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-surface-muted)', boxSizing: 'border-box' };
+
+// ── Continuing Education tab ──────────────────────────
+function CEStatusBadge({ status }) {
+  const done = status === 'completed';
+  return (
+    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+      background: done ? 'var(--pn-success-bg)' : 'var(--pn-warning-bg)',
+      color:      done ? 'var(--pn-success)' : 'var(--pn-warning)',
+      border: `1px solid ${done ? '#86efac' : '#fcd34d'}` }}>
+      {done ? 'Completed' : 'Planned'}
+    </span>
+  );
+}
+
+function ContinuingEducationTab({ records, employees, isTech, onNew, onEdit, onDelete }) {
+  const [showIdeas, setShowIdeas] = useState(false);
+
+  const totalHours   = records.reduce((s, r) => s + (Number(r.hours) || 0), 0);
+  const totalCredits = records.reduce((s, r) => s + (Number(r.credits) || 0), 0);
+
+  // Admin: group by employee. Tech: flat list (already scoped to self).
+  const byEmp = {};
+  records.forEach(r => {
+    const k = r.employeeName || '—';
+    (byEmp[k] = byEmp[k] || []).push(r);
+  });
+  const empNames = Object.keys(byEmp).sort();
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>
+          {records.length} record{records.length !== 1 ? 's' : ''}
+          {(totalHours > 0 || totalCredits > 0) && ` · ${totalHours} hrs${totalCredits > 0 ? ` · ${totalCredits} credits` : ''}`}
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={() => setShowIdeas(s => !s)}
+            style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>
+            💡 {showIdeas ? 'Hide ideas' : 'Browse ideas'}
+          </button>
+          <button onClick={() => onNew({ status: 'planned' })}
+            style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+            + Log Education
+          </button>
+        </div>
+      </div>
+
+      {showIdeas && (
+        <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '14px 16px', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 10 }}>Class ideas — tap to log</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 8 }}>
+            {CE_IDEAS.map(idea => (
+              <button key={idea.title} onClick={() => onNew({ status: 'planned', title: idea.title, category: idea.category, provider: idea.provider, hours: idea.hours, credits: idea.credits, notes: idea.blurb })}
+                style={{ textAlign: 'left', padding: '10px 12px', borderRadius: 10, border: '1px solid var(--pn-border)', background: 'var(--pn-surface-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{idea.title}</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>{idea.category} · {idea.hours} hrs</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4, lineHeight: 1.4 }}>{idea.blurb}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {records.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>
+          No education logged yet. {isTech ? 'Log your first class or certification.' : 'Browse ideas or log a class.'}
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {empNames.map(name => {
+            const recs = byEmp[name].slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+            const emp  = employees.find(e => e.name === name);
+            return (
+              <div key={name} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', overflow: 'hidden' }}>
+                {!isTech && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid var(--pn-border)' }}>
+                    {emp && <EmpAvatar emp={emp} size={28} />}
+                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>{name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{recs.length} · {recs.reduce((s, r) => s + (Number(r.hours) || 0), 0)} hrs</div>
+                  </div>
+                )}
+                {recs.map((rec, i) => (
+                  <div key={rec.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '12px 16px', borderBottom: i < recs.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{rec.title}</span>
+                        <CEStatusBadge status={rec.status} />
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 3 }}>
+                        {[rec.category, rec.provider, rec.date && fmtDateFull(rec.date),
+                          (Number(rec.hours) || 0) > 0 && `${rec.hours} hrs`,
+                          (Number(rec.credits) || 0) > 0 && `${rec.credits} credits`,
+                          (Number(rec.cost) || 0) > 0 && fmt$(rec.cost)].filter(Boolean).join(' · ')}
+                      </div>
+                      {rec.notes && <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 5, lineHeight: 1.5 }}>{rec.notes}</div>}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => onEdit(rec)}
+                        style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Edit
+                      </button>
+                      <button onClick={() => onDelete(rec.id)}
+                        style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                        Del
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── Log / Edit Continuing Education modal ─────────────
+function EditCEModal({ seed, employees, isTech, myTechName, myUid, onSave, onClose }) {
+  const isEdit = !!seed?.id;
+  // Techs log only for themselves; lock the employee to the signed-in tech.
+  const selfEmp = isTech ? employees.find(e => e.name === myTechName) : null;
+  const [empId,    setEmpId]    = useState(seed?.employeeId || selfEmp?.id || employees[0]?.id || '');
+  const [title,    setTitle]    = useState(seed?.title    || '');
+  const [category, setCategory] = useState(seed?.category || CE_CATEGORIES[0]);
+  const [provider, setProvider] = useState(seed?.provider || '');
+  const [date,     setDate]     = useState(seed?.date     || todayStr());
+  const [status,   setStatus]   = useState(seed?.status   || 'planned');
+  const [hours,    setHours]    = useState(seed?.hours    ?? '');
+  const [credits,  setCredits]  = useState(seed?.credits  ?? '');
+  const [cost,     setCost]     = useState(seed?.cost     ?? '');
+  const [notes,    setNotes]    = useState(seed?.notes    || '');
+  const [saving,   setSaving]   = useState(false);
+
+  const emp = employees.find(e => e.id === empId);
+
+  async function submit() {
+    if (!emp || !title.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({
+        ...(isEdit ? seed : {}),
+        employeeId:   emp.id,
+        employeeName: emp.name,
+        title:        title.trim(),
+        category, provider, date, status,
+        hours:   Number(hours)   || 0,
+        credits: Number(credits) || 0,
+        cost:    Number(cost)    || 0,
+        notes,
+        createdBy: seed?.createdBy || myUid || null,
+      });
+      onClose();
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 300, overflowY: 'auto', padding: '20px 0' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{isEdit ? 'Edit Education' : 'Log Continuing Education'}</div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid rgba(255,255,255,.4)', background: 'rgba(255,255,255,.15)', cursor: 'pointer', fontSize: 16, color: '#fff' }}>×</button>
+        </div>
+
+        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {!isTech && (
+            <Field label="Employee">
+              <select value={empId} onChange={e => setEmpId(e.target.value)} style={inp}>
+                <option value="">Select employee…</option>
+                {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Course / certification">
+            <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Gel-X Extension Mastery" style={inp} />
+          </Field>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Field label="Category" style={{ flex: 1 }}>
+              <select value={category} onChange={e => setCategory(e.target.value)} style={inp}>
+                {CE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Status" style={{ width: 140 }}>
+              <select value={status} onChange={e => setStatus(e.target.value)} style={inp}>
+                <option value="planned">Planned</option>
+                <option value="completed">Completed</option>
+              </select>
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Field label="Provider" style={{ flex: 1 }}>
+              <input value={provider} onChange={e => setProvider(e.target.value)} placeholder="Academy, school…" style={inp} />
+            </Field>
+            <Field label="Date" style={{ width: 150 }}>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)} style={inp} />
+            </Field>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Field label="Hours" style={{ flex: 1 }}>
+              <input type="number" min={0} value={hours} onChange={e => setHours(e.target.value)} placeholder="0" style={inp} />
+            </Field>
+            <Field label="Credits" style={{ flex: 1 }}>
+              <input type="number" min={0} value={credits} onChange={e => setCredits(e.target.value)} placeholder="0" style={inp} />
+            </Field>
+            <Field label="Cost ($)" style={{ flex: 1 }}>
+              <input type="number" min={0} value={cost} onChange={e => setCost(e.target.value)} placeholder="0" style={inp} />
+            </Field>
+          </div>
+          <Field label="Notes">
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Takeaways, certificate #, etc." style={{ ...inp, resize: 'vertical', lineHeight: 1.5 }} />
+          </Field>
+        </div>
+
+        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Cancel</button>
+          <button onClick={submit} disabled={saving || !title.trim() || !empId}
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: saving || !title.trim() || !empId ? '#d0d0d0' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: saving || !title.trim() || !empId ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+            {saving ? 'Saving…' : isEdit ? 'Save' : 'Log Education'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Field({ label, children, style }) {
+  return (
+    <div style={style}>
+      <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// ── Bonus Rules tab ───────────────────────────────────
+const metricMeta = (key) => BONUS_METRICS.find(m => m.key === key) || { label: key, unit: '' };
+
+function describeRule(rule) {
+  const crit = (rule.criteria || []).map(c => {
+    const m = metricMeta(c.metric);
+    return `${m.label} ≥ ${m.unit === '$' ? fmt$(c.value) : c.value}${m.unit === '%' ? '%' : m.unit === '★' ? '★' : ''}`;
+  }).join(' AND ');
+  const pt = PAYOUT_TYPES.find(p => p.key === rule.payoutType);
+  let pay = '';
+  if (rule.payoutType === 'fixed')      pay = fmt$(rule.payoutValue);
+  else if (rule.payoutType === 'pctRevenue') pay = `${rule.payoutValue}% of revenue`;
+  else if (rule.payoutType === 'perAppt')    pay = `${fmt$(rule.payoutValue)}/appt`;
+  if (Number(rule.payoutMax) > 0) pay += ` (max ${fmt$(rule.payoutMax)})`;
+  return { crit: crit || 'No criteria', pay, ptLabel: pt?.label || '' };
+}
+
+function BonusRulesTab({ rules, rows, loading, onNew, onEdit, onToggle, onDelete }) {
+  // Live "would pay this period" preview, from the current payroll rows.
+  const previewByRule = {};
+  rows.forEach(r => (r.ruleBonusLines || []).forEach(l => {
+    previewByRule[l.name] = (previewByRule[l.name] || 0) + l.amount;
+  }));
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>
+          Bonuses are previewed on the Payroll tab and recorded when you run payroll. Programs are evaluated per tech, per pay period.
+        </div>
+        <button onClick={onNew}
+          style={{ padding: '8px 18px', borderRadius: 8, border: 'none', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>
+          + New Rule
+        </button>
+      </div>
+
+      {rules.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 60, color: 'var(--pn-text-faint)', fontSize: 13 }}>No bonus rules yet. Create one to start rewarding performance.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {rules.map(rule => {
+            const d = describeRule(rule);
+            const preview = previewByRule[rule.name] || 0;
+            return (
+              <div key={rule.id} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', padding: '14px 16px', opacity: rule.enabled ? 1 : 0.6 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>{rule.name}</span>
+                      <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                        background: rule.enabled ? 'var(--pn-success-bg)' : 'var(--pn-surface-muted)',
+                        color: rule.enabled ? 'var(--pn-success)' : 'var(--pn-text-faint)',
+                        border: `1px solid ${rule.enabled ? '#86efac' : 'var(--pn-border-strong)'}` }}>
+                        {rule.enabled ? 'Active' : 'Off'}
+                      </span>
+                      {(rule.scopeTechNames || []).length > 0 && (
+                        <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>· {rule.scopeTechNames.length} tech{rule.scopeTechNames.length !== 1 ? 's' : ''}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+                      <span style={{ color: 'var(--pn-text-faint)' }}>When </span>{d.crit}
+                      <span style={{ color: 'var(--pn-text-faint)' }}> → pay </span><span style={{ fontWeight: 600, color: '#2D7A5F' }}>{d.pay}</span>
+                    </div>
+                    {rule.enabled && (
+                      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>
+                        This period{loading ? '…' : `: ${preview > 0 ? fmt$(preview) : 'no payouts yet'}`}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                    <button onClick={() => onToggle(rule)}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {rule.enabled ? 'Disable' : 'Enable'}
+                    </button>
+                    <button onClick={() => onEdit(rule)}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Edit
+                    </button>
+                    <button onClick={() => onDelete(rule.id)}
+                      style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Del
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ── New / Edit Bonus Rule modal ───────────────────────
+function EditRuleModal({ existing, employees, onSave, onClose }) {
+  const [name,     setName]     = useState(existing?.name     || '');
+  const [enabled,  setEnabled]  = useState(existing?.enabled  ?? true);
+  const [criteria, setCriteria] = useState(existing?.criteria?.length ? existing.criteria : [{ metric: 'serviceRevenue', value: '' }]);
+  const [payoutType,  setPayoutType]  = useState(existing?.payoutType  || 'fixed');
+  const [payoutValue, setPayoutValue] = useState(existing?.payoutValue ?? '');
+  const [payoutMax,   setPayoutMax]   = useState(existing?.payoutMax   ?? '');
+  const [scope,       setScope]       = useState(existing?.scopeTechNames?.length ? 'some' : 'all');
+  const [scopeTechNames, setScopeTechNames] = useState(existing?.scopeTechNames || []);
+  const [saving,   setSaving]   = useState(false);
+
+  function setCrit(i, patch) { setCriteria(cs => cs.map((c, idx) => idx === i ? { ...c, ...patch } : c)); }
+  function addCrit()  { setCriteria(cs => [...cs, { metric: 'apptCount', value: '' }]); }
+  function delCrit(i) { setCriteria(cs => cs.filter((_, idx) => idx !== i)); }
+  function toggleTech(name) {
+    setScopeTechNames(ns => ns.includes(name) ? ns.filter(n => n !== name) : [...ns, name]);
+  }
+
+  async function submit() {
+    if (!name.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({
+        ...(existing || {}),
+        name: name.trim(),
+        enabled,
+        criteria: criteria
+          .filter(c => c.metric && c.value !== '' && c.value != null)
+          .map(c => ({ metric: c.metric, value: Number(c.value) || 0 })),
+        payoutType,
+        payoutValue: Number(payoutValue) || 0,
+        payoutMax:   Number(payoutMax)   || 0,
+        scopeTechNames: scope === 'some' ? scopeTechNames : [],
+      });
+      onClose();
+    } finally { setSaving(false); }
+  }
+
+  const payoutUnit = PAYOUT_TYPES.find(p => p.key === payoutType)?.unit || '';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', zIndex: 300, overflowY: 'auto', padding: '20px 0' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 560, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }} onClick={e => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F,#3D95CE)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: '#fff' }}>{existing?.id ? 'Edit Bonus Rule' : 'New Bonus Rule'}</div>
+          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid rgba(255,255,255,.4)', background: 'rgba(255,255,255,.15)', cursor: 'pointer', fontSize: 16, color: '#fff' }}>×</button>
+        </div>
+
+        <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <Field label="Rule name">
+            <input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Revenue milestone" style={inp} />
+          </Field>
+
+          {/* Criteria */}
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>
+              Criteria — all must be met (AND)
+            </label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {criteria.map((c, i) => {
+                const m = metricMeta(c.metric);
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select value={c.metric} onChange={e => setCrit(i, { metric: e.target.value })} style={{ ...inp, flex: 1 }}>
+                      {BONUS_METRICS.map(bm => <option key={bm.key} value={bm.key}>{bm.label}</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', flexShrink: 0 }}>≥</span>
+                    <input type="number" min={0} value={c.value} onChange={e => setCrit(i, { value: e.target.value })} placeholder="0" style={{ ...inp, width: 100 }} />
+                    <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 44, flexShrink: 0 }}>{m.unit}</span>
+                    <button onClick={() => delCrit(i)} disabled={criteria.length === 1}
+                      style={{ border: 'none', background: 'none', color: criteria.length === 1 ? 'var(--pn-border-strong)' : 'var(--pn-danger)', cursor: criteria.length === 1 ? 'default' : 'pointer', fontSize: 18, lineHeight: 1, flexShrink: 0 }}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+            <button onClick={addCrit} style={{ marginTop: 8, fontSize: 12, padding: '5px 12px', borderRadius: 6, border: '1px dashed var(--pn-border-strong)', background: 'none', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>+ Add criterion</button>
+          </div>
+
+          {/* Payout */}
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Payout</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select value={payoutType} onChange={e => setPayoutType(e.target.value)} style={{ ...inp, flex: 1 }}>
+                {PAYOUT_TYPES.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+              <input type="number" min={0} value={payoutValue} onChange={e => setPayoutValue(e.target.value)} placeholder="0" style={{ ...inp, width: 110 }} />
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 70, flexShrink: 0 }}>{payoutUnit}</span>
+            </div>
+            {payoutType !== 'fixed' && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', flex: 1 }}>Cap payout at (optional)</span>
+                <input type="number" min={0} value={payoutMax} onChange={e => setPayoutMax(e.target.value)} placeholder="no cap" style={{ ...inp, width: 110 }} />
+                <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 70, flexShrink: 0 }}>$ max</span>
+              </div>
+            )}
+          </div>
+
+          {/* Scope */}
+          <div>
+            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em' }}>Applies to</label>
+            <div style={{ display: 'flex', gap: 6, marginBottom: scope === 'some' ? 10 : 0 }}>
+              <PillBtn active={scope === 'all'}  onClick={() => setScope('all')}>All techs</PillBtn>
+              <PillBtn active={scope === 'some'} onClick={() => setScope('some')}>Specific techs</PillBtn>
+            </div>
+            {scope === 'some' && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {employees.map(e => (
+                  <button key={e.id} onClick={() => toggleTech(e.name)}
+                    style={{ fontSize: 12, padding: '5px 12px', borderRadius: 16, fontFamily: 'inherit', cursor: 'pointer',
+                      border: `1px solid ${scopeTechNames.includes(e.name) ? '#2D7A5F' : 'var(--pn-border-strong)'}`,
+                      background: scopeTechNames.includes(e.name) ? 'var(--pn-success-bg)' : 'var(--pn-surface-muted)',
+                      color: scopeTechNames.includes(e.name) ? '#2D7A5F' : 'var(--pn-text-muted)' }}>
+                    {e.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer' }}>
+            <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+            Rule is active (counts toward payroll)
+          </label>
+        </div>
+
+        <div style={{ padding: '12px 20px 16px', borderTop: '1px solid var(--pn-border)', display: 'flex', gap: 8 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>Cancel</button>
+          <button onClick={submit} disabled={saving || !name.trim()}
+            style={{ flex: 2, padding: '10px', borderRadius: 8, border: 'none', background: saving || !name.trim() ? '#d0d0d0' : 'linear-gradient(135deg,#2D7A5F,#3D95CE)', color: '#fff', cursor: saving || !name.trim() ? 'default' : 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600 }}>
+            {saving ? 'Saving…' : existing?.id ? 'Save Rule' : 'Create Rule'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

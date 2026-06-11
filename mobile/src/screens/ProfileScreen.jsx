@@ -7,7 +7,8 @@ import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { auth } from '../lib/firebase';
-import { saveEmployee, fetchTimeOff, createTimeOff, deleteTimeOff } from '../lib/firestore';
+import { saveEmployee, fetchTimeOff, createTimeOff, deleteTimeOff, fetchContinuingEducation, saveCE, deleteCE } from '../lib/firestore';
+import { CE_CATEGORIES } from '../lib/ceIdeas';
 import ConflictTextsModal from '../components/ConflictTextsModal';
 import { clearPushTokenForUser } from '../hooks/usePushRegistration';
 import { clearCurrentTenant } from '../lib/currentTenant';
@@ -46,6 +47,17 @@ export default function ProfileScreen({ navigation }) {
     } catch { setMyTimeOff([]); }
   }
   useEffect(() => { reloadTimeOff(); }, [employee?.id, employee?.name]);
+
+  // Continuing education — this tech's own records (logged by them or for them).
+  const [myCE, setMyCE] = useState([]);
+  const [ceOpen, setCeOpen] = useState(false);
+  const reloadCE = useCallback(async () => {
+    if (!user?.uid) { setMyCE([]); return; }
+    // Rules only let staff read their own CE — fetch scoped to this uid.
+    try { setMyCE(await fetchContinuingEducation(user.uid)); }
+    catch { setMyCE([]); }
+  }, [user?.uid]);
+  useEffect(() => { reloadCE(); }, [reloadCE]);
 
   useEffect(() => {
     if (employee) setDraft(employee);
@@ -509,6 +521,44 @@ export default function ProfileScreen({ navigation }) {
           </View>
         )}
 
+        {/* Continuing education — this tech logs and tracks their own classes,
+            certifications, and license CE. Mirrors web HR → Education. */}
+        {employee?.id && (
+          <View style={{ marginTop: 18 }}>
+            <Text style={styles.sectionLabel}>Continuing education</Text>
+            {myCE.length === 0 ? (
+              <View style={styles.cardRow}>
+                <Text style={styles.settingsBody}>No education logged yet. Track classes and certifications here.</Text>
+              </View>
+            ) : (
+              myCE.map(r => (
+                <TouchableOpacity
+                  key={r.id}
+                  style={styles.timeOffRow}
+                  onPress={() => Alert.alert(
+                    r.title,
+                    `${[r.category, r.provider, r.date, (Number(r.hours) || 0) > 0 ? `${r.hours} hrs` : '', r.status].filter(Boolean).join(' · ')}${r.notes ? '\n\n' + r.notes : ''}`,
+                    [
+                      { text: 'Delete', style: 'destructive', onPress: async () => {
+                        try { await deleteCE(r.id); reloadCE(); }
+                        catch (e) { Alert.alert('Couldn\'t delete', e?.message || 'Try again.'); }
+                      } },
+                      { text: 'Close', style: 'cancel' },
+                    ],
+                  )}
+                  activeOpacity={0.6}
+                >
+                  <Text style={styles.timeOffRowType}>{r.title}</Text>
+                  <Text style={styles.timeOffRowRange}>{[r.category, r.status, (Number(r.hours) || 0) > 0 ? `${r.hours} hrs` : ''].filter(Boolean).join(' · ')}</Text>
+                </TouchableOpacity>
+              ))
+            )}
+            <TouchableOpacity style={styles.timeOffAddBtn} onPress={() => setCeOpen(true)} activeOpacity={0.6}>
+              <Text style={styles.timeOffAddBtnText}>＋ Log education</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Notifications — only show when an employee record exists,
             since the prefs live on that doc. */}
         {employee?.id && (
@@ -569,7 +619,102 @@ export default function ProfileScreen({ navigation }) {
         onSaved={(saved) => { setTimeOffOpen(false); reloadTimeOff(); if (saved) setConflictEntry(saved); }}
         techName={employee?.name}
       />
+
+      <MyEducationModal
+        open={ceOpen}
+        onClose={() => setCeOpen(false)}
+        onSaved={() => { setCeOpen(false); reloadCE(); }}
+        employee={employee}
+        uid={user?.uid}
+      />
     </KeyboardAvoidingView>
+  );
+}
+
+// Tech self-service "log continuing education" sheet. Mirrors AddTimeOffModal's
+// shape + styles; writes to the same continuingEducation collection as web/HR.
+function MyEducationModal({ open, onClose, onSaved, employee, uid }) {
+  const { theme } = useTheme();
+  const s = useThemedStyles(makeTimeOffStyles);
+  const today = new Date().toISOString().slice(0, 10);
+  const [title,    setTitle]    = useState('');
+  const [category, setCategory] = useState(CE_CATEGORIES[0]);
+  const [status,   setStatus]   = useState('planned');
+  const [provider, setProvider] = useState('');
+  const [hours,    setHours]    = useState('');
+  const [notes,    setNotes]    = useState('');
+  const [saving,   setSaving]   = useState(false);
+
+  useEffect(() => {
+    if (open) { setTitle(''); setCategory(CE_CATEGORIES[0]); setStatus('planned'); setProvider(''); setHours(''); setNotes(''); }
+  }, [open]);
+
+  if (!open) return null;
+  const valid = !!title.trim();
+
+  async function save() {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      await saveCE(null, {
+        employeeId: employee?.id || '', employeeName: employee?.name || '',
+        title: title.trim(), category, status, provider: provider.trim(),
+        date: today, hours: Number(hours) || 0, credits: 0, cost: 0,
+        notes: notes.trim(), createdBy: uid || null,
+      });
+      onSaved?.();
+    } catch (e) { Alert.alert('Couldn\'t save', e?.message || 'Try again.'); }
+    finally { setSaving(false); }
+  }
+
+  return (
+    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={s.backdrop}>
+          <View style={s.sheet}>
+            <View style={s.header}>
+              <Text style={s.title}>Log education</Text>
+              <TouchableOpacity onPress={onClose} style={s.closeBtn}><Text style={s.closeBtnText}>×</Text></TouchableOpacity>
+            </View>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+              <Text style={s.label}>Course / certification</Text>
+              <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="e.g. Gel-X Mastery" placeholderTextColor={theme.placeholder} />
+
+              <Text style={[s.label, { marginTop: 16 }]}>Category</Text>
+              <View style={s.typeRow}>
+                {CE_CATEGORIES.map(c => (
+                  <TouchableOpacity key={c} onPress={() => setCategory(c)} style={[s.typeChip, category === c && s.typeChipActive]}>
+                    <Text style={[s.typeChipText, category === c && s.typeChipTextActive]}>{c}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[s.label, { marginTop: 16 }]}>Status</Text>
+              <View style={s.typeRow}>
+                {[['planned', 'Planned'], ['completed', 'Completed']].map(([id, lbl]) => (
+                  <TouchableOpacity key={id} onPress={() => setStatus(id)} style={[s.typeChip, status === id && s.typeChipActive]}>
+                    <Text style={[s.typeChipText, status === id && s.typeChipTextActive]}>{lbl}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={[s.label, { marginTop: 16 }]}>Provider (optional)</Text>
+              <TextInput style={s.input} value={provider} onChangeText={setProvider} placeholder="Academy, school…" placeholderTextColor={theme.placeholder} />
+
+              <Text style={[s.label, { marginTop: 16 }]}>Hours (optional)</Text>
+              <TextInput style={s.input} value={hours} onChangeText={setHours} placeholder="0" placeholderTextColor={theme.placeholder} keyboardType="decimal-pad" />
+
+              <Text style={[s.label, { marginTop: 16 }]}>Notes (optional)</Text>
+              <TextInput style={[s.input, { minHeight: 80, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} placeholder="Takeaways, certificate #, etc." placeholderTextColor={theme.placeholder} multiline maxLength={500} />
+
+              <TouchableOpacity style={[s.saveBtn, (!valid || saving) && { opacity: 0.5 }, { marginTop: 18 }]} onPress={save} disabled={!valid || saving}>
+                <Text style={s.saveBtnText}>{saving ? 'Saving…' : 'Save education'}</Text>
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

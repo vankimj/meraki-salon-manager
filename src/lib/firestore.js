@@ -71,6 +71,8 @@ const SOFT_DELETED_COLLECTIONS = [
   { key: 'timeOff',         col: () => TIMEOFF_COL,          restorable: false },
   { key: 'promoCodes',      col: () => PROMO_COL,            restorable: false },
   { key: 'reviews',         col: () => REVIEWS_COL,          restorable: false },
+  { key: 'continuingEducation', col: () => CE_COL,           restorable: false },
+  { key: 'bonusRules',      col: () => BONUS_RULES_COL,      restorable: false },
   { key: 'meetings',        col: () => MEETINGS_COL,         restorable: false },
   { key: 'products',        col: () => PRODUCTS_COL,         restorable: false },
   { key: 'campaigns',       col: () => CAMPAIGNS_COL,        restorable: false },
@@ -1278,6 +1280,56 @@ export async function saveReview(id, data) {
 export const deleteReview = (id, deletedBy) => softDelete(doc(REVIEWS_COL, id), deletedBy);
 export const purgeReview  = (id) => deleteDoc(doc(REVIEWS_COL, id));
 
+// ── Continuing education ───────────────────────────────
+const CE_COL = tenantCol('continuingEducation');
+
+// Pass `ownUid` for non-admin (staff) callers — the rules only let staff read
+// their OWN records (createdBy == uid), so the query must be scoped to match
+// or Firestore rejects it. Admins omit it and read all. Filtered path skips
+// orderBy (where+orderBy on different fields would need a composite index) and
+// sorts client-side.
+export async function fetchContinuingEducation(ownUid) {
+  const q = ownUid
+    ? query(CE_COL, where('createdBy', '==', ownUid))
+    : query(CE_COL, orderBy('date', 'desc'));
+  const rows = (await getDocs(q)).docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+  return ownUid ? rows.sort((a, b) => (b.date || '').localeCompare(a.date || '')) : rows;
+}
+
+export async function saveCE(id, data) {
+  const now = new Date().toISOString();
+  if (id) {
+    await setDoc(doc(CE_COL, id), { ...data, updatedAt: now }, { merge: true });
+    return id;
+  }
+  const ref = await addDoc(CE_COL, { ...data, createdAt: now, updatedAt: now });
+  return ref.id;
+}
+
+export const deleteCE = (id, deletedBy) => softDelete(doc(CE_COL, id), deletedBy);
+export const purgeCE  = (id) => deleteDoc(doc(CE_COL, id));
+
+// ── Bonus rules (structured incentive programs) ────────
+const BONUS_RULES_COL = tenantCol('bonusRules');
+
+export async function fetchBonusRules() {
+  const snap = await getDocs(query(BONUS_RULES_COL, orderBy('createdAt', 'desc')));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+
+export async function saveBonusRule(id, data) {
+  const now = new Date().toISOString();
+  if (id) {
+    await setDoc(doc(BONUS_RULES_COL, id), { ...data, updatedAt: now }, { merge: true });
+    return id;
+  }
+  const ref = await addDoc(BONUS_RULES_COL, { ...data, createdAt: now, updatedAt: now });
+  return ref.id;
+}
+
+export const deleteBonusRule = (id, deletedBy) => softDelete(doc(BONUS_RULES_COL, id), deletedBy);
+export const purgeBonusRule  = (id) => deleteDoc(doc(BONUS_RULES_COL, id));
+
 // ── User preferences (per-uid, e.g. tech overlay) ─────
 const USER_PREFS_COL = tenantCol('userPrefs');
 
@@ -2112,7 +2164,7 @@ export async function sendHandbookReminderNotif(techName, handbookTitle, version
   await addDoc(NOTIFS_COL, {
     changeType:    'handbook_reminder',
     techName,
-    handbookTitle: handbookTitle || 'Employee Handbook',
+    handbookTitle: handbookTitle || 'Company Policies',
     version:       version || '1.0',
     createdAt:     new Date().toISOString(),
     sent:          false,
@@ -2296,6 +2348,8 @@ export async function fetchAllForBackup() {
     'campaigns', 'campaignTemplates', 'chats',
     // Reviews
     'reviews', 'reviewReceived', 'reviewRequests',
+    // HR
+    'continuingEducation', 'bonusRules',
     // Time + scheduling
     'meetings', 'timeOff', 'attendance', 'waitlist',
     // Memberships
@@ -2339,6 +2393,7 @@ export async function restoreFromBackup(data, onProgress) {
     'giftCards', 'promoCodes', 'bonuses', 'payrollRuns', 'taxForms',
     'campaigns', 'campaignTemplates', 'chats',
     'reviews', 'reviewReceived', 'reviewRequests',
+    'continuingEducation', 'bonusRules',
     'meetings', 'timeOff', 'attendance', 'waitlist',
     'memberships', 'membershipPlans',
     'products', 'handbookSigs', 'logs', 'feedback',

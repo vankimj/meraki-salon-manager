@@ -134,9 +134,13 @@ export const HELP_TOPICS = {
     tip: 'Mobile manages drafts; the web app fires real email/SMS campaigns.',
   },
   hr: {
-    icon: 'briefcase', what: 'Compensation + payroll (admin).',
-    steps: ['View per-tech compensation and payroll figures.'],
-    tip: 'Detailed payroll edits live on the web app.',
+    icon: 'briefcase', what: 'Compensation, payroll, bonus rules + continuing education (admin).',
+    steps: [
+      'Payroll: commission + manual bonuses + structured rule bonuses per tech.',
+      'Rules: set criteria (revenue, appts, rebooking, ratings, tenure…) → a payout; they preview on Payroll and record when you run it.',
+      'Education: log classes/certifications for staff and track hours/credits.',
+    ],
+    tip: 'Techs log their own continuing education from Profile → Continuing education.',
   },
 };
 
