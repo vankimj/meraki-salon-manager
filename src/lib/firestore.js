@@ -2933,6 +2933,10 @@ export async function growPhotoCritique({ imageData, mediaType = 'image/jpeg', k
   const res = await callFn('growPhotoCritique')({ tenantId: TENANT_ID, imageData, mediaType, kind });
   return res.data; // { review }
 }
+export async function growStepHelp({ title, context, question }) {
+  const res = await callFn('growStepHelp')({ tenantId: TENANT_ID, title, context, question });
+  return res.data; // { text }
+}
 
 // ── Instagram live monitoring (Phase 2) ───────────────────────────────────
 export function subscribeInstagramAuth(cb) {

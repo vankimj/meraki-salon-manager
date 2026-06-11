@@ -5492,6 +5492,21 @@ ${cfg.policy || 'Appointments canceled with less than 24 hours notice may incur 
 // Backs the Launch & Grow module's AI coach: short marketing copy, longer
 // document drafts (with an attorney-review disclaimer for legal-ish ones), and
 // photo critique via Claude vision. All admin-only + usage-logged.
+// Hard daily per-tenant cap across ALL Launch & Grow AI endpoints, so cost
+// can't run away. Counts into tenants/{tid}/data/growAiUsage; rejects past cap.
+const GROW_AI_DAILY_CAP = 60;
+async function growAiGuard(db, tenantId) {
+  const today = new Date().toISOString().slice(0, 10);
+  const ref = db.doc(`tenants/${tenantId}/data/growAiUsage`);
+  const snap = await ref.get();
+  const d = snap.exists ? snap.data() : {};
+  const count = d.date === today ? (d.count || 0) : 0;
+  if (count >= GROW_AI_DAILY_CAP) {
+    throw new HttpsError('resource-exhausted', `Daily AI limit reached for Launch & Grow (${GROW_AI_DAILY_CAP}/day). Try again tomorrow.`);
+  }
+  await ref.set({ date: today, count: count + 1, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
 async function loadSalonBrief(db, tenantId) {
   const [tDoc, wf, settings, svc] = await Promise.all([
     db.doc(`tenants/${tenantId}`).get(),
@@ -5529,6 +5544,7 @@ exports.growCoachSuggest = onCall(
 
     const db = getFirestore();
     await requireTenantAdmin(db, tenantId, request);
+    await growAiGuard(db, tenantId);
     const brief = await loadSalonBrief(db, tenantId);
 
     const system = `You are a marketing coach for ${brief.name}${brief.city ? ` in ${brief.city}` : ''}, a nail salon. Write copy the owner can use immediately — specific, warm, concise. Never invent prices or claims.${brief.services.length ? ` Their services include: ${brief.services.join(', ')}.` : ''}`;
@@ -5566,6 +5582,7 @@ exports.growDraftDocument = onCall(
 
     const db = getFirestore();
     await requireTenantAdmin(db, tenantId, request);
+    await growAiGuard(db, tenantId);
     const brief = await loadSalonBrief(db, tenantId);
 
     const isLegal = ['privacyPolicy', 'intakeForm', 'contractorAgreement', 'boothRental', 'handbook'].includes(kind);
@@ -5602,6 +5619,7 @@ exports.growPhotoCritique = onCall(
 
     const db = getFirestore();
     await requireTenantAdmin(db, tenantId, request);
+    await growAiGuard(db, tenantId);
 
     const subject = kind === 'salon' ? 'a photo of the salon space' : 'a photo of nail work';
     const system = 'You are a professional photographer + brand stylist helping a nail salon choose photos for their website and Instagram. Critique the photo concisely and kindly across: lighting, composition/framing, focus/sharpness, clutter/background, and color. End with a clear verdict — KEEP, CROP (say how), or RESHOOT (say what to change). 4-6 short bullet points max.';
@@ -5616,6 +5634,49 @@ exports.growPhotoCritique = onCall(
     });
     usageLog.logAiUsage(db, tenantId, { endpoint: 'growPhotoCritique', model: resp?.model || 'claude-sonnet-4-6', usage: resp?.usage }).catch(() => {});
     return { review: resp.content[0]?.text || '' };
+  }
+);
+
+// Per-step helper — answers a question (or "how do I do this?") scoped strictly
+// to ONE Launch & Grow step. Haiku + 500 tokens + the shared daily cap keep cost
+// bounded; the system prompt refuses anything outside this step.
+exports.growStepHelp = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, title = '', context = '', question = '' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    const stepTitle = String(title).slice(0, 160);
+    const stepCtx   = String(context).slice(0, 900);
+    const q         = String(question).slice(0, 500);
+    if (!stepTitle && !q) throw new HttpsError('invalid-argument', 'A step or question is required');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+    await growAiGuard(db, tenantId);
+    const brief = await loadSalonBrief(db, tenantId);
+
+    const system = `You are the Launch & Grow assistant for ${brief.name}${brief.city ? ` in ${brief.city}` : ''}, a nail salon. You ONLY help the owner complete this specific business-setup step:
+
+STEP: ${stepTitle}
+WHAT IT INVOLVES: ${stepCtx || '(see the step title)'}
+
+Rules:
+- Answer ONLY about completing THIS step for a nail salon. If asked anything unrelated to launching/running the salon business, politely say it's outside this step and point them back to it.
+- Be concrete, encouraging, and concise — a few short paragraphs or a short list.
+- Never invent legal/tax specifics, prices, dollar amounts, or state rules; tell them to verify with the relevant agency or a professional.
+- For legal/tax/accounting matters, recommend confirming with a licensed professional rather than giving definitive advice.`;
+    const user = q || `Help me understand and complete this step: ${stepTitle}.`;
+
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 500,
+      system, messages: [{ role: 'user', content: user }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growStepHelp', model: resp?.model || 'claude-haiku-4-5-20251001', usage: resp?.usage }).catch(() => {});
+    return { text: resp.content[0]?.text || '' };
   }
 );
 

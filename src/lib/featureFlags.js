@@ -35,11 +35,11 @@ export const FEATURE_TIER_DEFAULTS = {
 
   // Curated/collapsed home grid (Core / Grow / Admin + "Show more") + the
   // per-user Simple Mode density switch. Ships dark; roll out demo → owner → …
-  curatedHome: { demo: true },
+  curatedHome: { demo: true, owner: true, free: true, pro: true, enterprise: true },
 
   // Launch & Grow module (Phase 2) — guided business setup + growth + AI coach.
   // Ships dark; roll out demo → owner → … once content + AI are reviewed.
-  launchGrow: { demo: true },
+  launchGrow: { demo: true, owner: true, free: true, pro: true, enterprise: true },
 
   // Add new features here as they're rolled out. Examples:
   //   newCheckoutFlow:        { demo: true, owner: true },

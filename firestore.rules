@@ -247,6 +247,12 @@ service cloud.firestore {
       match /data/launchChecklist {
         allow read, write: if isTenantAdmin(tenantId);
       }
+      // Daily Launch & Grow AI usage counter — server-written (Admin SDK) for the
+      // cost cap. Admin-readable; never client-written.
+      match /data/growAiUsage {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
       // Kiosk device registry + exit PINs. Owner-readable (to list/revoke
       // kiosks); written only by the kiosk CFs via Admin SDK. A kiosk identity
       // must NOT read this (it holds every device's uid) — isKiosk ≠ admin.
