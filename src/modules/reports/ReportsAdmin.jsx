@@ -3200,7 +3200,7 @@ function renderInline(text, keyPrefix = '') {
     if (m[1] !== undefined) parts.push(<strong key={`${keyPrefix}b${idx++}`}>{m[1]}</strong>);
     else if (m[2] !== undefined) parts.push(<em key={`${keyPrefix}i${idx++}`}>{m[2]}</em>);
     else parts.push(
-      <code key={`${keyPrefix}c${idx++}`} style={{ background: '#f3f0f8', padding: '1px 5px', borderRadius: 4, fontSize: '.92em', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
+      <code key={`${keyPrefix}c${idx++}`} style={{ background: 'var(--pn-surface-alt)', color: 'var(--pn-text)', padding: '1px 5px', borderRadius: 4, fontSize: '.92em', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
         {m[3]}
       </code>
     );
@@ -3319,7 +3319,7 @@ function MarkdownLite({ text }) {
                 <thead>
                   <tr>
                     {b.header.map((h, hi) => (
-                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: '#f3eafc', color: '#6a4fa0', fontWeight: 700, borderBottom: '1px solid #d8d0e8', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', fontWeight: 700, borderBottom: '1px solid #d8d0e8', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
                         {renderInline(h, `${k}h${hi}`)}
                       </th>
                     ))}

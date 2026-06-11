@@ -1436,7 +1436,7 @@ function LogRow({ log }) {
         </div>
       </div>
       {expanded && (
-        <div style={{ padding: '0 16px 10px', fontSize: 11, color: '#c00', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: '#fff0f0', borderTop: '1px solid #fecaca' }}>
+        <div style={{ padding: '0 16px 10px', fontSize: 11, color: 'var(--pn-danger)', fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', background: 'var(--pn-danger-bg)', borderTop: '1px solid #fecaca' }}>
           {log._message && <div><strong>Error:</strong> {log._message}</div>}
           {log._context && <div><strong>Context:</strong> {log._context}</div>}
           {log.fileType  && <div><strong>File type:</strong> {log.fileType}</div>}
@@ -1497,7 +1497,7 @@ function PendingRow({ req, employees, onGrant }) {
               value={newName}
               onChange={e => setNewName(e.target.value)}
               placeholder="Employee name"
-              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #3D95CE', background: '#f0f7ff', fontFamily: 'inherit', width: 130, outline: 'none' }}
+              style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #3D95CE', background: 'var(--pn-surface-alt)', fontFamily: 'inherit', width: 130, outline: 'none' }}
             />
           )}
         </>
@@ -2883,7 +2883,7 @@ function PortfolioGridEditor({ cfg, patch }) {
             {uploading && <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Uploading…</span>}
             <input ref={fileRef} type="file" accept="image/*" multiple onChange={onFiles} disabled={uploading} style={{ display: 'none' }} id="portfolio-upload" />
             <label htmlFor="portfolio-upload" style={{
-              ...inp, padding: '6px 14px', borderColor: '#c19a4a', color: '#c19a4a', background: '#fffbf2',
+              ...inp, padding: '6px 14px', borderColor: '#c19a4a', color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)',
               fontWeight: 700, cursor: uploading ? 'wait' : 'pointer', opacity: uploading ? .6 : 1,
             }}>
               + Upload photos
@@ -3104,7 +3104,7 @@ function ReviewsTab({ data, onRefresh, onMarkReceived }) {
                 </div>
                 {!isReceived && (
                   <button onClick={() => handleMark(req)} disabled={marking === req.id}
-                    style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #c6e8d5', background: '#f0faf6', color: '#2D7A5F', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+                    style={{ padding: '6px 12px', borderRadius: 8, border: '1px solid #c6e8d5', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
                     {marking === req.id ? '…' : '✓ Mark reviewed'}
                   </button>
                 )}

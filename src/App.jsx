@@ -84,7 +84,7 @@ function MagicLinkPrompt() {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 }}>
-      <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: '90%', maxWidth: 340, boxShadow: '0 20px 60px rgba(0,0,0,.35)', textAlign: 'center' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, padding: 28, width: '90%', maxWidth: 340, boxShadow: '0 20px 60px rgba(0,0,0,.35)', textAlign: 'center' }}>
         <div style={{ fontSize: 32, marginBottom: 10 }}>🔗</div>
         <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>Confirm your email</h3>
         <p style={{ fontSize: 12, color: '#888', lineHeight: 1.5, marginBottom: 18 }}>

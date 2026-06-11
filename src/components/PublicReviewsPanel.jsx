@@ -150,7 +150,7 @@ export default function PublicReviewsPanel() {
     return rel || '—';
   };
 
-  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#bbb', fontSize: 14 }}>Loading…</div>;
+  if (loading) return <div style={{ textAlign: 'center', padding: 80, color: 'var(--pn-text-muted)', fontSize: 14 }}>Loading…</div>;
 
   const totalOnGoogle = data?.userRatingCount || 0;
   const pulled = useFullSource ? fullReviews.length : (data?.reviews?.length || 0);
@@ -159,16 +159,16 @@ export default function PublicReviewsPanel() {
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
 
-      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
+      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>Public Google Reviews</div>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Public Google Reviews</div>
             {useFullSource ? (
-              <div style={{ fontSize: 11, color: '#15803d', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-success)', marginTop: 4 }}>
                 ✓ Business Profile · {pulled} reviews · last synced {gbpAuth?.lastSyncAt ? new Date(gbpAuth.lastSyncAt).toLocaleString() : 'never'}
               </div>
             ) : data?.refreshedAt && (
-              <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 4 }}>
                 Last refreshed {new Date(data.refreshedAt).toLocaleString()} · pulled {pulled} of {totalOnGoogle} reviews (Places API cap)
               </div>
             )}
@@ -183,7 +183,7 @@ export default function PublicReviewsPanel() {
             )}
           </div>
         </div>
-        {err && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 8 }}>{err}</div>}
+        {err && <div style={{ fontSize: 12, color: 'var(--pn-danger)', marginTop: 8 }}>{err}</div>}
         {hidden > 0 && (
           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 12px', marginTop: 10, fontSize: 11, color: '#92400e', lineHeight: 1.5 }}>
             <strong>{hidden} more reviews exist on Google but Google's Places API caps public access at 5.</strong> Pulling all {totalOnGoogle} would require connecting your Google Business Profile (separate OAuth integration — ask if you want this set up).
@@ -192,7 +192,7 @@ export default function PublicReviewsPanel() {
       </div>
 
       {!data?.reviews?.length ? (
-        <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: '#888', fontSize: 13 }}>
+        <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>
           No reviews cached yet. {isAdmin ? 'Click "Refresh from Google" to pull.' : 'Ask an admin to pull reviews.'}
         </div>
       ) : (
@@ -208,16 +208,16 @@ export default function PublicReviewsPanel() {
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>Sort</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Sort</span>
               <select value={sort} onChange={e => setSort(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}>
+                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text)', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer' }}>
                 {SORT_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em' }}>Filter</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em' }}>Filter</span>
               <select value={filterTech} onChange={e => setFilter(e.target.value)}
-                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid #e0e0e0', background: '#fff', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', minWidth: 180 }}>
+                style={{ padding: '6px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text)', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', minWidth: 180 }}>
                 <option value="">All reviews</option>
                 <option value="__any__">Any tech mentioned</option>
                 <option disabled>──────────</option>
@@ -226,28 +226,28 @@ export default function PublicReviewsPanel() {
                 ))}
               </select>
             </div>
-            <div style={{ fontSize: 11, color: '#aaa', marginLeft: 'auto' }}>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>
               Showing {filtered.length} of {enriched.length}
             </div>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {filtered.map((r) => (
-              <div key={r.idx} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
+              <div key={r.idx} style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
                   {r.photoUrl
                     ? <img src={r.photoUrl} alt="" style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0, objectFit: 'cover' }} />
-                    : <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#888', fontSize: 13, fontWeight: 600 }}>{(r.name || '?').slice(0, 1)}</div>
+                    : <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--pn-surface-alt)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600 }}>{(r.name || '?').slice(0, 1)}</div>
                   }
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2, flexWrap: 'wrap' }}>
                       {r.authorUrl ? (
-                        <a href={r.authorUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a', textDecoration: 'none' }}>{r.name}</a>
+                        <a href={r.authorUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', textDecoration: 'none' }}>{r.name}</a>
                       ) : (
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{r.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>{r.name}</span>
                       )}
                       <span style={{ color: '#f59e0b', fontSize: 11, letterSpacing: 1 }}>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
-                      <span style={{ fontSize: 11, color: '#aaa' }}>· {fmtDate(r.publishTime, r.date)}</span>
+                      <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>· {fmtDate(r.publishTime, r.date)}</span>
                     </div>
                     {r.mentions.length > 0 && (
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4, marginBottom: 6 }}>
@@ -256,7 +256,7 @@ export default function PublicReviewsPanel() {
                         ))}
                       </div>
                     )}
-                    <div style={{ fontSize: 13, color: '#444', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
+                    <div style={{ fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.55, whiteSpace: 'pre-wrap' }}>
                       {r.matchedText.length > 0 ? highlight(r.text, r.matchedText) : r.text}
                     </div>
                   </div>
@@ -264,14 +264,14 @@ export default function PublicReviewsPanel() {
               </div>
             ))}
             {filtered.length === 0 && (
-              <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '30px 20px', textAlign: 'center', color: '#888', fontSize: 13 }}>
+              <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '30px 20px', textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13 }}>
                 No reviews match this filter.
               </div>
             )}
           </div>
 
-          <div style={{ background: '#fafafa', border: '1px solid #eee', borderRadius: 10, padding: '12px 14px', marginTop: 14, fontSize: 11, color: '#666', lineHeight: 1.55 }}>
-            <strong style={{ color: '#444' }}>How tech detection works:</strong> we scan each review's text for each tech's full name, first name, first + last initial, and any Instagram / TikTok / Venmo / Facebook handle stored on their employee record. To improve coverage for a tech who's mentioned by a nickname (e.g. "Sammy" for "Samantha"), add the nickname as their display name or stash the alias in their Instagram handle.
+          <div style={{ background: 'var(--pn-surface-alt)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginTop: 14, fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.55 }}>
+            <strong style={{ color: 'var(--pn-text)' }}>How tech detection works:</strong> we scan each review's text for each tech's full name, first name, first + last initial, and any Instagram / TikTok / Venmo / Facebook handle stored on their employee record. To improve coverage for a tech who's mentioned by a nickname (e.g. "Sammy" for "Samantha"), add the nickname as their display name or stash the alias in their Instagram handle.
           </div>
         </>
       )}
@@ -281,10 +281,10 @@ export default function PublicReviewsPanel() {
 
 function Stat({ label, value, sub, accent }) {
   return (
-    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: '14px 16px' }}>
-      <div style={{ fontSize: 10, color: '#aaa', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
+    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px' }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, color: accent }}>{value}</div>
-      {sub && <div style={{ fontSize: 10, color: '#bbb', marginTop: 2 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2 }}>{sub}</div>}
     </div>
   );
 }

@@ -859,7 +859,7 @@ function HistoryTab({ runs, onMarkPaid }) {
             {isExpanded && (
               <div style={{ borderTop: '1px solid var(--pn-border)' }}>
                 {run.techs.map((t, i) => (
-                  <div key={t.techName} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px 9px 28px', borderBottom: i < run.techs.length - 1 ? '1px solid var(--pn-border)' : 'none', background: t.paidAt ? '#fafffe' : 'var(--pn-surface)' }}>
+                  <div key={t.techName} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px 9px 28px', borderBottom: i < run.techs.length - 1 ? '1px solid var(--pn-border)' : 'none', background: t.paidAt ? 'var(--pn-success-bg)' : 'var(--pn-surface)' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{t.techName}</span>
                       <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 8 }}>
@@ -1752,7 +1752,7 @@ function TaxFormsTab({ forms, employees, isAdmin, isTech, myTechName, settings, 
                 </div>
                 <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                   <button onClick={() => download1099Pdf(form, emp, settings)}
-                    style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #2D7A5F', background: '#f0faf6', color: '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #2D7A5F', background: 'var(--pn-success-bg)', color: 'var(--pn-success)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                     PDF
                   </button>
                   {isAdmin && (
@@ -1825,7 +1825,7 @@ function GustoTab({ employees, payrollRuns }) {
       {/* Connection card */}
       <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '20px 20px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={{ width: 44, height: 44, borderRadius: 10, background: '#f9f4ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🦖</div>
+          <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--pn-surface-alt)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>🦖</div>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>Gusto Payroll</div>
             {isConnected ? (
@@ -1893,7 +1893,7 @@ function GustoTab({ employees, payrollRuns }) {
                 <div style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{run.techs.length} techs · {fmt$(run.grandTotal)}</div>
               </div>
               {run.gustoPayrollId ? (
-                <span style={{ fontSize: 10, fontWeight: 600, color: '#7c3aed', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 6, padding: '2px 8px' }}>Submitted</span>
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--pn-text)', background: 'var(--pn-surface-alt)', border: '1px solid #ddd6fe', borderRadius: 6, padding: '2px 8px' }}>Submitted</span>
               ) : (
                 <button onClick={() => handleSubmitPayroll(run)} disabled={submitting === run.id}
                   style={{ fontSize: 11, padding: '5px 12px', borderRadius: 6, border: 'none', background: submitting === run.id ? 'var(--pn-border-strong)' : '#7c3aed', color: '#fff', cursor: submitting === run.id ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>

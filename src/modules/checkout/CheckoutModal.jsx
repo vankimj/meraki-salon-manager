@@ -1123,7 +1123,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                   </div>
                 )}
                 <div style={{ border: '1px solid var(--pn-border-strong)', borderRadius: 10, padding: '11px 12px', background: 'var(--pn-bg)' }}>
-                  <CardElement options={{ style: { base: { fontSize: '14px', fontFamily: '-apple-system, sans-serif', color: '#1a1a1a', '::placeholder': { color: '#aaa' } }, invalid: { color: '#ef4444' } } }} />
+                  {(() => {
+                    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                    return <CardElement options={{ style: { base: { fontSize: '14px', fontFamily: '-apple-system, sans-serif', color: isDark ? '#f1f3f5' : '#1a1a1a', '::placeholder': { color: isDark ? '#8e97a3' : '#aaa' } }, invalid: { color: '#ef4444' } } }} />;
+                  })()}
                 </div>
                 {cardError && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 6 }}>{cardError}</div>}
                 {kioskAvail && keyedCard && (

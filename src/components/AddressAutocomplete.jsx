@@ -92,7 +92,7 @@ export default function AddressAutocomplete({ value, onChange, onPlaceSelected, 
               key={p.placeId}
               onMouseDown={() => pickPrediction(p)}
               style={{ padding: '8px 12px', fontSize: 13, cursor: 'pointer', borderBottom: '1px solid var(--pn-border)', color: 'var(--pn-text)' }}
-              onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
+              onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
               onMouseLeave={e => e.currentTarget.style.background = ''}
             >
               📍 {p.description}
