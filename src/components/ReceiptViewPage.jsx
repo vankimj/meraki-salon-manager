@@ -206,6 +206,13 @@ function RatingSection({ data, token }) {
     if (!techs.includes(prefilledTech)) return;
     if (seeded[prefilledTech]?.rating) return; // already rated previously
     setPicks(prev => ({ ...prev, [prefilledTech]: { rating: prefilledRate, comment: '' } }));
+    // Only auto-submit HIGH ratings (the frictionless path → Google review). For a
+    // LOW rating the salon wants written feedback, so seed the star but DON'T submit
+    // yet — keep the widget + comment box open so the visitor can type and press
+    // "Send feedback". (Was auto-submitting every rating, firing before the 1-star
+    // visitor could write anything.)
+    const thr = Number(data.reviewRoutingThreshold) || 4;
+    if (prefilledRate < thr) return;
     callFn('submitServiceRating')({
       token, source,
       ratings: [{ techName: prefilledTech, rating: prefilledRate }],
