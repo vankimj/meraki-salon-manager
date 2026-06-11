@@ -1283,9 +1283,17 @@ export const purgeReview  = (id) => deleteDoc(doc(REVIEWS_COL, id));
 // ── Continuing education ───────────────────────────────
 const CE_COL = tenantCol('continuingEducation');
 
-export async function fetchContinuingEducation() {
-  const snap = await getDocs(query(CE_COL, orderBy('date', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+// Pass `ownUid` for non-admin (staff) callers — the rules only let staff read
+// their OWN records (createdBy == uid), so the query must be scoped to match
+// or Firestore rejects it. Admins omit it and read all. Filtered path skips
+// orderBy (where+orderBy on different fields would need a composite index) and
+// sorts client-side.
+export async function fetchContinuingEducation(ownUid) {
+  const q = ownUid
+    ? query(CE_COL, where('createdBy', '==', ownUid))
+    : query(CE_COL, orderBy('date', 'desc'));
+  const rows = (await getDocs(q)).docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+  return ownUid ? rows.sort((a, b) => (b.date || '').localeCompare(a.date || '')) : rows;
 }
 
 export async function saveCE(id, data) {

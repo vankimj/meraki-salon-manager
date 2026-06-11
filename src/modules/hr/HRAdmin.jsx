@@ -136,7 +136,9 @@ export default function HRAdmin() {
   }
 
   async function loadCE() {
-    try { setCeRecords(await fetchContinuingEducation()); }
+    // Non-admin staff may only read their own CE (rules gate on createdBy), so
+    // scope the query to their uid; admins read all.
+    try { setCeRecords(await fetchContinuingEducation(isAdmin ? undefined : gUser?.uid)); }
     catch {}
   }
 

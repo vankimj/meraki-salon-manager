@@ -993,9 +993,15 @@ export async function saveReview(id, data) {
 export async function deleteReview(id) { await softDelete(doc(tenantCol('reviews'), id)); }
 
 // Continuing education (per-employee CE records). Mirrors web shapes.
-export async function fetchContinuingEducation() {
-  const snap = await getDocs(query(tenantCol('continuingEducation'), orderBy('date', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+// Non-admin (staff) callers pass `ownUid` — rules only allow reading their own
+// records (createdBy == uid), so the query must be scoped to match. Filtered
+// path skips orderBy (avoids a composite index) and sorts client-side.
+export async function fetchContinuingEducation(ownUid) {
+  const q = ownUid
+    ? query(tenantCol('continuingEducation'), where('createdBy', '==', ownUid))
+    : query(tenantCol('continuingEducation'), orderBy('date', 'desc'));
+  const rows = (await getDocs(q)).docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+  return ownUid ? rows.sort((a, b) => (b.date || '').localeCompare(a.date || '')) : rows;
 }
 export async function saveCE(id, data) {
   const now = new Date().toISOString();

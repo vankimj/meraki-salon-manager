@@ -543,10 +543,12 @@ service cloud.firestore {
       }
 
       // Continuing education: staff can read + manage ONLY their own records
-      // (createdBy == self); admins can read/manage all. UI also scopes the
-      // tech view, but the gate lives here too (not just in the UI).
+      // (createdBy == self); admins can read/manage all. Read is owner-scoped
+      // at the rule layer (not just the UI) — non-admin clients must query
+      // where('createdBy','==',uid) or the read is rejected.
       match /continuingEducation/{ceId} {
-        allow read:   if isTenantStaff(tenantId);
+        allow read:   if isTenantAdmin(tenantId)
+          || (isTenantStaff(tenantId) && resource.data.createdBy == request.auth.uid);
         allow create: if isTenantAdmin(tenantId)
           || (isTenantStaff(tenantId) && request.resource.data.createdBy == request.auth.uid);
         allow update, delete: if isTenantAdmin(tenantId)

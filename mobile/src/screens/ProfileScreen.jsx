@@ -52,16 +52,11 @@ export default function ProfileScreen({ navigation }) {
   const [myCE, setMyCE] = useState([]);
   const [ceOpen, setCeOpen] = useState(false);
   const reloadCE = useCallback(async () => {
-    if (!employee?.name && !user?.uid) { setMyCE([]); return; }
-    try {
-      const all = await fetchContinuingEducation();
-      const mine = all.filter(r =>
-        r.createdBy === user?.uid ||
-        (r.employeeName || '').toLowerCase() === (employee?.name || '').toLowerCase()
-      );
-      setMyCE(mine);
-    } catch { setMyCE([]); }
-  }, [employee?.name, user?.uid]);
+    if (!user?.uid) { setMyCE([]); return; }
+    // Rules only let staff read their own CE — fetch scoped to this uid.
+    try { setMyCE(await fetchContinuingEducation(user.uid)); }
+    catch { setMyCE([]); }
+  }, [user?.uid]);
   useEffect(() => { reloadCE(); }, [reloadCE]);
 
   useEffect(() => {
