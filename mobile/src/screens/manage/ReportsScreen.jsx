@@ -3,7 +3,7 @@ import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { fetchReceiptsByRange, fetchAppointmentsByRange, fetchServiceRatingsByRange, fetchHistoricalClientIds, fetchClients, fetchClientAppointments, fetchFraudBlocksByRange } from '../../lib/firestore';
-import { buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown } from '../../lib/metrics';
+import { buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown, computeRetention } from '../../lib/metrics';
 import AskAIChat from '../../components/AskAIChat';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import useResponsive from '../../hooks/useResponsive';
@@ -136,14 +136,7 @@ export default function ReportsScreen({ navigation }) {
       setPrev(computeMetrics(buildTransactions(pReceipts, pAppts)));
       setRatings(computeRatings(svcRatings));
       setRefundBreak(computeRefundBreakdown(receipts));
-      // New vs returning: a client with any visit before the period is returning.
-      const seen = new Set(); let nw = 0, ret = 0, walk = 0;
-      txns.forEach(t => {
-        if (!t.clientId) { walk++; return; }
-        if (seen.has(t.clientId)) return; seen.add(t.clientId);
-        if (priorIds.has(t.clientId)) ret++; else nw++;
-      });
-      setRetention({ nw, ret, walk });
+      setRetention(computeRetention(txns, priorIds));
       // Referral leaderboard from client.referredBy.
       const refMap = {};
       (clients || []).forEach(c => {
@@ -406,9 +399,17 @@ export default function ReportsScreen({ navigation }) {
                 <>
                   <Text style={styles.section}>New vs returning</Text>
                   <View style={styles.card2}>
-                    <View style={styles.statRow}><Text style={styles.statLabel}>New clients</Text><Text style={styles.statValue}>{retention.nw}</Text></View>
-                    <View style={styles.statRow}><Text style={styles.statLabel}>Returning clients</Text><Text style={styles.statValue}>{retention.ret}</Text></View>
-                    <View style={styles.statRow}><Text style={styles.statLabel}>Walk-ins</Text><Text style={styles.statValue}>{retention.walk}</Text></View>
+                    {retention.clientTotal > 0 ? (
+                      <>
+                        <View style={styles.statRow}><Text style={styles.statLabel}>Returning clients</Text><Text style={styles.statValue}>{retention.returningCount} · {Math.round(retention.returningCount / retention.clientTotal * 100)}%</Text></View>
+                        <View style={styles.statRow}><Text style={styles.statLabel}>New clients</Text><Text style={styles.statValue}>{retention.newCount} · {Math.round(retention.newCount / retention.clientTotal * 100)}%</Text></View>
+                      </>
+                    ) : (
+                      <View style={styles.statRow}><Text style={styles.statLabel}>No client-linked visits</Text><Text style={styles.statValue}>—</Text></View>
+                    )}
+                    {retention.giftRetailCount > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Gift card / retail (no client)</Text><Text style={styles.statValue}>{retention.giftRetailCount}</Text></View>}
+                    {retention.unlinkedCount > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Unmatched history</Text><Text style={styles.statValue}>{retention.unlinkedCount}</Text></View>}
+                    {retention.walkInCount > 0 && <View style={styles.statRow}><Text style={styles.statLabel}>Walk-ins (anonymous)</Text><Text style={styles.statValue}>{retention.walkInCount}</Text></View>}
                   </View>
                 </>
               )}

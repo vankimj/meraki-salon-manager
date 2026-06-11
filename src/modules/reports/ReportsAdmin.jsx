@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
-import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown } from './metrics';
+import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown, computeRetention } from './metrics';
 import CoachMark from '../../components/CoachMark';
 import { TENANT_ID } from '../../lib/tenant';
 
@@ -270,20 +270,7 @@ export default function ReportsAdmin() {
 
   const clientRetention = useMemo(() => {
     if (!metrics || !filteredAppts || !priorClientIds) return null;
-    const today = todayStr();
-    const done  = filteredAppts.filter(a => a.status !== 'cancelled' && a.date <= today);
-    let newCount = 0, returningCount = 0, walkInCount = 0;
-    const seen = {};
-    done.forEach(a => {
-      if (!a.clientId) { walkInCount++; return; }
-      if (!seen[a.clientId]) {
-        seen[a.clientId] = true;
-        // "New" = first ever visit is in this period; "Returning" = had any
-        // visit (appt or receipt) before this period, anywhere in history.
-        priorClientIds.has(a.clientId) ? returningCount++ : newCount++;
-      }
-    });
-    return { newCount, returningCount, walkInCount, total: newCount + returningCount + walkInCount };
+    return computeRetention(filteredAppts, priorClientIds);
   }, [metrics, filteredAppts, priorClientIds]);
 
   return (
@@ -834,34 +821,66 @@ function CancellationsBreakdown({ stats }) {
 
 // ── New vs Returning clients ───────────────────────────
 function NewVsReturning({ retention }) {
-  const { newCount, returningCount, walkInCount, total } = retention;
-  const pctNew  = total ? Math.round(newCount       / total * 100) : 0;
-  const pctRet  = total ? Math.round(returningCount / total * 100) : 0;
-  const pctWalk = total ? Math.round(walkInCount    / total * 100) : 0;
+  const { newCount, returningCount, walkInCount, giftRetailCount, unlinkedCount, clientTotal } = retention;
+  const pctNew = clientTotal ? Math.round(newCount       / clientTotal * 100) : 0;
+  const pctRet = clientTotal ? Math.round(returningCount / clientTotal * 100) : 0;
 
-  const rows = [
-    { label: 'Returning clients',     count: returningCount, pct: pctRet,  color: '#2D7A5F' },
-    { label: 'New clients',           count: newCount,       pct: pctNew,  color: '#3D95CE' },
-    { label: 'Walk-ins (no record)',  count: walkInCount,    pct: pctWalk, color: '#F59E0B' },
+  const clientRows = [
+    { label: 'Returning clients', count: returningCount, pct: pctRet, color: '#2D7A5F' },
+    { label: 'New clients',       count: newCount,       pct: pctNew, color: '#3D95CE' },
   ];
+  // Clientless transactions — kept out of the new/returning percentages above so
+  // a gift-card sale or unmatched import can't distort the retention rate.
+  const otherRows = [
+    { label: 'Gift card / retail (no client)', count: giftRetailCount, color: '#F59E0B' },
+    { label: 'Unmatched history',              count: unlinkedCount,   color: '#A78BFA' },
+    { label: 'Walk-ins (anonymous)',           count: walkInCount,     color: '#94A3B8' },
+  ].filter(r => r.count > 0);
+
+  const rowStyle = { display: 'flex', alignItems: 'center', marginBottom: 8 };
+  const dot = (color) => ({ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0, marginRight: 8 });
 
   return (
     <div>
-      <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', marginBottom: 16 }}>
-        <div style={{ width: `${pctRet}%`,  background: '#2D7A5F', transition: 'width .4s' }} />
-        <div style={{ width: `${pctNew}%`,  background: '#3D95CE', transition: 'width .4s' }} />
-        <div style={{ width: `${pctWalk}%`, background: '#F59E0B', transition: 'width .4s' }} />
-      </div>
-      {rows.map(r => (
-        <div key={r.label} style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: r.color, flexShrink: 0, marginRight: 8 }} />
-          <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
-          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
-          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+      {clientTotal > 0 ? (
+        <>
+          <div style={{ height: 10, borderRadius: 6, overflow: 'hidden', display: 'flex', marginBottom: 16 }}>
+            <div style={{ width: `${pctRet}%`, background: '#2D7A5F', transition: 'width .4s' }} />
+            <div style={{ width: `${pctNew}%`, background: '#3D95CE', transition: 'width .4s' }} />
+          </div>
+          {clientRows.map(r => (
+            <div key={r.label} style={rowStyle}>
+              <div style={dot(r.color)} />
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
+              <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', width: 36, textAlign: 'right' }}>{r.pct}%</span>
+            </div>
+          ))}
+        </>
+      ) : (
+        <div style={{ fontSize: 13, color: 'var(--pn-text-faint)', marginBottom: 12 }}>
+          No client-linked visits in this period.
         </div>
-      ))}
+      )}
+
+      {otherRows.length > 0 && (
+        <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 8, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+            Not tied to a client
+          </div>
+          {otherRows.map(r => (
+            <div key={r.label} style={rowStyle}>
+              <div style={dot(r.color)} />
+              <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1 }}>{r.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)', marginRight: 12 }}>{r.count}</span>
+              <span style={{ width: 36 }} />
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8 }}>
-        "New" = first-ever visit was in this period (no prior history at the salon)
+        "Returning" = visited before this period or more than once within it. "New" = a single first-ever visit.
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, techPayAdjust,
+  apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeRetention, techPayAdjust,
 } from './metrics';
 
 const TODAY = '2026-05-04';
@@ -287,5 +287,76 @@ describe('techPayAdjust — payroll refund + redo adjustments', () => {
     expect(techPayAdjust(recs, 'Yasmin').redoIn).toBe(0);
     expect(techPayAdjust(recs, 'Tess').redoIn).toBe(40);
     expect(techPayAdjust(recs, 'Tess').redoOut).toBe(0);
+  });
+});
+
+describe('computeRetention', () => {
+  const NONE = new Set();
+
+  it('classifies a client with prior history as returning', () => {
+    const r = computeRetention([tx({ clientId: 'c1' })], new Set(['c1']), TODAY);
+    expect(r).toMatchObject({ returningCount: 1, newCount: 0, clientTotal: 1 });
+  });
+
+  it('classifies a first-ever single visit as new', () => {
+    const r = computeRetention([tx({ clientId: 'c1' })], NONE, TODAY);
+    expect(r).toMatchObject({ returningCount: 0, newCount: 1, clientTotal: 1 });
+  });
+
+  it('treats 2+ distinct visit-dates within the window as returning even with no prior history (the All-time case)', () => {
+    const rows = [
+      tx({ clientId: 'c1', date: '2026-05-01' }),
+      tx({ clientId: 'c1', date: '2026-05-03' }),
+    ];
+    const r = computeRetention(rows, NONE, TODAY);
+    expect(r).toMatchObject({ returningCount: 1, newCount: 0, clientTotal: 1 });
+  });
+
+  it('does NOT promote a one-day client to returning when a same-day refund pairs with the sale', () => {
+    const rows = [
+      tx({ clientId: 'c1', date: '2026-05-01', transactionType: 'sale' }),
+      tx({ clientId: 'c1', date: '2026-05-01', transactionType: 'refund' }),
+    ];
+    const r = computeRetention(rows, NONE, TODAY);
+    expect(r).toMatchObject({ returningCount: 0, newCount: 1 });
+  });
+
+  it('buckets a gift-card sale as gift/retail, not a walk-in', () => {
+    const rows = [tx({ clientId: null, clientName: '', services: [], giftCardsSold: [{ code: 'ABC' }] })];
+    const r = computeRetention(rows, NONE, TODAY);
+    expect(r).toMatchObject({ giftRetailCount: 1, walkInCount: 0, unlinkedCount: 0, clientTotal: 0 });
+  });
+
+  it('buckets a retail-only clientless sale as gift/retail', () => {
+    const rows = [tx({ clientId: null, clientName: 'Walk-in retail', services: [], retailProducts: [{ name: 'Polish' }] })];
+    expect(computeRetention(rows, NONE, TODAY).giftRetailCount).toBe(1);
+  });
+
+  it('buckets an anonymous service walk-in as walkIn', () => {
+    const rows = [tx({ clientId: null, clientName: 'Walk-in' })];
+    expect(computeRetention(rows, NONE, TODAY)).toMatchObject({ walkInCount: 1, unlinkedCount: 0 });
+  });
+
+  it('buckets a named-but-unmatched receipt as unlinked', () => {
+    const rows = [tx({ clientId: null, clientName: 'Maria Sanchez' })];
+    expect(computeRetention(rows, NONE, TODAY)).toMatchObject({ unlinkedCount: 1, walkInCount: 0, giftRetailCount: 0 });
+  });
+
+  it('excludes cancelled and future-dated rows from every bucket', () => {
+    const rows = [
+      tx({ clientId: 'c1', status: 'cancelled' }),
+      tx({ clientId: 'c2', date: '2026-05-10' }), // after TODAY
+    ];
+    expect(computeRetention(rows, NONE, TODAY)).toMatchObject({ newCount: 0, returningCount: 0, clientTotal: 0 });
+  });
+
+  it('keeps clientless gift/retail out of the new/returning denominator', () => {
+    const rows = [
+      tx({ clientId: 'c1' }),
+      tx({ clientId: null, clientName: '', services: [], giftCardsSold: [{ code: 'X' }] }),
+    ];
+    const r = computeRetention(rows, NONE, TODAY);
+    expect(r.clientTotal).toBe(1);
+    expect(r.giftRetailCount).toBe(1);
   });
 });

@@ -135,6 +135,48 @@ export function buildTransactions(receipts, appointments) {
   return [...receipts, ...synthesized];
 }
 
+// New vs Returning classification — see the web copy in
+// src/modules/reports/metrics.js for the full rationale. Keep them in sync.
+//   returningCount/newCount — distinct CLIENTS. "Returning" = visited before
+//     this period (`priorClientIds`) OR on 2+ distinct dates within it (the
+//     within-period check is what makes "All time" correct, where nothing
+//     precedes the window so prior-history is empty by construction).
+//   walkIn/giftRetail/unlinked — clientless TRANSACTIONS, split so a gift-card
+//     sale isn't mislabeled an anonymous walk-in. Refund/void rows are excluded
+//     from the visit tally so a same-day sale+refund isn't read as two visits.
+export function computeRetention(transactions, priorClientIds, today = todayStr()) {
+  const prior = priorClientIds || new Set();
+  const rows = (transactions || []).filter(a =>
+    a && a.status !== 'cancelled' && a.date && a.date <= today &&
+    (!a.transactionType || a.transactionType === 'sale'));
+
+  const visitDates = {};
+  let walkInCount = 0, giftRetailCount = 0, unlinkedCount = 0;
+  rows.forEach(a => {
+    if (a.clientId) {
+      if (!visitDates[a.clientId]) visitDates[a.clientId] = new Set();
+      visitDates[a.clientId].add(a.date);
+      return;
+    }
+    const soldGc    = a.giftCardsSold?.length > 0 || a.payment?.giftCardsSold?.length > 0 || Number(a.payment?.gcSalesTotal) > 0;
+    const hasRetail = a.retailProducts?.length > 0;
+    const hasSvc    = a.services?.length > 0;
+    const name      = String(a.clientName || '').trim().toLowerCase();
+    const isWalkName = !name || name === 'walk-in' || name === 'walk in' || name === 'walk-in retail';
+    if (soldGc || (hasRetail && !hasSvc)) giftRetailCount++;
+    else if (isWalkName) walkInCount++;
+    else unlinkedCount++;
+  });
+
+  let newCount = 0, returningCount = 0;
+  Object.keys(visitDates).forEach(id => {
+    if (prior.has(id) || visitDates[id].size >= 2) returningCount++;
+    else newCount++;
+  });
+
+  return { newCount, returningCount, walkInCount, giftRetailCount, unlinkedCount, clientTotal: newCount + returningCount };
+}
+
 // `today` is parameterized for deterministic tests; production callers can
 // omit it and the live date is used.
 export function computeMetrics(transactions, today = todayStr()) {
