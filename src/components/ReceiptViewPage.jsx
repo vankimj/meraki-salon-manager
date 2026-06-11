@@ -191,6 +191,7 @@ function RatingSection({ data, token }) {
   const [submitting, setSubmit] = useState(false);
   const [result, setResult]     = useState(null);
   const [commentDraft, setCD]   = useState('');
+  const [consent, setConsent]   = useState({ email: false, phone: false });
 
   // Auto-submit from an email-link star tap (e.g., /r/{token}?rate=5&tech=Yasmin&src=email).
   // Seeds the picked star immediately, then submits in the background. We only
@@ -241,6 +242,7 @@ function RatingSection({ data, token }) {
         ratings: techs
           .filter(t => picks[t]?.rating)
           .map(t => ({ techName: t, rating: picks[t].rating, comment: !goPublic ? (commentDraft || '').trim() || null : null })),
+        contactConsent: !goPublic ? { email: !!consent.email, phone: !!consent.phone } : null,
       });
       setResult(res.data);
     } catch (e) {
@@ -302,6 +304,26 @@ function RatingSection({ data, token }) {
           rows={3}
           style={{ width: '100%', boxSizing: 'border-box', padding: 10, borderRadius: 8, border: '1px solid #d8d8d8', fontSize: 13, fontFamily: 'inherit', marginTop: 4, marginBottom: 12, resize: 'vertical' }}
         />
+      )}
+
+      {allRated && !goPublic && data.contact && (data.contact.hasEmail || data.contact.hasPhone) && (
+        <div style={{ marginBottom: 12, padding: '10px 12px', background: '#f7f9fb', borderRadius: 8, border: '1px solid #eef1f4' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#444', marginBottom: 7 }}>
+            Allow {data.salonName || 'us'} to reach out to you:
+          </div>
+          {data.contact.hasEmail && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#555', marginBottom: data.contact.hasPhone ? 6 : 0, cursor: 'pointer' }}>
+              <input type="checkbox" checked={consent.email} onChange={e => setConsent(c => ({ ...c, email: e.target.checked }))} />
+              <span>Email me <span style={{ color: '#888' }}>({data.contact.emailMask})</span></span>
+            </label>
+          )}
+          {data.contact.hasPhone && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#555', cursor: 'pointer' }}>
+              <input type="checkbox" checked={consent.phone} onChange={e => setConsent(c => ({ ...c, phone: e.target.checked }))} />
+              <span>Text me <span style={{ color: '#888' }}>({data.contact.phoneMask})</span></span>
+            </label>
+          )}
+        </div>
       )}
 
       {result?.error && (
