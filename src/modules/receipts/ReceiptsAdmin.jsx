@@ -172,6 +172,9 @@ function ReceiptCard({ item, open, onToggle, canWrite, canRefund, showToast, onR
   const pay = item.payment || {};
   const refunded = Number(item.refundedAmount) || 0;
   const remaining = Math.max(0, (Number(pay.total) || 0) - refunded);
+  const txnTime = pay.paidAt || item.createdAt || null;                       // actual transaction time
+  const txnId   = String(item.viewToken || item.id || '').slice(0, 10).toUpperCase();
+  const stamp   = (ts) => new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const method = pay.method || '';
   const redos = Array.isArray(item.redos) ? item.redos : [];
   return (
@@ -180,6 +183,14 @@ function ReceiptCard({ item, open, onToggle, canWrite, canRefund, showToast, onR
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14.5, fontWeight: 700, color: 'var(--pn-text)' }}>{item.clientName || 'Walk-in'}</div>
           <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 2 }}>{fmtDate(item)}{item.techName ? ` · ${item.techName}` : ''}{method ? ` · ${method}` : ''}</div>
+          {(txnId || txnTime) && (
+            <div
+              onClick={(e) => { e.stopPropagation(); const id = item.viewToken || item.id || ''; if (id) { navigator.clipboard?.writeText(id); showToast && showToast('Transaction ID copied'); } }}
+              title="Click to copy the full transaction ID"
+              style={{ fontSize: 10.5, color: 'var(--pn-text-faint)', marginTop: 3, fontFamily: 'ui-monospace, SFMono-Regular, monospace', cursor: 'pointer' }}>
+              {txnId ? `#${txnId}` : ''}{txnTime ? ` · ${stamp(txnTime)}` : ''} · 📋
+            </div>
+          )}
         </div>
         <div style={{ textAlign: 'right' }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--pn-text)', textDecoration: refunded > 0 ? 'line-through' : 'none' }}>{money(pay.total)}</div>
@@ -207,7 +218,7 @@ function ReceiptCard({ item, open, onToggle, canWrite, canRefund, showToast, onR
           </div>
           {(item.refunds || (item.refund ? [item.refund] : [])).map((r, i) => (
             <div key={`rf${i}`} style={{ display: 'flex', justifyContent: 'space-between', padding: '3px 0', marginTop: i === 0 ? 6 : 0 }}>
-              <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>↩ {refundTypeLabel(r)} refund{r.reason ? ` · ${r.reason}` : ''}</span>
+              <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>↩ {refundTypeLabel(r)} refund{r.reason ? ` · ${r.reason}` : ''}{r.refundedAt ? ` · ${stamp(r.refundedAt)}` : ''}</span>
               <span style={{ fontSize: 12.5, color: 'var(--pn-danger)', fontWeight: 700 }}>−{money(r.amount)}</span>
             </div>
           ))}
