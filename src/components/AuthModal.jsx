@@ -39,7 +39,7 @@ export default function AuthModal({ onClose, onSuccess }) {
   return (
     <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: '90%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: '#fff', color: '#1a1a1a', borderRadius: 16, padding: 24, width: '90%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Icon + title */}
         <div style={{ textAlign: 'center', marginBottom: 18 }}>
