@@ -14,11 +14,21 @@ const INPUT = {
 };
 const MONO = { ...INPUT, fontFamily: 'ui-monospace,SFMono-Regular,Menlo,monospace', lineHeight: 1.6 };
 
+// Effective phrase text = override value if present, else the baked-in default.
+function effPhrases(def, overridePhrases) {
+  const out = {};
+  for (const k of Object.keys(def.phrases || {})) {
+    const ov = overridePhrases && typeof overridePhrases[k] === 'string' && overridePhrases[k] ? overridePhrases[k] : null;
+    out[k] = ov != null ? ov : def.phrases[k].default;
+  }
+  return out;
+}
+
 export default function MessageTemplatesTab() {
   const { showToast, gUser } = useApp();
-  const [overrides, setOverrides] = useState(null);   // { key: {subject,body,updatedAt,updatedBy} }
+  const [overrides, setOverrides] = useState(null);   // { key: {subject,body,phrases,...} }
   const [selKey, setSelKey]       = useState(null);
-  const [draft, setDraft]         = useState({ subject: '', body: '' });
+  const [draft, setDraft]         = useState({ subject: '', body: '', phrases: {} });
   const [saving, setSaving]       = useState(false);
   const bodyRef    = useRef(null);
   const subjectRef = useRef(null);
@@ -28,7 +38,6 @@ export default function MessageTemplatesTab() {
 
   const def = selKey ? DEFAULT_TEMPLATES[selKey] : null;
 
-  // Load a template into the editor (override value or default).
   function open(key) {
     const o = (overrides && overrides[key]) || null;
     const d = DEFAULT_TEMPLATES[key];
@@ -36,21 +45,34 @@ export default function MessageTemplatesTab() {
     setDraft({
       subject: (o && typeof o.subject === 'string' && o.subject) || d.subject || '',
       body:    (o && typeof o.body === 'string' && o.body) || d.body || '',
+      phrases: effPhrases(d, o && o.phrases),
     });
+  }
+
+  function loadDefaults(d) {
+    setDraft({ subject: d.subject || '', body: d.body || '', phrases: effPhrases(d, null) });
   }
 
   const isEdited = (key) => {
     const o = overrides && overrides[key];
-    return !!(o && ((typeof o.subject === 'string' && o.subject) || (typeof o.body === 'string' && o.body)));
+    return !!(o && ((typeof o.subject === 'string' && o.subject) || (typeof o.body === 'string' && o.body) || (o.phrases && Object.keys(o.phrases).length)));
   };
 
-  const draftIsDefault = def && draft.subject === (def.subject || '') && draft.body === (def.body || '');
+  const draftIsDefault = def
+    && draft.subject === (def.subject || '')
+    && draft.body === (def.body || '')
+    && Object.keys(def.phrases || {}).every(k => (draft.phrases[k] || '') === def.phrases[k].default);
 
-  // Live preview from the CURRENT draft (exact server renderer).
+  // Live preview from the CURRENT draft — phrase edits feed their previewVar so
+  // the email/SMS preview reflects the wording you're typing.
   const preview = useMemo(() => {
     if (!def) return null;
     try {
-      return renderMessage(selKey, sampleVarsFor(def), PREVIEW_BRAND, { subject: draft.subject, body: draft.body });
+      const vars = sampleVarsFor(def);
+      for (const [k, meta] of Object.entries(def.phrases || {})) {
+        if (meta.previewVar) vars[meta.previewVar] = draft.phrases[k] ?? meta.default;
+      }
+      return renderMessage(selKey, vars, PREVIEW_BRAND, { subject: draft.subject, body: draft.body });
     } catch (e) {
       return { error: e.message };
     }
@@ -77,7 +99,19 @@ export default function MessageTemplatesTab() {
     if (!selKey) return;
     setSaving(true);
     try {
-      const payload = { subject: def.channel === 'email' ? (draft.subject || '') : '', body: draft.body || '', updatedBy: gUser?.email || '' };
+      // Only persist phrases that differ from the default (keeps the doc lean
+      // and lets future default changes flow through untouched phrases).
+      const phrases = {};
+      for (const k of Object.keys(def.phrases || {})) {
+        const v = (draft.phrases[k] || '').trim();
+        if (v && v !== def.phrases[k].default) phrases[k] = v;
+      }
+      const payload = {
+        subject: def.channel === 'email' ? (draft.subject || '') : '',
+        body: draft.body || '',
+        phrases,
+        updatedBy: gUser?.email || '',
+      };
       await saveMessageTemplate(selKey, payload);
       setOverrides(o => ({ ...(o || {}), [selKey]: { ...payload, updatedAt: new Date().toISOString() } }));
       logActivity('message_template_saved', `Edited template: ${def.label}`);
@@ -94,7 +128,7 @@ export default function MessageTemplatesTab() {
     try {
       await resetMessageTemplate(selKey);
       setOverrides(o => { const n = { ...(o || {}) }; delete n[selKey]; return n; });
-      setDraft({ subject: def.subject || '', body: def.body || '' });
+      loadDefaults(def);
       logActivity('message_template_reset', `Reset template: ${def.label}`);
       showToast('Reset to default');
     } catch (e) {
@@ -197,6 +231,32 @@ export default function MessageTemplatesTab() {
                 )}
               </div>
 
+              {/* Pointer for variables whose text lives in Settings, not here */}
+              {def.htmlVars?.includes('policies') && (
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 14, padding: '9px 11px', borderRadius: 8, background: 'rgba(61,149,206,.07)', border: '1px solid var(--pn-border)' }}>
+                  ℹ️ <code>{'{policies}'}</code> pulls in your cancellation &amp; refund policy text. Edit it in <strong>Settings → 🧾 Receipts &amp; Reviews → Cancellation &amp; No-Show Policy / Refund Policy</strong> (it also shows on receipts and the appointment page).
+                </div>
+              )}
+
+              {/* Phrases — the conditional wordings the message picks between at send time */}
+              {def.phrases && Object.keys(def.phrases).length > 0 && (
+                <div style={{ marginBottom: 16, padding: '12px 14px', border: '1px solid var(--pn-border)', borderRadius: 10, background: 'var(--pn-surface-2, var(--pn-surface))' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 2 }}>Wording variations</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--pn-text-faint)', marginBottom: 10, lineHeight: 1.5 }}>
+                    This message swaps in one of these lines depending on the situation. Edit each version below.
+                  </div>
+                  {Object.entries(def.phrases).map(([k, meta]) => (
+                    <label key={k} style={{ display: 'block', marginBottom: 9 }}>
+                      <span style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{meta.label}</span>
+                      <input value={draft.phrases[k] ?? meta.default}
+                        onChange={e => setDraft(d => ({ ...d, phrases: { ...d.phrases, [k]: e.target.value } }))}
+                        placeholder={meta.default}
+                        style={{ ...INPUT, marginTop: 3 }} />
+                    </label>
+                  ))}
+                </div>
+              )}
+
               {/* Preview */}
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--pn-text-faint)', marginBottom: 6 }}>Preview</div>
               {preview?.error ? (
@@ -217,7 +277,7 @@ export default function MessageTemplatesTab() {
                   padding: '9px 20px', borderRadius: 9, border: 'none', cursor: saving ? 'default' : 'pointer',
                   background: '#2D7A5F', color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', opacity: saving ? 0.6 : 1,
                 }}>{saving ? 'Saving…' : 'Save'}</button>
-                <button onClick={() => setDraft({ subject: def.subject || '', body: def.body || '' })} disabled={saving || draftIsDefault} style={{
+                <button onClick={() => loadDefaults(def)} disabled={saving || draftIsDefault} style={{
                   padding: '9px 16px', borderRadius: 9, border: '1px solid var(--pn-border-strong)', cursor: 'pointer',
                   background: 'var(--pn-surface)', color: 'var(--pn-text)', fontSize: 13, fontFamily: 'inherit', opacity: draftIsDefault ? 0.5 : 1,
                 }}>Load default text</button>

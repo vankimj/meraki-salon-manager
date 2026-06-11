@@ -16,7 +16,7 @@ const usageLog             = require('./lib/usage');
 const { roleCan }          = require('./lib/rbac');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
-const { renderTemplate }   = require('./lib/messageTemplates');
+const { renderTemplate, getTemplatePhrases } = require('./lib/messageTemplates');
 
 initializeApp();
 
@@ -302,7 +302,10 @@ const _replyToCache = new Map();
 // so a tenant whose heal keeps failing doesn't alert on every single send.
 const _sesHealAlerted = new Set();
 async function tenantReplyTo(db, tenantId) {
-  if (_replyToCache.has(tenantId)) return _replyToCache.get(tenantId);
+  // 5-min TTL so an owner editing the Reply-to field (Settings → App Settings)
+  // takes effect promptly instead of waiting for the instance to recycle.
+  const cached = _replyToCache.get(tenantId);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.addr;
   let addr = '';
   try {
     const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
@@ -313,7 +316,7 @@ async function tenantReplyTo(db, tenantId) {
       addr = (tSnap.exists ? tSnap.data().ownerEmail : '') || '';
     }
   } catch (e) { console.warn(`[tenantReplyTo] ${tenantId} lookup failed:`, e?.message); }
-  _replyToCache.set(tenantId, addr);
+  _replyToCache.set(tenantId, { addr, at: Date.now() });
   return addr;
 }
 
@@ -1152,6 +1155,7 @@ async function deliverReceiptEmail(db, tenantId, ref, data) {
       const { error } = await sendEmail({
         from:    await tenantFromAddress(db, tenantId),
         to:      clientEmail,
+        replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
         subject: receiptSubject,
         html,
       });
@@ -3582,6 +3586,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
       const { error } = await sendEmail({
         from:    fromAddr,
         to:      clientEmail,
+        replyTo: (await tenantReplyTo(db0, tenantId)) || undefined,
         subject: ratingSubject,
         html,
       });
@@ -3713,15 +3718,14 @@ async function buildCancelHtml(db, tenantId, appt, brand, rebookUrl, selfService
   const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services  = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Your appointment';
   const firstName = String(appt.clientName || '').trim().split(/\s+/)[0] || 'there';
-  const intro = selfService
-    ? `Your appointment below has been cancelled, as requested. We hope to see you again soon!`
-    : `We're sorry — your appointment below has been cancelled. We'd love to find you a new time whenever you're ready.`;
+  const ph = await getTemplatePhrases(db, tenantId, 'cancellation_notice_email');
+  const intro = selfService ? ph.introSelfService : ph.introStaff;
   const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
         <div style="font-size:13px;color:#333;margin-bottom:8px;"><span>📅</span> <strong style="text-decoration:line-through;color:#999;">${dateStr}</strong></div>
         <div style="font-size:13px;color:#333;margin-bottom:8px;"><span>💅</span> ${esc(services)}</div>
         ${appt.techName && appt.techName !== 'TBD' ? `<div style="font-size:13px;color:#333;"><span>👩‍💼</span> with ${esc(appt.techName)}</div>` : ''}
       </div>`;
-  const questionsLine = replyTo ? 'Questions? Just reply to this email.' : '';
+  const questionsLine = replyTo ? ph.questionsLine : '';
   return renderTemplate(db, tenantId, 'cancellation_notice_email', {
     clientName: firstName, salonName: brand.salonName,
     intro, rebookUrl: rebookUrl || '', questionsLine, detailsCard,
@@ -3816,9 +3820,10 @@ async function sendCancelNoticeForAppt(db, tenantId, appt, { selfService = false
     if (phone) {
       try {
         const when = [dateShort, timeShort].filter(Boolean).join(' ');
+        const smsPh = await getTemplatePhrases(db, tenantId, 'cancellation_sms');
         const { body: cancelSms } = await renderTemplate(db, tenantId, 'cancellation_sms', {
           clientName: firstName,
-          apology:    selfService ? '' : "we're sorry — ",
+          apology:    selfService ? '' : smsPh.apologyStaff,
           when,
           rebookSuffix: rebookUrl ? ` Rebook anytime: ${rebookUrl}` : '',
         });
@@ -4178,7 +4183,8 @@ async function buildReminderHtml(db, tenantId, appt, client, brand, manageLink, 
           <span>📍</span><span>${esc(brand.addressLine)}</span>
         </div>` : ''}
       </div>`;
-  const helpLine = replyTo ? 'Need help? Reply to this email or call the salon.' : 'Need help? Give the salon a call.';
+  const ph = await getTemplatePhrases(db, tenantId, 'reminder_email');
+  const helpLine = replyTo ? ph.helpLineWithReply : ph.helpLineNoReply;
   return renderTemplate(db, tenantId, 'reminder_email', {
     clientName: client.name?.split(' ')[0] || client.name,
     salonName:  brand.salonName,
@@ -4866,12 +4872,13 @@ exports.sendBookingConfirmation = onDocumentCreated(
         <div style="margin-bottom:6px;"><strong>Service:</strong> ${esc(svcName)}</div>
         <div><strong>Stylist:</strong> ${esc(appt.techName || 'TBD')}</div>
       </div>`;
+        const bkPh = await getTemplatePhrases(db, tenantId, 'admin_new_booking');
         const { subject: adminSubject, html: adminHtml } = await renderTemplate(db, tenantId, 'admin_new_booking', {
           clientName:   appt.clientName,
           date:         fmtDate(appt.date),
           bookingKind:  isOnline ? 'New online booking' : 'New appointment',
           subtitleLine: isOnline ? 'New Online Booking' : 'New Appointment',
-          introLine:    isOnline ? 'A new appointment was booked online.' : 'A new appointment was added to the schedule.',
+          introLine:    isOnline ? bkPh.introOnline : bkPh.introAdded,
           detailsCard:  adminCard,
         }, brand);
         await Promise.all(admins.map(a =>
@@ -6608,6 +6615,7 @@ exports.autoBirthdayCampaign = onSchedule(
           const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
+            replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
             subject: birthdaySubject,
             html,
           });
@@ -6690,6 +6698,7 @@ exports.autoLapsedCampaign = onSchedule(
           const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
+            replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
             subject: winbackSubject,
             html,
           });
@@ -9960,6 +9969,7 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
   await sendEmail({
     from:    await tenantFromAddress(db, tenantId),
     to:      client.email.trim(),
+    replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
     subject: membershipSubject,
     html,
   });
@@ -10976,6 +10986,7 @@ async function processGiftCardEmail(tenantId, docRef, data) {
     const result = await sendEmail({
       from: await tenantFromAddress(getFirestore(), tenantId),
       to:   recipientEmail,
+      replyTo: (await tenantReplyTo(getFirestore(), tenantId)) || undefined,
       subject: giftSubject,
       html,
       tenantId,
