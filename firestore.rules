@@ -242,6 +242,11 @@ service cloud.firestore {
       match /data/settingsPrivate {
         allow read, write: if isTenantAdmin(tenantId);
       }
+      // Launch & Grow checklist progress (per-tenant). Admin-only; content
+      // lives in code, this doc just stores per-item status + mode.
+      match /data/launchChecklist {
+        allow read, write: if isTenantAdmin(tenantId);
+      }
       // Kiosk device registry + exit PINs. Owner-readable (to list/revoke
       // kiosks); written only by the kiosk CFs via Admin SDK. A kiosk identity
       // must NOT read this (it holds every device's uid) — isKiosk ≠ admin.

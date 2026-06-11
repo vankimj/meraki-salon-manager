@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import Button from '../../components/Button';
 import { fetchServices, createService, saveService, deleteService, servicesExist, clearServices } from '../../lib/firestore';
 import { groupByCategory, formatPrice, formatDuration, validateService, blankService } from '../../utils/serviceHelpers';
 import TrashButton from '../../components/TrashButton';
@@ -633,11 +634,7 @@ function Field({ label, error, hint, children, style }) {
 }
 
 function Btn({ onClick, color, children }) {
-  return (
-    <button onClick={onClick} style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: 'none', background: color || 'var(--pn-surface-muted)', color: color ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
-      {children}
-    </button>
-  );
+  return <Button onClick={onClick} color={color}>{children}</Button>;
 }
 
 function Empty({ children }) {

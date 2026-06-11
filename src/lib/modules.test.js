@@ -97,12 +97,21 @@ describe('getVisibleModules', () => {
     expect(ids).not.toContain('hr');
   });
 
-  it('admin on pro sees all modules (none hidden)', () => {
+  it('admin on pro sees all modules except flag-gated ones (none hidden)', () => {
     const ids = getVisibleModules({ plan: 'pro' }, adminCtx).map(m => m.id);
     expect(ids).toContain('reports');
     expect(ids).toContain('marketing');
     expect(ids).toContain('hr');
-    expect(ids.length).toBe(MODULES.length);
+    expect(ids).not.toContain('grow'); // flag-gated, hidden until the flag is on
+    expect(ids.length).toBe(MODULES.filter(m => !m.flag).length);
+  });
+
+  it('a flag-gated module appears only when hasFeature enables its flag', () => {
+    const off = getVisibleModules({ plan: 'pro' }, adminCtx).map(m => m.id);
+    expect(off).not.toContain('grow');
+    const on = getVisibleModules({ plan: 'pro' }, { ...adminCtx, hasFeature: (f) => f === 'launchGrow' }).map(m => m.id);
+    expect(on).toContain('grow');
+    expect(on.length).toBe(MODULES.length);
   });
 
   it('non-admin (e.g. tech) on pro hides admin-only modules', () => {

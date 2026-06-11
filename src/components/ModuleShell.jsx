@@ -10,7 +10,7 @@ import LocationSwitcher from './LocationSwitcher';
 import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } from '../lib/modules';
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
-  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin } = useApp();
+  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
   const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
   const plan = effectivePlan(settings);
   const canManage = isAdmin || isReadOnly;
@@ -31,7 +31,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         .filter(m => isModuleAvailableForPlan(m, plan));
     }
     if (canManage) {
-      return getVisibleModules(settings, { isAdmin, hiddenTiles: settings?.hiddenTiles });
+      return getVisibleModules(settings, { isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
     }
     return [];
   })();

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, createContext, useContext } from 'react';
+import Button from '../../components/Button';
 import { useApp } from '../../context/AppContext';
 import { CORE_THEMES, HOLIDAY_THEMES, detectAutoTheme } from '../../lib/themes';
 import { buildExportBundle } from '../../lib/exportBundle';
@@ -1924,8 +1925,6 @@ function Btn({ onClick, color, children, disabled, savedLabel }) {
   const [phase, setPhase] = useState('idle');
   const busy  = !!savedLabel && phase !== 'idle';
   const label = phase === 'saving' ? 'Saving…' : phase === 'saved' ? savedLabel : children;
-  const bg    = phase === 'saved' ? '#10B981' : (color || 'var(--pn-surface-alt)');
-  const fg    = (phase === 'saved' || color) ? '#fff' : '#666';
 
   const handleClick = async (e) => {
     if (!savedLabel) return onClick?.(e);
@@ -1942,17 +1941,15 @@ function Btn({ onClick, color, children, disabled, savedLabel }) {
   };
 
   return (
-    <button onClick={handleClick} disabled={disabled || busy}
-      style={{
-        fontSize: 11, padding: '4px 8px', borderRadius: 6, border: 'none',
-        background: bg, color: fg,
-        cursor: disabled || busy ? 'default' : 'pointer',
-        fontFamily: 'inherit', fontWeight: 500,
-        opacity: disabled ? 0.5 : 1,
-        transition: 'background .25s ease',
-      }}>
+    <Button
+      onClick={handleClick}
+      disabled={disabled || busy}
+      variant={phase === 'saved' ? 'success' : undefined}
+      color={phase === 'saved' ? undefined : color}
+      style={!color && phase !== 'saved' ? { background: 'var(--pn-surface-alt)', color: '#666' } : undefined}
+    >
       {label}
-    </button>
+    </Button>
   );
 }
 

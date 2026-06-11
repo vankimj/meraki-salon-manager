@@ -25,32 +25,40 @@ export const PLAN_RANK = { starter: 0, studio: 1, pro: 2, enterprise: 3 };
 // `cap` = the RBAC capability required to see the tile (see lib/rbac.js). When a
 // role is known, getVisibleModules gates on cap; adminOnly is the legacy
 // fallback for callers that don't yet pass a role.
+// `group` buckets each module for the home screen's progressive disclosure:
+//   'core'  — daily drivers, always shown
+//   'grow'  — growth/operational tools, behind "Show more"
+//   'admin' — staff/admin/back-office, behind "Show more"
 export const MODULES = [
   // ── Starter (core salon operations, free) ───────────────
-  { id: 'schedule',    label: 'Schedule',         desc: 'Appointments & calendar',           plan: 'starter', adminOnly: false, cap: 'schedule' },
-  { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'starter', adminOnly: false, cap: 'clients' },
-  { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'starter', adminOnly: false, cap: 'services_edit' },
-  { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'starter', adminOnly: true,  cap: 'employees' },
-  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'starter', adminOnly: false, cap: 'walkin' },
+  { id: 'schedule',    label: 'Schedule',         desc: 'Appointments & calendar',           plan: 'starter', adminOnly: false, cap: 'schedule',         group: 'core'  },
+  { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'starter', adminOnly: false, cap: 'clients',          group: 'core'  },
+  { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'starter', adminOnly: false, cap: 'services_edit',     group: 'core'  },
+  { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'starter', adminOnly: true,  cap: 'employees',        group: 'admin' },
+  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'starter', adminOnly: false, cap: 'walkin',           group: 'grow'  },
 
   // ── Studio (run your salon better — analytics, inventory, payments) ─
-  { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false, cap: 'reports' },
-  { id: 'receipts',    label: 'Sales & Receipts', desc: 'Browse, search, resend & refund sales', plan: 'studio', adminOnly: false, cap: 'reports' },
-  { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'studio',  adminOnly: false, cap: 'earnings_own' },
-  { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'studio',  adminOnly: true,  cap: 'attendance' },
-  { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'studio',  adminOnly: true,  cap: 'giftcards_manage' },
-  { id: 'meetings',    label: 'Meetings',         desc: 'Internal team meetings',            plan: 'studio',  adminOnly: true,  cap: 'meetings' },
-  { id: 'products',    label: 'Products',         desc: 'Retail inventory & stock',          plan: 'studio',  adminOnly: true,  cap: 'products_edit' },
+  { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'studio',  adminOnly: false, cap: 'reports',         group: 'core'  },
+  { id: 'receipts',    label: 'Sales & Receipts', desc: 'Browse, search, resend & refund sales', plan: 'studio', adminOnly: false, cap: 'reports',      group: 'core'  },
+  { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'studio',  adminOnly: false, cap: 'earnings_own',     group: 'grow'  },
+  { id: 'attendance',  label: 'Attendance',       desc: 'Clock-in / clock-out times',        plan: 'studio',  adminOnly: true,  cap: 'attendance',       group: 'admin' },
+  { id: 'giftcards',   label: 'Gift Cards',       desc: 'Gift cards & promo codes',          plan: 'studio',  adminOnly: true,  cap: 'giftcards_manage', group: 'grow'  },
+  { id: 'meetings',    label: 'Meetings',         desc: 'Internal team meetings',            plan: 'studio',  adminOnly: true,  cap: 'meetings',         group: 'grow'  },
+  { id: 'products',    label: 'Products',         desc: 'Retail inventory & stock',          plan: 'studio',  adminOnly: true,  cap: 'products_edit',    group: 'grow'  },
 
   // ── Pro (grow your business — outbound comms, payroll, recurring revenue) ─
-  { id: 'chat',        label: 'Communications',   desc: 'SMS, email & in-app messages',      plan: 'pro',     adminOnly: false, cap: 'chat' },
-  { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'pro',     adminOnly: true,  cap: 'marketing' },
-  { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'pro',     adminOnly: true,  cap: 'hr' },
-  { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'pro',     adminOnly: true,  cap: 'memberships' },
+  { id: 'chat',        label: 'Communications',   desc: 'SMS, email & in-app messages',      plan: 'pro',     adminOnly: false, cap: 'chat',             group: 'grow'  },
+  { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'pro',     adminOnly: true,  cap: 'marketing',        group: 'grow'  },
+  { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'pro',     adminOnly: true,  cap: 'hr',               group: 'admin' },
+  { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'pro',     adminOnly: true,  cap: 'memberships',      group: 'grow'  },
+
+  // Launch & Grow — guided business setup + growth (Phase 2). Owner-only and
+  // gated behind the `launchGrow` feature flag so it ships dark until rolled out.
+  { id: 'grow',        label: 'Launch & Grow',    desc: 'Start, run & grow your business',    plan: 'starter', adminOnly: true,  cap: 'settings',         group: 'grow',  flag: 'launchGrow' },
 
   // Admin opens the settings overlay (not a routed view) — surfaced as a tile to
   // match the mobile app. Owner-only (the 'settings' capability).
-  { id: 'admin',       label: 'Admin',            desc: 'Users, settings, logs & trash',     plan: 'starter', adminOnly: true,  cap: 'settings' },
+  { id: 'admin',       label: 'Admin',            desc: 'Users, settings, logs & trash',     plan: 'starter', adminOnly: true,  cap: 'settings',         group: 'admin' },
 ];
 
 // Tenants without an explicit plan field are treated as pro — preserves
@@ -115,11 +123,12 @@ export function modulesLostOnDowngrade(currentPlan, targetPlan) {
 // for this user. Combines: plan gate + RBAC capability gate + owner-disabled +
 // per-tile hide. Pass `role` for capability gating; `isAdmin` is the legacy
 // fallback (adminOnly) for callers not yet migrated to roles.
-export function getVisibleModules(settings, { role, isAdmin, hiddenTiles } = {}) {
+export function getVisibleModules(settings, { role, isAdmin, hiddenTiles, hasFeature } = {}) {
   const plan = effectivePlan(settings);
   const hidden = new Set(hiddenTiles || settings?.hiddenTiles || []);
   const r = role ? normalizeRole(role) : null;
   return MODULES.filter(m => {
+    if (m.flag && !(typeof hasFeature === 'function' && hasFeature(m.flag))) return false;  // flag-gated module (ships dark)
     if (r) { if (m.cap && !roleCan(r, m.cap)) return false; }   // RBAC capability gate
     else if (m.adminOnly && !isAdmin) return false;             // legacy fallback
     if (!isModuleAvailableForPlan(m, plan)) return false;
@@ -127,6 +136,18 @@ export function getVisibleModules(settings, { role, isAdmin, hiddenTiles } = {})
     if (hidden.has(m.id)) return false;
     return true;
   });
+}
+
+// Bucket the visible modules into the home-screen groups for progressive
+// disclosure. Pure — Core renders open; Grow/Admin collapse behind "Show more".
+// Order within each group follows MODULES order. `opts` is forwarded to
+// getVisibleModules ({ role, isAdmin, hiddenTiles }).
+export const MODULE_GROUPS = ['core', 'grow', 'admin'];
+export function getGroupedModules(settings, opts = {}) {
+  const visible = getVisibleModules(settings, opts);
+  const groups = { core: [], grow: [], admin: [] };
+  for (const m of visible) (groups[m.group] || groups.core).push(m);
+  return groups;
 }
 
 // MODULE_TITLES lookup compatible with the existing App.jsx mount table.

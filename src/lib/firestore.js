@@ -2780,6 +2780,37 @@ export async function patchWebfrontConfig(partial) {
   await setDoc(WEBFRONT_CONFIG_REF, { ...partial, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+// ── Launch & Grow checklist (Phase 2) ─────────────────────────────────────
+// Per-tenant progress for the Launch & Grow guide. The guide CONTENT lives in
+// src/data/launchGuide.js; this doc only stores per-item status/notes + mode.
+const LAUNCH_CHECKLIST_REF = tenantDoc('launchChecklist');
+
+export async function fetchLaunchChecklist() {
+  const snap = await getDoc(LAUNCH_CHECKLIST_REF);
+  return snap.exists() ? snap.data() : null;
+}
+
+export function subscribeLaunchChecklist(cb) {
+  return onSnapshot(LAUNCH_CHECKLIST_REF,
+    snap => cb(snap.exists() ? snap.data() : null),
+    err => { console.warn('[launchChecklist] subscribe error:', err?.code); cb(null); }
+  );
+}
+
+// Idempotent per-item merge write — nested items.{id} path so two item updates
+// in quick succession never clobber each other.
+export async function setLaunchItemStatus(itemId, patch) {
+  await setDoc(LAUNCH_CHECKLIST_REF, {
+    items: { [itemId]: { ...patch } },
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
+// Persist the Launch ⇄ Audit mode toggle.
+export async function setLaunchMode(mode) {
+  await setDoc(LAUNCH_CHECKLIST_REF, { mode, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
 // Resize an image File/Blob to a width-capped JPEG Blob (for Storage uploads).
 // Returns a Blob, not a data URL — the resizeImg helper in utils/helpers.js
 // returns a data URL and would force a costly base64 round-trip here.

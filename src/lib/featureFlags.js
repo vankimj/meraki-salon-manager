@@ -33,6 +33,14 @@ export const FEATURE_TIER_DEFAULTS = {
   // Currently visible only on demo tenant.
   canaryRibbon: { demo: true },
 
+  // Curated/collapsed home grid (Core / Grow / Admin + "Show more") + the
+  // per-user Simple Mode density switch. Ships dark; roll out demo → owner → …
+  curatedHome: { demo: true },
+
+  // Launch & Grow module (Phase 2) — guided business setup + growth + AI coach.
+  // Ships dark; roll out demo → owner → … once content + AI are reviewed.
+  launchGrow: { demo: true },
+
   // Add new features here as they're rolled out. Examples:
   //   newCheckoutFlow:        { demo: true, owner: true },
   //   advancedReportsBeta:    { demo: true, owner: true, pro: true },

@@ -1,12 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { getColorMode, setColorMode, subscribeColorMode } from '../lib/colorMode';
+import { useUserPrefs } from '../lib/userPrefs';
 
 export default function UserMenu() {
-  const { gUser, signOut, switchAccount } = useApp();
+  const { gUser, signOut, switchAccount, hasFeature } = useApp();
   const [open, setOpen] = useState(false);
   const [colorMode, setMode] = useState(getColorMode());
   useEffect(() => subscribeColorMode(setMode), []);
+  const [prefs, setPrefs] = useUserPrefs(gUser?.uid);
   const ref = useRef(null);
 
   useEffect(() => {
@@ -78,6 +80,29 @@ export default function UserMenu() {
               })}
             </div>
           </div>
+
+          {/* Display density (per-user) — gated by the curatedHome flag */}
+          {hasFeature?.('curatedHome') && (
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--pn-border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 7 }}>Display</div>
+              <div style={{ display: 'flex', gap: 4, background: 'var(--pn-surface-muted)', borderRadius: 9, padding: 3 }}>
+                {[['simple', 'Simple'], ['standard', 'Standard'], ['everything', 'Everything']].map(([v, lbl]) => {
+                  const on = prefs.density === v;
+                  return (
+                    <button key={v} onClick={() => setPrefs({ density: v })}
+                      style={{ flex: 1, padding: '6px 0', fontSize: 11, fontWeight: on ? 700 : 500, fontFamily: 'inherit', cursor: 'pointer', border: 'none', borderRadius: 7, background: on ? 'var(--pn-surface)' : 'transparent', color: on ? 'var(--tm-primary, #2D7A5F)' : 'var(--pn-text-muted)', boxShadow: on ? '0 1px 3px var(--pn-shadow)' : 'none' }}>
+                      {lbl}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 6, lineHeight: 1.4 }}>
+                {prefs.density === 'simple' ? 'Just the essentials — advanced tools tucked away.'
+                  : prefs.density === 'everything' ? 'Show every tool and option.'
+                  : 'Core tools up front; the rest behind “Show more.”'}
+              </div>
+            </div>
+          )}
 
           {/* Actions */}
           <div style={{ padding: '6px 0' }}>
