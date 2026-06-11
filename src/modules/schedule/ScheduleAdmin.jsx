@@ -444,6 +444,39 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     return bm === dm && bd === dd;
   });
 
+  // Earliest free start (minutes since midnight) for a tech TODAY, given their
+  // booked appointments + work hours — so seating a walk-in pre-fills the time
+  // to when they're actually next open instead of a static 9:00. No tech (Any)
+  // → the next open slot from now. Returns null if the tech is off / fully
+  // booked today, and the caller falls back to blankAppt's default.
+  function nextOpeningMins(techName, durationMins = 60) {
+    const today = todayStr();
+    const dow = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+    const wd = techName ? empWorkDays[techName]?.[dow] : null;
+    if (wd && wd.on === false) return null;
+    const apptOpen  = strToMins(settings.apptHours?.open  || '09:00');
+    const apptClose = strToMins(settings.apptHours?.close || '20:00');
+    const techOpen  = Math.max(apptOpen,  wd?.start ? strToMins(wd.start) : apptOpen);
+    const techClose = Math.min(apptClose, wd?.end   ? strToMins(wd.end)   : apptClose);
+    const nowD = new Date();
+    const nowMins = nowD.getHours() * 60 + nowD.getMinutes();
+    const norm = s => String(s || '').trim().toLowerCase();
+    const busy = (techName ? appts.filter(a => a.date === today && norm(a.techName) === norm(techName)
+        && a.status !== 'cancelled' && a.status !== 'no_show' && a._deleted !== true) : [])
+      .map(a => {
+        const s = strToMins(a.startTime || '00:00');
+        const occ = (Array.isArray(a.services) ? a.services.reduce((sum, sv) => sum + (Number(sv.duration) || 0), 0) : 0) || (Number(a.duration) || 60);
+        return { s, e: s + occ };
+      });
+    const STEP = 15;
+    let m = Math.max(techOpen, nowMins);
+    if (m % STEP !== 0) m += STEP - (m % STEP);
+    for (; m + durationMins <= techClose; m += STEP) {
+      if (!busy.some(b => b.s < m + durationMins && b.e > m)) return m;
+    }
+    return null;
+  }
+
   async function handleSave(appt, original, pendingSeat) {
     try {
       // No-anonymous-customers rule (2026-05-12): every NEW appointment
@@ -988,6 +1021,10 @@ function openNew(techName, slotMins) {
             setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
+            // Default the start time to the up-next tech's next opening today.
+            const nSvc = services.find(s => s.name === entry.serviceName);
+            const nDur = nSvc ? (resolveServicePricing(nSvc, null, employees.find(e => e.name === next.techName)).duration || 60) : 60;
+            const nStart = nextOpeningMins(next.techName, nDur);
             // Defer the turn credit AND the queue removal until the appointment is
             // actually saved (handleSave's pendingSeat path). If the user cancels
             // the modal, nothing happened — they stay in the queue and the rotation
@@ -995,7 +1032,7 @@ function openNew(techName, slotMins) {
             // won't double-count the turn.
             setModal({
               appt: {
-                ...blankAppt(todayStr(), next.techName, null, entry.clientName, entry.serviceName),
+                ...blankAppt(todayStr(), next.techName, nStart, entry.clientName, entry.serviceName),
                 _turnCredited: new Date().toISOString(),
               },
               original: null,
@@ -1007,10 +1044,16 @@ function openNew(techName, slotMins) {
             setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
+            // Default the start time to this tech's next opening today (or, for an
+            // "Any" entry, the next open slot from now).
+            const sTech  = entry.techName === 'Any' ? '' : entry.techName;
+            const sSvc   = services.find(s => s.name === entry.serviceName);
+            const sDur   = sSvc ? (resolveServicePricing(sSvc, null, sTech ? employees.find(e => e.name === sTech) : null).duration || 60) : 60;
+            const sStart = nextOpeningMins(sTech, sDur);
             // Defer the queue removal until the appointment saves (pendingSeat) so
             // cancelling the modal leaves the person in the queue. Manual assignment
             // doesn't pre-credit a turn — it's reconciled at checkout / Recount.
-            setModal({ appt: blankAppt(todayStr(), entry.techName === 'Any' ? '' : entry.techName, null, entry.clientName, entry.serviceName), original: null, mode: 'edit', pendingSeat: { entryId: entry.id } });
+            setModal({ appt: blankAppt(todayStr(), sTech, sStart, entry.clientName, entry.serviceName), original: null, mode: 'edit', pendingSeat: { entryId: entry.id } });
           }}
           onRemove={async entry => { await removeWaitlistEntry(entry.id).catch(() => {}); }}
           onDone={async entry => { await updateWaitlistEntry(entry.id, { status: 'done' }).catch(() => {}); }}
