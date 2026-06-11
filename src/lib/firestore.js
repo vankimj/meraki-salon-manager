@@ -2080,6 +2080,21 @@ export async function fetchServiceRatingsByRange(startDate, endDate) {
     .filter(r => { const ld = r.submittedAt ? localDay(r.submittedAt) : null; return ld && ld >= startDate && ld <= endDate; });
 }
 
+// Financial ledger entries (the audit log) in a LOCAL date range. Same TZ-safe
+// padded-window approach as fetchServiceRatingsByRange — the ledger `at` is a UTC
+// ISO timestamp. Newest first.
+const LEDGER_COL = tenantCol('ledger');
+export async function fetchLedgerByRange(startDate, endDate) {
+  const shiftDay = (ds, delta) => { const d = new Date(`${ds}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10); };
+  const startISO = `${shiftDay(startDate, -1)}T00:00:00.000Z`;
+  const endISO   = `${shiftDay(endDate, 1)}T23:59:59.999Z`;
+  const localDay = (iso) => { const d = new Date(iso); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+  const snap = await getDocs(query(LEDGER_COL, where('at', '>=', startISO), where('at', '<=', endISO)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(e => { const ld = e.at ? localDay(e.at) : null; return ld && ld >= startDate && ld <= endDate; })
+    .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+}
+
 // Blocked booking attempts (honeypot / bot signals) in a date range. Stamped
 // with a YYYY-MM-DD `date` field server-side so a string range query works.
 export async function fetchFraudBlocksByRange(startDate, endDate) {
