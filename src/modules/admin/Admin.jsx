@@ -32,6 +32,7 @@ import { subscribeOnboarding, completedCount, isOnboardingComplete, phaseStatus,
 import CsvImportSection from '../../components/CsvImportSection';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 import LocationsTab from './LocationsTab';
+import MessageTemplatesTab from './MessageTemplatesTab';
 import SlideModal from '../tipflow/SlideModal';
 
 // Live filter query for the Settings tab. Default '' = no filter, so any
@@ -115,6 +116,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
     ...(isAdmin ? [{ id: 'locations', label: 'Locations' }] : []),
     { id: 'webfront', label: 'Webfront' },
     { id: 'sms',      label: 'SMS'      },
+    { id: 'templates', label: 'Messages' },
     { id: 'onboarding', label: 'Onboarding' },
     { id: 'feedback', label: 'Feedback' },
     // Trash exposes tombstone records (including deleted client names,
@@ -310,6 +312,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
         )}
 
         {tab === 'locations' && <LocationsTab />}
+        {tab === 'templates' && <MessageTemplatesTab />}
 
         {tab === 'webfront' && (
           <WebfrontTab cfg={webfrontCfg} setCfg={setWebfrontCfg} employees={employees} />
