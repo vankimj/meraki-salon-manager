@@ -385,10 +385,16 @@ function Recipients({ receipt, showToast }) {
 
 function RefundModal({ receipt, onClose, onDone, showToast, commissionDefault = 'withhold' }) {
   const pay = receipt.payment || {};
-  const original = Number(pay.total) || 0;
-  const already = Number(receipt.refundedAmount) || 0;
-  const remaining = Math.max(0, original - already);
+  // Refundable = the full value paid: card/cash (pay.total) + store credit + gift
+  // card. A store-credit-paid sale has pay.total === 0 — that was the $0 refund bug.
+  const moneyPaid  = Number(pay.total) || 0;
+  const creditPaid = Number(pay.creditApplied) || 0;
+  const gcPaid     = Number((pay.giftCard && pay.giftCard.applied) || 0);
+  const original   = moneyPaid + creditPaid + gcPaid;
+  const already    = Number(receipt.refundedAmount) || 0;
+  const remaining  = Math.max(0, original - already);
   const isCard = pay.method === 'card' && !!pay.stripePaymentIntentId;
+  const canRefundMoney = moneyPaid > 0.001;   // only offer a money refund if card/cash was actually charged
   const techs = (() => {
     const ts = (Array.isArray(pay.techSplit) && pay.techSplit.length)
       ? pay.techSplit.map(s => s.techName || '').filter(Boolean)
@@ -397,7 +403,7 @@ function RefundModal({ receipt, onClose, onDone, showToast, commissionDefault = 
   })();
   const [amount, setAmount] = useState(remaining ? remaining.toFixed(2) : '');
   const [reason, setReason] = useState('');
-  const [refundTo, setRefundTo] = useState('money');   // 'money' | 'credit'
+  const [refundTo, setRefundTo] = useState(canRefundMoney ? 'money' : 'credit');   // 'money' | 'credit'
   const [commission, setCommission] = useState(() => {
     const init = {}; techs.forEach(t => { init[t] = commissionDefault === 'goodwill' ? 'goodwill' : 'withhold'; }); return init;
   });
@@ -406,10 +412,14 @@ function RefundModal({ receipt, onClose, onDone, showToast, commissionDefault = 
   const mbtn = (on) => ({ flex: 1, padding: '9px 8px', borderRadius: 8, border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'var(--pn-success-bg)' : 'var(--pn-bg)', color: on ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'center' });
   const cbtn = (on) => ({ padding: '6px 12px', fontSize: 12.5, fontWeight: 800, border: 'none', background: on ? '#2D7A5F' : 'var(--pn-surface-muted)', color: on ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' });
 
+  // A money refund can't exceed what was actually charged to card/cash; store
+  // credit can be returned up to the full remaining value.
+  const cap = refundTo === 'money' ? Math.min(moneyPaid, remaining) : remaining;
+
   async function submit() {
     const amt = Number(amount) || 0;
     if (amt <= 0) { showToast('Enter a refund amount'); return; }
-    if (amt > remaining + 0.001) { showToast(`Refund can't exceed the remaining ${money(remaining)}.`); return; }
+    if (amt > cap + 0.001) { showToast(`Refund can't exceed ${money(cap)}${refundTo === 'money' ? ' back to the original payment' : ''}.`); return; }
     if (!reason.trim()) { showToast('Add a reason for the refund.'); return; }
     setBusy(true);
     try {
@@ -432,12 +442,14 @@ function RefundModal({ receipt, onClose, onDone, showToast, commissionDefault = 
 
         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Refund to</label>
         <div style={{ display: 'flex', gap: 8, margin: '6px 0 8px' }}>
-          <button onClick={() => setRefundTo('money')} style={mbtn(refundTo === 'money')}>
-            <div style={{ fontWeight: 800, fontSize: 13 }}>{isCard ? 'Back to card' : 'Cash'}</div>
-            <div style={{ fontSize: 11, opacity: .7 }}>{isCard ? 'Stripe refund' : 'hand cash back'}</div>
-          </button>
+          {canRefundMoney && (
+            <button onClick={() => { setRefundTo('money'); setAmount(Math.min(moneyPaid, remaining).toFixed(2)); }} style={mbtn(refundTo === 'money')}>
+              <div style={{ fontWeight: 800, fontSize: 13 }}>{isCard ? 'Back to card' : 'Cash'}</div>
+              <div style={{ fontSize: 11, opacity: .7 }}>{isCard ? 'Stripe refund' : 'hand cash back'}</div>
+            </button>
+          )}
           {!!receipt.clientId && (
-            <button onClick={() => setRefundTo('credit')} style={mbtn(refundTo === 'credit')}>
+            <button onClick={() => { setRefundTo('credit'); setAmount(remaining.toFixed(2)); }} style={mbtn(refundTo === 'credit')}>
               <div style={{ fontWeight: 800, fontSize: 13 }}>Store credit</div>
               <div style={{ fontSize: 11, opacity: .7 }}>no money moves</div>
             </button>
@@ -455,7 +467,7 @@ function RefundModal({ receipt, onClose, onDone, showToast, commissionDefault = 
           <span style={{ color: 'var(--pn-text-faint)' }}>$</span>
           <input type="number" min={0} value={amount} onChange={e => setAmount(e.target.value)} placeholder={remaining.toFixed(2)}
             style={{ flex: 1, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 11px', fontSize: 14, background: 'var(--pn-bg)', color: 'var(--pn-text)' }} />
-          <button onClick={() => setAmount(remaining.toFixed(2))} style={{ padding: '7px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>Full</button>
+          <button onClick={() => setAmount(cap.toFixed(2))} style={{ padding: '7px 12px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-surface-muted)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>Full</button>
         </div>
 
         <label style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>Reason</label>

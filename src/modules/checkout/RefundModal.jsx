@@ -5,7 +5,10 @@ import { logActivity } from '../../lib/logger';
 
 export default function RefundModal({ appt, onComplete, onClose }) {
   const payment     = appt.payment || {};
-  const maxRefund   = payment.total ?? payment.subtotal ?? 0;
+  // Full value paid: card/cash (total) + store credit + gift card. A store-credit-
+  // paid sale has total === 0, which used to make this $0 (un-refundable).
+  const maxRefund   = ((Number(payment.total) || 0) + (Number(payment.creditApplied) || 0) + (Number((payment.giftCard && payment.giftCard.applied)) || 0))
+    || (Number(payment.subtotal) || 0);
 
   const [amount,    setAmount]    = useState(String(maxRefund));
   const [reason,    setReason]    = useState('');
