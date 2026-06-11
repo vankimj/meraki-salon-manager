@@ -335,8 +335,10 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
         {tab === 'settings' && (
           <>
+            {/* ══ GROUP 1 · Brand & Appearance ══ */}
+            <Section title="🏷 Brand & Appearance" defaultOpen>
             {/* ── Brand & Identity (URL + every brand field, single Save) ── */}
-            <Section title="🌐 Brand & Identity">
+            <Section title="🌐 Brand & Identity" nested>
               {/* Salon URL — read-only display + coming-soon CTA. */}
               <div style={{ padding: '12px 16px' }}>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Your salon URL</div>
@@ -458,6 +460,19 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 }}>Save</Btn>
               </div>
             </Section>
+            <AppearanceSection
+              themeId={themeId}    setThemeId={setThemeId}
+              autoTheme={autoTheme} setAutoTheme={setAutoTheme}
+              saving={themeSaving}
+              onSave={async () => {
+                setThemeSaving(true);
+                await updateSettings({ ...settings, themeId, autoTheme });
+                setThemeSaving(false);
+              }}
+              nested
+            />
+            </Section>
+            {/* ══ end GROUP 1 ══ */}
 
             {/* Coming-soon modal for "Change my URL" */}
             {showUrlSoon && (
@@ -473,7 +488,9 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
             )}
 
-            <Section title="⚙ App Settings">
+            {/* ══ GROUP 2 · General ══ */}
+            <Section title="⚙ General">
+            <Section title="⚙ App Settings" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Auto-logout timeout</div>
@@ -569,7 +586,16 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
               </div>
             </Section>
-            <Section title="🕐 Time Clock">
+            <ModulesSection nested />
+            <TileVisibilitySection settings={settings} updateSettings={updateSettings} nested />
+            <NotesPreferenceSection settings={settings} updateSettings={updateSettings} nested />
+            <PauseSection settings={settings} updateSettings={updateSettings} nested />
+            </Section>
+            {/* ══ end GROUP 2 ══ */}
+
+            {/* ══ GROUP 3 · Scheduling & Booking ══ */}
+            <Section title="📅 Scheduling & Booking">
+            <Section title="🕐 Time Clock" nested>
               {/* Break length + warning */}
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -624,7 +650,15 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 }}>Save</Btn>
               </div>
             </Section>
-            <Section title="🧾 Receipts & Ratings">
+            <TechRemindersSection settings={settings} updateSettings={updateSettings} nested />
+            <CancellationPolicySection settings={settings} updateSettings={updateSettings} nested />
+            <BookingCardPolicySection settings={settings} updateSettings={updateSettings} nested />
+            </Section>
+            {/* ══ end GROUP 3 ══ */}
+
+            {/* ══ GROUP 4 · Receipts & Reviews ══ */}
+            <Section title="🧾 Receipts & Reviews">
+            <Section title="🧾 Receipts & Ratings" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Receipt delivery</div>
@@ -699,8 +733,15 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 })}>Save</Btn>
               </div>
             </Section>
+            </Section>
+            {/* ══ end GROUP 4 ══ */}
+
             <TipFlowSection />
-            <Section title="💰 Financial">
+            <BookingSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} />
+
+            {/* ══ GROUP 5 · Payments ══ */}
+            <Section title="💳 Payments">
+            <Section title="💰 Financial" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Sales tax rate</div>
@@ -787,31 +828,17 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 }}>{finSaving ? 'Saving…' : 'Save Financial Settings'}</Btn>
               </div>
             </Section>
-            <BookingSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} />
-            <AppearanceSection
-              themeId={themeId}    setThemeId={setThemeId}
-              autoTheme={autoTheme} setAutoTheme={setAutoTheme}
-              saving={themeSaving}
-              onSave={async () => {
-                setThemeSaving(true);
-                await updateSettings({ ...settings, themeId, autoTheme });
-                setThemeSaving(false);
-              }}
-            />
-            <TechRemindersSection settings={settings} updateSettings={updateSettings} />
-            <CancellationPolicySection settings={settings} updateSettings={updateSettings} />
-            <BookingCardPolicySection settings={settings} updateSettings={updateSettings} />
-            <PauseSection settings={settings} updateSettings={updateSettings} />
-            <TileVisibilitySection settings={settings} updateSettings={updateSettings} />
-            <ModulesSection />
-            <NotesPreferenceSection settings={settings} updateSettings={updateSettings} />
-            <div data-anchor="payments"><StripeConnectSection onOpenWizard={onOpenWizard} /></div>
-            <TerminalReaderSection />
-            <UpgradeSection settings={settings} gUser={gUser} />
-            {ALLOWED_EMAILS.includes(gUser?.email) && <SesRepairSection />}
-            <DisputesSection />
-            <BackupRestoreSection />
-            <Section title="📦 Data Imports">
+            <div data-anchor="payments"><StripeConnectSection onOpenWizard={onOpenWizard} nested /></div>
+            <TerminalReaderSection nested />
+            <DisputesSection nested />
+            <UpgradeSection settings={settings} gUser={gUser} nested />
+            </Section>
+            {/* ══ end GROUP 5 ══ */}
+
+            {/* ══ GROUP 6 · Data ══ */}
+            <Section title="🗄 Data">
+            <BackupRestoreSection nested />
+            <Section title="📦 Data Imports" nested>
               <div style={{ padding: '12px 14px' }}>
                 <CsvImportSection />
               </div>
@@ -819,7 +846,17 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             {/* Super-admin-only demo seeder. Hidden from regular salon
                 owners — these create / wipe sample records and aren't
                 appropriate for production-tenant admin panels. */}
-            {isSuperAdmin && <DemoSeedSection />}
+            {isSuperAdmin && <DemoSeedSection nested />}
+            </Section>
+            {/* ══ end GROUP 6 ══ */}
+
+            {/* ══ GROUP 7 · Maintenance ══ */}
+            {ALLOWED_EMAILS.includes(gUser?.email) && (
+              <Section title="🛠 Maintenance">
+                <SesRepairSection nested />
+              </Section>
+            )}
+            {/* ══ end GROUP 7 ══ */}
           </>
         )}
 
@@ -1277,7 +1314,7 @@ function ThemeCard({ th, isSelected, badge, onClick }) {
   );
 }
 
-function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, saving, onSave }) {
+function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, saving, onSave, nested = false }) {
   const autoDetected = detectAutoTheme();
 
   const grid = (themes) => (
@@ -1295,7 +1332,7 @@ function AppearanceSection({ themeId, setThemeId, autoTheme, setAutoTheme, savin
   );
 
   return (
-    <Section title="🎨 Appearance">
+    <Section title="🎨 Appearance" nested={nested}>
       {/* Auto-seasonal toggle */}
       <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
         <div style={{ flex: 1 }}>
@@ -1384,8 +1421,30 @@ function AddMissingTechUsersBtn({ employees, users, addTechUsersForEmployees, sh
   );
 }
 
-function Section({ title, children, action, defaultOpen = false }) {
+function Section({ title, children, action, defaultOpen = false, nested = false }) {
   const [open, setOpen] = useState(defaultOpen);
+  if (nested) {
+    // Lighter variant for sub-sections inside a top-level group: no elevated
+    // card chrome, smaller title, indented — but still collapsible.
+    return (
+      <div style={{ borderTop: '1px solid var(--pn-border)' }}>
+        <div
+          onClick={() => setOpen(o => !o)}
+          style={{ padding: '10px 16px 10px 28px', fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', letterSpacing: '.05em', textTransform: 'uppercase', display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', userSelect: 'none' }}
+        >
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .15s', fontSize: 9, color: 'var(--pn-text-faint)' }}>▶</span>
+            {title}
+          </span>
+          {action && (
+            // Stop bubbling so action-bar buttons don't toggle the section.
+            <span onClick={e => e.stopPropagation()}>{action}</span>
+          )}
+        </div>
+        {open && <div style={{ borderTop: '1px solid var(--pn-border)' }}>{children}</div>}
+      </div>
+    );
+  }
   return (
     <div style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', marginBottom: 14, overflow: 'hidden' }}>
       <div
@@ -1819,7 +1878,7 @@ function Empty({ children }) {
   return <div style={{ padding: 16, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>{children}</div>;
 }
 
-function BackupRestoreSection() {
+function BackupRestoreSection({ nested = false } = {}) {
   const { pauseLogoutTimer, resumeLogoutTimer } = useApp();
   const [busy,   setBusy]   = useState(false);
   const [status, setStatus] = useState('');
@@ -1905,7 +1964,7 @@ function BackupRestoreSection() {
   }
 
   return (
-    <Section title="🗄 Your Data — Export &amp; Restore">
+    <Section title="🗄 Your Data — Export &amp; Restore" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         {/* Principle #8 callout */}
         <div style={{
@@ -1946,7 +2005,7 @@ function BackupRestoreSection() {
   );
 }
 
-function DemoSeedSection() {
+function DemoSeedSection({ nested = false } = {}) {
   const { gUser, settings, updateSettings, pauseLogoutTimer, resumeLogoutTimer } = useApp();
   const [status,  setStatus]  = useState('');
   const [running, setRunning] = useState(false);
@@ -2022,7 +2081,7 @@ function DemoSeedSection() {
   const completedCount = seedState?.completedSteps?.length || 0;
 
   return (
-    <Section title="🧪 Demo Data">
+    <Section title="🧪 Demo Data" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 10 }}>
           One-click populate every module with realistic sample data: clients, appointments, receipts, products, promo codes, memberships, time off, Google reviews, HR bonuses, walk-in queue, and marketing campaigns. Use this to show the platform off without exposing real customer data.
@@ -3277,7 +3336,7 @@ function NotifRow({ item, last }) {
 }
 
 // ── Tech appointment reminders settings ───────────────────────────────────────
-function TechRemindersSection({ settings, updateSettings }) {
+function TechRemindersSection({ settings, updateSettings, nested = false }) {
   const cfg = settings.techReminders || {};
   const [enabled,  setEnabled]  = useState(cfg.enabled !== false); // default ON
   const [saving,   setSaving]   = useState(false);
@@ -3300,7 +3359,7 @@ function TechRemindersSection({ settings, updateSettings }) {
   }
 
   return (
-    <Section title="🔔 Tech Appointment Reminders">
+    <Section title="🔔 Tech Appointment Reminders" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Sends each tech a heads-up before every scheduled appointment. Each tech sets their own lead time and notification channel (email / SMS / push) on their <strong>employee record → Profile → Notifications</strong>. Defaults: 15 min before, email. Runs every 5 minutes server-side; per-appt dedupe.
@@ -3335,7 +3394,7 @@ function TechRemindersSection({ settings, updateSettings }) {
 // Card Reader (Stripe Terminal) setup — readiness + one-tap Location creation.
 // Physical reader pairing happens on the iPad app (Bluetooth needs the device);
 // this web section just removes the Stripe-Dashboard step for the Location.
-function TerminalReaderSection() {
+function TerminalReaderSection({ nested = false } = {}) {
   const [status, setStatus] = useState(null);
   const [busy,   setBusy]   = useState(false);
   const [msg,    setMsg]    = useState('');
@@ -3358,7 +3417,7 @@ function TerminalReaderSection() {
     <div style={{ fontSize: 13, color: ok ? '#166534' : 'var(--pn-text-muted)', marginBottom: 4 }}>{ok ? '✓' : '○'} {children}</div>
   );
   return (
-    <Section title="💳 Card Reader (Stripe Terminal)">
+    <Section title="💳 Card Reader (Stripe Terminal)" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           In-person card payments (Bluetooth reader / Tap to Pay). Create the Terminal Location here — then pair the physical reader from the iPad app → <strong>Manage → Card Reader Setup</strong>.
@@ -3385,7 +3444,7 @@ function TerminalReaderSection() {
   );
 }
 
-function SesRepairSection() {
+function SesRepairSection({ nested = false } = {}) {
   const [busy, setBusy]     = useState(false);
   const [result, setResult] = useState(null);
   async function run() {
@@ -3398,7 +3457,7 @@ function SesRepairSection() {
     } finally { setBusy(false); }
   }
   return (
-    <Section title="🛠️ Email delivery repair (SES)">
+    <Section title="🛠️ Email delivery repair (SES)" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10 }}>
           Platform-admin only. Creates this tenant&apos;s SES Tenant resource and identity association so transactional
@@ -3425,7 +3484,7 @@ function SesRepairSection() {
   );
 }
 
-function CancellationPolicySection({ settings, updateSettings }) {
+function CancellationPolicySection({ settings, updateSettings, nested = false }) {
   const cfg = settings.cancellationPolicy || {};
   const [enabled,        setEnabled]        = useState(cfg.enabled === true);
   const [thresholdCount, setThresholdCount] = useState(cfg.thresholdCount ?? 3);
@@ -3465,7 +3524,7 @@ function CancellationPolicySection({ settings, updateSettings }) {
   }
 
   return (
-    <Section title="🚫 Cancellation Policy">
+    <Section title="🚫 Cancellation Policy" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           After this many cancellations within the window, the booking page will require the client to have a card on file before they can book again. Clients who already have a card on file aren't affected. Admins can override per-client in the client modal.
@@ -3543,7 +3602,7 @@ function CancellationPolicySection({ settings, updateSettings }) {
 // configurable deposit percentage. Schema lives on settings.bookingCardPolicy
 // — see src/lib/cancellationPolicy.js (resolveBookingCardPolicy). Enforced
 // server-side in submitOnlineBooking and surfaced in BookingScreen.
-function BookingCardPolicySection({ settings, updateSettings }) {
+function BookingCardPolicySection({ settings, updateSettings, nested = false }) {
   const cfg = settings.bookingCardPolicy || {};
   const [firstTime,  setFirstTime]  = useState(cfg.firstTimeRequireCard   === true);
   const [allBookings, setAllBookings] = useState(cfg.allBookingsRequireCard === true);
@@ -3578,7 +3637,7 @@ function BookingCardPolicySection({ settings, updateSettings }) {
   };
 
   return (
-    <Section title="💳 Card on file for booking">
+    <Section title="💳 Card on file for booking" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Require online-booking clients to put a card on file before they can confirm. Clients who already have a card aren&apos;t prompted again. This is separate from the cancellation-history policy above.
@@ -3640,7 +3699,7 @@ function BookingCardPolicySection({ settings, updateSettings }) {
 // While paused: inbound SMS gets an auto-reply (mode A, default) OR is
 // forwarded to the admin's personal phone for emergencies (mode B, opt-in).
 // Pause is enforced server-side in the twilioInboundSms cloud function.
-function PauseSection({ settings, updateSettings }) {
+function PauseSection({ settings, updateSettings, nested = false }) {
   const cfg = settings.pause || {};
   const [until,         setUntil]         = useState(cfg.until || '');
   const [forwardPhone,  setForwardPhone]  = useState(cfg.forwardPhone || '');
@@ -3696,7 +3755,7 @@ function PauseSection({ settings, updateSettings }) {
   }
 
   return (
-    <Section title="⏸️ Pause / Vacation Mode">
+    <Section title="⏸️ Pause / Vacation Mode" nested={nested}>
       <div style={{ padding: '12px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
           Temporarily close the salon (vacation, slow season, renovation, etc.). While paused, inbound texts get an auto-reply that says when you reopen — or, if you opt in, get forwarded to your personal phone so you stay reachable for emergencies.
@@ -3786,7 +3845,7 @@ function PauseSection({ settings, updateSettings }) {
 // don't use. Plan-locked features (above their tier) are shown as disabled
 // with an "Upgrade required" hint — included so they know what's available
 // at the next tier without being surprised at billing.
-function TileVisibilitySection({ settings, updateSettings }) {
+function TileVisibilitySection({ settings, updateSettings, nested = false }) {
   const plan   = effectivePlan(settings);
   const hidden = new Set(settings?.hiddenTiles || []);
   const [saving, setSaving] = useState(false);
@@ -3804,7 +3863,7 @@ function TileVisibilitySection({ settings, updateSettings }) {
   const PLAN_LABEL = { starter: 'Starter', pro: 'Pro', enterprise: 'Enterprise' };
 
   return (
-    <Section title="🧩 Home Tiles · what shows up on the dashboard">
+    <Section title="🧩 Home Tiles · what shows up on the dashboard" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
           Toggle off tiles you don't use to keep the dashboard simple.
@@ -3869,7 +3928,7 @@ function TileVisibilitySection({ settings, updateSettings }) {
 // Turning off Memberships is gated server-side (setModuleEnabled) on having
 // zero still-billing client memberships — the same teardown the downgrade flow
 // enforces — so the owner can't strand recurring client charges.
-function ModulesSection() {
+function ModulesSection({ nested = false } = {}) {
   const { settings, setSettings, showToast } = useApp();
   const plan = effectivePlan(settings);
   const [busy, setBusy] = useState('');
@@ -3887,7 +3946,7 @@ function ModulesSection() {
   }
 
   return (
-    <Section title="🧩 Modules · turn features on or off">
+    <Section title="🧩 Modules · turn features on or off" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12, lineHeight: 1.5 }}>
           Turn off features you don't use. Some need cleanup first — Memberships
@@ -3936,10 +3995,10 @@ function ModulesSection() {
 // inside appointment + client modals. Existing SOAP-typed entries
 // always render; this toggle only controls whether a NEW entry can be
 // composed in SOAP format.
-function NotesPreferenceSection({ settings, updateSettings }) {
+function NotesPreferenceSection({ settings, updateSettings, nested = false }) {
   const enabled = settings?.clinicalNotes === true;
   return (
-    <Section title="📋 Notes preferences">
+    <Section title="📋 Notes preferences" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${enabled ? '#c7d2fe' : 'var(--pn-border)'}`, background: enabled ? '#eef2ff' : 'var(--pn-bg)', cursor: 'pointer' }}>
           <input type="checkbox" checked={enabled}
@@ -3965,7 +4024,7 @@ function NotesPreferenceSection({ settings, updateSettings }) {
 // email when a dispute opens, but the email is easy to miss — this section
 // is a persistent reminder until the dispute closes. Section renders nothing
 // when there are zero disputes (no clutter for the common case).
-function DisputesSection() {
+function DisputesSection({ nested = false } = {}) {
   const [disputes, setDisputes] = useState(null);   // null = loading, [] = empty
   const [error,    setError]    = useState('');
 
@@ -3985,7 +4044,7 @@ function DisputesSection() {
   const closed  = disputes.filter(d => !isOpen(d));
 
   return (
-    <Section title={`⚠ Chargebacks${open.length ? ` (${open.length} open)` : ''}`} defaultOpen={open.length > 0}>
+    <Section title={`⚠ Chargebacks${open.length ? ` (${open.length} open)` : ''}`} defaultOpen={open.length > 0} nested={nested}>
       <div style={{ padding: '14px 16px' }}>
         {error && <div style={{ fontSize: 12, color: '#ef4444', marginBottom: 10 }}>{error}</div>}
         {open.length > 0 && (
@@ -4114,7 +4173,7 @@ const PLAN_TIERS = [
 // wizard's Money phase; this surfaces live status and deep-links there, so a
 // salon can set up / manage payments without hunting for the wizard. Card
 // checkout is gated on chargesEnabled, so this is the place that unblocks it.
-function StripeConnectSection({ onOpenWizard }) {
+function StripeConnectSection({ onOpenWizard, nested = false }) {
   const { settings, updateSettings } = useApp();
   const sc = settings?.stripeConnect || null;
   const [refreshing, setRefreshing] = useState(false);
@@ -4158,7 +4217,7 @@ function StripeConnectSection({ onOpenWizard }) {
               :              { t: 'Setup incomplete', bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)' };
 
   return (
-    <Section title="💸 Payments · Stripe Connect">
+    <Section title="💸 Payments · Stripe Connect" nested={nested}>
       <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -4199,7 +4258,7 @@ function StripeConnectSection({ onOpenWizard }) {
   );
 }
 
-function UpgradeSection({ settings, gUser }) {
+function UpgradeSection({ settings, gUser, nested = false }) {
   const [loading, setLoading] = useState('');   // plan id currently loading
   const [error,   setError]   = useState('');
   // The stored plan (what they're nominally on or trialling) — distinct
@@ -4252,7 +4311,7 @@ function UpgradeSection({ settings, gUser }) {
   const currentTier = PLAN_TIERS.find(t => t.id === visiblePlan) || PLAN_TIERS[0];
 
   return (
-    <Section title="💳 Plan &amp; Billing">
+    <Section title="💳 Plan &amp; Billing" nested={nested}>
       <div style={{ padding: '14px 16px' }}>
         {/* Current plan + trial banner */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
