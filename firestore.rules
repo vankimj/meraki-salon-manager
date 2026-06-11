@@ -728,6 +728,13 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
+      // Message templates (per-tenant overrides of the baked-in default copy
+      // for automated emails/SMS): admin only. Cloud Functions read via the
+      // Admin SDK; a missing doc just falls back to the default.
+      match /messageTemplates/{key} {
+        allow read, write: if isTenantAdmin(tenantId);
+      }
+
       // Automation dedup records: admin reads; Cloud Functions write via admin SDK
       match /automationSent/{docId} {
         allow read, write: if isTenantAdmin(tenantId);

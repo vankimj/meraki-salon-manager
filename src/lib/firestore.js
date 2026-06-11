@@ -355,6 +355,20 @@ export const saveUsers = async (users) => {
 // ── Settings ───────────────────────────────────────────
 export const saveSettings = (settings) => setDoc(SETTINGS_REF, settings);
 
+// ── Message templates (tenants/{id}/messageTemplates/{key}) ────────────
+// Per-tenant overrides of the baked-in default copy. A missing doc OR a blank
+// field = fall back to the default (so the editor's "Reset" is just a delete).
+const messageTemplateRef = (key) => doc(db, 'tenants', TENANT_ID, 'messageTemplates', key);
+export const fetchMessageTemplates = async () => {
+  const snap = await getDocs(collection(db, 'tenants', TENANT_ID, 'messageTemplates'));
+  const out = {};
+  snap.forEach(d => { out[d.id] = d.data(); });
+  return out;
+};
+export const saveMessageTemplate = (key, data) =>
+  setDoc(messageTemplateRef(key), { ...data, updatedAt: new Date().toISOString() });
+export const resetMessageTemplate = (key) => deleteDoc(messageTemplateRef(key));
+
 // ── Front-desk kiosk handoff (shared with the mobile kiosk) ────────────
 // The web checkout writes a 'pending' session here; an iPad running in kiosk
 // mode (mobile KioskScreen) picks it up and takes the card on the M2 reader,

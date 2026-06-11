@@ -16,6 +16,7 @@ const usageLog             = require('./lib/usage');
 const { roleCan }          = require('./lib/rbac');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
+const { renderTemplate }   = require('./lib/messageTemplates');
 
 initializeApp();
 
@@ -157,7 +158,7 @@ const {
   isValidPinFormat:   tcIsValidPin,
 } = require('./lib/timeclock');
 const { planReassignments: tcPlanReassign, nowMinutesInTz: tcNowMinsInTz } = require('./lib/reassign');
-const { shouldSendCancelNotice, buildCancelSms } = require('./lib/cancelNotice');
+const { shouldSendCancelNotice } = require('./lib/cancelNotice');
 function apptManageToken(tenantId, apptId, exp) {
   return buildApptManageToken(apptManageSecret.value(), tenantId, apptId, exp);
 }
@@ -1108,24 +1109,11 @@ async function deliverReceiptEmail(db, tenantId, ref, data) {
       payment.tip            > 0 && `<tr><td style="padding:4px 0;font-size:12px;color:#888;">Tip</td><td style="text-align:right;font-size:12px;color:#555;">$${payment.tip.toFixed(2)}</td></tr>`,
     ].filter(Boolean).join('');
 
-    const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Receipt</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 4px;font-weight:600;">Hi ${esc(firstName)}!</p>
-      <p style="font-size:13px;color:#888;margin:0 0 20px;">Thanks for visiting ${esc(brand.salonName)}. Here's your receipt.</p>
-
-      <div style="background:#f8f9fa;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#555;">
+    const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#555;">
         <div>📅 ${dateStr}</div>
         <div style="margin-top:4px;">👩‍💼 ${esc(techName || 'Your technician')}</div>
-      </div>
-
-      <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+      </div>`;
+    const receiptTable = `<table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
         <tr style="border-bottom:1px solid #e8e8e8;">
           <th style="text-align:left;font-size:11px;color:#aaa;padding-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Service</th>
           <th style="text-align:right;font-size:11px;color:#aaa;padding-bottom:6px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;">Price</th>
@@ -1143,26 +1131,24 @@ async function deliverReceiptEmail(db, tenantId, ref, data) {
         <tr>
           <td colspan="2" style="font-size:11px;color:#aaa;padding-top:3px;">Paid via ${esc(payment.method || '—')}</td>
         </tr>
-      </table>
-
-      ${buildRatingEmailBlock({
-        viewToken, baseUrl, services, techName,
-        style: emailRatingStyle,
-        fallbackGoogleUrl: googleReviewUrl,
-      })}
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+      </table>`;
+    const ratingBlock = buildRatingEmailBlock({
+      viewToken, baseUrl, services, techName,
+      style: emailRatingStyle,
+      fallbackGoogleUrl: googleReviewUrl,
+    });
+    const { subject: receiptSubject, html } = await renderTemplate(db, tenantId, 'receipt_email', {
+      clientName: firstName,
+      salonName:  brand.salonName,
+      date:       fmtDate(date),
+      detailsCard, receiptTable, ratingBlock,
+    }, brand);
 
     try {
       const { error } = await sendEmail({
         from:    await tenantFromAddress(db, tenantId),
         to:      clientEmail,
-        subject: `Your receipt — ${fmtDate(date)}`,
+        subject: receiptSubject,
         html,
       });
       if (error) throw new Error(error.message || JSON.stringify(error));
@@ -1244,9 +1230,9 @@ exports.sendReceiptSms = onDocumentCreated(
     // Salon name prefix is required by our A2P TFN use case — every
     // multi-tenant message must identify the originating business in
     // the body. sendSms appends "Reply STOP to opt out." automatically.
-    const body =
-      `${brand.salonName}: Your receipt for today's $${total} visit with ${techFirst} ` +
-      `is ready — view & rate: ${viewUrl}`;
+    const { body } = await renderTemplate(db, tenantId, 'receipt_sms', {
+      salonName: brand.salonName, total, tech: techFirst, viewLink: viewUrl,
+    });
 
     const r = await sendSms({
       to:        phone,
@@ -3581,44 +3567,18 @@ exports.sendReviewRequestEmail = onDocumentCreated(
     const trackUrl    = `https://us-central1-plumenexus-prod.cloudfunctions.net/trackReviewClick?r=${encodeURIComponent(reqId)}`;
     const db0 = getFirestore();
     const brand = await tenantBranding(db0, tenantId);
-    const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">We'd love your feedback</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}! 💅</p>
-      <p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 24px;">
-        Thank you so much for visiting us at ${esc(brand.salonName)}! We hope you loved your nails.
-        If you have a moment, leaving us a Google review would mean the world to us and helps
-        other clients find us.
-      </p>
-      <div style="text-align:center;margin-bottom:24px;">
-        <a href="${esc(trackUrl)}" style="display:inline-block;background:#f59e0b;color:#fff;font-size:14px;font-weight:700;padding:13px 32px;border-radius:10px;text-decoration:none;letter-spacing:.01em;">
-          ⭐ Leave a Google Review
-        </a>
-        <p style="font-size:11px;color:#bbb;margin:10px 0 0;">It only takes 30 seconds and helps us so much 🙏</p>
-      </div>
-      <p style="font-size:12px;color:#aaa;line-height:1.6;margin:0;">
-        We can't wait to see you again soon!<br>— The ${esc(brand.salonName)} Team
-      </p>
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+    const { subject: ratingSubject, html } = await renderTemplate(db0, tenantId, 'rating_request_email', {
+      clientName: firstName,
+      salonName:  brand.salonName,
+      reviewLink: trackUrl,
+    }, brand);
 
     try {
       const fromAddr = await tenantFromAddress(db0, tenantId);
       const { error } = await sendEmail({
         from:    fromAddr,
         to:      clientEmail,
-        subject: `How was your visit? We'd love your feedback 💅`,
+        subject: ratingSubject,
         html,
       });
       if (error) throw new Error(error.message || JSON.stringify(error));
@@ -3691,39 +3651,22 @@ exports.sendAccessRequestNotification = onDocumentCreated(
     const name   = req.name || req.email;
     const brand  = await tenantBranding(db, tenantId);
 
-    const html = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">New Access Request</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;line-height:1.65;color:#222;margin:0 0 16px;">
-        A new user is requesting access to the salon manager app.
-      </p>
-      <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
+    const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
         <div><strong>Name:</strong> ${esc(name)}</div>
         <div style="margin-top:6px;"><strong>Email:</strong> ${esc(req.email)}</div>
-      </div>
-      <p style="font-size:13px;color:#888;margin:16px 0 0;">
-        Log in to the Admin panel to approve or deny this request.
-      </p>
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+      </div>`;
+    const { subject: accessSubject, html } = await renderTemplate(db, tenantId, 'admin_access_request', {
+      name,
+      email: req.email,
+      detailsCard,
+    }, brand);
 
     const fromAddr = await tenantFromAddress(db, tenantId);
     await Promise.all(admins.map(admin =>
       sendEmail({
         from:    fromAddr,
         to:      admin.email,
-        subject: `Access request — ${name}`,
+        subject: accessSubject,
         html,
       }).catch(e => console.error('[AccessReq] Email to', admin.email, 'failed:', e.message))
     ));
@@ -3762,42 +3705,23 @@ exports.notifyOnCheckIn = onDocumentUpdated(
 // Cancellation email template for the client. Deliberately NO rating/review
 // affordance (that only belongs on a completed visit) — just an apology/confirm
 // line and a clear "Book again" button.
-function buildCancelHtml(appt, brand, rebookUrl, selfService, replyTo) {
+async function buildCancelHtml(db, tenantId, appt, brand, rebookUrl, selfService, replyTo) {
   const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services  = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Your appointment';
   const firstName = String(appt.clientName || '').trim().split(/\s+/)[0] || 'there';
   const intro = selfService
     ? `Your appointment below has been cancelled, as requested. We hope to see you again soon!`
     : `We're sorry — your appointment below has been cancelled. We'd love to find you a new time whenever you're ready.`;
-  return `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Appointment Cancelled</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)},</p>
-      <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">${intro}</p>
-      <div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
+  const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
         <div style="font-size:13px;color:#333;margin-bottom:8px;"><span>📅</span> <strong style="text-decoration:line-through;color:#999;">${dateStr}</strong></div>
         <div style="font-size:13px;color:#333;margin-bottom:8px;"><span>💅</span> ${esc(services)}</div>
         ${appt.techName && appt.techName !== 'TBD' ? `<div style="font-size:13px;color:#333;"><span>👩‍💼</span> with ${esc(appt.techName)}</div>` : ''}
-      </div>
-      ${rebookUrl ? `<div style="text-align:center;margin:20px 0 0;">
-        <a href="${esc(rebookUrl)}" style="display:inline-block;background:#2D7A5F;color:#fff;font-size:14px;font-weight:700;padding:12px 28px;border-radius:10px;text-decoration:none;">
-          Book again
-        </a>
-      </div>` : ''}
-      ${replyTo ? `<p style="font-size:11px;color:#aaa;margin:16px 0 0;text-align:center;">Questions? Just reply to this email.</p>` : ''}
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+      </div>`;
+  const questionsLine = replyTo ? 'Questions? Just reply to this email.' : '';
+  return renderTemplate(db, tenantId, 'cancellation_notice_email', {
+    clientName: firstName, salonName: brand.salonName,
+    intro, rebookUrl: rebookUrl || '', questionsLine, detailsCard,
+  }, brand);
 }
 
 // Customer cancellation notice: when an appointment transitions to 'cancelled',
@@ -3872,12 +3796,13 @@ async function sendCancelNoticeForAppt(db, tenantId, appt, { selfService = false
 
     if (email && emailOk) {
       try {
+        const { subject: cancelSubject, html: cancelHtml } = await buildCancelHtml(db, tenantId, appt, brand, rebookUrl, selfService, replyTo);
         const r = await sendEmail({
           from:    await tenantFromAddress(db, tenantId),
           to:      email,
           replyTo: replyTo || undefined,
-          subject: `Your appointment at ${brand.salonName} was cancelled`,
-          html:    buildCancelHtml(appt, brand, rebookUrl, selfService, replyTo),
+          subject: cancelSubject,
+          html:    cancelHtml,
           tenantId,
           tags:    [{ name: 'kind', value: 'transactional' }],
         });
@@ -3886,9 +3811,16 @@ async function sendCancelNoticeForAppt(db, tenantId, appt, { selfService = false
     }
     if (phone) {
       try {
+        const when = [dateShort, timeShort].filter(Boolean).join(' ');
+        const { body: cancelSms } = await renderTemplate(db, tenantId, 'cancellation_sms', {
+          clientName: firstName,
+          apology:    selfService ? '' : "we're sorry — ",
+          when,
+          rebookSuffix: rebookUrl ? ` Rebook anytime: ${rebookUrl}` : '',
+        });
         const r = await sendSms({
           to: phone,
-          body: buildCancelSms({ firstName, dateShort, timeShort, rebookUrl, selfService }),
+          body: cancelSms,
           tenantId, kind: 'transactional', clientId: appt.clientId || null,
         });
         out.sms = !!r?.ok;
@@ -4224,24 +4156,11 @@ function tomorrowStr() {
   return d.toISOString().slice(0, 10);
 }
 
-function buildReminderHtml(appt, client, tenantId, brand, manageLink, replyTo) {
+async function buildReminderHtml(db, tenantId, appt, client, brand, manageLink, replyTo) {
   const dateStr  = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
   const services = (appt.services || []).map(s => s.name).filter(Boolean).join(', ') || 'Nail services';
   const duration = appt.duration ? `${appt.duration} min` : '';
-  return `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Appointment Reminder</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(client.name?.split(' ')[0] || client.name)}!</p>
-      <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
-        Just a reminder that you have an appointment <strong>tomorrow</strong> at ${esc(brand.salonName)}.
-      </p>
-      <div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
+  const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:16px;border:1px solid #e8e8e8;">
         <div style="font-size:13px;color:#333;margin-bottom:8px;display:flex;gap:10px;">
           <span>📅</span><span><strong>${dateStr}</strong></span>
         </div>
@@ -4254,22 +4173,15 @@ function buildReminderHtml(appt, client, tenantId, brand, manageLink, replyTo) {
         ${brand.addressLine ? `<div style="font-size:13px;color:#333;display:flex;gap:10px;">
           <span>📍</span><span>${esc(brand.addressLine)}</span>
         </div>` : ''}
-      </div>
-      ${manageLink ? `<div style="text-align:center;margin:18px 0 0;">
-        <a href="${esc(manageLink)}" style="display:inline-block;background:#6a4fa0;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
-          Reschedule or cancel
-        </a>
-      </div>` : ''}
-      <p style="font-size:11px;color:#aaa;margin:14px 0 0;line-height:1.5;text-align:center;">
-        ${replyTo ? 'Need help? Reply to this email or call the salon.' : 'Need help? Give the salon a call.'}
-      </p>
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+      </div>`;
+  const helpLine = replyTo ? 'Need help? Reply to this email or call the salon.' : 'Need help? Give the salon a call.';
+  return renderTemplate(db, tenantId, 'reminder_email', {
+    clientName: client.name?.split(' ')[0] || client.name,
+    salonName:  brand.salonName,
+    manageLink: manageLink || '',
+    helpLine,
+    detailsCard,
+  }, brand);
 }
 
 function buildMeetingReminderHtml(meeting, participantName, timeLabel, brand) {
@@ -4501,12 +4413,13 @@ exports.sendDailyReminders = onSchedule(
         if (wantsEmail) {
           try {
             const replyTo = await tenantReplyTo(db, tenantId);
+            const { subject: remSubject, html: remHtml } = await buildReminderHtml(db, tenantId, appt, client, brand, manageLink, replyTo);
             const { error } = await sendEmail({
               from:    fromAddr,
               to:      email,
               replyTo: replyTo || undefined,
-              subject: `Reminder: Your appointment tomorrow at ${tenantName}`,
-              html:    buildReminderHtml(appt, client, tenantId, brand, manageLink, replyTo),
+              subject: remSubject,
+              html:    remHtml,
               tenantId,
             });
             if (error) throw new Error(error.message || JSON.stringify(error));
@@ -4526,9 +4439,11 @@ exports.sendDailyReminders = onSchedule(
           // disambiguate tenant on a shared inbound number.
           const techShort  = appt.techRequestType === 'auto' ? ' with a member of our team'
             : (appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '');
-          const smsBody    = manageLink
-            ? `${brand.salonName}: Hi ${firstName}! Your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}. Confirm/reschedule: ${manageLink}`
-            : `${brand.salonName}: Hi ${firstName}! Reminder: your appt tomorrow at ${fmtTime(appt.startTime)}${techShort}.`;
+          const confirmSuffix = manageLink ? ` Confirm/reschedule: ${manageLink}` : '';
+          const { body: smsBody } = await renderTemplate(db, tenantId, 'reminder_sms', {
+            clientName: firstName, salonName: brand.salonName,
+            timeShort: fmtTime(appt.startTime), techSuffix: techShort, confirmSuffix,
+          });
           const r = await sendSms({
             to: phone,
             body: smsBody,
@@ -4849,39 +4764,27 @@ exports.sendBookingConfirmation = onDocumentCreated(
       : brand.salonName;
 
     const replyTo = await tenantReplyTo(db, tenantId);
-    const clientHtml = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;letter-spacing:-.3px;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">Booking Confirmation</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">Hi ${esc(firstName)}!</p>
-      <p style="font-size:14px;line-height:1.65;color:#555;margin:0 0 20px;">
-        Your appointment has been booked. We can't wait to see you!
-      </p>
-      <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;">
+    const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;">
         <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>📅</strong> ${dateStr}</div>
         <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>💅</strong> ${esc(svcName)}</div>
         <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>👩‍💼</strong> With ${esc(techLine)}</div>
         <div style="font-size:13px;color:#555;"><strong>📍</strong> ${esc(locationLine)}</div>
-      </div>
-      ${manageLink ? `<div style="text-align:center;margin:18px 0 0;">
-        <a href="${esc(manageLink)}" style="display:inline-block;background:#6a4fa0;color:#fff;font-size:13px;font-weight:600;padding:11px 24px;border-radius:10px;text-decoration:none;">
-          Reschedule or cancel
-        </a>
-      </div>` : ''}
-      ${typeof sData.cancellationPolicyText === 'string' && sData.cancellationPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:18px 0 0;"><strong style="color:#888;">Cancellation policy:</strong> ${esc(sData.cancellationPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : ''}
-      ${typeof sData.refundPolicyText === 'string' && sData.refundPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:8px 0 0;"><strong style="color:#888;">Refund policy:</strong> ${esc(sData.refundPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : ''}
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+      </div>`;
+    const policies =
+      (typeof sData.cancellationPolicyText === 'string' && sData.cancellationPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:18px 0 0;"><strong style="color:#888;">Cancellation policy:</strong> ${esc(sData.cancellationPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : '')
+      + (typeof sData.refundPolicyText === 'string' && sData.refundPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:8px 0 0;"><strong style="color:#888;">Refund policy:</strong> ${esc(sData.refundPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : '');
+    const { subject: bookingSubject, html: clientHtml } = await renderTemplate(db, tenantId, 'booking_confirmation_email', {
+      clientName: firstName,
+      salonName:  brand.salonName,
+      date:       fmtDate(appt.date),
+      time:       fmtTime(appt.startTime),
+      service:    svcName,
+      tech:       techLine,
+      location:   locationLine,
+      manageLink: manageLink || '',
+      detailsCard,
+      policies,
+    }, brand);
 
     // Send to client. Email comes from the booking form (online) or, for a
     // staff-entered appt, the linked client profile. Honor commPreferences.
@@ -4902,7 +4805,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
         from:    await tenantFromAddress(db, tenantId),
         to:      clientEmail,
         replyTo: replyTo || undefined,
-        subject: `Booking confirmed — ${fmtDate(appt.date)} at ${fmtTime(appt.startTime)}`,
+        subject: bookingSubject,
         html:    clientHtml,
         tenantId,
       }).catch(e => console.error('[Booking] Client email failed:', e.message));
@@ -4927,9 +4830,12 @@ exports.sendBookingConfirmation = onDocumentCreated(
       const timeShort    = fmtTime(appt.startTime);
       const techShort    = noPrefBooking ? 'with a member of our team'
         : (appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '');
-      const smsBody =
-        `Hi ${firstName}! Your ${svcName} at ${brand.salonName} is booked for ${dateShort} at ${timeShort}${techShort ? ' ' + techShort : ''}.`
-        + (manageShort ? ` Manage: ${manageShort}` : '');
+      const techSuffix   = techShort ? ' ' + techShort : '';
+      const manageSuffix = manageShort ? ` Manage: ${manageShort}` : '';
+      const { body: smsBody } = await renderTemplate(db, tenantId, 'booking_confirmation_sms', {
+        clientName: firstName, service: svcName, salonName: brand.salonName,
+        dateShort, timeShort, techSuffix, manageSuffix,
+      });
       await sendSms({
         to: clientPhone,
         body: smsBody,
@@ -4950,36 +4856,25 @@ exports.sendBookingConfirmation = onDocumentCreated(
       const admins      = adminEmails.map(email => ({ email }));
       if (admins.length) {
         const adminFrom = await tenantFromAddress(db, tenantId);
-        const adminHtml = `<!DOCTYPE html>
-<html>
-<body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">${isOnline ? 'New Online Booking' : 'New Appointment'}</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:14px;line-height:1.65;color:#222;margin:0 0 16px;">
-        ${isOnline ? 'A new appointment was booked online.' : 'A new appointment was added to the schedule.'}
-      </p>
-      <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
+        const adminCard = `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
         <div style="margin-bottom:6px;"><strong>Client:</strong> ${esc(appt.clientName)}${appt.clientPhone ? ' · ' + esc(appt.clientPhone) : ''}</div>
         <div style="margin-bottom:6px;"><strong>Date:</strong> ${dateStr}</div>
         <div style="margin-bottom:6px;"><strong>Service:</strong> ${esc(svcName)}</div>
         <div><strong>Stylist:</strong> ${esc(appt.techName || 'TBD')}</div>
-      </div>
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body>
-</html>`;
+      </div>`;
+        const { subject: adminSubject, html: adminHtml } = await renderTemplate(db, tenantId, 'admin_new_booking', {
+          clientName:   appt.clientName,
+          date:         fmtDate(appt.date),
+          bookingKind:  isOnline ? 'New online booking' : 'New appointment',
+          subtitleLine: isOnline ? 'New Online Booking' : 'New Appointment',
+          introLine:    isOnline ? 'A new appointment was booked online.' : 'A new appointment was added to the schedule.',
+          detailsCard:  adminCard,
+        }, brand);
         await Promise.all(admins.map(a =>
           sendEmail({
             from:    adminFrom,
             to:      a.email,
-            subject: `🔔 Admin Alert · ${isOnline ? 'New online booking' : 'New appointment'} — ${appt.clientName} on ${fmtDate(appt.date)}`,
+            subject: adminSubject,
             html:    adminHtml,
           }).catch(e => console.error('[Booking] Admin email failed:', e.message))
         ));
@@ -5094,30 +4989,20 @@ exports.sendChatNotification = onDocumentCreated(
     const firstName = (data.clientName || 'A client').split(' ')[0];
     const preview   = (data.preview || '').slice(0, 120);
 
-    const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#2D7A5F,#3D95CE);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.75);font-size:12px;margin-top:2px;">New Client Message</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">New message from ${esc(data.clientName || 'a client')}</p>
-      <div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;margin:12px 0;">
+    const messageCard = `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;margin:12px 0;">
         <div style="font-size:13px;color:#555;font-style:italic;">"${esc(preview)}"</div>
-      </div>
-      <p style="font-size:13px;color:#888;margin:0;">Open the salon manager app and go to <strong>Messages</strong> to reply.</p>
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div></body></html>`;
+      </div>`;
+    const { subject: msgSubject, html } = await renderTemplate(db, tenantId, 'admin_new_message', {
+      clientName: data.clientName || 'a client',
+      messageCard,
+    }, brand);
 
     const fromAddr = await tenantFromAddress(db, tenantId);
     await Promise.all(admins.map(a =>
       sendEmail({
         from:    fromAddr,
         to:      a.email,
-        subject: `New message from ${data.clientName || 'a client'}`,
+        subject: msgSubject,
         html,
       }).catch(e => console.error('[ChatNotif] Email to', a.email, 'failed:', e.message))
     ));
@@ -5146,25 +5031,16 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
     const admins      = adminEmails.map(email => ({ email }));
     const brand       = await tenantBranding(db, tenantId);
 
-    const html = `<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#f59e0b,#f97316);padding:20px 24px;">
-      <div style="color:#fff;font-size:18px;font-weight:700;">${esc(brand.salonName)}</div>
-      <div style="color:rgba(255,255,255,.85);font-size:12px;margin-top:2px;">New Google Review</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 6px;font-weight:600;">⭐ New review from ${esc(data.clientName || 'a client')}!</p>
-      <div style="background:#fffbeb;border-radius:8px;padding:14px 16px;border:1px solid #fde68a;margin:12px 0;">
+    const reviewCard = `<div style="background:#fffbeb;border-radius:8px;padding:14px 16px;border:1px solid #fde68a;margin:12px 0;">
         <div style="font-size:20px;color:#f59e0b;margin-bottom:6px;letter-spacing:2px;">${stars}</div>
         ${data.techName ? `<div style="font-size:13px;color:#555;">Serviced by <strong>${esc(data.techName)}</strong></div>` : ''}
         ${data.date ? `<div style="font-size:12px;color:#aaa;margin-top:4px;">${esc(data.date)}</div>` : ''}
-      </div>
-      <p style="font-size:13px;color:#888;margin:0;">Open the client's profile in the salon manager app to view the full review.</p>
-    </div>
-    <div style="padding:12px 24px 20px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div></body></html>`;
+      </div>`;
+    const { subject: reviewSubject, html } = await renderTemplate(db, tenantId, 'admin_new_review', {
+      clientName: data.clientName || 'a client',
+      rating:     data.rating || 5,
+      reviewCard,
+    }, brand);
 
     const recipients = [...admins];
 
@@ -5184,7 +5060,7 @@ exports.sendReviewReceivedNotification = onDocumentCreated(
       sendEmail({
         from:    fromAddr,
         to:      r.email,
-        subject: `New ${data.rating || 5}-star Google review — ${data.clientName || 'client'}`,
+        subject: reviewSubject,
         html,
       }).catch(e => console.error('[ReviewReceived] Email to', r.email, 'failed:', e.message))
     ));
@@ -6586,18 +6462,18 @@ exports.autoBirthdayCampaign = onSchedule(
         const firstName  = (client.name || 'there').split(' ')[0];
         const bookingUrl = settings.bookingUrl
           || `${await tenantBaseUrl(db, tenantId)}/?book`;
-        const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
-          🎉 Happy Birthday! We hope your special day is as fabulous as you are.
-          As a little gift from all of us at ${esc(tenantShort)}, we'd love to treat you to something special this month.
-          Come celebrate with us — you deserve it!
-        </p>`;
-        const html = buildAutoEmail("Happy Birthday! 🎂", firstName, body, "Book Your Birthday Visit", bookingUrl, brand);
+        const { subject: birthdaySubject, html } = await renderTemplate(db, tenantId, 'birthday_email', {
+          clientName:  firstName,
+          salonName:   brand.salonName,
+          salonShort:  tenantShort,
+          bookingLink: bookingUrl,
+        }, brand);
 
         try {
           const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
-            subject: `Happy Birthday, ${firstName}! 🎂 A gift from ${tenantShort}`,
+            subject: birthdaySubject,
             html,
           });
           if (!error) {
@@ -6669,18 +6545,17 @@ exports.autoLapsedCampaign = onSchedule(
         const firstName  = (client.name || 'there').split(' ')[0];
         const bookingUrl = settings.bookingUrl
           || `${await tenantBaseUrl(db, tenantId)}/?book`;
-        const body = `<p style="font-size:14px;line-height:1.7;color:#555;margin:0 0 8px;">
-          It's been a while since your last visit, and we genuinely miss you!
-          We have exciting new styles and services waiting for you.
-          Come back and let us take care of you — your nails (and you!) deserve it.
-        </p>`;
-        const html = buildAutoEmail("We miss you! 💅", firstName, body, "Book Your Next Visit", bookingUrl, brand);
+        const { subject: winbackSubject, html } = await renderTemplate(db, tenantId, 'win_back_email', {
+          clientName:  firstName,
+          salonName:   brand.salonName,
+          bookingLink: bookingUrl,
+        }, brand);
 
         try {
           const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
-            subject: `We miss you, ${firstName}! Come see us 💅`,
+            subject: winbackSubject,
             html,
           });
           if (!error) {
@@ -6993,9 +6868,12 @@ async function notifyTenantAdmins(db, tenantId, { title, line, data = {} }) {
     emps.docs.forEach(d => { const e = d.data() || {}; const em = String(e.email || '').toLowerCase(); if (em && e.phone) phoneByEmail[em] = e.phone; });
   } catch (e) { /* best-effort */ }
 
+  const { subject: alertSubject, html: alertHtml } = await renderTemplate(db, tenantId, 'admin_alert', {
+    salonName: brand.salonName, title, detail: line,
+  }, brand);
   await Promise.all([...admins].map(async (em) => {
     try { await sendPushToEmail(db, tenantId, em, { title, body: line, data }); } catch (e) { /* best-effort */ }
-    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `🔔 Admin Alert · ${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: alertSubject, html: alertHtml, tenantId }); } catch (e) { /* best-effort */ }
     const phone = phoneByEmail[em];
     if (phone) { try { await sendSms({ to: phone, body: `${brand.salonName}: ${line}`, tenantId, kind: 'transactional' }); } catch (e) { /* best-effort */ } }
   }));
@@ -9936,19 +9814,18 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
   }
   const firstName = (client.name || 'there').split(' ')[0];
   const brand = await tenantBranding(db, tenantId);
-  const html = buildAutoEmail(
-    `${plan.name} membership`,
-    firstName,
-    `<p style="font-size:14px;color:#222;margin:0 0 12px;">You're all set to join the <strong>${esc(plan.name)}</strong> membership at $${plan.price}/${plan.billingPeriod === 'yearly' ? 'year' : 'month'}.</p>
-     <p style="font-size:13px;color:#555;margin:0 0 18px;">Click the button below to add your payment method. Your subscription starts immediately and renews automatically. You can cancel anytime through your billing portal — we'll email you the link after sign-up.</p>`,
-    'Complete sign-up',
-    url,
-    brand
-  );
+  const priceLine = `$${plan.price}/${plan.billingPeriod === 'yearly' ? 'year' : 'month'}`;
+  const { subject: membershipSubject, html } = await renderTemplate(db, tenantId, 'membership_invite_email', {
+    clientName: firstName,
+    salonName:  brand.salonName,
+    planName:   plan.name,
+    priceLine,
+    paymentLink: url,
+  }, brand);
   await sendEmail({
     from:    await tenantFromAddress(db, tenantId),
     to:      client.email.trim(),
-    subject: `Complete your ${plan.name} membership`,
+    subject: membershipSubject,
     html,
   });
 
@@ -10945,36 +10822,26 @@ async function processGiftCardEmail(tenantId, docRef, data) {
   const amount = Number(data.balance) || Number(data.originalAmount) || 0;
   const bookingUrl = `https://${tenantId}.plumenexus.com/book`;
 
-  const html = `<!DOCTYPE html>
-<html><body style="margin:0;padding:0;background:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
-  <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:14px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);">
-    <div style="background:linear-gradient(135deg,#7c3aed,#3D95CE);padding:24px;text-align:center;color:#fff;">
-      <div style="font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;opacity:.9;">${esc(brand.salonName)}</div>
-      <div style="font-size:22px;font-weight:700;margin-top:8px;">🎁 You've received a gift card!</div>
-    </div>
-    <div style="padding:24px;">
-      <p style="font-size:15px;color:#222;margin:0 0 14px;">Hi ${esc(recipientName)},</p>
-      <p style="font-size:14px;line-height:1.6;color:#444;margin:0 0 18px;">Someone has gifted you a ${esc(brand.salonName)} gift card. Use the code below at checkout next time you visit us.</p>
-      <div style="background:#f0faf6;border:2px dashed #7c3aed;border-radius:12px;padding:20px;text-align:center;margin:18px 0;">
+  const codeBlock = `<div style="background:#f0faf6;border:2px dashed #7c3aed;border-radius:12px;padding:20px;text-align:center;margin:18px 0;">
         <div style="font-size:11px;color:#7c3aed;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-bottom:10px;">Your gift card code</div>
         <div style="font-size:26px;font-weight:800;color:#1a1a1a;letter-spacing:.16em;font-family:monospace,sans-serif;">${esc(code)}</div>
         <div style="font-size:14px;color:#7c3aed;font-weight:600;margin-top:10px;">$${amount.toFixed(2)} balance</div>
-      </div>
-      <p style="font-size:13px;line-height:1.6;color:#666;margin:0 0 8px;">Save this code — you'll need it at your next visit. Mention it to the front desk or enter it at checkout.</p>
-      <p style="font-size:13px;line-height:1.6;color:#666;margin:0;">Book your appointment any time at <a href="${esc(bookingUrl)}" style="color:#2D7A5F;">our online booking page</a>.</p>
-    </div>
-    <div style="padding:14px 24px;text-align:center;border-top:1px solid #f0f0f0;">
-      <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>
-    </div>
-  </div>
-</body></html>`;
+      </div>`;
+  const bookingLink = `<a href="${esc(bookingUrl)}" style="color:#2D7A5F;">our online booking page</a>`;
+  const { subject: giftSubject, html } = await renderTemplate(getFirestore(), tenantId, 'gift_card_email', {
+    recipientName,
+    salonName: brand.salonName,
+    amount:    amount.toFixed(2),
+    codeBlock,
+    bookingLink,
+  }, brand);
 
   let providerMessageId = null, errorCode = null, errorReason = null;
   try {
     const result = await sendEmail({
       from: await tenantFromAddress(getFirestore(), tenantId),
       to:   recipientEmail,
-      subject: `🎁 You've received a $${amount.toFixed(2)} gift card`,
+      subject: giftSubject,
       html,
       tenantId,
     });
