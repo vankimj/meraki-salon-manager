@@ -10,6 +10,7 @@ import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRi
 import { MODULES, getVisibleModules, getGroupedModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
 import { fetchWebfrontConfig, fetchEmployees } from '../lib/firestore';
 import { useUserPrefs } from '../lib/userPrefs';
+import { isManagementRole } from '../lib/rbac';
 
 function greeting() {
   const h = new Date().getHours();
@@ -61,7 +62,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     }).catch(() => setTechNameFromEmployee(null));
   }, [gUser?.email, realIsAdmin, techNameFromUserRec]);
   const myTechEmpName = techNameFromUserRec || techNameFromEmployee;
-  const canManage = isAdmin || isReadOnly;
+  const canManage = isAdmin || isReadOnly || isManagementRole(role);
   const plan = effectivePlan(settings);
 
   // Pre-login, settings is rules-blocked (staff-only). Fall back to the
@@ -254,7 +255,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
           )
         ) : !gUser ? null : (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--pn-text-faint)', fontSize: 13 }}>
-            Your access is pending admin approval.
+            {viewAs ? `The ${previewLabel(viewAs) || 'selected'} role has no management dashboard.` : 'Your access is pending admin approval.'}
           </div>
         )}
 
@@ -304,7 +305,7 @@ function SectionLabel({ children }) {
 function CuratedManageGrid({ settings, role, isAdmin, hasFeature, navigate, totalChatUnread, density, homeExpanded, onToggleExpanded }) {
   const groups   = getGroupedModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
   const showAll  = density === 'everything';
-  const [expanded, setExpanded] = useState(!!homeExpanded);
+  const [expanded, setExpanded] = useState(density === 'simple' ? false : !!homeExpanded);
   const advanced = [...groups.grow, ...groups.admin];
 
   const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 };

@@ -360,11 +360,11 @@ export const LAUNCH_GROUPS = [
         links: [{ label: 'Google Ads', href: L.googleAds }],
         ai: { fn: 'suggest', kind: 'adCopy', label: 'Write an ad' },
         keywords: 'google ads seo local search marketing nap citations advertising' },
-      { id: 'instagram-monitor', flavor: FLAVORS.DEEPLINK,
+      { id: 'instagram-monitor', flavor: FLAVORS.EXTERNAL,
         title: 'Post consistently on Instagram',
         why: 'Salons that post regularly grow faster. Connect Instagram to track your cadence and get AI suggestions on what to post next.',
         steps: ['Connect your Instagram business account', 'Aim for ~3 posts/week: before/afters, reels, client features', 'Use the AI coach for caption + post ideas'],
-        deepLink: { kind: 'module', target: 'grow' }, autoStatus: 'instagramConnected',
+        autoStatus: 'instagramConnected',
         ai: { fn: 'suggest', kind: 'postIdeas', label: 'Get post ideas' },
         keywords: 'instagram posting cadence reels content social media coach' },
     ],
@@ -401,7 +401,6 @@ export function deriveAutoStatus(item, ctx = {}) {
     case 'paymentsReady':          return settings?.stripeConnect?.chargesEnabled ? 'done' : null;
     case 'smsReady':               return sms?.status === 'approved' ? 'done' : (sms?.status && sms.status !== 'draft' ? 'in_progress' : null);
     case 'googleReviewsConnected': return googleAuth ? 'done' : (settings.googleReviewUrl ? 'in_progress' : null);
-    case 'placeIdSet':             return webfront?.googlePlaceId ? 'done' : null;
     case 'socialsAdded':           return (webfront?.instagram || webfront?.facebook || webfront?.tiktok) ? 'done' : null;
     case 'instagramConnected':     return instagramAuth ? 'done' : null;
     case 'portfolioAdded':         return (webfront?.portfolioUploads?.length > 0) ? 'done' : null;

@@ -9,7 +9,7 @@
 // Mirror of mobile/src/lib/userPrefs.js. Upgrade path for cross-device sync:
 // persist into usersFull[email].uiPrefs later (the shape is forward-compatible).
 //
-//   density: 'simple'   → Core tiles only; advanced options collapsed everywhere
+//   density: 'simple'   → fewest tiles; advanced groups always start collapsed
 //            'standard'  → curated home (Core open, Grow/Admin behind "Show more")
 //            'everything'→ every tile expanded; power-user mode
 //   homeExpanded: remembers whether the "Show more" groups were left open
@@ -41,10 +41,11 @@ export function getUserPrefs(uid) {
 }
 
 export function setUserPrefs(uid, patch) {
-  const next = { ...getUserPrefs(uid), ...patch };
-  try { localStorage.setItem(keyFor(uid), JSON.stringify(next)); } catch (_) {}
-  notify(uid, next);
-  return next;
+  const merged = { ...getUserPrefs(uid), ...patch };
+  try { localStorage.setItem(keyFor(uid), JSON.stringify(merged)); } catch (_) {}
+  const clean = getUserPrefs(uid); // re-read so density is sanitized for the return value + subscribers
+  notify(uid, clean);
+  return clean;
 }
 
 // Subscribe to in-tab pref changes. cb receives (uid, prefs).

@@ -8,12 +8,13 @@ import SupportTicketsButton from './SupportTicketsButton';
 import { MODULE_ICONS, IconHome, IconSettings, IconMessage } from './Icons';
 import LocationSwitcher from './LocationSwitcher';
 import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } from '../lib/modules';
+import { isManagementRole } from '../lib/rbac';
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
-  const { isAdmin, isReadOnly, isTech, isScheduler, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
+  const { isAdmin, isReadOnly, isTech, isScheduler, role, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
   const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
   const plan = effectivePlan(settings);
-  const canManage = isAdmin || isReadOnly;
+  const canManage = isAdmin || isReadOnly || isManagementRole(role);
 
   // Build the per-role sidebar list. Single catalog (src/lib/modules.js) is
   // the source of truth for plan gating + admin-only flags + per-tile hide
@@ -31,7 +32,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         .filter(m => isModuleAvailableForPlan(m, plan));
     }
     if (canManage) {
-      return getVisibleModules(settings, { isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
+      return getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
     }
     return [];
   })();
@@ -41,6 +42,8 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
     if (!va) return '';
     if (va.role === 'tech') return va.techName;
     if (va.role === 'scheduler') return 'Front desk';
+    if (va.role === 'manager') return 'Manager';
+    if (va.role === 'kiosk') return 'Kiosk';
     return 'View only';
   }
 
@@ -48,6 +51,8 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
     if (!val) return null;
     if (val === 'scheduler') return { role: 'scheduler' };
     if (val === 'readonly') return { role: 'readonly' };
+    if (val === 'manager') return { role: 'manager' };
+    if (val === 'kiosk') return { role: 'kiosk' };
     if (val.startsWith('tech:')) return { role: 'tech', techName: val.slice(5) };
     return null;
   }
@@ -183,11 +188,13 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
               className="ms-preview-select"
               style={{ height: 40, borderRadius: 20, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', fontFamily: 'inherit', padding: '0 12px', outline: 'none' }}>
               <option value="">👤 Preview as…</option>
+              <option value="manager">🧑‍💼 Manager</option>
               {techUsers.map(u => (
                 <option key={u.email} value={`tech:${u.techName}`}>👩‍💼 {u.techName}</option>
               ))}
               <option value="scheduler">📅 Scheduler</option>
               <option value="readonly">👁 Read-only</option>
+              <option value="kiosk">🔒 Kiosk</option>
             </select>
           )}
           <button onClick={() => setShowFeedback(true)} title="Report a bug or idea" className="ms-action-btn"

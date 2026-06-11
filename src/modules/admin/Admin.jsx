@@ -1943,10 +1943,13 @@ function Btn({ onClick, color, children, disabled, savedLabel }) {
   return (
     <Button
       onClick={handleClick}
-      disabled={disabled || busy}
+      disabled={disabled}
       variant={phase === 'saved' ? 'success' : undefined}
       color={phase === 'saved' ? undefined : color}
-      style={!color && phase !== 'saved' ? { background: 'var(--pn-surface-alt)', color: '#666' } : undefined}
+      style={{
+        ...(!color && phase !== 'saved' ? { background: 'var(--pn-surface-alt)', color: '#666' } : {}),
+        ...(busy ? { cursor: 'default' } : {}),
+      }}
     >
       {label}
     </Button>

@@ -28,6 +28,11 @@ describe('userPrefs', () => {
     expect(getUserPrefs('u1').density).toBe('standard');
   });
 
+  it('setUserPrefs returns a sanitized density (not the raw patch)', () => {
+    const out = setUserPrefs('u1', { density: 'bogus' });
+    expect(out.density).toBe('standard');
+  });
+
   it('coerces homeExpanded to a boolean', () => {
     setUserPrefs('u1', { homeExpanded: 1 });
     expect(getUserPrefs('u1').homeExpanded).toBe(true);
