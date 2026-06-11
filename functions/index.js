@@ -3418,6 +3418,8 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
       policy: {
         cancellationLeadHours: leadHours,
         canModify: appt.status !== 'cancelled' && appt.status !== 'done' && hUntil >= leadHours,
+        canCancel: appt.status !== 'cancelled' && appt.status !== 'done',
+        lateCancel: appt.status !== 'cancelled' && appt.status !== 'done' && hUntil < leadHours,
         hoursUntil: hUntil,
         cancellationPolicyText: typeof settings.cancellationPolicyText === 'string' ? settings.cancellationPolicyText.slice(0, 1000) : null,
         refundPolicyText:       typeof settings.refundPolicyText       === 'string' ? settings.refundPolicyText.slice(0, 1000)       : null,
@@ -3431,8 +3433,11 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
 
   if (appt.status === 'cancelled') throw new HttpsError('failed-precondition', 'Already cancelled');
   if (appt.status === 'done')      throw new HttpsError('failed-precondition', 'Already completed');
-  if (hoursUntilAppt() < leadHours) {
-    throw new HttpsError('failed-precondition', `Changes must be made at least ${leadHours} hour${leadHours === 1 ? '' : 's'} in advance — please call the salon.`);
+  // A customer can always CANCEL (a late cancellation beats a silent no-show), but
+  // a RESCHEDULE inside the lead window still needs a call to the salon.
+  const lateChange = hoursUntilAppt() < leadHours;
+  if (action !== 'cancel' && lateChange) {
+    throw new HttpsError('failed-precondition', `Reschedules must be made at least ${leadHours} hour${leadHours === 1 ? '' : 's'} in advance — please call the salon.`);
   }
 
   if (action === 'cancel') {
@@ -3440,6 +3445,7 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
       status:           'cancelled',
       cancelledAt:      new Date().toISOString(),
       cancelledBy:      'client_self_service',
+      lateCancellation: lateChange,
       updatedAt:        new Date().toISOString(),
     });
     // Notify the assigned tech (push, via sendApptNotification).
@@ -3448,7 +3454,7 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
         apptId: appt.id || null, techName: appt.techName || '', clientName: appt.clientName || 'A client',
         date: appt.date || '', startTime: appt.startTime || '',
         changeType: 'appt_removed',
-        message: `${appt.clientName || 'A client'} cancelled their appointment${appt.date ? ` on ${appt.date}` : ''}${appt.startTime ? ` at ${appt.startTime}` : ''}.`,
+        message: `${appt.clientName || 'A client'} cancelled their appointment${appt.date ? ` on ${appt.date}` : ''}${appt.startTime ? ` at ${appt.startTime}` : ''}.${lateChange ? ' (within the cancellation window — a fee may apply.)' : ''}`,
         createdAt: new Date().toISOString(), sent: false,
       });
     } catch (e) { console.error('[manageAppt] cancel notify failed:', e?.message); }
@@ -4972,7 +4978,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
           sendEmail({
             from:    adminFrom,
             to:      a.email,
-            subject: `${isOnline ? 'New online booking' : 'New appointment'} — ${appt.clientName} on ${fmtDate(appt.date)}`,
+            subject: `🔔 Admin Alert · ${isOnline ? 'New online booking' : 'New appointment'} — ${appt.clientName} on ${fmtDate(appt.date)}`,
             html:    adminHtml,
           }).catch(e => console.error('[Booking] Admin email failed:', e.message))
         ));
@@ -6988,7 +6994,7 @@ async function notifyTenantAdmins(db, tenantId, { title, line, data = {} }) {
 
   await Promise.all([...admins].map(async (em) => {
     try { await sendPushToEmail(db, tenantId, em, { title, body: line, data }); } catch (e) { /* best-effort */ }
-    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `🔔 Admin Alert · ${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
     const phone = phoneByEmail[em];
     if (phone) { try { await sendSms({ to: phone, body: `${brand.salonName}: ${line}`, tenantId, kind: 'transactional' }); } catch (e) { /* best-effort */ } }
   }));
@@ -7253,7 +7259,7 @@ async function notifyTechsOfRedo(db, tenantId, { rec, redoEntry, issuerEmail }) 
     const em = emailByName[String(name).trim().toLowerCase()];
     if (!em) return;
     try { await sendPushToEmail(db, tenantId, em, { title, body: line, data: { type: 'redo', receiptId: rec.viewToken || null } }); } catch (e) { /* best-effort */ }
-    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
+    try { await sendEmail({ from: await tenantFromAddress(db, tenantId), to: em, subject: `🔔 Admin Alert · ${brand.salonName}: ${title}`, html: `<p style="font-family:sans-serif;font-size:15px;color:#222;">${esc(line)}</p>`, tenantId }); } catch (e) { /* best-effort */ }
   };
   await Promise.all([
     ...fromTechs.map(t => send(t, 'A service was redone', `${client}'s ${svc} was redone by ${redoEntry.toTech}. ${amtStr} in commission moved from you to them${redoEntry.reason ? ` — "${redoEntry.reason}"` : ''}.`)),
