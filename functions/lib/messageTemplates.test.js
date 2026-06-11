@@ -3,7 +3,7 @@ import {
   esc, interpolate, renderEmailBody, emailShell, segmentInfo,
 } from './emailShell.js';
 import {
-  renderMessage, DEFAULT_TEMPLATES, TEMPLATE_KEYS,
+  renderMessage, resolvePhrases, DEFAULT_TEMPLATES, TEMPLATE_KEYS,
 } from './messageTemplates.js';
 
 const BRAND = { salonName: 'Meraki Nail Studio', footerLine: 'Meraki Nail Studio · 123 Main St' };
@@ -146,6 +146,31 @@ describe('default-parity — wording is preserved', () => {
     expect(out.body).toBe(
       'Meraki Nail Studio: Hi Sam! Your appt tomorrow at 2:00 PM with Jen. Confirm/reschedule: https://x.test/m',
     );
+  });
+});
+
+describe('phrases (editable conditional wordings)', () => {
+  it('returns defaults when there is no override', () => {
+    const ph = resolvePhrases('reminder_email', null);
+    expect(ph.helpLineWithReply).toBe('Need help? Reply to this email or call the salon.');
+    expect(ph.helpLineNoReply).toBe('Need help? Give the salon a call.');
+  });
+  it('layers an override phrase over the default, keeping the others', () => {
+    const ph = resolvePhrases('cancellation_notice_email', { phrases: { introStaff: 'So sorry, we had to cancel.' } });
+    expect(ph.introStaff).toBe('So sorry, we had to cancel.');
+    expect(ph.introSelfService).toBe('Your appointment below has been cancelled, as requested. We hope to see you again soon!');
+  });
+  it('ignores a blank override phrase (falls back to default)', () => {
+    const ph = resolvePhrases('cancellation_sms', { phrases: { apologyStaff: '' } });
+    expect(ph.apologyStaff).toBe("we're sorry — ");
+  });
+  it('every previewVar points at a real template var', () => {
+    for (const key of TEMPLATE_KEYS) {
+      const def = DEFAULT_TEMPLATES[key];
+      for (const meta of Object.values(def.phrases || {})) {
+        if (meta.previewVar) expect(def.vars).toContain(meta.previewVar);
+      }
+    }
   });
 });
 

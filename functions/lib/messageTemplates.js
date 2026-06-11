@@ -64,6 +64,7 @@ async function loadOverride(db, tenantId, key) {
       override = {
         subject: typeof d.subject === 'string' ? d.subject : undefined,
         body:    typeof d.body === 'string' ? d.body : undefined,
+        phrases: (d.phrases && typeof d.phrases === 'object') ? d.phrases : undefined,
       };
     }
   } catch (e) {
@@ -82,6 +83,29 @@ async function renderTemplate(db, tenantId, key, vars = {}, brand = null) {
   return renderMessage(key, vars, brand, override);
 }
 
+// Resolve a template's editable "phrases" — the conditional prose fragments
+// (e.g. the reminder help line, the cancellation intro) that the send site
+// picks between at runtime. Returns { phraseKey: text } with per-tenant
+// overrides layered over the defaults. Pure.
+function resolvePhrases(key, override = null) {
+  const def = DEFAULT_TEMPLATES[key];
+  const defs = (def && def.phrases) || {};
+  const out = {};
+  for (const k of Object.keys(defs)) {
+    const ov = override && override.phrases && typeof override.phrases[k] === 'string' && override.phrases[k].length
+      ? override.phrases[k] : null;
+    out[k] = ov != null ? ov : defs[k].default;
+  }
+  return out;
+}
+
+// Server-side: load the (cached) override and resolve phrases. The send site
+// calls this, then passes the chosen phrase into renderTemplate's vars.
+async function getTemplatePhrases(db, tenantId, key) {
+  const override = await loadOverride(db, tenantId, key);
+  return resolvePhrases(key, override);
+}
+
 function clearTemplateCache(tenantId, key) {
   if (tenantId && key) _overrideCache.delete(`${tenantId}/${key}`);
   else _overrideCache.clear();
@@ -89,5 +113,6 @@ function clearTemplateCache(tenantId, key) {
 
 module.exports = {
   renderMessage, renderTemplate, loadOverride, clearTemplateCache,
+  resolvePhrases, getTemplatePhrases,
   DEFAULT_TEMPLATES, TEMPLATE_GROUPS, TEMPLATE_KEYS,
 };

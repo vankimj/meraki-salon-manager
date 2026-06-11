@@ -65,6 +65,10 @@ Just a reminder that you have an appointment **tomorrow** at {salonName}.
     vars: ['clientName', 'salonName', 'date', 'time', 'service', 'tech', 'manageLink', 'helpLine'],
     htmlVars: ['detailsCard'],
     email: { subtitle: 'Appointment Reminder' },
+    phrases: {
+      helpLineWithReply: { label: 'Help line — when replies reach a real inbox', default: 'Need help? Reply to this email or call the salon.', previewVar: 'helpLine' },
+      helpLineNoReply:   { label: 'Help line — when no reply-to address is set', default: 'Need help? Give the salon a call.' },
+    },
   },
 
   cancellation_notice_email: {
@@ -85,6 +89,11 @@ Just a reminder that you have an appointment **tomorrow** at {salonName}.
     vars: ['clientName', 'salonName', 'intro', 'rebookUrl', 'questionsLine'],
     htmlVars: ['detailsCard'],
     email: { subtitle: 'Appointment Cancelled' },
+    phrases: {
+      introStaff:       { label: 'Intro — salon/staff cancelled the appointment', default: "We're sorry — your appointment below has been cancelled. We'd love to find you a new time whenever you're ready.", previewVar: 'intro' },
+      introSelfService: { label: 'Intro — client cancelled it themselves', default: 'Your appointment below has been cancelled, as requested. We hope to see you again soon!' },
+      questionsLine:    { label: 'Closing line — when replies reach a real inbox', default: 'Questions? Just reply to this email.', previewVar: 'questionsLine' },
+    },
   },
 
   receipt_email: {
@@ -237,6 +246,9 @@ It's been a while since your last visit, and we genuinely miss you! We have exci
     description: 'Texted to the client when their appointment is cancelled.',
     body: 'Hi {clientName}, {apology}your {when} appointment was cancelled.{rebookSuffix}',
     vars: ['clientName', 'apology', 'when', 'rebookSuffix'],
+    phrases: {
+      apologyStaff: { label: 'Apology prefix — salon/staff cancelled (a client self-cancel omits this)', default: "we're sorry — ", previewVar: 'apology' },
+    },
   },
 
   // ── Admin alerts (emailed to salon admins) ─────────────────────────
@@ -252,6 +264,10 @@ It's been a while since your last visit, and we genuinely miss you! We have exci
     vars: ['clientName', 'date', 'bookingKind', 'introLine'],
     htmlVars: ['detailsCard'],
     email: { subtitle: '{subtitleLine}', footerBorder: false },
+    phrases: {
+      introOnline: { label: 'Intro — booked online by a client', default: 'A new appointment was booked online.', previewVar: 'introLine' },
+      introAdded:  { label: 'Intro — added by staff on the schedule', default: 'A new appointment was added to the schedule.' },
+    },
   },
 
   admin_alert: {
