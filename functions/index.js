@@ -15,6 +15,7 @@ const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
 const { roleCan }          = require('./lib/rbac');
 const kioskSaleLib         = require('./lib/kioskSale');
+const ledger               = require('./lib/ledger');
 
 initializeApp();
 
@@ -6956,6 +6957,23 @@ exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
         details: `${sign === 'added' ? '+' : '−'}${amt} store credit · ${out.clientName} · new balance $${out.credit.toFixed(2)} · "${reasonStr}"`,
       });
     } catch (e) { console.error('[adjustClientCredit] log failed:', e?.message); }
+    // Financial ledger entry — manual store-credit change (the reason + who only
+    // exist here, so it's instrumented directly rather than via a trigger).
+    try {
+      await ledger.appendLedger(db, tenantId, `credit_${idemKey}`, {
+        type: 'credit_adjust',
+        at: new Date().toISOString(),
+        amount: Math.abs(out.applied),
+        direction: out.applied >= 0 ? 'in' : 'out',
+        method: 'store_credit',
+        clientId, clientName: out.clientName || 'Client',
+        by: issuerEmail || null,
+        reason: reasonStr,
+        creditDelta: out.applied,
+        creditBalanceAfter: out.credit,
+        detail: `Store credit ${sign} ${amt} · ${out.clientName || 'Client'} · new balance $${out.credit.toFixed(2)} · "${reasonStr}"`,
+      });
+    } catch (e) { console.error('[adjustClientCredit] ledger failed:', e?.message); }
     notifyTenantAdmins(db, tenantId, {
       title: `${amt} store credit ${sign}`,
       line:  `${issuerEmail || 'A staff member'} ${sign} ${amt} store credit ${out.applied >= 0 ? 'to' : 'from'} ${out.clientName} (new balance $${out.credit.toFixed(2)}) — "${reasonStr}".`,
@@ -6963,6 +6981,40 @@ exports.adjustClientCredit = onCall({ cors: true }, async (request) => {
     }).catch(e => console.error('[adjustClientCredit] notify failed:', e?.message));
   }
   return out;
+});
+
+// ── Financial ledger triggers ─────────────────────────────────────────────────
+// Capture every sale + refund straight from the receipt, so the ledger is
+// complete regardless of which client/server path recorded the sale. Idempotent
+// (eventId = doc id), so a trigger retry overwrites instead of double-counting.
+exports.ledgerOnReceiptCreated = onDocumentCreated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {
+  const r = event.data?.data();
+  if (!r) return;
+  const { tenantId, receiptId } = event.params;
+  try {
+    await ledger.appendLedger(getFirestore(), tenantId, `sale_${receiptId}`, ledger.buildSaleEntry(receiptId, r));
+  } catch (e) { console.error('[ledger] sale entry failed:', receiptId, e?.message); }
+});
+
+exports.ledgerOnReceiptUpdated = onDocumentUpdated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {
+  const before = event.data?.before?.data() || {};
+  const after  = event.data?.after?.data()  || {};
+  const { tenantId, receiptId } = event.params;
+  const db = getFirestore();
+  // New refunds (compare by idempotency key).
+  const seenRefunds = new Set((before.refunds || []).map(rf => rf && rf.key).filter(Boolean));
+  for (const rf of (after.refunds || [])) {
+    if (rf && rf.key && seenRefunds.has(rf.key)) continue;
+    try { await ledger.appendLedger(db, tenantId, `refund_${receiptId}_${rf.key || (after.refunds || []).indexOf(rf)}`, ledger.buildRefundEntry(receiptId, after, rf)); }
+    catch (e) { console.error('[ledger] refund entry failed:', receiptId, e?.message); }
+  }
+  // New redos (commission transfers).
+  const beforeRedoCount = (before.redos || []).length;
+  const afterRedos = after.redos || [];
+  for (let i = beforeRedoCount; i < afterRedos.length; i++) {
+    try { await ledger.appendLedger(db, tenantId, `redo_${receiptId}_${i}`, ledger.buildRedoEntry(receiptId, after, afterRedos[i], i)); }
+    catch (e) { console.error('[ledger] redo entry failed:', receiptId, e?.message); }
+  }
 });
 
 // Redo a service from a past sale. A redo is NOT a refund — no money moves. It
