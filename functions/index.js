@@ -2074,6 +2074,8 @@ exports.getPublicAppointment = onCall({ cors: true }, async (request) => {
   const snap = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
   if (!snap.exists) throw new HttpsError('not-found', 'Appointment not found.');
   const a = snap.data();
+  const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+  const sData = sSnap.exists ? sSnap.data() : {};
   return {
     id:        snap.id,
     date:      a.date || '',
@@ -2087,6 +2089,7 @@ exports.getPublicAppointment = onCall({ cors: true }, async (request) => {
     clientFirstName: ((a.clientName || '').trim().split(/\s+/)[0] || ''),
     status:          a.status || 'scheduled',
     checkedInAt:     a.checkedInAt || null,
+    cancellationPolicyText: typeof sData?.cancellationPolicyText === 'string' ? sData.cancellationPolicyText.slice(0, 1000) : null,
   };
 });
 
@@ -2180,6 +2183,8 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
     reviewEditWindowDays: editWindowDays,
     feedbackTitle:   typeof sData?.feedbackThankYouTitle === 'string' ? sData.feedbackThankYouTitle.slice(0, 120) : null,
     feedbackMessage: typeof sData?.feedbackThankYouMsg   === 'string' ? sData.feedbackThankYouMsg.slice(0, 400)   : null,
+    cancellationPolicyText: typeof sData?.cancellationPolicyText === 'string' ? sData.cancellationPolicyText.slice(0, 1000) : null,
+    refundPolicyText:       typeof sData?.refundPolicyText       === 'string' ? sData.refundPolicyText.slice(0, 1000)       : null,
     contact,
     existingRatings,
   };
@@ -3414,6 +3419,7 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
         cancellationLeadHours: leadHours,
         canModify: appt.status !== 'cancelled' && appt.status !== 'done' && hUntil >= leadHours,
         hoursUntil: hUntil,
+        cancellationPolicyText: typeof settings.cancellationPolicyText === 'string' ? settings.cancellationPolicyText.slice(0, 1000) : null,
       },
       salon: {
         name: settings.salonName || (await tenantBranding(getFirestore(), tid)).salonName,
@@ -4814,6 +4820,11 @@ exports.sendBookingConfirmation = onDocumentCreated(
     // an appointment doc). Every interpolation below MUST be HTML-escaped so
     // an attacker can't inject markup into mail sent from the verified domain.
     const brand     = await tenantBranding(db, tenantId);
+    let sData = {};
+    try {
+      const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      if (sSnap.exists) sData = sSnap.data() || {};
+    } catch { /* policy is optional */ }
     const firstName = (appt.clientName || 'there').split(' ')[0];
     const dateStr   = `${esc(fmtDate(appt.date))} at ${esc(fmtTime(appt.startTime))}`;
     const svcName   = appt.services?.[0]?.name || 'Nail service';
@@ -4855,7 +4866,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
           Reschedule or cancel
         </a>
       </div>` : ''}
-      ${replyTo ? `<p style="font-size:11px;color:#aaa;margin:14px 0 0;text-align:center;">Or reply to this email — we'll take care of you.</p>` : ''}
+      ${typeof sData.cancellationPolicyText === 'string' && sData.cancellationPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:18px 0 0;"><strong style="color:#888;">Cancellation policy:</strong> ${esc(sData.cancellationPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : ''}
     </div>
     <div style="padding:12px 24px 20px;text-align:center;">
       <p style="font-size:11px;color:#bbb;margin:0;">${esc(brand.footerLine)}</p>

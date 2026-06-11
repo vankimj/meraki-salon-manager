@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
 import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance } from '../../lib/firestore';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
 import { callFn, startTrace } from '../../lib/firebase';
 import CheckoutModal from '../checkout/CheckoutModal';
-import RefundModal from '../checkout/RefundModal';
+import RefundModal from '../receipts/RefundModal';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
@@ -733,6 +733,23 @@ function openNew(techName, slotMins) {
   function openView(appt) { setModal({ appt, original: appt, mode: 'view' }); }
   function openEdit(appt) { setModal({ appt: { ...appt }, original: appt, mode: 'edit' }); }
 
+  // "Issue Refund" routes through the REAL refund flow (refundSale: Stripe/credit
+  // refund + ledger + commission). That operates on the POS receipt, not the
+  // appointment — so look up the receipt that covers this appt first. No receipt
+  // means the appt was never checked out, so there's nothing to refund.
+  async function requestRefund(appt) {
+    try {
+      const receipt = await fetchReceiptByApptId(appt?.id);
+      if (!receipt) {
+        showToast('No payment to refund — this appointment hasn\'t been checked out.');
+        return;
+      }
+      setRefund(receipt);
+    } catch (e) {
+      showToast(`Couldn't load the sale to refund: ${e?.message || 'try again'}`);
+    }
+  }
+
   function toggleTechVisible(name) {
     setVisibleTechNames(prev => {
       const next = prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name];
@@ -1196,7 +1213,7 @@ function openNew(techName, slotMins) {
           onClose={() => setModal(null)}
           onCheckout={appt => { setModal(null); setCheckout({ appts: [appt], walkInClient: null }); }}
           onAddToTicket={appt => { setModal(null); addApptToTicket(appt); showToast(`Added ${appt.clientName || 'walk-in'} to ticket`); }}
-          onRefund={appt => setRefund(appt)}
+          onRefund={appt => requestRefund(appt)}
           onOpenClient={(id) => { setModal(null); onOpenClient?.(id); }}
           onClientCreated={(c) => setClients(prev => [...prev, c].sort((a, b) => (a.name || '').localeCompare(b.name || '')))}
           isAdmin={isAdmin}
@@ -1217,9 +1234,11 @@ function openNew(techName, slotMins) {
 
       {refund && (
         <RefundModal
-          appt={refund}
-          onComplete={() => { setRefund(null); setModal(null); load(); }}
+          receipt={refund}
           onClose={() => setRefund(null)}
+          onDone={(msg) => { if (msg) showToast(msg); setRefund(null); setModal(null); load(); }}
+          showToast={showToast}
+          commissionDefault={settings?.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold'}
         />
       )}
 
