@@ -2084,6 +2084,15 @@ function geoString(a) {
   return [g.city, g.region, g.country].filter(Boolean).join(', ');
 }
 
+// When the booking was actually placed (appointment createdAt) — distinct from
+// the appointment date, which is when the visit is scheduled to happen.
+function fmtBookedAt(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
 function apptLost(a) {
   return (a.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
 }
@@ -2174,7 +2183,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
   function exportCsv() {
     const header = [
       'Date', 'Time', 'Status', 'Cancelled at', 'Client', 'Phone', 'Email', 'Address',
-      'Tech', 'Services', 'Lost revenue', 'Source', 'Booking IP', 'Booking location',
+      'Tech', 'Services', 'Lost revenue', 'Source', 'Booking IP', 'Booking location', 'Booked at',
       'Deposit mode', 'Deposit amount', 'Deposit status', 'Client ID', 'Appointment ID',
     ];
     const body = filtered.map(r => [
@@ -2192,6 +2201,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
       sourceLabel(r),
       r.bookingIp || '',
       geoString(r),
+      fmtBookedAt(r.createdAt),
       r.deposit?.mode || '',
       r.deposit?.amountCents ? (r.deposit.amountCents / 100).toFixed(2) : '',
       r.deposit?.status || '',
@@ -2271,6 +2281,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                     <Th>Lost</Th>
                     <Th left>Source</Th>
                     <Th left>Booked from</Th>
+                    <Th left>Booked at</Th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2322,6 +2333,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                         {geoString(r) ? <div>{geoString(r)}</div> : <span style={{ color: 'var(--pn-text-faint)' }}>{r.source === 'online_booking' ? '—' : 'In-salon'}</span>}
                         {r.bookingIp && <div style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>{r.bookingIp}</div>}
                       </Td>
+                      <Td muted>{fmtBookedAt(r.createdAt) || '—'}</Td>
                     </tr>
                   ))}
                 </tbody>
