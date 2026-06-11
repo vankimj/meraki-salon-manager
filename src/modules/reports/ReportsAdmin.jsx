@@ -1313,6 +1313,7 @@ function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays,
   const all = entries || [];
   const filtered = all.filter(e => typeFilter === 'all' || e.type === typeFilter);
   const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
   const sum = all.reduce((a, e) => {
     const amt = Number(e.amount) || 0;
     if (e.type === 'sale') { a.sales += amt; }
