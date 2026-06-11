@@ -7410,7 +7410,14 @@ exports.shortLinkRedirect = onRequest({ cors: false }, async (req, res) => {
     if (!data) { res.status(404).send('Link expired or not found'); return; }
     const { tenantId, apptId, exp, token } = data;
     const target = `/?manage=${encodeURIComponent(apptId)}&tid=${encodeURIComponent(tenantId)}&exp=${Number(exp)}&t=${encodeURIComponent(token)}`;
-    res.redirect(302, target);
+    // Return a BROWSER-side redirect (200 HTML), NOT a 302. The *.plumenexus.com
+    // Cloudflare Worker proxies via fetch(), which follows 302s server-side — so a
+    // 302 here made the Worker fetch the SPA and hand it back at /m/{code} with no
+    // ?manage= param, landing the visitor on home. A 200 HTML page makes the
+    // browser itself navigate to ?manage=…, so the manage screen actually loads.
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.set('Cache-Control', 'no-store');
+    res.status(200).send(`<!doctype html><html><head><meta charset="utf-8"><script>location.replace(${JSON.stringify(target)})</script><noscript><meta http-equiv="refresh" content="0;url=${target.replace(/&/g, '&amp;')}"></noscript></head><body style="font-family:sans-serif;padding:24px;color:#555">Redirecting…</body></html>`);
   } catch (e) {
     console.error('[shortLinkRedirect] error', e);
     res.status(500).send('Server error');
