@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange, fetchLedgerByRange } from '../../lib/firestore';
 import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
@@ -145,6 +145,7 @@ const PERIODS = [
 const TABS = [
   { id: 'overview',      label: 'Overview' },
   { id: 'transactions',  label: 'Transactions' },
+  { id: 'ledger',        label: 'Audit Log' },
   { id: 'cancellations', label: 'Cancellations & No-Shows' },
   { id: 'ratings',       label: 'Service Ratings' },
   { id: 'tax',           label: 'IRS / Tax Report' },
@@ -308,6 +309,16 @@ export default function ReportsAdmin() {
         <AskAI />
       ) : activeTab === 'tax' ? (
         <TaxReport />
+      ) : activeTab === 'ledger' ? (
+        <LedgerReport
+          startDate={isCustom ? customStart : startOf(periodDays)}
+          endDate={isCustom ? customEnd : todayStr()}
+          isCustom={isCustom}
+          periodDays={periodDays}
+          setPeriodDays={setPeriodDays}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd}     setCustomEnd={setCustomEnd}
+        />
       ) : activeTab === 'transactions' ? (
         <TransactionsReport
           startDate={isCustom ? customStart : startOf(periodDays)}
@@ -1277,6 +1288,132 @@ const QUARTER_MONTHS = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
 
 // ─── Transactions Report (filterable + per-tech detail) ───────────────
 const METHOD_LABELS = { card: 'Credit card', cash: 'Cash', venmo: 'Venmo', other: 'Other' };
+
+function LedgerSummaryCard({ label, value, color }) {
+  return (
+    <div style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 12px', background: 'var(--pn-surface)' }}>
+      <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.03em' }}>{label}</div>
+      <div style={{ fontSize: 17, fontWeight: 800, color, marginTop: 3 }}>{value}</div>
+    </div>
+  );
+}
+
+// Financial Audit Log — every money movement (sale / refund / store-credit
+// adjust / redo) from the immutable ledger, with a reconciliation summary.
+function LedgerReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const [entries, setEntries]   = useState(null);
+  const [typeFilter, setType]   = useState('all');
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchLedgerByRange(startDate, endDate).then(e => setEntries(e || [])).catch(() => setEntries([])).finally(() => setLoading(false));
+  }, [startDate, endDate]);
+
+  const all = entries || [];
+  const filtered = all.filter(e => typeFilter === 'all' || e.type === typeFilter);
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const sum = all.reduce((a, e) => {
+    const amt = Number(e.amount) || 0;
+    if (e.type === 'sale') { a.sales += amt; }
+    else if (e.type === 'refund') { if (e.refundDest === 'credit') a.refundCredit += amt; else a.refundMoney += amt; }
+    else if (e.type === 'credit_adjust') { if (e.direction === 'in') a.creditAdded += amt; else a.creditRemoved += amt; }
+    return a;
+  }, { sales: 0, refundMoney: 0, refundCredit: 0, creditAdded: 0, creditRemoved: 0 });
+  const netCash = r2(sum.sales - sum.refundMoney);
+
+  const stamp = (ts) => ts ? new Date(ts).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const META = {
+    sale:          { label: 'Sale',   color: '#16a34a', sign: '+' },
+    refund:        { label: 'Refund', color: '#ef4444', sign: '−' },
+    credit_adjust: { label: 'Credit', color: '#2563eb', sign: '' },
+    redo:          { label: 'Redo',   color: '#9333ea', sign: '' },
+  };
+
+  function exportCSV() {
+    const hdr = ['at', 'type', 'amount', 'direction', 'method', 'client', 'tech', 'by', 'reason', 'refundDest', 'commission', 'creditBalanceAfter', 'transactionId'];
+    const rows = filtered.map(e => [
+      e.at, e.type, e.amount, e.direction, e.method || '', e.clientName || '', e.techName || '', e.by || '', (e.reason || ''),
+      e.refundDest || '', e.commissionByTech ? Object.entries(e.commissionByTech).map(([t, v]) => `${t}:${v}`).join(';') : '',
+      e.creditBalanceAfter != null ? e.creditBalanceAfter : '', e.refViewToken || e.refReceiptId || '',
+    ]);
+    const csv = [hdr, ...rows].map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `financial-ledger-${startDate}_to_${endDate}.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {PERIODS.map(p => <PillBtn key={p.days} active={periodDays === p.days} onClick={() => setPeriodDays(p.days)}>{p.label}</PillBtn>)}
+          <PillBtn active={isCustom} onClick={() => setPeriodDays('custom')}>Custom</PillBtn>
+          {isCustom && (
+            <>
+              <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)' }} />
+              <span style={{ color: 'var(--pn-text-muted)', fontSize: 12 }}>→</span>
+              <input type="date" value={customEnd} min={customStart} max={todayStr()} onChange={e => setCustomEnd(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)' }} />
+            </>
+          )}
+        </div>
+        <button onClick={exportCSV} disabled={!filtered.length}
+          style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #2D7A5F', background: filtered.length ? '#2D7A5F' : 'var(--pn-border-strong)', color: '#fff', fontWeight: 600, cursor: filtered.length ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+          Export CSV
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: 10, marginBottom: 14 }}>
+        <LedgerSummaryCard label="Sales" value={money(sum.sales)} color="#16a34a" />
+        <LedgerSummaryCard label="Refunds — money" value={`−${money(sum.refundMoney)}`} color="#ef4444" />
+        <LedgerSummaryCard label="Refunds — store credit" value={`−${money(sum.refundCredit)}`} color="#ef4444" />
+        <LedgerSummaryCard label="Net cash" value={money(netCash)} color="var(--pn-text)" />
+        <LedgerSummaryCard label="Credit added" value={money(sum.creditAdded)} color="#2563eb" />
+        <LedgerSummaryCard label="Credit removed" value={`−${money(sum.creditRemoved)}`} color="#2563eb" />
+      </div>
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 12, flexWrap: 'wrap' }}>
+        {['all', 'sale', 'refund', 'credit_adjust', 'redo'].map(t => (
+          <PillBtn key={t} active={typeFilter === t} onClick={() => setType(t)}>{t === 'all' ? `All (${all.length})` : (META[t]?.label || t)}</PillBtn>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--pn-text-faint)' }}>Loading…</div>
+      ) : !filtered.length ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--pn-text-faint)', fontSize: 13 }}>
+          No financial activity in this period.{all.length === 0 && entries !== null ? ' (The ledger captures everything going forward; older activity appears once backfilled.)' : ''}
+        </div>
+      ) : (
+        <div>
+          {filtered.map(e => {
+            const m = META[e.type] || { label: e.type, color: 'var(--pn-text)', sign: '' };
+            return (
+              <div key={e.id} style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 12px', marginBottom: 8, background: 'var(--pn-surface)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <span style={{ fontSize: 10.5, fontWeight: 800, color: m.color, background: `${m.color}1a`, padding: '2px 7px', borderRadius: 6, marginRight: 8 }}>{m.label}</span>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--pn-text)' }}>{e.clientName || '—'}</span>
+                    {e.techName ? <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}> · {e.techName}</span> : null}
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: m.color, whiteSpace: 'nowrap' }}>{m.sign}{money(e.amount)}</div>
+                </div>
+                <div style={{ fontSize: 11.5, color: 'var(--pn-text-muted)', marginTop: 3 }}>
+                  {stamp(e.at)}{e.method ? ` · ${e.method}` : ''}{e.by ? ` · by ${e.by}` : ''}
+                  {e.type === 'refund' ? <>{' · '}<b style={{ color: e.refundDest === 'credit' ? '#2563eb' : '#ef4444' }}>{e.refundDest === 'credit' ? 'store credit' : 'money back'}</b>{e.commissionByTech ? ` · commission ${Object.entries(e.commissionByTech).map(([t, v]) => `${t}:${v}`).join(', ')}` : ''}</> : null}
+                  {e.type === 'credit_adjust' && e.creditBalanceAfter != null ? ` · new balance ${money(e.creditBalanceAfter)}` : ''}
+                </div>
+                {e.reason ? <div style={{ fontSize: 11.5, color: 'var(--pn-text-faint)', marginTop: 2, fontStyle: 'italic' }}>“{e.reason}”</div> : null}
+                {(e.refViewToken || e.refReceiptId) ? <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 2, fontFamily: 'ui-monospace, monospace' }}>#{String(e.refViewToken || e.refReceiptId).slice(0, 10).toUpperCase()}</div> : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function TransactionsReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
   const [receipts, setReceipts] = useState(null);
