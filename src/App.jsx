@@ -27,6 +27,7 @@ import GiftCardsAdmin from './modules/giftcards/GiftCardsAdmin';
 import MeetingsAdmin from './modules/meetings/MeetingsAdmin';
 import ProductsAdmin from './modules/products/ProductsAdmin';
 import MarketingAdmin from './modules/marketing/MarketingAdmin';
+import GrowGuide from './modules/grow/GrowGuide';
 import ChatAdmin from './modules/chat/ChatAdmin';
 import CheckInScreen from './components/CheckInScreen';
 import BookingScreen from './components/BookingScreen';
@@ -66,6 +67,7 @@ const MODULE_TITLES = {
   earnings:   'Earnings',
   walkin:     'Walk-in Kiosk',
   memberships: 'Memberships',
+  grow:        'Launch & Grow',
 };
 
 function MagicLinkPrompt() {
@@ -212,7 +214,7 @@ function AppShell({ initialView = 'home' }) {
   // to a different module/view from inside the chat. Bounded to known
   // views so a hallucinated target can't break the app.
   useEffect(() => {
-    const VALID = new Set(['home','tipflow','schedule','clients','services','employees','reports','marketing','meetings','memberships','products','attendance','communications','reviews','hr']);
+    const VALID = new Set(['home','tipflow','schedule','clients','services','employees','reports','marketing','meetings','memberships','products','attendance','communications','reviews','hr','grow']);
     window.__plumeNavigate = (target, opts = {}) => {
       const v = String(target || '').trim();
       if (v === 'admin') { setShowAdmin(true); if (opts.tab) setAdminInitial({ tab: opts.tab, scrollTo: opts.scrollTo }); return true; }
@@ -322,6 +324,13 @@ function AppShell({ initialView = 'home' }) {
           {id === 'earnings'   && <TechEarnings />}
           {id === 'walkin'     && <WalkinKiosk />}
           {id === 'memberships' && <MembershipsAdmin />}
+          {id === 'grow' && (
+            <GrowGuide
+              onOpenWizard={(phaseKey) => { setWizardInitialPhase(phaseKey || null); setShowWizard(true); setDismissedThisSession(false); }}
+              onOpenAdmin={(detail) => { setAdminInitial(detail || {}); setShowAdmin(true); }}
+              onNavigate={setView}
+            />
+          )}
         </ModuleShell>
         )
       ))}

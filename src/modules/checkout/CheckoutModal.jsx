@@ -46,7 +46,7 @@ export default function CheckoutModal(props) {
 }
 
 function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
-  const { settings, isOnline, isAdmin, showToast, gUser } = useApp();
+  const { settings, isOnline, isAdmin, showToast, gUser, hasFeature } = useApp();
   // Tax follows the location the sale is rung up at (the current-location
   // switcher); falls back to the tenant-wide rate for single-location tenants
   // or a location with no override. While locations load, the fallback applies.
@@ -927,6 +927,9 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             )}
           </Section>
 
+          {/* Promo / Gift Card / Store Credit — tucked behind "More options"
+              when the curatedHome flag is on (auto-opens if one is applied). */}
+          <MoreOptions enabled={!!hasFeature?.('curatedHome')} openByDefault={!!(promo || giftCard || creditApply > 0 || clientCredit > 0)}>
           {/* Promo code */}
           <Section title="Promo Code">
             {promo ? (
@@ -1035,6 +1038,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               </label>
             </Section>
           )}
+          </MoreOptions>
 
           {/* Tip is collected on the customer-facing checkout (the front-desk
               kiosk for card; cash tips are handed to the tech directly), so the
@@ -1609,6 +1613,26 @@ function RRow({ label, value, color }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', color: 'var(--pn-text-muted)' }}>
       <span>{label}</span><span style={{ color: color || 'var(--pn-text)', fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+}
+
+// Collapses optional money tools (promo / gift card / store credit) behind a
+// single "More options" toggle. When `enabled` is false it renders its children
+// inline (today's layout) so the change ships dark behind the curatedHome flag.
+// Auto-opens once any of those is applied.
+function MoreOptions({ enabled, openByDefault, children }) {
+  const [open, setOpen] = useState(!!openByDefault);
+  useEffect(() => { if (openByDefault) setOpen(true); }, [openByDefault]);
+  if (!enabled) return <>{children}</>;
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', boxSizing: 'border-box', background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '10px 14px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--pn-text-muted)' }}>
+        <span>More options · promo, gift card, credit</span>
+        <span style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s', fontSize: 11 }}>▾</span>
+      </button>
+      {open && <div style={{ marginTop: 10 }}>{children}</div>}
     </div>
   );
 }

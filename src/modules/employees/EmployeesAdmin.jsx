@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import Button from '../../components/Button';
 import { fetchEmployees, fetchEmployeesWithComp, createEmployee, saveEmployee, deleteEmployee, employeesExist, fetchServices } from '../../lib/firestore';
 import TrashButton from '../../components/TrashButton';
 import { TENANT_ID } from '../../lib/tenant';
@@ -795,11 +796,7 @@ function Field({ label, children, style }) {
 }
 
 function Btn({ onClick, color, children, disabled }) {
-  return (
-    <button onClick={onClick} disabled={disabled} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: color || 'var(--pn-surface-muted)', color: color ? '#fff' : 'var(--pn-text-muted)', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 500, opacity: disabled ? .6 : 1 }}>
-      {children}
-    </button>
-  );
+  return <Button onClick={onClick} color={color} disabled={disabled}>{children}</Button>;
 }
 
 function Empty({ children }) {

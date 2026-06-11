@@ -242,6 +242,11 @@ service cloud.firestore {
       match /data/settingsPrivate {
         allow read, write: if isTenantAdmin(tenantId);
       }
+      // Launch & Grow checklist progress (per-tenant). Admin-only; content
+      // lives in code, this doc just stores per-item status + mode.
+      match /data/launchChecklist {
+        allow read, write: if isTenantAdmin(tenantId);
+      }
       // Kiosk device registry + exit PINs. Owner-readable (to list/revoke
       // kiosks); written only by the kiosk CFs via Admin SDK. A kiosk identity
       // must NOT read this (it holds every device's uid) — isKiosk ≠ admin.
@@ -283,6 +288,19 @@ service cloud.firestore {
       // Pending OAuth state tokens (CSRF defense). Server-only.
       match /data/googleBusinessAuthState {
         allow read, write: if false;
+      }
+      // Instagram OAuth token (KMS-encrypted) + cadence stats (Launch & Grow).
+      // Token written server-side via instagramAuthCallback; stats via the cron.
+      match /data/instagramAuth {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      match /data/instagramAuthState {
+        allow read, write: if false;
+      }
+      match /data/instagramStats {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
       }
       // Full public review history pulled from Google Business Profile API.
       // Each doc is one review keyed by Google's review name. Admin-readable

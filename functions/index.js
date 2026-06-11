@@ -63,6 +63,10 @@ const publicAppUrl    = defineString('PUBLIC_APP_URL',      { default: 'https://
 const googleBusinessClientId = defineString('GOOGLE_OAUTH_CLIENT_ID', { default: '' });
 const googleBusinessKmsKey   = defineString('GOOGLE_BUSINESS_KMS_KEY', { default: '' });
 const googleBusinessSecret   = defineSecret('GOOGLE_OAUTH_CLIENT_SECRET');
+// Meta / Instagram (Launch & Grow live monitoring). App ID is public (it rides
+// in the OAuth URL) so defineString; the secret is a real secret.
+const metaAppId     = defineString('META_APP_ID', { default: '' });
+const metaAppSecret = defineSecret('META_APP_SECRET');
 // HMAC signing keys for two distinct token types. Split into separate
 // secrets (per security audit) so a leak of one only compromises one
 // token surface — and so each can be rotated on its own cadence.
@@ -5481,6 +5485,137 @@ ${cfg.policy || 'Appointments canceled with less than 24 hours notice may incur 
     }).catch(() => {});
 
     return { reply: response.content[0]?.text || '' };
+  }
+);
+
+// ── Launch & Grow AI coach (admin-only) ───────────────────────────────────
+// Backs the Launch & Grow module's AI coach: short marketing copy, longer
+// document drafts (with an attorney-review disclaimer for legal-ish ones), and
+// photo critique via Claude vision. All admin-only + usage-logged.
+async function loadSalonBrief(db, tenantId) {
+  const [tDoc, wf, settings, svc] = await Promise.all([
+    db.doc(`tenants/${tenantId}`).get(),
+    db.doc(`tenants/${tenantId}/data/webfront`).get(),
+    db.doc(`tenants/${tenantId}/data/settings`).get(),
+    db.collection(`tenants/${tenantId}/services`).get(),
+  ]);
+  const t = tDoc.exists ? tDoc.data() : {};
+  const cfg = wf.exists ? wf.data() : {};
+  const s = settings.exists ? settings.data() : {};
+  return {
+    name: cfg.salonName || s.salonName || t.name || 'the salon',
+    city: cfg.city || s.brandCity || '',
+    services: svc.docs.slice(0, 20).map(d => d.data()?.name).filter(Boolean),
+  };
+}
+
+const COACH_PROMPTS = {
+  caption:   'Write 3 distinct Instagram caption options (each with a few relevant hashtags) for a post showing recent nail work. Short, warm, on-brand.',
+  postIdeas: 'Suggest 6 Instagram post ideas for the next two weeks — a mix of before/afters, reels, client features, promotions, and education. One line each.',
+  adCopy:    'Write a short local ad: one punchy headline (≤30 chars) + a 2-sentence body + a clear call to action, to attract new clients searching for a nail salon nearby.',
+  promo:     'Write friendly, shareable copy for a grand-opening / launch promotion: a headline, 2-3 sentences, and a suggested first-visit offer.',
+};
+
+exports.growCoachSuggest = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, kind, context = '' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    const task = COACH_PROMPTS[kind];
+    if (!task) throw new HttpsError('invalid-argument', 'Unknown suggestion kind');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+    const brief = await loadSalonBrief(db, tenantId);
+
+    const system = `You are a marketing coach for ${brief.name}${brief.city ? ` in ${brief.city}` : ''}, a nail salon. Write copy the owner can use immediately — specific, warm, concise. Never invent prices or claims.${brief.services.length ? ` Their services include: ${brief.services.join(', ')}.` : ''}`;
+    const user = `${task}${context ? `\n\nExtra context from the owner: ${String(context).slice(0, 1000)}` : ''}`;
+
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 700,
+      system, messages: [{ role: 'user', content: user }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growCoachSuggest', model: resp?.model || 'claude-haiku-4-5-20251001', usage: resp?.usage }).catch(() => {});
+    return { text: resp.content[0]?.text || '' };
+  }
+);
+
+const DOC_PROMPTS = {
+  businessPlan:        'Draft a concise one-page business plan for a nail salon: concept, target client, services & pricing approach, marketing, staffing, and a simple monthly break-even framework. Clear headings.',
+  privacyPolicy:       'Draft a plain-language privacy policy for a nail salon that collects client names, contact info, appointment history, and basic health/allergy notes, and sends appointment + marketing texts/emails. Cover what is collected, how it is used, sharing, retention, opt-out, and contact.',
+  intakeForm:          'Draft a new-client intake & consent form for a nail salon: contact info, health/allergy questions relevant to nail services, photo-use consent, and an acknowledgement/consent section.',
+  contractorAgreement: 'Draft a simple independent-contractor agreement between a nail salon and a nail technician: scope, independent-contractor status, payment/commission placeholder, supplies, scheduling, confidentiality, term & termination.',
+  boothRental:         'Draft a simple booth-rental agreement between a nail salon and a renting technician: rented space, rent & payment terms, use of space, insurance/licensing responsibility, term & termination, house rules.',
+  handbook:            'Draft a short employee handbook outline for a small nail salon: scheduling & attendance, dress/hygiene, sanitation, client service standards, pay & tips, time off, and conduct.',
+};
+
+exports.growDraftDocument = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, kind, context = '' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    const task = DOC_PROMPTS[kind];
+    if (!task) throw new HttpsError('invalid-argument', 'Unknown document kind');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+    const brief = await loadSalonBrief(db, tenantId);
+
+    const isLegal = ['privacyPolicy', 'intakeForm', 'contractorAgreement', 'boothRental', 'handbook'].includes(kind);
+    const system = `You are a small-business assistant drafting documents for ${brief.name}${brief.city ? ` (${brief.city})` : ''}, a nail salon. Produce a clear, well-structured draft the owner can edit. Use placeholders like [Owner Name], [Date], [State] where specifics are unknown — never invent legal specifics, dollar amounts, or addresses.`;
+    const user = `${task}${context ? `\n\nOwner context: ${String(context).slice(0, 1500)}` : ''}`;
+
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 2500,
+      system, messages: [{ role: 'user', content: user }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growDraftDocument', model: resp?.model || 'claude-sonnet-4-6', usage: resp?.usage }).catch(() => {});
+
+    const body = resp.content[0]?.text || '';
+    // Non-removable disclaimer prepended server-side for any legal-ish doc.
+    const disclaimer = isLegal
+      ? '⚠️ TEMPLATE — NOT LEGAL ADVICE. This is an AI-generated starting point. Have a licensed attorney review and adapt it to your state before relying on it.\n\n———\n\n'
+      : '';
+    return { text: disclaimer + body, disclaimer: isLegal };
+  }
+);
+
+exports.growPhotoCritique = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, imageData, mediaType = 'image/jpeg', kind = 'work' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    if (typeof imageData !== 'string' || imageData.length < 100) throw new HttpsError('invalid-argument', 'imageData required');
+    if (imageData.length > 7000000) throw new HttpsError('invalid-argument', 'Image too large — resize before sending');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) throw new HttpsError('invalid-argument', 'Unsupported image type');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+
+    const subject = kind === 'salon' ? 'a photo of the salon space' : 'a photo of nail work';
+    const system = 'You are a professional photographer + brand stylist helping a nail salon choose photos for their website and Instagram. Critique the photo concisely and kindly across: lighting, composition/framing, focus/sharpness, clutter/background, and color. End with a clear verdict — KEEP, CROP (say how), or RESHOOT (say what to change). 4-6 short bullet points max.';
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
+        { type: 'text', text: `Here is ${subject}. Give your critique and verdict.` },
+      ] }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growPhotoCritique', model: resp?.model || 'claude-sonnet-4-6', usage: resp?.usage }).catch(() => {});
+    return { review: resp.content[0]?.text || '' };
   }
 );
 
@@ -13269,6 +13404,194 @@ async function kmsDecrypt(ciphertextB64) {
   });
   return Buffer.from(result.plaintext).toString('utf8');
 }
+
+// ── Instagram (Launch & Grow live monitoring) ─────────────────────────────
+// Mirrors the Google Business OAuth + KMS-token + scheduled-cadence pattern.
+// Meta-App-Review-gated: these no-op gracefully until META_APP_ID/META_APP_SECRET
+// are configured AND the Meta app is approved (instagram_basic + insights). Until
+// then the Launch & Grow UI uses a manual "last posted" fallback.
+const IG_AUTH_URL  = 'https://www.facebook.com/v21.0/dialog/oauth';
+const IG_TOKEN_URL = 'https://graph.facebook.com/v21.0/oauth/access_token';
+const IG_GRAPH     = 'https://graph.facebook.com/v21.0';
+const IG_SCOPES    = 'instagram_basic,instagram_manage_insights,pages_show_list,pages_read_engagement,business_management';
+function instagramCallbackUrl() {
+  return 'https://us-central1-plumenexus-prod.cloudfunctions.net/instagramAuthCallback';
+}
+
+async function pollInstagramForTenant(tenantId) {
+  const db = getFirestore();
+  const authSnap = await db.doc(`tenants/${tenantId}/data/instagramAuth`).get();
+  if (!authSnap.exists) return null;
+  const auth = authSnap.data();
+  if (!auth.tokenEnc || !auth.igUserId) return null;
+  let token;
+  try { token = await kmsDecrypt(auth.tokenEnc); } catch (_) { return null; }
+
+  // Re-extend the ~60-day long-lived token before it lapses, so cadence
+  // monitoring doesn't silently die. Best-effort — fall through with the
+  // current token if extension fails. (Callers all declare secrets:[metaAppSecret].)
+  try {
+    const expMs = auth.expiresAt ? new Date(auth.expiresAt).getTime() : 0;
+    if (expMs && (expMs - Date.now()) < 7 * 24 * 3600 * 1000) {
+      const appId = metaAppId.value(), appSecret = metaAppSecret.value();
+      if (appId && appSecret) {
+        const xr = await fetch(`${IG_TOKEN_URL}?` + new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: token }));
+        const xj = await xr.json();
+        if (xj.access_token) {
+          token = xj.access_token;
+          await db.doc(`tenants/${tenantId}/data/instagramAuth`).update({
+            tokenEnc:  await kmsEncrypt(token),
+            expiresAt: new Date(Date.now() + (Number(xj.expires_in) || 60 * 24 * 3600) * 1000).toISOString(),
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch (_) { /* token remains usable until its real expiry */ }
+
+  const r = await fetch(`${IG_GRAPH}/${auth.igUserId}/media?fields=timestamp,media_type&limit=50&access_token=${encodeURIComponent(token)}`);
+  const data = await r.json();
+  if (data.error) {
+    await db.doc(`tenants/${tenantId}/data/instagramAuth`).update({ lastSyncAt: new Date().toISOString(), lastSyncError: data.error.message || 'sync error' }).catch(() => {});
+    return null;
+  }
+  const posts = (data.data || []).map(m => new Date(m.timestamp).getTime()).filter(t => !isNaN(t)).sort((a, b) => b - a);
+  const now = Date.now(), DAY = 24 * 3600 * 1000;
+  const lastPostAt = posts[0] ? new Date(posts[0]).toISOString() : null;
+  const daysSinceLastPost = posts[0] ? Math.floor((now - posts[0]) / DAY) : null;
+  const posts7d  = posts.filter(t => now - t <= 7 * DAY).length;
+  const posts30d = posts.filter(t => now - t <= 30 * DAY).length;
+  const avgPerWeek = Math.round((posts30d / 30) * 7 * 10) / 10;
+
+  await db.doc(`tenants/${tenantId}/data/instagramStats`).set({
+    username: auth.username || '', lastPostAt, daysSinceLastPost, posts7d, posts30d, avgPerWeek,
+    refreshedAt: new Date().toISOString(),
+  }, { merge: true });
+  await db.doc(`tenants/${tenantId}/data/instagramAuth`).update({ lastSyncAt: new Date().toISOString(), lastSyncError: null }).catch(() => {});
+  return { posts7d, posts30d, avgPerWeek, daysSinceLastPost };
+}
+
+exports.startInstagramAuth = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  await requireTenantAdmin(getFirestore(), tenantId, request);
+
+  const appId = metaAppId.value();
+  if (!appId) throw new HttpsError('failed-precondition', 'META_APP_ID not configured — Instagram connect is not available yet.');
+
+  const stateToken = require('crypto').randomBytes(32).toString('hex');
+  const email = await callerEmail(request);
+  await getFirestore().doc(`tenants/${tenantId}/data/instagramAuthState`).set({
+    [stateToken]: { createdAt: Date.now(), initiator: email || '', expiresAt: Date.now() + 10 * 60 * 1000 },
+  }, { merge: true });
+
+  const stateParam = Buffer.from(JSON.stringify({ t: tenantId, n: stateToken })).toString('base64url');
+  const url = new URL(IG_AUTH_URL);
+  url.searchParams.set('client_id',     appId);
+  url.searchParams.set('redirect_uri',  instagramCallbackUrl());
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope',         IG_SCOPES);
+  url.searchParams.set('state',         stateParam);
+  return { authUrl: url.toString() };
+});
+
+exports.instagramAuthCallback = onRequest(
+  { cors: false, timeoutSeconds: 30, secrets: [metaAppSecret] },
+  async (req, res) => {
+    const code = req.query.code, stateRaw = req.query.state, errorParam = req.query.error;
+    function respondHtml(title, body, ok = true) {
+      res.set('Content-Type', 'text/html; charset=utf-8');
+      res.status(200).send(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><style>body{font-family:system-ui,-apple-system,sans-serif;background:#fafafa;color:${ok ? '#1a1a1a' : '#b91c1c'};display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center;padding:0 20px}.card{background:#fff;border:1px solid #e8e8e8;border-radius:12px;padding:32px 28px;max-width:420px}h1{margin:0 0 12px;font-size:18px}p{margin:6px 0;font-size:13px;color:#555;line-height:1.5}</style></head><body><div class="card">${body}<script>setTimeout(()=>{if(window.opener){window.opener.postMessage({type:'instagram-auth',ok:${ok}},'*');window.close()}},800)</script></div></body></html>`);
+    }
+    if (errorParam) return respondHtml('Cancelled', `<h1>✗ Connection cancelled</h1><p>${String(errorParam).replace(/[<>]/g, '')}</p>`, false);
+    if (!code || !stateRaw) return respondHtml('Missing parameters', '<h1>✗ Missing code or state</h1>', false);
+
+    let stateObj;
+    try { stateObj = JSON.parse(Buffer.from(String(stateRaw), 'base64url').toString('utf8')); }
+    catch (_) { return respondHtml('Invalid state', '<h1>✗ Invalid state</h1>', false); }
+    const tenantId = String(stateObj.t || '').slice(0, 64);
+    const nonce    = String(stateObj.n || '');
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId) || !/^[a-f0-9]{64}$/.test(nonce)) return respondHtml('Invalid state', '<h1>✗ Invalid state</h1>', false);
+
+    const db = getFirestore();
+    const stateRef  = db.doc(`tenants/${tenantId}/data/instagramAuthState`);
+    const stateSnap = await stateRef.get();
+    const stored    = (stateSnap.exists ? stateSnap.data() : {})[nonce];
+    if (!stored || stored.expiresAt < Date.now()) return respondHtml('Expired', '<h1>✗ Link expired</h1><p>Try connecting again.</p>', false);
+    const { FieldValue: FV } = require('firebase-admin/firestore');
+    await stateRef.update({ [nonce]: FV.delete() }).catch(() => {});
+
+    const appId = metaAppId.value(), appSecret = metaAppSecret.value();
+    if (!appId || !appSecret) return respondHtml('Not configured', '<h1>✗ Instagram not configured</h1>', false);
+
+    try {
+      const tokRes = await fetch(`${IG_TOKEN_URL}?` + new URLSearchParams({ client_id: appId, client_secret: appSecret, redirect_uri: instagramCallbackUrl(), code }));
+      const tok = await tokRes.json();
+      if (!tok.access_token) { console.error('[instagramAuthCallback] token exchange failed', tok); return respondHtml('Token failed', '<h1>✗ Could not connect</h1>', false); }
+
+      const llRes = await fetch(`${IG_TOKEN_URL}?` + new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: tok.access_token }));
+      const ll = await llRes.json();
+      const accessToken = ll.access_token || tok.access_token;
+      const expiresIn = Number(ll.expires_in) || (60 * 24 * 3600);
+
+      const pagesRes = await fetch(`${IG_GRAPH}/me/accounts?fields=name,instagram_business_account&access_token=${encodeURIComponent(accessToken)}`);
+      const pages = await pagesRes.json();
+      const page = (pages.data || []).find(p => p.instagram_business_account?.id);
+      if (!page) return respondHtml('No Instagram', '<h1>✗ No linked Instagram business account</h1><p>Connect a Facebook Page linked to your Instagram professional account, then try again.</p>', false);
+      const igUserId = page.instagram_business_account.id;
+
+      const igRes = await fetch(`${IG_GRAPH}/${igUserId}?fields=username&access_token=${encodeURIComponent(accessToken)}`);
+      const ig = await igRes.json();
+
+      const tokenEnc = await kmsEncrypt(accessToken);
+      await db.doc(`tenants/${tenantId}/data/instagramAuth`).set({
+        tokenEnc, igUserId,
+        username:      ig.username || '',
+        pageId:        page.id || '',
+        expiresAt:     new Date(Date.now() + expiresIn * 1000).toISOString(),
+        connectedAt:   new Date().toISOString(),
+        connectedBy:   stored.initiator || '',
+        lastSyncAt:    null,
+        lastSyncError: null,
+      });
+      await pollInstagramForTenant(tenantId).catch(() => {});
+      return respondHtml('Connected', `<h1>✓ Instagram connected!</h1><p>@${(ig.username || '').replace(/[<>]/g, '')} — we’ll track your posting cadence.</p>`, true);
+    } catch (e) {
+      console.error('[instagramAuthCallback] failed', e);
+      return respondHtml('Error', '<h1>✗ Could not connect Instagram</h1>', false);
+    }
+  }
+);
+
+exports.syncInstagramNow = onCall({ cors: true, timeoutSeconds: 60, secrets: [metaAppSecret] }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  await requireTenantAdmin(getFirestore(), tenantId, request);
+  const stats = await pollInstagramForTenant(tenantId);
+  return { ok: true, stats };
+});
+
+exports.disconnectInstagram = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const { tenantId: tid } = request.data || {};
+  const tenantId = String(tid || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  await db.doc(`tenants/${tenantId}/data/instagramAuth`).delete().catch(() => {});
+  await db.doc(`tenants/${tenantId}/data/instagramStats`).delete().catch(() => {});
+  return { ok: true };
+});
+
+exports.pollInstagramCadence = onSchedule(
+  { schedule: 'every 6 hours', timeZone: 'America/New_York', secrets: [metaAppSecret] },
+  async () => {
+    await forEachActiveTenant('InstagramPoll', async (tenantId) => {
+      const snap = await getFirestore().doc(`tenants/${tenantId}/data/instagramAuth`).get();
+      if (snap.exists) await pollInstagramForTenant(tenantId);
+    });
+  }
+);
 
 // 1) Build the OAuth URL + stash CSRF state.
 exports.startGoogleBusinessAuth = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {

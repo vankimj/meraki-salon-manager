@@ -2780,6 +2780,37 @@ export async function patchWebfrontConfig(partial) {
   await setDoc(WEBFRONT_CONFIG_REF, { ...partial, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+// ── Launch & Grow checklist (Phase 2) ─────────────────────────────────────
+// Per-tenant progress for the Launch & Grow guide. The guide CONTENT lives in
+// src/data/launchGuide.js; this doc only stores per-item status/notes + mode.
+const LAUNCH_CHECKLIST_REF = tenantDoc('launchChecklist');
+
+export async function fetchLaunchChecklist() {
+  const snap = await getDoc(LAUNCH_CHECKLIST_REF);
+  return snap.exists() ? snap.data() : null;
+}
+
+export function subscribeLaunchChecklist(cb) {
+  return onSnapshot(LAUNCH_CHECKLIST_REF,
+    snap => cb(snap.exists() ? snap.data() : null),
+    err => { console.warn('[launchChecklist] subscribe error:', err?.code); cb(null); }
+  );
+}
+
+// Idempotent per-item merge write — nested items.{id} path so two item updates
+// in quick succession never clobber each other.
+export async function setLaunchItemStatus(itemId, patch) {
+  await setDoc(LAUNCH_CHECKLIST_REF, {
+    items: { [itemId]: { ...patch } },
+    updatedAt: new Date().toISOString(),
+  }, { merge: true });
+}
+
+// Persist the Launch ⇄ Audit mode toggle.
+export async function setLaunchMode(mode) {
+  await setDoc(LAUNCH_CHECKLIST_REF, { mode, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
 // Resize an image File/Blob to a width-capped JPEG Blob (for Storage uploads).
 // Returns a Blob, not a data URL — the resizeImg helper in utils/helpers.js
 // returns a data URL and would force a costly base64 round-trip here.
@@ -2886,6 +2917,40 @@ export async function syncGoogleBusinessReviews() {
 }
 export async function disconnectGoogleBusiness() {
   const res = await callFn('disconnectGoogleBusiness')({ tenantId: TENANT_ID });
+  return res.data;
+}
+
+// ── Launch & Grow AI coach (Phase 2) ──────────────────────────────────────
+export async function growCoachSuggest(kind, context = '') {
+  const res = await callFn('growCoachSuggest')({ tenantId: TENANT_ID, kind, context });
+  return res.data; // { text }
+}
+export async function growDraftDocument(kind, context = '') {
+  const res = await callFn('growDraftDocument')({ tenantId: TENANT_ID, kind, context });
+  return res.data; // { text, disclaimer }
+}
+export async function growPhotoCritique({ imageData, mediaType = 'image/jpeg', kind = 'work' }) {
+  const res = await callFn('growPhotoCritique')({ tenantId: TENANT_ID, imageData, mediaType, kind });
+  return res.data; // { review }
+}
+
+// ── Instagram live monitoring (Phase 2) ───────────────────────────────────
+export function subscribeInstagramAuth(cb) {
+  return onSnapshot(tenantDoc('instagramAuth'), s => cb(s.exists() ? s.data() : null), () => cb(null));
+}
+export function subscribeInstagramStats(cb) {
+  return onSnapshot(tenantDoc('instagramStats'), s => cb(s.exists() ? s.data() : null), () => cb(null));
+}
+export async function startInstagramAuth() {
+  const res = await callFn('startInstagramAuth')({ tenantId: TENANT_ID });
+  return res.data; // { authUrl }
+}
+export async function syncInstagramNow() {
+  const res = await callFn('syncInstagramNow')({ tenantId: TENANT_ID });
+  return res.data;
+}
+export async function disconnectInstagram() {
+  const res = await callFn('disconnectInstagram')({ tenantId: TENANT_ID });
   return res.data;
 }
 export function subscribeGoogleReviewsLog(callback) {

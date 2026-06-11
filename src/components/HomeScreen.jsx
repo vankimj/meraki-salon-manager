@@ -7,8 +7,10 @@ import NotificationsBell from './NotificationsBell';
 import TicketPanel from './TicketPanel';
 import HeroMerakiSite from './HeroMerakiSite';
 import { MODULE_ICONS, IconLightbulb, IconChair, IconChevronRight, IconArrowUpRight, IconSettings, IconMessage } from './Icons';
-import { MODULES, getVisibleModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
+import { MODULES, getVisibleModules, getGroupedModules, effectivePlan, isModuleAvailableForPlan } from '../lib/modules';
 import { fetchWebfrontConfig, fetchEmployees } from '../lib/firestore';
+import { useUserPrefs } from '../lib/userPrefs';
+import { isManagementRole } from '../lib/rbac';
 
 function greeting() {
   const h = new Date().getHours();
@@ -38,6 +40,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [webCfg,       setWebCfg]       = useState(null);
+  const [prefs, setPrefs] = useUserPrefs(gUser?.uid); // per-user density / home-expansion
   // Decide whether to show the one-click "My tech view" button. Two
   // independent signals — either is sufficient:
   //   1. The admin's user record has a `techName` set explicitly (Admin →
@@ -59,7 +62,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     }).catch(() => setTechNameFromEmployee(null));
   }, [gUser?.email, realIsAdmin, techNameFromUserRec]);
   const myTechEmpName = techNameFromUserRec || techNameFromEmployee;
-  const canManage = isAdmin || isReadOnly;
+  const canManage = isAdmin || isReadOnly || isManagementRole(role);
   const plan = effectivePlan(settings);
 
   // Pre-login, settings is rules-blocked (staff-only). Fall back to the
@@ -79,6 +82,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     if (!va) return '';
     if (va.role === 'tech') return va.techName;
     if (va.role === 'scheduler') return 'Front desk';
+    if (va.role === 'manager') return 'Manager';
+    if (va.role === 'kiosk') return 'Kiosk';
     return 'View only';
   }
 
@@ -86,6 +91,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     if (!val) return null;
     if (val === 'scheduler') return { role: 'scheduler' };
     if (val === 'readonly') return { role: 'readonly' };
+    if (val === 'manager') return { role: 'manager' };
+    if (val === 'kiosk') return { role: 'kiosk' };
     if (val.startsWith('tech:')) return { role: 'tech', techName: val.slice(5) };
     return null;
   }
@@ -153,11 +160,13 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
               className="ms-preview-select"
               style={{ height: 40, borderRadius: 20, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--pn-text-muted)', fontFamily: 'inherit', padding: '0 12px', outline: 'none' }}>
               <option value="">👤 Preview as…</option>
+              <option value="manager">🧑‍💼 Manager</option>
               {techUsers.map(u => (
                 <option key={u.email} value={`tech:${u.techName}`}>👩‍💼 {u.techName}</option>
               ))}
               <option value="scheduler">📅 Scheduler</option>
               <option value="readonly">👁 Read-only</option>
+              <option value="kiosk">🔒 Kiosk</option>
             </select>
           )}
           <button onClick={() => setShowFeedback(true)} title="Report a bug or idea" className="ms-action-btn"
@@ -227,17 +236,26 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             </div>
           </>
         ) : canManage ? (
-          <>
-            <SectionLabel>Manage</SectionLabel>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-              {getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles }).map(m => (
-                <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
-              ))}
-            </div>
-          </>
+          hasFeature?.('curatedHome') ? (
+            <CuratedManageGrid
+              settings={settings} role={role} isAdmin={isAdmin} hasFeature={hasFeature}
+              navigate={navigate} totalChatUnread={totalChatUnread}
+              density={prefs.density} homeExpanded={prefs.homeExpanded}
+              onToggleExpanded={(v) => setPrefs({ homeExpanded: v })}
+            />
+          ) : (
+            <>
+              <SectionLabel>Manage</SectionLabel>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+                {getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature }).map(m => (
+                  <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
+                ))}
+              </div>
+            </>
+          )
         ) : !gUser ? null : (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--pn-text-faint)', fontSize: 13 }}>
-            Your access is pending admin approval.
+            {viewAs ? `The ${previewLabel(viewAs) || 'selected'} role has no management dashboard.` : 'Your access is pending admin approval.'}
           </div>
         )}
 
@@ -277,6 +295,51 @@ function SectionLabel({ children }) {
     <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 12, paddingLeft: 2 }}>
       {children}
     </div>
+  );
+}
+
+// Curated home grid: Core tiles always shown; Grow + Admin tucked behind a
+// "Show more" toggle (per-user `homeExpanded` remembers the choice). Density
+// 'everything' expands all groups; 'simple'/'standard' collapse the advanced
+// ones. Gated by the `curatedHome` feature flag so it ships dark.
+function CuratedManageGrid({ settings, role, isAdmin, hasFeature, navigate, totalChatUnread, density, homeExpanded, onToggleExpanded }) {
+  const groups   = getGroupedModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
+  const showAll  = density === 'everything';
+  const [expanded, setExpanded] = useState(density === 'simple' ? false : !!homeExpanded);
+  const advanced = [...groups.grow, ...groups.admin];
+
+  const grid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 };
+  const tile = (m) => <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />;
+  const moreBtn = {
+    display: 'block', margin: '0 auto 16px', background: 'var(--pn-surface)',
+    border: '1px solid var(--pn-border)', borderRadius: 12, padding: '9px 18px',
+    cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 600, color: 'var(--pn-text-muted)',
+  };
+  const advancedSections = (
+    <>
+      {groups.grow.length  > 0 && (<><SectionLabel>Grow</SectionLabel><div style={grid}>{groups.grow.map(tile)}</div></>)}
+      {groups.admin.length > 0 && (<><SectionLabel>Admin</SectionLabel><div style={grid}>{groups.admin.map(tile)}</div></>)}
+    </>
+  );
+
+  return (
+    <>
+      <SectionLabel>Core</SectionLabel>
+      <div style={grid}>{groups.core.map(tile)}</div>
+
+      {advanced.length > 0 && (
+        showAll ? advancedSections : (expanded ? (
+          <>
+            {advancedSections}
+            <button onClick={() => { setExpanded(false); onToggleExpanded?.(false); }} style={moreBtn}>Show less ▴</button>
+          </>
+        ) : (
+          <button onClick={() => { setExpanded(true); onToggleExpanded?.(true); }} style={moreBtn}>
+            Show {advanced.length} more {advanced.length === 1 ? 'tool' : 'tools'} ▾
+          </button>
+        ))
+      )}
+    </>
   );
 }
 

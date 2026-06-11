@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import Button from '../../components/Button';
 import { fetchClients, createClient, saveClient, deleteClient, fetchServices, fetchClientAppointments, createReviewRequest, saveReviewReceived } from '../../lib/firestore';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import TrashButton from '../../components/TrashButton';
@@ -1312,11 +1313,7 @@ function CopyVal({ value }) {
 }
 
 function Btn({ onClick, color, children }) {
-  return (
-    <button onClick={onClick} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: color || 'var(--pn-surface-muted)', color: color ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 500 }}>
-      {children}
-    </button>
-  );
+  return <Button onClick={onClick} color={color}>{children}</Button>;
 }
 
 function Empty({ children }) {
