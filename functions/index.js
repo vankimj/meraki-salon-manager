@@ -2127,6 +2127,24 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
     return { techName: rd.techName, rating: rd.rating, comment: rd.comment || null };
   });
 
+  // Masked contact for the private-feedback consent checkbox. MASKED, never the raw
+  // email/phone — this page is reachable by anyone holding the token, so we surface
+  // only enough for the guest to recognize their own contact and opt in.
+  let contact = null;
+  if (r.clientId) {
+    try {
+      const cSnap = await db.doc(`tenants/${tenantId}/clients/${r.clientId}`).get();
+      if (cSnap.exists) {
+        const c = cSnap.data() || {};
+        const maskEmail = (e) => { e = String(e || '').trim(); if (!e.includes('@')) return null; const [u, d] = e.split('@'); return `${u.slice(0, 2)}•••@${d}`; };
+        const maskPhone = (p) => { const dig = String(p || '').replace(/\D/g, ''); return dig.length >= 4 ? `•••-${dig.slice(-4)}` : null; };
+        const em = maskEmail(c.email);
+        const ph = maskPhone(c.phone);
+        if (em || ph) contact = { emailMask: em, phoneMask: ph, hasEmail: !!em, hasPhone: !!ph };
+      }
+    } catch (_) { /* contact is optional */ }
+  }
+
   return {
     salonName:   brand?.salonName || '',
     logoUrl:     brand?.logoUrl || null,
@@ -2155,6 +2173,7 @@ exports.getReceiptByToken = onCall({ cors: true }, async (request) => {
     reviewRoutingThreshold: threshold,
     feedbackTitle:   typeof sData?.feedbackThankYouTitle === 'string' ? sData.feedbackThankYouTitle.slice(0, 120) : null,
     feedbackMessage: typeof sData?.feedbackThankYouMsg   === 'string' ? sData.feedbackThankYouMsg.slice(0, 400)   : null,
+    contact,
     existingRatings,
   };
 });
@@ -2172,6 +2191,11 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
   const token   = String(request.data?.token || '').trim();
   const ratings = Array.isArray(request.data?.ratings) ? request.data.ratings : [];
   const source  = String(request.data?.source || 'email');
+  // Opt-in consent from the private-feedback form: may the salon follow up, and
+  // via which channel(s). Stored on the rating so the owner can act on a bad visit.
+  const cc = request.data?.contactConsent;
+  const contactConsent = (cc && typeof cc === 'object' && (cc.email || cc.phone))
+    ? { email: !!cc.email, phone: !!cc.phone } : null;
 
   if (!token || token.length < 16) throw new HttpsError('invalid-argument', 'bad_token');
   if (ratings.length === 0)        throw new HttpsError('invalid-argument', 'no_ratings');
@@ -2221,6 +2245,7 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
       rating,
       comment,
       source:      (source === 'sms' || source === 'email' || source === 'web') ? source : 'web',
+      contactConsent,
       submittedAt: now,
     };
 
@@ -2243,9 +2268,12 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
     const title  = lowRatings.length === 1
       ? `⚠️ ${lowRatings[0].rating}★ rating for ${lowRatings[0].techName}`
       : `⚠️ Low ratings from ${client}`;
+    const consentNote = contactConsent && (contactConsent.email || contactConsent.phone)
+      ? ` ✅ OK'd a follow-up via ${[contactConsent.email && 'email', contactConsent.phone && 'phone'].filter(Boolean).join(' & ')}.`
+      : '';
     notifyTenantAdmins(db, tenantId, {
       title,
-      line: `${client} left a low rating: ${parts.join('; ')}.`,
+      line: `${client} left a low rating: ${parts.join('; ')}.${consentNote}`,
       data: { type: 'low_rating', receiptId: token },
     }).catch(e => console.error('[rating] low-rating notify failed:', e?.message));
   }

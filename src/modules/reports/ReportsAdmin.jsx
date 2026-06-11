@@ -2370,6 +2370,11 @@ function RecentFeedback({ lowFeedback }) {
               "{r.comment}"
             </div>
           )}
+          {r.contactConsent && (r.contactConsent.email || r.contactConsent.phone) && (
+            <div style={{ fontSize: 11, color: 'var(--pn-success)', fontWeight: 700, marginTop: 4 }}>
+              📞 OK to reach out via {[r.contactConsent.email && 'email', r.contactConsent.phone && 'phone'].filter(Boolean).join(' & ')}
+            </div>
+          )}
         </div>
       ))}
       {lowFeedback.length > 20 && (
