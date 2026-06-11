@@ -26,6 +26,13 @@ const BRAND = { green: '#2D7A5F', blue: '#3D95CE', teal: '#3D9E8A' };
 const inp   = { fontFamily: 'inherit', fontSize: 13, padding: '8px 11px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text)', outline: 'none', width: '100%', boxSizing: 'border-box' };
 const panel = { marginTop: 10, padding: 12, border: '1px solid var(--pn-border)', borderRadius: 10, background: 'var(--pn-bg)' };
 
+// Local-time day delta for a YYYY-MM-DD date-only string (avoids the UTC off-by-one).
+function daysSince(ymd) {
+  const [y, m, d] = String(ymd).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return Math.floor((Date.now() - new Date(y, m - 1, d).getTime()) / 86400000);
+}
+
 export default function GrowGuide({ onOpenWizard, onOpenAdmin, onNavigate }) {
   const { isAdmin, settings, showToast } = useApp();
   const [checklist, setChecklist] = useState(null);
@@ -318,13 +325,17 @@ function PhotoStudio({ ctx }) {
   }
 
   async function critique(url) {
+    const reqUrl = url;
     setCrit({ url, loading: true });
     try {
       const dataUrl = await resizeImg(url, 1200, 1200, 0.82);
       const b64 = String(dataUrl).split(',')[1] || '';
       const res = await growPhotoCritique({ imageData: b64, mediaType: 'image/jpeg', kind: 'work' });
-      setCrit({ url, text: res?.review || '' });
-    } catch (e) { setCrit({ url, err: e?.message || 'Could not critique this photo.' }); }
+      setCrit(c => (c && c.url === reqUrl ? { url: reqUrl, text: res?.review || '' } : c)); // ignore stale resolutions
+    } catch (e) {
+      const msg = /fetch|network|load|cors/i.test(e?.message || '') ? 'Could not load this image to review it (check Storage CORS).' : (e?.message || 'Could not critique this photo.');
+      setCrit(c => (c && c.url === reqUrl ? { url: reqUrl, err: msg } : c));
+    }
   }
 
   return (
@@ -378,7 +389,10 @@ function InstagramPanel({ ctx, item, entry, patchItem }) {
     });
   }
   async function refresh() { setBusy(true); try { await syncInstagramNow(); showToast?.('Refreshed'); } catch { showToast?.('Refresh failed'); } finally { setBusy(false); } }
-  async function disconnect() { setBusy(true); try { await disconnectInstagram(); showToast?.('Disconnected'); } catch { /* noop */ } finally { setBusy(false); } }
+  async function disconnect() {
+    if (!window.confirm("Disconnect Instagram? You'll need to reconnect via Instagram (Meta consent + page link) to resume cadence tracking.")) return;
+    setBusy(true); try { await disconnectInstagram(); showToast?.('Disconnected'); } catch { /* noop */ } finally { setBusy(false); }
+  }
 
   if (auth) {
     const stale = stats?.daysSinceLastPost != null && stats.daysSinceLastPost > 7;
@@ -393,6 +407,12 @@ function InstagramPanel({ ctx, item, entry, patchItem }) {
             </div>
           </div>
         ) : <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 4 }}>No stats yet — Refresh to pull your latest posts.</div>}
+        {auth.lastSyncError && (
+          <div style={{ marginTop: 8, fontSize: 11.5, color: '#b45309', background: '#fffbeb', borderRadius: 8, padding: '7px 10px' }}>
+            ⚠ Couldn’t refresh recently — your connection may have expired.{' '}
+            <button onClick={connect} style={{ background: 'none', border: 'none', color: '#7c3aed', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>Reconnect</button>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
           <Button variant="secondary" disabled={busy} onClick={refresh}>Refresh</Button>
           <Button variant="ghost" disabled={busy} onClick={disconnect}>Disconnect</Button>
@@ -402,7 +422,7 @@ function InstagramPanel({ ctx, item, entry, patchItem }) {
   }
 
   const last = entry?.lastPostedAt;
-  const daysAgo = last ? Math.floor((Date.now() - new Date(last).getTime()) / 86400000) : null;
+  const daysAgo = last ? daysSince(last) : null;
   return (
     <div style={panel}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

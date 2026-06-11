@@ -13416,6 +13416,27 @@ async function pollInstagramForTenant(tenantId) {
   let token;
   try { token = await kmsDecrypt(auth.tokenEnc); } catch (_) { return null; }
 
+  // Re-extend the ~60-day long-lived token before it lapses, so cadence
+  // monitoring doesn't silently die. Best-effort — fall through with the
+  // current token if extension fails. (Callers all declare secrets:[metaAppSecret].)
+  try {
+    const expMs = auth.expiresAt ? new Date(auth.expiresAt).getTime() : 0;
+    if (expMs && (expMs - Date.now()) < 7 * 24 * 3600 * 1000) {
+      const appId = metaAppId.value(), appSecret = metaAppSecret.value();
+      if (appId && appSecret) {
+        const xr = await fetch(`${IG_TOKEN_URL}?` + new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: token }));
+        const xj = await xr.json();
+        if (xj.access_token) {
+          token = xj.access_token;
+          await db.doc(`tenants/${tenantId}/data/instagramAuth`).update({
+            tokenEnc:  await kmsEncrypt(token),
+            expiresAt: new Date(Date.now() + (Number(xj.expires_in) || 60 * 24 * 3600) * 1000).toISOString(),
+          }).catch(() => {});
+        }
+      }
+    }
+  } catch (_) { /* token remains usable until its real expiry */ }
+
   const r = await fetch(`${IG_GRAPH}/${auth.igUserId}/media?fields=timestamp,media_type&limit=50&access_token=${encodeURIComponent(token)}`);
   const data = await r.json();
   if (data.error) {
