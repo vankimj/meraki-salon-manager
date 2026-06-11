@@ -125,7 +125,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%', background: gUser ? 'var(--pn-bg)' : 'var(--tm-bg, #f8f9fa)', overflowY: 'auto' }}>
 
       {/* Top bar */}
-      <div style={{ background: 'var(--pn-surface)', borderBottom: `1px solid var(--tm-border, #ebebeb)`, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%', boxSizing: 'border-box', gap: 8 }}>
+      <div style={{ background: 'var(--pn-surface)', borderBottom: `1px solid var(--pn-border)`, padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, width: '100%', boxSizing: 'border-box', gap: 8 }}>
         <div className="ms-brand-block" style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <div style={{ width: 34, height: 34, borderRadius: 10, background: 'var(--tm-grad)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 2px 6px rgba(0,0,0,.10), inset 0 1px 0 rgba(255,255,255,.18)' }}>
             <span style={{ fontFamily: '"Cinzel", Georgia, serif', fontSize: 17, fontWeight: 700, color: '#fff', letterSpacing: 0, lineHeight: 1 }}>
@@ -133,8 +133,8 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             </span>
           </div>
           <div style={{ minWidth: 0 }}>
-            <div className="ms-brand-title" style={{ fontSize: 14, fontWeight: 700, color: 'var(--tm-text, #1a1a1a)', lineHeight: 1.2 }}>{displayName}</div>
-            <div className="ms-brand-subtitle" style={{ fontSize: 11, color: 'var(--tm-muted, #aaa)' }}>
+            <div className="ms-brand-title" style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1.2 }}>{displayName}</div>
+            <div className="ms-brand-subtitle" style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
               Salon Manager{t?.seasonal ? ` · ${t.seasonal.emoji}` : ''}
             </div>
           </div>

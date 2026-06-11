@@ -77,7 +77,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1.2 }}>{settings?.brandName || settings?.salonName || 'Plume Nexus'}</div>
-              <div style={{ fontSize: 10, color: 'var(--tm-muted, #aaa)' }}>Salon Manager</div>
+              <div style={{ fontSize: 10, color: 'var(--pn-text-muted)' }}>Salon Manager</div>
             </div>
           </button>
           <div style={{ flex: 1, padding: '10px 8px', display: 'flex', flexDirection: 'column', gap: 2 }}>
