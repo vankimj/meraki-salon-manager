@@ -231,6 +231,13 @@ export default function MessageTemplatesTab() {
                 )}
               </div>
 
+              {/* Pointer for variables whose text lives in Settings, not here */}
+              {def.htmlVars?.includes('policies') && (
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 14, padding: '9px 11px', borderRadius: 8, background: 'rgba(61,149,206,.07)', border: '1px solid var(--pn-border)' }}>
+                  ℹ️ <code>{'{policies}'}</code> pulls in your cancellation &amp; refund policy text. Edit it in <strong>Settings → 🧾 Receipts &amp; Reviews → Cancellation &amp; No-Show Policy / Refund Policy</strong> (it also shows on receipts and the appointment page).
+                </div>
+              )}
+
               {/* Phrases — the conditional wordings the message picks between at send time */}
               {def.phrases && Object.keys(def.phrases).length > 0 && (
                 <div style={{ marginBottom: 16, padding: '12px 14px', border: '1px solid var(--pn-border)', borderRadius: 10, background: 'var(--pn-surface-2, var(--pn-surface))' }}>
