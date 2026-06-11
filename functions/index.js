@@ -2059,10 +2059,245 @@ exports.getClockedInTechNames = onCall({ cors: true }, async (request) => {
   if (!snap.exists) return { names: [] };
   const entries = Array.isArray(snap.data().entries) ? snap.data().entries : [];
   const names = entries
-    .filter(en => tcCurrentState(Array.isArray(en.events) ? en.events : []) === TC_STATES.IN)
+    // Clocked-in = last event IN, OR a flat (admin-entered) entry with clockInAt
+    // set and no clockOutAt — the admin Attendance screen writes no events array.
+    .filter(en => {
+      const evts = Array.isArray(en.events) ? en.events : [];
+      return evts.length ? tcCurrentState(evts) === TC_STATES.IN : (en.clockInAt && !en.clockOutAt);
+    })
     .map(en => en.employeeName)
     .filter(Boolean);
   return { names };
+});
+
+// Public callable: walk-in availability for the lobby kiosk (/?queue). The
+// kiosk is ANONYMOUS, so it must never read appointments/attendance directly
+// (client PII + who's working). Given a service, this computes — server-side —
+// the earliest opening TODAY among CLOCKED-IN techs who can perform it, and
+// returns ONLY { techName, waitMinutes, startTime }. No schedule, no client
+// data, no clock times. Same security envelope as getClockedInTechNames +
+// getPublicAvailability (App Check monitor + in-memory + durable rate caps).
+// On-break techs count as unavailable (state must be IN), matching the
+// names-only callable. "Earliest opening" honors store hours, per-tech work
+// days/hours, existing appointments, and time off.
+exports.kioskWalkinOptions = onCall({ cors: true }, async (request) => {
+  requireAppCheck(request, 'kioskWalkinOptions');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 240)) {
+    throw new HttpsError('resource-exhausted', 'Too many availability checks. Try again in a few minutes.');
+  }
+  const tenantId  = String(request.data?.tenantId || TENANT_ID);
+  const serviceId = String(request.data?.serviceId || '').trim();
+  if (!serviceId) throw new HttpsError('invalid-argument', 'serviceId is required.');
+  // Charset-guard ids before they reach Firestore path templates (a '/' could
+  // redirect a read deeper into the same tenant tree). Defense-in-depth.
+  const ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+  if (!ID_RE.test(tenantId) || !ID_RE.test(serviceId)) throw new HttpsError('invalid-argument', 'Invalid id.');
+  const db = getFirestore();
+  if (!(await fsRateAllow(db, tenantId, `kioskOpts:${new Date().toISOString().slice(0, 13)}:${ipKeyPart(ip)}`, 200, 60 * 60 * 1000))) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+
+  const SLOT_STEP = 15;
+  const strToMins = (s) => { if (!s || typeof s !== 'string') return null; const m = s.match(/^(\d{1,2}):(\d{2})$/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+  const fmtTime   = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const norm      = (s) => String(s || '').trim().toLowerCase();
+  const techCanDo = (emp, sid) => (!emp.serviceIds || emp.serviceIds.length === 0) ? true : emp.serviceIds.includes(sid);
+
+  const tz      = await tenantTimezone(db, tenantId);
+  const now     = new Date();                                                        // one instant → consistent fields
+  const today   = now.toLocaleDateString('en-CA', { timeZone: tz });                 // YYYY-MM-DD
+  const dow     = now.toLocaleDateString('en-US', { weekday: 'short', timeZone: tz }); // Mon..Sun
+  const [nowH, nowM] = now.toLocaleTimeString('en-GB', { timeZone: tz, hour12: false }).split(':').map(Number);
+  const nowMins = nowH * 60 + nowM;
+
+  const sSnap    = await db.doc(`tenants/${tenantId}/data/settings`).get();
+  const settings = sSnap.exists ? (sSnap.data() || {}) : {};
+  const storeDay = settings.storeHours?.[dow] || null;
+  if (storeDay && storeDay.closed) return { options: [], noPrefEarliest: null, anyAvailable: false, salonClosed: true };
+  const apptOpen  = strToMins(settings.apptHours?.open  || '09:00') ?? 540;
+  const apptClose = strToMins(settings.apptHours?.close || '20:00') ?? 1200;
+  const storeOpen  = storeDay && storeDay.open  ? (strToMins(storeDay.open)  ?? apptOpen)  : apptOpen;
+  const storeClose = storeDay && storeDay.close ? (strToMins(storeDay.close) ?? apptClose) : apptClose;
+
+  const svcSnap = await db.doc(`tenants/${tenantId}/services/${serviceId}`).get();
+  if (!svcSnap.exists) throw new HttpsError('invalid-argument', 'Unknown service.');
+  const svc = svcSnap.data() || {};
+
+  const attSnap = await db.doc(`tenants/${tenantId}/attendance/${today}`).get();
+  // Clocked-in = last event IN, OR a flat (admin-entered) entry with clockInAt
+  // and no clockOutAt. Match by stable employeeId with a name fallback so a
+  // rename or a same-name collision doesn't hide / over-list a tech.
+  const inEntries = (attSnap.exists && Array.isArray(attSnap.data().entries) ? attSnap.data().entries : [])
+    .filter(en => {
+      const evts = Array.isArray(en.events) ? en.events : [];
+      return evts.length ? tcCurrentState(evts) === TC_STATES.IN : (en.clockInAt && !en.clockOutAt);
+    });
+  const clockedInIds   = new Set(inEntries.map(en => en.employeeId).filter(Boolean));
+  const clockedInNames = new Set(inEntries.map(en => norm(en.employeeName)).filter(Boolean));
+
+  const [empSnap, apptSnap, offSnap] = await Promise.all([
+    db.collection(`tenants/${tenantId}/employees`).get(),
+    db.collection(`tenants/${tenantId}/appointments`).where('date', '==', today).get(),
+    db.collection(`tenants/${tenantId}/timeOff`).get().catch(() => null),
+  ]);
+  const employees = empSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.active !== false);
+  // Exclude tombstoned (soft-deleted) appts + time-off — they must be invisible
+  // to scheduling (mirrors notTombstoned on the client fetch paths).
+  const appts     = apptSnap.docs.map(d => d.data()).filter(a => a._deleted !== true && a.status !== 'cancelled' && a.status !== 'no_show');
+  const offBlocks = (offSnap ? offSnap.docs.map(d => d.data()) : []).filter(b => b._deleted !== true);
+
+  const options = [];
+  for (const emp of employees) {
+    const empName = norm(emp.name);
+    if (!clockedInIds.has(emp.id) && !clockedInNames.has(empName)) continue; // not on the clock
+    if (!techCanDo(emp, serviceId)) continue;       // can't do this service
+    const wd = emp.workDays?.[dow];
+    if (wd && wd.on === false) continue;            // off that day
+
+    const isAllDayOff = (b) => norm(b.techName) === empName && b.allDay !== false
+      && String(b.startDate || '') <= today && today <= String(b.endDate || b.startDate || '');
+    if (offBlocks.some(isAllDayOff)) continue;      // all-day time off
+
+    const durOverride = emp.serviceDurations?.[serviceId];
+    const dur = (typeof durOverride === 'number' && durOverride > 0) ? durOverride : (Number(svc.duration) || 60);
+    const techOpen  = Math.max(storeOpen,  wd && wd.start ? (strToMins(wd.start) ?? storeOpen)  : storeOpen);
+    const techClose = Math.min(storeClose, wd && wd.end   ? (strToMins(wd.end)   ?? storeClose) : storeClose);
+
+    const busy = [];
+    for (const a of appts) {
+      if (norm(a.techName) === empName || (a.techId && a.techId === emp.id)) {
+        const s = strToMins(a.startTime);
+        if (s == null) continue;
+        const occ = (Array.isArray(a.services) ? a.services.reduce((sum, sv) => sum + (Number(sv.duration) || 0), 0) : 0) || (Number(a.duration) || 60);
+        busy.push({ s, e: s + occ });
+      }
+    }
+    for (const b of offBlocks) {
+      const sd = String(b.startDate || ''), ed = String(b.endDate || b.startDate || '');
+      if (norm(b.techName) === empName && b.allDay === false && sd <= today && today <= ed) {
+        // Mirror the schedule UI (isSlotBlocked) + reminder cron: interior days
+        // of a multi-day block are fully off; startTime applies only on the
+        // start date, endTime only on the end date; missing bounds → 0/1440.
+        let s = 0, e = 24 * 60;
+        if (today === sd) { const sm = strToMins(b.startTime); if (sm != null) s = sm; }
+        if (today === ed) { const em = strToMins(b.endTime);   if (em != null) e = em; }
+        if (e > s) busy.push({ s, e });
+      }
+    }
+
+    let start = Math.max(techOpen, nowMins);
+    if (start % SLOT_STEP !== 0) start += SLOT_STEP - (start % SLOT_STEP); // align to slot grid
+    let earliest = null;
+    for (let m = start; m + dur <= techClose; m += SLOT_STEP) {
+      if (!busy.some(b => b.s < m + dur && b.e > m)) { earliest = m; break; }
+    }
+    if (earliest == null) continue;                 // no opening left today
+    options.push({ techName: emp.name, waitMinutes: Math.max(0, earliest - nowMins), startTime: fmtTime(earliest) });
+  }
+
+  options.sort((a, b) => a.waitMinutes - b.waitMinutes || a.techName.localeCompare(b.techName));
+  return { options, noPrefEarliest: options[0] || null, anyAvailable: options.length > 0, salonClosed: false };
+});
+
+// Public callable: phone-first client lookup + create for the lobby kiosk. The
+// anonymous kiosk can't read/write the clients collection (PII), so this does
+// it server-side and returns ONLY { matched, clientId, firstName, created,
+// banned?, todayAppt? } — never last name, email, phone echo, notes, history,
+// or any OTHER client's record. Called first with just a phone (lookup); on a
+// miss the kiosk asks "new to the salon?" then re-calls with first+last name to
+// create. Mirrors findOrCreateClient's abuse controls (App Check, rate caps,
+// honeypot, phone-digit dedup, banned hard-stop).
+exports.kioskRegisterClient = onCall({ cors: true }, async (request) => {
+  requireAppCheck(request, 'kioskRegisterClient');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many attempts. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenant.');
+  const db = getFirestore();
+  if (!(await fsRateAllow(db, tenantId, `kioskReg:${new Date().toISOString().slice(0, 13)}:${ipKeyPart(ip)}`, 40, 60 * 60 * 1000))) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+
+  const hp = String(request.data?.hp || '').trim();
+  if (hp) {
+    await logFraudBlock(db, tenantId, {
+      type: 'honeypot', ip, source: 'kiosk_walkin', honeypot: hp.slice(0, 200),
+      userAgent: String(request.rawRequest?.headers?.['user-agent'] || '').slice(0, 300),
+    });
+    return { matched: false, clientId: '', firstName: '', created: false, bot: true };
+  }
+
+  let digits = String(request.data?.phone || '').replace(/\D/g, '');
+  if (digits.length === 11 && digits.startsWith('1')) digits = digits.slice(1);
+  if (digits.length !== 10) throw new HttpsError('invalid-argument', 'A 10-digit phone number is required.');
+  const formattedPhone = `+1 (${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+
+  // Per-PHONE daily cap (across IPs) so a single number can't be probed
+  // repeatedly to confirm membership / harvest today's appointment, even from
+  // rotating IPs. Legit re-tries stay well under it.
+  if (!(await fsRateAllow(db, tenantId, `kioskRegPhone:${new Date().toISOString().slice(0, 10)}:${digits}`, 8, 24 * 60 * 60 * 1000))) {
+    throw new HttpsError('resource-exhausted', 'Too many lookups for this number today. Please see the front desk.');
+  }
+  const firstName = String(request.data?.firstName || '').trim().slice(0, 40);
+  const lastName  = String(request.data?.lastName  || '').trim().slice(0, 40);
+
+  const clientsRef = db.collection(`tenants/${tenantId}/clients`);
+
+  // Server-side "today's appointment for this person" — minimal slice only.
+  const todayApptFor = async (clientId) => {
+    const tz = await tenantTimezone(db, tenantId);
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: tz });
+    const snap = await db.collection(`tenants/${tenantId}/appointments`).where('date', '==', today).get().catch(() => null);
+    if (!snap) return null;
+    const matches = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(a => {
+      if (clientId && a.clientId === clientId) return true;
+      let ap = String(a.clientPhone || '').replace(/\D/g, '');
+      if (ap.length === 11 && ap.startsWith('1')) ap = ap.slice(1);
+      return ap && ap === digits;
+    });
+    if (!matches.length) return null;
+    matches.sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    const a = matches.find(x => x.status !== 'done' && x.status !== 'cancelled') || matches[0];
+    return { apptId: a.id, startTime: a.startTime || '', techName: a.techName || '', serviceName: a.services?.[0]?.name || a.serviceName || '' };
+  };
+
+  // Dedup scan by phone digits (cap 5000; same as findOrCreateClient).
+  let existing = null;
+  const allSnap = await clientsRef.limit(5000).get().catch(() => null);
+  if (allSnap) {
+    for (const d of allSnap.docs) {
+      let cd = String(d.data().phone || '').replace(/\D/g, '');
+      if (cd.length === 11 && cd.startsWith('1')) cd = cd.slice(1);
+      if (cd === digits) { existing = { id: d.id, ...d.data() }; break; }
+    }
+  }
+
+  if (existing) {
+    if (existing.banned) return { matched: true, banned: true, clientId: '', firstName: '', created: false };
+    return {
+      matched: true, created: false, clientId: existing.id,
+      firstName: String(existing.name || '').trim().split(/\s+/)[0] || '',
+      todayAppt: await todayApptFor(existing.id),
+    };
+  }
+
+  // No match. Pure lookup (no name yet) → kiosk shows the "new?" prompt.
+  if (!firstName || !lastName) return { matched: false, clientId: '', firstName: '', created: false };
+
+  // Create the new client (phone already validated + deduped).
+  const now = new Date().toISOString();
+  const ref = await clientsRef.add({
+    name: `${firstName} ${lastName}`.trim(),
+    phone: formattedPhone,
+    email: '',
+    source: 'kiosk_walkin',
+    createdAt: now, updatedAt: now,
+    visits: [], instagramTags: [], googleReviews: [],
+  });
+  return { matched: false, created: true, clientId: ref.id, firstName, todayAppt: await todayApptFor(ref.id) };
 });
 
 // Public callable for the check-in flow (a client clicks the link in
