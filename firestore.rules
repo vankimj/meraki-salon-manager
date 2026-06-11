@@ -289,6 +289,19 @@ service cloud.firestore {
       match /data/googleBusinessAuthState {
         allow read, write: if false;
       }
+      // Instagram OAuth token (KMS-encrypted) + cadence stats (Launch & Grow).
+      // Token written server-side via instagramAuthCallback; stats via the cron.
+      match /data/instagramAuth {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
+      match /data/instagramAuthState {
+        allow read, write: if false;
+      }
+      match /data/instagramStats {
+        allow read:  if isTenantAdmin(tenantId);
+        allow write: if false;
+      }
       // Full public review history pulled from Google Business Profile API.
       // Each doc is one review keyed by Google's review name. Admin-readable
       // for the Public Reviews panel; server-only writes via the sync CF.

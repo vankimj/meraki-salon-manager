@@ -2933,6 +2933,26 @@ export async function growPhotoCritique({ imageData, mediaType = 'image/jpeg', k
   const res = await callFn('growPhotoCritique')({ tenantId: TENANT_ID, imageData, mediaType, kind });
   return res.data; // { review }
 }
+
+// ── Instagram live monitoring (Phase 2) ───────────────────────────────────
+export function subscribeInstagramAuth(cb) {
+  return onSnapshot(tenantDoc('instagramAuth'), s => cb(s.exists() ? s.data() : null), () => cb(null));
+}
+export function subscribeInstagramStats(cb) {
+  return onSnapshot(tenantDoc('instagramStats'), s => cb(s.exists() ? s.data() : null), () => cb(null));
+}
+export async function startInstagramAuth() {
+  const res = await callFn('startInstagramAuth')({ tenantId: TENANT_ID });
+  return res.data; // { authUrl }
+}
+export async function syncInstagramNow() {
+  const res = await callFn('syncInstagramNow')({ tenantId: TENANT_ID });
+  return res.data;
+}
+export async function disconnectInstagram() {
+  const res = await callFn('disconnectInstagram')({ tenantId: TENANT_ID });
+  return res.data;
+}
 export function subscribeGoogleReviewsLog(callback) {
   return onSnapshot(tenantCol('googleReviewsLog'), snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
