@@ -1094,11 +1094,6 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
               style={{ width: '100%', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 12px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
             />
           </div>
-          <AutoAssignSection
-            method={bookingCfg.assignmentMethod || DEFAULT_ASSIGNMENT_METHOD}
-            onChange={m => save({ assignmentMethod: m })}
-            saving={saving}
-          />
         </>
       )}
 
@@ -1154,6 +1149,13 @@ function BookingSection({ bookingCfg, setBookingCfg }) {
         </div>
       )}
     </Section>
+    <Section title="🔁 Walk-in Queue & Tech Assignment" keywords="walk-in queue turn rotation tech assignment auto assign no preference">
+      <AutoAssignSection
+        method={bookingCfg.assignmentMethod || DEFAULT_ASSIGNMENT_METHOD}
+        onChange={m => save({ assignmentMethod: m })}
+        saving={saving}
+      />
+    </Section>
     <BookingFlowSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} save={save} saving={saving} />
     </>
   );
@@ -1170,10 +1172,10 @@ function Toggle({ active, onChange, disabled }) {
 
 function AutoAssignSection({ method, onChange, saving }) {
   return (
-    <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
-      <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8, fontWeight: 600 }}>"NO PREFERENCE" AUTO-ASSIGNMENT</div>
+    <div style={{ padding: '12px 16px' }}>
+      <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 8, fontWeight: 600 }}>AUTO-ASSIGNMENT METHOD</div>
       <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 10, lineHeight: 1.5 }}>
-        When a customer picks "no preference" while booking, how should we choose which tech gets the appointment? Clients who ask for a specific tech are always honored — those bookings show a ⭐ on the schedule.
+        How the next tech is chosen when no specific tech is requested — for walk-ins seated through the turn rotation and for online bookings where the client picks "no preference." Clients who ask for a specific tech are always honored — those bookings show a ⭐ on the schedule.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {ASSIGNMENT_METHODS.map(m => {
