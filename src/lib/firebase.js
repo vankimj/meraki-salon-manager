@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import {
   getFirestore,
   initializeFirestore,
@@ -43,7 +43,7 @@ if (RECAPTCHA_SITE_KEY && !USE_EMULATORS && typeof window !== 'undefined') {
     const dbgTok = import.meta.env.VITE_APPCHECK_DEBUG_TOKEN;
     if (dbgTok) self.FIREBASE_APPCHECK_DEBUG_TOKEN = dbgTok === 'true' ? true : dbgTok;
     initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
+      provider: new ReCaptchaEnterpriseProvider(RECAPTCHA_SITE_KEY),
       isTokenAutoRefreshEnabled: true,
     });
   } catch (e) {
