@@ -176,6 +176,17 @@ function SummaryView({ appt, policy, salon, onReschedule, onCancel }) {
           </Banner>
         )}
 
+        {(policy.cancellationPolicyText || '').trim() && (
+          <div style={{ marginTop: 18, padding: '12px 14px', background: '#faf8fd', border: '1px solid #ede7f6', borderRadius: 10 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#6a4fa0', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 5 }}>
+              Cancellation &amp; No-Show Policy
+            </div>
+            <div style={{ fontSize: 12.5, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-line' }}>
+              {policy.cancellationPolicyText.trim()}
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: 22, padding: '14px 0 0', borderTop: '1px solid #f0f0f0', textAlign: 'center', fontSize: 12, color: '#888' }}>
           Need help? Call {salon.phone || 'the salon'}
         </div>

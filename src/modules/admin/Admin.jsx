@@ -81,6 +81,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [reviewEditDays, setReviewEditDays] = useState(settings.reviewEditWindowDays ?? 5);
   const [feedbackTitle, setFeedbackTitle] = useState(settings.feedbackThankYouTitle || '');
   const [feedbackMsg,   setFeedbackMsg]   = useState(settings.feedbackThankYouMsg   || '');
+  const [cancellationPolicyText, setCancellationPolicyText] = useState(settings.cancellationPolicyText || '');
+  const [refundPolicyText,       setRefundPolicyText]       = useState(settings.refundPolicyText       || '');
   const [emailRatingStyle,       setEmailRatingStyle]       = useState(settings.emailRatingStyle       || 'both');
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
@@ -765,6 +767,28 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', resize: 'vertical' }} />
               </div>
 
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #f7f7f7' }}>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Cancellation &amp; No-Show Policy</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>
+                  Shown to clients on their receipt, appointment page, and booking confirmation email. Leave blank to hide.
+                </div>
+                <textarea value={cancellationPolicyText} onChange={e => setCancellationPolicyText(e.target.value.slice(0, 1000))}
+                  placeholder="Please give 24 hours notice. No-shows may be charged 50%."
+                  rows={3}
+                  style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', resize: 'vertical' }} />
+              </div>
+
+              <div style={{ padding: '12px 16px', borderTop: '1px solid #f7f7f7' }}>
+                <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Refund Policy</div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>
+                  Shown to clients on their receipt. Leave blank to hide.
+                </div>
+                <textarea value={refundPolicyText} onChange={e => setRefundPolicyText(e.target.value.slice(0, 1000))}
+                  placeholder="All sales are final. Service redos within 7 days are complimentary."
+                  rows={3}
+                  style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', resize: 'vertical' }} />
+              </div>
+
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({
                   ...settings,
@@ -774,6 +798,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   emailRatingStyle,
                   feedbackThankYouTitle: feedbackTitle.trim() || null,
                   feedbackThankYouMsg:   feedbackMsg.trim()   || null,
+                  cancellationPolicyText: cancellationPolicyText.trim() || null,
+                  refundPolicyText:       refundPolicyText.trim()       || null,
                 })}>Save</Btn>
               </div>
             </Section>

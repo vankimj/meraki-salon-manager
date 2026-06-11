@@ -60,6 +60,7 @@ export default function ReceiptViewPage() {
     <PageShell brandColor="#2D7A5F">
       <ReceiptCard data={data} />
       <RatingSection data={data} token={token} />
+      <PoliciesCard data={data} />
       <div style={{ textAlign: 'center', padding: '16px 0 32px', color: '#bbb', fontSize: 11 }}>
         Powered by Plume Nexus
       </div>
@@ -170,6 +171,29 @@ function SummaryRow({ label, value, color }) {
       <td style={{ padding: '4px 0', fontSize: 12, color: '#888' }}>{label}</td>
       <td style={{ textAlign: 'right', fontSize: 12, color }}>{value}</td>
     </tr>
+  );
+}
+
+function PoliciesCard({ data }) {
+  const cancellation = (data.cancellationPolicyText || '').trim();
+  const refund       = (data.refundPolicyText || '').trim();
+  if (!cancellation && !refund) return null;
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 2px 12px rgba(0,0,0,.06)', marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 14 }}>Policies</div>
+      {cancellation && (
+        <div style={{ marginBottom: refund ? 14 : 0 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 }}>Cancellation &amp; No-Show</div>
+          <div style={{ fontSize: 12.5, color: '#888', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{cancellation}</div>
+        </div>
+      )}
+      {refund && (
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 }}>Refunds</div>
+          <div style={{ fontSize: 12.5, color: '#888', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{refund}</div>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -2094,6 +2094,17 @@ export async function fetchReceiptsByClientName(name) {
     .sort((a, b) => String(b.createdAt || b.date || '').localeCompare(String(a.createdAt || a.date || '')));
 }
 
+// The receipt (POS sale) that covers a given appointment, if it's been checked
+// out. Receipts link to their appointments via the `apptIds` array, so this is
+// an array-contains lookup. Returns the first non-tombstoned match, or null.
+export async function fetchReceiptByApptId(apptId) {
+  const id = String(apptId || '').trim();
+  if (!id) return null;
+  const snap = await getDocs(query(RECEIPTS_COL, where('apptIds', 'array-contains', id)));
+  const hit = snap.docs.map(d => ({ id: d.id, ...d.data() })).find(notTombstoned);
+  return hit || null;
+}
+
 // Fetch specific appointments by id (e.g. a receipt's apptIds) to resolve the
 // participants of a combined checkout. Small N — one getDoc each.
 export async function fetchAppointmentsByIds(ids = []) {
