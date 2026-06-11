@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeRetention, techPayAdjust,
+  doneTransactions, txMethodKey, txMethodAmount,
 } from './metrics';
 
 const TODAY = '2026-05-04';
@@ -369,5 +370,39 @@ describe('computeRetention', () => {
     const r = computeRetention(rows, NONE, TODAY);
     expect(r.clientTotal).toBe(1);
     expect(r.giftRetailCount).toBe(1);
+  });
+});
+
+describe('payment-method helpers', () => {
+  it('buckets card/cash by method, everything else as other', () => {
+    expect(txMethodKey({ payment: { method: 'card' } })).toBe('card');
+    expect(txMethodKey({ payment: { method: 'cash' } })).toBe('cash');
+    expect(txMethodKey({ payment: { method: 'venmo' } })).toBe('other');
+    expect(txMethodKey({ payment: { method: 'giftcard' } })).toBe('other');
+    expect(txMethodKey({})).toBe('other');
+  });
+
+  it('signs a refund negative and a sale positive', () => {
+    expect(txMethodAmount({ payment: { total: 50 } })).toBe(50);
+    expect(txMethodAmount({ payment: { total: 50 }, transactionType: 'refund' })).toBe(-50);
+  });
+
+  it('honors an explicit zero total and skips a no-data row', () => {
+    expect(txMethodAmount({ payment: { total: 0 }, services: [{ price: 40 }] })).toBe(0);
+    expect(txMethodAmount({ services: [] })).toBe(null);
+  });
+
+  it('per-method amounts sum to the byMethod totals (drill-down matches aggregate)', () => {
+    const rows = [
+      tx({ payment: { method: 'card', total: 100 } }),
+      tx({ payment: { method: 'venmo', total: 60 } }),
+      tx({ payment: { method: 'venmo', total: 27 }, transactionType: 'refund' }),
+    ];
+    const m = computeMetrics(rows, TODAY);
+    const sumOther = doneTransactions(rows, TODAY)
+      .filter(a => txMethodKey(a) === 'other')
+      .reduce((s, a) => s + txMethodAmount(a), 0);
+    expect(sumOther).toBe(m.byMethod.other.total); // 60 - 27 = 33
+    expect(sumOther).toBe(33);
   });
 });

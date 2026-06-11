@@ -258,21 +258,41 @@ export function computeRetention(transactions, priorClientIds, today = todayStr(
 
 // `today` is parameterized for deterministic tests; production callers can
 // omit it and the live date is used.
-export function computeMetrics(transactions, today = todayStr()) {
-  // A transaction counts toward revenue when it's a real sale OR a refund.
-  // Refunds are included so they net against the original sale (apptRevenue
-  // returns a negative number for them). Cancellations and voids are
-  // excluded entirely — no money moved. Same for cancelled appointments.
-  // The `date <= today` guard only applies to synthesized appointments
-  // (future-scheduled appts marked done by mistake), not real receipts —
-  // a receipt is a completed transaction so the date should always count.
-  const done = transactions.filter(a => {
+// A transaction counts toward revenue when it's a real sale OR a refund.
+// Refunds are included so they net against the original sale. Cancellations
+// and voids are excluded entirely — no money moved. The `date <= today` guard
+// only applies to synthesized appointments (future-scheduled appts marked done
+// by mistake), not real receipts. Shared so drill-downs match the aggregates.
+export function doneTransactions(transactions, today = todayStr()) {
+  return (transactions || []).filter(a => {
     if (a.status === 'cancelled') return false;
     if (a.transactionType && a.transactionType !== 'sale' && a.transactionType !== 'refund') return false;
     if (!a.date) return false;
     if (a.payment?._synthetic && a.date > today) return false;
     return true;
   });
+}
+
+// Which payment-method bucket a transaction lands in. Anything that isn't a
+// plain card or cash sale is collapsed into "other" (gift card, etc.).
+export function txMethodKey(a) {
+  const m = a?.payment?.method;
+  return (m === 'card' || m === 'cash') ? m : 'other';
+}
+
+// Signed amount a transaction contributes to its method bucket — mirrors the
+// byMethod math in computeMetrics so a per-method drill-down sums to the same
+// total. Returns null when the transaction contributes nothing.
+export function txMethodAmount(a) {
+  const p = a.payment || {};
+  let total;
+  if (p.total !== undefined && p.total !== null) total = Number(p.total) || 0;
+  else { total = Math.abs(apptRevenue(a)); if (total === 0) return null; }
+  return a.transactionType === 'refund' ? -Math.abs(total) : total;
+}
+
+export function computeMetrics(transactions, today = todayStr()) {
+  const done = doneTransactions(transactions, today);
 
   const totalRevenue  = done.reduce((s, a) => s + apptRevenue(a), 0);
   const totalAppts    = done.length;

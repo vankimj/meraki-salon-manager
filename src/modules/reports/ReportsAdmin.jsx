@@ -5,7 +5,7 @@ import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
-import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown, computeRetention } from './metrics';
+import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown, computeRetention, doneTransactions, txMethodKey, txMethodAmount } from './metrics';
 import CoachMark from '../../components/CoachMark';
 import { TENANT_ID } from '../../lib/tenant';
 
@@ -400,7 +400,7 @@ export default function ReportsAdmin() {
               </Card>
 
               <Card title="Payment Methods" style={{ marginBottom: 12 }}>
-                <PaymentMethodsBreakdown metrics={metrics} />
+                <PaymentMethodsBreakdown metrics={metrics} transactions={filteredAppts} />
               </Card>
 
               <Card title="Processing Fees" style={{ marginBottom: 12 }}>
@@ -502,16 +502,31 @@ function WalkInVsScheduled({ metrics }) {
 }
 
 // ── Payment methods breakdown ──────────────────────────
-function PaymentMethodsBreakdown({ metrics }) {
+const METHOD_TXN_CAP = 100;
+
+function PaymentMethodsBreakdown({ metrics, transactions }) {
   const [expanded, setExpanded] = useState(null); // method id when open
   const { byMethod, methodTotal } = metrics;
+  // Per-method transaction lists, signed exactly like the byMethod totals, so
+  // expanding a row shows the records that sum to it (refunds explain a
+  // negative total). Computed once and bucketed by method.
+  const txnsByMethod = useMemo(() => {
+    const out = { card: [], cash: [], other: [] };
+    doneTransactions(transactions || []).forEach(a => {
+      const amt = txMethodAmount(a);
+      if (amt === null) return;
+      out[txMethodKey(a)].push({ t: a, amt });
+    });
+    Object.values(out).forEach(list => list.sort((x, y) => String(y.t.date).localeCompare(String(x.t.date))));
+    return out;
+  }, [transactions]);
   if (!methodTotal) return <Empty>No payment data</Empty>;
   const pct = (n) => methodTotal ? Math.round(n / methodTotal * 100) : 0;
 
   const rows = [
     { id: 'card',  label: 'Credit card', color: '#3B82F6' },
     { id: 'cash',  label: 'Cash',        color: '#10B981' },
-    { id: 'other', label: 'Other (Venmo / Zelle / GC)', color: '#A78BFA' },
+    { id: 'other', label: 'Other (Gift card)', color: '#A78BFA' },
   ].map(r => {
     const d = byMethod[r.id] || {};
     return {
@@ -573,6 +588,36 @@ function PaymentMethodsBreakdown({ metrics }) {
                     Δ {fmt$(r.total - (r.svcRev + r.retail + r.tax + r.tip))} — usually a discount/promo/gift-card adjustment baked into <code>payment.total</code> but not into the line items.
                   </div>
                 )}
+                {(() => {
+                  const list = txnsByMethod[r.id] || [];
+                  if (!list.length) return null;
+                  return (
+                    <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid var(--pn-border)' }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>
+                        Transactions ({list.length.toLocaleString()})
+                      </div>
+                      {list.slice(0, METHOD_TXN_CAP).map(({ t, amt }, i) => {
+                        const isRefund = t.transactionType === 'refund';
+                        const d = t.date ? new Date(t.date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '—';
+                        return (
+                          <div key={t.id || i} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '3px 0', borderTop: i ? '1px solid var(--pn-border)' : 'none' }}>
+                            <span style={{ color: 'var(--pn-text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {isRefund && <span style={{ color: '#EF4444', fontWeight: 700, marginRight: 4 }}>↩ refund</span>}
+                              {t.clientName || '(walk-in)'}
+                            </span>
+                            <span style={{ color: 'var(--pn-text-faint)' }}>{d}</span>
+                            <span style={{ fontWeight: 600, color: isRefund ? '#EF4444' : 'var(--pn-text)', minWidth: 64, textAlign: 'right' }}>{fmt$(amt)}</span>
+                          </div>
+                        );
+                      })}
+                      {list.length > METHOD_TXN_CAP && (
+                        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 6 }}>
+                          Showing the {METHOD_TXN_CAP} most recent of {list.length.toLocaleString()}.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
           </div>
@@ -583,7 +628,7 @@ function PaymentMethodsBreakdown({ metrics }) {
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>{fmt$(methodTotal)}</span>
       </div>
       <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 6, lineHeight: 1.5 }}>
-        Sums <code>payment.total</code> per transaction (includes tax + tip on top of service revenue). Click a row to see the breakdown.
+        Sums <code>payment.total</code> per transaction (includes tax + tip on top of service revenue). Click a row to see its breakdown and the transactions behind it. A negative total means refunds outweighed sales for that method.
       </div>
     </div>
   );
