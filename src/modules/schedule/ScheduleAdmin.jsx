@@ -2529,7 +2529,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                         <div key={s}
                           onMouseDown={e => { e.preventDefault(); setNewClient(p => ({ ...p, email: s })); setEmailFocused(false); }}
                           style={{ padding: '7px 10px', fontSize: 12, color: 'var(--pn-text)', cursor: 'pointer', borderBottom: '1px solid var(--pn-border)' }}
-                          onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                           onMouseLeave={e => e.currentTarget.style.background = ''}>
                           {s}
                         </div>

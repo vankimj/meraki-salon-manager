@@ -312,7 +312,7 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--pn-text)' }}>{client.name || '—'}</span>
             {referralCount > 0 && (
-              <span style={{ fontSize: 10, background: '#e8f4ee', color: '#2D7A5F', borderRadius: 10, padding: '1px 7px', fontWeight: 600, flexShrink: 0 }}>
+              <span style={{ fontSize: 10, background: 'var(--pn-success-bg)', color: 'var(--pn-success)', borderRadius: 10, padding: '1px 7px', fontWeight: 600, flexShrink: 0 }}>
                 ↗ {referralCount} referred
               </span>
             )}
@@ -756,7 +756,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                           <ViewVal>{client.referredBy?.name || '—'}</ViewVal>
                           {count > 0 && (
-                            <span style={{ fontSize: 11, background: '#e8f4ee', color: '#2D7A5F', borderRadius: 10, padding: '2px 9px', fontWeight: 600 }}>
+                            <span style={{ fontSize: 11, background: 'var(--pn-success-bg)', color: 'var(--pn-success)', borderRadius: 10, padding: '2px 9px', fontWeight: 600 }}>
                               Referred {count} {count === 1 ? 'client' : 'clients'}
                             </span>
                           )}

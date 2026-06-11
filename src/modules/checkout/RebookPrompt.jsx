@@ -292,9 +292,10 @@ export default function RebookPrompt({
 }
 
 const cardStyle = {
-  background: '#f0f9f5',
-  border: '1.5px solid #c3e6d8',
+  background: 'var(--pn-success-bg)',
+  border: '1px solid var(--pn-border)',
   borderRadius: 12,
   padding: '12px 14px',
   marginBottom: 14,
+  color: 'var(--pn-text)',
 };

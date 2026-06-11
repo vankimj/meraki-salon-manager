@@ -74,7 +74,7 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
   return (
     <div>
       {!viewOnly && composer === 'free' && (
-        <div style={{ marginBottom: 8, padding: 10, border: '1px solid #bfdbfe', borderRadius: 8, background: '#eff6ff' }}>
+        <div style={{ marginBottom: 8, padding: 10, border: '1px solid #bfdbfe', borderRadius: 8, background: 'var(--pn-info-bg)' }}>
           <textarea
             autoFocus
             value={draft}
@@ -99,7 +99,7 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
       )}
 
       {!viewOnly && composer === 'soap' && (
-        <div style={{ marginBottom: 8, padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: '#eef2ff' }}>
+        <div style={{ marginBottom: 8, padding: 10, border: '1px solid #c7d2fe', borderRadius: 8, background: 'var(--pn-info-bg)' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: '#3730a3', letterSpacing: '.05em', textTransform: 'uppercase' }}>SOAP note</div>
             <a href="https://en.wikipedia.org/wiki/SOAP_note" target="_blank" rel="noopener" style={{ fontSize: 10, color: '#6366f1' }}>What's this?</a>
@@ -118,11 +118,11 @@ export default function NotesEditor({ entries, legacy, onChange, viewOnly, autho
       {!viewOnly && composer == null && (
         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
           <button onClick={() => setComposer('free')}
-            style={{ flex: enableSoap ? 2 : 1, padding: '8px 10px', borderRadius: 8, border: '1px dashed #bfdbfe', background: '#eff6ff', color: '#1e40af', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ flex: enableSoap ? 2 : 1, padding: '8px 10px', borderRadius: 8, border: '1px dashed #bfdbfe', background: 'var(--pn-info-bg)', color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             + Add note
           </button>
           {enableSoap && <button onClick={() => setComposer('soap')} title="Clinical SOAP-format note: Subjective / Objective / Assessment / Plan"
-            style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px dashed #c7d2fe', background: '#eef2ff', color: '#4338ca', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: '1px dashed #c7d2fe', background: 'var(--pn-info-bg)', color: 'var(--pn-info)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             + SOAP note
           </button>}
         </div>

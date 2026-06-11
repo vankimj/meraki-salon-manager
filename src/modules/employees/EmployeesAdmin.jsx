@@ -869,7 +869,7 @@ function TimeClockPinSection({ emp, onPinChanged, showToast }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8 }}>
         {!editing && (
           <>
-            <div style={{ flex: 1, fontSize: 12, color: hasPin ? '#166534' : 'var(--pn-text-faint)' }}>
+            <div style={{ flex: 1, fontSize: 12, color: hasPin ? 'var(--pn-success)' : 'var(--pn-text-faint)' }}>
               {hasPin ? '✓ PIN set' : 'No PIN — kiosk locked out'}
             </div>
             <Btn onClick={() => { setPin(''); setEditing(true); }}>{hasPin ? 'Change' : 'Set PIN'}</Btn>
