@@ -533,6 +533,11 @@ service cloud.firestore {
         allow read, write: if isTenantAdmin(tenantId);
       }
 
+      // Operating expenses (P&L): admin only — financial data.
+      match /expenses/{expenseId} {
+        allow read, write: if isTenantAdmin(tenantId);
+      }
+
       // Gift cards: staff can read (so checkout can validate balance);
       // admin can write (mint, redeem-server-side, top-up). Without the
       // admin gate on writes, a tech could open the JS console and

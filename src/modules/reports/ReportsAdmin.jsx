@@ -1,11 +1,12 @@
-import { useState, useEffect, useMemo } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange, fetchLedgerByRange } from '../../lib/firestore';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange, fetchLedgerByRange, fetchExpensesByRange, createExpense, deleteExpense, fetchPayrollRuns, fetchBonuses, fetchProducts, EXPENSE_CATEGORIES } from '../../lib/firestore';
 import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import { generate1099NecPdf } from '../../lib/pdf1099';
 import { todayStr, apptRevenue, apptToSyntheticReceipt, buildTransactions, computeMetrics, computeCancellations, computeRefundBreakdown, computeRetention, doneTransactions, txMethodKey, txMethodAmount } from './metrics';
+import { computePnl } from './pnl';
 import CoachMark from '../../components/CoachMark';
 import { TENANT_ID } from '../../lib/tenant';
 
@@ -154,6 +155,7 @@ const PERIODS = [
 const TABS = [
   { id: 'overview',      label: 'Overview' },
   { id: 'transactions',  label: 'Transactions' },
+  { id: 'pnl',           label: 'P&L' },
   { id: 'ledger',        label: 'Ledger' },
   { id: 'cancellations', label: 'Cancellations & No-Shows' },
   { id: 'ratings',       label: 'Service Ratings' },
@@ -305,6 +307,16 @@ export default function ReportsAdmin() {
         <AskAI />
       ) : activeTab === 'tax' ? (
         <TaxReport />
+      ) : activeTab === 'pnl' ? (
+        <PnlReport
+          startDate={isCustom ? customStart : startOf(periodDays)}
+          endDate={isCustom ? customEnd : todayStr()}
+          isCustom={isCustom}
+          periodDays={periodDays}
+          setPeriodDays={setPeriodDays}
+          customStart={customStart} setCustomStart={setCustomStart}
+          customEnd={customEnd}     setCustomEnd={setCustomEnd}
+        />
       ) : activeTab === 'ledger' ? (
         <LedgerReport
           startDate={isCustom ? customStart : startOf(periodDays)}
@@ -1436,6 +1448,214 @@ function paymentMethodLabel(p = {}) {
     ? charged
     : (Number(p?.total) || 0) - (Number(p?.tip) || 0) - credit - (Number(p?.giftCard?.applied) || 0);
   return remainder <= 0.005 ? 'Store credit' : `Store credit + ${base}`;
+}
+
+// ── Profit & Loss ──────────────────────────────────────
+function PnlReport({ startDate, endDate, isCustom, periodDays, setPeriodDays, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const { gUser, showToast } = useApp();
+  const [basis, setBasis]   = useState('cash');
+  const [data, setData]     = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [form, setForm]     = useState({ date: todayStr(), amount: '', category: EXPENSE_CATEGORIES[0], vendor: '', note: '' });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [rs, as, expenses, payrollRuns, bonuses, products, employees] = await Promise.all([
+        fetchReceiptsByRange(startDate, endDate).catch(() => []),
+        fetchAppointmentsByRange(startDate, endDate).catch(() => []),
+        fetchExpensesByRange(startDate, endDate).catch(() => []),
+        fetchPayrollRuns().catch(() => []),
+        fetchBonuses().catch(() => []),
+        fetchProducts().catch(() => []),
+        fetchEmployees().catch(() => []),
+      ]);
+      const txns = buildTransactions(rs, as);
+      const metrics = computeMetrics(txns);
+      const productCostById = {};
+      products.forEach(p => { if (p.id != null) productCostById[p.id] = Number(p.cost) || 0; });
+      // Accrual labor = commission earned this period = Σ per-tech service
+      // revenue × their commission %. (Hourly wages, if any, come through
+      // payroll runs / manual expenses.)
+      const pctByName = {};
+      employees.forEach(e => { if (e.name && (e.rateType === 'commission' || e.rateType === 'both')) pctByName[e.name] = Number(e.commissionPct) || 0; });
+      let commissionEarned = 0;
+      Object.entries(metrics.byTech || {}).forEach(([name, t]) => {
+        const pct = pctByName[name];
+        if (pct) commissionEarned += (t.revenue || 0) * pct / 100;
+      });
+      setData({ txns, expenses, payrollRuns, bonuses, productCostById, commissionEarned });
+    } catch { setData({ txns: [], expenses: [], payrollRuns: [], bonuses: [], productCostById: {}, commissionEarned: 0 }); }
+    finally { setLoading(false); }
+  }, [startDate, endDate]);
+  useEffect(() => { load(); }, [load]);
+
+  const pnl = useMemo(() => data ? computePnl(data.txns, data.expenses, {
+    basis, payrollRuns: data.payrollRuns, bonuses: data.bonuses,
+    commissionEarned: data.commissionEarned, productCostById: data.productCostById,
+    startDate, endDate,
+  }) : null, [data, basis, startDate, endDate]);
+
+  async function addExpense() {
+    const amt = Number(form.amount);
+    if (!(amt > 0) || !form.date) { showToast?.('Enter a date and a positive amount'); return; }
+    setAdding(true);
+    try {
+      await createExpense({ date: form.date, amount: amt, category: form.category, vendor: form.vendor.trim() || null, note: form.note.trim() || null, createdBy: gUser?.email || null });
+      setForm(f => ({ ...f, amount: '', vendor: '', note: '' }));
+      await load();
+    } catch { showToast?.('Could not save expense'); }
+    finally { setAdding(false); }
+  }
+  async function removeExpense(id) {
+    if (!window.confirm('Delete this expense?')) return;
+    try { await deleteExpense(id, gUser?.email || null); await load(); } catch { showToast?.('Could not delete'); }
+  }
+
+  function exportCSV() {
+    if (!pnl) return;
+    const rows = [
+      ['Profit & Loss', `${startDate} to ${endDate}`, `${basis} basis`],
+      [],
+      ['Service revenue', pnl.revenue.service.toFixed(2)],
+      ['Retail revenue', pnl.revenue.retail.toFixed(2)],
+      ['Refunds', `-${pnl.revenue.refunds.toFixed(2)}`],
+      ['Net revenue', pnl.revenue.net.toFixed(2)],
+      ['Cost of goods sold', `-${pnl.cogs.toFixed(2)}`],
+      ['Gross profit', pnl.grossProfit.toFixed(2)],
+      ['Labor — commissions/wages', `-${pnl.opex.laborCommissions.toFixed(2)}`],
+      ['Labor — bonuses', `-${pnl.opex.laborBonuses.toFixed(2)}`],
+      ['Payment processing fees', `-${pnl.opex.processingFees.toFixed(2)}`],
+      ...Object.entries(pnl.opex.byCategory).map(([k, v]) => [k, `-${v.toFixed(2)}`]),
+      ['Total operating expenses', `-${pnl.opex.total.toFixed(2)}`],
+      ['NET OPERATING INCOME', pnl.netOperatingIncome.toFixed(2)],
+      [],
+      ['Memo — not income (pass-through / liabilities)'],
+      ['Sales tax collected', pnl.memo.salesTaxCollected.toFixed(2)],
+      ['Tips collected', pnl.memo.tipsCollected.toFixed(2)],
+      ['Gift cards sold', pnl.memo.giftCardsSold.toFixed(2)],
+    ];
+    const csv = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const a = document.createElement('a'); a.href = url; a.download = `profit-and-loss-${startDate}_to_${endDate}_${basis}.csv`; a.click(); URL.revokeObjectURL(url);
+  }
+
+  const money = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+  const neg   = (n) => (Number(n) || 0) === 0 ? money(0) : `(${money(Math.abs(n))})`;
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {PERIODS.map(p => <PillBtn key={p.days} active={periodDays === p.days} onClick={() => setPeriodDays(p.days)}>{p.label}</PillBtn>)}
+          <PillBtn active={isCustom} onClick={() => setPeriodDays('custom')}>Custom</PillBtn>
+          {isCustom && (
+            <>
+              <input type="date" value={customStart} max={customEnd} onChange={e => setCustomStart(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)' }} />
+              <span style={{ color: 'var(--pn-text-muted)', fontSize: 12 }}>→</span>
+              <input type="date" value={customEnd} min={customStart} max={todayStr()} onChange={e => setCustomEnd(e.target.value)}
+                style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)' }} />
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', border: '1px solid var(--pn-border-strong)', borderRadius: 8, overflow: 'hidden' }}>
+            {['cash', 'accrual'].map(b => (
+              <button key={b} onClick={() => setBasis(b)} style={{
+                padding: '6px 12px', fontSize: 12, fontFamily: 'inherit', border: 'none', cursor: 'pointer', textTransform: 'capitalize',
+                background: basis === b ? '#2D7A5F' : 'var(--pn-surface)', color: basis === b ? '#fff' : 'var(--pn-text-muted)', fontWeight: basis === b ? 700 : 500,
+              }}>{b}</button>
+            ))}
+          </div>
+          <button onClick={exportCSV} disabled={!pnl}
+            style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #2D7A5F', background: pnl ? '#2D7A5F' : 'var(--pn-border-strong)', color: '#fff', fontWeight: 600, cursor: pnl ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {loading || !pnl ? (
+        <div style={{ textAlign: 'center', padding: 40, color: 'var(--pn-text-faint)' }}>Loading…</div>
+      ) : (
+        <>
+          <Card title={`Profit & Loss — ${basis} basis`} style={{ marginBottom: 12 }}>
+            <PnlLine label="Service revenue" value={money(pnl.revenue.service)} />
+            <PnlLine label="Retail revenue"  value={money(pnl.revenue.retail)} />
+            {pnl.revenue.refunds > 0 && <PnlLine label="Less: refunds" value={neg(pnl.revenue.refunds)} muted />}
+            <PnlLine label="Net revenue" value={money(pnl.revenue.net)} bold divider />
+            <PnlLine label="Cost of goods sold (retail)" value={neg(pnl.cogs)} muted />
+            <PnlLine label="Gross profit" value={money(pnl.grossProfit)} bold divider />
+            <PnlLine label="Labor — commissions/wages" value={neg(pnl.opex.laborCommissions)} muted />
+            <PnlLine label="Labor — bonuses" value={neg(pnl.opex.laborBonuses)} muted />
+            <PnlLine label="Payment processing fees" value={neg(pnl.opex.processingFees)} muted />
+            {Object.entries(pnl.opex.byCategory).map(([k, v]) => <PnlLine key={k} label={k} value={neg(v)} muted />)}
+            <PnlLine label="Total operating expenses" value={neg(pnl.opex.total)} bold divider />
+            <PnlLine label="Net operating income" value={money(pnl.netOperatingIncome)} bold big
+              color={pnl.netOperatingIncome >= 0 ? '#16a34a' : '#ef4444'} />
+            <div style={{ fontSize: 10.5, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.6, borderTop: '1px solid var(--pn-border)', paddingTop: 10 }}>
+              Revenue excludes sales tax and tips (not income — see memo). {basis === 'cash'
+                ? 'Cash basis: gift-card sales count as revenue when sold; redemptions aren’t re-counted; labor is payroll + bonuses paid in the period.'
+                : 'Accrual basis: gift-card sales are deferred until redeemed; labor is commission earned + bonuses.'} COGS uses retail product cost. Confirm treatment with your accountant before filing.
+            </div>
+          </Card>
+
+          <Card title="Not income — pass-through & liabilities" style={{ marginBottom: 12 }}>
+            <PnlLine label="Sales tax collected (owed to state)" value={money(pnl.memo.salesTaxCollected)} muted />
+            <PnlLine label="Tips collected (paid to staff)" value={money(pnl.memo.tipsCollected)} muted />
+            <PnlLine label="Gift cards sold (liability until redeemed)" value={money(pnl.memo.giftCardsSold)} muted />
+          </Card>
+
+          <Card title="Operating expenses">
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
+              <input type="date" value={form.date} max={todayStr()} onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                style={{ fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text)' }} />
+              <select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}
+                style={{ fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text)' }}>
+                {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <input type="number" min="0" step="0.01" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} placeholder="Amount"
+                style={{ width: 90, fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text)' }} />
+              <input value={form.vendor} onChange={e => setForm(f => ({ ...f, vendor: e.target.value }))} placeholder="Vendor (optional)"
+                style={{ flex: 1, minWidth: 120, fontSize: 12, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', fontFamily: 'inherit', background: 'var(--pn-bg)', color: 'var(--pn-text)' }} />
+              <button onClick={addExpense} disabled={adding}
+                style={{ fontSize: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #2D7A5F', background: '#2D7A5F', color: '#fff', fontWeight: 600, cursor: adding ? 'default' : 'pointer', fontFamily: 'inherit', opacity: adding ? .6 : 1 }}>
+                Add
+              </button>
+            </div>
+            {!data?.expenses?.length ? (
+              <div style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>No operating expenses logged in this period. Add rent, supplies, utilities, etc. above.</div>
+            ) : (
+              data.expenses.map(e => (
+                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderTop: '1px solid var(--pn-border)', fontSize: 12 }}>
+                  <span style={{ color: 'var(--pn-text-faint)', width: 78 }}>{e.date}</span>
+                  <span style={{ color: 'var(--pn-text)', flex: 1 }}>{e.category}{e.vendor ? ` · ${e.vendor}` : ''}</span>
+                  <span style={{ fontWeight: 600, color: 'var(--pn-text)' }}>{money(e.amount)}</span>
+                  <button onClick={() => removeExpense(e.id)} title="Delete"
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--pn-text-faint)', fontSize: 14 }}>×</button>
+                </div>
+              ))
+            )}
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PnlLine({ label, value, bold, big, muted, divider, color }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+      padding: big ? '8px 0 2px' : '4px 0',
+      borderTop: divider ? '1px solid var(--pn-border)' : 'none',
+      marginTop: divider ? 4 : 0,
+    }}>
+      <span style={{ fontSize: big ? 14 : 13, fontWeight: bold ? 700 : 400, color: muted ? 'var(--pn-text-muted)' : 'var(--pn-text)' }}>{label}</span>
+      <span style={{ fontSize: big ? 16 : 13, fontWeight: bold ? 800 : 600, color: color || 'var(--pn-text)' }}>{value}</span>
+    </div>
+  );
 }
 
 function LedgerSummaryCard({ label, value, color }) {

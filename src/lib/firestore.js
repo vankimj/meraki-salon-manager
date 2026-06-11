@@ -2172,6 +2172,43 @@ export async function fetchLedgerByRange(startDate, endDate) {
     .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
 }
 
+// ── Operating expenses (P&L) ───────────────────────────
+// Manual operating-expense entries (rent, supplies, utilities, etc.) the app
+// can't derive from receipts/HR. Feeds the P&L. `date` is YYYY-MM-DD (the
+// expense/paid date) so a string range query works without a composite index.
+const EXPENSES_COL = tenantCol('expenses');
+
+export const EXPENSE_CATEGORIES = [
+  'Rent / occupancy',
+  'Supplies & inventory',
+  'Software & subscriptions',
+  'Utilities',
+  'Marketing & advertising',
+  'Insurance',
+  'Education & licensing',
+  'Repairs & maintenance',
+  'Bank & processing fees',
+  'Other',
+];
+
+export async function fetchExpensesByRange(startDate, endDate) {
+  const snap = await getDocs(query(EXPENSES_COL, where('date', '>=', startDate), where('date', '<=', endDate)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+}
+
+export async function createExpense(data) {
+  const ref = await addDoc(EXPENSES_COL, { ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() });
+  return ref.id;
+}
+
+export async function updateExpense(id, data) {
+  await setDoc(doc(EXPENSES_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
+export const deleteExpense = (id, deletedBy) => softDelete(doc(EXPENSES_COL, id), deletedBy);
+export const purgeExpense  = (id) => deleteDoc(doc(EXPENSES_COL, id));
+
 // Blocked booking attempts (honeypot / bot signals) in a date range. Stamped
 // with a YYYY-MM-DD `date` field server-side so a string range query works.
 export async function fetchFraudBlocksByRange(startDate, endDate) {
