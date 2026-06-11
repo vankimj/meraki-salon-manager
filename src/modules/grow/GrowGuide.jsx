@@ -13,7 +13,7 @@ import { resizeImg } from '../../utils/helpers';
 import {
   subscribeLaunchChecklist, setLaunchItemStatus, setLaunchMode,
   subscribeTenantSms, subscribeGoogleBusinessAuth, subscribeWebfrontConfig,
-  growCoachSuggest, growDraftDocument, growPhotoCritique,
+  growCoachSuggest, growDraftDocument, growPhotoCritique, growStepHelp,
   patchWebfrontConfig, uploadPortfolioPhoto,
   subscribeInstagramAuth, subscribeInstagramStats, startInstagramAuth, syncInstagramNow, disconnectInstagram,
 } from '../../lib/firestore';
@@ -180,6 +180,7 @@ const STATUS_PILL = {
 function LaunchItemCard({ item, status, entry, state, ctx, onMark, onDeepLink, patchItem, auditMode }) {
   const [open, setOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const pill = STATUS_PILL[status] || STATUS_PILL.pending;
   const done = status === 'done';
   const risk = item.risk === 'high'
@@ -229,12 +230,14 @@ function LaunchItemCard({ item, status, entry, state, ctx, onMark, onDeepLink, p
             ✨ {item.ai.label}
           </Button>
         )}
+        <Button variant="ghost" onClick={() => setHelpOpen(true)} style={{ color: '#7c3aed' }}>✨ Ask AI</Button>
         <div style={{ flex: 1 }} />
         {done
           ? <Button variant="ghost" onClick={() => onMark(item.id, 'pending')}>Undo</Button>
           : <Button variant="secondary" onClick={() => onMark(item.id, 'done')}>Mark done</Button>}
       </div>
       {aiOpen && <AiCoachModal ai={item.ai} onClose={() => setAiOpen(false)} />}
+      {helpOpen && <StepHelpModal item={item} onClose={() => setHelpOpen(false)} />}
     </div>
   );
 }
@@ -494,6 +497,55 @@ function AiCoachModal({ ai, onClose }) {
             <Button variant="primary" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</Button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Per-step "Ask AI" — scoped to ONE Launch & Grow step (growStepHelp), with a
+// shared daily cost cap on the server. Ask a question or get walked through it.
+function StepHelpModal({ item, onClose }) {
+  const [question, setQuestion] = useState('');
+  const [loading, setLoading]   = useState(false);
+  const [text, setText]         = useState('');
+  const [err, setErr]           = useState('');
+  const stepContext = [item.why, ...(item.steps || [])].filter(Boolean).join(' · ');
+
+  async function ask(q) {
+    setLoading(true); setErr(''); setText('');
+    try {
+      const res = await growStepHelp({ title: item.title, context: stepContext, question: q });
+      setText(res?.text || '');
+    } catch (e) {
+      setErr(e?.message || 'Could not get help right now.');
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '100%', maxWidth: 600, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 12px 48px rgba(0,0,0,.3)' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>✨ Ask AI — {item.title}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--pn-text-faint)', flexShrink: 0 }}>×</button>
+        </div>
+        <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input value={question} onChange={e => setQuestion(e.target.value)} onKeyDown={e => e.key === 'Enter' && !loading && ask(question)}
+              placeholder="Ask anything about this step…" style={inp} />
+            <Button variant="primary" disabled={loading} onClick={() => ask(question)}>{loading ? '…' : 'Ask'}</Button>
+          </div>
+          {!text && !loading && !err && (
+            <button onClick={() => ask('')} style={{ background: 'none', border: 'none', color: '#7c3aed', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, padding: 0 }}>
+              Or — walk me through this step →
+            </button>
+          )}
+          {loading && <div style={{ textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13, padding: 20 }}>Thinking… ✨</div>}
+          {err && <div style={{ color: '#ef4444', fontSize: 13 }}>{err}</div>}
+          {text && <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.6, margin: 0 }}>{text}</pre>}
+        </div>
+        <div style={{ padding: '10px 18px', borderTop: '1px solid var(--pn-border)', fontSize: 11, color: 'var(--pn-text-faint)' }}>
+          Scoped to this step · not legal/tax advice — verify specifics with a professional.
+        </div>
       </div>
     </div>
   );
