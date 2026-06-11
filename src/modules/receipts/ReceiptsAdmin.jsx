@@ -150,7 +150,7 @@ export default function ReceiptsAdmin() {
         filtered.map(item => (
           <ReceiptCard key={item.id} item={item} open={openId === item.id}
             onToggle={() => setOpenId(openId === item.id ? null : item.id)}
-            canWrite={canWrite} canRefund={canRefund} canEditCommission={isAdmin} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
+            canWrite={canWrite} canRefund={canRefund} canEditCommission={canRefund} showToast={showToast} onRefund={() => setRefundReceipt(item)} onRedo={() => setRedoReceipt(item)} />
         ))
       )}
 

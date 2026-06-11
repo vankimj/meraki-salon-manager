@@ -7093,7 +7093,7 @@ exports.updateRefundCommission = onCall({ cors: true }, async (request) => {
   if (treatment !== 'withhold' && treatment !== 'goodwill') throw new HttpsError('invalid-argument', 'treatment must be withhold|goodwill');
   if (!receiptId || !refundKey || !techName) throw new HttpsError('invalid-argument', 'receiptId, refundKey, techName required');
   const db = getFirestore();
-  await requireTenantAdmin(db, tenantId, request);   // owner/admin only ("owner or higher")
+  await requireCap(db, tenantId, request, 'refund');   // owner + manager (RBAC), same bar as issuing the refund
   const issuer = await callerEmail(request);
   const recRef = db.doc(`tenants/${tenantId}/receipts/${receiptId}`);
 
