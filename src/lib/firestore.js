@@ -2919,6 +2919,20 @@ export async function disconnectGoogleBusiness() {
   const res = await callFn('disconnectGoogleBusiness')({ tenantId: TENANT_ID });
   return res.data;
 }
+
+// ── Launch & Grow AI coach (Phase 2) ──────────────────────────────────────
+export async function growCoachSuggest(kind, context = '') {
+  const res = await callFn('growCoachSuggest')({ tenantId: TENANT_ID, kind, context });
+  return res.data; // { text }
+}
+export async function growDraftDocument(kind, context = '') {
+  const res = await callFn('growDraftDocument')({ tenantId: TENANT_ID, kind, context });
+  return res.data; // { text, disclaimer }
+}
+export async function growPhotoCritique({ imageData, mediaType = 'image/jpeg', kind = 'work' }) {
+  const res = await callFn('growPhotoCritique')({ tenantId: TENANT_ID, imageData, mediaType, kind });
+  return res.data; // { review }
+}
 export function subscribeGoogleReviewsLog(callback) {
   return onSnapshot(tenantCol('googleReviewsLog'), snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));

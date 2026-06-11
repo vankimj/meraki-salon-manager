@@ -12,6 +12,7 @@ import Button from '../../components/Button';
 import {
   subscribeLaunchChecklist, setLaunchItemStatus, setLaunchMode,
   subscribeTenantSms, subscribeGoogleBusinessAuth, subscribeWebfrontConfig,
+  growCoachSuggest, growDraftDocument,
 } from '../../lib/firestore';
 import {
   LAUNCH_GROUPS, FLAVORS, resolveHref,
@@ -160,6 +161,7 @@ const STATUS_PILL = {
 
 function LaunchItemCard({ item, status, state, onMark, onDeepLink, auditMode }) {
   const [open, setOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const pill = STATUS_PILL[status] || STATUS_PILL.pending;
   const done = status === 'done';
   const risk = item.risk === 'high'
@@ -203,11 +205,17 @@ function LaunchItemCard({ item, status, state, onMark, onDeepLink, auditMode }) 
             {item.flavor === FLAVORS.CAPTURE ? 'Set it up →' : 'Open →'}
           </Button>
         )}
+        {item.ai && (
+          <Button variant="secondary" onClick={() => setAiOpen(true)} style={{ borderColor: '#c4b5fd', color: '#7c3aed' }}>
+            ✨ {item.ai.label}
+          </Button>
+        )}
         <div style={{ flex: 1 }} />
         {done
           ? <Button variant="ghost" onClick={() => onMark(item.id, 'pending')}>Undo</Button>
           : <Button variant="secondary" onClick={() => onMark(item.id, 'done')}>Mark done</Button>}
       </div>
+      {aiOpen && <AiCoachModal ai={item.ai} onClose={() => setAiOpen(false)} />}
     </div>
   );
 }
@@ -219,4 +227,58 @@ function ExternalLinks({ links, state }) {
       {link.label} ↗
     </a>
   ));
+}
+
+// AI coach result modal — calls the suggest/draft callable, shows the output
+// with copy-to-clipboard. Legal drafts carry a server-injected disclaimer.
+function AiCoachModal({ ai, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [text, setText]       = useState('');
+  const [err, setErr]         = useState('');
+  const [copied, setCopied]   = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = ai.fn === 'draft' ? await growDraftDocument(ai.kind) : await growCoachSuggest(ai.kind);
+        if (alive) setText(res?.text || '');
+      } catch (e) {
+        if (alive) setErr(e?.message || 'Could not generate — try again.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [ai.fn, ai.kind]);
+
+  function copy() {
+    navigator.clipboard?.writeText(text)
+      .then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); })
+      .catch(() => {});
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', boxShadow: '0 12px 48px rgba(0,0,0,.3)' }}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--pn-text)' }}>✨ {ai.label}</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: 'var(--pn-text-faint)' }}>×</button>
+        </div>
+        <div style={{ padding: 18, overflowY: 'auto', flex: 1 }}>
+          {loading
+            ? <div style={{ textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13, padding: 30 }}>Writing… ✨</div>
+            : err
+              ? <div style={{ color: '#ef4444', fontSize: 13 }}>{err}</div>
+              : <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.6, margin: 0 }}>{text}</pre>}
+        </div>
+        {!loading && !err && (
+          <div style={{ padding: '12px 18px', borderTop: '1px solid var(--pn-border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>AI draft — review before using.</span>
+            <Button variant="primary" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

@@ -5477,6 +5477,137 @@ ${cfg.policy || 'Appointments canceled with less than 24 hours notice may incur 
   }
 );
 
+// ── Launch & Grow AI coach (admin-only) ───────────────────────────────────
+// Backs the Launch & Grow module's AI coach: short marketing copy, longer
+// document drafts (with an attorney-review disclaimer for legal-ish ones), and
+// photo critique via Claude vision. All admin-only + usage-logged.
+async function loadSalonBrief(db, tenantId) {
+  const [tDoc, wf, settings, svc] = await Promise.all([
+    db.doc(`tenants/${tenantId}`).get(),
+    db.doc(`tenants/${tenantId}/data/webfront`).get(),
+    db.doc(`tenants/${tenantId}/data/settings`).get(),
+    db.collection(`tenants/${tenantId}/services`).get(),
+  ]);
+  const t = tDoc.exists ? tDoc.data() : {};
+  const cfg = wf.exists ? wf.data() : {};
+  const s = settings.exists ? settings.data() : {};
+  return {
+    name: cfg.salonName || s.salonName || t.name || 'the salon',
+    city: cfg.city || s.brandCity || '',
+    services: svc.docs.slice(0, 20).map(d => d.data()?.name).filter(Boolean),
+  };
+}
+
+const COACH_PROMPTS = {
+  caption:   'Write 3 distinct Instagram caption options (each with a few relevant hashtags) for a post showing recent nail work. Short, warm, on-brand.',
+  postIdeas: 'Suggest 6 Instagram post ideas for the next two weeks — a mix of before/afters, reels, client features, promotions, and education. One line each.',
+  adCopy:    'Write a short local ad: one punchy headline (≤30 chars) + a 2-sentence body + a clear call to action, to attract new clients searching for a nail salon nearby.',
+  promo:     'Write friendly, shareable copy for a grand-opening / launch promotion: a headline, 2-3 sentences, and a suggested first-visit offer.',
+};
+
+exports.growCoachSuggest = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, kind, context = '' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    const task = COACH_PROMPTS[kind];
+    if (!task) throw new HttpsError('invalid-argument', 'Unknown suggestion kind');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+    const brief = await loadSalonBrief(db, tenantId);
+
+    const system = `You are a marketing coach for ${brief.name}${brief.city ? ` in ${brief.city}` : ''}, a nail salon. Write copy the owner can use immediately — specific, warm, concise. Never invent prices or claims.${brief.services.length ? ` Their services include: ${brief.services.join(', ')}.` : ''}`;
+    const user = `${task}${context ? `\n\nExtra context from the owner: ${String(context).slice(0, 1000)}` : ''}`;
+
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001', max_tokens: 700,
+      system, messages: [{ role: 'user', content: user }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growCoachSuggest', model: resp?.model || 'claude-haiku-4-5-20251001', usage: resp?.usage }).catch(() => {});
+    return { text: resp.content[0]?.text || '' };
+  }
+);
+
+const DOC_PROMPTS = {
+  businessPlan:        'Draft a concise one-page business plan for a nail salon: concept, target client, services & pricing approach, marketing, staffing, and a simple monthly break-even framework. Clear headings.',
+  privacyPolicy:       'Draft a plain-language privacy policy for a nail salon that collects client names, contact info, appointment history, and basic health/allergy notes, and sends appointment + marketing texts/emails. Cover what is collected, how it is used, sharing, retention, opt-out, and contact.',
+  intakeForm:          'Draft a new-client intake & consent form for a nail salon: contact info, health/allergy questions relevant to nail services, photo-use consent, and an acknowledgement/consent section.',
+  contractorAgreement: 'Draft a simple independent-contractor agreement between a nail salon and a nail technician: scope, independent-contractor status, payment/commission placeholder, supplies, scheduling, confidentiality, term & termination.',
+  boothRental:         'Draft a simple booth-rental agreement between a nail salon and a renting technician: rented space, rent & payment terms, use of space, insurance/licensing responsibility, term & termination, house rules.',
+  handbook:            'Draft a short employee handbook outline for a small nail salon: scheduling & attendance, dress/hygiene, sanitation, client service standards, pay & tips, time off, and conduct.',
+};
+
+exports.growDraftDocument = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, kind, context = '' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    const task = DOC_PROMPTS[kind];
+    if (!task) throw new HttpsError('invalid-argument', 'Unknown document kind');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+    const brief = await loadSalonBrief(db, tenantId);
+
+    const isLegal = ['privacyPolicy', 'intakeForm', 'contractorAgreement', 'boothRental', 'handbook'].includes(kind);
+    const system = `You are a small-business assistant drafting documents for ${brief.name}${brief.city ? ` (${brief.city})` : ''}, a nail salon. Produce a clear, well-structured draft the owner can edit. Use placeholders like [Owner Name], [Date], [State] where specifics are unknown — never invent legal specifics, dollar amounts, or addresses.`;
+    const user = `${task}${context ? `\n\nOwner context: ${String(context).slice(0, 1500)}` : ''}`;
+
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 2500,
+      system, messages: [{ role: 'user', content: user }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growDraftDocument', model: resp?.model || 'claude-sonnet-4-6', usage: resp?.usage }).catch(() => {});
+
+    const body = resp.content[0]?.text || '';
+    // Non-removable disclaimer prepended server-side for any legal-ish doc.
+    const disclaimer = isLegal
+      ? '⚠️ TEMPLATE — NOT LEGAL ADVICE. This is an AI-generated starting point. Have a licensed attorney review and adapt it to your state before relying on it.\n\n———\n\n'
+      : '';
+    return { text: disclaimer + body, disclaimer: isLegal };
+  }
+);
+
+exports.growPhotoCritique = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, imageData, mediaType = 'image/jpeg', kind = 'work' } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    if (typeof imageData !== 'string' || imageData.length < 100) throw new HttpsError('invalid-argument', 'imageData required');
+    if (imageData.length > 7000000) throw new HttpsError('invalid-argument', 'Image too large — resize before sending');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) throw new HttpsError('invalid-argument', 'Unsupported image type');
+
+    const db = getFirestore();
+    await requireTenantAdmin(db, tenantId, request);
+
+    const subject = kind === 'salon' ? 'a photo of the salon space' : 'a photo of nail work';
+    const system = 'You are a professional photographer + brand stylist helping a nail salon choose photos for their website and Instagram. Critique the photo concisely and kindly across: lighting, composition/framing, focus/sharpness, clutter/background, and color. End with a clear verdict — KEEP, CROP (say how), or RESHOOT (say what to change). 4-6 short bullet points max.';
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 600,
+      system,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
+        { type: 'text', text: `Here is ${subject}. Give your critique and verdict.` },
+      ] }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'growPhotoCritique', model: resp?.model || 'claude-sonnet-4-6', usage: resp?.usage }).catch(() => {});
+    return { review: resp.content[0]?.text || '' };
+  }
+);
+
 // ── Reports AI chatbot (admin-only, read-only) ────────
 // Lets the salon owner ask natural-language questions about their data.
 // Hard read-only: no mutate methods imported, no write tools exposed.
