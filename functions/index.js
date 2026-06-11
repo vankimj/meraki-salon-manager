@@ -7417,7 +7417,12 @@ exports.shortLinkRedirect = onRequest({ cors: false }, async (req, res) => {
     // browser itself navigate to ?manage=…, so the manage screen actually loads.
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.set('Cache-Control', 'no-store');
-    res.status(200).send(`<!doctype html><html><head><meta charset="utf-8"><script>location.replace(${JSON.stringify(target)})</script><noscript><meta http-equiv="refresh" content="0;url=${target.replace(/&/g, '&amp;')}"></noscript></head><body style="font-family:sans-serif;padding:24px;color:#555">Redirecting…</body></html>`);
+    // Use a <meta refresh>, NOT an inline <script>: the app's CSP is
+    // `script-src 'self'` with no 'unsafe-inline', so an inline redirect script is
+    // blocked and the page hangs on "Redirecting…". A meta refresh isn't a script,
+    // so it runs. A plain <a> is the manual fallback.
+    const metaUrl = target.replace(/&/g, '&amp;').replace(/"/g, '%22');
+    res.status(200).send(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=${metaUrl}"></head><body style="font-family:sans-serif;padding:24px;color:#555">Redirecting… <a href="${metaUrl}">Continue</a></body></html>`);
   } catch (e) {
     console.error('[shortLinkRedirect] error', e);
     res.status(500).send('Server error');
