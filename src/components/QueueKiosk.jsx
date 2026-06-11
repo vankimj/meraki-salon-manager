@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { fetchServices, fetchEmployees, addToWaitlist, subscribeQueue, fetchWebfrontConfig, kioskWalkinOptions, kioskRegisterClient } from '../lib/firestore';
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { IconChair, IconCalendar, IconCheck, IconArrowLeft, IconClock, IconChevronRight } from './Icons';
+import { formatPrice, formatDuration } from '../utils/serviceHelpers';
 
 const RESET_SECS = 14;
 
@@ -89,6 +90,7 @@ export default function QueueKiosk() {
   const [lastName,  setLastName]  = useState('');
   const [identity,  setIdentity]  = useState(null);   // { clientId, firstName, todayAppt }
   const [svcSel,    setSvcSel]    = useState(null);   // { id, name }
+  const [removalNeeded, setRemovalNeeded] = useState(false);
   const [techSel,   setTechSel]   = useState('Any');  // 'Any' | tech name
   const [avail,     setAvail]     = useState(null);   // CF result { options, noPrefEarliest, anyAvailable, salonClosed }
   const [working,   setWorking]   = useState(false);
@@ -132,7 +134,7 @@ export default function QueueKiosk() {
   function reset() {
     setStep('welcome');
     setPhone(''); setFirstName(''); setLastName(''); setIdentity(null);
-    setSvcSel(null); setTechSel('Any'); setAvail(null); setWorking(false); setPosition(null);
+    setSvcSel(null); setRemovalNeeded(false); setTechSel('Any'); setAvail(null); setWorking(false); setPosition(null);
     setArrPhone(''); setArrMatched(null);
   }
 
@@ -190,6 +192,7 @@ export default function QueueKiosk() {
         clientPhone: fmtPhoneStored(phone),
         serviceName: svcSel?.name || '',
         serviceId:   svcSel?.id || '',
+        removal:     removalNeeded,
         techName:    techName || 'Any',
         requestedTechName: requestedTechName || '',
         estimatedWaitMin:  Number.isFinite(waitMin) ? waitMin : null,
@@ -423,12 +426,15 @@ export default function QueueKiosk() {
   if (step === 'service') {
     return (
       <Shell theme={theme} narrow brand={brand}>
-        <SectionHeader title="What can we do for you?" subtitle="Pick a service." />
-        <PillRow>
+        <SectionHeader title="What can we do for you?" subtitle="Tap a service." />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {services.map(s => (
-            <Pill key={s.id} active={svcSel?.id === s.id} tint={theme.primary} onClick={() => setSvcSel({ id: s.id, name: s.name })}>{s.name}</Pill>
+            <ServiceCard key={s.id} svc={s} tint={theme.primary}
+              selected={svcSel?.id === s.id}
+              onSelect={() => setSvcSel({ id: s.id, name: s.name })} />
           ))}
-        </PillRow>
+        </div>
+        <RemovalToggle tint={theme.accent} value={removalNeeded} onChange={setRemovalNeeded} />
         <ButtonRow style={{ marginTop: 18 }}>
           <SecondaryButton onClick={reset}><IconArrowLeft size={16} /> Start over</SecondaryButton>
           <PrimaryButton onClick={() => setStep('tech')} disabled={!svcSel} tint={theme.primary}>Continue</PrimaryButton>
@@ -636,6 +642,61 @@ function PrimaryButton({ onClick, disabled, tint, children }) {
       }}>
       {children}
     </button>
+  );
+}
+
+// Service card — picture + name + description + duration + price, selectable.
+// Mirrors the online-booking service card, adapted to the dark kiosk theme.
+function ServiceCard({ svc, tint, selected, onSelect }) {
+  const [imgErr, setImgErr] = useState(false);
+  const hasImg = svc.image && !imgErr;
+  return (
+    <button onClick={onSelect}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left',
+        fontFamily: 'inherit', cursor: 'pointer',
+        background: selected ? `${tint}22` : 'rgba(255,255,255,.04)',
+        border: `1.5px solid ${selected ? tint : 'rgba(255,255,255,.12)'}`,
+        borderRadius: 16, padding: 12, transition: 'background .15s, border-color .15s',
+      }}>
+      <div style={{ width: 68, height: 68, flexShrink: 0, borderRadius: 12, overflow: 'hidden', background: 'rgba(255,255,255,.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        {hasImg
+          ? <img src={svc.image} alt={svc.name} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <span style={{ fontSize: 32 }}>💅</span>}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#fff', display: 'flex', alignItems: 'center', gap: 6 }}>
+          {selected && <span style={{ color: tint }}>✓</span>}{svc.name}
+        </div>
+        {svc.description && (
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)', lineHeight: 1.45, marginTop: 3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            {svc.description}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: 'rgba(255,255,255,.45)', marginTop: 4 }}>⏱ {formatDuration(svc.duration, svc.durationMin)}</div>
+      </div>
+      <div style={{ flexShrink: 0, fontSize: 16, fontWeight: 800, color: '#fff', whiteSpace: 'nowrap' }}>{formatPrice(svc)}</div>
+    </button>
+  );
+}
+
+// "Do you need a removal?" — taking off existing gel/acrylic/dip first.
+function RemovalToggle({ tint, value, onChange }) {
+  return (
+    <div style={{ marginTop: 16, padding: 14, borderRadius: 14, background: 'rgba(255,255,255,.04)', border: '1px solid rgba(255,255,255,.1)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>Do you need a removal?</div>
+        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.5)', marginTop: 2 }}>Taking off existing gel, acrylic, or dip first.</div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+        {[['Yes', true], ['No', false]].map(([label, v]) => (
+          <button key={label} onClick={() => onChange(v)}
+            style={{ padding: '8px 18px', borderRadius: 30, border: `1.5px solid ${value === v ? tint : 'rgba(255,255,255,.18)'}`, background: value === v ? tint : 'rgba(255,255,255,.04)', color: value === v ? '#fff' : 'rgba(255,255,255,.7)', fontSize: 14, fontWeight: value === v ? 700 : 500, fontFamily: 'inherit', cursor: 'pointer' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
