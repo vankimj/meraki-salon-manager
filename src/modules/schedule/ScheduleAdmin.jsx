@@ -2319,10 +2319,11 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
     try { await onSave(); } finally { setSaving(false); }
   }
 
+  // 'in-progress' (kiosk-only, decorative) and 'done' (set by Checkout, which
+  // records the sale) are intentionally NOT manual options — completing an
+  // appointment here would skip the sale. Use the Checkout button to complete.
   const statusOpts = [
     { value: 'scheduled',    label: 'Scheduled' },
-    { value: 'in-progress',  label: 'In Progress' },
-    { value: 'done',         label: 'Done' },
     { value: 'cancelled',    label: 'Cancelled' },
     { value: 'no_show',      label: 'No-show' },
   ];
