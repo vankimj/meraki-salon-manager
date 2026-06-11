@@ -276,8 +276,8 @@ function RatingSection({ data, token }) {
     }
     return (
       <div style={{ background: '#fff', borderRadius: 12, padding: 24, textAlign: 'center', boxShadow: '0 2px 12px rgba(0,0,0,.06)' }}>
-        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>Thanks for letting us know.</div>
-        <div style={{ fontSize: 13, color: '#888' }}>Your feedback goes straight to the salon owner. We'll do better next time.</div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>{(data.feedbackTitle || '').trim() || 'Thanks for letting us know.'}</div>
+        <div style={{ fontSize: 13, color: '#888', whiteSpace: 'pre-line' }}>{(data.feedbackMessage || '').trim() || "Your feedback goes straight to the salon owner. We'll do better next time."}</div>
       </div>
     );
   }
