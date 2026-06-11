@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { fetchEmployees, subscribeAttendance, fetchTenantTimezone } from '../../lib/firestore';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { fetchEmployees, fetchKioskClockStatus, fetchTenantTimezone } from '../../lib/firestore';
 import { TENANT_ID } from '../../lib/tenant';
 import { EmpAvatar } from '../employees/EmployeesAdmin';
 
@@ -106,10 +106,20 @@ export default function TimeClockKiosk() {
     fetchTenantTimezone().then(setTz).catch(() => setTz('America/New_York'));
   }, []);
 
-  // Live attendance subscription for today.
-  useEffect(() => {
-    return subscribeAttendance(dateKey, doc => setEntries(Array.isArray(doc?.entries) ? doc.entries : []));
+  // The anonymous kiosk has no Firebase auth and can't read attendance directly
+  // (admin/kiosk-only by rules — a denied read silently looked like "everyone
+  // clocked out"). Poll a guarded CF for the per-tech clock states on a short
+  // interval + right after a clock action (onSuccess) so the board stays current.
+  const loadStatus = useCallback(() => {
+    fetchKioskClockStatus(dateKey)
+      .then(r => setEntries(Array.isArray(r?.entries) ? r.entries : []))
+      .catch(e => console.warn('[timeclock] status fetch failed:', e?.message));
   }, [dateKey]);
+  useEffect(() => {
+    loadStatus();
+    const t = setInterval(loadStatus, 8000);
+    return () => clearInterval(t);
+  }, [loadStatus]);
 
   // Clock tick — drives both header time + the "47m" chip refresh on tiles.
   useEffect(() => {
@@ -195,7 +205,7 @@ export default function TimeClockKiosk() {
           emp={picked}
           state={computeState((entryFor(picked.id)?.events) || [])}
           onClose={() => setPicked(null)}
-          onSuccess={(label) => { setPicked(null); setDoneInfo({ name: picked.name, label }); }}
+          onSuccess={(label) => { setPicked(null); setDoneInfo({ name: picked.name, label }); loadStatus(); }}
         />
       )}
 

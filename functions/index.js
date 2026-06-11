@@ -2077,6 +2077,37 @@ exports.getClockedInTechNames = onCall({ cors: true }, async (request) => {
   return { names };
 });
 
+// Public callable: per-tech clock status for the (anonymous) time-clock kiosk.
+// The kiosk has no Firebase auth and can't read attendance directly (admin/
+// kiosk-only by rules), so this returns the MINIMAL display slice — employeeId,
+// name, and ONLY the last event (kind + at) per tech — enough to render the
+// in / on-break / out board + the "since" chip, without exposing the full day's
+// clock history. Rate-limited; mirrors getClockedInTechNames.
+exports.getKioskClockStatus = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 900)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenant.');
+  const date = String(request.data?.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new HttpsError('invalid-argument', 'date (YYYY-MM-DD) required.');
+  const db = getFirestore();
+  const snap = await db.doc(`tenants/${tenantId}/attendance/${date}`).get();
+  if (!snap.exists) return { date, entries: [] };
+  const entries = (Array.isArray(snap.data().entries) ? snap.data().entries : []).map(e => {
+    const evs = Array.isArray(e.events) ? e.events : [];
+    let last = evs.length ? evs[evs.length - 1] : null;
+    if (!last && e.clockInAt) last = { kind: e.clockOutAt ? 'out' : 'in', at: e.clockOutAt || e.clockInAt };
+    return {
+      employeeId:   e.employeeId || '',
+      employeeName: e.employeeName || '',
+      events:       last ? [{ kind: last.kind, at: last.at }] : [],
+    };
+  });
+  return { date, entries };
+});
+
 // Public callable: walk-in availability for the lobby kiosk (/?queue). The
 // kiosk is ANONYMOUS, so it must never read appointments/attendance directly
 // (client PII + who's working). Given a service, this computes — server-side —

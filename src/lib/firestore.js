@@ -592,6 +592,17 @@ export function subscribeAttendance(date, cb) {
   );
 }
 
+// Per-tech clock status for the anonymous time-clock kiosk, via a guarded Cloud
+// Function — the kiosk has no Firebase auth so it can't read attendance directly
+// (admin/kiosk-only). Returns { entries: [{ employeeId, employeeName, events:
+// [lastEvent] }] } shaped so the kiosk's computeState/entryFor work unchanged.
+export async function fetchKioskClockStatus(date) {
+  const { httpsCallable } = await import('firebase/functions');
+  const { functions } = await import('./firebase');
+  const res = await httpsCallable(functions, 'getKioskClockStatus')({ tenantId: TENANT_ID, date });
+  return res?.data || { date, entries: [] };
+}
+
 export async function saveAttendance(date, entries) {
   await setDoc(doc(ATTENDANCE_COL, date), { date, entries, updatedAt: new Date().toISOString() });
 }
