@@ -45,6 +45,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
+  const [replyToEmail,   setReplyToEmail]  = useState(settings.replyToEmail || '');
   const [ein,            setEin]           = useState(settings.ein || '');
   const [reminderHour,   setReminderHour]  = useState(settings.reminderHour ?? 9);
   const [birthdayHour,   setBirthdayHour]  = useState(settings.birthdayHour ?? 10);
@@ -548,7 +549,15 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 <input type="url" value={reviewUrl} onChange={e => setReviewUrl(e.target.value)} placeholder="https://g.page/r/…/review"
                   style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
               </div>
-<div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
+                <div>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Reply-to email</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Where client replies land — emails send from a no-reply address. Leave blank to use the owner email.</div>
+                </div>
+                <input type="email" value={replyToEmail} onChange={e => setReplyToEmail(e.target.value)} placeholder="frontdesk@yoursalon.com"
+                  style={{ width: 220, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 12 }} />
+              </div>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Business EIN</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Employer Identification Number — printed on 1099-NEC forms.</div>
@@ -615,7 +624,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </select>
               </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
-                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
+                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, replyToEmail: replyToEmail.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
               </div>
             </Section>
             <ModulesSection nested />

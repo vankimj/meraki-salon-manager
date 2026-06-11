@@ -298,7 +298,10 @@ const _replyToCache = new Map();
 // so a tenant whose heal keeps failing doesn't alert on every single send.
 const _sesHealAlerted = new Set();
 async function tenantReplyTo(db, tenantId) {
-  if (_replyToCache.has(tenantId)) return _replyToCache.get(tenantId);
+  // 5-min TTL so an owner editing the Reply-to field (Settings → App Settings)
+  // takes effect promptly instead of waiting for the instance to recycle.
+  const cached = _replyToCache.get(tenantId);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.addr;
   let addr = '';
   try {
     const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
@@ -309,7 +312,7 @@ async function tenantReplyTo(db, tenantId) {
       addr = (tSnap.exists ? tSnap.data().ownerEmail : '') || '';
     }
   } catch (e) { console.warn(`[tenantReplyTo] ${tenantId} lookup failed:`, e?.message); }
-  _replyToCache.set(tenantId, addr);
+  _replyToCache.set(tenantId, { addr, at: Date.now() });
   return addr;
 }
 
@@ -1148,6 +1151,7 @@ async function deliverReceiptEmail(db, tenantId, ref, data) {
       const { error } = await sendEmail({
         from:    await tenantFromAddress(db, tenantId),
         to:      clientEmail,
+        replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
         subject: receiptSubject,
         html,
       });
@@ -3578,6 +3582,7 @@ exports.sendReviewRequestEmail = onDocumentCreated(
       const { error } = await sendEmail({
         from:    fromAddr,
         to:      clientEmail,
+        replyTo: (await tenantReplyTo(db0, tenantId)) || undefined,
         subject: ratingSubject,
         html,
       });
@@ -6475,6 +6480,7 @@ exports.autoBirthdayCampaign = onSchedule(
           const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
+            replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
             subject: birthdaySubject,
             html,
           });
@@ -6557,6 +6563,7 @@ exports.autoLapsedCampaign = onSchedule(
           const { error } = await sendEmail({
             from:    fromAddr,
             to:      client.email,
+            replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
             subject: winbackSubject,
             html,
           });
@@ -9827,6 +9834,7 @@ exports.emailMembershipPaymentLink = onCall({ cors: true }, async (request) => {
   await sendEmail({
     from:    await tenantFromAddress(db, tenantId),
     to:      client.email.trim(),
+    replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
     subject: membershipSubject,
     html,
   });
@@ -10843,6 +10851,7 @@ async function processGiftCardEmail(tenantId, docRef, data) {
     const result = await sendEmail({
       from: await tenantFromAddress(getFirestore(), tenantId),
       to:   recipientEmail,
+      replyTo: (await tenantReplyTo(getFirestore(), tenantId)) || undefined,
       subject: giftSubject,
       html,
       tenantId,
