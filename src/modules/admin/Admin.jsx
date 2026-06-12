@@ -3807,6 +3807,9 @@ function BookingCardPolicySection({ settings, updateSettings, nested = false }) 
   const [allBookings, setAllBookings] = useState(cfg.allBookingsRequireCard === true);
   const [depositMode, setDepositMode] = useState(cfg.depositMode || 'store');
   const [depositPct,  setDepositPct]  = useState(cfg.depositPct ?? 0);
+  const [groupRequireCard, setGroupRequireCard] = useState(cfg.groupRequireCard === true);
+  const [groupDepositMode, setGroupDepositMode] = useState(cfg.groupDepositMode || 'authorize');
+  const [groupDepositPct,  setGroupDepositPct]  = useState(cfg.groupDepositPct ?? 0);
   const [saving,      setSaving]      = useState(false);
   const [savedAt,     setSavedAt]     = useState(null);
 
@@ -3818,6 +3821,9 @@ function BookingCardPolicySection({ settings, updateSettings, nested = false }) 
         allBookingsRequireCard: allBookings,
         depositMode,
         depositPct: Math.min(100, Math.max(0, Math.round(Number(depositPct) || 0))),
+        groupRequireCard,
+        groupDepositMode,
+        groupDepositPct: Math.min(100, Math.max(0, Math.round(Number(groupDepositPct) || 0))),
         ...patch,
       };
       await updateSettings({ ...settings, bookingCardPolicy: next });
@@ -3886,6 +3892,50 @@ function BookingCardPolicySection({ settings, updateSettings, nested = false }) 
           </div>
           <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
             {modeBlurb[depositMode]}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: '1px solid var(--pn-border)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 8 }}>
+            <input type="checkbox" checked={groupRequireCard}
+              onChange={e => { setGroupRequireCard(e.target.checked); save({ groupRequireCard: e.target.checked }); }} disabled={saving} />
+            <span style={{ fontSize: 13, color: 'var(--pn-text-muted)', fontWeight: 600 }}>Require a card for group bookings (2+ people)</span>
+          </label>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 10, paddingLeft: 14 }}>
+            Group bookings reserve several techs at once, so a no-show is costlier. This applies on top of the rules above — whichever deposit is strongest wins.
+          </div>
+          <div style={{ opacity: groupRequireCard ? 1 : 0.5, pointerEvents: groupRequireCard ? 'auto' : 'none' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+              <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'block' }}>
+                <div style={{ marginBottom: 4, fontWeight: 600 }}>Deposit handling</div>
+                <select value={groupDepositMode}
+                  onChange={e => { setGroupDepositMode(e.target.value); save({ groupDepositMode: e.target.value }); }}
+                  disabled={saving}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)', fontSize: 13, fontFamily: 'inherit', background: 'var(--pn-surface)' }}>
+                  <option value="store">Store card — charge only on no-show</option>
+                  <option value="authorize">Authorize a hold at booking</option>
+                  <option value="charge">Charge a deposit at booking</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'block' }}>
+                <div style={{ marginBottom: 4, fontWeight: 600 }}>Deposit percentage</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input
+                    type="number" min={0} max={100} step={1}
+                    value={groupDepositPct}
+                    onChange={e => setGroupDepositPct(e.target.value)}
+                    onBlur={() => save({ groupDepositPct: Math.min(100, Math.max(0, Math.round(Number(groupDepositPct) || 0))) })}
+                    disabled={saving}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--pn-border)', fontSize: 13, fontFamily: 'inherit' }}
+                  />
+                  <span style={{ fontSize: 13, color: 'var(--pn-text-muted)' }}>%</span>
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>of each guest&apos;s total</div>
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 12, lineHeight: 1.5 }}>
+              {modeBlurb[groupDepositMode]}
+            </div>
           </div>
         </div>
       </div>

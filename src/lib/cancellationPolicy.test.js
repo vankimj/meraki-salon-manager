@@ -254,7 +254,7 @@ describe('evaluateCancellationPolicy', () => {
 describe('resolveBookingCardPolicy', () => {
   it('defaults to all-off / store / 0%', () => {
     const p = resolveBookingCardPolicy({});
-    expect(p).toEqual({ firstTimeRequireCard: false, allBookingsRequireCard: false, depositMode: 'store', depositPct: 0 });
+    expect(p).toEqual({ firstTimeRequireCard: false, allBookingsRequireCard: false, depositMode: 'store', depositPct: 0, groupRequireCard: false, groupDepositMode: 'store', groupDepositPct: 0 });
   });
   it('clamps depositPct to 0–100 and validates mode', () => {
     expect(resolveBookingCardPolicy({ bookingCardPolicy: { depositPct: 250 } }).depositPct).toBe(100);
@@ -289,6 +289,21 @@ describe('evaluateBookingCardRequirement', () => {
   it('all-bookings policy requires a card for everyone without one', () => {
     expect(evaluateBookingCardRequirement(allBookings, { isFirstTime: false, hasCard: false }).required).toBe(true);
     expect(evaluateBookingCardRequirement(allBookings, { isFirstTime: false, hasCard: true }).required).toBe(false);
+  });
+  it('group policy only triggers for group bookings', () => {
+    const groupOnly = { bookingCardPolicy: { groupRequireCard: true, groupDepositMode: 'authorize', groupDepositPct: 30 } };
+    expect(evaluateBookingCardRequirement(groupOnly, { isGroup: false, hasCard: false }).triggered).toBe(false);
+    const r = evaluateBookingCardRequirement(groupOnly, { isGroup: true, hasCard: false });
+    expect(r.triggered).toBe(true);
+    expect(r.required).toBe(true);
+    expect(r.depositMode).toBe('authorize');
+    expect(r.depositPct).toBe(30);
+  });
+  it('strongest deposit wins when both booking and group rules fire', () => {
+    const both = { bookingCardPolicy: { allBookingsRequireCard: true, depositMode: 'store', depositPct: 20, groupRequireCard: true, groupDepositMode: 'charge', groupDepositPct: 10 } };
+    const r = evaluateBookingCardRequirement(both, { isGroup: true, hasCard: true });
+    expect(r.depositMode).toBe('charge');   // charge (rank) beats store even at lower %
+    expect(r.depositPct).toBe(10);
   });
 });
 

@@ -1634,7 +1634,8 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
   const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
   const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
   const bcp = resolveBookingCardPolicy(settings);
-  const bookingCardOn = bcp.firstTimeRequireCard || bcp.allBookingsRequireCard;
+  const isGroupBooking = request.data?.group === true;
+  const bookingCardOn = bcp.firstTimeRequireCard || bcp.allBookingsRequireCard || (isGroupBooking && bcp.groupRequireCard);
 
   let existingId   = null;
   let existingData = null;
@@ -1735,6 +1736,7 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
           const bookReq = evaluateBookingCardRequirement(settings, {
             isFirstTime,
             hasCard: hasUsableCardOnFileFn(existingData),
+            isGroup: isGroupBooking,
           });
           if (bookReq.required) {
             return {
@@ -1952,9 +1954,10 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
   const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
   const bcp = resolveBookingCardPolicy(settings);
+  const isGroupSubmit = apptsIn.some(a => a && a.groupBooking);
   const cxEnabled = settings?.cancellationPolicy?.enabled === true;
   const overrideMatters = clientData && (clientData.cardRequiredOverride === true || clientData.cardRequiredOverride === false);
-  if (clientId && clientData && (cxEnabled || overrideMatters || bcp.firstTimeRequireCard || bcp.allBookingsRequireCard)) {
+  if (clientId && clientData && (cxEnabled || overrideMatters || bcp.firstTimeRequireCard || bcp.allBookingsRequireCard || (isGroupSubmit && bcp.groupRequireCard))) {
     const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`)
       .where('clientId', '==', clientId).get().catch(() => null);
     const past = apptsSnap ? apptsSnap.docs.map(d => d.data()) : [];
@@ -1964,7 +1967,7 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
         ...(cx.depositPct > 0 ? { depositMode: cx.depositMode, depositPct: cx.depositPct } : {}) };
     }
     const isFirstTime = past.filter(a => a.status !== 'cancelled' && a.status !== 'no_show').length === 0;
-    const bookReq = evaluateBookingCardRequirement(settings, { isFirstTime, hasCard: hasUsableCardOnFileFn(clientData) });
+    const bookReq = evaluateBookingCardRequirement(settings, { isFirstTime, hasCard: hasUsableCardOnFileFn(clientData), isGroup: isGroupSubmit });
     if (bookReq.required) {
       return { cardRequired: true, reason: 'booking_policy', firstTime: isFirstTime, depositMode: bookReq.depositMode, depositPct: bookReq.depositPct };
     }
@@ -9238,6 +9241,10 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
   // cancellation-history policy (a repeat no-show pays a hold even when the
   // tenant takes no deposit on ordinary bookings).
   let depMode = bcp.depositMode, depPct = bcp.depositMode === 'store' ? 0 : bcp.depositPct;
+  // Group bookings can carry their own (stronger) deposit/hold.
+  if (request.data?.group && bcp.groupRequireCard && bcp.groupDepositMode !== 'store' && bcp.groupDepositPct > depPct) {
+    depPct = bcp.groupDepositPct; depMode = bcp.groupDepositMode;
+  }
   const cxPolicy = resolveCancellationPolicy(settings);
   if (cxPolicy.enabled && cxPolicy.depositPct > 0) {
     const apptsSnap = await db.collection(`tenants/${tenantId}/appointments`).where('clientId', '==', caller.id).get().catch(() => null);

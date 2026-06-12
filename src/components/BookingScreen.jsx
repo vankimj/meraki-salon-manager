@@ -142,6 +142,15 @@ function dateStr(d) { return d.toISOString().slice(0, 10); }
 function firstName(s) {
   return (s || '').trim().split(/\s+/)[0].toLowerCase();
 }
+// Split a full name into first + last (last = everything after the first token).
+function splitName(full) {
+  const parts = String(full || '').trim().split(/\s+/).filter(Boolean);
+  return { firstName: parts[0] || '', lastName: parts.slice(1).join(' ') };
+}
+// Combine first + last into a single display/storage name.
+function joinName(first, last) {
+  return `${String(first || '').trim()} ${String(last || '').trim()}`.trim();
+}
 
 // Detect whether the user is typing an email vs a phone vs nothing yet.
 // Anything containing '@' is treated as email (covers partially-typed). If
@@ -224,7 +233,7 @@ export default function BookingScreen() {
   const [groupChoice,     setGroupChoice]     = useState(null);   // chosen ranked slot
   const [groupPreferredDate, setGroupPreferredDate] = useState('');
   const [groupSearching,  setGroupSearching]  = useState(false);
-  const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
+  const [form,    setForm]    = useState({ name: '', firstName: '', lastName: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
   const [submitting,      setSubmitting]      = useState(false);
   const [bookingError,    setBookingError]    = useState('');
   // Card-on-file capture prompt — set when the tenant's booking-card policy
@@ -389,12 +398,12 @@ export default function BookingScreen() {
           // auth provider gives us (Google displayName / email; phone for
           // OTP) and let Step4 collect the rest.
           setClient(null);
-          setForm(f => ({
-            ...f,
-            name:  f.name  || user.displayName || '',
-            email: f.email || user.email       || '',
-            phone: f.phone || user.phoneNumber || '',
-          }));
+          setForm(f => {
+            const name = f.name || user.displayName || '';
+            const sn = splitName(name);
+            return { ...f, name, firstName: f.firstName || sn.firstName, lastName: f.lastName || sn.lastName,
+              email: f.email || user.email || '', phone: f.phone || user.phoneNumber || '' };
+          });
           return;
         }
         // Defensive name-match for Google sign-in: if displayName disagrees
@@ -405,20 +414,21 @@ export default function BookingScreen() {
           firstName(c.name) !== firstName(user.displayName);
         if (googleNameClash) {
           setClient(null);
-          setForm(f => ({
-            ...f,
-            name:  f.name  || user.displayName || '',
-            email: f.email || user.email       || '',
-          }));
+          setForm(f => {
+            const name = f.name || user.displayName || '';
+            const sn = splitName(name);
+            return { ...f, name, firstName: f.firstName || sn.firstName, lastName: f.lastName || sn.lastName,
+              email: f.email || user.email || '' };
+          });
           return;
         }
         setClient(c);
-        setForm(f => ({
-          ...f,
-          name:  f.name  || c.name  || user.displayName || '',
-          phone: f.phone || c.phone || user.phoneNumber || '',
-          email: f.email || c.email || user.email       || '',
-        }));
+        setForm(f => {
+          const name = f.name || c.name || user.displayName || '';
+          const sn = splitName(name);
+          return { ...f, name, firstName: f.firstName || sn.firstName, lastName: f.lastName || sn.lastName,
+            phone: f.phone || c.phone || user.phoneNumber || '', email: f.email || c.email || user.email || '' };
+        });
       } catch (e) {
         console.warn('[booking auth lookup]', e?.message);
         setClient(null);
@@ -582,7 +592,17 @@ export default function BookingScreen() {
     setClient(null);
     setPendingFirstInitial(null);
     resetOtp();
-    setForm({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
+    setForm({ name: '', firstName: '', lastName: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
+  }
+
+  // Patch the booking form; keep the combined `name` in sync with first/last
+  // (downstream code — findOrCreateClient, clientName — reads form.name).
+  function setFormPatch(patch) {
+    setForm(f => {
+      const next = { ...f, ...patch };
+      if ('firstName' in patch || 'lastName' in patch) next.name = joinName(next.firstName, next.lastName);
+      return next;
+    });
   }
 
   async function handleBook() {
@@ -902,7 +922,7 @@ export default function BookingScreen() {
 
   // ── Group booking helpers ──────────────────────────────
   function addGuest() {
-    setGroupGuests(gs => gs.length >= 6 ? gs : [...gs, { id: `g_${Date.now()}_${gs.length}`, cart: [], pickedTech: null, name: '', phone: '', email: '' }]);
+    setGroupGuests(gs => gs.length >= 6 ? gs : [...gs, { id: `g_${Date.now()}_${gs.length}`, cart: [], pickedTech: null, name: '', firstName: '', lastName: '', phone: '', email: '' }]);
     setGroupResults(null); setGroupChoice(null);
   }
   function removeGuest(id) {
@@ -975,7 +995,7 @@ export default function BookingScreen() {
       const resolveName = form.name.trim(), resolvePhone = form.phone.trim(), resolveEmail = form.email.trim() || gUser?.email || '';
       try {
         const res = await callFn('findOrCreateClient')({
-          tenantId: TENANT_ID, name: resolveName, phone: resolvePhone, email: resolveEmail, hp: form.hp || '',
+          tenantId: TENANT_ID, name: resolveName, phone: resolvePhone, email: resolveEmail, hp: form.hp || '', group: true,
           extra: { picture: gUser?.photoURL || '', commPreferences: { appointmentSms: true, appointmentEmail: true, appointmentVoice: false, marketingSms: form.optInSms === true, marketingEmail: form.optInEmail === true, marketingVoice: false },
             marketingOptInSmsAt: form.optInSms === true ? new Date().toISOString() : null, marketingOptInEmailAt: form.optInEmail === true ? new Date().toISOString() : null },
         });
@@ -1004,7 +1024,7 @@ export default function BookingScreen() {
           return s + (Number(price) || 0) + ((item.removal && item.service?.canRequireRemoval) ? removalPrice : 0);
         }, 0), 0);
         try {
-          const dep = await callFn('chargeBookingDeposit')({ tenantId: TENANT_ID, appointmentTotalCents: Math.round(baseDollars * 100), idempotencyKey: `${clientId}_${groupChoice.date}_group` });
+          const dep = await callFn('chargeBookingDeposit')({ tenantId: TENANT_ID, appointmentTotalCents: Math.round(baseDollars * 100), idempotencyKey: `${clientId}_${groupChoice.date}_group`, group: true });
           if (dep?.data?.deposit) depositResult = dep.data.deposit;
         } catch (e) { setBookingError(e?.message || "We couldn't process the booking deposit. Please try another card or call the salon."); setSubmitting(false); return; }
       }
@@ -1150,8 +1170,8 @@ export default function BookingScreen() {
               if (f === 'time-first') { setPickedTech(null); setCartTech(undefined); }
               if (f === 'group') {
                 setGroupGuests([
-                  { id: `g_${Date.now()}_0`, cart: [], pickedTech: null, name: '', phone: '', email: '' },
-                  { id: `g_${Date.now()}_1`, cart: [], pickedTech: null, name: '', phone: '', email: '' },
+                  { id: `g_${Date.now()}_0`, cart: [], pickedTech: null, name: '', firstName: '', lastName: '', phone: '', email: '' },
+                  { id: `g_${Date.now()}_1`, cart: [], pickedTech: null, name: '', firstName: '', lastName: '', phone: '', email: '' },
                 ]);
                 setGroupResults(null); setGroupChoice(null); setGroupApptsByDate(null); setGroupPreferredDate('');
               }
@@ -1161,6 +1181,7 @@ export default function BookingScreen() {
         {step === 1 && flow === 'group' && (
           <GroupGuestsStep
             services={services} allTechs={techs} guests={groupGuests}
+            form={form} onFormChange={setFormPatch}
             onAddGuest={addGuest} onRemoveGuest={removeGuest} onUpdateGuest={updateGuest}
             onProceed={() => setStep(2)}
             onBack={() => { setStep(0); setFlow(null); setGroupGuests([]); }}
@@ -1169,7 +1190,7 @@ export default function BookingScreen() {
         {step === 2 && flow === 'group' && (
           <GroupResultsStep
             results={groupResults} searching={groupSearching} choice={groupChoice}
-            guests={groupGuests} allTechs={techs}
+            guests={groupGuests} allTechs={techs} form={form}
             preferredDate={groupPreferredDate} setPreferredDate={setGroupPreferredDate}
             maxLeadDays={Math.max(1, Number(flowCfg?.maxLeadDays) || 30)}
             onSearch={runGroupSearch} onPick={setGroupChoice}
@@ -1253,7 +1274,7 @@ export default function BookingScreen() {
             onResetOtp={resetOtp}
             onGoogleSignIn={handleGoogleSignIn}
             onAppleSignIn={handleAppleSignIn}
-            onChange={patch => setForm(f => ({ ...f, ...patch }))}
+            onChange={setFormPatch}
             onNext={() => setStep(5)}
             onBack={() => setStep(flow === 'group' ? 2 : 3)}
             flowCfg={flowCfg}
@@ -1464,9 +1485,10 @@ function GChip({ active, onClick, children }) {
   );
 }
 
-function GroupGuestsStep({ services, allTechs, guests, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack }) {
+function GroupGuestsStep({ services, allTechs, guests, form, onFormChange, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack }) {
   const cats = groupByCategory(services || []);
-  const ready = guests.length >= 2 && guests.every(g => g.cart.length > 0);
+  const ready = guests.length >= 2 && guests.every(g => g.cart.length > 0)
+    && (form.firstName || '').trim() && (form.phone || '').trim();
   const addSvc = (g, id) => {
     const svc = (services || []).find(s => s.id === id);
     if (!svc || g.cart.some(i => i.service.id === id)) return;
@@ -1487,7 +1509,19 @@ function GroupGuestsStep({ services, allTechs, guests, onAddGuest, onRemoveGuest
               <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>Guest {i + 1}{i === 0 ? ' (organizer)' : ''}</div>
               {guests.length > 2 && <button onClick={() => onRemoveGuest(g.id)} style={{ background: 'none', border: 'none', color: '#c00', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>}
             </div>
-            <input value={g.name} onChange={e => onUpdateGuest(g.id, { name: e.target.value })} placeholder="Name (optional)" style={G_INP} />
+            {(() => {
+              const isOrg = i === 0;
+              const fn = isOrg ? (form.firstName || '') : (g.firstName || '');
+              const ln = isOrg ? (form.lastName || '') : (g.lastName || '');
+              const setFn = v => isOrg ? onFormChange({ firstName: v }) : onUpdateGuest(g.id, { firstName: v, name: joinName(v, g.lastName) });
+              const setLn = v => isOrg ? onFormChange({ lastName: v }) : onUpdateGuest(g.id, { lastName: v, name: joinName(g.firstName, v) });
+              return (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input value={fn} onChange={e => setFn(e.target.value)} placeholder={isOrg ? 'First name *' : 'First name (optional)'} style={{ ...G_INP, flex: 1 }} />
+                  <input value={ln} onChange={e => setLn(e.target.value)} placeholder="Last name" style={{ ...G_INP, flex: 1 }} />
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '12px 0 6px' }}>Services</div>
             <select value="" onChange={e => { addSvc(g, e.target.value); e.target.value = ''; }} style={G_INP}>
               <option value="">+ Add a service…</option>
@@ -1512,10 +1546,19 @@ function GroupGuestsStep({ services, allTechs, guests, onAddGuest, onRemoveGuest
               <GChip active={!g.pickedTech} onClick={() => onUpdateGuest(g.id, { pickedTech: null })}>No preference</GChip>
               {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
             </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <input value={g.phone} onChange={e => onUpdateGuest(g.id, { phone: e.target.value })} placeholder={i === 0 ? '' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1, display: i === 0 ? 'none' : 'block' }} />
-              <input value={g.email} onChange={e => onUpdateGuest(g.id, { email: e.target.value })} placeholder={i === 0 ? '' : 'Their email (optional)'} style={{ ...G_INP, flex: 1, display: i === 0 ? 'none' : 'block' }} />
-            </div>
+            {(() => {
+              const isOrg = i === 0;
+              const ph = isOrg ? (form.phone || '') : (g.phone || '');
+              const em = isOrg ? (form.email || '') : (g.email || '');
+              const setPh = v => isOrg ? onFormChange({ phone: v }) : onUpdateGuest(g.id, { phone: v });
+              const setEm = v => isOrg ? onFormChange({ email: v }) : onUpdateGuest(g.id, { email: v });
+              return (
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <input value={ph} type="tel" onChange={e => setPh(e.target.value)} placeholder={isOrg ? 'Your phone *' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1 }} />
+                  <input value={em} type="email" onChange={e => setEm(e.target.value)} placeholder={isOrg ? 'Email (optional)' : 'Their email (optional)'} style={{ ...G_INP, flex: 1 }} />
+                </div>
+              );
+            })()}
           </div>
         );
       })}
@@ -1532,10 +1575,10 @@ function GroupGuestsStep({ services, allTechs, guests, onAddGuest, onRemoveGuest
   );
 }
 
-function GroupResultsStep({ results, searching, choice, guests, allTechs, preferredDate, setPreferredDate, maxLeadDays, onSearch, onPick, onProceed, onBack }) {
+function GroupResultsStep({ results, searching, choice, guests, allTechs, form, preferredDate, setPreferredDate, maxLeadDays, onSearch, onPick, onProceed, onBack }) {
   const today = dateStr(todayDate());
   const maxD = new Date(); maxD.setDate(maxD.getDate() + maxLeadDays);
-  const gLabel = (idx) => guests[idx]?.name?.trim() || `Guest ${idx + 1}`;
+  const gLabel = (idx) => idx === 0 ? (joinName(form?.firstName, form?.lastName) || 'You') : (guests[idx]?.name?.trim() || `Guest ${idx + 1}`);
   const tName = (a) => a.requestType === 'auto' ? (a.techName || 'next available') : (a.techName || 'your stylist');
   const byDate = {};
   (results?.slots || []).forEach(s => (byDate[s.date] || (byDate[s.date] = [])).push(s));
@@ -1591,7 +1634,7 @@ function GroupResultsStep({ results, searching, choice, guests, allTechs, prefer
 
 function GroupConfirmStep({ guests, allTechs, choice, form, submitting, bookingError, onEditInfo, onConfirm, onBack }) {
   if (!choice) return null;
-  const gLabel = (idx) => guests[idx]?.name?.trim() || `Guest ${idx + 1}`;
+  const gLabel = (idx) => idx === 0 ? (joinName(form?.firstName, form?.lastName) || 'You') : (guests[idx]?.name?.trim() || `Guest ${idx + 1}`);
   const tName = (a) => a.requestType === 'auto' ? (a.techName || 'next available') : (a.techName || 'your stylist');
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: '12px 0 24px' }}>
@@ -2180,7 +2223,7 @@ function Step4Info({
 }) {
   const salonName = webCfg?.salonName || 'our salon';
   // Required: name + phone (signed-in users skip this step entirely so they bypass the validation)
-  const valid = form.name.trim() && form.phone.trim();
+  const valid = (form.firstName || '').trim() && form.phone.trim();
   const showNotes = flowCfg?.showNotesField !== false;
 
   const formCard = (
@@ -2194,7 +2237,8 @@ function Step4Info({
         style={{ position: 'absolute', left: '-9999px', width: 1, height: 1, opacity: 0 }}
       />
       {[
-        { key: 'name',  label: 'Name',  type: 'text',  placeholder: 'Your full name',                 required: true  },
+        { key: 'firstName', label: 'First', type: 'text',  placeholder: 'First name',                  required: true  },
+        { key: 'lastName',  label: 'Last',  type: 'text',  placeholder: 'Last name',                   required: false },
         { key: 'phone', label: 'Phone', type: 'tel',   placeholder: '(555) 000-0000',                 required: true  },
         { key: 'email', label: 'Email', type: 'email', placeholder: 'For confirmation & sign-in',     required: false },
         showNotes && { key: 'notes', label: 'Notes', type: 'text', placeholder: 'Any requests or preferences?', required: false },

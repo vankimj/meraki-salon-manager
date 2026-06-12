@@ -116,16 +116,23 @@ const DEFAULT_BOOKING_CARD_POLICY = Object.freeze({
   allBookingsRequireCard: false,
   depositMode:            'store',
   depositPct:             0,
+  groupRequireCard:       false,
+  groupDepositMode:       'store',
+  groupDepositPct:        0,
 });
 
 function resolveBookingCardPolicy(settings) {
   const s = (settings && settings.bookingCardPolicy) || {};
   const pct = Number(s.depositPct);
+  const gpct = Number(s.groupDepositPct);
   return {
     firstTimeRequireCard:   s.firstTimeRequireCard   === true,
     allBookingsRequireCard: s.allBookingsRequireCard === true,
     depositMode:            DEPOSIT_MODES.includes(s.depositMode) ? s.depositMode : 'store',
     depositPct:             Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0,
+    groupRequireCard:       s.groupRequireCard === true,
+    groupDepositMode:       DEPOSIT_MODES.includes(s.groupDepositMode) ? s.groupDepositMode : 'store',
+    groupDepositPct:        Number.isFinite(gpct) ? Math.min(100, Math.max(0, gpct)) : 0,
   };
 }
 
@@ -133,12 +140,28 @@ function evaluateBookingCardRequirement(settings, ctx) {
   const p = resolveBookingCardPolicy(settings);
   const isFirstTime = ctx && ctx.isFirstTime === true;
   const hasCard     = ctx && ctx.hasCard === true;
-  const triggered = p.allBookingsRequireCard || (p.firstTimeRequireCard && isFirstTime);
+  const isGroup     = ctx && ctx.isGroup === true;
+  const bookingTrig = p.allBookingsRequireCard || (p.firstTimeRequireCard && isFirstTime);
+  const groupTrig   = isGroup && p.groupRequireCard;
+  const triggered   = bookingTrig || groupTrig;
+
+  // Strongest deposit wins: charge > authorize > store, then higher percentage.
+  // `store` still carries its percentage (the no-show charge amount).
+  const RANK = { store: 0, authorize: 1, charge: 2 };
+  let depositMode = 'store', depositPct = 0;
+  const consider = (mode, pct) => {
+    if (RANK[mode] > RANK[depositMode] || (RANK[mode] === RANK[depositMode] && pct > depositPct)) {
+      depositMode = mode; depositPct = pct;
+    }
+  };
+  if (bookingTrig) consider(p.depositMode, p.depositPct);
+  if (groupTrig)   consider(p.groupDepositMode, p.groupDepositPct);
+
   return {
     triggered,
     required:    triggered && !hasCard,
-    depositMode: p.depositMode,
-    depositPct:  p.depositPct,
+    depositMode,
+    depositPct,
   };
 }
 

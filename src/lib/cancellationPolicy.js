@@ -219,34 +219,61 @@ export const DEFAULT_BOOKING_CARD_POLICY = Object.freeze({
   allBookingsRequireCard: false,
   depositMode:            'store',
   depositPct:             0,
+  // Group bookings (2+ people) can require a card / hold / deposit independently.
+  groupRequireCard:       false,
+  groupDepositMode:       'store',
+  groupDepositPct:        0,
 });
 
 export function resolveBookingCardPolicy(settings) {
   const s = settings?.bookingCardPolicy || {};
   const pct = Number(s.depositPct);
+  const gpct = Number(s.groupDepositPct);
   return {
     firstTimeRequireCard:   s.firstTimeRequireCard   === true,
     allBookingsRequireCard: s.allBookingsRequireCard === true,
     depositMode:            DEPOSIT_MODES.includes(s.depositMode) ? s.depositMode : 'store',
     depositPct:             Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0,
+    groupRequireCard:       s.groupRequireCard === true,
+    groupDepositMode:       DEPOSIT_MODES.includes(s.groupDepositMode) ? s.groupDepositMode : 'store',
+    groupDepositPct:        Number.isFinite(gpct) ? Math.min(100, Math.max(0, gpct)) : 0,
   };
 }
 
 // Decide whether a card must be collected for THIS booking.
-//   ctx = { isFirstTime: boolean, hasCard: boolean }
+//   ctx = { isFirstTime: boolean, hasCard: boolean, isGroup: boolean }
 // Returns { triggered, required, depositMode, depositPct }.
 //   triggered — the policy applies to this booking
 //   required  — a card must be collected now (triggered AND no card on file)
+// When multiple rules fire, the STRONGEST deposit (highest %, non-store) wins.
 export function evaluateBookingCardRequirement(settings, ctx = {}) {
   const p = resolveBookingCardPolicy(settings);
   const isFirstTime = ctx.isFirstTime === true;
   const hasCard     = ctx.hasCard === true;
-  const triggered = p.allBookingsRequireCard || (p.firstTimeRequireCard && isFirstTime);
+  const isGroup     = ctx.isGroup === true;
+  const bookingTrig = p.allBookingsRequireCard || (p.firstTimeRequireCard && isFirstTime);
+  const groupTrig   = isGroup && p.groupRequireCard;
+  const triggered   = bookingTrig || groupTrig;
+
+  // When multiple rules fire, the STRONGEST deposit wins: charge > authorize >
+  // store (more money secured at booking time), and within the same mode the
+  // higher percentage. Note `store` still carries its percentage — it's the
+  // amount charged later on a no-show.
+  const RANK = { store: 0, authorize: 1, charge: 2 };
+  let depositMode = 'store', depositPct = 0;
+  const consider = (mode, pct) => {
+    if (RANK[mode] > RANK[depositMode] || (RANK[mode] === RANK[depositMode] && pct > depositPct)) {
+      depositMode = mode; depositPct = pct;
+    }
+  };
+  if (bookingTrig) consider(p.depositMode, p.depositPct);
+  if (groupTrig)   consider(p.groupDepositMode, p.groupDepositPct);
+
   return {
     triggered,
     required:    triggered && !hasCard,
-    depositMode: p.depositMode,
-    depositPct:  p.depositPct,
+    depositMode,
+    depositPct,
   };
 }
 
