@@ -378,11 +378,27 @@ export default function KioskCheckout({ session, settings, email, local = false,
   }
 
   function cancel() { finishCancel(); }
+  // Staff escape hatch. A checkout can get stuck with no way back to idle — the
+  // claim spinner, the "another station" screen, or a confirmed cash-review the
+  // desk never recorded. A confirmed Cancel clears the session
+  // (clearCheckoutSession → status 'idle') so the kiosk returns to its idle
+  // screen. Safe: it only shows before any card is captured (`paid` is null).
+  function confirmCancel() {
+    Alert.alert('Cancel this checkout?', "The sale won't be recorded and the kiosk returns to the idle screen.", [
+      { text: 'Keep going', style: 'cancel' },
+      { text: 'Cancel checkout', style: 'destructive', onPress: cancel },
+    ]);
+  }
 
   // Another station already owns this checkout — show a read-only state (no pay
   // buttons here) so the same sale can't be charged twice.
   if (claimState === 'checking' && stage !== 'done') {
-    return <View style={styles.center}><ActivityIndicator color={theme.green} size="large" /></View>;
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={theme.green} size="large" />
+        <TouchableOpacity style={styles.kioskCancelBtn} onPress={confirmCancel}><Text style={styles.kioskCancelText}>Cancel checkout</Text></TouchableOpacity>
+      </View>
+    );
   }
   if (claimState === 'other' && stage !== 'done') {
     return (
@@ -390,6 +406,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
         <Text style={styles.idleMark}>🧾</Text>
         <Text style={styles.idleTitle}>Checking out…</Text>
         <Text style={styles.idleSub}>This sale is being completed at another station.</Text>
+        <TouchableOpacity style={styles.kioskCancelBtn} onPress={confirmCancel}><Text style={styles.kioskCancelText}>Cancel checkout</Text></TouchableOpacity>
       </View>
     );
   }
@@ -433,6 +450,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
             </>
           )}
         </View>
+        <TouchableOpacity style={styles.kioskCancelBtn} onPress={confirmCancel}><Text style={styles.kioskCancelText}>Cancel checkout</Text></TouchableOpacity>
       </ScrollView>
     );
   }
@@ -471,7 +489,7 @@ export default function KioskCheckout({ session, settings, email, local = false,
     <ScrollView style={styles.wrap} contentContainerStyle={[styles.content, isTablet && { maxWidth: 720, alignSelf: 'center', width: '100%' }]}>
       <View style={styles.headerRow}>
         <Text style={styles.hello}>Hi {clientName.split(' ')[0]} 👋</Text>
-        <TouchableOpacity onPress={cancel} style={styles.cancelBtn}><Text style={styles.cancelText}>✕</Text></TouchableOpacity>
+        <TouchableOpacity onPress={confirmCancel} style={styles.cancelBtn}><Text style={styles.cancelText}>✕</Text></TouchableOpacity>
       </View>
 
       <Text style={styles.section}>Your visit</Text>
@@ -788,6 +806,8 @@ const makeStyles = (t) => StyleSheet.create({
   confirmHint:{ fontSize: 13, color: t.textMuted, textAlign: 'center', marginTop: 6, lineHeight: 19, paddingHorizontal: 8 },
   doneBtn:  { marginTop: 26, backgroundColor: t.green, borderRadius: 24, paddingVertical: 13, paddingHorizontal: 44 },
   doneBtnText:{ color: '#fff', fontWeight: '800', fontSize: 16 },
+  kioskCancelBtn: { marginTop: 24, borderRadius: 24, paddingVertical: 12, paddingHorizontal: 34, borderWidth: 1.5, borderColor: t.border, alignSelf: 'center' },
+  kioskCancelText:{ color: t.textMuted, fontWeight: '700', fontSize: 15 },
   resendBox:{ width: '100%', maxWidth: 380, marginTop: 22 },
   resendLabel:{ fontSize: 13, fontWeight: '700', color: t.textMuted, textAlign: 'center', marginBottom: 4 },
   settling: { marginTop: 18, backgroundColor: t.surface, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: t.border, alignItems: 'center', gap: 10 },
