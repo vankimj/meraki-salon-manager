@@ -289,7 +289,7 @@ function ReceiptCard({ item, open, onToggle, canWrite, canRefund, canEditCommiss
                 )}
                 <button onClick={onRedo}
                   style={{ padding: '10px 16px', fontWeight: 800, fontSize: 13.5, borderRadius: 10, border: '1px solid #2D7A5F', background: 'transparent', color: '#2D7A5F', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  ↻ Redo
+                  ↻ Redo service
                 </button>
               </div>
             </>

@@ -163,7 +163,7 @@ export default function ReceiptsScreen() {
                 <Text style={[styles.fullyRefunded, { flex: 1 }]}>Fully refunded</Text>
               )}
               <TouchableOpacity style={[styles.redoBtn, { flex: 1 }]} onPress={() => setRedoReceipt(item)} activeOpacity={0.85}>
-                <Text style={styles.redoBtnText}>↻ Redo</Text>
+                <Text style={styles.redoBtnText}>↻ Redo service</Text>
               </TouchableOpacity>
             </View>
           </View>
