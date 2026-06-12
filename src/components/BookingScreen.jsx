@@ -228,6 +228,7 @@ export default function BookingScreen() {
   // ── Group booking (2–6 people, distinct techs, ±15 min) ──
   // guest: { id, cart:[...cart items...], pickedTech: undefined|null|{tech}, name, phone, email }
   const [groupGuests,     setGroupGuests]     = useState([]);
+  const [groupGuestIdx,   setGroupGuestIdx]   = useState(0);      // which guest page is shown
   const [groupApptsByDate, setGroupApptsByDate] = useState(null); // one-shot month fetch
   const [groupResults,    setGroupResults]    = useState(null);   // { slots, unsatisfiable } | null
   const [groupChoice,     setGroupChoice]     = useState(null);   // chosen ranked slot
@@ -1173,6 +1174,7 @@ export default function BookingScreen() {
                   { id: `g_${Date.now()}_0`, cart: [], pickedTech: null, name: '', firstName: '', lastName: '', phone: '', email: '' },
                   { id: `g_${Date.now()}_1`, cart: [], pickedTech: null, name: '', firstName: '', lastName: '', phone: '', email: '' },
                 ]);
+                setGroupGuestIdx(0);
                 setGroupResults(null); setGroupChoice(null); setGroupApptsByDate(null); setGroupPreferredDate('');
               }
             }}
@@ -1181,6 +1183,8 @@ export default function BookingScreen() {
         {step === 1 && flow === 'group' && (
           <GroupGuestsStep
             services={services} allTechs={techs} guests={groupGuests}
+            guestIdx={groupGuestIdx} setGuestIdx={setGroupGuestIdx}
+            removalPrice={Number(cfg?.removalPrice ?? 15)}
             form={form} onFormChange={setFormPatch}
             onAddGuest={addGuest} onRemoveGuest={removeGuest} onUpdateGuest={updateGuest}
             onProceed={() => setStep(2)}
@@ -1485,92 +1489,156 @@ function GChip({ active, onClick, children }) {
   );
 }
 
-function GroupGuestsStep({ services, allTechs, guests, form, onFormChange, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack }) {
-  const cats = groupByCategory(services || []);
-  const ready = guests.length >= 2 && guests.every(g => g.cart.length > 0)
-    && (form.firstName || '').trim() && (form.phone || '').trim();
-  const addSvc = (g, id) => {
-    const svc = (services || []).find(s => s.id === id);
-    if (!svc || g.cart.some(i => i.service.id === id)) return;
-    onUpdateGuest(g.id, { cart: [...g.cart, { service: svc, option: null, removal: false }], pickedTech: g.pickedTech && techCanDo(g.pickedTech, id) ? g.pickedTech : (g.pickedTech ? null : g.pickedTech) });
+// One guest per page. Each page is the same rich service catalog the single-
+// guest flow uses (photos / descriptions / prices), plus that guest's name,
+// contact, and stylist. A roster bar across the top shows everyone and lets
+// the organizer jump between pages or add/remove guests.
+function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, removalPrice = 15, form, onFormChange, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack }) {
+  const idx  = Math.max(0, Math.min(guestIdx, guests.length - 1));
+  const g    = guests[idx];
+  const isOrg = idx === 0;
+  const last = guests.length - 1;
+  if (!g) return null;
+
+  const guestComplete = (gg, organizer) =>
+    gg.cart.length > 0 && (!organizer || ((form.firstName || '').trim() && (form.phone || '').trim()));
+  const thisComplete = guestComplete(g, isOrg);
+  const allReady = guests.length >= 2 && guests.every((gg, i) => guestComplete(gg, i === 0));
+
+  const elig = techsForServices(allTechs, g.cart.map(c => c.service)).filter(t => t.active !== false);
+
+  const onAddService = (svc, opt) => {
+    if (!svc || g.cart.some(i => i.service.id === svc.id)) return;
+    onUpdateGuest(g.id, {
+      cart: [...g.cart, { service: svc, option: opt || null, removal: false }],
+      pickedTech: g.pickedTech && !techCanDo(g.pickedTech, svc.id) ? null : g.pickedTech,
+    });
   };
-  const rmSvc = (g, id) => onUpdateGuest(g.id, { cart: g.cart.filter(i => i.service.id !== id) });
+  const rmService = (svcId) => onUpdateGuest(g.id, { cart: g.cart.filter(i => i.service.id !== svcId) });
+
+  const fn = isOrg ? (form.firstName || '') : (g.firstName || '');
+  const ln = isOrg ? (form.lastName || '') : (g.lastName || '');
+  const ph = isOrg ? (form.phone || '') : (g.phone || '');
+  const em = isOrg ? (form.email || '') : (g.email || '');
+  const setFn = v => isOrg ? onFormChange({ firstName: v }) : onUpdateGuest(g.id, { firstName: v, name: joinName(v, g.lastName) });
+  const setLn = v => isOrg ? onFormChange({ lastName: v }) : onUpdateGuest(g.id, { lastName: v, name: joinName(g.firstName, v) });
+  const setPh = v => isOrg ? onFormChange({ phone: v }) : onUpdateGuest(g.id, { phone: v });
+  const setEm = v => isOrg ? onFormChange({ email: v }) : onUpdateGuest(g.id, { email: v });
+
+  const rosterLabel = (gg, i) => {
+    const nm = i === 0 ? (joinName(form.firstName, form.lastName) || 'You') : (gg.name?.trim() || `Guest ${i + 1}`);
+    return nm.length > 14 ? nm.slice(0, 13) + '…' : nm;
+  };
+
+  const addAndGo = () => { const target = guests.length; onAddGuest(); setGuestIdx(target); };
+  const removeThis = () => { onRemoveGuest(g.id); setGuestIdx(Math.max(0, idx - 1)); };
+
+  const SECTION = { fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '20px 0 8px' };
+
   return (
-    <div style={{ maxWidth: 640, margin: '0 auto', padding: '12px 0 24px' }}>
+    <div style={{ maxWidth: 720, margin: '0 auto', padding: '12px 0 24px' }}>
       <StepTitle>Who's in your group?</StepTitle>
-      <div style={{ fontSize: 13, color: '#888', margin: '-8px 0 18px', lineHeight: 1.5 }}>
-        Add each person's services and (optionally) a preferred stylist. We'll find times where everyone is seated within ~15 minutes of each other, each with their own stylist.
+      <div style={{ fontSize: 13, color: '#888', margin: '-8px 0 16px', lineHeight: 1.5 }}>
+        Build each person's visit one at a time. We'll find times where everyone is seated within ~15 minutes of each other, each with their own stylist.
       </div>
-      {guests.map((g, i) => {
-        const elig = techsForServices(allTechs, g.cart.map(c => c.service)).filter(t => t.active !== false);
-        return (
-          <div key={g.id} style={{ background: '#fff', border: '1.5px solid #e8e8e8', borderRadius: 14, padding: 16, marginBottom: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>Guest {i + 1}{i === 0 ? ' (organizer)' : ''}</div>
-              {guests.length > 2 && <button onClick={() => onRemoveGuest(g.id)} style={{ background: 'none', border: 'none', color: '#c00', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>}
-            </div>
-            {(() => {
-              const isOrg = i === 0;
-              const fn = isOrg ? (form.firstName || '') : (g.firstName || '');
-              const ln = isOrg ? (form.lastName || '') : (g.lastName || '');
-              const setFn = v => isOrg ? onFormChange({ firstName: v }) : onUpdateGuest(g.id, { firstName: v, name: joinName(v, g.lastName) });
-              const setLn = v => isOrg ? onFormChange({ lastName: v }) : onUpdateGuest(g.id, { lastName: v, name: joinName(g.firstName, v) });
-              return (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input value={fn} onChange={e => setFn(e.target.value)} placeholder={isOrg ? 'First name *' : 'First name (optional)'} style={{ ...G_INP, flex: 1 }} />
-                  <input value={ln} onChange={e => setLn(e.target.value)} placeholder="Last name" style={{ ...G_INP, flex: 1 }} />
-                </div>
-              );
-            })()}
-            {(() => {
-              const isOrg = i === 0;
-              const ph = isOrg ? (form.phone || '') : (g.phone || '');
-              const em = isOrg ? (form.email || '') : (g.email || '');
-              const setPh = v => isOrg ? onFormChange({ phone: v }) : onUpdateGuest(g.id, { phone: v });
-              const setEm = v => isOrg ? onFormChange({ email: v }) : onUpdateGuest(g.id, { email: v });
-              return (
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <input value={ph} type="tel" onChange={e => setPh(e.target.value)} placeholder={isOrg ? 'Your phone *' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1 }} />
-                  <input value={em} type="email" onChange={e => setEm(e.target.value)} placeholder={isOrg ? 'Email (optional)' : 'Their email (optional)'} style={{ ...G_INP, flex: 1 }} />
-                </div>
-              );
-            })()}
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '12px 0 6px' }}>Services</div>
-            <select value="" onChange={e => { addSvc(g, e.target.value); e.target.value = ''; }} style={G_INP}>
-              <option value="">+ Add a service…</option>
-              {cats.map(c => (
-                <optgroup key={c.category} label={c.category}>
-                  {c.services.filter(s => s.active !== false).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </optgroup>
-              ))}
-            </select>
-            {g.cart.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                {g.cart.map(it => (
-                  <span key={it.service.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f0f9f5', color: 'var(--tm-primary, #2D7A5F)', fontSize: 12, fontWeight: 600, padding: '4px 6px 4px 10px', borderRadius: 14 }}>
-                    {it.service.name}
-                    <button onClick={() => rmSvc(g, it.service.id)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '12px 0 6px' }}>Stylist</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              <GChip active={!g.pickedTech} onClick={() => onUpdateGuest(g.id, { pickedTech: null })}>No preference</GChip>
-              {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
-            </div>
-          </div>
-        );
-      })}
-      {guests.length < 6 && (
-        <button onClick={onAddGuest} style={{ width: '100%', background: '#fff', border: '1.5px dashed #cbd5d0', borderRadius: 12, padding: '12px', fontSize: 13, fontWeight: 600, color: 'var(--tm-primary, #2D7A5F)', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 4 }}>
+
+      {/* Roster — tap a name to jump, + to add */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
+        {guests.map((gg, i) => {
+          const active = i === idx;
+          const done = guestComplete(gg, i === 0);
+          return (
+            <button key={gg.id} onClick={() => setGuestIdx(i)}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', cursor: 'pointer',
+                background: active ? 'var(--tm-primary, #2D7A5F)' : '#fff',
+                color: active ? '#fff' : '#444',
+                border: `1.5px solid ${active ? 'var(--tm-primary, #2D7A5F)' : '#e0e0e0'}`,
+                borderRadius: 999, padding: '7px 14px', fontSize: 12.5, fontWeight: 700,
+              }}>
+              <span style={{ fontSize: 11, opacity: active ? 0.85 : 0.5 }}>{done ? '✓' : i + 1}</span>
+              {rosterLabel(gg, i)}{i === 0 ? <span style={{ fontWeight: 600, opacity: 0.7 }}> ·org</span> : null}
+            </button>
+          );
+        })}
+        {guests.length < 6 && (
+          <button onClick={addAndGo}
+            style={{ fontFamily: 'inherit', cursor: 'pointer', background: '#fff', color: 'var(--tm-primary, #2D7A5F)', border: '1.5px dashed #cbd5d0', borderRadius: 999, padding: '7px 14px', fontSize: 12.5, fontWeight: 700 }}>
+            + Add guest
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <div style={{ fontSize: 17, fontWeight: 800, color: '#1a1a1a' }}>
+          Guest {idx + 1} of {guests.length}{isOrg ? <span style={{ fontSize: 13, fontWeight: 600, color: '#aaa' }}> · organizer</span> : null}
+        </div>
+        {guests.length > 2 && (
+          <button onClick={removeThis} style={{ background: 'none', border: 'none', color: '#c00', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>Remove this guest</button>
+        )}
+      </div>
+
+      {/* Name + contact */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <input value={fn} onChange={e => setFn(e.target.value)} placeholder={isOrg ? 'First name *' : 'First name (optional)'} style={{ ...G_INP, flex: 1 }} />
+        <input value={ln} onChange={e => setLn(e.target.value)} placeholder="Last name" style={{ ...G_INP, flex: 1 }} />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <input value={ph} type="tel" onChange={e => setPh(e.target.value)} placeholder={isOrg ? 'Your phone *' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1 }} />
+        <input value={em} type="email" onChange={e => setEm(e.target.value)} placeholder={isOrg ? 'Email (optional)' : 'Their email (optional)'} style={{ ...G_INP, flex: 1 }} />
+      </div>
+
+      {/* Services — the same rich catalog as the single-guest flow */}
+      <div style={SECTION}>{isOrg ? 'Your services' : `Guest ${idx + 1}'s services`}</div>
+      {g.cart.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+          {g.cart.map(it => (
+            <span key={it.service.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f0f9f5', color: 'var(--tm-primary, #2D7A5F)', fontSize: 12, fontWeight: 600, padding: '4px 6px 4px 10px', borderRadius: 14 }}>
+              {it.option?.name ? `${it.service.name} — ${it.option.name}` : it.service.name}
+              <button onClick={() => rmService(it.service.id)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      <ServiceCatalog key={g.id} services={services} cart={g.cart} onAdd={onAddService} />
+
+      {/* Stylist */}
+      <div style={SECTION}>Stylist</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        <GChip active={!g.pickedTech} onClick={() => onUpdateGuest(g.id, { pickedTech: null })}>No preference</GChip>
+        {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
+      </div>
+      {g.cart.length > 0 && elig.length === 0 && (
+        <div style={{ fontSize: 12, color: '#c0392b', marginTop: 8 }}>No stylist offers all of these services together. Try splitting them across guests.</div>
+      )}
+
+      {/* Footer nav */}
+      <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+        <button onClick={() => idx === 0 ? onBack() : setGuestIdx(idx - 1)} style={G_BACK}>
+          {idx === 0 ? 'Back' : '← Guest ' + idx}
+        </button>
+        {idx < last ? (
+          <button onClick={() => setGuestIdx(idx + 1)} disabled={!thisComplete}
+            style={{ ...G_PRIMARY, opacity: thisComplete ? 1 : 0.5, cursor: thisComplete ? 'pointer' : 'default' }}>
+            Next guest →
+          </button>
+        ) : (
+          <button onClick={onProceed} disabled={!allReady}
+            style={{ ...G_PRIMARY, opacity: allReady ? 1 : 0.5, cursor: allReady ? 'pointer' : 'default' }}>
+            Find times →
+          </button>
+        )}
+      </div>
+      {idx === last && guests.length < 6 && (
+        <button onClick={addAndGo} style={{ width: '100%', background: 'none', border: 'none', color: 'var(--tm-accent, #3D95CE)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginTop: 12 }}>
           + Add another guest
         </button>
       )}
-      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
-        <button onClick={onBack} style={G_BACK}>Back</button>
-        <button onClick={onProceed} disabled={!ready} style={{ ...G_PRIMARY, opacity: ready ? 1 : 0.5, cursor: ready ? 'pointer' : 'default' }}>Find times →</button>
-      </div>
+      {idx === last && !allReady && (
+        <div style={{ fontSize: 12, color: '#aaa', textAlign: 'center', marginTop: 10 }}>
+          Every guest needs at least one service{(form.firstName || '').trim() && (form.phone || '').trim() ? '' : ", and the organizer needs a name + phone"} before we can search.
+        </div>
+      )}
     </div>
   );
 }
@@ -1727,10 +1795,6 @@ function Step1PickStylist({ techs, picked, onPick, onProceed, onSwitchFlow }) {
 
 // ── Step 1: Cart (browse + add) ────────────────────────
 function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, techFirstNote, removalPrice = 15 }) {
-  const groups = groupByCategory(services);
-  // Per-row selected option (local UI state) — picking a variant chip just
-  // remembers it so 'Add to cart' adds the right one.
-  const [pendingOptions, setPendingOptions] = useState({}); // svc.id → option
   // Cart total includes the per-item removal charge for services that
   // canRequireRemoval AND have the customer-confirmed `removal` flag set.
   // Same formula Step 5 uses; we mirror it here so the sticky bar's price
@@ -1756,30 +1820,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
         </button>
       )}
       <div style={{ marginBottom: 12 }} />
-      {groups.map(({ category, services: svcs }) => {
-        const color = CATEGORY_COLORS[category] || '#1a1a1a';
-        return (
-          <div key={category} style={{ marginBottom: 32 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #ececec' }}>
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px' }}>{category}</span>
-              <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
-            </div>
-            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #ececec', overflow: 'hidden' }}>
-              {svcs.map((s, i) => (
-                <ServiceRow key={s.id} svc={s} color={color}
-                  selectedOption={pendingOptions[s.id] || null}
-                  divider={i < svcs.length - 1}
-                  blockedReason={whyCantAddService(s, cart)}
-                  onSelectOption={(opt) => setPendingOptions(p => ({ ...p, [s.id]: opt }))}
-                  onAdd={(opt) => {
-                    onAdd(s, opt || pendingOptions[s.id] || (s.options?.[0] ?? null));
-                    setPendingOptions(p => ({ ...p, [s.id]: null }));
-                  }} />
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <ServiceCatalog services={services} cart={cart} onAdd={onAdd} />
 
       {/* Sticky cart strip */}
       {cart.length > 0 && (
@@ -1922,6 +1963,42 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
           {isInCart ? '✓ Added' : '+ Add'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Shared rich service picker (photos / descriptions / prices) used by both the
+// single-guest flow (Step1Cart) and each group-guest page. `cart` is the
+// person's current selection (used to show ✓ Added / block duplicates).
+function ServiceCatalog({ services, cart, onAdd }) {
+  const groups = groupByCategory(services || []);
+  const [pendingOptions, setPendingOptions] = useState({});
+  return (
+    <div>
+      {groups.map(({ category, services: svcs }) => {
+        const color = CATEGORY_COLORS[category] || '#1a1a1a';
+        return (
+          <div key={category} style={{ marginBottom: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #ececec' }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px' }}>{category}</span>
+              <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
+            </div>
+            <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #ececec', overflow: 'hidden' }}>
+              {svcs.map((s, i) => (
+                <ServiceRow key={s.id} svc={s} color={color}
+                  selectedOption={pendingOptions[s.id] || null}
+                  divider={i < svcs.length - 1}
+                  blockedReason={whyCantAddService(s, cart)}
+                  onSelectOption={(opt) => setPendingOptions(p => ({ ...p, [s.id]: opt }))}
+                  onAdd={(opt) => {
+                    onAdd(s, opt || pendingOptions[s.id] || (s.options?.[0] ?? null));
+                    setPendingOptions(p => ({ ...p, [s.id]: null }));
+                  }} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
