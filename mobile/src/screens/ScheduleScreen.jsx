@@ -407,6 +407,17 @@ export default function ScheduleScreen({ navigation }) {
             <Text style={styles.chipBlueText}>Today</Text>
           </TouchableOpacity>
         )}
+        {/* Walk-in queue + who's clocked in — opens the existing Walk-in
+            Manager (rotation + waitlist) in the Manage stack, matching the
+            web schedule's turn roster. */}
+        {canSeeAll && (
+          <TouchableOpacity
+            style={[styles.chip, styles.chipGreen]}
+            onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'Walkin' })}
+          >
+            <Text style={styles.chipGreenText}>📋 Queue</Text>
+          </TouchableOpacity>
+        )}
         {/* Tech filter — owner/manager/scheduler. Plain techs are locked to their own. */}
         {canSeeAll && (
           <>
@@ -2090,6 +2101,8 @@ const makeStyles = (t) => StyleSheet.create({
   chipBlueText: { color: t.blue, fontSize: 14, fontWeight: '600' },
   chipMuted: { backgroundColor: t.surface, borderColor: t.borderStrong },
   chipMutedText: { color: t.textMuted, fontSize: 14, fontWeight: '500' },
+  chipGreen: { backgroundColor: t.greenSoft, borderColor: t.green },
+  chipGreenText: { color: t.green, fontSize: 14, fontWeight: '600' },
 
   viewSwitch:           { flexDirection: 'row', backgroundColor: t.surfaceMuted, borderRadius: 10, padding: 3, marginRight: 4 },
   viewSwitchBtn:        { paddingHorizontal: 16, paddingVertical: 10, minHeight: 38, minWidth: 60, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
