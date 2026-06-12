@@ -50,7 +50,18 @@ export default function ClockKioskScreen({ navigation }) {
     return () => parent?.setOptions({ tabBarStyle: undefined });
   }, [navigation]));
 
-  const stateOf = (id) => { const e = byEmp[id]; return (e && e.clockInAt && !e.clockOutAt) ? 'in' : 'out'; };
+  // Truth is the event log (matches the server's state machine). Last event
+  // 'out' = clocked out; 'in' / 'break_*' = on the clock. The flat clockInAt/
+  // clockOutAt pair is only a fallback for admin-entered rows with no events —
+  // and it goes STALE after an in->out->in (the server never clears clockOutAt
+  // on re-clock-in), which made re-clocked-in techs read as "clocked out".
+  const stateOf = (id) => {
+    const e = byEmp[id];
+    if (!e) return 'out';
+    const ev = e.events;
+    if (Array.isArray(ev) && ev.length) return ev[ev.length - 1]?.kind === 'out' ? 'out' : 'in';
+    return (e.clockInAt && !e.clockOutAt) ? 'in' : 'out';
+  };
 
   async function submitPin(pin) {
     if (!sel) return;
