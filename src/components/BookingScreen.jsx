@@ -1522,6 +1522,19 @@ function GroupGuestsStep({ services, allTechs, guests, form, onFormChange, onAdd
                 </div>
               );
             })()}
+            {(() => {
+              const isOrg = i === 0;
+              const ph = isOrg ? (form.phone || '') : (g.phone || '');
+              const em = isOrg ? (form.email || '') : (g.email || '');
+              const setPh = v => isOrg ? onFormChange({ phone: v }) : onUpdateGuest(g.id, { phone: v });
+              const setEm = v => isOrg ? onFormChange({ email: v }) : onUpdateGuest(g.id, { email: v });
+              return (
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <input value={ph} type="tel" onChange={e => setPh(e.target.value)} placeholder={isOrg ? 'Your phone *' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1 }} />
+                  <input value={em} type="email" onChange={e => setEm(e.target.value)} placeholder={isOrg ? 'Email (optional)' : 'Their email (optional)'} style={{ ...G_INP, flex: 1 }} />
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '12px 0 6px' }}>Services</div>
             <select value="" onChange={e => { addSvc(g, e.target.value); e.target.value = ''; }} style={G_INP}>
               <option value="">+ Add a service…</option>
@@ -1546,19 +1559,6 @@ function GroupGuestsStep({ services, allTechs, guests, form, onFormChange, onAdd
               <GChip active={!g.pickedTech} onClick={() => onUpdateGuest(g.id, { pickedTech: null })}>No preference</GChip>
               {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
             </div>
-            {(() => {
-              const isOrg = i === 0;
-              const ph = isOrg ? (form.phone || '') : (g.phone || '');
-              const em = isOrg ? (form.email || '') : (g.email || '');
-              const setPh = v => isOrg ? onFormChange({ phone: v }) : onUpdateGuest(g.id, { phone: v });
-              const setEm = v => isOrg ? onFormChange({ email: v }) : onUpdateGuest(g.id, { email: v });
-              return (
-                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                  <input value={ph} type="tel" onChange={e => setPh(e.target.value)} placeholder={isOrg ? 'Your phone *' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1 }} />
-                  <input value={em} type="email" onChange={e => setEm(e.target.value)} placeholder={isOrg ? 'Email (optional)' : 'Their email (optional)'} style={{ ...G_INP, flex: 1 }} />
-                </div>
-              );
-            })()}
           </div>
         );
       })}
