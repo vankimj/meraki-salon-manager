@@ -3125,7 +3125,12 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
     // Also maintain flat clockInAt/clockOutAt so the admin Attendance screen
     // (which reads those) reflects self-service kiosk clock events.
     if (kind === 'in' && !entries[idx].clockInAt) entries[idx].clockInAt = at;
-    if (kind === 'out') entries[idx].clockOutAt = at;
+    // Keep the flat clockOutAt consistent with the event log: a re-clock-in
+    // (or break) CLEARS it so the tech doesn't read as "clocked out" after an
+    // in->out->in; a clock-out stamps it. (events[] remains the precise
+    // multi-session source of truth; these flat fields are the at-a-glance
+    // summary the AttendanceScreen + reports read.)
+    entries[idx].clockOutAt = tcCurrentState(newEvents) === TC_STATES.OUT ? at : null;
     tx.set(attRef, { date, entries, updatedAt: new Date().toISOString() }, { merge: true });
     result = {
       state:   tcCurrentState(newEvents),
