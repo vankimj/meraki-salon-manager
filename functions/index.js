@@ -13,7 +13,8 @@ const {
 } = require('@aws-sdk/client-sesv2');
 const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
-const { roleCan }          = require('./lib/rbac');
+const { roleCan, normalizeRole } = require('./lib/rbac');
+const { resolveInternalRouting, isCustomerNotifEnabled } = require('./lib/notificationRouting');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
 const { renderTemplate, getTemplatePhrases } = require('./lib/messageTemplates');
@@ -1067,7 +1068,9 @@ exports.sendReceiptEmail = onDocumentCreated(
     if (!snap) return;
     const data = snap.data();
     if (!data || data.sent || data.error) return;
-    await deliverReceiptEmail(getFirestore(), event.params.tenantId, snap.ref, data);
+    const db = getFirestore();
+    if (!(await customerNotifEnabled(db, event.params.tenantId, 'receipt'))) return;
+    await deliverReceiptEmail(db, event.params.tenantId, snap.ref, data);
   }
 );
 
@@ -1197,6 +1200,8 @@ exports.sendReceiptSms = onDocumentCreated(
 
     const tenantId = event.params.tenantId;
     const db = getFirestore();
+
+    if (!(await customerNotifEnabled(db, tenantId, 'receipt'))) return;
 
     const policy = await tenantReceiptDeliveryPolicy(db, tenantId);
     if (policy === 'email') {
@@ -2594,6 +2599,7 @@ exports.submitServiceRating = onCall({ cors: true }, async (request) => {
       ? ` ✅ OK'd a follow-up via ${[contactConsent.email && 'email', contactConsent.phone && 'phone'].filter(Boolean).join(' & ')}.`
       : '';
     notifyTenantAdmins(db, tenantId, {
+      event: 'low_rating',
       title,
       line: `${client} left a low rating: ${parts.join('; ')}.${consentNote}`,
       data: { type: 'low_rating', receiptId: token },
@@ -3199,6 +3205,7 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
       const extra = (kind === 'out' && result?.summary) ? ` · ${(result.summary.workedMinutes / 60).toFixed(1).replace(/\.0$/, '')}h today` : '';
       const who   = emp.name || 'A team member';
       await notifyTenantAdmins(db, tenantId, {
+        event: 'clock_in_out',
         title: `${who} ${verb}`,
         line:  `${who} ${verb} at ${tStrN}${extra}.`,
         data:  { type: 'clock', employeeId, kind },
@@ -3902,6 +3909,11 @@ exports.sendReviewRequestEmail = onDocumentCreated(
     const data = snap.data();
     if (!data || data.sent || data.error) return;
 
+    if (!(await customerNotifEnabled(getFirestore(), tenantId, 'review_request'))) {
+      await snap.ref.update({ error: 'disabled_by_settings' });
+      return;
+    }
+
     const apiKey = awsAccessKey.value();
     if (!apiKey) { await snap.ref.update({ error: 'email_not_configured' }); return; }
 
@@ -4094,6 +4106,7 @@ exports.notifyCustomerOnCancel = onDocumentUpdated(
       const db = getFirestore();
       const sSnap    = await db.doc(`tenants/${tenantId}/data/settings`).get();
       const settings = sSnap.exists ? (sSnap.data() || {}) : {};
+      if (!isCustomerNotifEnabled(settings, 'cancellation_notice')) return;
       if (!shouldSendCancelNotice(settings, after.cancelledBy)) return;
       await sendCancelNoticeForAppt(db, tenantId, after, {
         selfService: after.cancelledBy === 'client_self_service',
@@ -4719,6 +4732,7 @@ exports.sendDailyReminders = onSchedule(
       // from the previous fixed 9-AM-Eastern schedule.
       const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
       const settings = sSnap.exists ? sSnap.data() : {};
+      if (!isCustomerNotifEnabled(settings, 'appointment_reminder')) return;
       if (!shouldSendRemindersNow(now, settings)) return;
       const fromAddr = await tenantFromAddress(db, tenantId);
       const brand    = await tenantBranding(db, tenantId);
@@ -5243,7 +5257,10 @@ exports.sendBookingConfirmation = onDocumentCreated(
         }
       } catch { /* fall through — assume opted-in */ }
     }
-    if (clientEmail && emailOk) {
+    // Master switch for the customer-facing confirmation. Tech + admin
+    // heads-ups below are NOT affected by it.
+    const customerConfirmOk = await customerNotifEnabled(db, tenantId, 'booking_confirmation');
+    if (clientEmail && emailOk && customerConfirmOk) {
       await sendEmail({
         from:    await tenantFromAddress(db, tenantId),
         to:      clientEmail,
@@ -5266,7 +5283,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
         return cDoc.exists ? (cDoc.data().phone || null) : null;
       } catch { return null; }
     })());
-    if (clientPhone) {
+    if (clientPhone && customerConfirmOk) {
       const apptIdForSms = event.params?.apptId || snap.id;
       const manageShort  = await apptManageUrl(db, tenantId, apptIdForSms, apptExpUnix(appt, tenantTz));
       const dateShort    = fmtDate(appt.date).replace(/,.*/, '');
@@ -7495,7 +7512,79 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
 // Generic admin fan-out: push + email always, SMS where the admin has a phone
 // on their employee record. All best-effort — a failed channel never blocks the
 // caller (whose money action already committed).
-async function notifyTenantAdmins(db, tenantId, { title, line, data = {} }) {
+// Role × channel routing for an internal staff alert. Reads the tenant's
+// notificationRouting config (defaults = owner gets every channel, i.e. the old
+// notifyTenantAdmins behavior) and sends each matching user ONLY the channels
+// configured for their role. `event` is a key from lib/notificationRouting.
+async function notifyByRouting(db, tenantId, event, { title, line, data = {} }) {
+  const setSnap  = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
+  const settings = setSnap && setSnap.exists ? setSnap.data() : {};
+  const routing  = resolveInternalRouting(settings, event);   // { role: {push,email,sms} }
+
+  // Resolve every staff member's role. usersFull carries the rich users[]; the
+  // tenant owner is always 'owner' even if not listed.
+  const fullDoc  = await db.doc(`tenants/${tenantId}/data/usersFull`).get().catch(() => null);
+  const usersArr = fullDoc && fullDoc.exists ? (fullDoc.data().users || []) : [];
+  const tenDoc   = await db.doc(`tenants/${tenantId}`).get().catch(() => null);
+  const ownerEmail = tenDoc && tenDoc.exists ? String(tenDoc.data().ownerEmail || '').toLowerCase() : '';
+
+  const roleByEmail = {};
+  usersArr.forEach(u => {
+    const em = String((u && u.email) || '').toLowerCase();
+    const r  = normalizeRole(u && u.role);
+    if (em && r) roleByEmail[em] = r;
+  });
+  if (ownerEmail) roleByEmail[ownerEmail] = 'owner';
+
+  const pushSet = new Set(), emailSet = new Set(), smsSet = new Set();
+  Object.keys(roleByEmail).forEach(em => {
+    const ch = routing[roleByEmail[em]];
+    if (!ch) return;
+    if (ch.push)  pushSet.add(em);
+    if (ch.email) emailSet.add(em);
+    if (ch.sms)   smsSet.add(em);
+  });
+  if (!pushSet.size && !emailSet.size && !smsSet.size) return;
+
+  const brand = await tenantBranding(db, tenantId);
+  const phoneByEmail = {};
+  if (smsSet.size) {
+    try {
+      const emps = await db.collection(`tenants/${tenantId}/employees`).get();
+      emps.docs.forEach(d => { const e = d.data() || {}; const em = String(e.email || '').toLowerCase(); if (em && e.phone) phoneByEmail[em] = e.phone; });
+    } catch (e) { /* best-effort */ }
+  }
+  let alertSubject = '', alertHtml = '', fromAddr = null;
+  if (emailSet.size) {
+    const r = await renderTemplate(db, tenantId, 'admin_alert', { salonName: brand.salonName, title, detail: line }, brand);
+    alertSubject = r.subject; alertHtml = r.html;
+    fromAddr = await tenantFromAddress(db, tenantId);
+  }
+  const all = new Set([...pushSet, ...emailSet, ...smsSet]);
+  await Promise.all([...all].map(async (em) => {
+    if (pushSet.has(em))  { try { await sendPushToEmail(db, tenantId, em, { title, body: line, data }); } catch (e) { /* best-effort */ } }
+    if (emailSet.has(em)) { try { await sendEmail({ from: fromAddr, to: em, subject: alertSubject, html: alertHtml, tenantId }); } catch (e) { /* best-effort */ } }
+    if (smsSet.has(em))   { const phone = phoneByEmail[em]; if (phone) { try { await sendSms({ to: phone, body: `${brand.salonName}: ${line}`, tenantId, kind: 'transactional' }); } catch (e) { /* best-effort */ } } }
+  }));
+}
+
+// Master on/off for an automatic customer-facing message. Fails OPEN (returns
+// true) on a read error so a transient Firestore blip never silently drops a
+// customer's confirmation/receipt. Manual resends should NOT call this — an
+// admin explicitly chose to send.
+async function customerNotifEnabled(db, tenantId, eventKey) {
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+    return isCustomerNotifEnabled(snap.exists ? snap.data() : {}, eventKey);
+  } catch (e) { return true; }
+}
+
+async function notifyTenantAdmins(db, tenantId, { title, line, data = {}, event = null }) {
+  // When the caller tags the alert with a routing `event`, honor the tenant's
+  // role × channel config. Untagged callers keep the legacy "all admins on all
+  // channels" behavior.
+  if (event) return notifyByRouting(db, tenantId, event, { title, line, data });
+
   const usersDoc = await db.doc(`tenants/${tenantId}/data/users`).get();
   const admins = new Set((usersDoc.exists ? (usersDoc.data().adminEmails || []) : []).map(e => String(e || '').toLowerCase()).filter(Boolean));
   const tenDoc = await db.doc(`tenants/${tenantId}`).get();
@@ -7528,6 +7617,7 @@ async function notifyAdminsOfRefund(db, tenantId, { rec, refundEntry, issuerEmai
   const client = rec.clientName || 'Walk-in';
   const kind   = refundEntry.addedCredit ? 'store-credit refund' : refundEntry.stripeRefundId ? 'card refund' : 'refund';
   await notifyTenantAdmins(db, tenantId, {
+    event: 'refund',
     title: `${amtStr} ${kind} issued`,
     line:  `${who} issued a ${amtStr} ${kind} for ${client}${refundEntry.reason ? ` — "${refundEntry.reason}"` : ''}.`,
     data:  { type: 'refund', receiptId: rec.viewToken || null },

@@ -19,6 +19,8 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          subscribeGoogleReviews, subscribeCheckoutSession, clearCheckoutSession } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
+import { INTERNAL_EVENTS, CUSTOMER_EVENTS, NOTIF_ROLES, NOTIF_CHANNELS, ROLE_LABELS_SHORT, CHANNEL_LABELS, resolveInternalRouting, isCustomerNotifEnabled } from '../../lib/notificationRouting';
+import { normalizeRole } from '../../lib/rbac';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { fetchMemberships } from '../../lib/firestore';
 import { formatTime } from '../../utils/helpers';
@@ -693,6 +695,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
             </Section>
             <TechRemindersSection settings={settings} updateSettings={updateSettings} nested />
+            <NotificationRoutingSection settings={settings} updateSettings={updateSettings} users={users} nested />
             <CancellationPolicySection settings={settings} updateSettings={updateSettings} nested />
             <BookingCardPolicySection settings={settings} updateSettings={updateSettings} nested />
             </Section>
@@ -3799,6 +3802,136 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
 // Independent of the cancellation-history policy: require a card on file at
 // booking time for first-time clients and/or every online booking, with a
 // configurable deposit percentage. Schema lives on settings.bookingCardPolicy
+// Notification routing — who (which staff role) gets which internal alert on
+// which channel, plus master on/off for each customer-facing message. Reads /
+// writes settings.notificationRouting; enforced server-side in notifyByRouting
+// (internal) and customerNotifEnabled gates (customer). Defaults mirror today's
+// behavior, so nothing changes until an admin edits the grid.
+function NotificationRoutingSection({ settings, updateSettings, users = [], nested = false }) {
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState(null);
+
+  // How many active staff sit in each role (so the admin knows who a row reaches).
+  const roleCounts = {};
+  NOTIF_ROLES.forEach(r => { roleCounts[r] = 0; });
+  (users || []).forEach(u => {
+    const r = normalizeRole(u && u.role);
+    if (r && roleCounts[r] !== undefined) roleCounts[r] += 1;
+  });
+
+  async function persist(nextRouting) {
+    setSaving(true);
+    try {
+      await updateSettings({ ...settings, notificationRouting: nextRouting });
+      setSavedAt(Date.now());
+      setTimeout(() => setSavedAt(null), 1800);
+    } finally { setSaving(false); }
+  }
+
+  function toggleInternal(eventKey, role, channel) {
+    const current = resolveInternalRouting(settings, eventKey);
+    const nextEvent = {};
+    NOTIF_ROLES.forEach(r => { nextEvent[r] = { ...current[r] }; });
+    nextEvent[role][channel] = !nextEvent[role][channel];
+    const routing = settings.notificationRouting || {};
+    persist({ ...routing, internal: { ...(routing.internal || {}), [eventKey]: nextEvent } });
+  }
+
+  function toggleCustomer(eventKey) {
+    const enabled = isCustomerNotifEnabled(settings, eventKey);
+    const routing = settings.notificationRouting || {};
+    persist({ ...routing, customer: { ...(routing.customer || {}), [eventKey]: { enabled: !enabled } } });
+  }
+
+  const cellBtn = (on) => ({
+    width: 30, height: 30, borderRadius: 7, cursor: saving ? 'default' : 'pointer',
+    border: `1.5px solid ${on ? 'var(--pn-accent, #2D7A5F)' : 'var(--pn-border)'}`,
+    background: on ? 'var(--pn-accent, #2D7A5F)' : 'var(--pn-surface)',
+    color: on ? '#fff' : 'var(--pn-text-faint)', fontSize: 13, fontWeight: 700,
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit',
+  });
+
+  return (
+    <Section title="🔔 Notification routing" keywords="notification routing who gets alerts roles channels push email sms admin manager staff scheduler customer messages clock refund rating" nested={nested}>
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 14 }}>
+          Choose which staff role receives each internal alert, and on which channel. Defaults match today&apos;s setup (owners get everything). Each person is matched by their role; the count next to a role shows how many users it reaches.
+        </div>
+
+        {/* Role legend */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+          {NOTIF_ROLES.map(r => (
+            <span key={r} style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 999, padding: '3px 10px' }}>
+              {ROLE_LABELS_SHORT[r]} · {roleCounts[r]}
+            </span>
+          ))}
+          {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto', fontWeight: 600 }}>✓ Saved</span>}
+        </div>
+
+        {INTERNAL_EVENTS.map(ev => {
+          const routing = resolveInternalRouting(settings, ev.key);
+          return (
+            <div key={ev.key} style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 10, background: 'var(--pn-bg)' }}>
+              <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--pn-text)' }}>{ev.label}</div>
+              <div style={{ fontSize: 11.5, color: 'var(--pn-text-muted)', marginTop: 2, marginBottom: 10 }}>{ev.desc}</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      <th style={{ textAlign: 'left', padding: '2px 10px 6px 0', color: 'var(--pn-text-faint)', fontWeight: 600 }}>Role</th>
+                      {NOTIF_CHANNELS.map(ch => (
+                        <th key={ch} style={{ padding: '2px 8px 6px', color: 'var(--pn-text-faint)', fontWeight: 600 }}>{CHANNEL_LABELS[ch]}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {NOTIF_ROLES.map(role => (
+                      <tr key={role}>
+                        <td style={{ padding: '3px 10px 3px 0', color: 'var(--pn-text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          {ROLE_LABELS_SHORT[role]} <span style={{ color: 'var(--pn-text-faint)', fontWeight: 500 }}>· {roleCounts[role]}</span>
+                        </td>
+                        {NOTIF_CHANNELS.map(ch => (
+                          <td key={ch} style={{ padding: '3px 8px', textAlign: 'center' }}>
+                            <button type="button" disabled={saving}
+                              onClick={() => toggleInternal(ev.key, role, ch)}
+                              title={`${ROLE_LABELS_SHORT[role]} · ${CHANNEL_LABELS[ch]}`}
+                              style={cellBtn(routing[role][ch])}>
+                              {routing[role][ch] ? '✓' : ''}
+                            </button>
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* Customer messages — master on/off */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em', margin: '20px 0 8px' }}>Customer messages</div>
+        <div style={{ fontSize: 11.5, color: 'var(--pn-text-faint)', lineHeight: 1.5, marginBottom: 10 }}>
+          These go to the customer, so there&apos;s no per-role routing — just a master switch. Each customer&apos;s own email/SMS opt-in still applies on top.
+        </div>
+        {CUSTOMER_EVENTS.map(ev => {
+          const on = isCustomerNotifEnabled(settings, ev.key);
+          return (
+            <label key={ev.key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 8 }}>
+              <input type="checkbox" checked={on} disabled={saving} onChange={() => toggleCustomer(ev.key)} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontSize: 13, color: 'var(--pn-text)', fontWeight: 600, display: 'block' }}>{ev.label}</span>
+                <span style={{ fontSize: 11.5, color: 'var(--pn-text-muted)' }}>{ev.desc}</span>
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: on ? '#22c55e' : 'var(--pn-text-faint)' }}>{on ? 'On' : 'Off'}</span>
+            </label>
+          );
+        })}
+      </div>
+    </Section>
+  );
+}
+
 // — see src/lib/cancellationPolicy.js (resolveBookingCardPolicy). Enforced
 // server-side in submitOnlineBooking and surfaced in BookingScreen.
 function BookingCardPolicySection({ settings, updateSettings, nested = false }) {
