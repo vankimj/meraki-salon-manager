@@ -3,6 +3,8 @@ import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter
 import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
+import { computeNextOpening, computeSeatStart } from './seatTime';
+import ClientSearch from './ClientSearch';
 import { callFn, startTrace } from '../../lib/firebase';
 import CheckoutModal from '../checkout/CheckoutModal';
 import RefundModal from '../receipts/RefundModal';
@@ -213,10 +215,12 @@ function emailSuggestions(input) {
 }
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-function blankAppt(date, techName, startMins, clientName = '', serviceName = '') {
+function blankAppt(date, techName, startMins, clientName = '', serviceName = '', extra = {}) {
   return {
-    clientId: '',
+    clientId: extra.clientId || '',
     clientName: clientName,
+    clientPhone: extra.clientPhone || '',
+    clientEmail: extra.clientEmail || '',
     techName: techName || '',
     services: [{ name: serviceName, duration: 60, price: '' }],
     date: date,
@@ -444,37 +448,15 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     return bm === dm && bd === dd;
   });
 
-  // Earliest free start (minutes since midnight) for a tech TODAY, given their
-  // booked appointments + work hours — so seating a walk-in pre-fills the time
-  // to when they're actually next open instead of a static 9:00. No tech (Any)
-  // → the next open slot from now. Returns null if the tech is off / fully
-  // booked today, and the caller falls back to blankAppt's default.
+  // Earliest free start (minutes since midnight) for a tech TODAY, and the
+  // default start time for a seated walk-in. Both delegate to the pure,
+  // unit-tested helpers in ./seatTime (see seatTime.test.js) — passing the live
+  // component state + `now` so the logic stays in one tested place.
   function nextOpeningMins(techName, durationMins = 60) {
-    const today = todayStr();
-    const dow = new Date().toLocaleDateString('en-US', { weekday: 'short' });
-    const wd = techName ? empWorkDays[techName]?.[dow] : null;
-    if (wd && wd.on === false) return null;
-    const apptOpen  = strToMins(settings.apptHours?.open  || '09:00');
-    const apptClose = strToMins(settings.apptHours?.close || '20:00');
-    const techOpen  = Math.max(apptOpen,  wd?.start ? strToMins(wd.start) : apptOpen);
-    const techClose = Math.min(apptClose, wd?.end   ? strToMins(wd.end)   : apptClose);
-    const nowD = new Date();
-    const nowMins = nowD.getHours() * 60 + nowD.getMinutes();
-    const norm = s => String(s || '').trim().toLowerCase();
-    const busy = (techName ? appts.filter(a => a.date === today && norm(a.techName) === norm(techName)
-        && a.status !== 'cancelled' && a.status !== 'no_show' && a._deleted !== true) : [])
-      .map(a => {
-        const s = strToMins(a.startTime || '00:00');
-        const occ = (Array.isArray(a.services) ? a.services.reduce((sum, sv) => sum + (Number(sv.duration) || 0), 0) : 0) || (Number(a.duration) || 60);
-        return { s, e: s + occ };
-      });
-    const STEP = 15;
-    let m = Math.max(techOpen, nowMins);
-    if (m % STEP !== 0) m += STEP - (m % STEP);
-    for (; m + durationMins <= techClose; m += STEP) {
-      if (!busy.some(b => b.s < m + durationMins && b.e > m)) return m;
-    }
-    return null;
+    return computeNextOpening({ settings, empWorkDays, appts, now: new Date(), techName, durationMins, today: todayStr() });
+  }
+  function seatStartMins(techName, durationMins = 60) {
+    return computeSeatStart({ settings, empWorkDays, appts, now: new Date(), techName, durationMins, today: todayStr() });
   }
 
   async function handleSave(appt, original, pendingSeat) {
@@ -1089,15 +1071,17 @@ function openNew(techName, slotMins) {
             // Default the start time to the up-next tech's next opening today.
             const nSvc = services.find(s => s.name === entry.serviceName);
             const nDur = nSvc ? (resolveServicePricing(nSvc, null, employees.find(e => e.name === next.techName)).duration || 60) : 60;
-            const nStart = nextOpeningMins(next.techName, nDur);
+            const nStart = seatStartMins(next.techName, nDur);
             // Defer the turn credit AND the queue removal until the appointment is
             // actually saved (handleSave's pendingSeat path). If the user cancels
             // the modal, nothing happened — they stay in the queue and the rotation
             // doesn't advance. _turnCredited rides on the appt so a later checkout
-            // won't double-count the turn.
+            // won't double-count the turn. Carry the queue entry's existing client
+            // link + contact so the appt is prefilled (and saves without re-keying).
             setModal({
               appt: {
-                ...blankAppt(todayStr(), next.techName, nStart, entry.clientName, entry.serviceName),
+                ...blankAppt(todayStr(), next.techName, nStart, entry.clientName, entry.serviceName,
+                  { clientId: entry.clientId, clientPhone: entry.clientPhone, clientEmail: entry.clientEmail }),
                 _turnCredited: new Date().toISOString(),
               },
               original: null,
@@ -1114,11 +1098,14 @@ function openNew(techName, slotMins) {
             const sTech  = entry.techName === 'Any' ? '' : entry.techName;
             const sSvc   = services.find(s => s.name === entry.serviceName);
             const sDur   = sSvc ? (resolveServicePricing(sSvc, null, sTech ? employees.find(e => e.name === sTech) : null).duration || 60) : 60;
-            const sStart = nextOpeningMins(sTech, sDur);
+            const sStart = seatStartMins(sTech, sDur);
             // Defer the queue removal until the appointment saves (pendingSeat) so
             // cancelling the modal leaves the person in the queue. Manual assignment
             // doesn't pre-credit a turn — it's reconciled at checkout / Recount.
-            setModal({ appt: blankAppt(todayStr(), sTech, sStart, entry.clientName, entry.serviceName), original: null, mode: 'edit', pendingSeat: { entryId: entry.id } });
+            // Carry the queue entry's existing client link + contact so the appt
+            // is prefilled and saves without re-keying the customer.
+            setModal({ appt: blankAppt(todayStr(), sTech, sStart, entry.clientName, entry.serviceName,
+              { clientId: entry.clientId, clientPhone: entry.clientPhone, clientEmail: entry.clientEmail }), original: null, mode: 'edit', pendingSeat: { entryId: entry.id } });
           }}
           onRemove={async entry => { await removeWaitlistEntry(entry.id).catch(() => {}); }}
           onDone={async entry => { await updateWaitlistEntry(entry.id, { status: 'done' }).catch(() => {}); }}
@@ -3390,117 +3377,6 @@ function PhotoSection({ photosBefore, photosAfter, isView, onChange }) {
 }
 
 // ── Client search typeahead ───────────────────────────
-function ClientSearch({ clients, clientId, clientName, onChange }) {
-  const [query,   setQuery]   = useState('');
-  const [open,    setOpen]    = useState(false);
-  const wrapRef = useRef(null);
-
-  const selected = clients.find(c => c.id === clientId);
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  // Sort alphabetically client-side so the dropdown order is predictable
-  // even if the upstream `clients` collection is unsorted.
-  const sortedAll = [...clients].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  const filtered = query.length >= 1
-    ? sortedAll.filter(c => c.name.toLowerCase().includes(query.toLowerCase()) || (c.phone || '').includes(query)).slice(0, 50)
-    : sortedAll.slice(0, 100);
-
-  function selectClient(c) {
-    onChange({ clientId: c.id, clientName: c.name });
-    setQuery('');
-    setOpen(false);
-  }
-
-  function clearClient() {
-    onChange({ clientId: '', clientName: '' });
-    setQuery('');
-  }
-
-  if (selected) {
-    return (
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        ...inp, cursor: 'default', paddingTop: 6, paddingBottom: 6,
-        ...(selected.banned ? { background: 'var(--pn-danger-bg)', borderColor: '#fca5a5' } : {}),
-      }}>
-        {selected.banned && <span title="Banned client" style={{ fontSize: 14 }}>🚫</span>}
-        <span style={{
-          flex: 1, fontSize: 13,
-          color: selected.banned ? 'var(--pn-danger)' : 'var(--pn-text)',
-          fontWeight: selected.banned ? 600 : 400,
-        }}>{selected.name}{selected.banned && ' · Banned'}</span>
-        {selected.phone && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{displayPhone(selected.phone)}</span>}
-        <button onClick={clearClient} style={{ border: 'none', background: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1, flexShrink: 0 }}>×</button>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={wrapRef} style={{ position: 'relative' }}>
-      <input
-        value={clientId ? (clientName || '') : query}
-        onChange={e => {
-          const val = e.target.value;
-          setQuery(val);
-          setOpen(true);
-          if (!clientId) onChange({ clientId: '', clientName: val });
-        }}
-        onFocus={() => setOpen(true)}
-        placeholder="Search clients by name…"
-        style={inp}
-      />
-      {open && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: 'var(--pn-surface)', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 200, maxHeight: 320, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
-          {/* Walk-in / anonymous shortcut intentionally removed — every
-              appointment must have a real client record (with phone) per
-              the no-anonymous-customers rule. If the search returns no
-              match, use the "+ Create new client contact" button below
-              the picker to mint a real record on the spot. */}
-          {filtered.length === 0 && (
-            <div style={{ padding: '12px', fontSize: 12, color: 'var(--pn-text-muted)', textAlign: 'center', borderBottom: '1px solid var(--pn-border)' }}>
-              No matches{query ? ` for “${query}”` : ''}. Close this menu and add a <strong style={{ color: '#92400e' }}>phone or email</strong> below — we'll create a new profile when you save.
-            </div>
-          )}
-          {filtered.map(c => (
-            <div
-              key={c.id}
-              onMouseDown={() => selectClient(c)}
-              style={{
-                padding: '8px 12px', fontSize: 13, cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 8,
-                borderBottom: '1px solid var(--pn-border)',
-                background: c.banned ? 'var(--pn-danger-bg)' : 'transparent',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = c.banned ? 'var(--pn-danger-bg)' : 'var(--pn-surface-alt)'}
-              onMouseLeave={e => e.currentTarget.style.background = c.banned ? 'var(--pn-danger-bg)' : ''}
-            >
-              {c.banned && <span title="Banned client — do not accept bookings" style={{ fontSize: 13 }}>🚫</span>}
-              <span style={{
-                flex: 1,
-                color: c.banned ? 'var(--pn-danger)' : 'var(--pn-text)',
-                fontWeight: c.banned ? 600 : 400,
-              }}>
-                {c.name}
-                {c.banned && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em' }}>· Banned</span>}
-              </span>
-              {c.phone && <span style={{ fontSize: 11, color: c.banned ? 'var(--pn-danger)' : 'var(--pn-text-faint)' }}>{displayPhone(c.phone)}</span>}
-            </div>
-          ))}
-          {filtered.length === 0 && query && (
-            <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--pn-text-faint)' }}>No match — “{query}” will become a new client profile once you add a phone or email below.</div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Small components ──────────────────────────────────
 function StatusChip({ status }) {
