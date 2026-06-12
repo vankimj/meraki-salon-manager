@@ -364,6 +364,9 @@ export default function ScheduleScreen({ navigation }) {
         </TouchableOpacity>
         <View style={styles.dateCenter}>
           <Text style={styles.dateText}>{displayDate}</Text>
+          {/* TEMP build marker — confirms which JS bundle is live on the device.
+              Remove once the Queue button is verified on the iPad. */}
+          <Text style={{ fontSize: 12, fontWeight: '800', color: '#e11d48', marginTop: 2 }}>BUILD: QUEUE-1</Text>
           {view === 'day' && (
             <Text style={styles.apptCount}>
               {filtered.length} appt{filtered.length !== 1 ? 's' : ''}
