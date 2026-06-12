@@ -89,16 +89,27 @@ describe('computeSeatStart (seated-walk-in default time)', () => {
     expect(computeSeatStart(base(now))).toBe(M(14));
   });
 
-  it('after close → falls back to SALON OPEN (10am), NOT 9am', () => {
+  it('after close → falls back to NOW (11pm), NOT a past salon-open time or 9am', () => {
     const now = new Date(2026, 5, 15, 23, 0);
     const r = computeSeatStart(base(now));
-    expect(r).toBe(M(10));
+    expect(r).toBe(M(23));      // 11pm now — not 10am (past), not 9am
+    expect(r).not.toBe(M(10));
     expect(r).not.toBe(M(9));
   });
 
-  it('tech off → falls back to salon open (10am)', () => {
+  it('the exact reported case: 11:43pm → rounds up to 11:45pm (not 10am)', () => {
+    const now = new Date(2026, 5, 15, 23, 43);
+    expect(computeSeatStart(base(now))).toBe(M(23, 45));
+  });
+
+  it('tech off (midday) → falls back to NOW (2pm)', () => {
     const now = new Date(2026, 5, 15, 14, 0);
-    expect(computeSeatStart(base(now, { empWorkDays: { Yara: { [dowOf(now)]: { on: false } } } }))).toBe(M(10));
+    expect(computeSeatStart(base(now, { empWorkDays: { Yara: { [dowOf(now)]: { on: false } } } }))).toBe(M(14));
+  });
+
+  it('before open (8am, salon opens 10am) → the OPEN time (10am, future), via next-opening', () => {
+    const now = new Date(2026, 5, 15, 8, 0);
+    expect(computeSeatStart(base(now))).toBe(M(10));
   });
 
   it('REGRESSION: never returns 9am when the salon opens at 10am', () => {
@@ -107,7 +118,7 @@ describe('computeSeatStart (seated-walk-in default time)', () => {
     }
   });
 
-  it('salon closed today, midday → clamps to "now" (2pm), not 9am', () => {
+  it('salon closed today, midday → "now" (2pm), not 9am or a past open time', () => {
     const now = new Date(2026, 5, 15, 14, 0);
     expect(computeSeatStart({ ...base(now), settings: settingsFor(now, { closed: true }) })).toBe(M(14));
   });
