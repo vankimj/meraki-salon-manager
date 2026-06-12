@@ -5,13 +5,17 @@ import { subscribeCheckoutSession, fetchSettings, fetchSlides } from '../../lib/
 import QRCode from '../../components/QRCode';
 import KioskExitButton from '../../components/KioskExitButton';
 import KioskCheckout from './KioskCheckout';
+import WalkinKioskScreen from './WalkinKioskScreen';
 import useTenantAccess from '../../hooks/useTenantAccess';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
+import { resolveKioskView } from '../../lib/kioskWalkin';
 
-// Front-desk kiosk. Idle = TipFlow: a rotating display of each tech with a
-// Venmo (or social) QR so a waiting client can tip directly. When a tech "sends
-// to front desk" (writes data/checkoutSession status:pending) it takes over with
-// the customer-facing checkout (KioskCheckout), then returns to the TipFlow idle.
+// Front-desk kiosk. The idle screen is configurable (Admin → Kiosk →
+// settings.kioskDefaultMode): 'walkin' shows the customer walk-in sign-in,
+// 'tipflow'/'checkout' show the TipFlow tech display. Whatever the idle, when a
+// tech "sends to front desk" (writes data/checkoutSession status:pending) it
+// takes over with the customer-facing checkout (KioskCheckout), then returns to
+// the configured idle. Default mode is 'walkin'.
 export default function KioskScreen({ navigation }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
@@ -42,18 +46,19 @@ export default function KioskScreen({ navigation }) {
     return () => parent?.setOptions({ tabBarStyle: undefined });
   }, [navigation]));
 
-  // 'confirmed' = a cash-review handoff the client OK'd; keep the kiosk on the
-  // "pay at the front desk" screen until the web records it and clears the session.
-  const active = session && (session.status === 'pending' || session.status === 'paying' || session.status === 'confirmed');
-
   if (session === undefined || settings === null) {
     return <View style={styles.center}><ActivityIndicator color={theme.green} size="large" /></View>;
   }
+  // 'checkout' = a live session (pending/paying/confirmed) takes over; else the
+  // configured idle ('walkin' → walk-in sign-in, otherwise TipFlow).
+  const view = resolveKioskView(settings, session);
   return (
     <View style={{ flex: 1 }}>
-      {active
+      {view === 'checkout'
         ? <KioskCheckout key={session.createdAt} session={session} settings={settings} email={email} />
-        : <KioskIdle styles={styles} theme={theme} />}
+        : view === 'walkin'
+          ? <WalkinKioskScreen />
+          : <KioskIdle styles={styles} theme={theme} />}
       <View style={styles.kioskExit}><KioskExitButton onExit={() => navigation.goBack()} /></View>
     </View>
   );

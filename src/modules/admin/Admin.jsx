@@ -819,6 +819,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
             </Section>
             {/* ══ end GROUP 4 ══ */}
 
+            <KioskModeSection />
             <TipFlowSection />
             <BookingSection bookingCfg={bookingCfg} setBookingCfg={setBookingCfg} />
 
@@ -951,6 +952,50 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// Front-desk kiosk idle screen (the mobile/iPad kiosk). 'walkin' shows the
+// customer walk-in sign-in; 'tipflow'/'checkout' show the TipFlow tech display.
+// A checkout session always takes over, then returns to this idle. Read by the
+// mobile KioskScreen (resolveKioskView); editable from either app.
+function KioskModeSection() {
+  const { settings, updateSettings, showToast } = useApp();
+  const [saving, setSaving] = useState(false);
+  const mode = settings.kioskDefaultMode || 'walkin';
+  const OPTIONS = [
+    { key: 'walkin',   label: 'Walk-in sign-in', desc: 'Customers sign into the queue' },
+    { key: 'tipflow',  label: 'TipFlow',         desc: 'Rotating tech display + tip QR' },
+    { key: 'checkout', label: 'Checkout',        desc: 'TipFlow idle, focused on checkout' },
+  ];
+  async function pick(m) {
+    if (m === mode || saving) return;
+    setSaving(true);
+    try { await updateSettings({ kioskDefaultMode: m }); logActivity('kiosk_mode_set', m); showToast('Kiosk default updated'); }
+    catch (e) { showToast('Save failed: ' + (e?.message || '')); }
+    finally { setSaving(false); }
+  }
+  return (
+    <Section title="🖥️ Kiosk idle screen" keywords="kiosk walk-in walkin tipflow checkout default front desk ipad idle queue">
+      <div style={{ padding: '8px 16px 14px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginBottom: 10, lineHeight: 1.5 }}>
+          What the front-desk kiosk (iPad app) shows when no checkout is happening. A checkout always takes over automatically, then returns here.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {OPTIONS.map(o => {
+            const on = mode === o.key;
+            return (
+              <button key={o.key} onClick={() => pick(o.key)} disabled={saving}
+                style={{ textAlign: 'left', padding: '11px 13px', borderRadius: 10, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit',
+                  border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'rgba(45,122,95,.08)' : 'var(--pn-surface)' }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: on ? '#2D7A5F' : 'var(--pn-text)' }}>{on ? '● ' : ''}{o.label}</div>
+                <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 2 }}>{o.desc}</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </Section>
   );
 }
 

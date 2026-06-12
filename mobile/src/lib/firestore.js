@@ -987,6 +987,21 @@ export async function removeWaitlistEntry(id) {
   await deleteDoc(doc(tenantCol('waitlist'), id));
 }
 
+// Public kiosk walk-in callables — the SAME guarded CFs the web /?queue uses, so
+// the native front-desk kiosk walk-in flow behaves identically. kioskRegisterClient:
+// call with { phone } to look up; on a miss, re-call with first+last name to create.
+// Returns minimal slices only ({ matched, clientId, firstName, created, banned?,
+// todayAppt? }) — never another client's PII. kioskWalkinOptions: server-side
+// availability for a service (+ optional requested tech).
+export async function kioskRegisterClient({ phone, firstName, lastName, hp } = {}) {
+  const res = await callFn('kioskRegisterClient')({ tenantId: getCurrentTenant(), phone, firstName, lastName, hp });
+  return res?.data || null;
+}
+export async function kioskWalkinOptions({ serviceId, requestedTechName } = {}) {
+  const res = await callFn('kioskWalkinOptions')({ tenantId: getCurrentTenant(), serviceId, requestedTechName });
+  return res?.data || null;
+}
+
 // ── HR: bonuses / performance reviews / payroll (read) ──
 export async function fetchBonuses() {
   const snap = await getDocs(query(tenantCol('bonuses'), orderBy('createdAt', 'desc')));

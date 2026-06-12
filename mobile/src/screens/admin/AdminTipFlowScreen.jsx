@@ -5,8 +5,14 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { fetchSlidesDoc, saveSlides, fetchEmployees } from '../../lib/firestore';
+import { fetchSlidesDoc, saveSlides, fetchEmployees, fetchSettings, updateSettings } from '../../lib/firestore';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
+
+const KIOSK_MODE_OPTIONS = [
+  { key: 'walkin',  label: 'Walk-in sign-in', desc: 'Customers sign into the queue' },
+  { key: 'tipflow', label: 'TipFlow',         desc: 'Rotating tech display + tip QR' },
+  { key: 'checkout',label: 'Checkout',        desc: 'TipFlow idle, focused on checkout' },
+];
 
 const cleanHandle = (v) => (v || '').trim().replace(/^@+/, '').replace(/\s+/g, '');
 const normUrl = (v) => { const s = (v || '').trim(); if (!s) return ''; return /^https?:\/\//i.test(s) ? s : `https://${s}`; };
@@ -21,12 +27,24 @@ export default function AdminTipFlowScreen() {
   const [def, setDef] = useState(0);
   const [saving, setSaving] = useState(false);
   const [editIndex, setEditIndex] = useState(-2); // -2 closed, -1 new, >=0 editing
+  const [kioskMode, setKioskMode] = useState('walkin');
+  const [savingMode, setSavingMode] = useState(false);
 
   const load = useCallback(async () => {
     const d = await fetchSlidesDoc();
     setSlides(d.slides); setDef(d.def);
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { fetchSettings().then(s => setKioskMode(s?.kioskDefaultMode || 'walkin')).catch(() => {}); }, []);
+
+  async function pickKioskMode(mode) {
+    if (mode === kioskMode || savingMode) return;
+    const prev = kioskMode;
+    setKioskMode(mode); setSavingMode(true);
+    try { await updateSettings({ kioskDefaultMode: mode }); }
+    catch (e) { setKioskMode(prev); Alert.alert("Couldn't save", e?.message || 'Try again.'); }
+    finally { setSavingMode(false); }
+  }
 
   async function persist(nextSlides, nextDef) {
     setSaving(true);
@@ -62,6 +80,22 @@ export default function AdminTipFlowScreen() {
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        <Text style={styles.sectionTitle}>Kiosk idle screen</Text>
+        <Text style={styles.note}>What the front-desk kiosk shows when no checkout is happening. (A checkout always takes over automatically, then returns here.)</Text>
+        <View style={styles.modeWrap}>
+          {KIOSK_MODE_OPTIONS.map(o => {
+            const on = kioskMode === o.key;
+            return (
+              <TouchableOpacity key={o.key} style={[styles.modeCard, on && styles.modeCardOn]} onPress={() => pickKioskMode(o.key)} disabled={savingMode} activeOpacity={0.85}>
+                <Text style={[styles.modeLabel, on && styles.modeLabelOn]}>{on ? '● ' : ''}{o.label}</Text>
+                <Text style={styles.modeDesc}>{o.desc}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        {savingMode && <Text style={styles.note}>Saving…</Text>}
+
+        <Text style={[styles.sectionTitle, { marginTop: 22 }]}>TipFlow slides</Text>
         <Text style={styles.note}>Slides show on the front-desk kiosk while it's idle — each tech's photo with a Venmo (or social) QR a waiting client can tip with.</Text>
 
         {slides.length === 0 && <Text style={styles.empty}>No slides yet. Add your first below.</Text>}
@@ -202,6 +236,13 @@ function SlideEditor({ slide, onClose, onSave, styles, theme }) {
 const makeStyles = (t) => StyleSheet.create({
   center:   { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: t.bg },
   note:     { fontSize: 12.5, color: t.textFaint, lineHeight: 18, marginBottom: 14 },
+  sectionTitle:{ fontSize: 16, fontWeight: '800', color: t.text, marginBottom: 6 },
+  modeWrap: { gap: 8, marginBottom: 6 },
+  modeCard: { backgroundColor: t.surface, borderRadius: 12, padding: 13, borderWidth: 1.5, borderColor: t.border },
+  modeCardOn:{ borderColor: t.green, backgroundColor: t.blueSoft },
+  modeLabel:{ fontSize: 15, fontWeight: '700', color: t.text },
+  modeLabelOn:{ color: t.green },
+  modeDesc: { fontSize: 12.5, color: t.textMuted, marginTop: 3 },
   empty:    { fontSize: 14, color: t.textMuted, textAlign: 'center', paddingVertical: 20 },
   row:      { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: t.surface, borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.border },
   thumb:    { width: 52, height: 64, borderRadius: 8, backgroundColor: t.surfaceAlt },
