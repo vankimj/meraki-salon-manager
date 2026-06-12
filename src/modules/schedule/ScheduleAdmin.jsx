@@ -20,6 +20,7 @@ import { resolveServicePricing } from '../../utils/serviceHelpers';
 import VoiceAssistant from '../voice/VoiceAssistant';
 import NotesEditor from '../../components/NotesEditor';
 import CoachMark from '../../components/CoachMark';
+import TurnHelpModal from '../../components/TurnHelpModal';
 
 // No baked-in tech roster. Multi-tenant SaaS — tech columns come from the
 // tenant's employees collection. While employees load, columns are empty
@@ -1423,6 +1424,7 @@ function fmtClockIn(iso) {
 // ── Turn roster panel — today's walk-in rotation ──────
 function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const inRoster = new Set(roster.map(r => r.techId));
   const available = (allTechs || []).filter(t => !inRoster.has(t.id));
   const sorted = [...roster].sort((a, b) => {
@@ -1437,8 +1439,13 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)', gap: 10, flexWrap: 'wrap' }}>
         <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', flex: 1, minWidth: 0 }}>
           🎯 Walk-in turn order
+          <button onClick={() => setShowHelp(true)} title="How the turn system works"
+            style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--pn-info)', background: 'var(--pn-info-bg)', border: '1px solid #bfdbfe', borderRadius: 20, padding: '2px 9px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            ? How turns work
+          </button>
           {next && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', borderRadius: 20, padding: '2px 10px', border: '1px solid #c6e8d5' }}>Next up: {next.techName}</span>}
         </span>
+        {showHelp && <TurnHelpModal onClose={() => setShowHelp(false)} />}
         <div style={{ position: 'relative' }}>
           <button onClick={() => setShowPicker(o => !o)} disabled={available.length === 0}
             style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: available.length === 0 ? '#ccc' : 'var(--tm-primary, #2D7A5F)', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: available.length === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>

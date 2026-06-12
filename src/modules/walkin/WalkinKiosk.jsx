@@ -8,6 +8,7 @@ import {
 } from '../../lib/firestore';
 import { logActivity } from '../../lib/logger';
 import { resolveServicePricing } from '../../utils/serviceHelpers';
+import TurnHelpModal from '../../components/TurnHelpModal';
 
 function todayStr() {
   const d = new Date();
@@ -97,6 +98,7 @@ export default function WalkinKiosk() {
   const [seatPrompt, setSeatPrompt] = useState(null); // { entry, techName }
   const [now, setNow] = useState(new Date());
   const [fullscreen, setFullscreen] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const containerRef = useRef(null);
 
   if (!isAdmin && !isScheduler) {
@@ -239,12 +241,17 @@ export default function WalkinKiosk() {
           <div style={{ fontSize: fullscreen ? 24 : 18, fontWeight: 700, color: fullscreen ? '#fff' : '#6a4fa0', fontVariantNumeric: 'tabular-nums' }}>
             {fmtClock(now)}
           </div>
+          <button onClick={() => setShowHelp(true)} title="How the turn system works"
+            style={{ fontSize: 14, padding: '8px 14px', borderRadius: 10, border: 'none', background: fullscreen ? 'rgba(255,255,255,.15)' : '#f3eafc', color: fullscreen ? '#fff' : '#6a4fa0', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            ? How turns work
+          </button>
           <button onClick={toggleFullscreen}
             style={{ fontSize: 14, padding: '8px 14px', borderRadius: 10, border: 'none', background: fullscreen ? 'rgba(255,255,255,.15)' : '#f3eafc', color: fullscreen ? '#fff' : '#6a4fa0', fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
             {fullscreen ? '✕ Exit fullscreen' : '⛶ Fullscreen'}
           </button>
         </div>
       </div>
+      {showHelp && <TurnHelpModal onClose={() => setShowHelp(false)} />}
 
       {/* Main grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18 }}>

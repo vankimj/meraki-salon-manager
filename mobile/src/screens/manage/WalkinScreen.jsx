@@ -10,6 +10,7 @@ import {
 const fmtTurns = (n) => { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 import { playChime } from '../../lib/chime';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
+import { TURN_HELP } from '../../lib/turnHelp';
 
 // Walk-in kiosk: today's turn rotation (next tech up = fewest turns) +
 // a waitlist. Front-desk tool — any staff can operate it.
@@ -34,6 +35,7 @@ export default function WalkinScreen() {
   const [seatWeight, setSeatWeight] = useState(1);        // numeric turn weight (partial-turns mode)
   const [seatRequested, setSeatRequested] = useState(false);
   const [lastSeat, setLastSeat] = useState(null);         // { entryId, techId, delta, clientName, techName } — undo target
+  const [showHelp, setShowHelp] = useState(false);        // "how turns work" explainer
 
   // Auto-dismiss the undo banner after a few seconds.
   useEffect(() => {
@@ -242,7 +244,14 @@ export default function WalkinScreen() {
       keyExtractor={(t) => t.techId}
       contentContainerStyle={{ padding: 14, paddingBottom: 40 }}
       refreshControl={<RefreshControl refreshing={false} onRefresh={load} tintColor={theme.green} />}
-      ListHeaderComponent={<Text style={styles.section}>Rotation — next up first</Text>}
+      ListHeaderComponent={
+        <View style={styles.sectionRow}>
+          <Text style={styles.section}>Rotation — next up first</Text>
+          <TouchableOpacity style={styles.helpBtn} onPress={() => setShowHelp(true)}>
+            <Text style={styles.helpBtnText}>? How turns work</Text>
+          </TouchableOpacity>
+        </View>
+      }
       ListEmptyComponent={<Text style={styles.empty}>No techs clocked in yet — they appear here automatically when they clock in at the Clock Kiosk. Or add one manually below.</Text>}
       renderItem={({ item, index }) => {
         const isNext = index === 0 && !item.away;
@@ -319,6 +328,47 @@ export default function WalkinScreen() {
         </TouchableOpacity>
       </View>
     )}
+
+    <Modal visible={showHelp} transparent animationType="slide" onRequestClose={() => setShowHelp(false)}>
+      <View style={styles.helpBackdrop}>
+        <View style={styles.helpSheet}>
+          <View style={styles.helpHead}>
+            <Text style={styles.helpTitle}>🔄 {TURN_HELP.title}</Text>
+            <TouchableOpacity onPress={() => setShowHelp(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Text style={styles.helpClose}>✕</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 32 }}>
+            <Text style={styles.helpIntro}>{TURN_HELP.intro}</Text>
+            {TURN_HELP.sections.map((s, i) => (
+              <View key={i} style={{ marginTop: 18 }}>
+                <Text style={styles.helpH}>{s.h}</Text>
+                {(s.p || []).map((para, j) => <Text key={j} style={styles.helpP}>{para}</Text>)}
+                {(s.bullets || []).map((b, j) => (
+                  <View key={j} style={styles.helpBulletRow}>
+                    <Text style={styles.helpBulletDot}>•</Text>
+                    <Text style={styles.helpBulletText}>{b}</Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+            <Text style={[styles.helpH, { marginTop: 24 }]}>Examples</Text>
+            {TURN_HELP.examples.map((ex, i) => (
+              <View key={i} style={styles.helpExample}>
+                <Text style={styles.helpExampleTitle}>{i + 1}. {ex.title}</Text>
+                {ex.lines.map((ln, j) => (
+                  <View key={j} style={styles.helpExLineRow}>
+                    <Text style={styles.helpExArrow}>›</Text>
+                    <Text style={styles.helpExLine}>{ln}</Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+            <Text style={styles.helpFooter}>{TURN_HELP.footer}</Text>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
 
     <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setAdding(false)}>
@@ -490,6 +540,26 @@ const makeStyles = (t) => StyleSheet.create({
   undoText:   { flex: 1, color: t.bg, fontSize: 14, fontWeight: '600' },
   undoBtn:    { backgroundColor: t.green, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
   undoBtnText:{ color: '#fff', fontSize: 14, fontWeight: '800' },
+  sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, marginBottom: 8 },
+  helpBtn:    { backgroundColor: t.blueSoft, borderWidth: 1, borderColor: t.blue, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 6 },
+  helpBtnText:{ color: t.blue, fontWeight: '700', fontSize: 12 },
+  helpBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.45)', justifyContent: 'flex-end' },
+  helpSheet:  { backgroundColor: t.bg, borderTopLeftRadius: 18, borderTopRightRadius: 18, maxHeight: '88%' },
+  helpHead:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: t.border },
+  helpTitle:  { fontSize: 17, fontWeight: '800', color: t.text, flex: 1 },
+  helpClose:  { fontSize: 18, color: t.textMuted, fontWeight: '700', paddingLeft: 12 },
+  helpIntro:  { fontSize: 14, lineHeight: 21, color: t.text },
+  helpH:      { fontSize: 14, fontWeight: '800', color: t.green, marginBottom: 6 },
+  helpP:      { fontSize: 13.5, lineHeight: 20, color: t.textMuted, marginBottom: 6 },
+  helpBulletRow: { flexDirection: 'row', gap: 8, marginBottom: 5, paddingRight: 4 },
+  helpBulletDot: { fontSize: 14, color: t.green, lineHeight: 20 },
+  helpBulletText:{ flex: 1, fontSize: 13.5, lineHeight: 20, color: t.textMuted },
+  helpExample: { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 12, padding: 14, marginBottom: 10 },
+  helpExampleTitle: { fontSize: 13.5, fontWeight: '700', color: t.text, marginBottom: 8 },
+  helpExLineRow: { flexDirection: 'row', gap: 8, marginBottom: 5 },
+  helpExArrow: { color: t.green, fontWeight: '800', fontSize: 14, lineHeight: 19 },
+  helpExLine: { flex: 1, fontSize: 13, lineHeight: 19, color: t.textMuted },
+  helpFooter: { fontSize: 13, fontStyle: 'italic', color: t.textFaint, marginTop: 14, lineHeight: 19 },
   fieldLbl:   { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
   inputFull:  { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   foundBanner:{ backgroundColor: t.greenSoft, borderRadius: 10, padding: 10, marginTop: 8, borderWidth: 1, borderColor: t.green },
