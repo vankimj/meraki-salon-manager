@@ -2658,6 +2658,7 @@ function LaneBreakdownCard({ eyebrow, tech, startMins, endMins, items, editorial
 
 function SuccessScreen({ appts, techs, webCfg }) {
   const a = Array.isArray(appts) ? appts[0] : appts;
+  const group = Array.isArray(a?._group) && a._group.length > 1 ? a._group : null;
   const tech = a?._tech || techs?.find(t => t.id === a?.techId) || null;
   const cartItems = a?._cartItems || [];
   const firstSvc = cartItems[0]?.service;
@@ -2683,13 +2684,51 @@ function SuccessScreen({ appts, techs, webCfg }) {
           </div>
           <div style={{ fontSize: 24, fontWeight: 800, color: '#1a1a1a', marginBottom: 6 }}>You're booked!</div>
           <div style={{ fontSize: 14, color: '#888', lineHeight: 1.7 }}>
-            See you on <strong style={{ color: '#333' }}>{fmtDate(a?.date)}</strong> at <strong style={{ color: '#333' }}>{minsToStr(strToMins(a?.startTime))}</strong>
+            {group ? (
+              <>Your group of <strong style={{ color: '#333' }}>{group.length}</strong> is set for <strong style={{ color: '#333' }}>{fmtDate(a?.date)}</strong> — everyone within ~15 minutes, each with their own stylist.</>
+            ) : (
+              <>See you on <strong style={{ color: '#333' }}>{fmtDate(a?.date)}</strong> at <strong style={{ color: '#333' }}>{minsToStr(strToMins(a?.startTime))}</strong></>
+            )}
             {sendEmail && (
               <><br /><span style={{ fontSize: 12, color: '#bbb' }}>Confirmation sent to {sendEmail}</span></>
             )}
           </div>
         </div>
 
+        {group ? (
+          <div style={{ background: '#fff', borderRadius: 14, padding: '6px 18px', boxShadow: '0 2px 8px rgba(0,0,0,.06)', marginBottom: 12 }}>
+            {group.map((g, gi) => {
+              const gTech = techs?.find(t => t.id === g.techId) || null;
+              const svcNames = (Array.isArray(g.services) ? g.services : [])
+                .filter(s => !s.isRemoval).map(s => s.name);
+              const hasRemoval = (Array.isArray(g.services) ? g.services : []).some(s => s.isRemoval);
+              const noPref = g.techRequestType === 'auto';
+              return (
+                <div key={g.id || gi} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, padding: '12px 0', borderBottom: gi < group.length - 1 ? '1px solid #f5f5f5' : 'none' }}>
+                  {noPref
+                    ? <span style={{ fontSize: 18, width: 30, textAlign: 'center', flexShrink: 0, marginTop: 1 }}>👩‍💼</span>
+                    : (gTech ? <TechAvatar tech={gTech} size={30} /> : <span style={{ fontSize: 18, width: 30, textAlign: 'center', flexShrink: 0, marginTop: 1 }}>👩‍💼</span>)}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>
+                        {g.clientName || `Guest ${gi + 1}`}{gi === 0 ? <span style={{ fontSize: 11, fontWeight: 600, color: '#aaa' }}> · organizer</span> : null}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tm-primary, #2D7A5F)', whiteSpace: 'nowrap' }}>{minsToStr(strToMins(g.startTime))}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                      {noPref ? 'No preference' : `with ${g.techName}`}
+                    </div>
+                    {svcNames.length > 0 && (
+                      <div style={{ fontSize: 12, color: '#666', marginTop: 3 }}>
+                        {svcNames.join(' · ')}{hasRemoval ? ' · removal' : ''}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
         <div style={{ background: '#fff', borderRadius: 14, padding: '14px 18px', boxShadow: '0 2px 8px rgba(0,0,0,.06)', marginBottom: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
             <ServiceThumb svc={firstSvc} color={color} />
@@ -2725,6 +2764,7 @@ function SuccessScreen({ appts, techs, webCfg }) {
             </div>
           )}
         </div>
+        )}
 
         {/* Salon contact card */}
         <div style={{ background: '#fff', borderRadius: 16, padding: '8px 20px', boxShadow: '0 2px 8px rgba(0,0,0,.06)', marginBottom: 16 }}>
