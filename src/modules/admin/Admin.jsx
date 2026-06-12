@@ -16,7 +16,7 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
          saveReviewReceived, findBusinessByAddress,
          subscribeGoogleBusinessAuth, startGoogleBusinessAuth,
          syncGoogleBusinessReviews, disconnectGoogleBusiness,
-         subscribeGoogleReviews } from '../../lib/firestore';
+         subscribeGoogleReviews, subscribeCheckoutSession, clearCheckoutSession } from '../../lib/firestore';
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
@@ -962,7 +962,21 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 function KioskModeSection() {
   const { settings, updateSettings, showToast } = useApp();
   const [saving, setSaving] = useState(false);
+  const [coStatus, setCoStatus] = useState('idle'); // live front-desk checkout status
+  const [clearing, setClearing] = useState(false);
   const mode = settings.kioskDefaultMode || 'walkin';
+
+  useEffect(() => subscribeCheckoutSession(d => setCoStatus(d?.status || 'idle')), []);
+  const coActive = coStatus === 'pending' || coStatus === 'paying' || coStatus === 'confirmed';
+
+  async function clearStuckCheckout() {
+    if (clearing) return;
+    if (!window.confirm('Clear the front-desk checkout? The kiosk returns to its idle screen and the in-progress sale is dropped (not recorded).')) return;
+    setClearing(true);
+    try { await clearCheckoutSession(); logActivity('kiosk_checkout_cleared', coStatus); showToast('Front-desk checkout cleared'); }
+    catch (e) { showToast('Clear failed: ' + (e?.message || '')); }
+    finally { setClearing(false); }
+  }
   const OPTIONS = [
     { key: 'walkin',   label: 'Walk-in sign-in', desc: 'Customers sign into the queue' },
     { key: 'tipflow',  label: 'TipFlow',         desc: 'Rotating tech display + tip QR' },
@@ -993,6 +1007,21 @@ function KioskModeSection() {
               </button>
             );
           })}
+        </div>
+
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--pn-border)' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 4 }}>Front-desk checkout</div>
+          {coActive ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12.5, color: '#b45309', fontWeight: 600 }}>⚠️ A checkout is in progress on the kiosk ({coStatus}).</span>
+              <button onClick={clearStuckCheckout} disabled={clearing}
+                style={{ padding: '7px 14px', borderRadius: 9, border: '1.5px solid #ef4444', background: 'var(--pn-surface)', color: '#ef4444', fontSize: 13, fontWeight: 700, cursor: clearing ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+                {clearing ? 'Clearing…' : 'Clear stuck checkout'}
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12.5, color: 'var(--pn-text-faint)' }}>No checkout in progress. If the kiosk ever gets stuck on a checkout, a “Clear stuck checkout” button appears here.</div>
+          )}
         </div>
       </div>
     </Section>

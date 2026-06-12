@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { fetchSlidesDoc, saveSlides, fetchEmployees, fetchSettings, updateSettings } from '../../lib/firestore';
+import { fetchSlidesDoc, saveSlides, fetchEmployees, fetchSettings, updateSettings, subscribeCheckoutSession, clearCheckoutSession } from '../../lib/firestore';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 const KIOSK_MODE_OPTIONS = [
@@ -29,6 +29,8 @@ export default function AdminTipFlowScreen() {
   const [editIndex, setEditIndex] = useState(-2); // -2 closed, -1 new, >=0 editing
   const [kioskMode, setKioskMode] = useState('walkin');
   const [savingMode, setSavingMode] = useState(false);
+  const [coStatus, setCoStatus] = useState('idle');
+  const [clearing, setClearing] = useState(false);
 
   const load = useCallback(async () => {
     const d = await fetchSlidesDoc();
@@ -36,6 +38,19 @@ export default function AdminTipFlowScreen() {
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { fetchSettings().then(s => setKioskMode(s?.kioskDefaultMode || 'walkin')).catch(() => {}); }, []);
+  useEffect(() => subscribeCheckoutSession(d => setCoStatus(d?.status || 'idle')), []);
+  const coActive = coStatus === 'pending' || coStatus === 'paying' || coStatus === 'confirmed';
+
+  function clearStuckCheckout() {
+    Alert.alert('Clear the front-desk checkout?', 'The kiosk returns to its idle screen and the in-progress sale is dropped (not recorded).', [
+      { text: 'Keep it', style: 'cancel' },
+      { text: 'Clear checkout', style: 'destructive', onPress: async () => {
+        setClearing(true);
+        try { await clearCheckoutSession(); } catch (e) { Alert.alert("Couldn't clear", e?.message || 'Try again.'); }
+        finally { setClearing(false); }
+      } },
+    ]);
+  }
 
   async function pickKioskMode(mode) {
     if (mode === kioskMode || savingMode) return;
@@ -94,6 +109,20 @@ export default function AdminTipFlowScreen() {
           })}
         </View>
         {savingMode && <Text style={styles.note}>Saving…</Text>}
+
+        <View style={styles.coBox}>
+          <Text style={styles.coTitle}>Front-desk checkout</Text>
+          {coActive ? (
+            <>
+              <Text style={styles.coWarn}>⚠️ A checkout is in progress on the kiosk ({coStatus}).</Text>
+              <TouchableOpacity style={[styles.coClearBtn, clearing && { opacity: 0.5 }]} onPress={clearStuckCheckout} disabled={clearing}>
+                <Text style={styles.coClearText}>{clearing ? 'Clearing…' : 'Clear stuck checkout'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <Text style={styles.coIdle}>No checkout in progress. If the kiosk ever gets stuck on a checkout, a “Clear stuck checkout” button appears here.</Text>
+          )}
+        </View>
 
         <Text style={[styles.sectionTitle, { marginTop: 22 }]}>TipFlow slides</Text>
         <Text style={styles.note}>Slides show on the front-desk kiosk while it's idle — each tech's photo with a Venmo (or social) QR a waiting client can tip with.</Text>
@@ -243,6 +272,12 @@ const makeStyles = (t) => StyleSheet.create({
   modeLabel:{ fontSize: 15, fontWeight: '700', color: t.text },
   modeLabelOn:{ color: t.green },
   modeDesc: { fontSize: 12.5, color: t.textMuted, marginTop: 3 },
+  coBox:    { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: t.border },
+  coTitle:  { fontSize: 13.5, fontWeight: '800', color: t.text, marginBottom: 5 },
+  coWarn:   { fontSize: 12.5, color: '#b45309', fontWeight: '600', marginBottom: 8 },
+  coIdle:   { fontSize: 12.5, color: t.textFaint, lineHeight: 18 },
+  coClearBtn:{ alignSelf: 'flex-start', borderWidth: 1.5, borderColor: t.danger, borderRadius: 9, paddingVertical: 8, paddingHorizontal: 14 },
+  coClearText:{ color: t.danger, fontWeight: '800', fontSize: 13 },
   empty:    { fontSize: 14, color: t.textMuted, textAlign: 'center', paddingVertical: 20 },
   row:      { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: t.surface, borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.border },
   thumb:    { width: 52, height: 64, borderRadius: 8, backgroundColor: t.surfaceAlt },
