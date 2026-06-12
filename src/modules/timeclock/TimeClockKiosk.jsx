@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { fetchEmployees, fetchKioskClockStatus, fetchTenantTimezone } from '../../lib/firestore';
 import { TENANT_ID } from '../../lib/tenant';
 import { EmpAvatar } from '../employees/EmployeesAdmin';
+import { BUILD_SHA } from '../../lib/version';
 
 // Public iPad kiosk for tech clock-in/out + breaks. Auth = 4-digit PIN per
 // tech (server-verified by clockEvent callable with via='kiosk'). No Firebase
@@ -89,6 +90,7 @@ export default function TimeClockKiosk() {
   const [doneInfo,   setDoneInfo]   = useState(null);  // { name, label }
   const [noPinName,  setNoPinName]  = useState(null);  // tech tapped without a PIN set
   const [tz,         setTz]         = useState(null);  // tenant timezone (settings)
+  const [fetchInfo,  setFetchInfo]  = useState({ count: null, error: null }); // diagnostic
   // Date key MUST be computed in the TENANT's timezone so it matches the doc the
   // server (clockEvent) writes — the iPad's own timezone may differ, which would
   // otherwise subscribe us to the wrong day's doc and show everyone clocked out
@@ -112,8 +114,8 @@ export default function TimeClockKiosk() {
   // interval + right after a clock action (onSuccess) so the board stays current.
   const loadStatus = useCallback(() => {
     fetchKioskClockStatus(dateKey)
-      .then(r => setEntries(Array.isArray(r?.entries) ? r.entries : []))
-      .catch(e => console.warn('[timeclock] status fetch failed:', e?.message));
+      .then(r => { const list = Array.isArray(r?.entries) ? r.entries : []; setEntries(list); setFetchInfo({ count: list.length, error: null }); })
+      .catch(e => { setFetchInfo({ count: null, error: e?.message || 'failed' }); console.warn('[timeclock] status fetch failed:', e?.message); });
   }, [dateKey]);
   useEffect(() => {
     loadStatus();
@@ -220,6 +222,15 @@ export default function TimeClockKiosk() {
       {noPinName && (
         <NoPinOverlay name={noPinName} onDismiss={() => setNoPinName(null)} />
       )}
+
+      {/* Diagnostic footer — confirms which build is running + that the live
+          clock-status fetch works (count + how many it computed as clocked in). */}
+      <div style={{ position: 'fixed', bottom: 4, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,.4)', pointerEvents: 'none' }}>
+        build {BUILD_SHA} · {dateKey} · {fetchInfo.error
+          ? `fetch error: ${fetchInfo.error}`
+          : fetchInfo.count == null ? 'loading…'
+          : `${fetchInfo.count} on file · ${entries.filter(e => computeState(e?.events || []) !== 'out').length} clocked in`}
+      </div>
     </div>
   );
 }
