@@ -24,6 +24,9 @@ export const FLOW_DEFAULTS = {
   // Multi-lane behavior (cart with both a categoryExclusive mani + pedi).
   multiLaneShape:         'back-to-back',   // 'back-to-back' | 'simultaneous' | 'ask'
 
+  // Group booking: let 2–6 people book together (distinct techs, ±15 min).
+  allowGroupBooking:      false,
+
   // Removal modal cadence.
   removalPromptMode:      'always',         // 'always' | 'first-only' | 'never'
 

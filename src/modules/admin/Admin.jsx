@@ -1368,6 +1368,13 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
           control={<Toggle active={eff.allowGuestCheckout} onChange={() => patchFlow({ allowGuestCheckout: !eff.allowGuestCheckout })} disabled={saving || eff.requireSignIn} />} />
       </FlowSubGroup>
 
+      {/* Group booking */}
+      <FlowSubGroup title="Group booking">
+        <FlowRow label="Allow booking for a group (2–6 people)"
+          desc="Adds a 'Book for a group' option. Each guest picks services + an optional stylist; we find times where everyone's seated within ~15 min, each with a distinct tech, and suggest alternatives up to a month out. One organizer, one bundled confirmation."
+          control={<Toggle active={eff.allowGroupBooking} onChange={() => patchFlow({ allowGroupBooking: !eff.allowGroupBooking })} disabled={saving} />} />
+      </FlowSubGroup>
+
       {/* Multi-lane */}
       <FlowSubGroup title="Multi-lane (mani + pedi)">
         <FlowRow label="Schedule shape when cart has both"

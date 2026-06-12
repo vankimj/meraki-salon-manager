@@ -30,6 +30,7 @@ import {
 } from '../lib/booking';
 import { pickTech, startOfWeek, endOfWeek, DEFAULT_ASSIGNMENT_METHOD } from '../lib/techAssignment';
 import { getEffectiveFlow } from '../lib/bookingFlow';
+import { findGroupSlots } from '../lib/groupBooking';
 
 // ── constants ──────────────────────────────────────────
 
@@ -215,6 +216,14 @@ export default function BookingScreen() {
   const [cartSlot, setCartSlot] = useState(null);
   // Per-date appointment cache for the slot picker.
   const [apptsByDate, setApptsByDate] = useState({});
+  // ── Group booking (2–6 people, distinct techs, ±15 min) ──
+  // guest: { id, cart:[...cart items...], pickedTech: undefined|null|{tech}, name, phone, email }
+  const [groupGuests,     setGroupGuests]     = useState([]);
+  const [groupApptsByDate, setGroupApptsByDate] = useState(null); // one-shot month fetch
+  const [groupResults,    setGroupResults]    = useState(null);   // { slots, unsatisfiable } | null
+  const [groupChoice,     setGroupChoice]     = useState(null);   // chosen ranked slot
+  const [groupPreferredDate, setGroupPreferredDate] = useState('');
+  const [groupSearching,  setGroupSearching]  = useState(false);
   const [form,    setForm]    = useState({ name: '', phone: '', email: '', notes: '', optInSms: false, optInEmail: false, hp: '' });
   const [submitting,      setSubmitting]      = useState(false);
   const [bookingError,    setBookingError]    = useState('');
@@ -891,6 +900,162 @@ export default function BookingScreen() {
     }
   }
 
+  // ── Group booking helpers ──────────────────────────────
+  function addGuest() {
+    setGroupGuests(gs => gs.length >= 6 ? gs : [...gs, { id: `g_${Date.now()}_${gs.length}`, cart: [], pickedTech: null, name: '', phone: '', email: '' }]);
+    setGroupResults(null); setGroupChoice(null);
+  }
+  function removeGuest(id) {
+    setGroupGuests(gs => gs.filter(g => g.id !== id));
+    setGroupResults(null); setGroupChoice(null);
+  }
+  function updateGuest(id, patch) {
+    setGroupGuests(gs => gs.map(g => g.id === id ? { ...g, ...patch } : g));
+    setGroupResults(null); setGroupChoice(null);
+  }
+
+  // Fetch the whole bookable month once, then run the pure matcher in-memory.
+  async function runGroupSearch() {
+    const ready = groupGuests.length >= 2 && groupGuests.every(g => g.cart.length > 0);
+    if (!ready) { setBookingError('Give every guest at least one service.'); return; }
+    // Two guests can't request the SAME specific tech.
+    const pinned = groupGuests.map(g => g.pickedTech?.id).filter(Boolean);
+    if (new Set(pinned).size !== pinned.length) { setBookingError('Two guests requested the same stylist — pick different stylists or "No preference".'); return; }
+    setBookingError(''); setGroupSearching(true); setGroupChoice(null);
+    try {
+      const minLead = Number(flowCfg?.minLeadTimeMinutes) || 0;
+      const maxDays = Math.max(1, Number(flowCfg?.maxLeadDays) || 30);
+      const start = dateStr(todayDate());
+      const endD = new Date(); endD.setDate(endD.getDate() + maxDays);
+      const end = dateStr(endD);
+      let byDate = groupApptsByDate;
+      if (!byDate) {
+        const res = await callFn('getPublicAvailability')({ tenantId: TENANT_ID, dateStart: start, dateEnd: end }).catch(() => ({ data: { appts: [] } }));
+        const appts = res?.data?.appts || [];
+        byDate = {};
+        appts.forEach(a => { (byDate[a.date] || (byDate[a.date] = [])).push(a); });
+        setGroupApptsByDate(byDate);
+      }
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes() + minLead;
+      const result = findGroupSlots({
+        guests: groupGuests.map(g => ({ cartItems: g.cart, pickedTechId: g.pickedTech?.id || null })),
+        techs, apptsByDate: byDate, dateRange: { start, end },
+        preferredDate: groupPreferredDate || null,
+        today: start, nowMins, windowStart: 9 * 60, windowEnd: 20 * 60,
+      });
+      setGroupResults(result);
+    } finally { setGroupSearching(false); }
+  }
+
+  async function handleGroupBook() {
+    if (!groupChoice || groupGuests.length < 2) return;
+    if (!form.name.trim() || !form.phone.trim()) { setBookingError('Enter the organizer\'s name and phone.'); return; }
+    setBookingError('');
+    if (client?.banned) { setBookingError("We're not able to accept this booking online. Please call the salon."); return; }
+    setSubmitting(true);
+    try {
+      const removalDur = 15;
+      const removalPrice = Number(cfg?.removalPrice ?? 15);
+      const techById = Object.fromEntries(techs.map(t => [t.id, t]));
+      const buildServices = (items, tech) => {
+        const out = [];
+        items.forEach(item => {
+          const { service: svc, option: opt } = item;
+          const r = resolveServicePricing(svc, opt, tech);
+          out.push({ id: svc.id, name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name, price: r.price || 0, duration: r.duration || 60, optionId: opt?.id || null, optionName: opt?.name || null, taxable: svc.taxable !== false });
+          if (item.removal && svc.canRequireRemoval && removalPrice > 0) out.push({ id: 'removal', name: `Removal (${svc.name})`, price: removalPrice, duration: removalDur, isRemoval: true });
+        });
+        return out;
+      };
+
+      // Resolve the ORGANIZER client + run the card/deposit gate (same as handleBook).
+      let clientId = client?.id || '';
+      let bookingDeposit = null;
+      const resolveName = form.name.trim(), resolvePhone = form.phone.trim(), resolveEmail = form.email.trim() || gUser?.email || '';
+      try {
+        const res = await callFn('findOrCreateClient')({
+          tenantId: TENANT_ID, name: resolveName, phone: resolvePhone, email: resolveEmail, hp: form.hp || '',
+          extra: { picture: gUser?.photoURL || '', commPreferences: { appointmentSms: true, appointmentEmail: true, appointmentVoice: false, marketingSms: form.optInSms === true, marketingEmail: form.optInEmail === true, marketingVoice: false },
+            marketingOptInSmsAt: form.optInSms === true ? new Date().toISOString() : null, marketingOptInEmailAt: form.optInEmail === true ? new Date().toISOString() : null },
+        });
+        if (res?.data?.banned)          { setBookingError("We're not able to accept this booking online. Please call the salon."); setSubmitting(false); return; }
+        if (res?.data?.disposableEmail) { setBookingError('Please use a permanent email address to book online.'); setSubmitting(false); return; }
+        if (res?.data?.velocityBlocked) { setBookingError("We've received a lot of booking activity from your connection. Please try again later or call the salon."); setSubmitting(false); return; }
+        bookingDeposit = res?.data?.bookingDeposit || null;
+        if (res?.data?.cardRequired) {
+          const gateId = res.data.id || res.data.existingId;
+          if (gateId && (res.data.reason === 'booking_policy' || res.data.reason === 'cancellation_deposit')) {
+            setCardPrompt({ clientId: gateId, depositMode: res.data.depositMode || 'store', depositPct: Number(res.data.depositPct) || 0, firstTime: res.data.firstTime === true, cancellation: res.data.reason === 'cancellation_deposit' });
+            setSubmitting(false); return;
+          }
+          const { cancellationCount, thresholdCount, windowDays } = res.data;
+          setBookingError(`Because of recent cancellations (${cancellationCount} in the last ${windowDays} days, threshold ${thresholdCount}), this salon requires a card on file before booking. Please call us to add one.`);
+          setSubmitting(false); return;
+        }
+        clientId = res?.data?.id || clientId;
+      } catch (e) { console.error('[Group] findOrCreateClient failed:', e); }
+
+      // Deposit = % of the WHOLE party total.
+      let depositResult = null;
+      if (bookingDeposit && bookingDeposit.depositMode && bookingDeposit.depositMode !== 'store') {
+        const baseDollars = groupGuests.reduce((sum, g) => sum + g.cart.reduce((s, item) => {
+          const { price } = resolveServicePricing(item.service, item.option);
+          return s + (Number(price) || 0) + ((item.removal && item.service?.canRequireRemoval) ? removalPrice : 0);
+        }, 0), 0);
+        try {
+          const dep = await callFn('chargeBookingDeposit')({ tenantId: TENANT_ID, appointmentTotalCents: Math.round(baseDollars * 100), idempotencyKey: `${clientId}_${groupChoice.date}_group` });
+          if (dep?.data?.deposit) depositResult = dep.data.deposit;
+        } catch (e) { setBookingError(e?.message || "We couldn't process the booking deposit. Please try another card or call the salon."); setSubmitting(false); return; }
+      }
+
+      // Build one appointment per guest from the frozen assignment.
+      const groupId = `bg_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
+      const apptsToWrite = groupChoice.assignments.map((a, i) => {
+        const guest = groupGuests[a.guestIdx];
+        const tech = techById[a.techId] || null;
+        const h = Math.floor(a.startMins / 60), m = a.startMins % 60;
+        const isOrg = i === 0;
+        return {
+          date: groupChoice.date,
+          startTime: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
+          duration: a.durMins,
+          techId: tech?.id || null,
+          techName: tech?.name || a.techName || 'TBD',
+          techRequestType: a.requestType,
+          clientId,
+          clientName: (isOrg ? form.name.trim() : (guest.name?.trim() || `${form.name.trim()}'s guest ${i + 1}`)),
+          clientPhone: (guest.phone?.trim() || form.phone.trim()),
+          clientEmail: (guest.email?.trim() || form.email.trim() || gUser?.email || null),
+          services: buildServices(guest.cart, tech),
+          status: 'scheduled',
+          notes: form.notes.trim() || null,
+          source: 'online_booking',
+          bookingGroupId: groupId,
+          groupBooking: true,
+          groupRole: isOrg ? 'organizer' : 'guest',
+          groupSize: groupChoice.assignments.length,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+      const subRes = await callFn('submitOnlineBooking')({
+        tenantId: TENANT_ID, clientId, appointments: apptsToWrite, deposit: depositResult || null,
+        hp: form.hp || '', idempotencyKey: `${clientId || resolvePhone}_${groupChoice.date}_group_${groupId}`,
+      });
+      if (subRes?.data?.banned)         { setBookingError("We're not able to accept this booking online. Please call the salon."); setSubmitting(false); return; }
+      if (subRes?.data?.velocityBlocked){ setBookingError("We've received a lot of booking activity from your connection. Please try again later or call the salon."); setSubmitting(false); return; }
+      if (subRes?.data?.cardRequired)   { setBookingError('This salon requires a card on file before booking. Please refresh and try again, or call us.'); setSubmitting(false); return; }
+      const newIds = subRes?.data?.ids || [];
+      const written = apptsToWrite.map((a, i) => ({ ...a, id: newIds[i] }));
+      setConfirmed({ ...written[0], _tech: techById[groupChoice.assignments[0].techId] || null, _cartItems: groupGuests[0].cart, _allAppts: written, _group: written });
+    } catch (e) {
+      console.error('[Group] booking failed:', e);
+      setBookingError('Booking failed. Please try again or call us.');
+    } finally { setSubmitting(false); }
+  }
+
   if (loading || gUser === undefined) return <FullCenter><Spinner /></FullCenter>;
   if (!cfg?.enabled) return (
     <FullCenter>
@@ -920,7 +1085,7 @@ export default function BookingScreen() {
         <BookingCardCapture
           prompt={cardPrompt}
           onCancel={() => setCardPrompt(null)}
-          onSaved={() => { setCardPrompt(null); handleBook(); }}
+          onSaved={() => { setCardPrompt(null); (flow === 'group' ? handleGroupBook : handleBook)(); }}
         />
       )}
 
@@ -978,11 +1143,38 @@ export default function BookingScreen() {
 
         {step === 0 && (
           <FlowChooser
+            allowGroup={flowCfg.allowGroupBooking === true}
             onPick={f => {
               setFlow(f);
               setStep(1);
               if (f === 'time-first') { setPickedTech(null); setCartTech(undefined); }
+              if (f === 'group') {
+                setGroupGuests([
+                  { id: `g_${Date.now()}_0`, cart: [], pickedTech: null, name: '', phone: '', email: '' },
+                  { id: `g_${Date.now()}_1`, cart: [], pickedTech: null, name: '', phone: '', email: '' },
+                ]);
+                setGroupResults(null); setGroupChoice(null); setGroupApptsByDate(null); setGroupPreferredDate('');
+              }
             }}
+          />
+        )}
+        {step === 1 && flow === 'group' && (
+          <GroupGuestsStep
+            services={services} allTechs={techs} guests={groupGuests}
+            onAddGuest={addGuest} onRemoveGuest={removeGuest} onUpdateGuest={updateGuest}
+            onProceed={() => setStep(2)}
+            onBack={() => { setStep(0); setFlow(null); setGroupGuests([]); }}
+          />
+        )}
+        {step === 2 && flow === 'group' && (
+          <GroupResultsStep
+            results={groupResults} searching={groupSearching} choice={groupChoice}
+            guests={groupGuests} allTechs={techs}
+            preferredDate={groupPreferredDate} setPreferredDate={setGroupPreferredDate}
+            maxLeadDays={Math.max(1, Number(flowCfg?.maxLeadDays) || 30)}
+            onSearch={runGroupSearch} onPick={setGroupChoice}
+            onProceed={() => setStep(form.name.trim() && form.phone.trim() ? 5 : 4)}
+            onBack={() => setStep(1)}
           />
         )}
         {step === 1 && flow === 'time-first' && (
@@ -1063,11 +1255,19 @@ export default function BookingScreen() {
             onAppleSignIn={handleAppleSignIn}
             onChange={patch => setForm(f => ({ ...f, ...patch }))}
             onNext={() => setStep(5)}
-            onBack={() => setStep(3)}
+            onBack={() => setStep(flow === 'group' ? 2 : 3)}
             flowCfg={flowCfg}
           />
         )}
-        {step === 5 && (
+        {step === 5 && flow === 'group' && (
+          <GroupConfirmStep
+            guests={groupGuests} allTechs={techs} choice={groupChoice}
+            form={form} submitting={submitting} bookingError={bookingError}
+            onEditInfo={() => setStep(4)} onConfirm={handleGroupBook}
+            onBack={() => setStep(form.name.trim() && form.phone.trim() ? 2 : 4)}
+          />
+        )}
+        {step === 5 && flow !== 'group' && (
           <Step5Confirm
             cart={cart} allTechs={techs}
             cartTech={cartTech} cartTechByLane={cartTechByLane}
@@ -1091,9 +1291,11 @@ export default function BookingScreen() {
 
 // ── Header ─────────────────────────────────────────────
 function Header({ step, cfg, flow, webCfg, gUser, client, onSignIn, onSignOut }) {
-  const labels = flow === 'tech-first'
-    ? ['Stylist','Services','Schedule','Info','Confirm']
-    : ['Cart','Stylists','Schedule','Info','Confirm'];
+  const labels = flow === 'group'
+    ? ['Guests','Time','','Info','Confirm']
+    : flow === 'tech-first'
+      ? ['Stylist','Services','Schedule','Info','Confirm']
+      : ['Cart','Stylists','Schedule','Info','Confirm'];
 
   // Editorial mode (when this tenant uses the merakiSite homepage) flips
   // the header to a light cream surface with ink text + brand fonts so it
@@ -1218,10 +1420,11 @@ function Header({ step, cfg, flow, webCfg, gUser, client, onSignIn, onSignOut })
 }
 
 // ── Flow chooser (step 0) ─────────────────────────────
-function FlowChooser({ onPick }) {
+function FlowChooser({ onPick, allowGroup }) {
   const opts = [
     { id: 'time-first', emoji: '📅', title: 'Pick a time that works for me',  desc: 'Choose your services first, then we\'ll show you available stylists and times.' },
     { id: 'tech-first', emoji: '⭐', title: 'Book with a specific stylist',    desc: 'Pick your favorite nail tech, then see only their services and openings.' },
+    ...(allowGroup ? [{ id: 'group', emoji: '👯', title: 'Book for a group', desc: 'Two or more people together — mom & daughter, friends, or a small party. We\'ll find times where everyone\'s seated at once.' }] : []),
   ];
   return (
     <div style={{ maxWidth: 640, margin: '0 auto', padding: '20px 0' }}>
@@ -1243,6 +1446,178 @@ function FlowChooser({ onPick }) {
             <div style={{ fontSize: 18, color: 'var(--tm-primary, #2D7A5F)', flexShrink: 0 }}>→</div>
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Group booking ──────────────────────────────────────
+const G_INP = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1.5px solid #e8e8e8', borderRadius: 10, padding: '9px 11px', fontSize: 13, outline: 'none' };
+const G_PRIMARY = { flex: 2, background: 'var(--tm-primary, #2D7A5F)', color: '#fff', border: 'none', borderRadius: 12, padding: '13px', fontSize: 15, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' };
+const G_BACK = { flex: 1, background: '#fff', color: '#666', border: '1.5px solid #e8e8e8', borderRadius: 12, padding: '13px', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' };
+function GChip({ active, onClick, children }) {
+  return (
+    <button onClick={onClick} style={{ fontFamily: 'inherit', fontSize: 12, fontWeight: 600, padding: '7px 12px', borderRadius: 20, cursor: 'pointer',
+      border: `1.5px solid ${active ? 'var(--tm-primary, #2D7A5F)' : '#e0e0e0'}`, background: active ? '#f0f9f5' : '#fff', color: active ? 'var(--tm-primary, #2D7A5F)' : '#444' }}>
+      {children}
+    </button>
+  );
+}
+
+function GroupGuestsStep({ services, allTechs, guests, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack }) {
+  const cats = groupByCategory(services || []);
+  const ready = guests.length >= 2 && guests.every(g => g.cart.length > 0);
+  const addSvc = (g, id) => {
+    const svc = (services || []).find(s => s.id === id);
+    if (!svc || g.cart.some(i => i.service.id === id)) return;
+    onUpdateGuest(g.id, { cart: [...g.cart, { service: svc, option: null, removal: false }], pickedTech: g.pickedTech && techCanDo(g.pickedTech, id) ? g.pickedTech : (g.pickedTech ? null : g.pickedTech) });
+  };
+  const rmSvc = (g, id) => onUpdateGuest(g.id, { cart: g.cart.filter(i => i.service.id !== id) });
+  return (
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '12px 0 24px' }}>
+      <StepTitle>Who's in your group?</StepTitle>
+      <div style={{ fontSize: 13, color: '#888', margin: '-8px 0 18px', lineHeight: 1.5 }}>
+        Add each person's services and (optionally) a preferred stylist. We'll find times where everyone is seated within ~15 minutes of each other, each with their own stylist.
+      </div>
+      {guests.map((g, i) => {
+        const elig = techsForServices(allTechs, g.cart.map(c => c.service)).filter(t => t.active !== false);
+        return (
+          <div key={g.id} style={{ background: '#fff', border: '1.5px solid #e8e8e8', borderRadius: 14, padding: 16, marginBottom: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>Guest {i + 1}{i === 0 ? ' (organizer)' : ''}</div>
+              {guests.length > 2 && <button onClick={() => onRemoveGuest(g.id)} style={{ background: 'none', border: 'none', color: '#c00', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>Remove</button>}
+            </div>
+            <input value={g.name} onChange={e => onUpdateGuest(g.id, { name: e.target.value })} placeholder="Name (optional)" style={G_INP} />
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '12px 0 6px' }}>Services</div>
+            <select value="" onChange={e => { addSvc(g, e.target.value); e.target.value = ''; }} style={G_INP}>
+              <option value="">+ Add a service…</option>
+              {cats.map(c => (
+                <optgroup key={c.category} label={c.category}>
+                  {c.services.filter(s => s.active !== false).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            {g.cart.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {g.cart.map(it => (
+                  <span key={it.service.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: '#f0f9f5', color: 'var(--tm-primary, #2D7A5F)', fontSize: 12, fontWeight: 600, padding: '4px 6px 4px 10px', borderRadius: 14 }}>
+                    {it.service.name}
+                    <button onClick={() => rmSvc(g, it.service.id)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#999', textTransform: 'uppercase', letterSpacing: '.04em', margin: '12px 0 6px' }}>Stylist</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              <GChip active={!g.pickedTech} onClick={() => onUpdateGuest(g.id, { pickedTech: null })}>No preference</GChip>
+              {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <input value={g.phone} onChange={e => onUpdateGuest(g.id, { phone: e.target.value })} placeholder={i === 0 ? '' : 'Their phone (optional)'} style={{ ...G_INP, flex: 1, display: i === 0 ? 'none' : 'block' }} />
+              <input value={g.email} onChange={e => onUpdateGuest(g.id, { email: e.target.value })} placeholder={i === 0 ? '' : 'Their email (optional)'} style={{ ...G_INP, flex: 1, display: i === 0 ? 'none' : 'block' }} />
+            </div>
+          </div>
+        );
+      })}
+      {guests.length < 6 && (
+        <button onClick={onAddGuest} style={{ width: '100%', background: '#fff', border: '1.5px dashed #cbd5d0', borderRadius: 12, padding: '12px', fontSize: 13, fontWeight: 600, color: 'var(--tm-primary, #2D7A5F)', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 4 }}>
+          + Add another guest
+        </button>
+      )}
+      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+        <button onClick={onBack} style={G_BACK}>Back</button>
+        <button onClick={onProceed} disabled={!ready} style={{ ...G_PRIMARY, opacity: ready ? 1 : 0.5, cursor: ready ? 'pointer' : 'default' }}>Find times →</button>
+      </div>
+    </div>
+  );
+}
+
+function GroupResultsStep({ results, searching, choice, guests, allTechs, preferredDate, setPreferredDate, maxLeadDays, onSearch, onPick, onProceed, onBack }) {
+  const today = dateStr(todayDate());
+  const maxD = new Date(); maxD.setDate(maxD.getDate() + maxLeadDays);
+  const gLabel = (idx) => guests[idx]?.name?.trim() || `Guest ${idx + 1}`;
+  const tName = (a) => a.requestType === 'auto' ? (a.techName || 'next available') : (a.techName || 'your stylist');
+  const byDate = {};
+  (results?.slots || []).forEach(s => (byDate[s.date] || (byDate[s.date] = [])).push(s));
+  const sameKey = (a, b) => a && b && a.date === b.date && a.anchorMins === b.anchorMins;
+  return (
+    <div style={{ maxWidth: 640, margin: '0 auto', padding: '12px 0 24px' }}>
+      <StepTitle>Find a time for your group</StepTitle>
+      <div style={{ fontSize: 13, color: '#888', margin: '-8px 0 14px', lineHeight: 1.5 }}>
+        Optionally pick a preferred date — we'll show it first, plus other options over the next {maxLeadDays} days.
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+        <input type="date" value={preferredDate} min={today} max={dateStr(maxD)} onChange={e => setPreferredDate(e.target.value)} style={{ ...G_INP, flex: 1 }} />
+        <button onClick={onSearch} disabled={searching} style={{ ...G_PRIMARY, flex: 'none', padding: '9px 18px', opacity: searching ? 0.6 : 1 }}>{searching ? 'Searching…' : 'Find times'}</button>
+      </div>
+      {results && (results.slots.length === 0 ? (
+        <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: '16px', fontSize: 13, color: '#9a3412', lineHeight: 1.6 }}>
+          We couldn't seat all {guests.length} guests together in the next {maxLeadDays} days
+          {results.unsatisfiable?.length ? ` (Guest ${results.unsatisfiable[0] + 1}'s stylist can't do those services)` : ''}.
+          Please call us and we'll arrange your group personally.
+        </div>
+      ) : (
+        Object.entries(byDate).map(([date, slots]) => (
+          <div key={date} style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>
+              {fmtDate(date)}{date === preferredDate ? <span style={{ color: 'var(--tm-primary, #2D7A5F)' }}> · your date</span> : ''}
+            </div>
+            <div style={{ display: 'grid', gap: 8 }}>
+              {slots.map((s, j) => {
+                const sel = sameKey(s, choice);
+                return (
+                  <button key={j} onClick={() => onPick(s)}
+                    style={{ textAlign: 'left', background: sel ? '#f0f9f5' : '#fff', border: `1.5px solid ${sel ? 'var(--tm-primary, #2D7A5F)' : '#e8e8e8'}`, borderRadius: 12, padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
+                      {s.sameStart ? `All together at ${minsToStr(s.anchorMins)}` : `Around ${minsToStr(s.anchorMins)}`}
+                    </div>
+                    {s.assignments.map(a => (
+                      <div key={a.guestIdx} style={{ fontSize: 12, color: '#555' }}>{gLabel(a.guestIdx)} — {minsToStr(a.startMins)} with {tName(a)}</div>
+                    ))}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))
+      ))}
+      <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+        <button onClick={onBack} style={G_BACK}>Back</button>
+        <button onClick={onProceed} disabled={!choice} style={{ ...G_PRIMARY, opacity: choice ? 1 : 0.5, cursor: choice ? 'pointer' : 'default' }}>Continue →</button>
+      </div>
+    </div>
+  );
+}
+
+function GroupConfirmStep({ guests, allTechs, choice, form, submitting, bookingError, onEditInfo, onConfirm, onBack }) {
+  if (!choice) return null;
+  const gLabel = (idx) => guests[idx]?.name?.trim() || `Guest ${idx + 1}`;
+  const tName = (a) => a.requestType === 'auto' ? (a.techName || 'next available') : (a.techName || 'your stylist');
+  return (
+    <div style={{ maxWidth: 560, margin: '0 auto', padding: '12px 0 24px' }}>
+      <StepTitle>Confirm group booking</StepTitle>
+      <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 18, marginBottom: 12 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 }}>{fmtDate(choice.date)} · party of {choice.assignments.length}</div>
+        {choice.assignments.map(a => {
+          const g = guests[a.guestIdx];
+          const svc = (g?.cart || []).map(c => c.service.name).join(', ') || 'Nail service';
+          return (
+            <div key={a.guestIdx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderTop: '1px solid #f3f3f3', fontSize: 13 }}>
+              <div><strong style={{ color: '#1a1a1a' }}>{gLabel(a.guestIdx)}</strong><div style={{ color: '#888', fontSize: 12 }}>{svc}</div></div>
+              <div style={{ textAlign: 'right', color: '#555', whiteSpace: 'nowrap' }}>{minsToStr(a.startMins)}<div style={{ fontSize: 12, color: '#888' }}>{tName(a)}</div></div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 13, color: '#555', marginBottom: 12 }}>
+        Organizer: <strong>{form.name}</strong> · {form.phone}
+        <button onClick={onEditInfo} style={{ background: 'none', border: 'none', color: 'var(--tm-primary, #2D7A5F)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', marginLeft: 8 }}>edit</button>
+        <div style={{ fontSize: 11, color: '#999', marginTop: 4 }}>One confirmation goes to the organizer with everyone's times.</div>
+      </div>
+      {bookingError && <div style={{ background: '#fef2f2', border: '1px solid #fecaca', color: '#b91c1c', borderRadius: 10, padding: '10px 12px', fontSize: 13, marginBottom: 12 }}>{bookingError}</div>}
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button onClick={onBack} style={G_BACK}>Back</button>
+        <button onClick={onConfirm} disabled={submitting} style={{ ...G_PRIMARY, opacity: submitting ? 0.6 : 1 }}>{submitting ? 'Booking…' : 'Confirm group booking'}</button>
       </div>
     </div>
   );

@@ -1866,6 +1866,11 @@ function sanitizeBookingAppt(a, { clientId }) {
   if (a && a.bookingGroupId) out.bookingGroupId = str(a.bookingGroupId, 64);
   if (a && a.lane)           out.lane = str(a.lane, 32);
   if (a && a.laneShape)      out.laneShape = str(a.laneShape, 32);
+  // Group booking (2+ people, one organizer). groupRole 'organizer' carries the
+  // single bundled confirmation; 'guest' appts suppress their own.
+  if (a && a.groupBooking)   out.groupBooking = true;
+  if (a && a.groupRole)      out.groupRole = str(a.groupRole, 16);
+  if (a && a.groupSize)      out.groupSize = Math.max(1, Math.min(6, Number(a.groupSize) || 1));
   return out;
 }
 
@@ -1925,14 +1930,14 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const clientId = String(request.data?.clientId || '').slice(0, 64);
   const apptsIn = Array.isArray(request.data?.appointments) ? request.data.appointments : [];
   if (!apptsIn.length)   throw new HttpsError('invalid-argument', 'No appointments to create.');
-  if (apptsIn.length > 4) throw new HttpsError('invalid-argument', 'Too many appointments in one booking.');
+  if (apptsIn.length > 6) throw new HttpsError('invalid-argument', 'Too many appointments in one booking.');
   const idempotencyKey = String(request.data?.idempotencyKey || '').slice(0, 160);
 
   // Idempotency: a retried submit (network blip / double-tap) returns the
   // already-written appointments instead of duplicating them.
   if (idempotencyKey) {
     const dup = await db.collection(`tenants/${tenantId}/appointments`)
-      .where('bookingIdempotencyKey', '==', idempotencyKey).limit(4).get().catch(() => null);
+      .where('bookingIdempotencyKey', '==', idempotencyKey).limit(6).get().catch(() => null);
     if (dup && !dup.empty) return { ids: dup.docs.map(d => d.id), idempotent: true };
   }
 
@@ -5145,6 +5150,22 @@ exports.sendBookingConfirmation = onDocumentCreated(
       } catch (e) { console.error('[booking] tech notify failed:', e?.message); }
     }
 
+    // Group booking: the ORGANIZER appt sends ONE bundled confirmation covering
+    // every guest; guest appts suppress their own client/admin email + SMS (the
+    // tech notification above still fired for each guest's tech). Per-guest
+    // reminders are unaffected — those run from the reminder crons.
+    let groupAppts = null;
+    if (appt.groupBooking) {
+      if (appt.groupRole !== 'organizer') return;
+      try {
+        const gSnap = await db.collection(`tenants/${tenantId}/appointments`)
+          .where('bookingGroupId', '==', appt.bookingGroupId).get();
+        groupAppts = gSnap.docs.map(d => d.data())
+          .sort((a, b) => (a.groupRole === 'organizer' ? 0 : 1) - (b.groupRole === 'organizer' ? 0 : 1)
+            || String(a.startTime).localeCompare(String(b.startTime)));
+      } catch (e) { console.error('[booking] group siblings failed:', e?.message); }
+    }
+
     const apiKey = awsAccessKey.value();
     if (!apiKey) return;
 
@@ -5180,6 +5201,15 @@ exports.sendBookingConfirmation = onDocumentCreated(
         <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>👩‍💼</strong> With ${esc(techLine)}</div>
         <div style="font-size:13px;color:#555;"><strong>📍</strong> ${esc(locationLine)}</div>
       </div>`;
+    // For a group, one card lists every guest's service / time / tech.
+    const apptTechLine = (ap) => ap.techRequestType === 'auto' ? 'a member of our team'
+      : (ap.techName && ap.techName !== 'TBD' ? ap.techName : 'an available stylist');
+    const groupCard = (groupAppts && groupAppts.length > 1) ? `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;">
+        <div style="font-size:13px;color:#555;margin-bottom:8px;"><strong>📅</strong> ${esc(fmtDate(appt.date))} · party of ${groupAppts.length}</div>
+        ${groupAppts.map((ap, i) => `<div style="font-size:13px;color:#555;margin-bottom:6px;">${esc(ap.clientName || ('Guest ' + (i + 1)))} — ${esc(ap.services?.[0]?.name || 'Nail service')} at ${esc(fmtTime(ap.startTime))} with ${esc(apptTechLine(ap))}</div>`).join('')}
+        <div style="font-size:13px;color:#555;margin-top:6px;"><strong>📍</strong> ${esc(locationLine)}</div>
+      </div>` : null;
+    const finalCard = groupCard || detailsCard;
     const policies =
       (typeof sData.cancellationPolicyText === 'string' && sData.cancellationPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:18px 0 0;"><strong style="color:#888;">Cancellation policy:</strong> ${esc(sData.cancellationPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : '')
       + (typeof sData.refundPolicyText === 'string' && sData.refundPolicyText.trim() ? `<p style="font-size:11px;line-height:1.6;color:#999;margin:8px 0 0;"><strong style="color:#888;">Refund policy:</strong> ${esc(sData.refundPolicyText.slice(0, 1000)).replace(/\n/g, '<br>')}</p>` : '');
@@ -5192,7 +5222,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
       tech:       techLine,
       location:   locationLine,
       manageLink: manageLink || '',
-      detailsCard,
+      detailsCard: finalCard,
       policies,
     }, brand);
 
@@ -5242,10 +5272,15 @@ exports.sendBookingConfirmation = onDocumentCreated(
         : (appt.techName && appt.techName !== 'TBD' ? `with ${appt.techName}` : '');
       const techSuffix   = techShort ? ' ' + techShort : '';
       const manageSuffix = manageShort ? ` Manage: ${manageShort}` : '';
-      const { body: smsBody } = await renderTemplate(db, tenantId, 'booking_confirmation_sms', {
-        clientName: firstName, service: svcName, salonName: brand.salonName,
-        dateShort, timeShort, techSuffix, manageSuffix,
-      });
+      let smsBody;
+      if (groupAppts && groupAppts.length > 1) {
+        smsBody = `${brand.salonName}: Your group of ${groupAppts.length} is booked for ${dateShort} starting ${timeShort}.${manageSuffix}`.trim();
+      } else {
+        ({ body: smsBody } = await renderTemplate(db, tenantId, 'booking_confirmation_sms', {
+          clientName: firstName, service: svcName, salonName: brand.salonName,
+          dateShort, timeShort, techSuffix, manageSuffix,
+        }));
+      }
       await sendSms({
         to: clientPhone,
         body: smsBody,
@@ -5266,7 +5301,7 @@ exports.sendBookingConfirmation = onDocumentCreated(
       const admins      = adminEmails.map(email => ({ email }));
       if (admins.length) {
         const adminFrom = await tenantFromAddress(db, tenantId);
-        const adminCard = `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
+        const adminCard = groupCard || `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;font-size:13px;color:#555;">
         <div style="margin-bottom:6px;"><strong>Client:</strong> ${esc(appt.clientName)}${appt.clientPhone ? ' · ' + esc(appt.clientPhone) : ''}</div>
         <div style="margin-bottom:6px;"><strong>Date:</strong> ${dateStr}</div>
         <div style="margin-bottom:6px;"><strong>Service:</strong> ${esc(svcName)}</div>
