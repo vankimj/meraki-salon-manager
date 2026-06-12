@@ -33,6 +33,14 @@ export default function WalkinScreen() {
   const [services, setServices] = useState([]);
   const [seatWeight, setSeatWeight] = useState(1);        // numeric turn weight (partial-turns mode)
   const [seatRequested, setSeatRequested] = useState(false);
+  const [lastSeat, setLastSeat] = useState(null);         // { entryId, techId, delta, clientName, techName } — undo target
+
+  // Auto-dismiss the undo banner after a few seconds.
+  useEffect(() => {
+    if (!lastSeat) return;
+    const id = setTimeout(() => setLastSeat(null), 7000);
+    return () => clearTimeout(id);
+  }, [lastSeat]);
 
   const load = useCallback(async () => {
     const today = new Date().toISOString().slice(0, 10);
@@ -160,10 +168,11 @@ export default function WalkinScreen() {
   }
   async function assignSeat(entry, tech) {
     setSeatingFor(null);
+    // Turn weight: full/half/none in partial-turns mode, else a full turn.
+    // A client-requested tech takes no turn when that policy is on (Mango-style).
+    let delta = 0;
     if (tech) {
-      // Turn weight: full/half/none in partial-turns mode, else a full turn.
-      // A client-requested tech takes no turn when that policy is on (Mango-style).
-      let delta = cfg.partialTurns ? (Number(seatWeight) || 0) : 1;
+      delta = cfg.partialTurns ? (Number(seatWeight) || 0) : 1;
       if (seatRequested && cfg.requestNoTurn) delta = 0;
       persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + delta } : t));
     }
@@ -171,6 +180,24 @@ export default function WalkinScreen() {
       await updateWaitlistEntry(entry.id, {
         status: 'seated', seatedAt: new Date().toISOString(),
         seatedTechId: tech?.techId || null, seatedTechName: tech?.techName || null,
+        seatTurnDelta: delta,
+      });
+      setLastSeat({ entryId: entry.id, techId: tech?.techId || null, delta, clientName: entry.clientName || 'Walk-in', techName: tech?.techName || null });
+      await load();
+    } catch {}
+  }
+  // Undo the most recent seating: put the turn back on the tech and return the
+  // walk-in to the waitlist. Covers the "seated the wrong tech" misclick.
+  async function undoSeat() {
+    const ls = lastSeat;
+    if (!ls) return;
+    setLastSeat(null);
+    if (ls.techId && ls.delta) {
+      persistRoster(roster.map(t => t.techId === ls.techId ? { ...t, turnsTaken: Math.max(0, (t.turnsTaken || 0) - ls.delta) } : t));
+    }
+    try {
+      await updateWaitlistEntry(ls.entryId, {
+        status: 'waiting', seatedAt: null, seatedTechId: null, seatedTechName: null, seatTurnDelta: null,
       });
       await load();
     } catch {}
@@ -281,6 +308,17 @@ export default function WalkinScreen() {
         </View>
       }
     />
+
+    {lastSeat && (
+      <View style={styles.undoBar}>
+        <Text style={styles.undoText} numberOfLines={1}>
+          Seated {lastSeat.clientName}{lastSeat.techName ? ` with ${lastSeat.techName}` : ''}
+        </Text>
+        <TouchableOpacity style={styles.undoBtn} onPress={undoSeat}>
+          <Text style={styles.undoBtnText}>Undo</Text>
+        </TouchableOpacity>
+      </View>
+    )}
 
     <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setAdding(false)}>
@@ -448,6 +486,10 @@ const makeStyles = (t) => StyleSheet.create({
   addText:    { color: '#fff', fontWeight: '800', fontSize: 14 },
   addWalkinBtn: { backgroundColor: t.green, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 10 },
   addWalkinText:{ color: '#fff', fontWeight: '800', fontSize: 14 },
+  undoBar:    { position: 'absolute', left: 14, right: 14, bottom: 20, backgroundColor: t.text, borderRadius: 12, paddingVertical: 12, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.22, shadowRadius: 8, elevation: 6 },
+  undoText:   { flex: 1, color: t.bg, fontSize: 14, fontWeight: '600' },
+  undoBtn:    { backgroundColor: t.green, borderRadius: 8, paddingHorizontal: 16, paddingVertical: 8 },
+  undoBtnText:{ color: '#fff', fontSize: 14, fontWeight: '800' },
   fieldLbl:   { fontSize: 12, fontWeight: '700', color: t.textMuted, marginTop: 12, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.3 },
   inputFull:  { backgroundColor: t.surface, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 11, fontSize: 15, color: t.text, borderWidth: 1, borderColor: t.border },
   foundBanner:{ backgroundColor: t.greenSoft, borderRadius: 10, padding: 10, marginTop: 8, borderWidth: 1, borderColor: t.green },
