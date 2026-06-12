@@ -479,14 +479,77 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
 
   async function handleSave(appt, original, pendingSeat) {
     try {
-      // No-anonymous-customers rule (2026-05-12): every NEW appointment
-      // must reference a real client record. Existing walk-in appts
-      // (legacy / GG-imported, no clientId) stay editable without
-      // forcing a fresh assignment, since there are thousands of them
-      // and the user might just be tweaking notes / status / time.
-      if (!appt.id && !appt.clientId) {
-        alert('Pick an existing client from the search box, or use "+ Create new client contact" to add one. Anonymous appointments are no longer allowed — every client needs a phone number.');
-        return;
+      // No-anonymous-customers rule (2026-05-12): every NEW appointment must
+      // reference a real client record. When the user books someone who isn't
+      // in the system yet (typed a name + a phone or email but never linked a
+      // client), auto-create their profile here — or link an existing client
+      // if the phone/email already matches one — so the appointment is
+      // reachable AND the person shows up in Clients. The inline form already
+      // required a name plus a phone or email before enabling Save; a save with
+      // no name and no contact stays blocked. Existing walk-in appts (legacy /
+      // GG-imported, no clientId) keep editing freely on the appt.id path.
+      let resolvedClientId    = appt.clientId  || '';
+      let resolvedClientName  = appt.clientName || '';
+      let resolvedClientPhone = appt.clientPhone || '';
+      let resolvedClientEmail = appt.clientEmail || '';
+      if (!appt.id && !resolvedClientId) {
+        const name      = resolvedClientName.trim();
+        const phoneInfo = normalizePhone(resolvedClientPhone);
+        const email     = resolvedClientEmail.trim();
+        // Validate exactly like the full "+ details" sub-form (saveNewClient)
+        // so this fast inline path can't mint junk records: a non-empty phone
+        // must actually parse, a non-empty email must look real, and at least
+        // one VALID contact is required. (An unparseable phone stored verbatim
+        // gets no phoneDigits index server-side → the client is unfindable by
+        // phone and becomes a duplicate magnet.)
+        if (!name) {
+          alert('Add the client\'s name — or pick an existing client from the search box.');
+          return;
+        }
+        if (!phoneInfo.empty && !phoneInfo.valid) {
+          alert('That phone number doesn\'t look valid. Enter a US number like (614) 555-0123, or an international one with a +country code.');
+          return;
+        }
+        if (email && !EMAIL_RE.test(email)) {
+          alert('That email address looks invalid.');
+          return;
+        }
+        const phone = phoneInfo.valid ? phoneInfo.formatted : '';
+        if (!phone && !email) {
+          alert('Add a phone or email so we can create their profile — or pick an existing client from the search box.');
+          return;
+        }
+        try {
+          const pd = phoneInfo.digits;
+          const em = email.toLowerCase();
+          const existing = clients.find(c => {
+            const cpd = normalizePhone(c.phone).digits;
+            const cem = (c.email || '').trim().toLowerCase();
+            return (pd && cpd && cpd === pd) || (em && cem && cem === em);
+          });
+          if (existing) {
+            resolvedClientId    = existing.id;
+            resolvedClientName  = existing.name  || name;
+            resolvedClientPhone = existing.phone || phone;
+            resolvedClientEmail = existing.email || email;
+            if (showToast && existing.name) showToast(`Linked to existing client ${existing.name}`, 4000);
+          } else {
+            const data = {
+              name, phone, email,
+              commPreferences: { appointmentSms: true, appointmentEmail: true, appointmentVoice: false, marketingSms: true, marketingEmail: true, marketingVoice: false },
+              instagramTags: [], googleReviews: [], visits: [],
+            };
+            resolvedClientId    = await createClient(data);
+            resolvedClientName  = name;
+            resolvedClientPhone = phone;
+            resolvedClientEmail = email;
+            setClients(prev => [...prev, { id: resolvedClientId, ...data }].sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+            logActivity('client_added', `${name}${phone ? ' · ' + phone : ''}${email ? ' · ' + email : ''} (from Schedule appt)`);
+          }
+        } catch (e) {
+          alert(`Could not create the client profile: ${e.message || 'unknown error'}`);
+          return;
+        }
       }
 
       // Clock-in gate: a tech editing their own calendar while the salon is open
@@ -519,7 +582,9 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
       const derivedNotes = log.length
         ? log.map(e => e?.text || '').filter(Boolean).join('\n\n')
         : (apptBase.notes || '');
-      const full = { ...apptBase, notes: derivedNotes, duration: dur };
+      const full = { ...apptBase, notes: derivedNotes, duration: dur,
+        clientId: resolvedClientId, clientName: resolvedClientName,
+        clientPhone: resolvedClientPhone, clientEmail: resolvedClientEmail };
       // Record which staff member entered this booking — surfaced in Reports as
       // the "source" for in-salon bookings. Only on NEW staff-created appts
       // (never overwrite on edit; online bookings carry source='online_booking').
@@ -2161,6 +2226,14 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
 
   const isNew  = !appt.id;
 
+  // While a name is being typed into ClientSearch, appt.clientName updates on
+  // every keystroke — so the inline "new client" capture must NOT pop in until
+  // the typed text matches no existing client (mirrors the search dropdown's
+  // own filter). Otherwise it flashes over the still-open search results.
+  const typedClientName = (appt.clientName || '').trim();
+  const typedNameMatchesExisting = !appt.clientId && typedClientName.length > 0 &&
+    clients.some(c => (c.name || '').toLowerCase().includes(typedClientName.toLowerCase()) || (c.phone || '').includes(typedClientName));
+
   function openNewClientForm() {
     // Pre-fill name with whatever was typed into ClientSearch as a
     // walk-in-style entry, and pre-fill any contact info already keyed.
@@ -2497,6 +2570,29 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             )}
           </Field>
 
+          {/* New-client contact capture — once a name is typed but no existing
+              client is linked, collect a phone/email right here so SAVING the
+              appointment mints (or links) a real client profile. No more
+              "walk-in with name" dead-end; the "+ full details" form below
+              stays available for birthday/notes. */}
+          {!isView && !appt.clientId && typedClientName && !typedNameMatchesExisting && !newClientOpen && (
+            <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--pn-warning-bg)', border: '1px solid #fde68a' }}>
+              <div style={{ fontSize: 11, color: 'var(--pn-warning)', fontWeight: 700, marginBottom: 7 }}>
+                New client “{typedClientName}” — add a phone or email and we'll create their profile when you save.
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input type="tel" inputMode="tel" autoComplete="off" placeholder="Phone  (614) 555-0123"
+                  value={appt.clientPhone || ''}
+                  onChange={e => onChange({ clientPhone: formatPhoneAsYouType(e.target.value) })}
+                  style={{ ...inp, flex: 1, marginBottom: 0 }} />
+                <input type="email" inputMode="email" autoComplete="off" placeholder="email (optional)"
+                  value={appt.clientEmail || ''}
+                  onChange={e => onChange({ clientEmail: e.target.value })}
+                  style={{ ...inp, flex: 1, marginBottom: 0 }} />
+              </div>
+            </div>
+          )}
+
           {/* Banned-client warning — surfaces when the linked client has
               banned: true. Requires explicit override checkbox before save. */}
           {!isView && linkedBanned && (
@@ -2535,7 +2631,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             <div style={{ marginBottom: 10 }}>
               <button onClick={openNewClientForm}
                 style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: '1.5px dashed #fde68a', background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}>
-                + Create new client contact
+                {(appt.clientName || '').trim() ? '+ Add full details (birthday, notes, duplicate check)' : '+ Create new client contact'}
               </button>
             </div>
           )}
@@ -3369,7 +3465,7 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
               the picker to mint a real record on the spot. */}
           {filtered.length === 0 && (
             <div style={{ padding: '12px', fontSize: 12, color: 'var(--pn-text-muted)', textAlign: 'center', borderBottom: '1px solid var(--pn-border)' }}>
-              No matches{query ? ` for “${query}”` : ''}. Close this menu and tap <strong style={{ color: '#92400e' }}>+ Create new client contact</strong> below.
+              No matches{query ? ` for “${query}”` : ''}. Close this menu and add a <strong style={{ color: '#92400e' }}>phone or email</strong> below — we'll create a new profile when you save.
             </div>
           )}
           {filtered.map(c => (
@@ -3398,7 +3494,7 @@ function ClientSearch({ clients, clientId, clientName, onChange }) {
             </div>
           ))}
           {filtered.length === 0 && query && (
-            <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--pn-text-faint)' }}>No clients found — will be recorded as walk-in with name "{query}"</div>
+            <div style={{ padding: '8px 12px', fontSize: 12, color: 'var(--pn-text-faint)' }}>No match — “{query}” will become a new client profile once you add a phone or email below.</div>
           )}
         </div>
       )}
