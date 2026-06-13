@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { resolvedScheme, subscribeColorMode } from '../lib/colorMode';
 
 const FLOATERS = [
   { left: '4%',  dur: '9s',  delay: '0s'   },
@@ -58,17 +59,26 @@ export default function ThemeProvider({ children }) {
   const { activeTheme: t } = useApp();
 
   useEffect(() => {
-    const s = document.documentElement.style;
-    s.setProperty('--tm-primary',   t.primary);
-    s.setProperty('--tm-accent',    t.accent);
-    s.setProperty('--tm-grad',      `linear-gradient(135deg, ${t.gradStart} 0%, ${t.gradEnd} 100%)`);
-    s.setProperty('--tm-grad-dark', `linear-gradient(135deg, ${t.dark} 0%, ${t.gradStart} 100%)`);
-    s.setProperty('--tm-dark',      t.dark);
-    s.setProperty('--tm-bg',        t.bg);
-    s.setProperty('--tm-card',      t.cardBg);
-    s.setProperty('--tm-border',    t.border);
-    s.setProperty('--tm-text',      t.text);
-    s.setProperty('--tm-muted',     t.muted);
+    const apply = () => {
+      const s = document.documentElement.style;
+      // Brand identity — used on both light and dark, keep verbatim.
+      s.setProperty('--tm-primary',   t.primary);
+      s.setProperty('--tm-accent',    t.accent);
+      s.setProperty('--tm-grad',      `linear-gradient(135deg, ${t.gradStart} 0%, ${t.gradEnd} 100%)`);
+      s.setProperty('--tm-grad-dark', `linear-gradient(135deg, ${t.dark} 0%, ${t.gradStart} 100%)`);
+      s.setProperty('--tm-dark',      t.dark);
+      // Structural surfaces — in dark mode, defer to the --pn-* tokens so the
+      // tenant's light brand background/text don't paint light-on-light (the
+      // shell uses --tm-bg, so a light tenant bg made dark-mode text unreadable).
+      const dark = resolvedScheme() === 'dark';
+      s.setProperty('--tm-bg',     dark ? 'var(--pn-bg)'          : t.bg);
+      s.setProperty('--tm-card',   dark ? 'var(--pn-surface)'     : t.cardBg);
+      s.setProperty('--tm-border', dark ? 'var(--pn-border)'      : t.border);
+      s.setProperty('--tm-text',   dark ? 'var(--pn-text)'        : t.text);
+      s.setProperty('--tm-muted',  dark ? 'var(--pn-text-muted)'  : t.muted);
+    };
+    apply();
+    return subscribeColorMode(apply);
   }, [t]);
 
   return (
