@@ -23,6 +23,28 @@ describe('findGroupSlots', () => {
     expect(top.assignments.every(a => a.startMins === top.anchorMins)).toBe(true);
   });
 
+  it('a guest booking TWO services (mani + pedi) gets one tech for the summed time', () => {
+    const mani = svc('mani', 30), pedi = svc('pedi', 45);
+    const { slots } = findGroupSlots({
+      guests: [guest([mani, pedi]), guest([mani])], techs: TECHS3, apptsByDate: {}, dateRange: RANGE,
+    });
+    expect(slots.length).toBeGreaterThan(0);
+    const top = slots[0];
+    const a0 = top.assignments.find(a => a.guestIdx === 0);
+    expect(a0.durMins).toBe(75);                                  // 30 + 45 back-to-back, one tech
+    expect(top.assignments[0].techId).not.toBe(top.assignments[1].techId);
+  });
+
+  it('multi-service guest is unsatisfiable when no single tech does all of them', () => {
+    const mani = svc('mani', 30), pedi = svc('pedi', 45);
+    const techs = [tech('t1', 'Anna', ['mani']), tech('t2', 'Mia', ['pedi'])];
+    const { slots, unsatisfiable } = findGroupSlots({
+      guests: [guest([mani, pedi]), guest([mani])], techs, apptsByDate: {}, dateRange: RANGE,
+    });
+    expect(slots).toEqual([]);
+    expect(unsatisfiable).toContain(0);
+  });
+
   it('only ONE tech eligible for both guests → impossible (distinct techs) → no slots', () => {
     const special = svc('special', 30);
     const techs = [tech('t1', 'Anna', ['special']), tech('t2', 'Mia', ['other'])];

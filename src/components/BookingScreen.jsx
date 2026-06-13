@@ -1196,7 +1196,7 @@ export default function BookingScreen() {
         {step === 2 && flow === 'group' && (
           <GroupResultsStep
             results={groupResults} searching={groupSearching} choice={groupChoice}
-            guests={groupGuests} allTechs={techs} form={form}
+            guests={groupGuests} allTechs={techs} form={form} webCfg={webCfg}
             preferredDate={groupPreferredDate} setPreferredDate={setGroupPreferredDate}
             maxLeadDays={Math.max(1, Number(flowCfg?.maxLeadDays) || 30)}
             onSearch={runGroupSearch} onPick={setGroupChoice}
@@ -1627,6 +1627,9 @@ function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, re
 
       {/* Services — the same rich catalog as the single-guest flow */}
       <div style={SECTION}>{isOrg ? 'Your services' : `Guest ${idx + 1}'s services`}</div>
+      <div style={{ fontSize: 12, color: '#888', margin: '-2px 0 10px', lineHeight: 1.5 }}>
+        Add as many as this person wants — e.g. a manicure <em>and</em> a pedicure. One stylist does them back-to-back and we reserve the full time.
+      </div>
       {g.cart.length > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
           {g.cart.map(it => (
@@ -1680,7 +1683,7 @@ function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, re
   );
 }
 
-function GroupResultsStep({ results, searching, choice, guests, allTechs, form, preferredDate, setPreferredDate, maxLeadDays, onSearch, onPick, onProceed, onBack }) {
+function GroupResultsStep({ results, searching, choice, guests, allTechs, form, webCfg, preferredDate, setPreferredDate, maxLeadDays, onSearch, onPick, onProceed, onBack }) {
   const today = dateStr(todayDate());
   const maxD = new Date(); maxD.setDate(maxD.getDate() + maxLeadDays);
   const gLabel = (idx) => idx === 0 ? (joinName(form?.firstName, form?.lastName) || 'You') : (guests[idx]?.name?.trim() || `Guest ${idx + 1}`);
@@ -1699,11 +1702,38 @@ function GroupResultsStep({ results, searching, choice, guests, allTechs, form, 
         <button onClick={onSearch} disabled={searching} style={{ ...G_PRIMARY, flex: 'none', padding: '9px 18px', opacity: searching ? 0.6 : 1 }}>{searching ? 'Searching…' : 'Find times'}</button>
       </div>
       {results && (results.slots.length === 0 ? (
-        <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: '16px', fontSize: 13, color: '#9a3412', lineHeight: 1.6 }}>
-          We couldn't seat all {guests.length} guests together in the next {maxLeadDays} days
-          {results.unsatisfiable?.length ? ` (Guest ${results.unsatisfiable[0] + 1}'s stylist can't do those services)` : ''}.
-          Please call us and we'll arrange your group personally.
-        </div>
+        (() => {
+          const phone = webCfg?.phone?.trim();
+          const email = webCfg?.publicEmail?.trim() || webCfg?.email?.trim();
+          const tel = phone ? `tel:${phone.replace(/[^\d+]/g, '')}` : null;
+          const unsat = results.unsatisfiable?.length ? results.unsatisfiable[0] : null;
+          const subject = encodeURIComponent(`Group booking — party of ${guests.length}`);
+          const bodyLines = [
+            `Hi! I'd like to book a group of ${guests.length}${preferredDate ? ` around ${fmtDate(preferredDate)}` : ''}.`,
+            ...guests.map((g, i) => `• ${gLabel(i)}: ${(g.cart || []).map(c => c.service.name).join(', ') || 'nail service'}`),
+            '', 'Could you help us find a time? Thank you!',
+          ];
+          const body = encodeURIComponent(bodyLines.join('\n'));
+          const pill = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid #fdba74', borderRadius: 999, padding: '8px 14px', fontSize: 13, fontWeight: 700, color: '#9a3412', textDecoration: 'none' };
+          return (
+            <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: '16px', fontSize: 13, color: '#9a3412', lineHeight: 1.6 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                No open time for all {guests.length} together in the next {maxLeadDays} days
+                {unsat != null ? ` — ${gLabel(unsat)}'s services need one stylist who does all of them` : ''}.
+              </div>
+              <div style={{ marginBottom: phone || email ? 12 : 0 }}>
+                Reach out and we'll do our best to make special arrangements for your group{preferredDate ? ` around ${fmtDate(preferredDate)}` : ''}:
+              </div>
+              {(phone || email) && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {tel && <a href={tel} style={pill}>📞 Call {phone}</a>}
+                  {email && <a href={`mailto:${email}?subject=${subject}&body=${body}`} style={pill}>✉️ Email {email}</a>}
+                </div>
+              )}
+              {!phone && !email && <div style={{ fontWeight: 600 }}>Please contact the salon directly and we'll arrange your group personally.</div>}
+            </div>
+          );
+        })()
       ) : (
         Object.entries(byDate).map(([date, slots]) => (
           <div key={date} style={{ marginBottom: 16 }}>
