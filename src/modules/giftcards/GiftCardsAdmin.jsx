@@ -205,10 +205,15 @@ export default function GiftCardsAdmin() {
 // ── Gift Cards tab ───────────────────────────────────────
 function GiftCardsTab({ giftCards, activeGC, depletedGC, voidedGC, totalOutstanding, isAdmin, onNew, onDetail }) {
   const [filter, setFilter] = useState('active');
+  const [search, setSearch] = useState('');
 
-  const shown = filter === 'active'   ? activeGC
-              : filter === 'depleted' ? depletedGC
-              : voidedGC;
+  const q = search.trim().toLowerCase();
+  const bucket = filter === 'active'   ? activeGC
+               : filter === 'depleted' ? depletedGC
+               : voidedGC;
+  // While searching, look across ALL cards (any status) so a buyer or
+  // recipient can be found regardless of remaining balance.
+  const shown = q ? (giftCards || []).filter(g => matchesGiftCard(g, q)) : bucket;
 
   return (
     <>
@@ -219,6 +224,21 @@ function GiftCardsTab({ giftCards, activeGC, depletedGC, voidedGC, totalOutstand
         <StatCard label="Total issued"        value={(giftCards || []).length}  />
       </div>
 
+      {/* Search — by buyer, recipient, code, phone or email */}
+      <div style={{ position: 'relative', marginBottom: 14 }}>
+        <span style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--pn-text-faint)', pointerEvents: 'none' }}>🔍</span>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by buyer, recipient, code, phone or email…"
+          style={{ ...inputStyle, paddingLeft: 34, paddingRight: search ? 34 : 12 }}
+        />
+        {search && (
+          <button onClick={() => setSearch('')}
+            style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', width: 22, height: 22, borderRadius: '50%', border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+        )}
+      </div>
+
       {/* Toolbar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
         <div style={{ display: 'flex', gap: 6 }}>
@@ -227,7 +247,7 @@ function GiftCardsTab({ giftCards, activeGC, depletedGC, voidedGC, totalOutstand
             { id: 'depleted', label: `Depleted (${depletedGC.length})` },
             { id: 'voided',   label: `Voided (${voidedGC.length})` },
           ].map(f => (
-            <PillBtn key={f.id} active={filter === f.id} onClick={() => setFilter(f.id)}>{f.label}</PillBtn>
+            <PillBtn key={f.id} active={!q && filter === f.id} onClick={() => { setSearch(''); setFilter(f.id); }}>{f.label}</PillBtn>
           ))}
         </div>
         <TrashButton collections={['giftCards', 'promoCodes']} scope="Gift Cards" />
@@ -238,8 +258,14 @@ function GiftCardsTab({ giftCards, activeGC, depletedGC, voidedGC, totalOutstand
         )}
       </div>
 
+      {q && (
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 10 }}>
+          {shown.length} {shown.length === 1 ? 'card' : 'cards'} matching “{search.trim()}” · all statuses
+        </div>
+      )}
+
       {shown.length === 0 ? (
-        <Empty>No {filter} gift cards.</Empty>
+        <Empty>{q ? `No gift cards match “${search.trim()}”.` : `No ${filter} gift cards.`}</Empty>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {shown.map(gc => <GiftCardRow key={gc.id} gc={gc} onClick={() => onDetail(gc)} />)}
@@ -247,6 +273,21 @@ function GiftCardsTab({ giftCards, activeGC, depletedGC, voidedGC, totalOutstand
       )}
     </>
   );
+}
+
+// Match a gift card against a free-text query — buyer, recipient, code,
+// note, email, or (digits-only) either phone number.
+function matchesGiftCard(g, q) {
+  const hay = [g.code, g.purchaserName, g.purchaserPhone, g.recipientName, g.recipientEmail, g.recipientPhone, g.issuedTo, g.note]
+    .map(v => String(v || '').toLowerCase());
+  if (hay.some(h => h.includes(q))) return true;
+  const digits = (q.match(/\d/g) || []).join('');
+  if (digits.length >= 4) {
+    const pPhone = (String(g.purchaserPhone || '').match(/\d/g) || []).join('');
+    const rPhone = (String(g.recipientPhone || '').match(/\d/g) || []).join('');
+    if ((pPhone && pPhone.includes(digits)) || (rPhone && rPhone.includes(digits))) return true;
+  }
+  return false;
 }
 
 function GiftCardRow({ gc, onClick }) {
@@ -272,8 +313,9 @@ function GiftCardRow({ gc, onClick }) {
             </span>
             <EmailStatusBadge gc={gc} />
           </div>
+          {gc.purchaserName && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>From: {gc.purchaserName}{gc.purchaserPhone ? ` · ${gc.purchaserPhone}` : ''}</div>}
           {gc.recipientName && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>To: {gc.recipientName}{gc.recipientEmail ? ` · ${gc.recipientEmail}` : ''}</div>}
-          {gc.issuedTo && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Issued to: {gc.issuedTo}</div>}
+          {!gc.recipientName && gc.issuedTo && <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>Issued to: {gc.issuedTo}</div>}
           {gc.note     && <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 1 }}>{gc.note}</div>}
           {status === 'active' && gc.initialBalance && (
             <div style={{ marginTop: 5, height: 4, background: 'var(--pn-surface-alt)', borderRadius: 2, overflow: 'hidden' }}>
@@ -486,6 +528,8 @@ function PromoEditModal({ promo, onSave, onClose }) {
 function GiftCardModal({ onSave, onClose }) {
   const [amount,         setAmount]         = useState('');
   const [code,           setCode]           = useState(genCode());
+  const [purchaserName,  setPurchaserName]  = useState('');
+  const [purchaserPhone, setPurchaserPhone] = useState('');
   const [recipientName,  setRecipientName]  = useState('');
   const [recipientEmail, setRecipientEmail] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
@@ -511,6 +555,10 @@ function GiftCardModal({ onSave, onClose }) {
       recipientEmail: recipientEmail.trim(),
       recipientPhone: recipientPhone.trim() || null,
       issuedTo:       recipientName.trim() || null,
+      // Who bought the card — used for record-keeping + lookup (search by
+      // buyer or recipient in the Gift Cards list and at checkout).
+      purchaserName:  purchaserName.trim() || null,
+      purchaserPhone: purchaserPhone.trim() || null,
       note:           note.trim() || null,
       voided:         false,
     });
@@ -535,6 +583,19 @@ function GiftCardModal({ onSave, onClose }) {
               Generate
             </button>
           </div>
+        </Field>
+
+        <Field label="Purchased by (optional)">
+          <input value={purchaserName} onChange={e => setPurchaserName(e.target.value)}
+            placeholder="Buyer's name…"
+            style={inputStyle} />
+        </Field>
+
+        <Field label="Purchaser phone (optional)">
+          <input value={purchaserPhone} onChange={e => setPurchaserPhone(e.target.value)}
+            placeholder="(555) 123-4567" inputMode="tel"
+            style={inputStyle} />
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>Lets you find this card later by who bought it.</div>
         </Field>
 
         <Field label="Recipient name (optional)">
@@ -571,8 +632,11 @@ function GiftCardModal({ onSave, onClose }) {
           <div style={{ fontSize: 12, color: 'var(--pn-success)', fontWeight: 600 }}>Gift card summary</div>
           <div style={{ fontSize: 13, color: 'var(--pn-text)', marginTop: 4 }}>
             {code || '—'} · {amount ? fmt$(amount) : '$—'}
-            {recipientName && <span style={{ color: 'var(--pn-text-muted)' }}> · {recipientName}</span>}
+            {recipientName && <span style={{ color: 'var(--pn-text-muted)' }}> · for {recipientName}</span>}
           </div>
+          {purchaserName && (
+            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>Bought by {purchaserName}</div>
+          )}
           {validEmail && (
             <div style={{ fontSize: 11, color: 'var(--pn-success)', marginTop: 3 }}>📧 Code will be emailed to {recipientEmail}</div>
           )}
@@ -729,7 +793,11 @@ function GiftCardDetail({ gc, isAdmin, onVoid, onClose }) {
 
         {/* Details */}
         <div style={{ background: 'var(--pn-bg)', borderRadius: 10, padding: '12px 14px', marginBottom: 20, fontSize: 12, display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {gc.issuedTo && <DetailRow label="Issued to"  value={gc.issuedTo} />}
+          {gc.purchaserName  && <DetailRow label="Purchased by" value={gc.purchaserName} />}
+          {gc.purchaserPhone && <DetailRow label="Buyer phone"  value={gc.purchaserPhone} />}
+          {(gc.recipientName || gc.issuedTo) && <DetailRow label="Recipient" value={gc.recipientName || gc.issuedTo} />}
+          {gc.recipientEmail && <DetailRow label="Recipient email" value={gc.recipientEmail} />}
+          {gc.recipientPhone && <DetailRow label="Recipient phone" value={gc.recipientPhone} />}
           {gc.note     && <DetailRow label="Note"       value={gc.note} />}
           <DetailRow label="Created" value={fmtDate(gc.createdAt)} />
           {gc.voidedAt && <DetailRow label="Voided"     value={fmtDate(gc.voidedAt)} />}

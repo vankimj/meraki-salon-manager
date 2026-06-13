@@ -523,6 +523,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         : null;
 
       // Persist any sold gift cards as real records so the codes work for redemption.
+      // The buyer is whoever is being checked out — stamp them on each card so it's
+      // findable later by purchaser as well as recipient.
+      const buyerName  = combinedClientLabel && !/^walk-?in/i.test(combinedClientLabel) ? combinedClientLabel : null;
+      const buyerPhone = walkInClient?.phone?.trim() || primaryAppt?.clientPhone || null;
       const giftCardsSold = [];
       for (const g of gcSales) {
         try {
@@ -532,6 +536,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             originalAmount: g.amount,
             recipientName: g.recipientName || null,
             recipientEmail: g.recipientEmail || null,
+            purchaserName:  buyerName,
+            purchaserPhone: buyerPhone,
             soldAt: new Date().toISOString(),
             soldVia: 'checkout',
             active: true,
