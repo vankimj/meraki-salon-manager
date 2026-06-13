@@ -104,6 +104,15 @@ test.describe('Public surfaces', () => {
         /Firestore.*Connection .* will not be retried/i,
         /service worker.*registration/i,
         /apple-mobile-web-app-capable.*deprecated/i,
+        // Network-level resource failures are not app-init bugs: font-CDN
+        // hiccups, Firestore long-poll aborts (normal lifecycle), RUM/analytics
+        // beacons, and ORB/CORS-blocked third-party images. The Firebase
+        // chunk-order regression this suite guards surfaces as a pageerror
+        // ("is not a constructor" / "Service X not available") — caught above
+        // and by the dedicated sentinel test — not as a net::ERR_ resource
+        // failure. HTTP-status failures (e.g. a 404 on a broken app chunk) do
+        // NOT match net::ERR_, so they still fail the test.
+        /Failed to load resource:.*net::ERR_/i,
       ];
       if (benign.some(rx => rx.test(text))) return;
       errors.push(`CONSOLE: ${text}`);
