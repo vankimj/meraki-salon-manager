@@ -4,7 +4,7 @@ import { parsePhoneNumberFromString as lpnParse } from 'libphonenumber-js';
 // Self-contained so it can be unit-tested without dragging in ScheduleAdmin's
 // firestore/Stripe import tree. Style + phone-format are local copies of the
 // parent's equivalents (kept visually identical).
-const inp = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
+const inp = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
 
 function displayPhone(p) {
   if (!p) return '';
@@ -93,7 +93,7 @@ export default function ClientSearch({ clients, clientId, clientName, onChange }
         )}
       </div>
       {open && (
-        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: 'var(--pn-surface)', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 200, maxHeight: 320, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+        <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, zIndex: 200, maxHeight: 320, overflowY: 'auto', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
           {filtered.length === 0 && (
             <div style={{ padding: '12px', fontSize: 12, color: 'var(--pn-text-muted)', textAlign: 'center', borderBottom: '1px solid var(--pn-border)' }}>
               No matches{query ? ` for “${query}”` : ''}. Close this menu and add a <strong style={{ color: '#92400e' }}>phone or email</strong> below — we'll create a new profile when you save.

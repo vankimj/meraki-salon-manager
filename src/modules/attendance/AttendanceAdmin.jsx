@@ -203,7 +203,7 @@ export default function AttendanceAdmin() {
             const hrs = e ? hoursWorked(e.clockInAt, e.clockOutAt) : 0;
             const noShow = wd?.on && !e?.clockInAt;
             return (
-              <div key={emp.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1.4fr 1.4fr 1fr 1fr', padding: '10px 14px', borderBottom: '1px solid var(--pn-surface-alt)', fontSize: 12, alignItems: 'center', background: noShow ? '#fffaf8' : 'var(--pn-surface)' }}>
+              <div key={emp.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1.4fr 1.4fr 1fr 1fr', padding: '10px 14px', borderBottom: '1px solid var(--pn-surface-alt)', fontSize: 12, alignItems: 'center', background: noShow ? 'var(--pn-warning-bg)' : 'var(--pn-surface)' }}>
                 <div style={{ color: 'var(--pn-text)', fontWeight: 600 }}>{emp.name}</div>
                 <div style={{ color: wd?.on ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)' }}>{scheduled}</div>
                 <div style={{ color: e?.clockInAt  ? 'var(--pn-text)' : noShow ? '#ef4444' : 'var(--pn-text-faint)' }}>{e?.clockInAt  ? fmtTime(e.clockInAt)  : noShow ? 'Not clocked in' : '—'}</div>

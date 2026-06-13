@@ -291,7 +291,7 @@ export default function TechEarnings() {
       )}
 
       {!loading && data && data.month.serviceCount === 0 && data.todayRemaining.length === 0 && data.nextSevenDays.length === 0 && (
-        <div style={{ background: 'linear-gradient(135deg, #f3eafc 0%, #eaf3fc 100%)', border: '1px solid #d8d0e8', borderRadius: 14, padding: 24, textAlign: 'center', marginBottom: 18 }}>
+        <div style={{ background: 'linear-gradient(135deg, #f3eafc 0%, #eaf3fc 100%)', border: '1px solid var(--pn-border)', borderRadius: 14, padding: 24, textAlign: 'center', marginBottom: 18 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>✨</div>
           <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>Welcome, {techName.split(' ')[0]}!</div>
           <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', maxWidth: 480, margin: '0 auto', lineHeight: 1.5 }}>
@@ -418,7 +418,7 @@ export default function TechEarnings() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {data.topClients.map((c, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: i === 0 ? '#fff7ed' : 'var(--pn-bg)', borderRadius: 8 }}>
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', background: i === 0 ? 'var(--pn-warning-bg)' : 'var(--pn-bg)', borderRadius: 8 }}>
                       <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
                         {i === 0 && '⭐ '}
                         {c.name}

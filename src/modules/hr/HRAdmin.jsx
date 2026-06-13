@@ -628,7 +628,7 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
                       ? fmt$(row.earned)
                       : <span style={{ color: 'var(--pn-text-faint)', fontSize: 11 }}>hourly</span>}
                   </span>
-                  <span style={{ textAlign: 'right', fontSize: 13, color: (row.bonusTotal + row.ruleBonusTotal) > 0 ? '#22c55e' : '#bbb' }}
+                  <span style={{ textAlign: 'right', fontSize: 13, color: (row.bonusTotal + row.ruleBonusTotal) > 0 ? '#22c55e' : 'var(--pn-text-faint)' }}
                     title={row.ruleBonusTotal > 0 ? `${fmt$(row.bonusTotal)} manual · ${fmt$(row.ruleBonusTotal)} rule bonuses` : ''}>
                     {(row.bonusTotal + row.ruleBonusTotal) > 0 ? fmt$(row.bonusTotal + row.ruleBonusTotal) : '—'}
                     {row.ruleBonusTotal > 0 && <span style={{ fontSize: 9, color: 'var(--pn-text-faint)', display: 'block' }}>incl. rules</span>}
@@ -707,7 +707,7 @@ function PayrollTab({ periodDays, setPeriodDays, startDate, endDate, rows, loadi
                 placeholder="Holiday, performance, etc." style={inp} />
             </div>
             {addBonusIs1099 && (
-              <div style={{ marginBottom: 12, fontSize: 11.5, lineHeight: 1.5, color: '#b45309', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px' }}>
+              <div style={{ marginBottom: 12, fontSize: 11.5, lineHeight: 1.5, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px' }}>
                 ⚠️ {addBonusFor} has a Tax ID on file (treated as a <strong>1099 contractor</strong>). Recurring or discretionary bonuses can reclassify a contractor as a W-2 employee — prefer output-based amounts written into their contract. See the <strong>Bonus Rules</strong> tab for guidance.
               </div>
             )}

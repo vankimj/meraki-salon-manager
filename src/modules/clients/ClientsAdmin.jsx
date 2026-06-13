@@ -780,7 +780,7 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
 
               {/* Review request — view mode only, admin only, existing clients with email */}
               {isView && client.id && client.email && isAdmin && (
-                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid #f0f0f0' }}>
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--pn-border)' }}>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 6 }}>
                     GOOGLE REVIEW
                     {client.reviewRequestedAt && (
@@ -823,13 +823,13 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                           ))}
                         </div>
                         <input type="date" value={reviewForm.date} onChange={e => setReviewForm(f => ({ ...f, date: e.target.value }))}
-                          style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d0d0d0', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 6, boxSizing: 'border-box' }} />
+                          style={{ width: '100%', fontFamily: 'inherit', border: '1px solid var(--pn-border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 6, boxSizing: 'border-box' }} />
                         <input value={reviewForm.techName} onChange={e => setReviewForm(f => ({ ...f, techName: e.target.value }))}
                           placeholder="Tech name (optional)"
-                          style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d0d0d0', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 6, boxSizing: 'border-box' }} />
+                          style={{ width: '100%', fontFamily: 'inherit', border: '1px solid var(--pn-border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 6, boxSizing: 'border-box' }} />
                         <input value={reviewForm.note} onChange={e => setReviewForm(f => ({ ...f, note: e.target.value }))}
                           placeholder="Note (optional)"
-                          style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d0d0d0', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
+                          style={{ width: '100%', fontFamily: 'inherit', border: '1px solid var(--pn-border)', borderRadius: 6, padding: '5px 8px', fontSize: 12, marginBottom: 8, boxSizing: 'border-box' }} />
                         <div style={{ display: 'flex', gap: 6 }}>
                           <button onClick={() => setRecordingReview(false)}
                             style={{ flex: 1, padding: '6px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>

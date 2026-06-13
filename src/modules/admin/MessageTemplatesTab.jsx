@@ -260,7 +260,7 @@ export default function MessageTemplatesTab() {
               {/* Preview */}
               <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--pn-text-faint)', marginBottom: 6 }}>Preview</div>
               {preview?.error ? (
-                <div style={{ padding: 12, borderRadius: 8, background: '#fef2f2', color: '#b91c1c', fontSize: 12 }}>Preview error: {preview.error}</div>
+                <div style={{ padding: 12, borderRadius: 8, background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', fontSize: 12 }}>Preview error: {preview.error}</div>
               ) : def.channel === 'email' ? (
                 <>
                   <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 6 }}><strong>Subject:</strong> {preview?.subject}</div>
@@ -284,7 +284,7 @@ export default function MessageTemplatesTab() {
                 {isEdited(selKey) && (
                   <button onClick={reset} disabled={saving} style={{
                     padding: '9px 16px', borderRadius: 9, border: '1px solid #e5b4b4', cursor: 'pointer',
-                    background: 'var(--pn-surface)', color: '#b91c1c', fontSize: 13, fontFamily: 'inherit', marginLeft: 'auto',
+                    background: 'var(--pn-surface)', color: 'var(--pn-danger)', fontSize: 13, fontFamily: 'inherit', marginLeft: 'auto',
                   }}>Reset to default</button>
                 )}
               </div>

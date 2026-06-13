@@ -219,17 +219,17 @@ function ThreadView({ thread: initialThread, clientId, senderName, onBack }) {
         {/* Channel selector — buttons disable when contact info isn't on file */}
         <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap' }}>
           <button onClick={() => setChannel('app')}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'app' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'app' ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'app' ? 'var(--pn-success-bg)' : 'var(--pn-surface-alt)', color: channel === 'app' ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             💬 In-app chat
           </button>
           <button onClick={() => setChannel('sms')} disabled={!thread?.clientPhone}
             title={thread?.clientPhone ? `Sends an SMS to ${thread.clientPhone}` : 'No phone on file'}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'sms' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'sms' ? '#2D7A5F' : (thread?.clientPhone ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: thread?.clientPhone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'sms' ? 'var(--pn-success-bg)' : 'var(--pn-surface-alt)', color: channel === 'sms' ? '#2D7A5F' : (thread?.clientPhone ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: thread?.clientPhone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
             📱 SMS
           </button>
           <button onClick={() => setChannel('email')} disabled={!thread?.clientEmail}
             title={thread?.clientEmail ? `Sends an email to ${thread.clientEmail}` : 'No email on file'}
-            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'email' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'email' ? '#2D7A5F' : (thread?.clientEmail ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: thread?.clientEmail ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'email' ? 'var(--pn-success-bg)' : 'var(--pn-surface-alt)', color: channel === 'email' ? '#2D7A5F' : (thread?.clientEmail ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: thread?.clientEmail ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>
             ✉️ Email
           </button>
         </div>
@@ -415,11 +415,11 @@ function ComposeModal({ senderName, onClose, onSent }) {
             </div>
             <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
               <button onClick={() => setChannel('sms')} disabled={!picked.phone}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'sms' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'sms' ? '#2D7A5F' : (picked.phone ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: picked.phone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>📱 SMS</button>
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'sms' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'sms' ? 'var(--pn-success-bg)' : 'var(--pn-surface-alt)', color: channel === 'sms' ? '#2D7A5F' : (picked.phone ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: picked.phone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>📱 SMS</button>
               <button onClick={() => setChannel('email')} disabled={!picked.email}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'email' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'email' ? '#2D7A5F' : (picked.email ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: picked.email ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>✉️ Email</button>
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'email' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'email' ? 'var(--pn-success-bg)' : 'var(--pn-surface-alt)', color: channel === 'email' ? '#2D7A5F' : (picked.email ? 'var(--pn-text-muted)' : 'var(--pn-text-faint)'), cursor: picked.email ? 'pointer' : 'not-allowed', fontFamily: 'inherit', fontWeight: 600 }}>✉️ Email</button>
               <button onClick={() => setChannel('app')}
-                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'app' ? '#f0faf6' : 'var(--pn-surface-alt)', color: channel === 'app' ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>💬 In-app</button>
+                style={{ fontSize: 11, padding: '4px 10px', borderRadius: 14, border: `1px solid ${channel === 'app' ? '#2D7A5F' : 'var(--pn-border-strong)'}`, background: channel === 'app' ? 'var(--pn-success-bg)' : 'var(--pn-surface-alt)', color: channel === 'app' ? '#2D7A5F' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>💬 In-app</button>
             </div>
             {channel === 'email' && (
               <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Subject"

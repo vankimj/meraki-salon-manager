@@ -1124,7 +1124,7 @@ function Leaderboard({ byTech }) {
             {/* Row */}
             <div
               onClick={() => setExpanded(isOpen ? null : name)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', background: isOpen ? '#f0f7ff' : 'transparent', transition: 'background .15s' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', background: isOpen ? 'var(--pn-info-bg)' : 'transparent', transition: 'background .15s' }}
             >
               <div style={{ width: 22, fontSize: 16, textAlign: 'center', flexShrink: 0 }}>
                 {MEDALS[i] || <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', fontWeight: 600 }}>#{i + 1}</span>}
@@ -2583,8 +2583,8 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                       <Td>
                         <span style={{
                           fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 10,
-                          background: r.status === 'no_show' ? '#FEE2E2' : '#FEF3C7',
-                          color: r.status === 'no_show' ? '#991B1B' : '#92400E',
+                          background: r.status === 'no_show' ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)',
+                          color: r.status === 'no_show' ? 'var(--pn-danger)' : 'var(--pn-warning)',
                         }}>{cancelStatusLabel(r)}</span>
                         {r.cancelledAt && (
                           <div style={{ color: 'var(--pn-text-faint)', marginTop: 2 }}>{String(r.cancelledAt).slice(0, 10)}</div>
@@ -3123,7 +3123,7 @@ function TaxReport() {
                 const isActive = quarter === String(q);
                 return (
                   <div key={q} onClick={() => setQuarter(isActive ? 'all' : String(q))}
-                    style={{ background: isActive ? '#e8f4ee' : 'var(--pn-bg)', border: `1px solid ${isActive ? '#2D7A5F' : 'var(--pn-border)'}`, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', transition: 'all .15s' }}>
+                    style={{ background: isActive ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${isActive ? '#2D7A5F' : 'var(--pn-border)'}`, borderRadius: 10, padding: '14px 16px', cursor: 'pointer', transition: 'all .15s' }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: isActive ? '#2D7A5F' : 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 }}>Q{q}</div>
                     <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', lineHeight: 1 }}>{fmt$(d.revenue)}</div>
                     <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>{d.count} appts</div>
@@ -3285,8 +3285,8 @@ function FiltersPanel({ filters, setFilters, options, activeCount, totalCount, s
             display: 'flex', alignItems: 'center', gap: 6,
             padding: '6px 12px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
             border: `1.5px solid ${activeCount > 0 ? '#2D7A5F' : 'var(--pn-border-strong)'}`,
-            background: activeCount > 0 ? '#EDFAF3' : 'var(--pn-surface)',
-            color: activeCount > 0 ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer',
+            background: activeCount > 0 ? 'var(--pn-success-bg)' : 'var(--pn-surface)',
+            color: activeCount > 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer',
           }}>
           <span>⚲</span>
           <span>Filters{activeCount > 0 ? ` (${activeCount})` : ''}</span>
@@ -3368,8 +3368,8 @@ function FilterChip({ active, onClick, children, radio }) {
       style={{
         padding: '5px 11px', borderRadius: 14, fontFamily: 'inherit', fontSize: 12, fontWeight: 600,
         border: `1.5px solid ${active ? '#2D7A5F' : 'var(--pn-border)'}`,
-        background: active ? '#EDFAF3' : 'var(--pn-surface)',
-        color: active ? '#166534' : 'var(--pn-text-muted)', cursor: 'pointer', whiteSpace: 'nowrap',
+        background: active ? 'var(--pn-success-bg)' : 'var(--pn-surface)',
+        color: active ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', whiteSpace: 'nowrap',
       }}>
       {!radio && active ? '✓ ' : ''}{children}
     </button>
@@ -3607,7 +3607,7 @@ function ExportMenu({ appts, metrics, startDate, endDate, filtersActive }) {
             </div>
             {OPTS.map(opt => (
               <button key={opt.label} onClick={opt.fn}
-                style={{ display: 'block', width: '100%', padding: '10px 16px', background: 'none', border: 'none', borderBottom: '1px solid #f5f5f5', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
+                style={{ display: 'block', width: '100%', padding: '10px 16px', background: 'none', border: 'none', borderBottom: '1px solid var(--pn-border)', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit' }}
                 onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'none'}
               >
@@ -3756,7 +3756,7 @@ function MarkdownLite({ text }) {
                 <thead>
                   <tr>
                     {b.header.map((h, hi) => (
-                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', fontWeight: 700, borderBottom: '1px solid #d8d0e8', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
+                      <th key={hi} style={{ textAlign: 'left', padding: '8px 12px', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', fontWeight: 700, borderBottom: '1px solid var(--pn-border)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.03em' }}>
                         {renderInline(h, `${k}h${hi}`)}
                       </th>
                     ))}
@@ -3851,7 +3851,7 @@ function AskAI() {
             color: m.role === 'user' ? '#fff' : 'var(--pn-text)',
             padding: m.role === 'user' ? '10px 14px' : '14px 18px',
             borderRadius: 14,
-            border: m.role === 'user' ? 'none' : '1px solid #e8e4f0',
+            border: m.role === 'user' ? 'none' : '1px solid var(--pn-border)',
             boxShadow: m.role === 'user' ? 'none' : '0 1px 3px rgba(106,79,160,.06)',
             fontSize: 13.5,
             lineHeight: 1.55,

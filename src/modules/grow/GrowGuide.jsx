@@ -184,8 +184,8 @@ function LaunchItemCard({ item, status, entry, state, ctx, onMark, onDeepLink, p
   const pill = STATUS_PILL[status] || STATUS_PILL.pending;
   const done = status === 'done';
   const risk = item.risk === 'high'
-    ? { bg: '#fef2f2', fg: '#b91c1c', label: 'High priority' }
-    : item.risk === 'med' ? { bg: '#fffbeb', fg: '#b45309', label: 'Important' } : null;
+    ? { bg: 'var(--pn-danger-bg)', fg: 'var(--pn-danger)', label: 'High priority' }
+    : item.risk === 'med' ? { bg: 'var(--pn-warning-bg)', fg: 'var(--pn-warning)', label: 'Important' } : null;
 
   return (
     <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px', marginBottom: 10, marginLeft: auditMode ? 0 : 24, opacity: done ? 0.72 : 1 }}>
@@ -411,7 +411,7 @@ function InstagramPanel({ ctx, item, entry, patchItem }) {
           </div>
         ) : <div style={{ fontSize: 12, color: 'var(--pn-text-faint)', marginTop: 4 }}>No stats yet — Refresh to pull your latest posts.</div>}
         {auth.lastSyncError && (
-          <div style={{ marginTop: 8, fontSize: 11.5, color: '#b45309', background: '#fffbeb', borderRadius: 8, padding: '7px 10px' }}>
+          <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', borderRadius: 8, padding: '7px 10px' }}>
             ⚠ Couldn’t refresh recently — your connection may have expired.{' '}
             <button onClick={connect} style={{ background: 'none', border: 'none', color: '#7c3aed', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>Reconnect</button>
           </div>

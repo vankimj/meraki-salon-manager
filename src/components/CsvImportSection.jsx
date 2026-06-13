@@ -343,7 +343,7 @@ export default function CsvImportSection({ onBusyChange }) {
 
       <div style={{ padding: '14px 16px' }}>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 14 }}>
-          Three sequential imports — each unlocks the next. Export from <strong>GlossGenius → Insights → Reports</strong>. Records get tagged <code style={{ background: '#fef3c7', padding: '0 4px', borderRadius: 3 }}>_importedFrom: glossgenius</code>.
+          Three sequential imports — each unlocks the next. Export from <strong>GlossGenius → Insights → Reports</strong>. Records get tagged <code style={{ background: 'var(--pn-warning-bg)', padding: '0 4px', borderRadius: 3 }}>_importedFrom: glossgenius</code>.
         </div>
 
         <Step
