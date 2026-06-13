@@ -10,6 +10,7 @@ import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shif
 import { logActivity } from '../../lib/logger';
 import { subscribeLocations, currentLocationId, locationTaxRate } from '../../lib/locations';
 import { applyTurnCredit } from '../../lib/turnCredit';
+import { resolveTurnMode } from '../../lib/turnValue';
 import { defaultWalkIn } from '../reports/metrics';
 import { useApp } from '../../context/AppContext';
 import { escapeHtml, genUrlSafeToken } from '../../utils/helpers';
@@ -586,7 +587,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         // applyTurnCredit checks the _turnCredited flag so walk-ins seated
         // via the queue's 🎯 Next button don't double-count.
         if (wasNotDone) {
-          applyTurnCredit({ ...g.appt, id, status: 'done' }).then(applied => {
+          applyTurnCredit({ ...g.appt, id, status: 'done' }, resolveTurnMode(settings)).then(applied => {
             if (applied) logActivity('turn_credit', `${g.appt.techName} +1 via checkout (${g.appt.clientName || 'walk-in'})`);
           });
         }

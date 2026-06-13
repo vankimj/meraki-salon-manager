@@ -13,6 +13,7 @@ import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
+import { resolveTurnMode } from '../../lib/turnValue';
 import { notifyAffectedTechs } from '../../lib/notifications';
 import { TENANT_ID } from '../../lib/tenant';
 import { resizeImg } from '../../utils/helpers';
@@ -603,7 +604,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
         // a scheduled appt).
         const becameDone = original?.status !== 'done' && appt.status === 'done';
         if (becameDone) {
-          applyTurnCredit({ ...full, id: appt.id }).then(applied => {
+          applyTurnCredit({ ...full, id: appt.id }, resolveTurnMode(settings)).then(applied => {
             if (applied) logActivity('turn_credit', `${appt.techName} +1 (${appt.clientName || 'walk-in'})`);
           });
         }
@@ -793,7 +794,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
       logActivity('appt_updated', logDetail);
       const becameDone = original?.status !== 'done' && appt.status === 'done';
       if (becameDone) {
-        applyTurnCredit({ ...full, id: appt.id }).then(applied => {
+        applyTurnCredit({ ...full, id: appt.id }, resolveTurnMode(settings)).then(applied => {
           if (applied) logActivity('turn_credit', `${appt.techName} +1 (${appt.clientName || 'walk-in'})`);
         });
       }
@@ -1045,7 +1046,7 @@ function openNew(techName, slotMins) {
           }}
           onRecount={async () => {
             try {
-              const result = await recomputeTodayTurns();
+              const result = await recomputeTodayTurns(resolveTurnMode(settings), services);
               const lines = Object.entries(result.byTech).map(([n, c]) => `${n}: ${c}`).join(' · ');
               showToast(`Recounted ${result.recounted} done appts today${lines ? ' — ' + lines : ''}`, 5000);
             } catch (e) {
@@ -1405,6 +1406,7 @@ function openNew(techName, slotMins) {
 function nextUpInRotation(roster) {
   if (!roster || roster.length === 0) return null;
   const sorted = [...roster].sort((a, b) => {
+    if (!!a.serving !== !!b.serving) return a.serving ? 1 : -1;   // on a ticket → sinks
     const ta = a.turnsTaken || 0, tb = b.turnsTaken || 0;
     if (ta !== tb) return ta - tb;
     return (a.clockInAt || '').localeCompare(b.clockInAt || '');
@@ -1428,6 +1430,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
   const inRoster = new Set(roster.map(r => r.techId));
   const available = (allTechs || []).filter(t => !inRoster.has(t.id));
   const sorted = [...roster].sort((a, b) => {
+    if (!!a.serving !== !!b.serving) return a.serving ? 1 : -1;   // on a ticket → sinks
     const ta = a.turnsTaken || 0, tb = b.turnsTaken || 0;
     if (ta !== tb) return ta - tb;
     return (a.clockInAt || '').localeCompare(b.clockInAt || '');

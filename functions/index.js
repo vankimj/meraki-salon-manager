@@ -15,6 +15,7 @@ const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
 const { roleCan, normalizeRole } = require('./lib/rbac');
 const { resolveInternalRouting, isCustomerNotifEnabled } = require('./lib/notificationRouting');
+const { resolveTurnMode, buildTurnValueMap, turnValueForLineName } = require('./lib/turnValue');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
 const { renderTemplate, getTemplatePhrases } = require('./lib/messageTemplates');
@@ -1060,6 +1061,71 @@ function buildHandbookReminderHtml(data, empName, brand) {
 // Rating CTA block injected into the email receipt. Extracted to ./lib/receiptEmail.js
 // so its three style branches + per-tech URL construction are unit-testable.
 const { buildRatingEmailBlock } = require('./lib/receiptEmail');
+
+// Value-weighted turn rotation (Mango mode). EVERY checkout path — kiosk
+// (recordKioskSale), mobile (completeSale), web (CheckoutModal) — writes a
+// receipt with services:[{name, price, techName}], so crediting turns here
+// catches all of them in one place without touching the money code. No-op
+// unless the tenant set walkinTurnMode='value'; legacy 'count' mode is
+// unaffected (it still credits +1 at seat / on 'done' client-side).
+exports.creditTurnsOnReceipt = onDocumentCreated(
+  `tenants/{tenantId}/receipts/{receiptId}`,
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const r = snap.data();
+    if (!r || r._turnsCredited) return;
+    const tenantId = event.params.tenantId;
+    const db = getFirestore();
+    try {
+      const setSnap  = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings = setSnap.exists ? setSnap.data() : {};
+      if (resolveTurnMode(settings) !== 'value') return;
+
+      const lines = Array.isArray(r.services) ? r.services : [];
+      if (!lines.length) return;
+
+      // Value each line by its service name → turnValue (fallback 1.0).
+      const svcSnap  = await db.collection(`tenants/${tenantId}/services`).get().catch(() => null);
+      const services = svcSnap ? svcSnap.docs.map(d => ({ id: d.id, ...d.data() })) : [];
+      const valueMap = buildTurnValueMap(services);
+      const byTech = {};
+      lines.forEach(l => {
+        const tech = String((l && l.techName) || '').trim();
+        if (!tech) return;
+        byTech[tech] = (byTech[tech] || 0) + turnValueForLineName(l && l.name, valueMap);
+      });
+      if (!Object.keys(byTech).length) return;
+
+      // Credit TODAY's roster (rotation is per-day; checkout happens today).
+      const tz    = await tenantTimezone(db, tenantId);
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
+      const rosterRef = db.doc(`tenants/${tenantId}/turnRoster/${today}`);
+
+      // Transaction: re-check the stamp (idempotent across retries) + credit + clear serving atomically.
+      await db.runTransaction(async tx => {
+        const rFresh = await tx.get(snap.ref);
+        if (!rFresh.exists || rFresh.data()._turnsCredited) return;
+        const rosterSnap = await tx.get(rosterRef);
+        if (rosterSnap.exists) {
+          const data   = rosterSnap.data() || {};
+          const roster = Array.isArray(data.roster) ? data.roster : [];
+          let changed = false;
+          const next = roster.map(e => {
+            const add = byTech[String((e && e.techName) || '').trim()];
+            if (add == null) return e;                 // tech not on this ticket — untouched
+            changed = true;
+            return { ...e, turnsTaken: (Number(e.turnsTaken) || 0) + add, serving: false };
+          });
+          if (changed) tx.set(rosterRef, { ...data, roster: next, updatedAt: new Date().toISOString() }, { merge: true });
+        }
+        tx.set(snap.ref, { _turnsCredited: new Date().toISOString() }, { merge: true });
+      });
+    } catch (e) {
+      console.warn(`[creditTurnsOnReceipt] tenant=${tenantId}:`, e && e.message);
+    }
+  }
+);
 
 exports.sendReceiptEmail = onDocumentCreated(
   `tenants/{tenantId}/receipts/{receiptId}`,

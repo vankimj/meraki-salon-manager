@@ -9,6 +9,7 @@ import {
 import { logActivity } from '../../lib/logger';
 import { resolveServicePricing } from '../../utils/serviceHelpers';
 import TurnHelpModal from '../../components/TurnHelpModal';
+import { resolveTurnMode } from '../../lib/turnValue';
 
 function todayStr() {
   const d = new Date();
@@ -66,6 +67,9 @@ function playChime() {
 function nextUpInRotation(roster) {
   if (!roster || roster.length === 0) return null;
   const sorted = [...roster].sort((a, b) => {
+    // A tech currently on a ticket ('serving', value mode) sinks below the
+    // available ones so we never point a walk-in at someone mid-service.
+    if (!!a.serving !== !!b.serving) return a.serving ? 1 : -1;
     const ta = a.turnsTaken || 0, tb = b.turnsTaken || 0;
     if (ta !== tb) return ta - tb;
     return (a.clockInAt || '').localeCompare(b.clockInAt || '');
@@ -86,7 +90,7 @@ function initialsOf(name) {
 }
 
 export default function WalkinKiosk() {
-  const { isAdmin, isScheduler, showToast, gUser } = useApp();
+  const { isAdmin, isScheduler, showToast, gUser, settings } = useApp();
   const today = todayStr();
   const [roster, setRoster]   = useState([]);
   const [queue, setQueue]     = useState([]);
@@ -182,9 +186,15 @@ export default function WalkinKiosk() {
           console.warn('[walkin] could not check ban status:', e?.message);
         }
       }
-      // 1) +1 turn for the tech
+      // 1) Advance the rotation. In count mode, +1 now. In value mode, the turn
+      // is credited at checkout (creditTurnsOnReceipt) from the real ticket
+      // value — so here we just mark the tech 'serving' so they drop out of
+      // "next up" until their ticket closes.
+      const valueMode = resolveTurnMode(settings) === 'value';
       const updated = (roster || []).map(r =>
-        r.techName === techName ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
+        r.techName === techName
+          ? (valueMode ? { ...r, serving: true } : { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 })
+          : r
       );
       await saveTurnRoster(today, updated).catch(() => {});
 

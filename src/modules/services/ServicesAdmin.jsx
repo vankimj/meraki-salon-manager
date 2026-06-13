@@ -433,6 +433,13 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           <Field label="Duration (min)" error={errors.duration} style={{ flex: 1 }}>
             <input type="number" min={1} value={svc.duration} onChange={e => onChange({ duration: Number(e.target.value) })} style={inputStyle} />
           </Field>
+          <Field label="Turn value (pts)" style={{ flex: 1 }}>
+            <input type="number" min={0} step={0.5} value={svc.turnValue ?? ''} placeholder="1"
+              onChange={e => onChange({ turnValue: e.target.value === '' ? null : Number(e.target.value) })} style={inputStyle} />
+          </Field>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: -6, marginBottom: 12 }}>
+          Turn value is only used when the walk-in rotation is set to “by value of work” (Admin → Settings). Blank = counts as 1 turn. e.g. polish change 0.5, full set 2.
         </div>
 
         <div style={{ display: 'flex', gap: 20, marginBottom: 12 }}>

@@ -54,7 +54,7 @@ export default function WalkinScreen() {
       fetchSettings().catch(() => ({})),
       fetchServices().catch(() => []),
     ]);
-    setCfg({ partialTurns: !!s?.walkinPartialTurns, requestNoTurn: !!s?.walkinRequestNoTurn, seniority: !!s?.walkinSeniorityOrder });
+    setCfg({ partialTurns: !!s?.walkinPartialTurns, requestNoTurn: !!s?.walkinRequestNoTurn, seniority: !!s?.walkinSeniorityOrder, valueMode: s?.walkinTurnMode === 'value' });
     setServices((svc || []).filter(x => x.active !== false));
     const savedRoster = r.roster || [];
     const activeEmps = e.filter(x => x.active !== false);
@@ -180,9 +180,16 @@ export default function WalkinScreen() {
     // A client-requested tech takes no turn when that policy is on (Mango-style).
     let delta = 0;
     if (tech) {
-      delta = cfg.partialTurns ? (Number(seatWeight) || 0) : 1;
-      if (seatRequested && cfg.requestNoTurn) delta = 0;
-      persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + delta } : t));
+      if (cfg.valueMode) {
+        // Value mode: the turn is credited at checkout from the real ticket
+        // value. Here we just mark the tech 'serving' so they drop out of
+        // "next up" until their ticket closes.
+        persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, serving: true } : t));
+      } else {
+        delta = cfg.partialTurns ? (Number(seatWeight) || 0) : 1;
+        if (seatRequested && cfg.requestNoTurn) delta = 0;
+        persistRoster(roster.map(t => t.techId === tech.techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + delta } : t));
+      }
     }
     try {
       await updateWaitlistEntry(entry.id, {
@@ -190,18 +197,23 @@ export default function WalkinScreen() {
         seatedTechId: tech?.techId || null, seatedTechName: tech?.techName || null,
         seatTurnDelta: delta,
       });
-      setLastSeat({ entryId: entry.id, techId: tech?.techId || null, delta, clientName: entry.clientName || 'Walk-in', techName: tech?.techName || null });
+      setLastSeat({ entryId: entry.id, techId: tech?.techId || null, delta, valueMode: cfg.valueMode, clientName: entry.clientName || 'Walk-in', techName: tech?.techName || null });
       await load();
     } catch {}
   }
-  // Undo the most recent seating: put the turn back on the tech and return the
-  // walk-in to the waitlist. Covers the "seated the wrong tech" misclick.
+  // Undo the most recent seating: put the turn back (count mode) or clear the
+  // serving flag (value mode), and return the walk-in to the waitlist. Covers
+  // the "seated the wrong tech" misclick.
   async function undoSeat() {
     const ls = lastSeat;
     if (!ls) return;
     setLastSeat(null);
-    if (ls.techId && ls.delta) {
-      persistRoster(roster.map(t => t.techId === ls.techId ? { ...t, turnsTaken: Math.max(0, (t.turnsTaken || 0) - ls.delta) } : t));
+    if (ls.techId) {
+      persistRoster(roster.map(t => t.techId === ls.techId
+        ? { ...t,
+            ...(ls.valueMode ? { serving: false } : {}),
+            ...(ls.delta ? { turnsTaken: Math.max(0, (t.turnsTaken || 0) - ls.delta) } : {}) }
+        : t));
     }
     try {
       await updateWaitlistEntry(ls.entryId, {
@@ -226,8 +238,11 @@ export default function WalkinScreen() {
   const senById = {};
   const empById = {};
   emps.forEach(e => { senById[e.id] = Number.isFinite(e.sortOrder) ? e.sortOrder : 999; empById[e.id] = e; });
+  // Away OR on-a-ticket (serving, value mode) sink to the bottom and never hold
+  // the "next up" star.
+  const benched = (t) => (t.away || t.serving) ? 1 : 0;
   const sorted = [...roster].sort((a, b) =>
-    (a.away ? 1 : 0) - (b.away ? 1 : 0)
+    benched(a) - benched(b)
     || (a.turnsTaken || 0) - (b.turnsTaken || 0)
     || (cfg.seniority ? ((senById[a.techId] ?? 999) - (senById[b.techId] ?? 999)) : 0)
     || (a.clockInAt || '').localeCompare(b.clockInAt || ''));
@@ -260,13 +275,18 @@ export default function WalkinScreen() {
       }
       ListEmptyComponent={<Text style={styles.empty}>No techs clocked in yet — they appear here automatically when they clock in at the Clock Kiosk. Or add one manually below.</Text>}
       renderItem={({ item, index }) => {
-        const isNext = index === 0 && !item.away;
+        const isNext = index === 0 && !item.away && !item.serving;
         return (
-        <View style={[styles.row, isNext && styles.nextRow, item.away && styles.awayRow]}>
+        <View style={[styles.row, isNext && styles.nextRow, (item.away || item.serving) && styles.awayRow]}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{isNext ? '⭐ ' : ''}{item.away ? '💤 ' : ''}{item.techName}</Text>
-            <Text style={styles.sub}>{fmtTurns(item.turnsTaken)} turn{(item.turnsTaken || 0) === 1 ? '' : 's'} today{item.away ? ' · away' : ''}</Text>
+            <Text style={styles.name}>{isNext ? '⭐ ' : ''}{item.away ? '💤 ' : ''}{item.serving ? '💺 ' : ''}{item.techName}</Text>
+            <Text style={styles.sub}>{fmtTurns(item.turnsTaken)} turn{(item.turnsTaken || 0) === 1 ? '' : 's'} today{item.away ? ' · away' : ''}{item.serving ? ' · on a ticket' : ''}</Text>
           </View>
+          {canEdit && item.serving && (
+            <TouchableOpacity style={styles.awayBtn} onPress={() => persistRoster(roster.map(t => t.techId === item.techId ? { ...t, serving: false } : t))}>
+              <Text style={styles.awayText}>Free</Text>
+            </TouchableOpacity>
+          )}
           {canEdit && (
             <>
               <TouchableOpacity style={styles.awayBtn} onPress={() => toggleAway(item.techId)}><Text style={styles.awayText}>{item.away ? 'Back' : 'Away'}</Text></TouchableOpacity>

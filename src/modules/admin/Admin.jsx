@@ -695,6 +695,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
             </Section>
             <TechRemindersSection settings={settings} updateSettings={updateSettings} nested />
+            <WalkinTurnModeSection settings={settings} updateSettings={updateSettings} nested />
             <NotificationRoutingSection settings={settings} updateSettings={updateSettings} users={users} nested />
             <CancellationPolicySection settings={settings} updateSettings={updateSettings} nested />
             <BookingCardPolicySection settings={settings} updateSettings={updateSettings} nested />
@@ -3807,6 +3808,51 @@ function CancellationPolicySection({ settings, updateSettings, nested = false })
 // writes settings.notificationRouting; enforced server-side in notifyByRouting
 // (internal) and customerNotifEnabled gates (customer). Defaults mirror today's
 // behavior, so nothing changes until an admin edits the grid.
+// How the walk-in rotation counts a turn: legacy headcount ('count') or
+// value-weighted ('value', credited at checkout from per-service turn values).
+// Read server-side by creditTurnsOnReceipt and by the walk-in screens.
+function WalkinTurnModeSection({ settings, updateSettings, nested = false }) {
+  const mode = settings.walkinTurnMode === 'value' ? 'value' : 'count';
+  const [saving, setSaving] = useState(false);
+  async function setMode(m) {
+    if (m === mode) return;
+    setSaving(true);
+    try { await updateSettings({ ...settings, walkinTurnMode: m }); } finally { setSaving(false); }
+  }
+  const opts = [
+    { k: 'count', t: 'By customer count', d: 'Each ticket counts as one turn, whatever the price. Simplest — balances how many customers each tech serves.' },
+    { k: 'value', t: 'By value of work (Mango-style)', d: 'Each service adds its turn value when the ticket is checked out, so the rotation balances earnings, not headcount. Booked appointments count automatically.' },
+  ];
+  return (
+    <Section title="🔢 Walk-in turn counting" keywords="walk-in walkin turn rotation value mango count fair ticket points earnings next up" nested={nested}>
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+          How the walk-in rotation decides who&apos;s “next up.” The schedule&apos;s turn panel has a “? How turns work” explainer.
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {opts.map(o => {
+            const sel = mode === o.k;
+            return (
+              <label key={o.k} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${sel ? '#2D7A5F' : 'var(--pn-border)'}`, background: sel ? '#f0faf6' : 'var(--pn-surface)' }}>
+                <input type="radio" name="walkinTurnMode" checked={sel} disabled={saving} onChange={() => setMode(o.k)} style={{ marginTop: 2, accentColor: '#2D7A5F' }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text)' }}>{o.t}</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>{o.d}</div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {mode === 'value' && (
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 10, lineHeight: 1.5 }}>
+            Set each service&apos;s <strong>Turn value</strong> in <strong>Services</strong> (e.g. polish change 0.5, full set 2). Blank = 1. Turns are credited when the ticket checks out.
+          </div>
+        )}
+      </div>
+    </Section>
+  );
+}
+
 function NotificationRoutingSection({ settings, updateSettings, users = [], nested = false }) {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);

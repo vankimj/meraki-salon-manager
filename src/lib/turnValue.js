@@ -19,7 +19,8 @@ export function resolveTurnMode(settings) {
 
 // One service's turn value — its configured turnValue, else the default.
 export function resolveTurnValue(service) {
-  const v = Number(service && service.turnValue);
+  if (!service || service.turnValue == null) return DEFAULT_TURN_VALUE;
+  const v = Number(service.turnValue);
   return Number.isFinite(v) && v >= 0 ? v : DEFAULT_TURN_VALUE;
 }
 

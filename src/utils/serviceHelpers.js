@@ -37,7 +37,7 @@ export function validateService(data) {
 }
 
 export function blankService() {
-  return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, description: '', image: '', active: true, taxable: true, sortOrder: 99, options: [], defaultRebookWeeks: 0 };
+  return { name: '', category: 'Manicures', basePrice: 0, priceFrom: true, duration: 30, durationMin: false, turnValue: null, description: '', image: '', active: true, taxable: true, sortOrder: 99, options: [], defaultRebookWeeks: 0 };
 }
 
 // Per-tech duration override: a slower (e.g. newer) tech can need more time

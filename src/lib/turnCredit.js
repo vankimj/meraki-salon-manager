@@ -1,4 +1,5 @@
 import { fetchTurnRoster, saveTurnRoster, fetchAppointments, saveAppointment } from './firestore';
+import { buildTurnValueMap, turnValueForLineName } from './turnValue';
 
 function todayStr() {
   const d = new Date();
@@ -17,7 +18,10 @@ function todayStr() {
 //
 // Today-only: the roster is per-day, so completing an appointment for a
 // past or future date doesn't move today's rotation.
-export async function applyTurnCredit(appt) {
+export async function applyTurnCredit(appt, turnMode = 'count') {
+  // In value mode, turns are credited at checkout by the creditTurnsOnReceipt
+  // Cloud Function from the real ticket value — never +1 here (would double-count).
+  if (turnMode === 'value') return false;
   if (!appt) return false;
   if (!appt.techName) return false;
   if (appt.date !== todayStr()) return false;
@@ -49,7 +53,7 @@ export async function applyTurnCredit(appt) {
 // non-cancelled, non-no_show appointment that's marked done today. Used
 // to catch up after the rule changed (e.g., past checkouts that didn't
 // credit) or to manually fix drift. Returns { recounted, byTech }.
-export async function recomputeTodayTurns() {
+export async function recomputeTodayTurns(turnMode = 'count', services = []) {
   const today = todayStr();
   const data = await fetchTurnRoster(today);
   const roster = (data && data.roster) || [];
@@ -57,10 +61,15 @@ export async function recomputeTodayTurns() {
 
   const todayAppts = await fetchAppointments(today);
   const counted = todayAppts.filter(a => a.status === 'done');
+  // 'value' mode sums each done appt's per-service turn value; 'count' = +1 each.
+  const valueMap = turnMode === 'value' ? buildTurnValueMap(services) : null;
   const byTech = {};
   counted.forEach(a => {
     if (!a.techName) return;
-    byTech[a.techName] = (byTech[a.techName] || 0) + 1;
+    const add = turnMode === 'value'
+      ? (Array.isArray(a.services) ? a.services : []).reduce((s, sv) => s + turnValueForLineName(sv && (sv.name || sv.customName), valueMap), 0)
+      : 1;
+    byTech[a.techName] = (byTech[a.techName] || 0) + add;
   });
   const next = roster.map(r => ({ ...r, turnsTaken: byTech[r.techName] || 0 }));
   await saveTurnRoster(today, next);
