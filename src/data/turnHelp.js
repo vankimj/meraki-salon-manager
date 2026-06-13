@@ -124,6 +124,19 @@ export const TURN_HELP = {
     ],
   },
 
+  // ── Why not manage it by hand (perception) ────────────────────────────────
+  perception: {
+    q: 'Why not just manage the rotation by hand?',
+    a: 'Doing it manually looks unfair even when it isn’t — and that perception is the real problem.',
+    points: [
+      'It looks like favoritism. When a person hands out walk-ins, techs can’t see the logic, so a slow stretch feels like the front desk playing favorites — even when it was just luck.',
+      'There’s nothing to point to. “You gave her three in a row” becomes he-said-she-said with no record. An automatic, on-screen rotation everyone can see ends the argument — the screen decides, not a person.',
+      'It puts the front desk in the crossfire. Whoever assigns becomes the target of lobbying and complaints, which quietly strains the team.',
+      'People forget and bend the rule under pressure. That inconsistency chips away at trust over time, even with the best intentions.',
+      'A neutral, value-based rule everyone can see makes fairness objective: the math decides, it’s transparent, and nobody has to be the bad guy.',
+    ],
+  },
+
   // How the fair (value) system actually works in this app, once it's turned on.
   howItWorksHere: [
     'Your salon chooses the system in Admin → Walk-in turn counting. This explainer shows the fair “by value” one.',

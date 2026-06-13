@@ -90,7 +90,7 @@ export default function TurnHelpSheet({ visible, onClose }) {
         })}
         {done && (
           <View style={[styles.verdict, spread > 120 ? styles.verdictBad : styles.verdictGood]}>
-            <Text style={[styles.verdictText, { color: spread > 120 ? '#b3261e' : '#1a7a4f' }]}>
+            <Text style={[styles.verdictText, { color: spread > 120 ? theme.danger : theme.green }]}>
               {spread > 120
                 ? `😬 Pay gap: $${spread}. Same-ish client counts, very different money.`
                 : `✅ Pay gap: only $${spread}. Everyone earned about the same.`}
@@ -233,6 +233,13 @@ export default function TurnHelpSheet({ visible, onClose }) {
               </View>
             ))}
 
+            {/* Why not manage by hand (perception) */}
+            <Text style={styles.h}>🙈 {H.perception.q}</Text>
+            <Text style={[styles.p, styles.bold]}>{H.perception.a}</Text>
+            {H.perception.points.map((p, i) => (
+              <View key={i} style={styles.bulletRow}><Text style={styles.bulletDot}>›</Text><Text style={styles.bulletText}>{p}</Text></View>
+            ))}
+
             <Text style={styles.h}>How it works in this app</Text>
             {H.howItWorksHere.map((w, i) => (
               <View key={i} style={styles.bulletRow}>
@@ -258,10 +265,10 @@ const makeStyles = (t) => StyleSheet.create({
   h:        { fontSize: 14, fontWeight: '800', color: t.green, marginTop: 20, marginBottom: 7 },
   p:        { fontSize: 13.5, lineHeight: 20, color: t.textMuted, marginBottom: 7 },
   bold:     { fontWeight: '800', color: t.text },
-  qBox:     { backgroundColor: '#fff8ed', borderWidth: 1, borderColor: '#f3d9a4', borderRadius: 12, padding: 14, marginTop: 18 },
-  qQ:       { fontSize: 13.5, fontWeight: '800', color: '#9a6b1e' },
-  qA:       { fontSize: 15, fontWeight: '800', color: '#1a7a4f', marginTop: 4, marginBottom: 8 },
-  qWhy:     { fontSize: 13, lineHeight: 19, color: '#6b5a3a', marginBottom: 6 },
+  qBox:     { backgroundColor: t.warningBg, borderWidth: 1, borderColor: t.warning, borderRadius: 12, padding: 14, marginTop: 18 },
+  qQ:       { fontSize: 13.5, fontWeight: '800', color: t.warning },
+  qA:       { fontSize: 15, fontWeight: '800', color: t.green, marginTop: 4, marginBottom: 8 },
+  qWhy:     { fontSize: 13, lineHeight: 19, color: t.text, marginBottom: 6 },
   chipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
   chip:     { backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.border, borderRadius: 14, paddingHorizontal: 9, paddingVertical: 4 },
   chipText: { fontSize: 11.5, color: t.textMuted, fontWeight: '600' },
@@ -285,8 +292,8 @@ const makeStyles = (t) => StyleSheet.create({
   tieNote:  { fontSize: 12, lineHeight: 17, color: t.textFaint, backgroundColor: t.surfaceAlt, borderRadius: 8, padding: 9, marginBottom: 12 },
   barTrack: { flexDirection: 'row', height: 15, backgroundColor: t.surfaceAlt, borderRadius: 7, overflow: 'hidden' },
   verdict:  { marginTop: 4, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
-  verdictBad:  { backgroundColor: '#fdecea' },
-  verdictGood: { backgroundColor: '#eaf6ef' },
+  verdictBad:  { backgroundColor: t.dangerBg },
+  verdictGood: { backgroundColor: t.greenSoft },
   verdictText: { fontSize: 11.5, fontWeight: '700', lineHeight: 16 },
   bulletRow: { flexDirection: 'row', gap: 8, marginBottom: 6 },
   bulletDot: { color: t.green, fontWeight: '800', fontSize: 14, lineHeight: 20 },

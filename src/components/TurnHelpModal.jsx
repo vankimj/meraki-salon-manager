@@ -77,7 +77,7 @@ export default function TurnHelpModal({ onClose }) {
           );
         })}
         {done && (
-          <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 700, color: spread > 120 ? '#c0392b' : '#1a7a4f', background: spread > 120 ? '#fdecea' : '#eaf6ef', borderRadius: 8, padding: '7px 9px', lineHeight: 1.4 }}>
+          <div style={{ marginTop: 6, fontSize: 11.5, fontWeight: 700, color: spread > 120 ? 'var(--pn-danger, #c0392b)' : 'var(--pn-success, #16a34a)', background: spread > 120 ? 'var(--pn-danger-bg, #fdecea)' : 'var(--pn-success-bg, #ecfdf3)', borderRadius: 8, padding: '7px 9px', lineHeight: 1.4 }}>
             {spread > 120
               ? `😬 Pay gap: $${spread}. Same-ish client counts, wildly different money.`
               : `✅ Pay gap: only $${spread}. Everyone earned about the same.`}
@@ -108,11 +108,11 @@ export default function TurnHelpModal({ onClose }) {
           ))}
 
           {/* The big question */}
-          <div style={{ marginTop: 20, background: '#fff8ed', border: '1px solid #f3d9a4', borderRadius: 12, padding: '14px 16px' }}>
-            <div style={{ fontSize: 13.5, fontWeight: 800, color: '#9a6b1e' }}>❓ {H.bigQuestion.q}</div>
-            <div style={{ fontSize: 15, fontWeight: 800, color: '#1a7a4f', margin: '4px 0 8px' }}>{H.bigQuestion.a}</div>
+          <div style={{ marginTop: 20, background: 'var(--pn-bg, #fff8ed)', border: '1px solid var(--pn-border, #f3d9a4)', borderRadius: 12, padding: '14px 16px' }}>
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--pn-text, #9a6b1e)' }}>❓ {H.bigQuestion.q}</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--pn-success, #16a34a)', margin: '4px 0 8px' }}>{H.bigQuestion.a}</div>
             {H.bigQuestion.why.map((w, i) => (
-              <p key={i} style={{ ...para, color: '#6b5a3a', margin: '0 0 6px' }}>{w}</p>
+              <p key={i} style={{ ...para, margin: '0 0 6px' }}>{w}</p>
             ))}
           </div>
 
@@ -148,7 +148,7 @@ export default function TurnHelpModal({ onClose }) {
             <span style={{ fontSize: 12, color: 'var(--pn-text-muted, #888)', marginLeft: 'auto', fontWeight: 600 }}>{step} / {clients.length} served</span>
           </div>
 
-          <div style={{ minHeight: 44, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', background: incoming ? '#eef5f2' : 'transparent', borderRadius: 10, padding: incoming ? '10px 12px' : 0 }}>
+          <div style={{ minHeight: 44, marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', background: incoming ? 'var(--pn-success-bg, #eef5f2)' : 'transparent', borderRadius: 10, padding: incoming ? '10px 12px' : 0 }}>
             {incoming
               ? <span style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--pn-text, #333)' }}>Walk-in #{incoming.n} just arrived: <span style={{ color: 'var(--tm-primary, #2D7A5F)' }}>{incoming.service}</span> · ${incoming.price} <span style={{ color: 'var(--pn-text-muted, #888)', fontWeight: 600 }}>({incoming.value} pts)</span></span>
               : done
@@ -196,8 +196,8 @@ export default function TurnHelpModal({ onClose }) {
           {(() => {
             const stp = H.breaks.steps[breakI];
             const chip = (r) => {
-              const bg = r.s === 'away' ? 'var(--pn-bg, #f4f5f6)' : r.s === 'next' ? '#eaf6ef' : 'var(--pn-surface, #fff)';
-              const bd = r.s === 'next' ? '#2D7A5F' : 'var(--pn-border, #e0e0e0)';
+              const bg = r.s === 'away' ? 'var(--pn-bg, #f4f5f6)' : r.s === 'next' ? 'var(--pn-success-bg, #ecfdf3)' : 'var(--pn-surface, #fff)';
+              const bd = r.s === 'next' ? 'var(--pn-success, #16a34a)' : 'var(--pn-border, #e0e0e0)';
               return (
                 <div key={r.n} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, border: `1.5px solid ${bd}`, background: bg, marginBottom: 6, opacity: r.s === 'away' ? 0.6 : 1, transition: 'all .3s' }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text, #222)' }}>{r.s === 'next' ? '⭐ ' : r.s === 'away' ? '💤 ' : ''}{r.n}</span>
@@ -235,6 +235,16 @@ export default function TurnHelpModal({ onClose }) {
               </div>
             ))}
           </div>
+
+          {/* Why not manage by hand (perception) */}
+          <div style={sec}>🙈 {H.perception.q}</div>
+          <p style={{ ...para, fontWeight: 700, color: 'var(--pn-text, #333)' }}>{H.perception.a}</p>
+          {H.perception.points.map((p, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+              <span style={{ color: 'var(--tm-primary, #2D7A5F)', fontWeight: 800 }}>›</span>
+              <span style={para}>{p}</span>
+            </div>
+          ))}
 
           {/* How it works in this app */}
           <div style={sec}>How it works in this app</div>
