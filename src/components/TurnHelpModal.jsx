@@ -34,6 +34,8 @@ export default function TurnHelpModal({ onClose }) {
   const [step, setStep] = useState(0);          // 0 = before anyone; clients.length = done
   const [playing, setPlaying] = useState(false);
   const timer = useRef(null);
+  const [clockN, setClockN] = useState(0);      // clock-in timeline reveal count
+  const [breakI, setBreakI] = useState(0);      // breaks stepper index
 
   useEffect(() => {
     if (!playing) return;
@@ -167,6 +169,72 @@ export default function TurnHelpModal({ onClose }) {
               <span style={para}>{w}</span>
             </div>
           ))}
+
+          {/* Clock-in timeline */}
+          <div style={sec}>🕘 {H.clockInTimeline.q}</div>
+          <p style={{ ...para, fontWeight: 700, color: 'var(--pn-text, #333)' }}>{H.clockInTimeline.a}</p>
+          <button onClick={() => setClockN(n => n >= H.clockInTimeline.events.length ? 0 : n + 1)}
+            style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: 'var(--tm-primary, #2D7A5F)', border: 'none', borderRadius: 8, padding: '7px 14px', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 12 }}>
+            {clockN >= H.clockInTimeline.events.length ? '↺ Replay' : clockN === 0 ? '▶ Play the day' : 'Next ›'}
+          </button>
+          <div style={{ borderLeft: '2px solid var(--pn-border, #e6e6e6)', paddingLeft: 14, marginLeft: 4 }}>
+            {H.clockInTimeline.events.map((ev, i) => {
+              const shown = i < clockN;
+              return (
+                <div key={i} style={{ position: 'relative', marginBottom: 12, opacity: shown ? 1 : 0.25, transition: 'opacity .4s', transform: shown ? 'none' : 'translateY(4px)' }}>
+                  <span style={{ position: 'absolute', left: -21, top: 3, width: 9, height: 9, borderRadius: '50%', background: ev.highlight ? '#e0892f' : 'var(--tm-primary, #2D7A5F)', boxShadow: '0 0 0 3px var(--pn-surface, #fff)' }} />
+                  <div style={{ fontSize: 12, fontWeight: 800, color: ev.highlight ? '#c0721e' : 'var(--pn-text, #333)' }}>{ev.time}</div>
+                  <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--pn-text-muted, #555)' }}>{ev.text}</div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Breaks */}
+          <div style={sec}>☕ {H.breaks.q}</div>
+          <p style={{ ...para, fontWeight: 700, color: 'var(--pn-text, #333)' }}>{H.breaks.a}</p>
+          {(() => {
+            const stp = H.breaks.steps[breakI];
+            const chip = (r) => {
+              const bg = r.s === 'away' ? 'var(--pn-bg, #f4f5f6)' : r.s === 'next' ? '#eaf6ef' : 'var(--pn-surface, #fff)';
+              const bd = r.s === 'next' ? '#2D7A5F' : 'var(--pn-border, #e0e0e0)';
+              return (
+                <div key={r.n} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderRadius: 8, border: `1.5px solid ${bd}`, background: bg, marginBottom: 6, opacity: r.s === 'away' ? 0.6 : 1, transition: 'all .3s' }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text, #222)' }}>{r.s === 'next' ? '⭐ ' : r.s === 'away' ? '💤 ' : ''}{r.n}</span>
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-muted, #777)' }}>{r.t} turn{r.t === 1 ? '' : 's'}{r.s === 'away' ? ' · away' : ''}</span>
+                </div>
+              );
+            };
+            return (
+              <div>
+                <div style={{ background: 'var(--pn-bg, #f7f8f9)', borderRadius: 10, padding: 12, marginBottom: 10 }}>{stp.roster.map(chip)}</div>
+                <div style={{ fontSize: 13, lineHeight: 1.5, color: 'var(--pn-text-muted, #555)', minHeight: 38, marginBottom: 10 }}>{stp.caption}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <button onClick={() => setBreakI(i => Math.max(0, i - 1))} disabled={breakI === 0}
+                    style={{ fontSize: 12, fontWeight: 700, color: breakI === 0 ? '#bbb' : 'var(--pn-text-muted, #555)', background: 'var(--pn-surface, #fff)', border: '1px solid var(--pn-border, #ddd)', borderRadius: 8, padding: '6px 12px', cursor: breakI === 0 ? 'default' : 'pointer', fontFamily: 'inherit' }}>‹ Back</button>
+                  <button onClick={() => setBreakI(i => Math.min(H.breaks.steps.length - 1, i + 1))} disabled={breakI >= H.breaks.steps.length - 1}
+                    style={{ fontSize: 12, fontWeight: 800, color: '#fff', background: breakI >= H.breaks.steps.length - 1 ? '#bbb' : 'var(--tm-primary, #2D7A5F)', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: breakI >= H.breaks.steps.length - 1 ? 'default' : 'pointer', fontFamily: 'inherit' }}>Next ›</button>
+                  <span style={{ fontSize: 11, color: 'var(--pn-text-faint, #999)', marginLeft: 'auto' }}>{breakI + 1} / {H.breaks.steps.length}</span>
+                </div>
+              </div>
+            );
+          })()}
+          <div style={{ marginTop: 10 }}>
+            {H.breaks.points.map((p, i) => (
+              <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 4 }}><span style={{ color: 'var(--tm-primary, #2D7A5F)', fontWeight: 800 }}>›</span><span style={{ ...para, margin: 0 }}>{p}</span></div>
+            ))}
+          </div>
+
+          {/* No preference vs requested */}
+          <div style={sec}>{H.requests.q}</div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            {H.requests.cases.map(c => (
+              <div key={c.tag} style={{ flex: 1, minWidth: 220, background: 'var(--pn-bg, #f7f8f9)', border: '1px solid var(--pn-border, #eee)', borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: 'var(--pn-text, #222)', marginBottom: 6 }}>{c.icon} {c.tag}</div>
+                <div style={{ fontSize: 13, lineHeight: 1.55, color: 'var(--pn-text-muted, #555)' }}>{c.text}</div>
+              </div>
+            ))}
+          </div>
 
           {/* How it works in this app */}
           <div style={sec}>How it works in this app</div>

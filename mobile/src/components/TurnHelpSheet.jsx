@@ -42,6 +42,9 @@ export default function TurnHelpSheet({ visible, onClose }) {
   const [step, setStep] = useState(0);
   const [playing, setPlaying] = useState(false);
   const timer = useRef(null);
+  const [clockN, setClockN] = useState(0);
+  const [breakI, setBreakI] = useState(0);
+  const anim = () => LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
   useEffect(() => { if (!visible) { setStep(0); setPlaying(false); } }, [visible]);
 
@@ -173,6 +176,63 @@ export default function TurnHelpSheet({ visible, onClose }) {
               </View>
             ))}
 
+            {/* Clock-in timeline */}
+            <Text style={styles.h}>🕘 {H.clockInTimeline.q}</Text>
+            <Text style={[styles.p, styles.bold]}>{H.clockInTimeline.a}</Text>
+            <TouchableOpacity style={styles.miniBtn} onPress={() => { anim(); setClockN(n => n >= H.clockInTimeline.events.length ? 0 : n + 1); }}>
+              <Text style={styles.miniBtnText}>{clockN >= H.clockInTimeline.events.length ? '↺ Replay' : clockN === 0 ? '▶ Play the day' : 'Next ›'}</Text>
+            </TouchableOpacity>
+            <View style={styles.timeline}>
+              {H.clockInTimeline.events.map((ev, i) => (
+                i < clockN ? (
+                  <View key={i} style={styles.tlRow}>
+                    <View style={[styles.tlDot, { backgroundColor: ev.highlight ? '#e0892f' : theme.green }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.tlTime, ev.highlight && { color: '#c0721e' }]}>{ev.time}</Text>
+                      <Text style={styles.tlText}>{ev.text}</Text>
+                    </View>
+                  </View>
+                ) : null
+              ))}
+              {clockN === 0 && <Text style={styles.tlHint}>Tap “Play the day” to step through the clock-ins.</Text>}
+            </View>
+
+            {/* Breaks */}
+            <Text style={styles.h}>☕ {H.breaks.q}</Text>
+            <Text style={[styles.p, styles.bold]}>{H.breaks.a}</Text>
+            <View style={styles.breakBox}>
+              {H.breaks.steps[breakI].roster.map(r => (
+                <View key={r.n} style={[styles.breakChip,
+                  r.s === 'next' && { borderColor: theme.green, backgroundColor: theme.greenSoft },
+                  r.s === 'away' && { opacity: 0.6 }]}>
+                  <Text style={styles.breakName}>{r.s === 'next' ? '⭐ ' : r.s === 'away' ? '💤 ' : ''}{r.n}</Text>
+                  <Text style={styles.breakMeta}>{r.t} turn{r.t === 1 ? '' : 's'}{r.s === 'away' ? ' · away' : ''}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.breakCaption}>{H.breaks.steps[breakI].caption}</Text>
+            <View style={styles.controls}>
+              <TouchableOpacity style={styles.stepBtn} disabled={breakI === 0} onPress={() => { anim(); setBreakI(i => Math.max(0, i - 1)); }}>
+                <Text style={[styles.stepBtnText, breakI === 0 && { color: theme.textFaint }]}>‹ Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.miniBtn, breakI >= H.breaks.steps.length - 1 && { backgroundColor: theme.borderStrong }]} disabled={breakI >= H.breaks.steps.length - 1} onPress={() => { anim(); setBreakI(i => Math.min(H.breaks.steps.length - 1, i + 1)); }}>
+                <Text style={styles.miniBtnText}>Next ›</Text>
+              </TouchableOpacity>
+              <Text style={styles.counter}>{breakI + 1} / {H.breaks.steps.length}</Text>
+            </View>
+            {H.breaks.points.map((p, i) => (
+              <View key={i} style={styles.bulletRow}><Text style={styles.bulletDot}>›</Text><Text style={styles.bulletText}>{p}</Text></View>
+            ))}
+
+            {/* No preference vs requested */}
+            <Text style={styles.h}>{H.requests.q}</Text>
+            {H.requests.cases.map(c => (
+              <View key={c.tag} style={styles.reqCard}>
+                <Text style={styles.reqTag}>{c.icon} {c.tag}</Text>
+                <Text style={styles.reqText}>{c.text}</Text>
+              </View>
+            ))}
+
             <Text style={styles.h}>How it works in this app</Text>
             {H.howItWorksHere.map((w, i) => (
               <View key={i} style={styles.bulletRow}>
@@ -232,4 +292,20 @@ const makeStyles = (t) => StyleSheet.create({
   bulletDot: { color: t.green, fontWeight: '800', fontSize: 14, lineHeight: 20 },
   bulletText: { flex: 1, fontSize: 13, lineHeight: 19, color: t.textMuted },
   footer:   { fontSize: 13, fontStyle: 'italic', color: t.textFaint, marginTop: 16, lineHeight: 19, borderTopWidth: 1, borderTopColor: t.border, paddingTop: 14 },
+  miniBtn:  { backgroundColor: t.green, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', marginBottom: 12 },
+  miniBtnText: { color: '#fff', fontWeight: '800', fontSize: 12.5 },
+  timeline: { borderLeftWidth: 2, borderLeftColor: t.border, paddingLeft: 14, marginLeft: 4 },
+  tlRow:    { flexDirection: 'row', marginBottom: 12 },
+  tlDot:    { position: 'absolute', left: -21, top: 4, width: 9, height: 9, borderRadius: 5 },
+  tlTime:   { fontSize: 12, fontWeight: '800', color: t.text },
+  tlText:   { fontSize: 13, lineHeight: 19, color: t.textMuted },
+  tlHint:   { fontSize: 12, color: t.textFaint, fontStyle: 'italic' },
+  breakBox: { backgroundColor: t.surface, borderRadius: 10, padding: 12, marginBottom: 8 },
+  breakChip:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1.5, borderColor: t.border, backgroundColor: t.bg, marginBottom: 6 },
+  breakName:{ fontSize: 13, fontWeight: '700', color: t.text },
+  breakMeta:{ fontSize: 12, color: t.textMuted },
+  breakCaption: { fontSize: 13, lineHeight: 19, color: t.textMuted, minHeight: 38, marginBottom: 8 },
+  reqCard:  { backgroundColor: t.surface, borderWidth: 1, borderColor: t.border, borderRadius: 12, padding: 14, marginBottom: 10 },
+  reqTag:   { fontSize: 13, fontWeight: '800', color: t.text, marginBottom: 6 },
+  reqText:  { fontSize: 13, lineHeight: 19, color: t.textMuted },
 });

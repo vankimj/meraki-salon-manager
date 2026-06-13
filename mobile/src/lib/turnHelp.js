@@ -82,6 +82,48 @@ export const TURN_HELP = {
     'The value system fixes it: a full set is “worth” about four polish changes, so after one full set you wait while teammates catch up. Everyone’s drawer ends up close to even.',
   ],
 
+  // ── Clock-in timeline (staggered start + a late arrival) ──────────────────
+  clockInTimeline: {
+    q: 'When does a tech join the rotation?',
+    a: 'The moment they clock in — and that time sets their place.',
+    events: [
+      { time: '8:55a', text: 'Anna clocks in first, so she’s “next up” (⭐) to start. Earliest-in also breaks any ties all day.' },
+      { time: '9:05a', text: 'Bao clocks in next.' },
+      { time: '9:20a', text: 'Chi clocks in. All three are now in — walk-ins start cycling evenly between them.' },
+      { time: '11:00a', text: 'Dao comes in for a midday shift and clocks in. She joins at 0, so she’s instantly “next up” and catches the next few walk-ins.', highlight: true },
+      { time: 'Close', text: 'Dao ends the day having served fewer customers — not a penalty, just fewer hours worked. That’s fair.' },
+    ],
+  },
+
+  // ── Breaks (Away / Back) ──────────────────────────────────────────────────
+  breaks: {
+    q: 'What happens when a tech takes a break?',
+    a: 'They tap Away, and the rotation simply skips them until they’re back.',
+    steps: [
+      { caption: 'Bao needs lunch and taps “Away.” She drops to the bottom (💤).',
+        roster: [{ n: 'Chi', t: 1, s: 'next' }, { n: 'Anna', t: 2, s: 'in' }, { n: 'Bao', t: 2, s: 'away' }] },
+      { caption: 'While she’s out, no walk-ins land on Bao and her count is frozen. The line flows to Anna and Chi.',
+        roster: [{ n: 'Chi', t: 2, s: 'in' }, { n: 'Anna', t: 3, s: 'in' }, { n: 'Bao', t: 2, s: 'away' }] },
+      { caption: 'Bao taps “Back.” She rejoins with the 2 turns she had — and since the line moved on, she’s now “next up” and catches back up.',
+        roster: [{ n: 'Bao', t: 2, s: 'next' }, { n: 'Chi', t: 2, s: 'in' }, { n: 'Anna', t: 3, s: 'in' }] },
+    ],
+    points: [
+      'Away = 💤, drops to the bottom — no walk-ins, count frozen.',
+      'Back = rejoins with the same count, so missed turns are made up on their own.',
+    ],
+  },
+
+  // ── No preference vs requested-by-name ────────────────────────────────────
+  requests: {
+    q: 'No preference vs. asking for a specific tech?',
+    cases: [
+      { tag: 'No preference', icon: '🎲',
+        text: 'The customer doesn’t care who does their nails, so they go to whoever is “next up” in the rotation. This is what the turn order is for.' },
+      { tag: 'Asks for a tech by name', icon: '⭐',
+        text: 'The customer requests, say, Anna — so they go to Anna even if she isn’t next up. With “requested visits don’t take a turn” turned on, it doesn’t cost Anna her place in line, so being popular never benches her for the next no-preference walk-in.' },
+    ],
+  },
+
   // How the fair (value) system actually works in this app, once it's turned on.
   howItWorksHere: [
     'Your salon chooses the system in Admin → Walk-in turn counting. This explainer shows the fair “by value” one.',
