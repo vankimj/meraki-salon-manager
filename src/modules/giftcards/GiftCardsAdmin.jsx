@@ -835,7 +835,7 @@ function StatCard({ label, value, accent }) {
 
 function PillBtn({ active, onClick, children }) {
   return (
-    <button onClick={onClick} style={{ padding: '5px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? 'var(--pn-text)' : 'var(--pn-surface)', color: active ? '#fff' : 'var(--pn-text-muted)', border: `1px solid ${active ? 'var(--pn-text)' : 'var(--pn-border-strong)'}`, cursor: 'pointer' }}>
+    <button onClick={onClick} style={{ padding: '5px 14px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12, fontWeight: active ? 600 : 400, background: active ? 'var(--pn-text)' : 'var(--pn-surface)', color: active ? 'var(--pn-bg)' : 'var(--pn-text-muted)', border: `1px solid ${active ? 'var(--pn-text)' : 'var(--pn-border-strong)'}`, cursor: 'pointer' }}>
       {children}
     </button>
   );
