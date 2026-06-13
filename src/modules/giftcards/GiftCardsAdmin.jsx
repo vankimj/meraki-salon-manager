@@ -34,7 +34,7 @@ function promoReason(p) {
   if (p.maxUses && (p.usedCount || 0) >= p.maxUses)
     return { label: 'Maxed out', color: '#7c3aed', bg: '#ede9fe', border: '#ddd6fe' };
   if (p.singleUse && p.usedAt)
-    return { label: 'Used', color: '#6b7280', bg: '#f3f4f6', border: '#e5e7eb' };
+    return { label: 'Used', color: 'var(--pn-text-muted)', bg: 'var(--pn-surface-muted)', border: 'var(--pn-border)' };
   return null;
 }
 
@@ -308,7 +308,7 @@ function GiftCardRow({ gc, onClick }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', fontFamily: 'monospace', letterSpacing: '.03em' }}>{gc.code}</span>
-            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: status === 'active' ? 'var(--pn-success-bg)' : status === 'voided' ? 'var(--pn-danger-bg)' : 'var(--pn-surface-alt)', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? 'var(--pn-danger)' : '#aaa', textTransform: 'uppercase', letterSpacing: '.05em' }}>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 7px', borderRadius: 10, background: status === 'active' ? 'var(--pn-success-bg)' : status === 'voided' ? 'var(--pn-danger-bg)' : 'var(--pn-surface-alt)', color: status === 'active' ? '#2D7A5F' : status === 'voided' ? 'var(--pn-danger)' : 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em' }}>
               {status}
             </span>
             <EmailStatusBadge gc={gc} />
@@ -325,7 +325,7 @@ function GiftCardRow({ gc, onClick }) {
         </div>
 
         <div style={{ textAlign: 'right', flexShrink: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: status === 'active' ? '#2D7A5F' : '#aaa' }}>
+          <div style={{ fontSize: 16, fontWeight: 700, color: status === 'active' ? '#2D7A5F' : 'var(--pn-text-faint)' }}>
             {fmt$(gc.balance)}
           </div>
           {gc.initialBalance && gc.initialBalance !== gc.balance && (
@@ -384,7 +384,7 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
   return (
     <>
       <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div style={{ width: 40, height: 28, borderRadius: 6, background: promo.active ? 'linear-gradient(135deg,#f59e0b,#f97316)' : '#e5e7eb', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>
+        <div style={{ width: 40, height: 28, borderRadius: 6, background: promo.active ? 'linear-gradient(135deg,#f59e0b,#f97316)' : 'var(--pn-surface-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: 14 }}>
           🏷
         </div>
 
@@ -400,7 +400,7 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
               </span>
             )}
             {promo.singleUse && (
-              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: '#f0f4ff', color: '#6366f1', fontWeight: 600 }}>Single-use</span>
+              <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'var(--pn-info-bg)', color: '#6366f1', fontWeight: 600 }}>Single-use</span>
             )}
             {promo.maxUses && (
               <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'var(--pn-warning-bg)', color: 'var(--pn-warning)', fontWeight: 600 }}>
@@ -424,7 +424,7 @@ function PromoRow({ promo, isAdmin, onToggle, onDelete, onEdit }) {
             <button onClick={() => setEditing(true)} style={{ padding: '5px 12px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               Edit
             </button>
-            <button onClick={onToggle} style={{ padding: '5px 12px', borderRadius: 8, border: `1px solid ${promo.active ? 'var(--pn-border)' : '#2D7A5F'}`, background: promo.active ? 'var(--pn-bg)' : '#e8f4ee', color: promo.active ? 'var(--pn-text-muted)' : '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={onToggle} style={{ padding: '5px 12px', borderRadius: 8, border: `1px solid ${promo.active ? 'var(--pn-border)' : '#2D7A5F'}`, background: promo.active ? 'var(--pn-bg)' : 'var(--pn-success-bg)', color: promo.active ? 'var(--pn-text-muted)' : '#2D7A5F', fontSize: 11, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
               {promo.active ? 'Deactivate' : 'Activate'}
             </button>
             <button onClick={onDelete} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #fee2e2', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -694,7 +694,7 @@ function PromoModal({ onSave, onClose }) {
           <div style={{ display: 'flex', gap: 8 }}>
             {[{ id: 'percent', label: '% off' }, { id: 'fixed', label: '$ off' }].map(t => (
               <button key={t.id} onClick={() => setType(t.id)}
-                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${type === t.id ? '#3D95CE' : 'var(--pn-border)'}`, background: type === t.id ? '#EBF4FB' : 'var(--pn-bg)', color: type === t.id ? '#1a5f8a' : 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${type === t.id ? '#3D95CE' : 'var(--pn-border)'}`, background: type === t.id ? 'var(--pn-info-bg)' : 'var(--pn-bg)', color: type === t.id ? 'var(--pn-info)' : 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 {t.label}
               </button>
             ))}
@@ -910,7 +910,7 @@ function EmailStatusBadge({ gc }) {
   if (!status) return <Pill bg="var(--pn-warning-bg)" fg="var(--pn-warning)" border="#fde68a">📧 Email queued</Pill>;
   if (status === 'sending') return <Pill bg="var(--pn-info-bg)" fg="var(--pn-info)" border="#bfdbfe">📧 Emailing…</Pill>;
   if (status === 'sent')    return <Pill bg="var(--pn-success-bg)" fg="var(--pn-success)" border="#86efac" title={live.emailSentAt ? `Sent ${new Date(live.emailSentAt).toLocaleString()}` : ''}>📧 Email sent</Pill>;
-  if (status === 'skipped') return <Pill bg="#f5f5f5" fg="#6b7280" border="#e5e7eb" title={live.emailErrorReason || 'No email on file'}>📧 No email</Pill>;
+  if (status === 'skipped') return <Pill bg="var(--pn-surface-muted)" fg="var(--pn-text-muted)" border="var(--pn-border)" title={live.emailErrorReason || 'No email on file'}>📧 No email</Pill>;
   if (status === 'failed') {
     return (
       <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
@@ -922,7 +922,7 @@ function EmailStatusBadge({ gc }) {
           catch (ex) { setErr(ex?.message || 'Retry failed'); }
           finally { setRetrying(false); }
         }} disabled={retrying}
-          style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, border: '1px solid #2D7A5F', background: '#f0faf6', color: '#2D7A5F', cursor: retrying ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+          style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, border: '1px solid #2D7A5F', background: 'var(--pn-success-bg)', color: '#2D7A5F', cursor: retrying ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
           {retrying ? '…' : '🔄 Retry'}
         </button>
         {err && <span title={err} style={{ fontSize: 10, color: '#ef4444' }}>!</span>}

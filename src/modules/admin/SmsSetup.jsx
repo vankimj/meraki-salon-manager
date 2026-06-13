@@ -236,7 +236,7 @@ export default function SmsSetup() {
         {sms?.tfnNumber && status !== 'released' && (
           <div style={{ marginTop: 10 }}>
             <button onClick={doRelease} disabled={releaseBusy}
-              style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: '#7f1d1d', cursor: releaseBusy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+              style={{ fontSize: 11, fontWeight: 600, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-danger)', cursor: releaseBusy ? 'default' : 'pointer', fontFamily: 'inherit' }}>
               {releaseBusy ? 'Releasing…' : '✕ Release this TFN'}
             </button>
           </div>

@@ -254,7 +254,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           maxWidth: 'calc(100vw - 40px)',
           maxHeight: 'calc(100vh - 120px)',
           background: 'var(--pn-surface)',
-          border: '1px solid #e6e0ee',
+          border: '1px solid var(--pn-border)',
           borderRadius: 16,
           boxShadow: '0 16px 40px rgba(106,79,160,.18)',
           zIndex: 95,
@@ -293,7 +293,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                 )}
 
                 {(transcript || interimText) && (
-                  <div style={{ marginTop: 14, padding: 10, background: '#f5f3fa', borderRadius: 10, fontSize: 13, color: 'var(--pn-text)', textAlign: 'left' }}>
+                  <div style={{ marginTop: 14, padding: 10, background: 'var(--pn-surface-alt)', borderRadius: 10, fontSize: 13, color: 'var(--pn-text)', textAlign: 'left' }}>
                     {transcript}
                     {interimText && <span style={{ color: 'var(--pn-text-faint)' }}>{interimText}</span>}
                   </div>
@@ -321,7 +321,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
                 <div style={{ fontSize: 28, marginBottom: 8 }}>🤔</div>
                 <div style={{ fontSize: 13 }}>Thinking…</div>
                 {transcript && (
-                  <div style={{ marginTop: 12, padding: 8, background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: 'var(--pn-text-muted)' }}>
+                  <div style={{ marginTop: 12, padding: 8, background: 'var(--pn-surface-alt)', borderRadius: 8, fontSize: 12, color: 'var(--pn-text-muted)' }}>
                     "{transcript}"
                   </div>
                 )}
@@ -351,7 +351,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           </div>
 
           {!proposal && !thinking && !listening && (
-            <div style={{ borderTop: '1px solid #f0ecf5', padding: '10px 14px', background: 'var(--pn-bg)' }}>
+            <div style={{ borderTop: '1px solid var(--pn-border)', padding: '10px 14px', background: 'var(--pn-bg)' }}>
               <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Try saying</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {[
@@ -401,7 +401,7 @@ function ProposalView({ proposal, executing, listening, clients, services, techs
         {items.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {items.map((it, i) => (
-              <div key={i} style={{ padding: '8px 10px', background: '#f5f3fa', borderRadius: 8, fontSize: 12, color: 'var(--pn-text)' }}>
+              <div key={i} style={{ padding: '8px 10px', background: 'var(--pn-surface-alt)', borderRadius: 8, fontSize: 12, color: 'var(--pn-text)' }}>
                 {renderItem(it)}
               </div>
             ))}
@@ -501,7 +501,7 @@ function MutationCard({ proposal, executing, listening, clients, services, techs
                 <div style={{ fontSize: 10, color: 'var(--pn-text-muted)', marginBottom: 4 }}>Pick one</div>
                 {ambiguousClientMatches.map(c => (
                   <button key={c.id} onClick={() => { onUpdate({ clientId: c.id, clientName: c.name }); setClientSearch(c.name); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 4, border: 'none', background: payload.clientId === c.id ? '#EDFAF3' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--pn-text)' }}>
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', borderRadius: 4, border: 'none', background: payload.clientId === c.id ? 'var(--pn-success-bg)' : 'transparent', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, color: 'var(--pn-text)' }}>
                     {c.name}{c.phone ? ` · ${c.phone}` : ''}
                   </button>
                 ))}

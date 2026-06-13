@@ -904,23 +904,23 @@ function openNew(techName, slotMins) {
         {viewMode === 'day' ? (
           <>
             <NavBtn onClick={() => setDate(d => addDays(d, -1))}>‹</NavBtn>
-            <button onClick={() => setDate(todayStr())} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: date === todayStr() ? '#3D95CE' : 'var(--pn-surface)', color: date === todayStr() ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setDate(todayStr())} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: date === todayStr() ? '#3D95CE' : 'var(--pn-surface)', color: date === todayStr() ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
               Today
             </button>
             <NavBtn onClick={() => setDate(d => addDays(d, 1))}>›</NavBtn>
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>{fmtDate(date)}</span>
             {isTech && (
-              <button onClick={() => setShowAll(v => !v)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer', border: `1px solid ${showAll ? '#3D95CE' : '#d8d8d8'}`, background: showAll ? 'var(--pn-info-bg)' : 'var(--pn-surface)', color: showAll ? 'var(--pn-info)' : 'var(--pn-text-muted)', fontWeight: showAll ? 600 : 400 }}>
+              <button onClick={() => setShowAll(v => !v)} style={{ fontSize: 11, padding: '5px 10px', borderRadius: 6, fontFamily: 'inherit', cursor: 'pointer', border: `1px solid ${showAll ? '#3D95CE' : 'var(--pn-border-strong)'}`, background: showAll ? 'var(--pn-info-bg)' : 'var(--pn-surface)', color: showAll ? 'var(--pn-info)' : 'var(--pn-text-muted)', fontWeight: showAll ? 600 : 400 }}>
                 {showAll ? '👥 All Techs' : '👤 My Column'}
               </button>
             )}
             <input type="date" value={date} onChange={e => setDate(e.target.value)}
-              style={{ marginLeft: 'auto', fontSize: 12, border: '1px solid #d8d8d8', borderRadius: 6, padding: '5px 8px', fontFamily: 'inherit', background: 'var(--pn-bg)' }} />
+              style={{ marginLeft: 'auto', fontSize: 12, border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '5px 8px', fontFamily: 'inherit', background: 'var(--pn-bg)' }} />
           </>
         ) : (
           <>
             <NavBtn onClick={() => setDate(addDays(weekStart, -7))}>‹</NavBtn>
-            <button onClick={() => setDate(todayStr())} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #d8d8d8', background: weekStart === weekStartOf(todayStr()) ? '#3D95CE' : 'var(--pn-surface)', color: weekStart === weekStartOf(todayStr()) ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => setDate(todayStr())} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: weekStart === weekStartOf(todayStr()) ? '#3D95CE' : 'var(--pn-surface)', color: weekStart === weekStartOf(todayStr()) ? '#fff' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
               This week
             </button>
             <NavBtn onClick={() => setDate(addDays(weekStart, 7))}>›</NavBtn>
@@ -932,7 +932,7 @@ function openNew(techName, slotMins) {
         )}
 
         {/* Day / Week toggle */}
-        <div style={{ display: 'flex', border: '1px solid #d8d8d8', borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
+        <div style={{ display: 'flex', border: '1px solid var(--pn-border-strong)', borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
           {[['day','Day'],['week','Week']].map(([v, label]) => (
             <button key={v} onClick={() => setViewMode(v)} style={{ padding: '5px 12px', border: 'none', fontFamily: 'inherit', fontSize: 12, cursor: 'pointer', background: viewMode === v ? '#3D95CE' : 'var(--pn-surface)', color: viewMode === v ? '#fff' : 'var(--pn-text-muted)', fontWeight: viewMode === v ? 600 : 400 }}>
               {label}
@@ -946,7 +946,7 @@ function openNew(techName, slotMins) {
           return (
             <button onClick={() => setShowQueue(v => !v)} style={{
               position: 'relative', fontSize: 12, padding: '5px 10px', borderRadius: 6, flexShrink: 0,
-              border: `1px solid ${showQueue ? '#2D7A5F' : '#d8d8d8'}`,
+              border: `1px solid ${showQueue ? '#2D7A5F' : 'var(--pn-border-strong)'}`,
               background: showQueue ? 'var(--pn-success-bg)' : 'var(--pn-surface)',
               color: showQueue ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: showQueue ? 600 : 400,
             }}>
@@ -970,7 +970,7 @@ function openNew(techName, slotMins) {
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button onClick={() => setShowToolbarMenu(o => !o)}
               title="Schedule options"
-              style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: `1px solid ${showToolbarMenu ? '#3D95CE' : '#d8d8d8'}`, background: showToolbarMenu ? '#eff6ff' : 'var(--pn-surface)', color: showToolbarMenu ? '#1e40af' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: `1px solid ${showToolbarMenu ? '#3D95CE' : 'var(--pn-border-strong)'}`, background: showToolbarMenu ? 'var(--pn-info-bg)' : 'var(--pn-surface)', color: showToolbarMenu ? 'var(--pn-info)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
               ⚙ Options
             </button>
             {showToolbarMenu && (
@@ -987,7 +987,7 @@ function openNew(techName, slotMins) {
                   {isAdmin && (
                     <button onClick={() => { setShowHours(true); setShowToolbarMenu(false); }}
                       style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text)', borderRadius: 6 }}
-                      onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                       <span>🕐</span>
                       <div>
@@ -998,7 +998,7 @@ function openNew(techName, slotMins) {
                   )}
                   <button onClick={() => { setShowTimeOff(true); setShowToolbarMenu(false); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text)', borderRadius: 6 }}
-                    onMouseEnter={e => e.currentTarget.style.background = '#f5f9ff'}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                     <span>🌴</span>
                     <div>
@@ -1174,7 +1174,7 @@ function openNew(techName, slotMins) {
         const isToday = date === todayStr();
         const Btn = ({ label, onClick, hint }) => (
           <button onClick={onClick} title={hint}
-            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1.5px solid #d8d8d8', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1.5px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             {label}
           </button>
         );
@@ -1194,7 +1194,7 @@ function openNew(techName, slotMins) {
                 return (
                   <button key={t} onClick={() => toggleTechVisible(t)} style={{
                     fontSize: 11, padding: '3px 10px', borderRadius: 20,
-                    border: `1.5px solid ${on ? col.solid : '#d8d8d8'}`,
+                    border: `1.5px solid ${on ? col.solid : 'var(--pn-border-strong)'}`,
                     background: on ? col.bg : 'var(--pn-surface-alt)',
                     color: on ? col.text : 'var(--pn-text-faint)',
                     cursor: 'pointer', fontFamily: 'inherit', fontWeight: on ? 600 : 400,
@@ -1681,9 +1681,9 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
                       const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
                       const isCancelled = appt.status === 'cancelled';
                       const isDone      = appt.status === 'done';
-                      const blockBg     = isCancelled ? 'var(--pn-danger-bg)' : isDone ? '#f3f4f6' : col.bg;
-                      const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
-                      const blockText   = isCancelled ? 'var(--pn-danger)' : isDone ? '#6b7280' : col.text;
+                      const blockBg     = isCancelled ? 'var(--pn-danger-bg)' : isDone ? 'var(--pn-surface-muted)' : col.bg;
+                      const blockBorder = isCancelled ? '#EF4444' : isDone ? 'var(--pn-border-strong)' : col.solid;
+                      const blockText   = isCancelled ? 'var(--pn-danger)' : isDone ? 'var(--pn-text-muted)' : col.text;
                       // Allergy lookup — surfaces a ⚠ on the block so the
                       // tech sees it before opening the appt. Falls back
                       // to no-op for walk-ins / unlinked appts.
@@ -2055,9 +2055,9 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
           const dot         = STATUS_DOT[appt.status] || STATUS_DOT.scheduled;
           const isCancelled = appt.status === 'cancelled';
           const isDone      = appt.status === 'done';
-          const blockBg     = isCancelled ? 'var(--pn-danger-bg)' : isDone ? '#f3f4f6' : col.bg;
-          const blockBorder = isCancelled ? '#EF4444' : isDone ? '#9ca3af' : col.solid;
-          const blockText   = isCancelled ? 'var(--pn-danger)' : isDone ? '#6b7280' : col.text;
+          const blockBg     = isCancelled ? 'var(--pn-danger-bg)' : isDone ? 'var(--pn-surface-muted)' : col.bg;
+          const blockBorder = isCancelled ? '#EF4444' : isDone ? 'var(--pn-border-strong)' : col.solid;
+          const blockText   = isCancelled ? 'var(--pn-danger)' : isDone ? 'var(--pn-text-muted)' : col.text;
 
           // Done/cancelled appts shouldn't be reschedulable — they represent
           // historical state. Active scheduled appts are draggable.
@@ -2719,9 +2719,9 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                     onChange={e => setNewClient(p => ({ ...p, email: e.target.value }))}
                     onFocus={() => setEmailFocused(true)}
                     onBlur={() => setTimeout(() => setEmailFocused(false), 150)}
-                    style={{ ...inp, width: '100%', borderColor: showEmailErr ? '#fca5a5' : '#d8d8d8' }} />
+                    style={{ ...inp, width: '100%', borderColor: showEmailErr ? '#fca5a5' : 'var(--pn-border-strong)' }} />
                   {emailSuggestionList.length > 0 && (
-                    <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: 'var(--pn-surface)', border: '1px solid #d8d8d8', borderRadius: 8, zIndex: 220, maxHeight: 180, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
+                    <div style={{ position: 'absolute', left: 0, right: 0, top: 'calc(100% + 2px)', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, zIndex: 220, maxHeight: 180, overflowY: 'auto', boxShadow: '0 6px 20px rgba(0,0,0,.12)' }}>
                       {emailSuggestionList.map(s => (
                         <div key={s}
                           onMouseDown={e => { e.preventDefault(); setNewClient(p => ({ ...p, email: s })); setEmailFocused(false); }}
@@ -2889,12 +2889,12 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                     };
                     const sStyle = STATUS_STYLE[v.status] || { bg: '#e5e7eb', fg: '#374151', label: v.status || '—' };
                     return (
-                      <div key={v.id || i} style={{ borderBottom: i < history.length - 1 ? '1px solid #f0f0f0' : 'none' }}>
+                      <div key={v.id || i} style={{ borderBottom: i < history.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
                         <div role="button" tabIndex={0}
                           onClick={() => setExpandedVisitId(prev => prev === v.id ? null : v.id)}
                           onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedVisitId(prev => prev === v.id ? null : v.id); } }}
                           title={isExpanded ? 'Hide details' : 'Show details'}
-                          style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer', background: isExpanded ? '#eff6ff' : 'transparent', userSelect: 'none' }}
+                          style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: 2, cursor: 'pointer', background: isExpanded ? 'var(--pn-info-bg)' : 'transparent', userSelect: 'none' }}
                           onMouseEnter={e => { if (!isExpanded) e.currentTarget.style.background = 'var(--pn-bg)'; }}
                           onMouseLeave={e => { if (!isExpanded) e.currentTarget.style.background = 'transparent'; }}>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
@@ -3021,7 +3021,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                 {advancedOpen ? '▾ Hide more options' : '▸ More options · client asked for tech, repeat'}
               </button>
               {advancedOpen && (
-                <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed #e5e7eb' }}>
+                <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed var(--pn-border)' }}>
                   {/* "Client asked for this tech" checkbox */}
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${appt.techRequestType === 'specific' ? '#ef4444' : 'var(--pn-border)'}`, background: appt.techRequestType === 'specific' ? 'var(--pn-danger-bg)' : 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
                     <input type="checkbox"
@@ -3370,7 +3370,7 @@ function PhotoSection({ photosBefore, photosAfter, isView, onChange }) {
               <input ref={ref} type="file" accept="image/*,.heic,.heif,.dng" style={{ display: 'none' }}
                 onChange={async e => { if (e.target.files[0]) await upload(e.target.files[0], type); e.target.value = ''; }} />
               <button onClick={() => ref.current?.click()} disabled={uploading === type}
-                style={{ width: 68, height: 68, borderRadius: 8, border: '2px dashed #d8d8d8', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 22, color: 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>
+                style={{ width: 68, height: 68, borderRadius: 8, border: '2px dashed var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: 'pointer', fontSize: 22, color: 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>
                 {uploading === type ? '…' : '+'}
               </button>
             </>
@@ -3425,7 +3425,7 @@ function ViewBadge() {
 
 function NavBtn({ onClick, children }) {
   return (
-    <button onClick={onClick} style={{ width: 30, height: 30, borderRadius: 6, border: '1px solid #d8d8d8', background: 'var(--pn-surface)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pn-text-muted)', fontFamily: 'inherit' }}>
+    <button onClick={onClick} style={{ width: 30, height: 30, borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pn-text-muted)', fontFamily: 'inherit' }}>
       {children}
     </button>
   );
@@ -3435,7 +3435,7 @@ function NoTechsEmptyState() {
   return (
     <div style={{
       textAlign: 'center', padding: '60px 24px',
-      background: 'var(--pn-surface)', border: '1px dashed #d8d8d8', borderRadius: 12,
+      background: 'var(--pn-surface)', border: '1px dashed var(--pn-border-strong)', borderRadius: 12,
       marginTop: 20,
     }}>
       <div style={{ fontSize: 56, marginBottom: 12, opacity: 0.7 }}>👥</div>
@@ -3476,7 +3476,7 @@ function Row({ label, value, bold, muted }) {
   );
 }
 
-const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid #d8d8d8', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
+const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, color: 'var(--pn-text)', outline: 'none', background: 'var(--pn-bg)', boxSizing: 'border-box' };
 const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 14px', color: 'var(--pn-text)' };
 
 // ── Time Off modal (vacation / sick / personal) ────────
@@ -3773,7 +3773,7 @@ function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmi
             { id: 'personal', label: '🏠 Personal' },
           ].map(opt => (
             <button key={opt.id} onClick={() => setType(opt.id)}
-              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: type === opt.id ? '1.5px solid #2D7A5F' : '1px solid #d8d8d8', background: type === opt.id ? 'var(--pn-success-bg)' : 'var(--pn-surface)', fontSize: 13, fontWeight: type === opt.id ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', color: type === opt.id ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>
+              style={{ flex: 1, padding: '8px 10px', borderRadius: 8, border: type === opt.id ? '1.5px solid #2D7A5F' : '1px solid var(--pn-border-strong)', background: type === opt.id ? 'var(--pn-success-bg)' : 'var(--pn-surface)', fontSize: 13, fontWeight: type === opt.id ? 600 : 500, cursor: 'pointer', fontFamily: 'inherit', color: type === opt.id ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>
               {opt.label}
             </button>
           ))}
@@ -4301,10 +4301,10 @@ function HoursModal({ settings, updateSettings, onClose }) {
                 {!h.closed && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
                     <input type="time" value={h.open}  onChange={e => patch(day, { open:  e.target.value })}
-                      style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '5px 7px', fontSize: 12 }} />
+                      style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '5px 7px', fontSize: 12 }} />
                     <span style={{ color: 'var(--pn-text-faint)' }}>–</span>
                     <input type="time" value={h.close} onChange={e => patch(day, { close: e.target.value })}
-                      style={{ fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '5px 7px', fontSize: 12 }} />
+                      style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '5px 7px', fontSize: 12 }} />
                   </div>
                 )}
               </div>

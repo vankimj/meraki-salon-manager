@@ -37,9 +37,9 @@ export default function AuthModal({ onClose, onSuccess }) {
   }
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
+    <div style={{ position: 'absolute', inset: 0, background: 'var(--pn-overlay)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 10 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: '#fff', color: '#1a1a1a', borderRadius: 16, padding: 24, width: '90%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', color: 'var(--pn-text)', borderRadius: 16, padding: 24, width: '90%', maxWidth: 360, boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Icon + title */}
         <div style={{ textAlign: 'center', marginBottom: 18 }}>
@@ -49,7 +49,7 @@ export default function AuthModal({ onClose, onSuccess }) {
             </svg>
           </div>
           <h3 style={{ fontSize: 17, fontWeight: 600, margin: 0 }}>Sign in</h3>
-          <p style={{ fontSize: 12, color: '#888', marginTop: 4 }}>Access is granted by an administrator.</p>
+          <p style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 4 }}>Access is granted by an administrator.</p>
         </div>
 
         {/* Google */}
@@ -73,31 +73,31 @@ export default function AuthModal({ onClose, onSuccess }) {
 
         {/* Divider */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <div style={{ flex: 1, height: 1, background: '#e8e8e8' }} />
-          <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>or</span>
-          <div style={{ flex: 1, height: 1, background: '#e8e8e8' }} />
+          <div style={{ flex: 1, height: 1, background: 'var(--pn-border)' }} />
+          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', fontWeight: 500 }}>or</span>
+          <div style={{ flex: 1, height: 1, background: 'var(--pn-border)' }} />
         </div>
 
         {/* Email magic link */}
         {linkSent ? (
           <div style={{ textAlign: 'center', padding: '12px 0' }}>
             <div style={{ fontSize: 28, marginBottom: 8 }}>📬</div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#1a1a1a', marginBottom: 4 }}>Check your inbox</div>
-            <div style={{ fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)', marginBottom: 4 }}>Check your inbox</div>
+            <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
               We sent a sign-in link to <strong>{email}</strong>. Click the link to sign in — no password needed.
             </div>
           </div>
         ) : (
           <>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: '#888', display: 'block', marginBottom: 4 }}>Email address</label>
+              <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 4 }}>Email address</label>
               <input
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleSendLink()}
                 placeholder="you@example.com"
-                style={{ width: '100%', fontFamily: 'inherit', border: '1px solid #d8d8d8', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', background: '#fafafa', color: '#1a1a1a', boxSizing: 'border-box' }}
+                style={{ width: '100%', fontFamily: 'inherit', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '9px 12px', fontSize: 13, outline: 'none', background: 'var(--pn-bg)', color: 'var(--pn-text)', boxSizing: 'border-box' }}
               />
             </div>
             <button onClick={handleSendLink} disabled={sending || !email.trim()}
@@ -110,7 +110,7 @@ export default function AuthModal({ onClose, onSuccess }) {
         {status && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 10, textAlign: 'center' }}>{status}</div>}
 
         <button onClick={onClose}
-          style={{ width: '100%', marginTop: 12, color: '#aaa', border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
+          style={{ width: '100%', marginTop: 12, color: 'var(--pn-text-faint)', border: 'none', background: 'none', fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
           Cancel
         </button>
       </div>

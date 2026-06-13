@@ -252,7 +252,7 @@ export default function MeetingsAdmin() {
       {/* My open action items — only shown when the current user has any */}
       {stats.myActions.length > 0 && (
         <div style={{ background: 'var(--pn-surface)', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 14px', marginBottom: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-warning)', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 8 }}>
             ⚡ My open action items ({stats.myActions.length})
           </div>
           {stats.myActions.slice(0, 5).map((a, i) => (
@@ -663,7 +663,7 @@ function MeetingCard({ meeting, past, onEdit, onDelete, onSendInvites, onDuplica
                     </span>
                   )}
                   {meeting.minutes && (
-                    <span style={{ background: '#eef2ff', borderRadius: 4, padding: '1px 7px', color: '#3730a3' }}>📝 minutes</span>
+                    <span style={{ background: 'var(--pn-info-bg)', borderRadius: 4, padding: '1px 7px', color: 'var(--pn-info)' }}>📝 minutes</span>
                   )}
                 </div>
               )}
@@ -744,7 +744,7 @@ const ATT_STYLE = {
   present: { color: 'var(--pn-success)', bg: 'var(--pn-success-bg)', label: 'PRESENT' },
   late:    { color: 'var(--pn-warning)', bg: 'var(--pn-warning-bg)', label: 'LATE' },
   absent:  { color: 'var(--pn-danger)',  bg: 'var(--pn-danger-bg)',  label: 'ABSENT' },
-  excused: { color: '#3730a3', bg: '#eef2ff', label: 'EXCUSED' },
+  excused: { color: 'var(--pn-info)', bg: 'var(--pn-info-bg)', label: 'EXCUSED' },
 };
 function AttBadge({ value }) {
   const s = ATT_STYLE[value]; if (!s) return null;

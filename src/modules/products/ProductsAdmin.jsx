@@ -137,7 +137,7 @@ function ProductRow({ product: p, last, isAdmin, onEdit, onDelete, onAdjust }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: p.active !== false ? 'var(--pn-text)' : 'var(--pn-text-faint)' }}>{p.name}</span>
           {p.brand && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{p.brand}</span>}
-          {p.category && <span style={{ fontSize: 10, background: '#f0f4ff', color: '#6366f1', borderRadius: 8, padding: '2px 7px', fontWeight: 600 }}>{p.category}</span>}
+          {p.category && <span style={{ fontSize: 10, background: 'var(--pn-info-bg)', color: '#6366f1', borderRadius: 8, padding: '2px 7px', fontWeight: 600 }}>{p.category}</span>}
           {p.active === false && <span style={{ fontSize: 10, background: 'var(--pn-surface-alt)', color: 'var(--pn-text-faint)', borderRadius: 8, padding: '2px 7px', fontWeight: 600 }}>Inactive</span>}
         </div>
         <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>
@@ -273,7 +273,7 @@ function ProductModal({ product, onSave, onClose }) {
             Active (available for sale)
           </label>
           <button onClick={handleSave} disabled={saving || !name.trim() || !price}
-            style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: saving || !name.trim() || !price ? '#d0d0d0' : '#2D7A5F', color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving || !name.trim() || !price ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: saving || !name.trim() || !price ? 'var(--pn-surface-muted)' : '#2D7A5F', color: '#fff', fontSize: 14, fontWeight: 600, cursor: saving || !name.trim() || !price ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {saving ? 'Saving…' : editing ? 'Save changes' : 'Add Product'}
           </button>
         </div>

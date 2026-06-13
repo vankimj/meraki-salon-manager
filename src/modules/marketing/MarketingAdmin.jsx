@@ -460,7 +460,7 @@ function SmsTestModePanel({ settings, updateSettings, isAdmin, showToast }) {
       {log === null ? (
         <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>
       ) : log.length === 0 ? (
-        <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13, background: 'var(--pn-surface-alt)', borderRadius: 10, border: '1px dashed #d0d0d0' }}>
+        <div style={{ padding: 24, textAlign: 'center', color: 'var(--pn-text-muted)', fontSize: 13, background: 'var(--pn-surface-alt)', borderRadius: 10, border: '1px dashed var(--pn-border)' }}>
           {effective
             ? 'No fake sends yet. Run a campaign or trigger a booking to see messages here.'
             : 'No entries — test mode has never been on for this tenant.'}
@@ -1343,8 +1343,8 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           {/* Audience preview */}
           <div style={{ marginBottom: 14 }}>
             <div style={{
-              background: (loading || needsSelection) ? '#f8f9fa' : recipients?.length ? 'var(--pn-success-bg)' : 'var(--pn-danger-bg)',
-              border: `1px solid ${(loading || needsSelection) ? '#e8e8e8' : recipients?.length ? '#c6e8d5' : '#fca5a5'}`,
+              background: (loading || needsSelection) ? 'var(--pn-bg)' : recipients?.length ? 'var(--pn-success-bg)' : 'var(--pn-danger-bg)',
+              border: `1px solid ${(loading || needsSelection) ? 'var(--pn-border)' : recipients?.length ? '#c6e8d5' : '#fca5a5'}`,
               borderRadius: showRecipients ? '8px 8px 0 0' : 8, padding: '10px 14px',
               display: 'flex', alignItems: 'center', gap: 10,
             }}>
@@ -1418,7 +1418,7 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
                         style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #3D95CE', outline: 'none', fontFamily: 'inherit', width: 140 }}
                       />
                       <button onClick={handleSaveTemplate} disabled={!tplName.trim()}
-                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: tplName.trim() ? '#3D95CE' : '#d0d0d0', color: '#fff', cursor: tplName.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+                        style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: 'none', background: tplName.trim() ? '#3D95CE' : 'var(--pn-border-strong)', color: '#fff', cursor: tplName.trim() ? 'pointer' : 'default', fontFamily: 'inherit' }}>
                         Save
                       </button>
                       <button onClick={() => setSavingTpl(false)}
@@ -1576,12 +1576,12 @@ function CampaignModal({ onSend, onClose, prefill = null }) {
           <div style={{ display: 'flex', gap: 8 }}>
             {channel === 'email' && (
               <button onClick={() => setShowPreview(true)} disabled={!subject.trim() && !body.trim()}
-                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid #d0d0d0', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                style={{ flex: 1, padding: '11px 0', borderRadius: 10, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 👁 Preview
               </button>
             )}
             <button onClick={submit} disabled={!canSend}
-              style={{ flex: channel === 'email' ? 2 : 1, padding: 11, borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : '#d0d0d0', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit' }}>
+              style={{ flex: channel === 'email' ? 2 : 1, padding: 11, borderRadius: 10, border: 'none', background: canSend ? '#2D7A5F' : 'var(--pn-border-strong)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: canSend ? 'pointer' : 'default', fontFamily: 'inherit' }}>
               {sending ? (sendMode === 'later' ? 'Scheduling…' : 'Queuing…')
                 : loading ? 'Loading…'
                 : needsSelection ? 'Select audience'

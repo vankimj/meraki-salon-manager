@@ -242,7 +242,7 @@ function EmployeeRow({ emp, totalServices, last, onView, onEdit, onDelete, onTog
         {emp.email && onSendInvite && (
           <button onClick={onSendInvite}
             title={emp.inviteSentAt ? `Resend sign-in link (last sent ${new Date(emp.inviteSentAt).toLocaleDateString()})` : 'Send sign-in invite to this employee'}
-            style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid #d8d0e8', background: emp.inviteSentAt ? '#f3eafc' : 'var(--pn-surface)', color: '#6a4fa0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--pn-border)', background: emp.inviteSentAt ? 'var(--pn-surface-alt)' : 'var(--pn-surface)', color: '#6a4fa0', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
             {emp.inviteSentAt ? '↻ Resend' : '📨 Invite'}
           </button>
         )}
@@ -480,7 +480,7 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                             style={{
                               flex: 1, minWidth: 160, padding: '8px 12px', borderRadius: 8,
                               border: `1.5px solid ${active ? color : 'var(--pn-border)'}`,
-                              background: active ? (v === 'edit' ? '#f0fdf4' : 'var(--pn-surface-muted)') : 'var(--pn-surface)',
+                              background: active ? (v === 'edit' ? 'var(--pn-success-bg)' : 'var(--pn-surface-muted)') : 'var(--pn-surface)',
                               color: active ? color : 'var(--pn-text-muted)',
                               fontSize: 12, fontWeight: active ? 700 : 500,
                               cursor: 'pointer', fontFamily: 'inherit',

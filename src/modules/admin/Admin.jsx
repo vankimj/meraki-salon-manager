@@ -387,7 +387,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   https://{tenantSubdomain}.plumenexus.com
                 </div>
                 {tenantAliases.length > 0 && (
-                  <div style={{ padding: '8px 12px', background: '#f5f3fa', border: '1px solid #e6e0ee', borderRadius: 10, marginBottom: 8 }}>
+                  <div style={{ padding: '8px 12px', background: 'var(--pn-surface-alt)', border: '1px solid #e6e0ee', borderRadius: 10, marginBottom: 8 }}>
                     <div style={{ fontSize: 10, color: '#6a4fa0', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>Previous URLs (still working as 301 redirects)</div>
                     {tenantAliases.map(a => (
                       <div key={a} style={{ fontSize: 11, color: '#6a4fa0', fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}>
@@ -721,7 +721,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </select>
               </div>
 
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Public review threshold</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
@@ -739,7 +739,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </div>
               </div>
 
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Review edit window</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
@@ -755,7 +755,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </div>
               </div>
 
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid #f7f7f7' }}>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Email rating CTA</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>
@@ -770,7 +770,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </select>
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #f7f7f7' }}>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
                 <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Private feedback thank-you</div>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>
                   Shown on the rating page after a guest leaves a below-threshold (private) rating. Leave blank for the default.
@@ -784,7 +784,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', resize: 'vertical' }} />
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #f7f7f7' }}>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
                 <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Cancellation &amp; No-Show Policy</div>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>
                   Shown to clients on their receipt, appointment page, and booking confirmation email. Leave blank to hide.
@@ -795,7 +795,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   style={{ width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)', color: 'var(--pn-text)', resize: 'vertical' }} />
               </div>
 
-              <div style={{ padding: '12px 16px', borderTop: '1px solid #f7f7f7' }}>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
                 <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Refund Policy</div>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, marginBottom: 8 }}>
                   Shown to clients on their receipt. Leave blank to hide.
@@ -1068,7 +1068,7 @@ function TipFlowSection() {
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: i ? '1px solid var(--pn-border)' : 'none' }}>
                 {s.img
                   ? <img src={s.img} alt="" style={{ width: 46, height: 58, borderRadius: 8, objectFit: 'cover', objectPosition: 'center top', flexShrink: 0 }} />
-                  : <div style={{ width: 46, height: 58, borderRadius: 8, background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc', flexShrink: 0 }}>✦</div>}
+                  : <div style={{ width: 46, height: 58, borderRadius: 8, background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--pn-text-faint)', flexShrink: 0 }}>✦</div>}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--pn-text)' }}>
                     {s.name || 'Untitled'}
@@ -1259,7 +1259,7 @@ function AutoAssignSection({ method, onChange, saving }) {
         {ASSIGNMENT_METHODS.map(m => {
           const selected = method === m;
           return (
-            <label key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${selected ? '#2D7A5F' : 'var(--pn-border)'}`, background: selected ? '#f0faf6' : 'var(--pn-surface)', transition: 'border-color .15s, background .15s' }}>
+            <label key={m} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${selected ? '#2D7A5F' : 'var(--pn-border)'}`, background: selected ? 'var(--pn-success-bg)' : 'var(--pn-surface)', transition: 'border-color .15s, background .15s' }}>
               <input type="radio" name="assignmentMethod" value={m}
                 checked={selected}
                 disabled={saving}
@@ -1327,13 +1327,13 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
                   textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit',
                   padding: '10px 12px', borderRadius: 10,
                   border: `2px solid ${active ? '#3D95CE' : 'var(--pn-border)'}`,
-                  background: active ? '#EBF4FB' : 'var(--pn-surface)',
+                  background: active ? 'var(--pn-info-bg)' : 'var(--pn-surface)',
                   boxShadow: active ? '0 0 0 2px rgba(61,149,206,.15)' : 'none',
                 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span style={{ fontSize: 18 }}>{t.icon}</span>
                   <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>{t.name}</span>
-                  {active && <span style={{ fontSize: 10, fontWeight: 700, color: '#1a5f8a', background: '#d4e9f8', padding: '2px 6px', borderRadius: 3, letterSpacing: '.04em' }}>ACTIVE</span>}
+                  {active && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-info)', background: 'var(--pn-info-bg)', padding: '2px 6px', borderRadius: 3, letterSpacing: '.04em' }}>ACTIVE</span>}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.4 }}>{t.description}</div>
               </button>
@@ -1676,7 +1676,7 @@ function LogRow({ log }) {
   const color = isErr ? '#ef4444' : (LOG_COLORS[log.action] || '#888');
   const hasDetail = isErr && (log._stack || log._ua || log._context);
   return (
-    <div style={{ borderBottom: '1px solid var(--pn-border)', background: isErr ? '#fff8f8' : 'transparent' }}>
+    <div style={{ borderBottom: '1px solid var(--pn-border)', background: isErr ? 'var(--pn-danger-bg)' : 'transparent' }}>
       <div style={{ padding: '10px 16px', cursor: hasDetail ? 'pointer' : 'default' }}
            onClick={() => hasDetail && setExpanded(x => !x)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -1687,8 +1687,8 @@ function LogRow({ log }) {
           {log._version && <span style={{ fontSize: 9, color: 'var(--pn-text-faint)', background: 'var(--pn-surface-alt)', borderRadius: 6, padding: '1px 5px' }}>v{log._version}</span>}
         <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>{formatTime(log.timestamp)}</span>
         </div>
-        <div style={{ fontSize: 12, color: isErr ? '#c00' : '#555' }}>
-          {log.email || 'anonymous'}{log.details ? <span style={{ color: isErr ? '#c00' : '#888' }}> — {log.details}</span> : ''}
+        <div style={{ fontSize: 12, color: isErr ? '#c00' : 'var(--pn-text-muted)' }}>
+          {log.email || 'anonymous'}{log.details ? <span style={{ color: isErr ? '#c00' : 'var(--pn-text-muted)' }}> — {log.details}</span> : ''}
         </div>
       </div>
       {expanded && (
@@ -1891,8 +1891,8 @@ function FeedbackTab({ items, onStatus, onRefresh }) {
   const pillStyle = (active) => ({
     fontSize: 11, padding: '4px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
     border: `1px solid ${active ? '#3D95CE' : 'var(--pn-border)'}`,
-    background: active ? '#EBF4FB' : 'var(--pn-surface)',
-    color: active ? '#1a5f8a' : 'var(--pn-text-muted)',
+    background: active ? 'var(--pn-info-bg)' : 'var(--pn-surface)',
+    color: active ? 'var(--pn-info)' : 'var(--pn-text-muted)',
     fontWeight: active ? 600 : 400,
   });
 
@@ -2043,7 +2043,7 @@ function Btn({ onClick, color, children, disabled, savedLabel }) {
       variant={phase === 'saved' ? 'success' : undefined}
       color={phase === 'saved' ? undefined : color}
       style={{
-        ...(!color && phase !== 'saved' ? { background: 'var(--pn-surface-alt)', color: '#666' } : {}),
+        ...(!color && phase !== 'saved' ? { background: 'var(--pn-surface-alt)', color: 'var(--pn-text-muted)' } : {}),
         ...(busy ? { cursor: 'default' } : {}),
       }}
     >
@@ -2149,7 +2149,7 @@ function BackupRestoreSection({ nested = false } = {}) {
           padding: '10px 14px', marginBottom: 14,
           background: 'rgba(45,122,95,.08)',
           border: '1px solid rgba(45,122,95,.22)',
-          borderRadius: 10, fontSize: 12, color: '#1f4e3a', lineHeight: 1.55,
+          borderRadius: 10, fontSize: 12, color: 'var(--pn-success)', lineHeight: 1.55,
         }}>
           <strong>Data export is free, complete, and one click. Forever.</strong>{' '}
           On every plan, including Free Solo, including Founders' Members, including paused accounts, including the 90-day post-cancellation grace. If our service ever stops working for you, walking out the door with everything intact is not a feature we'll ever paywall.
@@ -2171,7 +2171,7 @@ function BackupRestoreSection({ nested = false } = {}) {
         </div>
 
         <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>
-          The full export is a ZIP with: <code style={{ background: '#f5f3fa', padding: '0 4px', borderRadius: 3 }}>everything.json</code> (full snapshot for re-import),
+          The full export is a ZIP with: <code style={{ background: 'var(--pn-surface-muted)', padding: '0 4px', borderRadius: 3 }}>everything.json</code> (full snapshot for re-import),
           one CSV per data table (Excel/Sheets-friendly), every photo as a real image file, all settings, and a plain-English README.
         </div>
 
@@ -2274,7 +2274,7 @@ function DemoSeedSection({ nested = false } = {}) {
           </div>
         )}
         {status && (
-          <div style={{ fontSize: 12, color: phase === 'error' ? '#ef4444' : phase === 'cleared' || phase === 'seeded' ? '#16a34a' : '#888', marginBottom: 10, fontStyle: 'italic' }}>
+          <div style={{ fontSize: 12, color: phase === 'error' ? '#ef4444' : phase === 'cleared' || phase === 'seeded' ? '#16a34a' : 'var(--pn-text-muted)', marginBottom: 10, fontStyle: 'italic' }}>
             {status}
           </div>
         )}
@@ -2660,7 +2660,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
               <input value={cfg.googlePlaceId || ''} onChange={e => patch('googlePlaceId', e.target.value)} placeholder="ChIJ…" style={{ ...inp, flex: 1 }} />
               <button type="button" onClick={handleDetectPlaceId} disabled={detecting || !cfg.address?.trim()}
                 title={!cfg.address?.trim() ? 'Enter the salon address above first' : 'Find the Place ID from the salon address'}
-                style={{ padding: '0 14px', borderRadius: 8, border: '1px solid #2D7A5F', background: detecting ? '#aaa' : '#fff', color: detecting ? '#fff' : '#2D7A5F', fontSize: 12, fontWeight: 600, cursor: detecting || !cfg.address?.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: !cfg.address?.trim() ? 0.5 : 1 }}>
+                style={{ padding: '0 14px', borderRadius: 8, border: '1px solid #2D7A5F', background: detecting ? '#aaa' : 'var(--pn-surface)', color: detecting ? '#fff' : '#2D7A5F', fontSize: 12, fontWeight: 600, cursor: detecting || !cfg.address?.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap', opacity: !cfg.address?.trim() ? 0.5 : 1 }}>
                 {detecting ? 'Detecting…' : '🔍 Auto-detect from address'}
               </button>
             </div>
@@ -2673,7 +2673,7 @@ function WebfrontTab({ cfg, setCfg, employees }) {
                 {candidates.map(c => (
                   <button key={c.placeId} type="button"
                     onClick={() => { patch('googlePlaceId', c.placeId); if (c.mapsUrl) patch('mapsUrl', c.mapsUrl); setDetectMsg(`✓ Switched to ${c.name}${c.mapsUrl ? ' + Maps URL' : ''}`); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: cfg.googlePlaceId === c.placeId ? '#f0fdf4' : 'var(--pn-surface)', border: 'none', borderBottom: '1px solid var(--pn-border)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', background: cfg.googlePlaceId === c.placeId ? 'var(--pn-success-bg)' : 'var(--pn-surface)', border: 'none', borderBottom: '1px solid var(--pn-border)', cursor: 'pointer', fontFamily: 'inherit' }}>
                     <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--pn-text)' }}>{c.name}</div>
                     <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>{c.address}</div>
                   </button>
@@ -3324,7 +3324,7 @@ function ReviewsTab({ data, onRefresh, onMarkReceived }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', flexWrap: 'wrap' }}>
         {[['all','All'],['pending','Not clicked'],['clicked','Clicked'],['received','Reviewed']].map(([id, label]) => (
           <button key={id} onClick={() => setFilter(id)}
-            style={{ padding: '5px 12px', borderRadius: 20, border: `1px solid ${filter === id ? '#2D7A5F' : 'var(--pn-border)'}`, background: filter === id ? '#f0faf6' : 'var(--pn-surface)', color: filter === id ? '#2D7A5F' : 'var(--pn-text-muted)', fontSize: 12, fontWeight: filter === id ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
+            style={{ padding: '5px 12px', borderRadius: 20, border: `1px solid ${filter === id ? '#2D7A5F' : 'var(--pn-border)'}`, background: filter === id ? 'var(--pn-success-bg)' : 'var(--pn-surface)', color: filter === id ? '#2D7A5F' : 'var(--pn-text-muted)', fontSize: 12, fontWeight: filter === id ? 600 : 400, cursor: 'pointer', fontFamily: 'inherit' }}>
             {label}
           </button>
         ))}
@@ -3441,8 +3441,8 @@ function NotifsTab({ items, onRefresh }) {
           <button key={f.id} onClick={() => setFilter(f.id)} style={{
             fontSize: 11, padding: '4px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
             border: `1px solid ${filter === f.id ? '#3D95CE' : 'var(--pn-border)'}`,
-            background: filter === f.id ? '#EBF4FB' : 'var(--pn-surface)',
-            color: filter === f.id ? '#1a5f8a' : 'var(--pn-text-muted)',
+            background: filter === f.id ? 'var(--pn-info-bg)' : 'var(--pn-surface)',
+            color: filter === f.id ? 'var(--pn-info)' : 'var(--pn-text-muted)',
             fontWeight: filter === f.id ? 600 : 400,
           }}>{f.label}{f.id === 'failed' && failed > 0 ? ` (${failed})` : ''}</button>
         ))}
@@ -3833,7 +3833,7 @@ function WalkinTurnModeSection({ settings, updateSettings, nested = false }) {
           {opts.map(o => {
             const sel = mode === o.k;
             return (
-              <label key={o.k} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${sel ? '#2D7A5F' : 'var(--pn-border)'}`, background: sel ? '#f0faf6' : 'var(--pn-surface)' }}>
+              <label key={o.k} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 8, cursor: saving ? 'default' : 'pointer', border: `1.5px solid ${sel ? '#2D7A5F' : 'var(--pn-border)'}`, background: sel ? 'var(--pn-success-bg)' : 'var(--pn-surface)' }}>
                 <input type="radio" name="walkinTurnMode" checked={sel} disabled={saving} onChange={() => setMode(o.k)} style={{ marginTop: 2, accentColor: '#2D7A5F' }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--pn-text)' }}>{o.t}</div>
@@ -4309,7 +4309,7 @@ function TileVisibilitySection({ settings, updateSettings, nested = false }) {
                   display: 'flex', alignItems: 'flex-start', gap: 10,
                   padding: '10px 12px', borderRadius: 10,
                   border: `1px solid ${!available ? 'var(--pn-border)' : isHidden ? 'var(--pn-border)' : '#bfdbfe'}`,
-                  background: !available ? 'var(--pn-bg)' : isHidden ? 'var(--pn-surface)' : '#eff6ff',
+                  background: !available ? 'var(--pn-bg)' : isHidden ? 'var(--pn-surface)' : 'var(--pn-info-bg)',
                   cursor: available ? 'pointer' : 'not-allowed',
                   opacity: available ? 1 : 0.6,
                 }}>
@@ -4386,14 +4386,14 @@ function ModulesSection({ nested = false } = {}) {
             return (
               <div key={m.id} style={{
                 display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10,
-                border: `1px solid ${enabled ? '#bfdbfe' : 'var(--pn-border)'}`, background: enabled ? '#eff6ff' : 'var(--pn-surface)',
+                border: `1px solid ${enabled ? '#bfdbfe' : 'var(--pn-border)'}`, background: enabled ? 'var(--pn-info-bg)' : 'var(--pn-surface)',
               }}>
                 <button onClick={() => toggle(m, !enabled)} disabled={busy === m.id}
                   style={{
                     flexShrink: 0, marginTop: 1, minWidth: 44, padding: '4px 0', borderRadius: 999,
                     border: 'none', fontSize: 11, fontWeight: 700, fontFamily: 'inherit',
                     cursor: busy === m.id ? 'wait' : 'pointer',
-                    background: enabled ? '#3D95CE' : '#e5e7eb', color: enabled ? '#fff' : '#6b7280',
+                    background: enabled ? '#3D95CE' : 'var(--pn-surface-alt)', color: enabled ? '#fff' : 'var(--pn-text-muted)',
                   }}>
                   {busy === m.id ? '…' : enabled ? 'On' : 'Off'}
                 </button>
@@ -4428,12 +4428,12 @@ function NotesPreferenceSection({ settings, updateSettings, nested = false }) {
   return (
     <Section title="📋 Notes preferences" keywords="notes preferences client appointment default visibility" nested={nested}>
       <div style={{ padding: '10px 16px 14px' }}>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${enabled ? '#c7d2fe' : 'var(--pn-border)'}`, background: enabled ? '#eef2ff' : 'var(--pn-bg)', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', borderRadius: 10, border: `1px solid ${enabled ? '#c7d2fe' : 'var(--pn-border)'}`, background: enabled ? 'var(--pn-info-bg)' : 'var(--pn-bg)', cursor: 'pointer' }}>
           <input type="checkbox" checked={enabled}
             onChange={e => updateSettings({ ...settings, clinicalNotes: e.target.checked })}
             style={{ width: 16, height: 16, cursor: 'pointer', accentColor: '#4338ca', flexShrink: 0, marginTop: 2 }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: enabled ? '#3730a3' : '#374151' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: enabled ? 'var(--pn-info)' : 'var(--pn-text)' }}>
               Enable clinical (SOAP) notes
             </div>
             <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
@@ -4521,7 +4521,7 @@ function DisputeRow({ d, variant }) {
             {!wonOrLost && variant === 'closed' && (d.status || 'closed')}
           </span>
           {d.isMembership && (
-            <span style={{ fontSize: 10, background: '#e0e7ff', color: '#3730a3', padding: '2px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.5 }}>MEMBER</span>
+            <span style={{ fontSize: 10, background: 'var(--pn-info-bg)', color: 'var(--pn-info)', padding: '2px 6px', borderRadius: 4, fontWeight: 700, letterSpacing: 0.5 }}>MEMBER</span>
           )}
         </div>
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginTop: 4, lineHeight: 1.5 }}>
@@ -4661,7 +4661,7 @@ function StripeConnectSection({ onOpenWizard, nested = false }) {
           </div>
         </div>
         <button onClick={() => onOpenWizard?.('money')}
-          style={{ background: live ? '#fff' : '#635bff', color: live ? '#635bff' : '#fff', border: live ? '1px solid #d8d0f0' : 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          style={{ background: live ? 'var(--pn-surface)' : '#635bff', color: live ? '#635bff' : '#fff', border: live ? '1px solid #d8d0f0' : 'none', borderRadius: 8, padding: '9px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
           {!connected ? 'Set up payments →' : needsMore ? 'Finish setup →' : 'Manage →'}
         </button>
       </div>
@@ -4790,7 +4790,7 @@ function UpgradeSection({ settings, gUser, nested = false }) {
               <div key={tier.id}
                 style={{
                   border: isCurrent ? `2px solid ${tier.color}` : '1px solid var(--pn-border)',
-                  borderRadius: 12, padding: 12, background: isCurrent ? '#fafdff' : 'var(--pn-surface)',
+                  borderRadius: 12, padding: 12, background: isCurrent ? 'var(--pn-surface-alt)' : 'var(--pn-surface)',
                   display: 'flex', flexDirection: 'column', gap: 8, position: 'relative',
                 }}>
                 {isCurrent && (
@@ -5080,7 +5080,7 @@ function IntegrityCheckRow({ name, check, renderDetail, sampleKey }) {
 }
 
 function PlanBadge({ p }) {
-  const colors = { starter: ['var(--pn-success-bg)','var(--pn-success)'], pro: ['var(--pn-info-bg)','var(--pn-info)'], enterprise: ['#faf5ff','#7c3aed'] };
+  const colors = { starter: ['var(--pn-success-bg)','var(--pn-success)'], pro: ['var(--pn-info-bg)','var(--pn-info)'], enterprise: ['var(--pn-surface-alt)','#7c3aed'] };
   const [bg, c] = colors[p] || ['var(--pn-surface-alt)','var(--pn-text-muted)'];
   return <span style={{ background: bg, color: c, fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase' }}>{p}</span>;
 }

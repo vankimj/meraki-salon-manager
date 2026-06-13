@@ -292,7 +292,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
 
 function SectionLabel({ children }) {
   return (
-    <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 12, paddingLeft: 2 }}>
+    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-faint)', letterSpacing: '.1em', textTransform: 'uppercase', marginBottom: 12, paddingLeft: 2 }}>
       {children}
     </div>
   );
