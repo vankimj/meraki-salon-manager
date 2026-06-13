@@ -108,6 +108,12 @@ export default function WalkinScreen() {
     if (!canEdit) return;
     persistRoster(roster.map(t => t.techId === techId ? { ...t, turnsTaken: (t.turnsTaken || 0) + 1 } : t));
   }
+  // Manual correction partner to +1 — back a turn out (over-counted, or a +1
+  // misfire). Clamped at 0 so a tech can't go negative.
+  function subTurn(techId) {
+    if (!canEdit) return;
+    persistRoster(roster.map(t => t.techId === techId ? { ...t, turnsTaken: Math.max(0, (t.turnsTaken || 0) - 1) } : t));
+  }
   function removeTech(techId) {
     if (!canEdit) return;
     persistRoster(roster.filter(t => t.techId !== techId));
@@ -264,6 +270,9 @@ export default function WalkinScreen() {
           {canEdit && (
             <>
               <TouchableOpacity style={styles.awayBtn} onPress={() => toggleAway(item.techId)}><Text style={styles.awayText}>{item.away ? 'Back' : 'Away'}</Text></TouchableOpacity>
+              {(item.turnsTaken || 0) > 0 && (
+                <TouchableOpacity style={styles.minusBtn} onPress={() => subTurn(item.techId)}><Text style={styles.minusText}>−1</Text></TouchableOpacity>
+              )}
               <TouchableOpacity style={styles.turnBtn} onPress={() => addTurn(item.techId)}><Text style={styles.turnText}>+1</Text></TouchableOpacity>
               <TouchableOpacity style={styles.xBtn} onPress={() => removeTech(item.techId)}><Text style={styles.xText}>✕</Text></TouchableOpacity>
             </>
@@ -507,6 +516,8 @@ const makeStyles = (t) => StyleSheet.create({
   sub:        { fontSize: 12, color: t.textMuted, marginTop: 2 },
   turnBtn:    { backgroundColor: t.greenSoft, borderWidth: 1, borderColor: t.green, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 7 },
   turnText:   { color: t.green, fontWeight: '800', fontSize: 12 },
+  minusBtn:   { backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.borderStrong, borderRadius: 14, paddingHorizontal: 11, paddingVertical: 7 },
+  minusText:  { color: t.textMuted, fontWeight: '800', fontSize: 12 },
   awayRow:    { opacity: 0.6 },
   awayBtn:    { backgroundColor: t.surfaceAlt, borderWidth: 1, borderColor: t.border, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 7 },
   awayText:   { color: t.textMuted, fontWeight: '800', fontSize: 12 },
