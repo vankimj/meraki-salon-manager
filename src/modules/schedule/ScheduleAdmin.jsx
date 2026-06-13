@@ -14,6 +14,8 @@ import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
 import { resolveTurnMode } from '../../lib/turnValue';
+import { fetchTurnRoster } from '../../lib/firestore';
+import DayReplayModal from '../../components/DayReplayModal';
 import { notifyAffectedTechs } from '../../lib/notifications';
 import { TENANT_ID } from '../../lib/tenant';
 import { resizeImg } from '../../utils/helpers';
@@ -301,6 +303,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   const [weekAppts,        setWeekAppts]        = useState([]);
   const [weekLoading,      setWeekLoading]      = useState(false);
   const [showQueue,        setShowQueue]        = useState(false);
+  const [showReplay,       setShowReplay]       = useState(false);
   const [queueEntries,     setQueueEntries]     = useState([]);
   const [turnRoster,       setTurnRoster]       = useState({ date: '', roster: [] });
   const [deleteDialog,     setDeleteDialog]     = useState(null); // appt with recurringGroupId
@@ -1053,6 +1056,16 @@ function openNew(techName, slotMins) {
               showToast('Recount failed: ' + e.message, 3500);
             }
           }}
+          onReplay={() => setShowReplay(true)}
+        />
+      )}
+      {showReplay && (
+        <DayReplayModal
+          services={services}
+          turnMode={resolveTurnMode(settings)}
+          initialDate={date}
+          fetchDay={async (d) => ({ appointments: await fetchAppointments(d), roster: ((await fetchTurnRoster(d)) || {}).roster || [] })}
+          onClose={() => setShowReplay(false)}
         />
       )}
 
@@ -1424,7 +1437,7 @@ function fmtClockIn(iso) {
 }
 
 // ── Turn roster panel — today's walk-in rotation ──────
-function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount }) {
+function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount, onReplay }) {
   const [showPicker, setShowPicker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const inRoster = new Set(roster.map(r => r.techId));
@@ -1465,6 +1478,13 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
             </div>
           )}
         </div>
+        {onReplay && (
+          <button onClick={onReplay}
+            title="Replay how the rotation played out on any day"
+            style={{ fontSize: 11, color: 'var(--pn-info)', background: 'var(--pn-info-bg)', border: '1px solid #bfdbfe', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit' }}>
+            ▶ Replay the day
+          </button>
+        )}
         {roster.length > 0 && (
           <button onClick={onRecount}
             title="Rebuild turn counts from today's completed appointments"

@@ -3,9 +3,10 @@ import { View, Text, FlatList, TouchableOpacity, TextInput, StyleSheet, Activity
 import useTenantAccess from '../../hooks/useTenantAccess';
 import {
   fetchTurnRoster, saveTurnRoster, fetchWaitlist, addWaitlistEntry, updateWaitlistEntry, removeWaitlistEntry,
-  fetchEmployees, fetchAttendance, fetchSettings, fetchServices,
+  fetchEmployees, fetchAttendance, fetchSettings, fetchServices, fetchAppointments,
   fetchClientByPhone, createClient,
 } from '../../lib/firestore';
+import DayReplaySheet from '../../components/DayReplaySheet';
 
 const fmtTurns = (n) => { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 import { playChime } from '../../lib/chime';
@@ -36,6 +37,7 @@ export default function WalkinScreen() {
   const [seatRequested, setSeatRequested] = useState(false);
   const [lastSeat, setLastSeat] = useState(null);         // { entryId, techId, delta, clientName, techName } — undo target
   const [showHelp, setShowHelp] = useState(false);        // "how turns work" explainer
+  const [showReplay, setShowReplay] = useState(false);    // "replay the day" audit
 
   // Auto-dismiss the undo banner after a few seconds.
   useEffect(() => {
@@ -268,9 +270,14 @@ export default function WalkinScreen() {
       ListHeaderComponent={
         <View style={styles.sectionRow}>
           <Text style={styles.section}>Rotation — next up first</Text>
-          <TouchableOpacity style={styles.helpBtn} onPress={() => setShowHelp(true)}>
-            <Text style={styles.helpBtnText}>? How turns work</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <TouchableOpacity style={styles.helpBtn} onPress={() => setShowReplay(true)}>
+              <Text style={styles.helpBtnText}>▶ Replay</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.helpBtn} onPress={() => setShowHelp(true)}>
+              <Text style={styles.helpBtnText}>? How turns work</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       }
       ListEmptyComponent={<Text style={styles.empty}>No techs clocked in yet — they appear here automatically when they clock in at the Clock Kiosk. Or add one manually below.</Text>}
@@ -359,6 +366,14 @@ export default function WalkinScreen() {
     )}
 
     <TurnHelpSheet visible={showHelp} onClose={() => setShowHelp(false)} />
+
+    <DayReplaySheet
+      visible={showReplay}
+      onClose={() => setShowReplay(false)}
+      services={services}
+      turnMode={cfg.valueMode ? 'value' : 'count'}
+      fetchDay={async (d) => ({ appointments: await fetchAppointments(d), roster: ((await fetchTurnRoster(d)) || {}).roster || [] })}
+    />
 
     <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setAdding(false)}>
