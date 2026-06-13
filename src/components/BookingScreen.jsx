@@ -1649,7 +1649,9 @@ function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, re
         {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
       </div>
       {g.cart.length > 0 && elig.length === 0 && (
-        <div style={{ fontSize: 12, color: '#c0392b', marginTop: 8 }}>No stylist offers all of these services together. Try splitting them across guests.</div>
+        <div style={{ fontSize: 12, color: '#c0392b', marginTop: 8, lineHeight: 1.5 }}>
+          No single stylist does all of these (e.g. one does manicures but not pedicures). Online booking needs one stylist per guest — remove a service to book online, or keep going and we'll give you a number to call so we can split it across two stylists.
+        </div>
       )}
 
       {/* Footer nav */}
