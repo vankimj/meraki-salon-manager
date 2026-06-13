@@ -168,6 +168,15 @@ export default function TurnHelpModal({ onClose }) {
             </div>
           ))}
 
+          {/* How it works in this app */}
+          <div style={sec}>How it works in this app</div>
+          {H.howItWorksHere.map((w, i) => (
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+              <span style={{ color: 'var(--tm-primary, #2D7A5F)', fontWeight: 800 }}>›</span>
+              <span style={para}>{w}</span>
+            </div>
+          ))}
+
           <div style={{ fontSize: 13, fontStyle: 'italic', color: 'var(--pn-text-faint, #888)', marginTop: 16, lineHeight: 1.55, borderTop: '1px solid var(--pn-border, #eee)', paddingTop: 14 }}>{H.footer}</div>
         </div>
       </div>

@@ -82,6 +82,14 @@ export const TURN_HELP = {
     'The value system fixes it: a full set is “worth” about four polish changes, so after one full set you wait while teammates catch up. Everyone’s drawer ends up close to even.',
   ],
 
+  // How the fair (value) system actually works in this app, once it's turned on.
+  howItWorksHere: [
+    'Your salon chooses the system in Admin → Walk-in turn counting. This explainer shows the fair “by value” one.',
+    'Each service has a turn value, set in Services (e.g. polish change 0.5, full set 2). Leave it blank and it simply counts as 1.',
+    'The turn is added automatically when the ticket is checked out — no need to tap +1. Booked appointments count the same way.',
+    'When you seat a walk-in with a tech, they show 💺 “on a ticket” and step out of the line until they finish, so you’re never sent to someone who’s busy.',
+  ],
+
   footer:
     'The goal is simple: nobody goes home having earned three times what the person next to them earned for the same day’s work.',
 };

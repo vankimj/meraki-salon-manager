@@ -173,6 +173,14 @@ export default function TurnHelpSheet({ visible, onClose }) {
               </View>
             ))}
 
+            <Text style={styles.h}>How it works in this app</Text>
+            {H.howItWorksHere.map((w, i) => (
+              <View key={i} style={styles.bulletRow}>
+                <Text style={styles.bulletDot}>›</Text>
+                <Text style={styles.bulletText}>{w}</Text>
+              </View>
+            ))}
+
             <Text style={styles.footer}>{H.footer}</Text>
           </ScrollView>
         </View>
