@@ -1,95 +1,82 @@
-// Twin of src/data/turnHelp.js (web) — keep in sync. Plain-data explainer for
-// the walk-in TURN ROTATION, rendered on-page by the help modal in WalkinScreen.
+// Content + a single worked "day" that drives the animated turn-system
+// explainer (TurnHelpModal on web, a twin in mobile/src/lib/turnHelp.js).
+// Written for someone who has never worked in a salon. The component derives
+// running totals, revenue, and client counts from `clients` + each system's
+// `assigned` array, so the numbers can't drift between the two platforms.
 
 export const TURN_HELP = {
-  title: 'How the turn system works',
-  intro:
-    "The rotation keeps walk-ins fair. The tech who has taken the fewest turns today is “next up” (⭐). Each walk-in you seat advances that tech, so the line cycles evenly through everyone who's working.",
-  sections: [
-    {
-      h: "Who's in the rotation",
-      p: [
-        'Techs join automatically the moment they clock in at the Clock Kiosk, starting at 0 turns. You can also add one by hand. Marking a tech Away (💤) drops them to the bottom until they tap Back.',
-      ],
-    },
-    {
-      h: 'Who is “next up”',
-      p: ['The order, from the top down, is decided by:'],
-      bullets: [
-        'Fewest turns today comes first.',
-        'Ties break by seniority — but only if “Seniority order” is turned on in settings.',
-        'Otherwise ties break by whoever clocked in earliest.',
-        'Away techs always sink to the bottom and never hold the ⭐.',
-      ],
-    },
-    {
-      h: 'What counts as a turn',
-      p: ['A “turn” is one customer served, for fairness purposes. Turns get counted three ways:'],
-      bullets: [
-        'Seating a walk-in with the Seat button adds a turn to the tech you pick — this is the main way turns are counted.',
-        'On the web schedule, marking a booked appointment “done” also adds a turn automatically.',
-        'The +1 button adds a turn by hand for anything the app didn’t see — a tech who grabbed the next person without anyone tapping Seat, or a booked client here on the app. Use it to keep the order honest.',
-      ],
-    },
-    {
-      h: 'Turn weight (optional settings)',
-      bullets: [
-        'Partial turns: a seating can count as a full, a half, or no turn — handy for a quick polish change vs. a full set.',
-        'Requested-tech-no-turn: if a client specifically asks for a tech, seating them adds 0 turns, so honoring a request never costs that tech their place for the next unassigned walk-in.',
-      ],
-    },
-    {
-      h: 'Fixing mistakes',
-      bullets: [
-        'Right after seating, an Undo banner returns the client to the waitlist and removes the turn.',
-        'Use +1 to bump a tech who took someone off-book.',
-        'Remove (✕) takes a tech off today’s rotation entirely.',
-      ],
-    },
+  title: 'How the fair-turn system works',
+
+  // Plain-language primer — assume zero salon knowledge.
+  basics: [
+    { term: 'Walk-in', def: 'A customer who shows up with no appointment. The salon decides which nail tech takes them.' },
+    { term: 'Appointment', def: 'A customer who booked ahead for a set time (and sometimes asked for a specific tech).' },
+    { term: 'Turn', def: 'Whose “turn” it is to get the next walk-in. The system tracks this so the same tech doesn’t scoop up everybody.' },
   ],
-  examples: [
-    {
-      title: 'A normal morning',
-      lines: [
-        'Aaliyah, Ben, and Cara all clock in → everyone at 0 turns. Aaliyah clocked in first, so she’s ⭐.',
-        'A walk-in arrives with no preference → you Seat → Aaliyah. Aaliyah = 1 turn.',
-        'Now Ben is ⭐ (0 turns, clocked in before Cara). Seat the next walk-in → Ben = 1.',
-        'Cara is ⭐ next. The line keeps cycling evenly.',
-      ],
-    },
-    {
-      title: 'A client requests a specific tech',
-      lines: [
-        'Aaliyah 2 · Ben 1 · Cara 1 → Ben is ⭐.',
-        'A client asks for Aaliyah by name. You Seat → Aaliyah and mark “requested.”',
-        'With Requested-tech-no-turn on, Aaliyah stays at 2 turns — Ben is still ⭐ for the next walk-in who has no preference.',
-      ],
-    },
-    {
-      title: 'A tech grabbed someone you didn’t seat',
-      lines: [
-        'Ben walks a waiting client back himself, and nobody tapped Seat.',
-        'The app didn’t see it, so Ben still looks low in the rotation and would unfairly be ⭐ again.',
-        'Tap +1 on Ben so he advances and the order stays fair. Do the same for a booked appointment — only the web schedule counts those automatically.',
-      ],
-    },
-    {
-      title: 'Someone steps out',
-      lines: [
-        'Cara goes to lunch → tap Away. Cara (💤) drops to the bottom and won’t be ⭐.',
-        'Walk-ins flow to Aaliyah and Ben. When Cara returns → tap Back.',
-        'Cara rejoins with the turns she already had, so she’s likely ⭐ now — she missed turns while she was out.',
-      ],
-    },
-    {
-      title: 'Wrong tech — undo it',
-      lines: [
-        'You meant Cara but tapped Seat → Ben.',
-        'Tap Undo on the banner: the client goes back to the waitlist and Ben’s turn is removed.',
-        'Seat again → Cara. No harm done.',
-      ],
-    },
+
+  bigQuestion: {
+    q: 'Does a tech who has lots of appointments get punished?',
+    a: 'No — and this is the part people get wrong.',
+    why: [
+      'A tech with a full appointment book is already busy and already earning. The system simply stops piling walk-ins on top of someone who’s slammed and sends them to a teammate who would otherwise be standing around.',
+      'Her appointments still count as her share of the work — so by the end of the day she has earned about the same as everyone else. She didn’t lose anything: she was never free to take those walk-ins anyway.',
+      'If she finishes her appointments early and is suddenly free, her count stops growing and she rises right back to the top to get walk-ins again. It balances itself — it never punishes.',
+    ],
+  },
+
+  // The idea, in one line, then the menu the examples use.
+  idea:
+    'Instead of counting how many customers each tech served, the fair system counts the VALUE of the work they did. Whoever has done the least valuable work so far is next in line. That keeps everyone’s pay even — not just their customer count.',
+
+  menu: [
+    { name: 'Polish change', value: 0.5, price: 25 },
+    { name: 'Manicure',      value: 1.0, price: 40 },
+    { name: 'Fill',          value: 1.0, price: 45 },
+    { name: 'Gel manicure',  value: 1.5, price: 60 },
+    { name: 'Pedicure',      value: 1.5, price: 65 },
+    { name: 'Full set',      value: 2.0, price: 100 },
   ],
+
+  techs: ['Anna', 'Bao', 'Chi'],
+
+  // One day, nine walk-ins, in the order they arrive.
+  clients: [
+    { n: 1, service: 'Full set',      value: 2.0, price: 100 },
+    { n: 2, service: 'Polish change', value: 0.5, price: 25 },
+    { n: 3, service: 'Polish change', value: 0.5, price: 25 },
+    { n: 4, service: 'Full set',      value: 2.0, price: 100 },
+    { n: 5, service: 'Polish change', value: 0.5, price: 25 },
+    { n: 6, service: 'Polish change', value: 0.5, price: 25 },
+    { n: 7, service: 'Pedicure',      value: 1.5, price: 65 },
+    { n: 8, service: 'Polish change', value: 0.5, price: 25 },
+    { n: 9, service: 'Gel manicure',  value: 1.5, price: 60 },
+  ],
+
+  // How each system hands those same nine walk-ins out.
+  systems: {
+    leastBusy: {
+      key: 'leastBusy',
+      label: 'Least-busy (by customer count)',
+      blurb: 'Gives the next walk-in to whoever has served the fewest customers. Sounds fair… until you look at the money.',
+      // Round-robin: client i → tech (i mod 3).
+      assigned: ['Anna', 'Bao', 'Chi', 'Anna', 'Bao', 'Chi', 'Anna', 'Bao', 'Chi'],
+    },
+    mango: {
+      key: 'mango',
+      label: 'Fair turns (by value of work)',
+      blurb: 'Gives the next walk-in to whoever has done the least valuable work so far. Customer counts may differ — but the pay comes out even.',
+      // Each client goes to the tech with the lowest accumulated value.
+      assigned: ['Anna', 'Bao', 'Chi', 'Bao', 'Chi', 'Chi', 'Chi', 'Anna', 'Anna'],
+    },
+  },
+
+  // Why "least busy" feels fair but isn't.
+  whyNotFair: [
+    'Counting customers treats a $25 polish change and a $100 full set as the same “one turn.” They are not.',
+    'So a tech can serve the exact same number of customers as a teammate and take home three times the money — purely by luck of which customers walked in on their turn. That’s a lottery, not fairness.',
+    'The value system fixes it: a full set is “worth” about four polish changes, so after one full set you wait while teammates catch up. Everyone’s drawer ends up close to even.',
+  ],
+
   footer:
-    'Goal: nobody serves two walk-ins while a teammate serves none. When in doubt, glance at the turn counts — lowest is always next.',
+    'The goal is simple: nobody goes home having earned three times what the person next to them earned for the same day’s work.',
 };

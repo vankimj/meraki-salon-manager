@@ -10,7 +10,7 @@ import {
 const fmtTurns = (n) => { const v = Number(n) || 0; return Number.isInteger(v) ? String(v) : v.toFixed(1); };
 import { playChime } from '../../lib/chime';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
-import { TURN_HELP } from '../../lib/turnHelp';
+import TurnHelpSheet from '../../components/TurnHelpSheet';
 
 // Walk-in kiosk: today's turn rotation (next tech up = fewest turns) +
 // a waitlist. Front-desk tool — any staff can operate it.
@@ -338,46 +338,7 @@ export default function WalkinScreen() {
       </View>
     )}
 
-    <Modal visible={showHelp} transparent animationType="slide" onRequestClose={() => setShowHelp(false)}>
-      <View style={styles.helpBackdrop}>
-        <View style={styles.helpSheet}>
-          <View style={styles.helpHead}>
-            <Text style={styles.helpTitle}>🔄 {TURN_HELP.title}</Text>
-            <TouchableOpacity onPress={() => setShowHelp(false)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-              <Text style={styles.helpClose}>✕</Text>
-            </TouchableOpacity>
-          </View>
-          <ScrollView contentContainerStyle={{ padding: 18, paddingBottom: 32 }}>
-            <Text style={styles.helpIntro}>{TURN_HELP.intro}</Text>
-            {TURN_HELP.sections.map((s, i) => (
-              <View key={i} style={{ marginTop: 18 }}>
-                <Text style={styles.helpH}>{s.h}</Text>
-                {(s.p || []).map((para, j) => <Text key={j} style={styles.helpP}>{para}</Text>)}
-                {(s.bullets || []).map((b, j) => (
-                  <View key={j} style={styles.helpBulletRow}>
-                    <Text style={styles.helpBulletDot}>•</Text>
-                    <Text style={styles.helpBulletText}>{b}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-            <Text style={[styles.helpH, { marginTop: 24 }]}>Examples</Text>
-            {TURN_HELP.examples.map((ex, i) => (
-              <View key={i} style={styles.helpExample}>
-                <Text style={styles.helpExampleTitle}>{i + 1}. {ex.title}</Text>
-                {ex.lines.map((ln, j) => (
-                  <View key={j} style={styles.helpExLineRow}>
-                    <Text style={styles.helpExArrow}>›</Text>
-                    <Text style={styles.helpExLine}>{ln}</Text>
-                  </View>
-                ))}
-              </View>
-            ))}
-            <Text style={styles.helpFooter}>{TURN_HELP.footer}</Text>
-          </ScrollView>
-        </View>
-      </View>
-    </Modal>
+    <TurnHelpSheet visible={showHelp} onClose={() => setShowHelp(false)} />
 
     <Modal visible={adding} transparent animationType="fade" onRequestClose={() => setAdding(false)}>
       <TouchableOpacity style={styles.backdrop} activeOpacity={1} onPress={() => setAdding(false)}>
