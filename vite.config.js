@@ -4,6 +4,34 @@ import { VitePWA } from 'vite-plugin-pwa';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { execSync } from 'child_process';
 
+// The web app shares the EXACT renderer/defaults the Cloud Functions use
+// (functions/lib/*, pure CommonJS). Vite's dev server serves source-tree files
+// verbatim and only CJS->ESM-interops deps in node_modules, so these files'
+// `module.exports` produced zero ESM exports → importing them white-screened
+// /manage in dev. This dev-only plugin rewrites their two CJS boundaries to ESM
+// on load (`const {x} = require('./y')` -> `import {x} from './y.js'`,
+// `module.exports = {` -> `export {`). The files use only those two patterns
+// (destructured sibling requires + a single object-literal export), so the
+// rewrite is exact. The prod build (rollup) handles CJS natively, so skip it.
+function cjsFunctionsLib() {
+  return {
+    name: 'esm-ify-functions-lib',
+    apply: 'serve',
+    enforce: 'pre',
+    load(id) {
+      const clean = id.split('?')[0];
+      if (!clean.includes('/functions/lib/') || !clean.endsWith('.js') || clean.includes('node_modules')) return null;
+      let code = readFileSync(clean, 'utf-8');
+      code = code.replace(
+        /const\s*\{([^}]*)\}\s*=\s*require\(\s*(['"])(\.[^'"]+?)\2\s*\)\s*;?/g,
+        (_, names, _q, rel) => `import {${names}} from '${rel}${rel.endsWith('.js') ? '' : '.js'}';`,
+      );
+      code = code.replace(/module\.exports\s*=\s*\{/g, 'export {');
+      return code;
+    },
+  };
+}
+
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 const gitSha = (() => {
   try { return execSync('git rev-parse --short HEAD').toString().trim(); }
@@ -40,6 +68,7 @@ export default defineConfig({
     },
   },
   plugins: [
+    cjsFunctionsLib(),
     react(),
     // Emit /version.json (the current build sha) so the app can self-heal a stale
     // cache: on load it fetches this (cache-busted), and if its baked-in sha

@@ -1,8 +1,12 @@
 // Web entry for the Message Templates editor. Re-exports the EXACT same pure
 // renderer + defaults the Cloud Functions use (functions/lib), so the editor's
 // live preview is byte-for-byte what the server will send. No second copy of
-// the copy = no drift. (functions/lib/* are pure CommonJS with no Node-only
-// APIs, so Vite bundles them into the client cleanly.)
+// the copy = no drift.
+//
+// functions/lib/* are CommonJS (module.exports). Vite's dev server only applies
+// CJS->ESM interop to deps in node_modules, not to CJS files in the source tree,
+// so these are force-pre-bundled via optimizeDeps.include in vite.config.js —
+// without that, importing them here white-screened /manage in dev.
 export {
   DEFAULT_TEMPLATES, TEMPLATE_GROUPS, renderMessage, resolvePhrases,
 } from '../../functions/lib/messageTemplates.js';
