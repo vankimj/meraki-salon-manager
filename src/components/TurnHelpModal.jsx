@@ -62,7 +62,9 @@ export default function TurnHelpModal({ onClose }) {
             <div key={t} style={{ marginBottom: 12, transition: 'transform .2s', transform: isGettingIt ? 'scale(1.02)' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: COLORS[t] }}>
-                  {t}{isGettingIt && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#fff', background: COLORS[t], borderRadius: 10, padding: '1px 7px' }}>＋ got it</span>}
+                  {t}
+                  <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 600, color: 'var(--pn-text-faint, #999)' }}>🕘 in {H.clockIns[t]}</span>
+                  {isGettingIt && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 800, color: '#fff', background: COLORS[t], borderRadius: 10, padding: '1px 7px' }}>＋ got it</span>}
                 </span>
                 <span style={{ fontSize: 11, color: 'var(--pn-text-muted, #777)', fontVariantNumeric: 'tabular-nums' }}>${d.rev} · {d.count} {d.count === 1 ? 'client' : 'clients'}</span>
               </div>
@@ -125,7 +127,8 @@ export default function TurnHelpModal({ onClose }) {
 
           {/* Animated walkthrough */}
           <div style={sec}>Watch one day unfold — same 9 walk-ins, two systems</div>
-          <p style={{ ...para, marginBottom: 12 }}>Hit play. The same customers arrive in the same order; watch how each system hands them out and what each tech ends up earning.</p>
+          <p style={{ ...para, marginBottom: 8 }}>Hit play. The same customers arrive in the same order; watch how each system hands them out and what each tech ends up earning.</p>
+          <p style={{ fontSize: 12, lineHeight: 1.55, color: 'var(--pn-text-faint, #888)', background: 'var(--pn-bg, #f4f5f6)', borderRadius: 8, padding: '8px 10px', margin: '0 0 12px' }}>🕘 {H.tieNote}</p>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
             <button onClick={() => { if (done) { setStep(0); setPlaying(true); } else setPlaying(p => !p); }}

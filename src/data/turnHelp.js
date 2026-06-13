@@ -39,6 +39,11 @@ export const TURN_HELP = {
 
   techs: ['Anna', 'Bao', 'Chi'],
 
+  // When clock in determines who joins the rotation and breaks ties.
+  clockIns: { Anna: '8:55a', Bao: '9:05a', Chi: '9:20a' },
+  tieNote:
+    'A tech joins the rotation the moment they clock in. When two techs are tied, the one who clocked in earliest goes next — so clock-in time is the tiebreaker. (Here all three are in before the first walk-in; Anna clocked in first, so she wins ties.)',
+
   // One day, nine walk-ins, in the order they arrive.
   clients: [
     { n: 1, service: 'Full set',      value: 2.0, price: 100 },

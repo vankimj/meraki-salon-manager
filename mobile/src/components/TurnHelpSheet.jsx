@@ -74,7 +74,7 @@ export default function TurnHelpSheet({ visible, onClose }) {
             <View key={t} style={{ marginBottom: 10 }}>
               <View style={styles.barHead}>
                 <Text style={[styles.barName, { color: COLORS[t] }]}>
-                  {t}{got ? '  ＋ got it' : ''}
+                  {t}<Text style={styles.barClock}>  🕘 in {H.clockIns[t]}</Text>{got ? '  ＋ got it' : ''}
                 </Text>
                 <Text style={styles.barMeta}>${d.rev} · {d.count} {d.count === 1 ? 'client' : 'clients'}</Text>
               </View>
@@ -136,6 +136,7 @@ export default function TurnHelpSheet({ visible, onClose }) {
             {/* Walkthrough */}
             <Text style={styles.h}>Watch one day unfold — same 9 walk-ins, two systems</Text>
             <Text style={styles.p}>Hit play. The same customers arrive in the same order; watch how each system hands them out and what each tech earns.</Text>
+            <Text style={styles.tieNote}>🕘 {H.tieNote}</Text>
 
             <View style={styles.controls}>
               <TouchableOpacity
@@ -211,7 +212,9 @@ const makeStyles = (t) => StyleSheet.create({
   panelBlurb: { fontSize: 11.5, color: t.textMuted, lineHeight: 16, marginTop: 2, marginBottom: 12 },
   barHead:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 3 },
   barName:  { fontSize: 12, fontWeight: '700' },
+  barClock: { fontSize: 10, fontWeight: '600', color: t.textFaint },
   barMeta:  { fontSize: 11, color: t.textMuted },
+  tieNote:  { fontSize: 12, lineHeight: 17, color: t.textFaint, backgroundColor: t.surfaceAlt, borderRadius: 8, padding: 9, marginBottom: 12 },
   barTrack: { flexDirection: 'row', height: 15, backgroundColor: t.surfaceAlt, borderRadius: 7, overflow: 'hidden' },
   verdict:  { marginTop: 4, borderRadius: 8, paddingHorizontal: 9, paddingVertical: 7 },
   verdictBad:  { backgroundColor: '#fdecea' },
