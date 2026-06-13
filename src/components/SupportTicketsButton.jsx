@@ -393,11 +393,23 @@ function AskAiChat({ onClose }) {
   const [error,    setError]   = useState('');
   const sessionIdRef = useRef(genSessionId());
   const scrollRef    = useRef(null);
+  const taRef        = useRef(null);
 
   // Auto-scroll on new messages.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
+
+  // Auto-grow the input with its content (up to ~40% of the viewport), so it
+  // starts roomy and expands as you type. The CSS resize handle still lets you
+  // drag it taller manually; this only re-fits when the text changes.
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const cap = Math.round((window.innerHeight || 800) * 0.4);
+    el.style.height = Math.min(el.scrollHeight, cap) + 'px';
+  }, [input]);
 
   async function send() {
     const text = input.trim();
@@ -457,13 +469,14 @@ function AskAiChat({ onClose }) {
       </div>
       <div style={{ padding: 14, borderTop: `1px solid ${C.rule}`, background: 'var(--pn-surface)' }}>
         <textarea
+          ref={taRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); send(); } }}
           maxLength={4000}
-          rows={2}
+          rows={4}
           placeholder='Try: "Change Monday hours to 10–7", "Add a gel mani for $45", "Take me to marketing"'
-          style={{ ...input, resize: 'vertical', minHeight: 60, marginBottom: 8 }}
+          style={{ ...input, resize: 'vertical', minHeight: 110, maxHeight: '40vh', overflowY: 'auto', marginBottom: 8 }}
           disabled={sending}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
