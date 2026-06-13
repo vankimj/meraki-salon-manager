@@ -16,7 +16,7 @@ export default function PrivacyPage() {
 
       <h2>What this covers</h2>
       <p>
-        This Privacy Policy explains how Plume Nexus (operated by JVK Consulting LLC)
+        This Privacy Policy explains how Plume Nexus (operated by Plume Nexus LLC)
         collects, uses, and protects information when you use the platform or visit{' '}
         <a href="https://plumenexus.com">plumenexus.com</a>.
       </p>

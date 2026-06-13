@@ -13,7 +13,7 @@ export default function SmsConsentPage() {
 
       <h2>Who sends these messages</h2>
       <p>
-        Plume Nexus (operated by JVK Consulting LLC, Lewis Center, Ohio) sends
+        Plume Nexus (operated by Plume Nexus LLC, Lewis Center, Ohio) sends
         SMS to salon owners who have created an account at{' '}
         <a href="/signup">plumenexus.com/signup</a>.
       </p>
