@@ -657,9 +657,10 @@ export async function fetchGiftCardByCode(code) {
   return notTombstoned(d) ? d : null;
 }
 
-// Find redeemable gift cards by the recipient's name / email / phone (or code) —
-// for the "customer forgot their code" front-desk flow. Only active, non-voided
-// cards with a balance. Scans client-side (fine at salon scale).
+// Find redeemable gift cards by recipient OR purchaser name / phone, plus email
+// or code — for the "customer forgot their code" front-desk flow (the buyer who
+// paid can find it too). Only active, non-voided cards with a balance. Scans
+// client-side (fine at salon scale).
 export async function fetchGiftCardsByContact(qRaw) {
   const q = String(qRaw || '').trim().toLowerCase();
   if (q.length < 2) return [];
@@ -669,12 +670,17 @@ export async function fetchGiftCardsByContact(qRaw) {
   snap.docs.forEach(dd => {
     const g = { id: dd.id, ...dd.data() };
     if (!notTombstoned(g) || g.voided || !(Number(g.balance) > 0)) return;
-    const name  = String(g.recipientName || '').toLowerCase();
-    const email = String(g.recipientEmail || '').toLowerCase();
-    const code  = String(g.code || '').toLowerCase();
-    const gPhone = (String(g.recipientPhone || '').match(/\d/g) || []).join('');
-    const phoneHit = digits.length >= 7 && gPhone && gPhone.slice(-10) === digits.slice(-10);
-    if (name.includes(q) || email.includes(q) || code.includes(q) || phoneHit) out.push(g);
+    const name   = String(g.recipientName || '').toLowerCase();
+    const buyer  = String(g.purchaserName || '').toLowerCase();
+    const email  = String(g.recipientEmail || '').toLowerCase();
+    const code   = String(g.code || '').toLowerCase();
+    const rPhone = (String(g.recipientPhone || '').match(/\d/g) || []).join('');
+    const pPhone = (String(g.purchaserPhone || '').match(/\d/g) || []).join('');
+    const phoneHit = digits.length >= 7 && (
+      (rPhone && rPhone.slice(-10) === digits.slice(-10)) ||
+      (pPhone && pPhone.slice(-10) === digits.slice(-10))
+    );
+    if (name.includes(q) || buyer.includes(q) || email.includes(q) || code.includes(q) || phoneHit) out.push(g);
   });
   return out.slice(0, 25);
 }
