@@ -39,7 +39,7 @@ export default function Footer() {
           ['Contact', '#contact'],
           ['FAQ', '#faq'],
           ['Trust & Architecture', '/trust'],
-          ['Built by JVK Consulting LLC', null],
+          ['Built by Plume Nexus LLC', null],
         ]} />
 
         <FooterCol title="Legal" links={[
@@ -55,7 +55,7 @@ export default function Footer() {
         display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center',
         gap: 12, fontSize: 12, color: 'rgba(255,255,255,.4)',
       }}>
-        <div>© {year} JVK Consulting LLC · Plume Nexus</div>
+        <div>© {year} Plume Nexus LLC · Plume Nexus</div>
         <div>Columbus, Ohio · Built with care.</div>
       </div>
 

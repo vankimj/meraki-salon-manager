@@ -106,6 +106,23 @@ describe('logSmsUsage', () => {
     expect(db.adds[0].doc.segments).toBe(2);
   });
 
+  it('prices AWS sends at the AWS per-segment rate and tags provider', async () => {
+    const db = fakeDb();
+    await logSmsUsage(db, 'tenant-x', {
+      kind: 'reminder', to: '+16145551234', body: 'hello', sid: 'mid-1', segments: 3, provider: 'aws',
+    });
+    const { doc } = db.adds[0];
+    expect(doc.provider).toBe('aws');
+    expect(doc.costUsd).toBeCloseTo(3 * PRICING.awsSmsPerSegment, 8);
+  });
+
+  it('defaults provider to twilio at the twilio rate', async () => {
+    const db = fakeDb();
+    await logSmsUsage(db, 'tenant-x', { kind: 'reminder', to: '+1', body: 'hi', segments: 1 });
+    expect(db.adds[0].doc.provider).toBe('twilio');
+    expect(db.adds[0].doc.costUsd).toBeCloseTo(1 * PRICING.smsPerSegment, 8);
+  });
+
   it('does not throw if db.add fails', async () => {
     const db = { collection: () => ({ add: () => Promise.reject(new Error('boom')) }) };
     await expect(

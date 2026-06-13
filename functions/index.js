@@ -98,6 +98,15 @@ const twilioSid       = defineString('TWILIO_ACCOUNT_SID', { default: '' });
 const twilioToken     = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
 const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
+// ── AWS End User Messaging SMS (provider migration off Twilio) ────────────────
+// SMS_PROVIDER selects the dispatch path in sendSms(): 'twilio' (default)
+// keeps the existing path untouched; 'aws' sends via AWS End User Messaging
+// from the shared platform origination number. A tenant overrides per-tenant
+// via settings.smsProvider. Reuses the SES IAM creds (awsAccessKey/awsSecretKey)
+// — same key, same account; only the IAM policy needs sms-voice added.
+const smsProvider       = defineString('SMS_PROVIDER',        { default: 'twilio' });
+const awsSmsRegion      = defineString('AWS_SMS_REGION',      { default: '' }); // falls back to AWS_SES_REGION
+const awsSmsOrigination = defineString('AWS_SMS_ORIGINATION', { default: '' }); // shared #/pool, filled after provisioning
 const stripePriceId        = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
 const stripeStudioPriceId  = defineString('STRIPE_STUDIO_PRICE_ID',  { default: '' });
 const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
@@ -874,6 +883,42 @@ async function sendSms({
     });
     setClientLastSalon(db, phone, tenantId, clientId).catch(() => {});
     return { ok: true, sandboxed: true, sid: 'SANDBOX' };
+  }
+
+  // Real dispatch — provider selected per tenant (settings.smsProvider) with
+  // a global SMS_PROVIDER default. The AWS path sends via the shared platform
+  // origination number; everything above this point (prefix, footer, quota,
+  // opt-in/out) is provider-agnostic and already applied.
+  const provider = await resolveSmsProvider(db, tenantId);
+
+  if (provider === 'aws') {
+    const origination = awsSmsOrigination.value();
+    if (!origination) return { ok: false, error: 'aws_sms_no_origination' };
+    const res = await sendViaAwsSms({
+      to:                phone,
+      body:              finalBody,
+      originationNumber: origination,
+      messageType:       kind === 'marketing' ? 'PROMOTIONAL' : 'TRANSACTIONAL',
+      config: {
+        region:          awsSmsRegion.value() || awsSesRegion.value() || 'us-west-2',
+        accessKeyId:     awsAccessKey.value(),
+        secretAccessKey: awsSecretKey.value(),
+      },
+    });
+    if (!res.ok) {
+      console.error(`[sendSms] tenant=${tenantId} to=${phone} kind=${kind} aws failed:`, res.error);
+      return { ok: false, error: res.error || 'send_failed' };
+    }
+    // Cross-tenant index + usage logging, mirroring the Twilio path below.
+    setClientLastSalon(db, phone, tenantId, clientId).catch(() => {});
+    usageLog.logSmsUsage(db, tenantId, {
+      kind:     `appt_${kind}`,
+      to:       phone,
+      body:     finalBody,
+      sid:      res.messageId,
+      provider: 'aws',
+    }).catch(() => {});
+    return { ok: true, sid: res.messageId, twilioStatus: null };
   }
 
   // Real Twilio dispatch.
@@ -11756,7 +11801,7 @@ CRITICAL RULES:
 ━━━ ABOUT PLUME NEXUS ━━━
 - All-in-one operating system for modern personal-services businesses: salons, nail studios, spas, barbershops, brow/lash, wellness studios, tattoo, pet grooming.
 - Built by a software engineer who runs his own salon (in Columbus, OH). The platform is in production at that salon today.
-- Sold by JVK Consulting LLC. Domain plumenexus.com. App will be plumenexus.app on iOS/Android.
+- Sold by Plume Nexus LLC. Domain plumenexus.com. App will be plumenexus.app on iOS/Android.
 - Founder-led, small-team. Founder still answers email personally.
 
 ━━━ CORE MODULES ━━━
@@ -12824,6 +12869,28 @@ const _tenantSmsFromCache = new Map();
 // is unit-testable against a fake Firestore; `db` is injected into each call.
 const { registerTfnForTenant, unregisterTfn, findTenantByTfn, SHARED_TFN_SENTINEL } = require('./lib/tfnRegistry');
 const { setClientLastSalon, lookupClientLastSalon } = require('./lib/clientSalonIndex');
+const { sendViaAwsSms } = require('./lib/awsSms');
+
+// Resolve the SMS provider for a tenant: per-tenant settings.smsProvider
+// ('twilio' | 'aws') overrides the global SMS_PROVIDER env default. Cached
+// 5 min like tenantSmsFrom. Anything other than an explicit 'aws' resolves
+// to 'twilio' so a typo can never silently break sends.
+const _smsProviderCache = new Map();
+async function resolveSmsProvider(db, tenantId) {
+  const fallback = (smsProvider.value() || 'twilio').toLowerCase() === 'aws' ? 'aws' : 'twilio';
+  if (!tenantId) return fallback;
+  const cached = _smsProviderCache.get(tenantId);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.provider;
+  let provider = fallback;
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+    const s = snap.exists ? snap.data() : null;
+    const v = s && typeof s.smsProvider === 'string' ? s.smsProvider.toLowerCase() : null;
+    if (v === 'aws' || v === 'twilio') provider = v;
+  } catch (_) { /* fall back to global default */ }
+  _smsProviderCache.set(tenantId, { provider, at: Date.now() });
+  return provider;
+}
 
 async function tenantSmsFrom(db, tenantId) {
   if (_tenantSmsFromCache.has(tenantId)) {

@@ -23,6 +23,9 @@ const { FieldValue } = require('firebase-admin/firestore');
 const PRICING = Object.freeze({
   // Twilio toll-free US outbound; varies by country. v1 = US-only assumption.
   smsPerSegment:        0.0083,
+  // AWS End User Messaging US outbound (per message part). Cheaper than
+  // Twilio; selected when a send goes through the AWS provider path.
+  awsSmsPerSegment:     0.00581,
   // Twilio TFN rental, billed per number per month. Added as a fixed
   // line item by the monthly rollup, not per-send.
   tfnMonthlyRental:     2.00,
@@ -72,12 +75,13 @@ function maskEmail(e) {
 
 async function logSmsUsage(db, tenantId, opts = {}) {
   if (!db || !tenantId) return;
-  const { kind, to, body, sid, segments } = opts;
+  const { kind, to, body, sid, segments, provider } = opts;
   try {
     const segs = Number.isFinite(Number(segments)) && Number(segments) > 0
       ? Number(segments)
       : estimateSmsSegments(body);
-    const costUsd = +(segs * PRICING.smsPerSegment).toFixed(6);
+    const perSeg = provider === 'aws' ? PRICING.awsSmsPerSegment : PRICING.smsPerSegment;
+    const costUsd = +(segs * perSeg).toFixed(6);
     const now = new Date();
     await db.collection(`tenants/${tenantId}/usageSms`).add({
       at:       FieldValue.serverTimestamp(),
@@ -87,6 +91,7 @@ async function logSmsUsage(db, tenantId, opts = {}) {
       to:       maskPhone(to),
       segments: segs,
       costUsd,
+      provider: provider || 'twilio',
       sid:      sid || null,
     });
   } catch (e) {

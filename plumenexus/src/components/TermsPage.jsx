@@ -15,7 +15,7 @@ export default function TermsPage() {
 
       <h2>1. Who we are</h2>
       <p>
-        Plume Nexus is a salon management software platform operated by JVK Consulting LLC,
+        Plume Nexus is a salon management software platform operated by Plume Nexus LLC,
         an Ohio limited liability company ("Plume Nexus", "we", "us", "our"). Our principal
         place of business is in Columbus, Ohio.
       </p>
