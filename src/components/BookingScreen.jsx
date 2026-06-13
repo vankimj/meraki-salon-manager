@@ -30,7 +30,7 @@ import {
 } from '../lib/booking';
 import { pickTech, startOfWeek, endOfWeek, DEFAULT_ASSIGNMENT_METHOD } from '../lib/techAssignment';
 import { getEffectiveFlow } from '../lib/bookingFlow';
-import { findGroupSlots } from '../lib/groupBooking';
+import { findGroupSlots, computeLanes } from '../lib/groupBooking';
 
 // ── constants ──────────────────────────────────────────
 
@@ -1030,13 +1030,15 @@ export default function BookingScreen() {
         } catch (e) { setBookingError(e?.message || "We couldn't process the booking deposit. Please try another card or call the salon."); setSubmitting(false); return; }
       }
 
-      // Build one appointment per guest from the frozen assignment.
+      // Build one appointment per ASSIGNMENT (a guest can split across lanes —
+      // e.g. a manicure with one stylist then nail art with a specialist).
       const groupId = `bg_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
-      const apptsToWrite = groupChoice.assignments.map((a, i) => {
+      const apptsToWrite = groupChoice.assignments.map((a) => {
         const guest = groupGuests[a.guestIdx];
         const tech = techById[a.techId] || null;
         const h = Math.floor(a.startMins / 60), m = a.startMins % 60;
-        const isOrg = i === 0;
+        const isOrg = a.guestIdx === 0;
+        const guestLabel = isOrg ? form.name.trim() : (guest?.name?.trim() || `${form.name.trim()}'s guest ${a.guestIdx + 1}`);
         return {
           date: groupChoice.date,
           startTime: `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`,
@@ -1045,17 +1047,20 @@ export default function BookingScreen() {
           techName: tech?.name || a.techName || 'TBD',
           techRequestType: a.requestType,
           clientId,
-          clientName: (isOrg ? form.name.trim() : (guest.name?.trim() || `${form.name.trim()}'s guest ${i + 1}`)),
-          clientPhone: (guest.phone?.trim() || form.phone.trim()),
-          clientEmail: (guest.email?.trim() || form.email.trim() || gUser?.email || null),
-          services: buildServices(guest.cart, tech),
+          clientName: guestLabel,
+          clientPhone: (guest?.phone?.trim() || form.phone.trim()),
+          clientEmail: (guest?.email?.trim() || form.email.trim() || gUser?.email || null),
+          // This appt covers only this lane's services (the whole cart for a single-lane guest).
+          services: buildServices(a.serviceItems || guest?.cart || [], tech),
           status: 'scheduled',
           notes: form.notes.trim() || null,
           source: 'online_booking',
           bookingGroupId: groupId,
           groupBooking: true,
-          groupRole: isOrg ? 'organizer' : 'guest',
-          groupSize: groupChoice.assignments.length,
+          // Exactly one appt is the 'organizer' (guest 0's primary lane) so the
+          // server sends ONE bundled confirmation covering every guest + lane.
+          groupRole: (isOrg && a.lane === 0) ? 'organizer' : 'guest',
+          groupSize: groupGuests.length,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -1516,7 +1521,15 @@ function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, re
   const thisComplete = guestComplete(g, isOrg);
   const allReady = guests.length >= 2 && guests.every((gg, i) => guestComplete(gg, i === 0));
 
-  const elig = techsForServices(allTechs, g.cart.map(c => c.service)).filter(t => t.active !== false);
+  // Group this guest's services into lanes (services one stylist can do stay
+  // together; a specialist add-on like nail art becomes its own lane). The
+  // stylist picker chooses the PRIMARY lane's stylist; extra lanes auto-assign.
+  const activeTechs = (allTechs || []).filter(t => t.active !== false);
+  const lanes = computeLanes(g.cart, activeTechs);
+  const elig = (lanes[0]?.eligibleTechs || []).filter(t => t.active !== false);
+  const extraLanes = lanes.slice(1);
+  const undoableLane = lanes.find(l => l.eligibleTechs.length === 0);
+  const laneNames = (lane) => lane.items.map(it => it.option?.name ? `${it.service.name} — ${it.option.name}` : it.service.name).join(', ');
 
   const onAddService = (svc, opt) => {
     if (!svc || g.cart.some(i => i.service.id === svc.id)) return;
@@ -1643,14 +1656,19 @@ function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, re
       <ServiceCatalog key={g.id} services={services} cart={g.cart} onAdd={onAddService} onRemove={(svc) => rmService(svc.id)} />
 
       {/* Stylist */}
-      <div style={SECTION}>Stylist</div>
+      <div style={SECTION}>Stylist{extraLanes.length > 0 ? ' (for the main service)' : ''}</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
         <GChip active={!g.pickedTech} onClick={() => onUpdateGuest(g.id, { pickedTech: null })}>No preference</GChip>
         {elig.map(t => <GChip key={t.id} active={g.pickedTech?.id === t.id} onClick={() => onUpdateGuest(g.id, { pickedTech: t })}>{t.name}</GChip>)}
       </div>
-      {g.cart.length > 0 && elig.length === 0 && (
+      {extraLanes.length > 0 && !undoableLane && (
+        <div style={{ fontSize: 12, color: 'var(--tm-primary, #2D7A5F)', background: '#f0f9f5', borderRadius: 8, padding: '8px 10px', marginTop: 8, lineHeight: 1.5 }}>
+          ✨ A specialist will do {extraLanes.map(laneNames).join(' & ')} right after — we book that automatically and keep it back-to-back.
+        </div>
+      )}
+      {g.cart.length > 0 && undoableLane && (
         <div style={{ fontSize: 12, color: '#c0392b', marginTop: 8, lineHeight: 1.5 }}>
-          No single stylist does all of these (e.g. one does manicures but not pedicures). Online booking needs one stylist per guest — remove a service to book online, or keep going and we'll give you a number to call so we can split it across two stylists.
+          We don't have anyone who offers {laneNames(undoableLane)} right now. Remove it to book online, or call us and we'll see what we can arrange.
         </div>
       )}
 
@@ -1690,6 +1708,12 @@ function GroupResultsStep({ results, searching, choice, guests, allTechs, form, 
   const maxD = new Date(); maxD.setDate(maxD.getDate() + maxLeadDays);
   const gLabel = (idx) => idx === 0 ? (joinName(form?.firstName, form?.lastName) || 'You') : (guests[idx]?.name?.trim() || `Guest ${idx + 1}`);
   const tName = (a) => a.requestType === 'auto' ? (a.techName || 'next available') : (a.techName || 'your stylist');
+  const svcShort = (a) => (a.serviceItems || []).map(it => it.service?.name).filter(Boolean).join(', ') || 'add-on';
+  const groupByGuest = (assignments) => {
+    const by = {};
+    (assignments || []).forEach(a => { (by[a.guestIdx] || (by[a.guestIdx] = [])).push(a); });
+    return Object.keys(by).sort((x, y) => Number(x) - Number(y)).map(k => by[k].slice().sort((m, n) => (m.lane || 0) - (n.lane || 0)));
+  };
   const byDate = {};
   (results?.slots || []).forEach(s => (byDate[s.date] || (byDate[s.date] = [])).push(s));
   const sameKey = (a, b) => a && b && a.date === b.date && a.anchorMins === b.anchorMins;
@@ -1751,9 +1775,15 @@ function GroupResultsStep({ results, searching, choice, guests, allTechs, form, 
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>
                       {s.sameStart ? `All together at ${minsToStr(s.anchorMins)}` : `Around ${minsToStr(s.anchorMins)}`}
                     </div>
-                    {s.assignments.map(a => (
-                      <div key={a.guestIdx} style={{ fontSize: 12, color: '#555' }}>{gLabel(a.guestIdx)} — {minsToStr(a.startMins)} with {tName(a)}</div>
-                    ))}
+                    {groupByGuest(s.assignments).map(lanes => {
+                      const gi = lanes[0].guestIdx;
+                      return (
+                        <div key={gi} style={{ fontSize: 12, color: '#555' }}>
+                          {gLabel(gi)} — {minsToStr(lanes[0].startMins)} with {tName(lanes[0])}
+                          {lanes.slice(1).map((a, k) => <span key={k}> · then {minsToStr(a.startMins)} {svcShort(a)} with {tName(a)}</span>)}
+                        </div>
+                      );
+                    })}
                   </button>
                 );
               })}
@@ -1778,12 +1808,11 @@ function GroupConfirmStep({ guests, allTechs, choice, form, submitting, bookingE
       <StepTitle>Confirm group booking</StepTitle>
       <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 14, padding: 18, marginBottom: 12 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a', marginBottom: 12 }}>{fmtDate(choice.date)} · party of {choice.assignments.length}</div>
-        {choice.assignments.map(a => {
-          const g = guests[a.guestIdx];
-          const svc = (g?.cart || []).map(c => c.service.name).join(', ') || 'Nail service';
+        {choice.assignments.map((a, i) => {
+          const svc = (a.serviceItems || []).map(c => c.service?.name).filter(Boolean).join(', ') || 'Nail service';
           return (
-            <div key={a.guestIdx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderTop: '1px solid #f3f3f3', fontSize: 13 }}>
-              <div><strong style={{ color: '#1a1a1a' }}>{gLabel(a.guestIdx)}</strong><div style={{ color: '#888', fontSize: 12 }}>{svc}</div></div>
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '7px 0', borderTop: '1px solid #f3f3f3', fontSize: 13 }}>
+              <div><strong style={{ color: '#1a1a1a' }}>{gLabel(a.guestIdx)}{a.lane > 0 ? ' · then' : ''}</strong><div style={{ color: '#888', fontSize: 12 }}>{svc}</div></div>
               <div style={{ textAlign: 'right', color: '#555', whiteSpace: 'nowrap' }}>{minsToStr(a.startMins)}<div style={{ fontSize: 12, color: '#888' }}>{tName(a)}</div></div>
             </div>
           );

@@ -2003,14 +2003,16 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const clientId = String(request.data?.clientId || '').slice(0, 64);
   const apptsIn = Array.isArray(request.data?.appointments) ? request.data.appointments : [];
   if (!apptsIn.length)   throw new HttpsError('invalid-argument', 'No appointments to create.');
-  if (apptsIn.length > 6) throw new HttpsError('invalid-argument', 'Too many appointments in one booking.');
+  // Up to 6 guests; a guest can split across stylists (e.g. mani + nail-art
+  // specialist), so allow up to 2 appts per guest.
+  if (apptsIn.length > 12) throw new HttpsError('invalid-argument', 'Too many appointments in one booking.');
   const idempotencyKey = String(request.data?.idempotencyKey || '').slice(0, 160);
 
   // Idempotency: a retried submit (network blip / double-tap) returns the
   // already-written appointments instead of duplicating them.
   if (idempotencyKey) {
     const dup = await db.collection(`tenants/${tenantId}/appointments`)
-      .where('bookingIdempotencyKey', '==', idempotencyKey).limit(6).get().catch(() => null);
+      .where('bookingIdempotencyKey', '==', idempotencyKey).limit(12).get().catch(() => null);
     if (dup && !dup.empty) return { ids: dup.docs.map(d => d.id), idempotent: true };
   }
 

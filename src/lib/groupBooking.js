@@ -1,9 +1,14 @@
-// Group booking — find times where N guests can each be served by a DISTINCT
-// tech within ±tolerance of a shared anchor, scanned across a date range and
-// ranked. Pure (no Firebase/React) so it's fully unit-testable. The N-guest
-// generalization of the 2-lane "simultaneous" check in BookingScreen.
+// Group booking — find times where N guests are each seated within ±tolerance
+// of a shared anchor, scanned across a date range and ranked. Pure (no
+// Firebase/React) so it's fully unit-testable.
+//
+// Each guest's services are grouped into "lanes": consecutive services one
+// stylist can do stay together; we split only where no single stylist covers
+// the next service (e.g. a nail-art specialist). The PRIMARY lane (lane 0) is
+// seated with the group on a DISTINCT stylist; any extra lanes (specialty
+// add-ons) are scheduled back-to-back afterward with a free eligible stylist.
 import {
-  isTechFreeAt, cartTotalDuration, techsForServices, strToMins,
+  cartTotalDuration, techsForServices, strToMins,
   BOOKING_START, BOOKING_END, SLOT_STEP,
 } from './booking';
 
@@ -53,8 +58,36 @@ function buildOffsets(tolerance) {
   return out.sort((a, b) => Math.abs(a) - Math.abs(b));
 }
 
-// Try to seat all guests around one (date, anchor). Returns an assignment or null.
-function matchAnchor({ date, anchor, guestsInfo, dayIdx, offsets, windowStart, windowEnd, today, nowMins }) {
+// Base services (categoryExclusive) come first so a base service is done before
+// an add-on like nail art (which physically goes on top).
+function sortBaseFirst(items) {
+  const key = it => (it && it.service && it.service.categoryExclusive === true) ? 0 : 1;
+  return items.slice().sort((a, b) => key(a) - key(b));
+}
+
+// Group a guest's cart into lanes: keep services together while ONE stylist can
+// do them all; start a new lane when the next service can't join (specialist).
+// Returns [{ items, eligibleTechs }]. A lane with eligibleTechs=[] = a service
+// no stylist can do at all (guest unsatisfiable).
+export function computeLanes(items, techs) {
+  const lanes = [];
+  let cur = null;
+  for (const item of sortBaseFirst(items)) {
+    if (cur) {
+      const trial = [...cur.items, item];
+      const elig = techsForServices(techs, trial.map(i => i.service));
+      if (elig.length) { cur.items = trial; cur.eligibleTechs = elig; continue; }
+      lanes.push(cur); cur = null;
+    }
+    cur = { items: [item], eligibleTechs: techsForServices(techs, [item.service]) };
+  }
+  if (cur) lanes.push(cur);
+  return lanes;
+}
+
+// Seat all guests' PRIMARY lanes around one (date, anchor) on distinct techs,
+// then chain each guest's extra lanes after. Returns an assignment or null.
+function matchAnchor({ date, anchor, guestsInfo, dayIdx, offsets, windowStart, windowEnd, today, nowMins, removalDur }) {
   const feas = guestsInfo.map(g => {
     const pairs = [];
     for (const tech of g.candidateTechs) {
@@ -68,22 +101,22 @@ function matchAnchor({ date, anchor, guestsInfo, dayIdx, offsets, windowStart, w
         }
       }
     }
-    // Prefer landing on the anchor, then closeness, then earlier.
     pairs.sort((a, b) => Math.abs(a.start - anchor) - Math.abs(b.start - anchor) || a.start - b.start);
     return { idx: g.idx, pairs };
   });
   if (feas.some(f => f.pairs.length === 0)) return null;
 
-  // Most-constrained guest first (MRV), then backtrack assigning DISTINCT techs.
+  // Most-constrained guest first (MRV), then backtrack assigning DISTINCT techs
+  // for the primary lanes.
   const order = feas.slice().sort((a, b) => a.pairs.length - b.pairs.length);
   const used = new Set();
-  const chosen = new Array(order.length);
+  const chosen = {};
   const bt = (k) => {
     if (k === order.length) return true;
     for (const p of order[k].pairs) {
       if (used.has(p.techId)) continue;
       used.add(p.techId);
-      chosen[k] = { guestIdx: order[k].idx, ...p };
+      chosen[order[k].idx] = p;
       if (bt(k + 1)) return true;
       used.delete(p.techId);
     }
@@ -91,11 +124,43 @@ function matchAnchor({ date, anchor, guestsInfo, dayIdx, offsets, windowStart, w
   };
   if (!bt(0)) return null;
 
-  const assignments = chosen.slice().sort((a, b) => a.guestIdx - b.guestIdx)
-    .map(a => ({ guestIdx: a.guestIdx, techId: a.techId, techName: a.techName, startMins: a.start, durMins: a.dur, requestType: a.requestType }));
+  // Occupancy = the day's existing intervals + the primary lanes we just placed.
+  const occ = new Map();
+  for (const [tid, v] of dayIdx) occ.set(tid, v.slice());
+  const addIv = (tid, s, e) => { if (!occ.has(tid)) occ.set(tid, []); occ.get(tid).push({ s, e }); };
+
+  const assignments = [];
+  for (const g of guestsInfo) {
+    const p = chosen[g.idx];
+    addIv(p.techId, p.start, p.start + p.dur);
+    assignments.push({ guestIdx: g.idx, lane: 0, techId: p.techId, techName: p.techName, startMins: p.start, durMins: p.dur, requestType: p.requestType, serviceItems: g.lanes[0].items });
+  }
+
+  // Chain each guest's extra lanes back-to-back after their primary lane.
+  for (const g of guestsInfo) {
+    if (g.lanes.length <= 1) continue;
+    let cursor = chosen[g.idx].start + chosen[g.idx].dur;
+    for (let li = 1; li < g.lanes.length; li++) {
+      const lane = g.lanes[li];
+      let placed = null;
+      for (const tech of lane.eligibleTechs) {
+        const dur = cartTotalDuration(lane.items, removalDur, tech);
+        if (cursor + dur > windowEnd) continue;
+        if (freeIn(occ.get(tech.id), cursor, cursor + dur)) { placed = { tech, dur }; break; }
+      }
+      if (!placed) return null;                       // a specialty add-on can't be scheduled → slot invalid
+      addIv(placed.tech.id, cursor, cursor + placed.dur);
+      assignments.push({ guestIdx: g.idx, lane: li, techId: placed.tech.id, techName: placed.tech.name, startMins: cursor, durMins: placed.dur, requestType: 'auto', serviceItems: lane.items });
+      cursor += placed.dur;
+    }
+  }
+
+  assignments.sort((a, b) => a.guestIdx - b.guestIdx || a.lane - b.lane);
+  const primaries = assignments.filter(a => a.lane === 0);
   return {
     date, anchorMins: anchor,
-    sameStart: assignments.every(a => a.startMins === anchor),
+    sameStart: primaries.every(a => a.startMins === anchor),
+    split: assignments.length > primaries.length,
     techsUsed: new Set(assignments.map(a => a.techId)).size,
     assignments,
   };
@@ -111,8 +176,6 @@ export function findGroupSlots({
   const empty = { slots: [], unsatisfiable: [] };
   if (!Array.isArray(guests) || guests.length < 2 || !Array.isArray(techs) || !techs.length) return empty;
 
-  // Per-tech total busy load across the range — used to order auto-assign
-  // candidates least-busy-first (fair distribution), dedup enforced by backtracking.
   const dates = datesInRange(dateRange?.start, dateRange?.end);
   const loadByTech = new Map(techs.map(t => [t.id, 0]));
   dates.forEach(d => (apptsByDate[d] || []).forEach(a => {
@@ -120,21 +183,25 @@ export function findGroupSlots({
     const t = techs.find(x => x.id === a.techId || x.name === a.techName);
     if (t) loadByTech.set(t.id, (loadByTech.get(t.id) || 0) + 1);
   }));
+  const byLoad = (a, b) => (loadByTech.get(a.id) || 0) - (loadByTech.get(b.id) || 0) || String(a.name).localeCompare(String(b.name));
 
   const durCache = new Map();
   const unsatisfiable = [];
   const guestsInfo = guests.map((g, idx) => {
-    const services = (g.cartItems || []).map(i => i.service);
-    let eligible = techsForServices(techs, services);
-    if (g.pickedTechId) eligible = eligible.filter(t => t.id === g.pickedTechId);
-    else eligible = eligible.slice().sort((a, b) => (loadByTech.get(a.id) || 0) - (loadByTech.get(b.id) || 0) || String(a.name).localeCompare(String(b.name)));
-    if (!eligible.length) unsatisfiable.push(idx);
+    const lanes = computeLanes(g.cartItems || [], techs);
+    // A lane no stylist can do at all → this guest can't be served.
+    if (!lanes.length || lanes.some(l => l.eligibleTechs.length === 0)) { unsatisfiable.push(idx); }
+    // Order each lane's eligible stylists least-busy-first (fair); dedup of the
+    // primary lane is enforced by backtracking.
+    lanes.forEach(l => { l.eligibleTechs = l.eligibleTechs.slice().sort(byLoad); });
+    let primary = lanes[0] ? lanes[0].eligibleTechs : [];
+    if (g.pickedTechId) primary = primary.filter(t => t.id === g.pickedTechId);  // a pinned tech only constrains the primary lane
     const durFor = (tech) => {
       const key = `${idx}:${tech.id}`;
-      if (!durCache.has(key)) durCache.set(key, cartTotalDuration(g.cartItems || [], removalDur, tech));
+      if (!durCache.has(key)) durCache.set(key, cartTotalDuration((lanes[0] || {}).items || [], removalDur, tech));
       return durCache.get(key);
     };
-    return { idx, pinnedTechId: g.pickedTechId || null, candidateTechs: eligible, durFor };
+    return { idx, pinnedTechId: g.pickedTechId || null, candidateTechs: primary, durFor, lanes };
   });
   if (unsatisfiable.length) return { slots: [], unsatisfiable };
 
@@ -146,7 +213,7 @@ export function findGroupSlots({
   dates.forEach((date, dateRank) => {
     const dayIdx = buildDayIndex(apptsByDate[date] || [], techs);
     for (const anchor of anchors) {
-      const slot = matchAnchor({ date, anchor, guestsInfo, dayIdx, offsets, windowStart, windowEnd, today, nowMins });
+      const slot = matchAnchor({ date, anchor, guestsInfo, dayIdx, offsets, windowStart, windowEnd, today, nowMins, removalDur });
       if (slot) {
         slot._dateRank = dateRank;
         slot._preferred = preferredDate && date === preferredDate;
@@ -155,7 +222,6 @@ export function findGroupSlots({
     }
   });
 
-  // Rank: preferred date first → soonest date → same-start → earlier in day.
   viable.sort((a, b) =>
     (a._preferred === b._preferred ? 0 : (a._preferred ? -1 : 1)) ||
     (a._dateRank - b._dateRank) ||

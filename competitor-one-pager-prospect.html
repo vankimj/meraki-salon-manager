@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Plume Nexus Salon Manager — Why Salons Switch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600&family=Great+Vibes&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root{
+    --green:#2D7A5F; --blue:#3D95CE; --teal:#3D9E8A;
+    --ink:#1c2b2a; --muted:#5d6f6c; --line:#e4ebe8;
+    --bg:#ffffff; --soft:#f6faf8; --gold:#b8893b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:#eef2f0;color:var(--ink);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+  .page{
+    width:8.5in;min-height:11in;margin:24px auto;background:var(--bg);
+    padding:0.5in 0.55in 0.4in;box-shadow:0 8px 40px rgba(0,0,0,.12);
+    display:flex;flex-direction:column;
+  }
+
+  header{display:flex;justify-content:space-between;align-items:flex-end;
+    border-bottom:2px solid var(--green);padding-bottom:10px;margin-bottom:14px}
+  .brand .mark{font-family:'Great Vibes',cursive;font-size:32px;color:var(--green);line-height:1}
+  .brand .sub{font-family:'Cinzel',serif;font-size:9px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;margin-top:2px}
+  .headline{text-align:right}
+  .headline h1{font-size:15px;font-weight:700;color:var(--ink);letter-spacing:-.2px}
+  .headline p{font-size:9.5px;color:var(--muted);margin-top:2px}
+
+  .hero{text-align:center;margin-bottom:16px}
+  .hero h2{font-size:21px;font-weight:700;letter-spacing:-.4px;line-height:1.25;color:var(--ink)}
+  .hero h2 em{font-style:normal;color:var(--green)}
+  .hero p{font-size:11px;color:var(--muted);margin-top:6px;max-width:6.2in;margin-left:auto;margin-right:auto;line-height:1.5}
+
+  .pillars{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+  .pillar{background:var(--soft);border:1px solid var(--line);border-top:3px solid var(--teal);
+    border-radius:6px;padding:11px 11px 12px}
+  .pillar .ico{font-size:17px;line-height:1}
+  .pillar h3{font-size:10.5px;font-weight:700;color:var(--green);margin:6px 0 4px}
+  .pillar p{font-size:9px;color:var(--muted);line-height:1.45}
+
+  h4.sec{font-family:'Cinzel',serif;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;
+    color:var(--green);margin:0 0 8px;display:flex;align-items:center;gap:8px}
+  h4.sec::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  table{width:100%;border-collapse:collapse;font-size:9.3px;margin-bottom:16px}
+  th,td{text-align:left;padding:6px 8px;vertical-align:middle;border-bottom:1px solid var(--line)}
+  thead th{font-size:8.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);font-weight:600;border-bottom:1.5px solid var(--line)}
+  thead th.us{color:var(--green)}
+  td.cap{font-weight:600;color:var(--ink)}
+  tbody tr:last-child td{border-bottom:none}
+  .us-col{background:rgba(45,122,95,.07);text-align:center;font-weight:600;color:var(--green)}
+  .ok{color:var(--green);text-align:center;font-weight:700}
+  .no{color:#b9c2bf;text-align:center}
+  .partial{color:var(--muted);text-align:center;font-size:8.6px}
+
+  .pitch{margin-top:auto;background:linear-gradient(100deg,var(--green),var(--teal));color:#fff;
+    border-radius:8px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;gap:18px}
+  .pitch .txt .label{font-family:'Cinzel',serif;font-size:8.5px;letter-spacing:2px;text-transform:uppercase;opacity:.82;margin-bottom:4px}
+  .pitch .txt p{font-size:11px;line-height:1.5}
+  .pitch .txt b{font-weight:700}
+  .cta{flex:0 0 auto;text-align:center;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.35);
+    border-radius:6px;padding:10px 16px}
+  .cta .big{font-family:'Cinzel',serif;font-size:13px;letter-spacing:1px;font-weight:600}
+  .cta .small{font-size:8.5px;opacity:.9;margin-top:3px}
+
+  footer{display:flex;justify-content:space-between;font-size:7.6px;color:var(--muted);margin-top:9px}
+
+  @media print{
+    html,body{background:#fff}
+    .page{margin:0;box-shadow:none;width:auto;min-height:auto;padding:0.45in 0.5in}
+    @page{size:letter;margin:0}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <div class="brand">
+      <div class="mark">Plume Nexus</div>
+      <div class="sub">Salon Manager</div>
+    </div>
+    <div class="headline">
+      <h1>Everything your salon runs on — in one place</h1>
+      <p>Scheduling · Walk-ins · Checkout · Marketing · Payroll · AI Reports</p>
+    </div>
+  </header>
+
+  <div class="hero">
+    <h2>The salon software that finally <em>keeps up with your front desk.</em></h2>
+    <p>Booked appointments and walk-ins in one calendar. Checkout, tips and payroll that talk to each other.
+      And a reports assistant you can simply ask questions — built for growing salons, priced for them too.</p>
+  </div>
+
+  <div class="pillars">
+    <div class="pillar">
+      <div class="ico">🤖</div>
+      <h3>Just Ask AI</h3>
+      <p>“How did Tess do on Saturdays last quarter?” — answered in seconds. No spreadsheets, no digging.</p>
+    </div>
+    <div class="pillar">
+      <div class="ico">🔄</div>
+      <h3>Walk-ins, Solved</h3>
+      <p>A fair turn-rotation kiosk on iPad runs your walk-in line — alongside a full appointment book.</p>
+    </div>
+    <div class="pillar">
+      <div class="ico">💼</div>
+      <h3>Payroll Built In</h3>
+      <p>Commission, tips, 1099s and a Gusto bridge — included, not a costly add-on or a separate tool.</p>
+    </div>
+    <div class="pillar">
+      <div class="ico">💬</div>
+      <h3>One Inbox</h3>
+      <p>Texts, emails and chats with every client, threaded together — reply from one place.</p>
+    </div>
+  </div>
+
+  <h4 class="sec">See the Difference</h4>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:170px"></th>
+        <th class="us">Plume Nexus</th>
+        <th>GlossGenius</th>
+        <th>Vagaro</th>
+        <th>Boulevard</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="cap">Ask-anything AI reports</td>
+        <td class="us-col">✓</td>
+        <td class="no">—</td>
+        <td class="no">—</td>
+        <td class="no">—</td>
+      </tr>
+      <tr>
+        <td class="cap">Walk-in turn rotation</td>
+        <td class="us-col">✓</td>
+        <td class="partial">basic waitlist</td>
+        <td class="partial">basic</td>
+        <td class="no">appt-only</td>
+      </tr>
+      <tr>
+        <td class="cap">Payroll &amp; 1099 included</td>
+        <td class="us-col">✓</td>
+        <td class="no">—</td>
+        <td class="partial">basic</td>
+        <td class="partial">mid</td>
+      </tr>
+      <tr>
+        <td class="cap">SMS + email + chat in one inbox</td>
+        <td class="us-col">✓</td>
+        <td class="partial">SMS only</td>
+        <td class="partial">SMS / MMS</td>
+        <td class="partial">premium tier</td>
+      </tr>
+      <tr>
+        <td class="cap">Keep your own payment processor</td>
+        <td class="us-col">✓</td>
+        <td class="no">locked in</td>
+        <td class="no">locked in</td>
+        <td class="partial">per-merchant</td>
+      </tr>
+      <tr>
+        <td class="cap">Set up yourself in minutes</td>
+        <td class="us-col">✓</td>
+        <td class="ok">✓</td>
+        <td class="ok">✓</td>
+        <td class="no">2–4 wk setup</td>
+      </tr>
+      <tr>
+        <td class="cap">Price (top tier)</td>
+        <td class="us-col">~$49–149/mo</td>
+        <td class="partial">$24–168/mo</td>
+        <td class="partial">$30–105/mo +staff</td>
+        <td class="partial">$235–435+/mo</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="pitch">
+    <div class="txt">
+      <div class="label">Why salons switch to Plume Nexus</div>
+      <p>You get <b>more than Boulevard ships</b> — AI reports, walk-in rotation and built-in payroll —
+        at a price closer to GlossGenius, and you <b>keep your own payment processor</b>. One tool for the whole front desk.</p>
+    </div>
+    <div class="cta">
+      <div class="big">Book a Demo</div>
+      <div class="small">plumenexus.com · founding-salon pricing</div>
+    </div>
+  </div>
+
+  <footer>
+    <span>Plume Nexus Salon Manager · plumenexus.com</span>
+    <span>Competitor details verified May 2026 · features subject to plan</span>
+  </footer>
+
+</div>
+</body>
+</html>

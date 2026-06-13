@@ -35,11 +35,30 @@ describe('findGroupSlots', () => {
     expect(top.assignments[0].techId).not.toBe(top.assignments[1].techId);
   });
 
-  it('multi-service guest is unsatisfiable when no single tech does all of them', () => {
-    const mani = svc('mani', 30), pedi = svc('pedi', 45);
-    const techs = [tech('t1', 'Anna', ['mani']), tech('t2', 'Mia', ['pedi'])];
+  it('splits a guest across stylists when no one does all their services (nail-art specialist)', () => {
+    const mani = svc('mani', 30), art = svc('art', 30);
+    // t1/t2 do manicures; t3 is an art-only specialist.
+    const techs = [tech('t1', 'Anna', ['mani']), tech('t2', 'Mia', ['mani']), tech('t3', 'Bea', ['art'])];
     const { slots, unsatisfiable } = findGroupSlots({
-      guests: [guest([mani, pedi]), guest([mani])], techs, apptsByDate: {}, dateRange: RANGE,
+      guests: [guest([mani, art]), guest([mani])], techs, apptsByDate: {}, dateRange: RANGE,
+    });
+    expect(unsatisfiable).toEqual([]);
+    expect(slots.length).toBeGreaterThan(0);
+    const top = slots[0];
+    expect(top.split).toBe(true);
+    const g0 = top.assignments.filter(a => a.guestIdx === 0).sort((a, b) => a.lane - b.lane);
+    expect(g0).toHaveLength(2);                                        // mani lane + art lane
+    expect(g0[1].techId).toBe('t3');                                  // art by the specialist
+    expect(g0[1].startMins).toBe(g0[0].startMins + g0[0].durMins);    // back-to-back
+    const primaries = top.assignments.filter(a => a.lane === 0);
+    expect(new Set(primaries.map(p => p.techId)).size).toBe(primaries.length); // distinct primaries
+  });
+
+  it('a service no stylist offers at all → still unsatisfiable', () => {
+    const mani = svc('mani', 30), exotic = svc('exotic', 30);
+    const techs = [tech('t1', 'Anna', ['mani']), tech('t2', 'Mia', ['mani'])]; // nobody does exotic
+    const { slots, unsatisfiable } = findGroupSlots({
+      guests: [guest([mani, exotic]), guest([mani])], techs, apptsByDate: {}, dateRange: RANGE,
     });
     expect(slots).toEqual([]);
     expect(unsatisfiable).toContain(0);
