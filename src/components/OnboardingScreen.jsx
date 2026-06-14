@@ -6,24 +6,24 @@ const createTenantFn = httpsCallable(functions, 'createTenantOnboarding');
 
 const PLANS = [
   {
-    id: 'starter',
-    label: 'Starter',
-    price: 'Free',
-    features: ['Scheduling & clients', 'TipFlow kiosk', 'Email receipts', 'Online booking page'],
+    id: 'solo',
+    label: 'Solo',
+    price: '$49 / month',
+    features: ['Scheduling & online booking', 'POS, gift cards & promos', 'AI-powered reports', 'Clients & services'],
     color: '#2D7A5F',
   },
   {
     id: 'studio',
     label: 'Studio',
-    price: '$29 / month',
-    features: ['Everything in Starter', 'Reports & analytics', 'Earnings dashboard', 'Gift cards', 'Retail inventory'],
+    price: '$79 / month',
+    features: ['Everything in Solo', 'SMS + 2-way comms', 'Attendance & meetings', 'Retail inventory'],
     color: '#3D9E8A',
   },
   {
-    id: 'pro',
-    label: 'Pro',
-    price: '$49 / month',
-    features: ['Everything in Studio', 'SMS + email campaigns', 'HR & payroll (Gusto)', 'Memberships', 'AI chatbot on webfront'],
+    id: 'salonPro',
+    label: 'Salon Pro',
+    price: '$149 / month',
+    features: ['Everything in Studio', 'Marketing + loyalty', 'HR & payroll (Gusto)', 'Memberships', 'Unlimited staff'],
     color: '#3D95CE',
     recommended: true,
   },
@@ -38,7 +38,7 @@ export default function OnboardingScreen() {
   const [salonName,  setSalonName] = useState('');
   const [ownerName,  setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail]= useState('');
-  const [plan,       setPlan]      = useState('pro');
+  const [plan,       setPlan]      = useState('salonPro');
   const [loading,    setLoading]   = useState(false);
   const [error,      setError]     = useState('');
   const [result,     setResult]    = useState(null); // { tenantId, url, salonName }
@@ -131,7 +131,7 @@ export default function OnboardingScreen() {
             <>
               <button onClick={() => setStep(1)} style={backBtnStyle}>← Back</button>
               <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 6 }}>Choose your plan</div>
-              <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 24 }}>Every signup includes a 14-day Pro trial — no credit card required. Switch plans any time.</div>
+              <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 24 }}>Every signup includes a 30-day Salon Pro trial — no credit card required. Switch plans any time.</div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
                 {PLANS.map(p => (

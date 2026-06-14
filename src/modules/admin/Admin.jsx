@@ -22,6 +22,7 @@ import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/booki
 import { INTERNAL_EVENTS, CUSTOMER_EVENTS, NOTIF_ROLES, NOTIF_CHANNELS, ROLE_LABELS_SHORT, CHANNEL_LABELS, resolveInternalRouting, isCustomerNotifEnabled } from '../../lib/notificationRouting';
 import { normalizeRole } from '../../lib/rbac';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
+import { normalizePlan, PACKS, ATOMS } from '../../lib/planEntitlements';
 import { fetchMemberships } from '../../lib/firestore';
 import { formatTime } from '../../utils/helpers';
 import { logActivity } from '../../lib/logger';
@@ -4360,7 +4361,7 @@ function ModulesSection({ nested = false } = {}) {
   const { settings, setSettings, showToast } = useApp();
   const plan = effectivePlan(settings);
   const [busy, setBusy] = useState('');
-  const toggleable = MODULES.filter(m => m.plan !== 'starter' && isModuleAvailableForPlan(m, plan));
+  const toggleable = MODULES.filter(m => m.plan !== 'solo' && isModuleAvailableForPlan(m, plan));
   if (toggleable.length === 0) return null;
 
   async function toggle(m, enable) {
@@ -4572,27 +4573,29 @@ function friendlyFnError(e) {
   return msg;
 }
 
+// Mirrors the public pricing page (plumenexus/src/components/Pricing.jsx) so the
+// in-app picker and the marketing site advertise the same plans + prices.
 const PLAN_TIERS = [
   {
-    id:      'starter',
-    label:   'Starter',
-    price:   '$19/mo',
-    color:   '#888',
-    features:['Schedule & appointments', 'Clients & profiles', 'Services menu', 'Employees', 'Walk-in kiosk'],
+    id:      'solo',
+    label:   'Solo',
+    price:   '$49/mo',
+    color:   '#2D7A5F',
+    features:['Scheduling & online booking', 'POS, gift cards & promo codes', 'AI-powered reports', 'Clients & services', 'Walk-in manager'],
   },
   {
     id:      'studio',
     label:   'Studio',
-    price:   '$49/mo',
+    price:   '$79/mo',
     color:   '#3D9E8A',
-    features:['Everything in Starter', 'Reports & analytics', 'Earnings dashboard', 'Gift cards & promos', 'Retail inventory', 'Attendance tracking'],
+    features:['Everything in Solo', 'SMS + 2-way comms (Comms Pack)', 'Attendance & meetings', 'Retail inventory', 'Up to 8 staff'],
   },
   {
-    id:      'pro',
-    label:   'Pro',
+    id:      'salonPro',
+    label:   'Salon Pro',
     price:   '$149/mo',
-    color:   '#2563eb',
-    features:['Everything in Studio', 'SMS + email comms', 'Marketing campaigns', 'HR & payroll (Gusto)', 'Membership subscriptions', 'AI chatbot on webfront'],
+    color:   '#3D95CE',
+    features:['Everything in Studio', 'Marketing + loyalty (Marketing Pack)', 'HR & payroll (Operations Pack)', 'Memberships', 'Unlimited staff + multi-location'],
   },
 ];
 
@@ -4690,11 +4693,11 @@ function UpgradeSection({ settings, gUser, nested = false }) {
   const [loading, setLoading] = useState('');   // plan id currently loading
   const [error,   setError]   = useState('');
   // The stored plan (what they're nominally on or trialling) — distinct
-  // from the effectivePlan (which downgrades to starter when trial
-  // expires without payment).
+  // from the effectivePlan (which downgrades to solo when trial
+  // expires without payment). Normalized so legacy ids resolve to new tiers.
   const { showToast, setSettings } = useApp();
   const [downgradeTarget, setDowngradeTarget] = useState(null); // tier object or null
-  const storedPlan    = settings.plan || 'starter';
+  const storedPlan    = normalizePlan(settings.plan);
   const visiblePlan   = effectivePlan(settings);
   const inTrial       = isInTrial(settings);
   const trialDays     = trialDaysRemaining(settings);
@@ -4757,7 +4760,7 @@ function UpgradeSection({ settings, gUser, nested = false }) {
 
         {inTrial && (
           <div style={{ background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, color: 'var(--pn-warning)' }}>
-            <strong>{trialDays} {trialDays === 1 ? 'day' : 'days'} left</strong> in your Pro trial. Pick a plan below to continue uninterrupted — no charge until the trial ends.
+            <strong>{trialDays} {trialDays === 1 ? 'day' : 'days'} left</strong> in your Salon Pro trial. Pick a plan below to continue uninterrupted — no charge until the trial ends.
           </div>
         )}
 
@@ -4776,7 +4779,7 @@ function UpgradeSection({ settings, gUser, nested = false }) {
         {/* 3-tier picker */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
           {PLAN_TIERS.map(tier => {
-            const isCurrent = tier.id === storedPlan && !inTrial && (tier.id === 'starter' ? !hasPaidSubscription : hasPaidSubscription);
+            const isCurrent = tier.id === storedPlan && !inTrial && (tier.id === 'solo' ? !hasPaidSubscription : hasPaidSubscription);
             const isLoading = loading === tier.id;
             // No paid sub yet (trial / new tenant): every non-current tier is a
             // checkout. With a live subscription: compare rank → in-app upgrade
@@ -4827,6 +4830,8 @@ function UpgradeSection({ settings, gUser, nested = false }) {
         </div>
 
         {error && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 10 }}>{error}</div>}
+
+        <PowerPacksRow settings={settings} />
       </div>
 
       {downgradeTarget && (
@@ -4838,6 +4843,48 @@ function UpgradeSection({ settings, gUser, nested = false }) {
         />
       )}
     </Section>
+  );
+}
+
+// Power Packs / add-ons row in the billing section. Shows what's active on this
+// tenant (settings.packs / settings.atomicAddOns) plus the available packs and
+// their prices. In-app purchasing of packs isn't wired yet (needs Stripe pack
+// products) — adding is "contact us" for now; the entitlement engine already
+// honors any packs set on the tenant.
+function PowerPacksRow({ settings }) {
+  const activePacks = settings?.packs || [];
+  const activeAtoms = settings?.atomicAddOns || [];
+  const planId = normalizePlan(settings?.plan);
+  // Packs whose modules are already bundled into the current tier are "included".
+  const includedByTier = { solo: [], studio: ['comms'], salonPro: ['comms', 'marketing', 'ai', 'operations'] };
+  const included = new Set(includedByTier[planId] || []);
+
+  return (
+    <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--pn-border)' }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 2 }}>Power Packs</div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginBottom: 10 }}>
+        Stack extra capabilities on any plan. <a href="mailto:hello@plumenexus.com?subject=Add%20a%20Power%20Pack" style={{ color: '#3D95CE', fontWeight: 600 }}>Contact us to add one →</a>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+        {PACKS.map(p => {
+          const active = activePacks.includes(p.id);
+          const inc    = included.has(p.id);
+          const state  = inc ? 'Included' : active ? 'Active' : `+$${p.price}/mo`;
+          const stateColor = inc ? 'var(--pn-success)' : active ? 'var(--pn-success)' : 'var(--pn-text-muted)';
+          return (
+            <div key={p.id} style={{ border: '1px solid var(--pn-border)', borderRadius: 8, padding: '8px 10px', background: (active || inc) ? 'var(--pn-success-bg)' : 'var(--pn-surface)' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{p.label}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: stateColor, marginTop: 2 }}>{state}</div>
+            </div>
+          );
+        })}
+      </div>
+      {activeAtoms.length > 0 && (
+        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 8 }}>
+          Add-ons: {activeAtoms.map(id => ATOMS.find(a => a.id === id)?.label || id).join(', ')}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -4963,7 +5010,7 @@ function DowngradeModal({ tier, currentPlan, onClose, onDone }) {
 }
 
 // ── Tenant management (super-admin only) ─────────────────────────────────────
-const PLANS = ['starter', 'studio', 'pro', 'enterprise'];
+const PLANS = ['solo', 'studio', 'salonPro', 'enterprise'];
 
 // ── Integrity badge ──────────────────────────────────────────────────────
 // Reads tenants/{id}/data/integrityReport (written nightly by the

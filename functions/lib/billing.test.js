@@ -937,7 +937,7 @@ describe('handleSubscriptionDeletedSaas', () => {
     expect(result).toEqual({ skipped: 'no_tenant' });
   });
 
-  it('happy path: downgrades to starter, clears sub fields, emails the owner', async () => {
+  it('happy path: downgrades to solo, clears sub fields, emails the owner', async () => {
     const db = makeFakeDb({
       'tenants/acme': { name: 'Acme Salon', ownerEmail: 'owner@acme.test', subdomain: 'acme' },
     });
@@ -948,9 +948,9 @@ describe('handleSubscriptionDeletedSaas', () => {
     expect(result).toEqual({ downgraded: true, emailed: 'owner@acme.test' });
     // Both tenant root + settings get the downgrade
     const settingsWrite = db._writes.find(w => w.path === 'tenants/acme/data/settings');
-    expect(settingsWrite.value.plan).toBe('starter');
+    expect(settingsWrite.value.plan).toBe('solo');
     const tenantWrite = db._writes.find(w => w.path === 'tenants/acme');
-    expect(tenantWrite.value.plan).toBe('starter');
+    expect(tenantWrite.value.plan).toBe('solo');
     // Email landed on owner with the portal link
     const call = sendEmail.mock.calls[0][0];
     expect(call.to).toBe('owner@acme.test');
@@ -968,7 +968,7 @@ describe('handleSubscriptionDeletedSaas', () => {
     expect(result).toEqual({ downgraded: true, skipped: 'no_owner_email' });
     expect(sendEmail).not.toHaveBeenCalled();
     const tenantWrite = db._writes.find(w => w.path === 'tenants/acme');
-    expect(tenantWrite.value.plan).toBe('starter');
+    expect(tenantWrite.value.plan).toBe('solo');
   });
 });
 

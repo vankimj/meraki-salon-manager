@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { C, FONT, FOUNDERS_YEAR_END_LONG, grad, shadow, radius } from '../theme.js';
 import Section from './Section.jsx';
+import ComparisonTable from './ComparisonTable.jsx';
 
 // ── Base tiers ─────────────────────────────────────────────────────
 // `price` = monthly. `annual` = effective monthly when billed yearly
@@ -218,6 +219,9 @@ export default function Pricing() {
           </div>
         )}
       </div>
+
+      {/* ── Full feature comparison matrix ── */}
+      <ComparisonTable />
 
       <div style={{
         marginTop: 36, textAlign: 'center',

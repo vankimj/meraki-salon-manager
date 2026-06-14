@@ -644,7 +644,7 @@ async function handleInvoicePaymentFailedSaas(invoice, db, stripe, sendEmail) {
 }
 
 // customer.subscription.deleted handler for SaaS subscriptions. Combines the
-// downgrade-to-starter Firestore write and the email so the webhook block
+// downgrade-to-solo (free tier) Firestore write and the email so the webhook block
 // becomes a one-liner. Idempotent: subscription.deleted only fires once per
 // subscription lifecycle, but the email itself is unsigned and could be
 // re-delivered — the downgrade write is also idempotent (set merge).
@@ -653,7 +653,7 @@ async function handleSubscriptionDeletedSaas(subscription, db, stripe, sendEmail
   if (!tenant) return { skipped: 'no_tenant' };
   const { FieldValue } = require('firebase-admin/firestore');
   const clear = {
-    plan:                 'starter',
+    plan:                 'solo',
     stripeSubscriptionId: FieldValue.delete(),
     subscriptionStatus:   FieldValue.delete(),
     cancelAtPeriodEnd:    FieldValue.delete(),

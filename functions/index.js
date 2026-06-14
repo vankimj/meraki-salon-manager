@@ -8140,9 +8140,9 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   const rawOwner = String(request.data?.ownerName  || '').trim().slice(0, 80);
   const rawEmail = String(request.data?.ownerEmail || '').trim().slice(0, 200);
   // Note: caller may pass a `plan` field (which tile they clicked on the
-  // landing page) but it's ignored — every new tenant starts on the 14-day
-  // Pro trial regardless. Plan only diverges from 'pro' once they convert
-  // via Stripe Checkout or the trial expires.
+  // landing page) but it's ignored — every new tenant starts on the 30-day
+  // Salon Pro trial regardless. Plan only diverges from 'salonPro' once they
+  // convert via Stripe Checkout or the trial expires.
 
   if (!rawSalon || !rawEmail) throw new HttpsError('invalid-argument', 'salonName and ownerEmail are required');
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(rawEmail)) throw new HttpsError('invalid-argument', 'Email is invalid.');
@@ -8166,10 +8166,12 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
 
   const now  = new Date().toISOString();
   const url  = `https://${tenantId}.plumenexus.com`;
-  // Every new signup gets a 14-day Pro trial (Pro = full feature set so they
+  // Every new signup gets a 30-day Salon Pro trial (full feature set so they
   // see what they're paying for). When trialEndsAt passes without a paid
-  // Stripe subscription, effectivePlan() downgrades UI gating to Starter.
-  const trialEndsAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  // Stripe subscription, effectivePlan() downgrades UI gating to Solo.
+  const trialEndsAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+  // Pre-2027-06-30 signups are Founders' Members (lifetime Solo-free promise).
+  const foundersMember = true;
 
   // Create registry doc + provision atomically via writeBatch. The previous
   // Promise.all approach left a window where some docs (e.g. data/users
@@ -8181,9 +8183,11 @@ exports.createTenantOnboarding = onCall({ cors: true }, async (request) => {
   const batch = db.batch();
   batch.set(db.doc(`tenants/${tenantId}`),
     { name: salonName, ownerName: ownerName || '', ownerEmail,
-      plan: 'pro', trialEndsAt, active: true, createdAt: now });
+      plan: 'salonPro', packs: [], atomicAddOns: [], foundersMember,
+      trialEndsAt, active: true, createdAt: now });
   batch.set(db.doc(`tenants/${tenantId}/data/settings`),
-    { timeoutMin: 5, plan: 'pro', trialEndsAt, tier: 'free', createdAt: now });
+    { timeoutMin: 5, plan: 'salonPro', packs: [], atomicAddOns: [], foundersMember,
+      trialEndsAt, tier: 'free', createdAt: now });
   batch.set(db.doc(`tenants/${tenantId}/data/slides`),
     { slides: [], def: 0, cur: 0 });
   // Slim projection — staff readable. Holds membership lists the
@@ -8591,10 +8595,14 @@ function substitutePlaceholders(body, vars) {
 // ── Stripe Billing ────────────────────────────────────────────────────────────
 // Maps a plan id to its configured Stripe Price ID. Centralised so checkout +
 // webhook never disagree on which tier a price represents.
+// Env var names predate the solo/studio/salonPro rename — STRIPE_STARTER_PRICE_ID
+// is the Solo price, STRIPE_PRO_PRICE_ID is the Salon Pro price. The dollar
+// amounts in those Stripe prices must be re-set to the published $49/$79/$149 at
+// go-live (see Kanban) — the code just maps plan → configured price.
 function priceIdForPlan(plan) {
-  if (plan === 'starter') return stripeStarterPriceId.value();
-  if (plan === 'studio')  return stripeStudioPriceId.value();
-  if (plan === 'pro')     return stripePriceId.value();
+  if (plan === 'solo')     return stripeStarterPriceId.value();
+  if (plan === 'studio')   return stripeStudioPriceId.value();
+  if (plan === 'salonPro') return stripePriceId.value();
   return '';
 }
 
@@ -8605,9 +8613,9 @@ function priceIdForPlan(plan) {
 // out of sync with what's in Stripe).
 function planForPriceId(priceId) {
   if (!priceId) return null;
-  if (priceId === stripeStarterPriceId.value()) return 'starter';
+  if (priceId === stripeStarterPriceId.value()) return 'solo';
   if (priceId === stripeStudioPriceId.value())  return 'studio';
-  if (priceId === stripePriceId.value())        return 'pro';
+  if (priceId === stripePriceId.value())        return 'salonPro';
   return null;
 }
 
@@ -8616,7 +8624,7 @@ function planForPriceId(priceId) {
 // kept in sync by hand). Used by changeTenantPlan's downgrade teardown gate
 // and setModuleEnabled's Memberships precondition.
 const {
-  SAAS_PLAN_RANK, isBlockingMembership, buildDowngradeBlockers,
+  SAAS_PLAN_RANK, normalizePlan, isBlockingMembership, buildDowngradeBlockers,
 } = require('./lib/planGating');
 
 async function countActiveMemberships(db, tid) {
@@ -8769,7 +8777,7 @@ exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, asy
   const { plan, tenantId: tid } = request.data || {};
   const tId = tid || TENANT_ID;
 
-  if (!['starter', 'studio', 'pro'].includes(plan)) {
+  if (!['solo', 'studio', 'salonPro'].includes(plan)) {
     throw new HttpsError('invalid-argument', `Unknown plan "${plan}"`);
   }
 
@@ -8802,15 +8810,17 @@ exports.createCheckoutSession = onCall({ cors: true, secrets: [stripeKey] }, asy
   // returnUrl, which would be an open-redirect / phishing primitive (the
   // post-checkout redirect comes from the legit Stripe-hosted page).
   const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
-  // Starter's intro free window is a repeating 100%-off coupon ($0 invoices
-  // for 6 months, then the $19/mo Starter price). Card is still captured at
+  // Solo's intro free window is a repeating 100%-off coupon ($0 invoices for
+  // the coupon duration, then the Solo price). Card is still captured at
   // checkout, so billing resumes automatically when the coupon expires.
+  // NOTE: Founders'-Year "free for life" is a stronger promise than this 6-month
+  // coupon — tracked separately (foundersMember flag + Kanban).
   const starterCoupon = stripeStarterCoupon.value();
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode:     'subscription',
     line_items: [{ price: priceId, quantity: 1 }],
-    ...(plan === 'starter' && starterCoupon
+    ...(plan === 'solo' && starterCoupon
       ? { discounts: [{ coupon: starterCoupon }] }
       : {}),
     success_url: `${baseUrl}/?stripe=success`,
@@ -9067,7 +9077,7 @@ exports.setModuleEnabled = onCall({ cors: true, timeoutSeconds: 30 }, async (req
 exports.changeTenantPlan = onCall({ cors: true, secrets: gateStripeSecrets, timeoutSeconds: 30 }, async (request) => {
   const { targetPlan, dryRun, tenantId: tid } = request.data || {};
   const tId = tid || TENANT_ID;
-  if (!['starter', 'studio', 'pro'].includes(targetPlan)) {
+  if (!['solo', 'studio', 'salonPro'].includes(targetPlan)) {
     throw new HttpsError('invalid-argument', `Unknown plan "${targetPlan}"`);
   }
   const db = getFirestore();
@@ -9075,7 +9085,9 @@ exports.changeTenantPlan = onCall({ cors: true, secrets: gateStripeSecrets, time
 
   const setSnap = await db.doc(`tenants/${tId}/data/settings`).get();
   const s = setSnap.exists ? setSnap.data() : {};
-  const currentPlan = s.plan || 'starter';
+  const currentPlan = normalizePlan(s.plan);
+  const packs = s.packs || [];
+  const atomicAddOns = s.atomicAddOns || [];
   const subId  = s.stripeSubscriptionId;
   const status = s.subscriptionStatus;
 
@@ -9084,12 +9096,15 @@ exports.changeTenantPlan = onCall({ cors: true, secrets: gateStripeSecrets, time
   const isDowngrade = SAAS_PLAN_RANK[targetPlan] < SAAS_PLAN_RANK[currentPlan];
 
   if (isDowngrade) {
-    // Only count memberships when the downgrade actually drops that module.
-    const dropsMemberships = SAAS_PLAN_RANK['pro'] <= SAAS_PLAN_RANK[currentPlan] && SAAS_PLAN_RANK['pro'] > SAAS_PLAN_RANK[targetPlan];
+    // Only count memberships when the downgrade actually drops that module —
+    // i.e. it's a salonPro-tier module not retained by a pack.
+    const dropsMemberships = SAAS_PLAN_RANK['salonPro'] <= SAAS_PLAN_RANK[currentPlan] && SAAS_PLAN_RANK['salonPro'] > SAAS_PLAN_RANK[targetPlan];
     const activeMembershipCount = dropsMemberships ? await countActiveMemberships(db, tId) : 0;
     const { lost, blockers } = buildDowngradeBlockers(currentPlan, targetPlan, {
       disabledModules: s.disabledModules || [],
       activeMembershipCount,
+      packs,
+      atomicAddOns,
     });
     if (dryRun) return { ok: blockers.length === 0, blockers, lost };
     if (blockers.length) {
@@ -10227,7 +10242,7 @@ exports.stripeWebhook = onRequest(
       } else {
         // SaaS subscription
         const tenantId = obj.metadata?.tenantId;
-        const plan     = obj.metadata?.plan || 'pro';
+        const plan     = obj.metadata?.plan || 'salonPro';
         if (tenantId) {
           // Paid sub is now in place — clear trialEndsAt so effectivePlan()
           // stops downgrading the tenant when the trial date passes. We use
@@ -13446,8 +13461,18 @@ exports.provisionTenant = onCall(
     try {
       const batch = db.batch();
       const ownerLower = ownerEmail.toLowerCase();
+      // data/settings is the doc the in-app entitlement engine reads
+      // (effectivePlan/getEntitlements). It MUST carry the chosen plan + packs,
+      // or the tenant silently defaults to full Salon Pro access for free.
+      // Paid tiers (studio/salonPro) get a 30-day trial; Solo is free (no trial).
+      const isPaidTier = plan === 'studio' || plan === 'salonPro';
+      const trialEndsAt = isPaidTier
+        ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        : null;
       batch.set(db.doc(`tenants/${tenantId}/data/settings`), {
         timeoutMin: 5, salonName, ownerEmail, ownerPhone: verifiedPhone,
+        plan, packs: [], atomicAddOns: [], foundersMember: true,
+        ...(trialEndsAt ? { trialEndsAt } : {}),
         createdAt: now, updatedAt: now,
       });
       batch.set(db.doc(`tenants/${tenantId}/data/webfront`), {
