@@ -30,7 +30,8 @@
     "e2e": "playwright test",
     "e2e:headed": "playwright test --headed",
     "e2e:ui": "playwright test --ui",
-    "e2e:emulated": "firebase emulators:exec --only auth,firestore,functions --project plumenexus-prod \"node scripts/e2e-seed.cjs && E2E_EMULATORS=1 npx playwright test downgrade-gate.spec.js\""
+    "e2e:emulated": "firebase emulators:exec --only auth,firestore,functions --project plumenexus-prod \"node scripts/e2e-seed.cjs && E2E_EMULATORS=1 npx playwright test downgrade-gate.spec.js\"",
+    "test:otp:emulated": "firebase emulators:exec --only auth --project plumenexus-prod \"node scripts/otp-emulator-run.cjs\""
   },
   "dependencies": {
     "@stripe/connect-js": "^3.4.5",

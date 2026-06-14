@@ -1,6 +1,6 @@
 import { initializeApp }   from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
 import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -16,6 +16,16 @@ const app  = initializeApp(firebaseConfig);
 const fns  = getFunctions(app);
 export const auth = getAuth(app);
 export const db   = getFirestore(app);
+
+// E2E only: when built/served with VITE_USE_EMULATORS=1, point Auth at the
+// local Firebase Auth emulator so the signup phone-OTP flow can be tested
+// without a Firebase test phone in prod (a prod test number is a verification
+// backdoor we don't want to keep). Only Auth is emulated — the OTP spec never
+// touches Firestore/Functions. Prod builds (no flag) are unaffected.
+if (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_USE_EMULATORS === '1') {
+  connectAuthEmulator(auth, 'http://localhost:9099', { disableWarnings: true });
+  if (typeof console !== 'undefined') console.info('[firebase] marketing using local Auth emulator (9099)');
+}
 
 // Expose the initialized Firebase Auth instance on window so Playwright
 // E2E tests can drive sign-in flows without re-initializing Firebase

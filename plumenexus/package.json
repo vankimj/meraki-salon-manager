@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:emulated": "VITE_USE_EMULATORS=1 vite --port 4175 --strictPort",
     "build": "vite build",
     "preview": "vite preview --port 4174",
     "deploy": "vite build && firebase deploy --only hosting:plumenexus"
