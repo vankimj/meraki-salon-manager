@@ -100,6 +100,33 @@ const ATOMS = [
   { feature: 'Custom email sender domain',       price: 15, partOf: 'Brand Pack' },
 ];
 
+// ── White-Glove Onboarding (one-time setup / migration service) ─────
+// Free during Founders' Year — it removes the #1 switching objection.
+const WHITE_GLOVE = [
+  {
+    name: 'Self-Serve',
+    price: '$0',
+    tag: 'On every plan',
+    body: 'Our AI auto-imports your clients, services, and history from a GlossGenius, Vagaro, or Square export. Most salons are live by lunch.',
+    points: ['Guided in-app import wizard', 'Live the same day', 'Email support if you snag'],
+  },
+  {
+    name: 'Assisted Setup',
+    price: '$499',
+    tag: 'Single location · free for Founders',
+    featured: true,
+    body: 'Hand us your old export and we do the whole switch — data migration, branded booking site, service menu, and staff — then walk your team through it.',
+    points: ['Full migration, done for you', 'Branding + booking site set up', 'Menu & staff loaded', '1–2 live training sessions'],
+  },
+  {
+    name: 'Multi-Location',
+    price: '$1,500+',
+    tag: 'Large / multi-site',
+    body: 'A bigger operation or a complex move across locations? We scope it, quote it upfront, and migrate every chair.',
+    points: ['Multi-location data + staff', 'Scoped & fixed-quoted first', 'Dedicated onboarding lead', 'Training across locations'],
+  },
+];
+
 export default function Pricing() {
   const [showAtoms, setShowAtoms] = useState(false);
   const [billing, setBilling]     = useState('annual');
@@ -219,6 +246,9 @@ export default function Pricing() {
           </div>
         )}
       </div>
+
+      {/* ── White-Glove Onboarding ── */}
+      <WhiteGlove />
 
       {/* ── Full feature comparison matrix ── */}
       <ComparisonTable />
@@ -391,6 +421,96 @@ function Pack({ icon, name, price, body }) {
       </div>
       <div style={{ fontSize: 15, fontWeight: 700, color: C.ink, marginBottom: 6 }}>{name}</div>
       <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.55 }}>{body}</div>
+    </div>
+  );
+}
+
+// ── White-Glove Onboarding section ─────────────────────────────────
+function WhiteGlove() {
+  return (
+    <div style={{ maxWidth: 1080, margin: '64px auto 0' }}>
+      <div style={{ textAlign: 'center', marginBottom: 24 }}>
+        <div style={{
+          display: 'inline-block', padding: '4px 12px', borderRadius: 999,
+          background: 'rgba(45,122,95,.1)', color: C.success,
+          fontSize: 11, fontWeight: 700, letterSpacing: '.08em',
+          textTransform: 'uppercase', marginBottom: 12,
+        }}>White-Glove Onboarding · we&rsquo;ll switch you over</div>
+        <h3 style={{
+          fontFamily: FONT.display, fontSize: 'clamp(22px, 2.4vw, 28px)',
+          fontWeight: 600, color: C.ink, margin: '0 0 8px', letterSpacing: '-.005em',
+        }}>Leaving GlossGenius, Vagaro, or Square? We move you ourselves.</h3>
+        <p style={{ fontSize: 15, color: C.muted, margin: 0, maxWidth: 640, marginLeft: 'auto', marginRight: 'auto', lineHeight: 1.55 }}>
+          Switching tools is the scariest part — so we take it off your plate. Pick how hands-on you want us to be.
+        </p>
+      </div>
+
+      {/* Founders' Year free-migration banner */}
+      <div style={{
+        padding: '14px 20px', maxWidth: 720, margin: '0 auto 18px',
+        background: 'rgba(45,122,95,.06)', border: '1px solid rgba(45,122,95,.18)',
+        borderRadius: 12, textAlign: 'center', fontSize: 13, color: C.text, lineHeight: 1.55,
+      }}>
+        <strong style={{ color: C.success }}>Founders&rsquo; Members: white-glove migration is on us.</strong>{' '}
+        <span style={{ color: C.muted }}>
+          Sign up by {FOUNDERS_YEAR_END_LONG} and Assisted Setup is free — we&rsquo;ll concierge your switch at no charge.
+        </span>
+      </div>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 14,
+      }}>
+        {WHITE_GLOVE.map(w => <GloveCard key={w.name} {...w} />)}
+      </div>
+    </div>
+  );
+}
+
+function GloveCard({ name, price, tag, body, points, featured }) {
+  return (
+    <div style={{
+      position: 'relative',
+      padding: 24,
+      background: '#fff',
+      border: featured ? `2px solid ${C.success}` : `1px solid ${C.rule}`,
+      borderRadius: radius.md,
+      transition: 'transform .15s, box-shadow .15s, border-color .15s',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = shadow.md; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+    >
+      {featured && (
+        <div style={{
+          position: 'absolute', top: -11, left: 20,
+          padding: '4px 12px', borderRadius: 999,
+          background: C.success, color: '#fff',
+          fontSize: 10, fontWeight: 700, letterSpacing: '.06em',
+          textTransform: 'uppercase', boxShadow: '0 4px 12px rgba(45,122,95,.32)',
+        }}>Free during Founders&rsquo; Year</div>
+      )}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginTop: featured ? 6 : 0 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: C.ink }}>{name}</div>
+        <div style={{
+          padding: '4px 10px', borderRadius: 999,
+          background: `${C.plum}10`, color: C.plumDeep,
+          fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap',
+        }}>{price}</div>
+      </div>
+      <div style={{ fontSize: 11, color: C.mutedSoft, marginTop: 3, marginBottom: 10 }}>{tag}</div>
+      <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.55, marginBottom: 14 }}>{body}</div>
+      <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
+        {points.map(p => (
+          <li key={p} style={{
+            padding: '5px 0', fontSize: 12.5, lineHeight: 1.45,
+            color: C.text, display: 'flex', alignItems: 'flex-start', gap: 8,
+          }}>
+            <span style={{ color: C.success, fontSize: 12, marginTop: 1 }}>✓</span>
+            <span>{p}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
