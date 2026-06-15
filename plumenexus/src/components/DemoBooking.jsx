@@ -1,11 +1,17 @@
 import { C, FONT, grad, shadow, radius } from '../theme.js';
 import Section from './Section.jsx';
 
-// PLACEHOLDER CALENDLY URL — replace with the real Calendly event URL once
-// the account is set up. The component falls back to a contact-form CTA if
-// the URL is still the placeholder, so nothing breaks before the swap.
-const CALENDLY_URL = 'https://calendly.com/plumenexus/demo';
-const IS_PLACEHOLDER = CALENDLY_URL.includes('plumenexus/demo');
+// Google Calendar "Appointment schedule" public booking URL. To enable inline
+// scheduling, paste the link from Google Calendar → your appointment schedule →
+// Share → "Add to your website" (the iframe src that ends in ?gv=true), or the
+// plain public booking-page URL. Leave empty to gracefully fall back to the
+// contact-form CTA — nothing breaks before the swap.
+const BOOKING_URL = '';
+const IS_PLACEHOLDER = !BOOKING_URL.trim();
+// Ensure the embeddable view param is present whether a plain or embed URL was pasted.
+const EMBED_SRC = IS_PLACEHOLDER ? ''
+  : BOOKING_URL.includes('gv=true') ? BOOKING_URL
+  : BOOKING_URL + (BOOKING_URL.includes('?') ? '&' : '?') + 'gv=true';
 
 const POINTS = [
   { icon: '🎙️', title: 'Live AI walkthrough',     body: 'See voice-command booking, AI reports, and conflict-resolution drafts on real data.' },
@@ -116,24 +122,13 @@ function CalendlyEmbed() {
             boxShadow: shadow.brand,
           }}
         >
-          Use the contact form
+          Request a time
         </a>
-        <div style={{
-          marginTop: 22, padding: '10px 14px',
-          background: '#fff8eb', borderRadius: 10,
-          border: '1px dashed #fcd34d',
-          fontSize: 11, color: '#92660b', maxWidth: 360,
-          lineHeight: 1.5,
-        }}>
-          <strong>Setup needed:</strong> Replace the <code>CALENDLY_URL</code> constant
-          in <code>DemoBooking.jsx</code> with your real Calendly event link
-          to enable inline scheduling.
-        </div>
       </div>
     );
   }
 
-  // Real Calendly inline iframe
+  // Google Calendar appointment-schedule inline embed
   return (
     <div style={{
       background: '#fff',
@@ -144,7 +139,7 @@ function CalendlyEmbed() {
       minHeight: 660,
     }}>
       <iframe
-        src={`${CALENDLY_URL}?embed_domain=plumenexus.com&embed_type=Inline&hide_event_type_details=0&primary_color=5b3b8c`}
+        src={EMBED_SRC}
         title="Book a Plume Nexus demo"
         style={{
           width: '100%',
