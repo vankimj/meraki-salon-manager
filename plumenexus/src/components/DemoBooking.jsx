@@ -1,17 +1,16 @@
+import { useEffect } from 'react';
+import Cal, { getCalApi } from '@calcom/embed-react';
 import { C, FONT, grad, shadow, radius } from '../theme.js';
 import Section from './Section.jsx';
 
-// Google Calendar "Appointment schedule" public booking URL. To enable inline
-// scheduling, paste the link from Google Calendar → your appointment schedule →
-// Share → "Add to your website" (the iframe src that ends in ?gv=true), or the
-// plain public booking-page URL. Leave empty to gracefully fall back to the
-// contact-form CTA — nothing breaks before the swap.
-const BOOKING_URL = '';
-const IS_PLACEHOLDER = !BOOKING_URL.trim();
-// Ensure the embeddable view param is present whether a plain or embed URL was pasted.
-const EMBED_SRC = IS_PLACEHOLDER ? ''
-  : BOOKING_URL.includes('gv=true') ? BOOKING_URL
-  : BOOKING_URL + (BOOKING_URL.includes('?') ? '&' : '?') + 'gv=true';
+// Cal.com booking, deep-linked to ONE event type so visitors land straight on
+// the calendar (skipping the generic event-type picker). Brand-matched to the
+// site's plum via getCalApi. To swap the event, change CAL_LINK to
+// "<handle>/<event-slug>"; to switch providers, replace the embed entirely.
+const CAL_LINK         = 'jonathan-vankim-huyzoh/30min';
+const CAL_BOOKING_PAGE = 'https://cal.com/jonathan-vankim-huyzoh';
+const CAL_BRAND        = '#6a4fa0'; // brand plum
+const IS_PLACEHOLDER   = !CAL_LINK.trim();
 
 const POINTS = [
   { icon: '🎙️', title: 'Live AI walkthrough',     body: 'See voice-command booking, AI reports, and conflict-resolution drafts on real data.' },
@@ -71,8 +70,8 @@ export default function DemoBooking() {
           </div>
         </div>
 
-        {/* Right: Calendly embed (or fallback) */}
-        <CalendlyEmbed />
+        {/* Right: Cal.com embed (or fallback) */}
+        <BookingEmbed />
       </div>
 
       <style>{`
@@ -84,10 +83,26 @@ export default function DemoBooking() {
   );
 }
 
-function CalendlyEmbed() {
+function BookingEmbed() {
+  // Brand-match the Cal.com embed to the site's plum + a clean month layout.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const cal = await getCalApi({ namespace: 'pn-demo' });
+        if (cancelled) return;
+        cal('ui', {
+          styles: { branding: { brandColor: CAL_BRAND } },
+          hideEventTypeDetails: false,
+          layout: 'month_view',
+        });
+      } catch { /* the link fallback below covers a script-load failure */ }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
   if (IS_PLACEHOLDER) {
-    // Fallback card that renders before Calendly URL is configured. Tells
-    // the user (and future-Jonathan) exactly what to swap.
+    // Fallback card (only renders if CAL_LINK is unset) — routes to the form.
     return (
       <div style={{
         background: '#fff',
@@ -128,25 +143,31 @@ function CalendlyEmbed() {
     );
   }
 
-  // Google Calendar appointment-schedule inline embed
+  // Cal.com inline embed — brand-matched, deep-linked to one event so it lands
+  // straight on the calendar.
   return (
-    <div style={{
-      background: '#fff',
-      border: `1px solid ${C.rule}`,
-      borderRadius: radius.lg,
-      boxShadow: shadow.md,
-      overflow: 'hidden',
-      minHeight: 660,
-    }}>
-      <iframe
-        src={EMBED_SRC}
-        title="Book a Plume Nexus demo"
-        style={{
-          width: '100%',
-          height: 660,
-          border: 'none',
-        }}
-      />
+    <div>
+      <div style={{
+        background: '#fff',
+        border: `1px solid ${C.rule}`,
+        borderRadius: radius.lg,
+        boxShadow: shadow.md,
+        overflow: 'hidden',
+        minHeight: 660,
+      }}>
+        <Cal
+          namespace="pn-demo"
+          calLink={CAL_LINK}
+          config={{ layout: 'month_view' }}
+          style={{ width: '100%', height: 660, overflow: 'auto' }}
+        />
+      </div>
+      <div style={{ marginTop: 10, textAlign: 'center', fontSize: 12, color: C.mutedSoft }}>
+        Calendar not loading?{' '}
+        <a href={CAL_BOOKING_PAGE} target="_blank" rel="noopener noreferrer" style={{ color: C.plum, fontWeight: 600 }}>
+          Open the booking page →
+        </a>
+      </div>
     </div>
   );
 }
