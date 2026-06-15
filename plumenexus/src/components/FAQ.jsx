@@ -73,7 +73,7 @@ const ITEMS = [
   },
   {
     q: 'Is there a contract?',
-    a: 'Month-to-month. Cancel any time. Annual billing saves 20% if you want to lock in.',
+    a: 'Month-to-month. Cancel any time. Annual billing saves 14% if you want to lock in.',
   },
 ];
 
