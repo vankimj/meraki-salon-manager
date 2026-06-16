@@ -5,7 +5,7 @@ import Section from './Section.jsx';
 const ITEMS = [
   {
     q: 'What is "Founders\' Year" and how does it work?',
-    a: 'Sign up for the Solo plan before June 30, 2027 and you join our Founders\' cohort — Solo is free for life on your account, no expiration, no surprise charge later. After the Founders\' Year window closes, the Solo plan becomes paid for new signups. Founders\' Members keep their lifetime free Solo regardless. Plus a small badge in the app, early access to new features, and a vote on our roadmap.',
+    a: 'Sign up for the Solo plan during our launch window — we\'re targeting June 30, 2027 — and you lock in free-for-life Solo pricing. After the window closes, Solo becomes paid for new signups, and Founders keep their locked-in free Solo regardless. Founders also get early access to new features as they ship.',
   },
   {
     q: 'Can I migrate from my current platform?',
@@ -13,7 +13,7 @@ const ITEMS = [
   },
   {
     q: 'Are there hidden fees or add-on charges?',
-    a: 'No. Loyalty, marketing campaigns, gift cards, AI reporting, two-way messaging, voice commands, IRS-ready tax export — all built in. Your monthly price is your monthly price. The only third-party costs you might see are SMS overages on Solo plans (we include generous monthly allotments) and any optional integrations you enable like payroll. No "$45/mo loyalty add-on", no "marketing pack upgrade", no surprises on your invoice.',
+    a: 'No. Loyalty, marketing campaigns, gift cards, AI reporting, two-way SMS (rolling out as carrier registration completes), voice commands, IRS-ready tax export — all built in. Your monthly price is your monthly price. The only third-party costs you might see are SMS overages on Solo plans (we include generous monthly allotments) and any optional integrations you enable like payroll. No "$45/mo loyalty add-on", no "marketing pack upgrade", no surprises on your invoice.',
   },
   {
     q: 'Do you take a cut of my appointments or transactions?',
@@ -25,11 +25,11 @@ const ITEMS = [
   },
   {
     q: 'Do I need to set up Stripe, Twilio, or any other accounts on my own?',
-    a: 'No. The only platform you ever sign into is Plume Nexus. We handle every third-party service under the hood — payment processing, SMS, email, AI, payroll, bank verification, all of it. You never see a Stripe login, never get a Twilio bill, never configure email DNS records. You enter your bank info and tax ID once during signup, and we set up everything else in the background. The only exception is if you want to bring your own existing Stripe or Gusto account — that takes a single one-click sign-in from inside Plume Nexus, never sending you to another website.',
+    a: 'Almost none. You manage everything from inside Plume Nexus — we provision SMS, email, and AI for you, so you never get a separate Twilio bill or configure email DNS records. The one place we hand you off is payments: you complete a short Stripe-hosted verification once (we send you straight there and bring you right back), because Stripe requires the business owner to confirm their own bank and tax details directly. If you\'d rather bring an existing Stripe or Gusto account, that\'s a single one-click sign-in from inside Plume Nexus.',
   },
   {
     q: 'How long does setup actually take?',
-    a: 'Live by lunch — that\'s the promise. With our AI auto-import (paste your existing website URL and we pull in your services, hours, and brand details automatically), most salons are operational within 30 minutes. Starting completely fresh with no existing site? About an hour. Migrating from another platform with full historical data? Same business day, with white-glove migration on us during Founders\' Year. If you can\'t get set up in time, we\'ll concierge it for you for free.',
+    a: 'Setup is a guided wizard — profile, team, services, payments — that walks you through each step in plain language. Starting completely fresh, most salons can be operational in well under an hour. Migrating from another platform with full historical data? Same business day, with white-glove migration on us during the Founders\' window. If you get stuck at any point, we\'ll concierge it for you for free.',
   },
   {
     q: 'How does AI fit in? Is my client data private?',
@@ -41,15 +41,15 @@ const ITEMS = [
   },
   {
     q: 'Will the AI replace my staff?',
-    a: 'No — it removes the work nobody enjoys. AI doesn\'t answer your phone, greet your clients, or do nails. It drafts the texts when a tech calls in sick, surfaces the lapsed clients you forgot to follow up with, answers "how did Saturday go?" with real numbers in seconds. Your front desk gets back the hours they were burning on busywork. Same headcount, more time on the floor.',
+    a: 'No — it removes the work nobody enjoys. AI doesn\'t answer your phone, greet your clients, or do nails. It answers "how did Saturday go?" with real numbers in seconds, and helps you draft outreach — reschedule messages when a tech calls out, win-back notes for lapsed clients — that a human reviews and sends. Your front desk gets back the hours they were burning on busywork. Same headcount, more time on the floor.',
   },
   {
     q: 'What payment processors do you support?',
-    a: 'Stripe is built in, with multi-tech credit splits, tip-per-service, gift cards, refunds, and Tap-to-Pay (iOS coming Q3). Each tenant connects their own Stripe account, so funds settle directly to your bank — we never sit between you and your money.',
+    a: 'Stripe is built in, with multi-tech credit splits, tip-per-service, gift cards, and refunds. Tap-to-Pay on iPhone and iPad is in development (pending Apple approval). Each tenant connects their own Stripe account, so funds settle directly to your bank — we never sit between you and your money.',
   },
   {
     q: 'How does the two-way SMS work?',
-    a: 'You get a dedicated phone number (or port your existing one). Inbound texts route to the right client thread automatically. Outbound is unlimited within your plan. Marketing SMS uses a separate number from transactional, so STOP keywords don\'t accidentally opt clients out of appointment confirmations.',
+    a: 'You get a dedicated SMS number, rolling out as carrier registration completes (you can also port your existing one). Inbound texts route to the right client thread automatically, and outbound is included in your plan. Marketing and transactional sends are tracked in separate consent lanes, so a STOP on a promo doesn\'t accidentally opt a client out of their appointment confirmations.',
   },
   {
     q: 'What kind of support do I get?',
@@ -61,11 +61,11 @@ const ITEMS = [
   },
   {
     q: 'Is data export really free? On every plan?',
-    a: 'Yes — including the Free Solo plan. Including Founders\' Members. Including paused accounts. Including accounts in their 90-day post-cancellation grace period. Forever. Your data is yours, and your ability to walk out the door with it is not a feature we\'ll ever paywall. We\'d rather you leave with everything intact and recommend us anyway than feel trapped here.',
+    a: 'Yes — including the Free Solo plan. Including Founders. Including paused accounts. Forever. Your data is yours, and your ability to walk out the door with it is not a feature we\'ll ever paywall. We\'d rather you leave with everything intact and recommend us anyway than feel trapped here.',
   },
   {
     q: 'Who built this?',
-    a: 'Plume Nexus was built by Jonathan VanKim, a software engineer turned nail salon owner. The original codebase is the operating system for his own 10-tech salon in Columbus, Ohio. It was built to scratch his own itch — and is now ready for the next salon, spa, or studio that wants something better than the duct-taped patchwork the industry has settled for.',
+    a: 'Plume Nexus was built by Jonathan VanKim, a software engineer turned nail salon owner. He built it to run his own 10-tech salon in Columbus, Ohio — which is preparing to switch off GlossGenius onto it. It was built to scratch his own itch — and is now ready for the next salon, spa, or studio that wants something better than the duct-taped patchwork the industry has settled for.',
   },
   {
     q: 'What about HIPAA / med spas?',

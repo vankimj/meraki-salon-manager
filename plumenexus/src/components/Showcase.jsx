@@ -5,25 +5,25 @@ const ITEMS = [
   {
     eyebrow: 'Calendar',
     title: 'A schedule that thinks like a front desk.',
-    body: 'Drag any block to reschedule. Recurring appointments stick to the right tech. Time-off blocks auto-reroute affected clients. Walk-ins drop into the next-available column the moment they walk in.',
+    body: 'Drag any block to reschedule. Recurring appointments stick to the right tech. Time-off blocks flag the affected clients and draft reschedule outreach you send by SMS or email. Walk-ins drop into the next-available column the moment they walk in.',
     bullets: [
-      'Drag-and-drop reschedule with conflict detection',
+      'Drag-and-drop reschedule with time-off / off-hours warnings',
       'Recurring bookings (this · following · all)',
       'Smart walk-in management',
       'Per-tech work-day blocks + global store hours',
-      'Birthday banner + VIP highlight + check-in flow',
+      'Birthday banner + check-in flow',
     ],
     visual: ScheduleVisual,
   },
   {
     eyebrow: 'Communications Hub',
     title: 'Every text, one threaded inbox.',
-    body: 'Inbound texts auto-thread to the right client. Send confirmations, receipts, and marketing campaigns — by SMS or email — from the same surface your front desk works in. Per-client channel preferences so each client gets the channel they actually read.',
+    body: 'Inbound texts route to the right client thread automatically (rolling out as carrier registration completes). Send confirmations, receipts, and marketing campaigns — by SMS or email — from the same surface your front desk works in. Per-client channel preferences so each client gets the channel they actually read.',
     bullets: [
       'Two-way SMS with auto-routed inbound',
       'Email confirmations, receipts & campaigns',
       'Per-client channel preferences (SMS / email)',
-      'Delivery analytics on every send',
+      'Sent / failed delivery tracking on every campaign',
       'CAN-SPAM compliant + STOP keyword handling',
     ],
     visual: CommsVisual,
@@ -36,9 +36,9 @@ const ITEMS = [
     bullets: [
       'Read-only AI grounded in your salon\'s data',
       'Real-time financial breakdown + cancellation analysis',
-      'Per-tech leaderboards (avg ticket, rebook rate, retention)',
+      'Per-tech leaderboards (revenue, avg ticket, visit count)',
       'IRS-ready tax export, fiscal-year reporting',
-      'Method-bucket diagnostic on every receipt',
+      'Payment-method breakdown (card / cash / other) across all sales',
     ],
     visual: AIVisual,
   },
@@ -221,7 +221,7 @@ function ScheduleVisual() {
           fontSize: 11, color: C.text, boxShadow: shadow.sm,
         }}>
           <span style={{ fontSize: 14 }}>✋</span>
-          <span><strong>Dragging Spa Pedi → Jordan 3:00pm.</strong> No conflicts. Drop to confirm.</span>
+          <span><strong>Dragging Spa Pedi → Jordan 3:00pm.</strong> Within working hours. Drop to confirm.</span>
         </div>
       </div>
     </VisualCard>
@@ -305,12 +305,6 @@ function CommsVisual() {
                 </div>
               </div>
             ))}
-          </div>
-          {/* Quick-reply suggestions */}
-          <div style={{ padding: '6px 12px', borderTop: `1px solid ${C.ruleSoft}`, display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 9, color: C.mutedSoft, fontWeight: 600, alignSelf: 'center', textTransform: 'uppercase', letterSpacing: '.05em' }}>AI replies:</span>
-            <span style={{ fontSize: 10, padding: '3px 8px', background: `${C.plum}10`, color: C.plumDeep, borderRadius: 999, border: `1px solid ${C.plum}25`, fontWeight: 500 }}>"Booked! See you Sunday."</span>
-            <span style={{ fontSize: 10, padding: '3px 8px', background: `${C.plum}10`, color: C.plumDeep, borderRadius: 999, border: `1px solid ${C.plum}25`, fontWeight: 500 }}>"Confirmed for 11am."</span>
           </div>
           <div style={{ padding: 10, borderTop: `1px solid ${C.ruleSoft}`, display: 'flex', gap: 6, alignItems: 'center', background: '#fff' }}>
             <input type="text" placeholder="Reply..." readOnly style={{ flex: 1, padding: '7px 10px', fontSize: 11, border: `1px solid ${C.rule}`, borderRadius: 999, background: '#fafafa', outline: 'none' }} />
@@ -398,11 +392,11 @@ function AIVisual() {
           </Bubble>
 
           {/* User follow-up */}
-          <Bubble side="user">How many of her clients booked again within 30 days?</Bubble>
+          <Bubble side="user">How many of those were new clients?</Bubble>
 
           {/* AI follow-up — partial typing */}
           <Bubble side="ai" duration="0.9s">
-            <strong style={{ color: C.ink }}>147 of 184</strong> (80%). That's 12 points above the salon-wide rebook rate.
+            <strong style={{ color: C.ink }}>32 of 184</strong> tickets were first-time clients — the most of any tech this month.
           </Bubble>
         </div>
       </div>

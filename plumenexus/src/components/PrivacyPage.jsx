@@ -2,7 +2,7 @@ import LegalShell from './LegalShell.jsx';
 
 // Plain-English Privacy Policy for Plume Nexus LLC, accurate to how the platform
 // handles data (Stripe never exposes card numbers, no AI training, free export,
-// 90-day soft-delete, named subprocessors). Includes California (CCPA/CPRA) and
+// 30-day soft-delete purge, named subprocessors). Includes California (CCPA/CPRA) and
 // EU/UK (GDPR) sections. Recommended: a final review by privacy counsel before
 // launch, especially if you knowingly serve EU/UK residents.
 export default function PrivacyPage() {
@@ -92,8 +92,9 @@ export default function PrivacyPage() {
       <ul>
         <li><strong>Export:</strong> download a complete copy of Your Data at any time via the
           in-app backup tool — free, on every plan.</li>
-        <li><strong>Delete:</strong> delete your account at any time. We retain a backup for 90 days,
-          then permanently delete (subject to legal retention and routine backup cycles).</li>
+        <li><strong>Delete:</strong> delete your account at any time; on request we permanently remove
+          your records. Items you delete sit in an in-app recycle bin and are automatically purged
+          after 30 days (subject to legal retention and routine backup cycles).</li>
         <li><strong>Correct:</strong> edit your data directly with the in-app tools.</li>
         <li><strong>Opt out of marketing:</strong> use the unsubscribe link in any marketing email,
           or reply STOP to any marketing SMS.</li>
@@ -144,7 +145,8 @@ export default function PrivacyPage() {
         <li>All data in transit is encrypted via HTTPS / TLS; data at rest is encrypted by Google
           Cloud.</li>
         <li>Role-based access controls inside the app (admin / scheduler / staff / read-only), with
-          optional PIN locks on sensitive modules (HR, Reports) and 2FA for admins.</li>
+          optional PIN locks on sensitive modules (HR, Reports). Admin accounts sign in through
+          Google, so Google's 2-step verification protects them.</li>
         <li>Tenant data is logically isolated per salon, with security rules enforced server-side.</li>
         <li>Point-in-time recovery, redundant backups, a soft-delete recycle bin, and verbose
           activity logging on privileged actions.</li>
@@ -155,7 +157,9 @@ export default function PrivacyPage() {
       <h2>10. Data retention</h2>
       <ul>
         <li>Active account data: retained while your account is active.</li>
-        <li>Cancelled accounts: 90-day grace period, then permanent deletion.</li>
+        <li>Deleted records: held in the in-app recycle bin, then permanently purged after 30 days.</li>
+        <li>Cancelled accounts: your data stays exportable until you ask us to delete it; we then
+          permanently remove it (subject to routine backup cycles).</li>
         <li>Marketing-site inquiries: retained up to 24 months.</li>
         <li>Server and security logs: retained up to 90 days.</li>
       </ul>

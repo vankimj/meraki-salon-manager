@@ -89,9 +89,9 @@ export default function TermsPage() {
         <li><strong>Export is free, on every plan, forever.</strong> You may export a complete
           copy of Your Data at any time, including after you cancel. We will never hold your data
           behind a paywall.</li>
-        <li>If you cancel or delete your account, we retain a backup copy for 90 days in case you
-          change your mind, then permanently delete it (subject to legal retention obligations and
-          routine backup cycles).</li>
+        <li>If you cancel, your data stays exportable until you ask us to delete it. Records you
+          delete sit in an in-app recycle bin and are permanently purged after 30 days (subject to
+          legal retention obligations and routine backup cycles).</li>
         <li>We never sell Your Data, and we never share your client lists outside your account.</li>
       </ul>
 

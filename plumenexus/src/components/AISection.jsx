@@ -15,22 +15,17 @@ const AI_FEATURES = [
   {
     icon: '✍️',
     title: 'AI-drafted marketing copy',
-    body: 'Pick an audience and a goal. Get a campaign body draft you can edit and send. Most platforms charge a four-figure monthly add-on for this — we include it in every plan.',
+    body: 'On-brand Instagram captions, post ideas, ad copy, and promo blurbs — drawn from your salon\'s own profile and ready to drop into a post or campaign. Most platforms charge a four-figure monthly add-on for this; we include it in the AI Pack.',
   },
   {
     icon: '🩹',
     title: 'Conflict-resolution drafts',
-    body: 'Tech calls in sick. AI auto-covers what it can, drafts apology + reschedule texts for what it can\'t, ready for one-tap send.',
-  },
-  {
-    icon: '⏱️',
-    title: 'Send-time optimization',
-    body: 'Your last 3 months of opens + clicks tell us when your audience reads. AI picks the right time to send your next blast.',
+    body: 'A tech calls out and you see ranked coverage suggestions to apply with a click. For the slots you can\'t cover, AI drafts a warm apology + reschedule message — complete with a self-service rebooking link — for each affected client, ready for you to review and send by email or text.',
   },
   {
     icon: '🔄',
-    title: 'Auto-rebook nudges',
-    body: 'A client who comes every 4 weeks just hit week 5? AI sends a friendly "ready for your next visit?" SMS with a deep-link to book.',
+    title: 'Rebook & win-back',
+    body: 'Prompt every client to book their next visit right at checkout — with a suggested date based on the service\'s typical interval. Lapsed clients who haven\'t returned in a while get an automatic win-back email. (SMS reminders and per-client cadence are on the way.)',
   },
 ];
 

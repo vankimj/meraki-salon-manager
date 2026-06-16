@@ -55,7 +55,7 @@ function priceTagline(plan, billing) {
 //   Salon Pro: everything in Studio + Marketing + AI + Operations included
 //   Brand Pack stays a-la-carte at every tier (highly specialized).
 //
-// Security features (2FA, backups, encryption, audit log) are standard
+// Security features (Google 2-step, backups, encryption, audit log) are standard
 // on every plan — surfaced as a footnote under the table, not a row,
 // so the differentiators stay differentiating.
 const COMPARE = [
@@ -73,16 +73,16 @@ const COMPARE = [
   { section: 'Operations growth' },
   { label: 'Multi-tech credit splits',                            solo: false,                        studio: true,                         salonPro: true },
   { label: 'Smart walk-in queue management',                      solo: false,                        studio: true,                         salonPro: true },
-  { label: 'Custom booking domain (book.yoursalon.com)',          solo: false,                        studio: true,                         salonPro: true },
+  { label: 'Custom booking subdomain (yoursalon.plumenexus.com)',  solo: false,                        studio: true,                         salonPro: true },
 
   { section: 'Reach your clients · Power Packs' },
   { label: 'SMS reminders + 2-way (Comms Pack)',                  solo: '+$19/mo',                    studio: 'Included',                   salonPro: 'Included' },
-  { label: 'Loyalty + auto-rebook + segments (Marketing Pack)',   solo: '+$19/mo',                    studio: '+$19/mo',                    salonPro: 'Included' },
+  { label: 'Loyalty + campaigns + segments (Marketing Pack)',     solo: '+$19/mo',                    studio: '+$19/mo',                    salonPro: 'Included' },
   { label: 'Voice booking + AI marketing drafts (AI Pack)',       solo: '+$19/mo',                    studio: '+$19/mo',                    salonPro: 'Included' },
 
   { section: 'Advanced operations' },
   { label: 'Gusto payroll integration + multi-loc (Operations Pack)',            solo: '+$29/mo',     studio: '+$29/mo',                    salonPro: 'Included' },
-  { label: 'White-label client app + branded kiosk (Brand Pack)', solo: '+$39/mo',                    studio: '+$39/mo',                    salonPro: '+$39/mo' },
+  { label: 'Custom-branded kiosk + email domain (Brand Pack)',     solo: '+$39/mo',                    studio: '+$39/mo',                    salonPro: '+$39/mo' },
 
   { section: 'Support' },
   { label: 'Email · 5-day SLA',                                   solo: true,                         studio: false,                        salonPro: false },
@@ -583,7 +583,7 @@ function PlanComparison({ selectedPlan }) {
         </tbody>
       </table>
       <div style={securityNote}>
-        <strong>Standard on every plan</strong> · 2FA for admins · daily backups + 7-day point-in-time recovery · encryption at rest and in transit · audit logs · tenant data isolation
+        <strong>Standard on every plan</strong> · Google sign-in (with your Google 2-step) · daily backups + 7-day point-in-time recovery · encryption at rest and in transit · audit logs · tenant data isolation
       </div>
     </div>
   );

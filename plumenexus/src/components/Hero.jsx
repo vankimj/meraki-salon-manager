@@ -61,7 +61,7 @@ export default function Hero() {
               marginBottom: 22,
             }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.success, boxShadow: '0 0 10px rgba(45,122,95,.7)' }} />
-              Pre-production · Tested in a 10-tech salon · Columbus, OH
+              Pre-production · Built for a 10-tech salon · Columbus, OH
             </div>
 
             <h1 style={{
@@ -75,15 +75,16 @@ export default function Hero() {
                 WebkitBackgroundClip: 'text', backgroundClip: 'text',
                 WebkitTextFillColor: 'transparent', color: 'transparent',
                 fontFamily: FONT.script, fontWeight: 400, fontSize: '1.18em',
-              }}>built by salon owners.</span>
+              }}>built by a salon owner.</span>
             </h1>
 
             <p style={{
               fontSize: 'clamp(16px, 1.6vw, 19px)', lineHeight: 1.6,
               color: C.muted, margin: '0 0 32px', maxWidth: 560,
             }}>
-              Scheduling, POS, two-way client messaging, marketing, and AI-powered reporting —
-              all in one operating system. Designed by a salon owner to run your front desk
+              Scheduling, POS, client messaging (two-way SMS rolling out as carrier
+              registration completes), marketing, and AI-powered reporting — all in one
+              operating system. Designed by a salon owner to run your front desk
               the way you actually run it.
             </p>
 
@@ -127,7 +128,7 @@ export default function Hero() {
               fontSize: 13, color: C.mutedSoft,
             }}>
               <Stat label="Live by lunch · or we set it up free" />
-              <Stat label="Even our team can't see your data" />
+              <Stat label="Your data stays yours · audit-logged access" />
               <Stat label="Cancel anytime · keep your data" />
             </div>
           </div>
@@ -263,7 +264,7 @@ function HeroVisual() {
         }}>
           <div style={{ fontSize: 16 }}>✨</div>
           <div style={{ fontSize: 11, color: C.text, lineHeight: 1.4, flex: 1 }}>
-            <strong style={{ color: C.plumDeep }}>AI:</strong> Riley called in sick at 9:42 · 6 of 8 affected appts auto-covered.
+            <strong style={{ color: C.plumDeep }}>AI:</strong> Riley out sick at 9:42 · drafted client texts for 8 affected appts, ready to review.
           </div>
           <span style={{ fontSize: 10, color: C.plum, fontWeight: 700, whiteSpace: 'nowrap' }}>Draft texts →</span>
         </div>
@@ -293,7 +294,7 @@ function HeroVisual() {
         transform: 'rotate(3deg)',
       }}>
         <div style={{ fontSize: 14, color: C.gold }}>★★★★★</div>
-        <div style={{ fontSize: 11, color: C.text }}>Posted to Google · 2m ago</div>
+        <div style={{ fontSize: 11, color: C.text }}>Review request sent · routed to Google</div>
       </div>
     </div>
   );

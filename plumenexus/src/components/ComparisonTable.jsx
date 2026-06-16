@@ -43,7 +43,7 @@ const GROUPS = [
     title: 'Client communication',
     rows: [
       { label: 'Email + booking page',             solo: true,   studio: true, salonPro: true },
-      { label: 'SMS reminders + 2-way',            solo: 'pack', studio: true, salonPro: true },
+      { label: 'SMS reminders + 2-way (rolling out)', solo: 'pack', studio: true, salonPro: true },
       { label: 'Dedicated phone number',           solo: 'pack', studio: true, salonPro: true },
     ],
   },
@@ -51,7 +51,7 @@ const GROUPS = [
     title: 'Grow revenue',
     rows: [
       { label: 'Marketing campaigns',              solo: 'pack', studio: 'pack', salonPro: true },
-      { label: 'Loyalty + tiers + auto-rebook',    solo: 'pack', studio: 'pack', salonPro: true },
+      { label: 'Loyalty + tiers + segments',       solo: 'pack', studio: 'pack', salonPro: true },
       { label: 'AI voice + drafted copy',          solo: 'pack', studio: 'pack', salonPro: true },
       { label: 'Memberships (recurring revenue)',  solo: false,  studio: false, salonPro: true },
     ],
@@ -60,7 +60,7 @@ const GROUPS = [
     title: 'Back office',
     rows: [
       { label: 'Gusto payroll + HR',               solo: 'pack', studio: 'pack', salonPro: true },
-      { label: 'White-label app + custom domain',  solo: 'pack', studio: 'pack', salonPro: 'pack' },
+      { label: 'Custom email sender domain + branding', solo: 'pack', studio: 'pack', salonPro: 'pack' },
     ],
   },
   {
