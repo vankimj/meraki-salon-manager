@@ -38,9 +38,9 @@ export default function StudioStrip() {
             marginTop: 22, maxWidth: 580,
             fontSize: 17, lineHeight: 1.65, color: C.muted,
           }}>
-            Plume Nexus runs Meraki Nail Studio in Columbus, Ohio — a
-            10-tech salon — before it ships to anyone else. Every release
-            sits next to the work it serves.
+            Plume Nexus is built for Meraki Nail Studio in Columbus, Ohio —
+            a real 10-tech salon, and its founding customer — before it opens
+            to anyone else. Every release is shaped by the work it's built to serve.
           </p>
         </header>
 
