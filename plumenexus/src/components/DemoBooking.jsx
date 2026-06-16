@@ -27,58 +27,43 @@ export default function DemoBooking() {
       title="20 minutes. No slide deck."
       subtitle="A live walkthrough on real salon data with the founder. No sales engineer, no scripted pitch — just answers."
     >
+      {/* What you'll get — a row of points above the calendar */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
-        gap: 40,
-        maxWidth: 1080, margin: '0 auto',
-        alignItems: 'start',
-      }} className="pn-demo-grid">
-
-        {/* Left: what's included */}
-        <div>
-          <h3 style={{
-            fontFamily: FONT.display, fontSize: 22, fontWeight: 600,
-            margin: '0 0 22px', color: C.ink,
-          }}>What you'll get</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {POINTS.map(p => (
-              <div key={p.title} style={{ display: 'flex', gap: 14 }}>
-                <div style={{
-                  width: 38, height: 38, borderRadius: 10,
-                  background: `${C.plum}10`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 18, flexShrink: 0,
-                }}>{p.icon}</div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 2 }}>{p.title}</div>
-                  <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{p.body}</div>
-                </div>
-              </div>
-            ))}
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+        gap: 22,
+        maxWidth: 1000, margin: '0 auto 40px',
+      }}>
+        {POINTS.map(p => (
+          <div key={p.title} style={{ display: 'flex', gap: 12 }}>
+            <div style={{
+              width: 38, height: 38, borderRadius: 10,
+              background: `${C.plum}10`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 18, flexShrink: 0,
+            }}>{p.icon}</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: C.ink, marginBottom: 2 }}>{p.title}</div>
+              <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.5 }}>{p.body}</div>
+            </div>
           </div>
+        ))}
+      </div>
 
-          <div style={{
-            marginTop: 28, padding: '14px 16px',
-            background: C.bgSoft, borderRadius: radius.md,
-            border: `1px solid ${C.rule}`,
-            fontSize: 13, color: C.text, lineHeight: 1.55,
-          }}>
-            <strong style={{ color: C.plum }}>Can't find a time?</strong> Use the{' '}
-            <a href="#contact" style={{ color: C.plum, fontWeight: 600 }}>contact form</a> instead —
-            we'll work around your schedule.
-          </div>
-        </div>
-
-        {/* Right: Cal.com embed (or fallback) */}
+      {/* Cal.com embed (or fallback) — full width so the month calendar has room
+          to show its time-slot column side by side. */}
+      <div style={{ maxWidth: 920, margin: '0 auto' }}>
         <BookingEmbed />
       </div>
 
-      <style>{`
-        @media (max-width: 880px) {
-          .pn-demo-grid { grid-template-columns: 1fr !important; gap: 28px !important; }
-        }
-      `}</style>
+      <div style={{
+        maxWidth: 920, margin: '18px auto 0', textAlign: 'center',
+        fontSize: 13, color: C.muted, lineHeight: 1.55,
+      }}>
+        <strong style={{ color: C.plum }}>Can't find a time?</strong> Use the{' '}
+        <a href="#contact" style={{ color: C.plum, fontWeight: 600 }}>contact form</a> instead —
+        we'll work around your schedule.
+      </div>
     </Section>
   );
 }
@@ -94,7 +79,7 @@ function BookingEmbed() {
         cal('ui', {
           styles: { branding: { brandColor: CAL_BRAND } },
           hideEventTypeDetails: false,
-          layout: 'month_view',
+          layout: 'column_view',
         });
       } catch { /* the link fallback below covers a script-load failure */ }
     })();
@@ -153,13 +138,13 @@ function BookingEmbed() {
         borderRadius: radius.lg,
         boxShadow: shadow.md,
         overflow: 'hidden',
-        minHeight: 660,
+        minHeight: 720,
       }}>
         <Cal
           namespace="pn-demo"
           calLink={CAL_LINK}
-          config={{ layout: 'month_view' }}
-          style={{ width: '100%', height: 660, overflow: 'auto' }}
+          config={{ layout: 'column_view' }}
+          style={{ width: '100%', height: 720, overflow: 'auto' }}
         />
       </div>
       <div style={{ marginTop: 10, textAlign: 'center', fontSize: 12, color: C.mutedSoft }}>
