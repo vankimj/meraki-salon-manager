@@ -84,6 +84,11 @@ describe('rosterDocId', () => {
   it('suffixes other locations so each site has its own daily rotation', () => {
     expect(rosterDocId('2026-06-15', 'north')).toBe('2026-06-15_north');
   });
+  it('strips path-injection chars from the location segment (no extra path segments)', () => {
+    expect(rosterDocId('2026-06-15', 'x/clients/VICTIM')).toBe('2026-06-15_xclientsVICTIM');
+    expect(rosterDocId('2026-06-15', '../../evil')).toBe('2026-06-15_evil');
+    expect(rosterDocId('2026-06-15', 12345)).toBe('2026-06-15'); // non-string → legacy key
+  });
 });
 
 describe('current-location subscribers', () => {

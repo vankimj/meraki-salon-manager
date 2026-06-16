@@ -3162,7 +3162,12 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 // Function declarations are hoisted, so callers above this point (e.g.
 // creditTurnsOnReceipt) resolve them fine at invocation time.
 function rosterDocId(date, locationId) {
-  return (!locationId || locationId === 'main') ? date : `${date}_${locationId}`;
+  // Strip anything but [A-Za-z0-9_-] from the location segment so a stray '/'
+  // (or other path char) on a client-influenced field (e.g. a receipt's
+  // locationId in creditTurnsOnReceipt) can never inject extra Firestore path
+  // segments. Valid location ids are already in this charset → no-op for them.
+  const loc = (typeof locationId === 'string' ? locationId : '').replace(/[^A-Za-z0-9_-]/g, '');
+  return (!loc || loc === 'main') ? date : `${date}_${loc}`;
 }
 // Parse a roster doc id back to {date, locationId}. date is always YYYY-MM-DD
 // (10 chars) so a char-11 underscore unambiguously marks a location suffix even
