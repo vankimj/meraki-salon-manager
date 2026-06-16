@@ -84,8 +84,8 @@ export default function TrustPage() {
               body="Every privileged action — login, payment refund, role change, data export — is logged with who/what/when. Admin-readable." />
             <Card icon="🔢" title="PIN locks"
               body="Optional 4-digit PIN gates on HR + Reports modules. So a tech logged in to take payments can't accidentally open payroll." />
-            <Card icon="📱" title="2FA for admins"
-              body="Two-factor authentication on Salon Pro plans. Time-based one-time passwords (TOTP) via any standard authenticator app." />
+            <Card icon="📱" title="2FA via Google"
+              body="Admins sign in through Google, so whatever two-factor you keep on your Google account guards Plume Nexus too. Native authenticator-app 2FA is on the roadmap." />
             <Card icon="🚪" title="Session security"
               body="Configurable auto-logout on inactivity (default 5 min). Idle sessions invalidate; refresh tokens rotate." />
           </Grid>
@@ -110,9 +110,9 @@ export default function TrustPage() {
               note="Each tenant connects their own Stripe account. Funds settle directly to your bank." />
             <Integration name="Twilio"      what="SMS messaging"
               data="Phone numbers, message content for sent/received SMS."
-              note="Dedicated phone number per tenant; separate marketing vs transactional numbers." />
+              note="Dedicated number per tenant, with marketing and transactional sends kept in separate quota and consent lanes so a STOP only opts out of marketing. Goes live as carrier registration completes." />
             <Integration name="AWS SES"     what="Email delivery"
-              data="Email addresses, message content for sent/received email, delivery status."
+              data="Email addresses, message content for sent email, delivery status."
               note="Verified-domain sending with per-tenant reputation and suppression via SES Tenants." />
             <Integration name="Anthropic (Claude)"  what="AI features"
               data="Anonymized salon data passed in for the question being asked. Never trained on; never retained."
@@ -134,7 +134,7 @@ export default function TrustPage() {
             <Card icon="📲" title="TCPA + STOP keyword"
               body="Marketing SMS uses a separate phone number from transactional. Reply STOP to instantly opt out of marketing — your appointment confirmations keep coming." />
             <Card icon="🌍" title="GDPR-ready"
-              body="Data export anytime (CSV or JSON). Right-to-erasure honored within 30 days. Consent records logged. EU data residency available on request." />
+              body="Export your full data anytime (CSV or JSON). We honor deletion requests — client records can be permanently purged on request. Consent preferences are stored per client." />
             <Card icon="🩺" title="HIPAA-aware"
               body="PIN-locked sensitive modules, audited access logs, role-based permissions, allergy/health flags. Full BAA-eligible hosting available — talk to us if compliance is a hard requirement." />
           </Grid>
@@ -144,14 +144,14 @@ export default function TrustPage() {
         <Section eyebrow="Your data" title="Promises we put in writing.">
           <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
             {[
-              ['Data export is always free.',              'On every plan. On the Free Solo plan. For Founders\' Members. For paused accounts. For canceled accounts during the 90-day grace period. Forever. One click in Settings, full CSV + JSON of everything you own. If our service stops working for you, we will not hold your data hostage to slow you down.'],
+              ['Data export is always free.',              'On every plan. On the Free Solo plan. For Founders\' Members. For paused accounts. For canceled accounts. Forever. One click in Settings, full CSV + JSON of everything you own. If our service stops working for you, we will not hold your data hostage to slow you down.'],
               ['Even our founder cannot read your data.',  'Without your invitation, the Plume Nexus team cannot see a single one of your clients, appointments, receipts, or messages. The platform admin dashboard returns only metadata (your plan, billing, last login). If you ever want our help with something, you invite the founder as an admin via your own users settings — exactly the same way you\'d add any of your own staff. You can revoke access anytime. Most SaaS companies quietly keep god-mode access via "support impersonation." We don\'t.'],
               ['You own your data.',                       'Always. We process it on your behalf to operate the service. We never claim ownership.'],
               ['You can leave anytime.',                   'No exit fees. No "fill out this form." No 30-day waiting period. Cancel from Settings, export, done.'],
               ['We do not train AI on your data.',         'Our AI provider operates under a zero-retention agreement for API traffic. Your data is not used to improve any model.'],
               ['We do not sell or share your data.',       'Ever. Not to advertisers, not to "partners," not to data brokers. The only third parties that touch your data are the integrations listed above, and only to perform the service you signed up for.'],
-              ['90-day deletion grace period.',            'If you cancel, we hold a backup copy for 90 days in case you change your mind. Then it\'s permanently deleted from primary and backup storage.'],
-              ['No surprise outages.',                     'We aim for 99.9% uptime. Scheduled maintenance is announced 7+ days in advance via email and an in-app banner.'],
+              ['We honor deletion requests.',              'Our commitment: if you cancel, we keep a copy long enough for you to change your mind and reactivate, and we permanently purge your records — from primary and backup storage — whenever you ask.'],
+              ['No surprise outages.',                     'We target high availability on Google Cloud infrastructure. Any work that requires planned downtime is announced ahead of time by email.'],
             ].map(([title, body]) => (
               <div key={title} style={{
                 padding: 22, background: '#fff',

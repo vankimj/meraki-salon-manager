@@ -32,10 +32,10 @@ const TIERS = [
     features: [
       'Up to 8 staff members',
       'Everything in Solo, plus:',
-      'SMS reminders + 2-way (Comms Pack — included)',
+      'SMS reminders + 2-way, Comms Pack included (rolling out as carrier registration completes)',
       'Multi-tech credit splits',
       'Smart walk-in management',
-      'Custom domain for booking',
+      'Your own booking subdomain (yoursalon.plumenexus.com)',
       'Priority email + chat support',
     ],
     cta: 'Start free 30-day trial',
@@ -48,7 +48,7 @@ const TIERS = [
       'Unlimited staff + multi-location',
       'Everything in Studio, plus:',
       'Gusto payroll integration (Operations Pack) — included',
-      'Marketing Pack (loyalty + auto-rebook) — included',
+      'Marketing Pack (campaigns + audience segments) — included',
       'AI Pack (voice + drafted copy) — included',
       'Founder-direct support',
       'Dedicated onboarding',
@@ -63,13 +63,13 @@ const PACKS = [
     icon: '💬',
     name: 'Comms Pack',
     price: 19,
-    body: 'Two-way SMS + dedicated phone number + email reply parsing + STOP keyword handling. The full client communication suite.',
+    body: 'Two-way SMS + dedicated phone number + STOP keyword handling (rolling out as carrier registration completes). The full client communication suite.',
   },
   {
     icon: '📣',
     name: 'Marketing Pack',
     price: 19,
-    body: 'Loyalty + tiers + auto-rebook nudges + send-time optimizer + advanced audience segments. Replace your separate marketing tool.',
+    body: 'Campaign builder with smart audience segments (lapsed clients, by tech, by service), plus loyalty and thank-you message templates. Replace your separate marketing tool.',
   },
   {
     icon: '✨',
@@ -81,13 +81,13 @@ const PACKS = [
     icon: '💼',
     name: 'Operations Pack',
     price: 29,
-    body: 'One-click Gusto payroll integration, advanced earnings reports, and multi-location. Bring your existing Gusto account or set one up in onboarding. Gusto handles W-2 + 1099-NEC filing end-to-end. Included on Salon Pro.',
+    body: 'Connect your Gusto account to sync employees and push payroll runs, plus advanced earnings reports and multi-location. Bring your existing Gusto account or set one up in onboarding. Filing is handled by Gusto. Included on Salon Pro.',
   },
   {
     icon: '🎨',
     name: 'Brand Pack',
     price: 39,
-    body: 'White-label client app + custom-branded TipFlow kiosk + custom email sender domain. Look like the premium brand you are.',
+    body: 'Custom-branded TipFlow kiosk + custom email sender domain (send from your own domain). Look like the premium brand you are.',
   },
 ];
 
@@ -95,7 +95,7 @@ const PACKS = [
 const ATOMS = [
   { feature: 'SMS (dedicated number + two-way)', price: 15, partOf: 'Comms Pack' },
   { feature: 'Voice commands',                   price: 15, partOf: 'AI Pack' },
-  { feature: 'Loyalty + tiers',                  price: 15, partOf: 'Marketing Pack' },
+  { feature: 'Loyalty message templates',        price: 15, partOf: 'Marketing Pack' },
   { feature: 'Gusto payroll sync',               price: 25, partOf: 'Operations Pack' },
   { feature: 'Custom email sender domain',       price: 15, partOf: 'Brand Pack' },
 ];
@@ -107,7 +107,7 @@ const WHITE_GLOVE = [
     name: 'Self-Serve',
     price: '$0',
     tag: 'On every plan',
-    body: 'Our AI auto-imports your clients, services, and history from a GlossGenius, Vagaro, or Square export. Most salons are live by lunch.',
+    body: 'Our guided import wizard pulls in your clients, services, and history from a GlossGenius, Vagaro, or Square export — at your own pace.',
     points: ['Guided in-app import wizard', 'Live the same day', 'Email support if you snag'],
   },
   {
@@ -134,9 +134,9 @@ export default function Pricing() {
   return (
     <Section
       id="pricing"
-      eyebrow={`Founders' Year · sign up by ${FOUNDERS_YEAR_END_LONG}`}
+      eyebrow={`Founders' Year · launch window through ${FOUNDERS_YEAR_END_LONG}`}
       title="Free for Founders. Pick a plan, then add what you need."
-      subtitle={`Sign up before ${FOUNDERS_YEAR_END_LONG} and Solo is free for life. Pair any plan with the Power Packs you actually want — no forced bundles, no add-on tax.`}
+      subtitle={`Join during our launch window (targeting ${FOUNDERS_YEAR_END_LONG}) and lock in free Solo as a founding salon. Pair any plan with the Power Packs you actually want — no forced bundles, no add-on tax.`}
       alt
     >
       {/* ── Billing toggle (Monthly / Annual) ── */}
@@ -317,7 +317,7 @@ function Tier({ name, price, annual, blurb, features, cta, featured, foundersFre
           textTransform: 'uppercase',
           boxShadow: '0 4px 12px rgba(45,122,95,.32)',
           whiteSpace: 'nowrap',
-        }}>Founders' Year — Free for life</div>
+        }}>Founders' Year — Free Solo</div>
       )}
 
       <div style={{
@@ -339,7 +339,7 @@ function Tier({ name, price, annual, blurb, features, cta, featured, foundersFre
             <span style={{ fontSize: 13, color: C.mutedSoft, fontWeight: 500, textDecoration: 'line-through' }}>${price}/mo</span>
           </div>
           <div style={{ fontSize: 11, color: C.mutedSoft, marginTop: 6, lineHeight: 1.4 }}>
-            For Founders' Members who join by {FOUNDERS_YEAR_END_LONG}. Lifetime lock-in.
+            For founding salons who join during our launch window (targeting {FOUNDERS_YEAR_END_LONG}). Early-member pricing, locked in.
           </div>
         </div>
       ) : (
@@ -453,7 +453,7 @@ function WhiteGlove() {
       }}>
         <strong style={{ color: C.success }}>Founders&rsquo; Members: white-glove migration is on us.</strong>{' '}
         <span style={{ color: C.muted }}>
-          Sign up by {FOUNDERS_YEAR_END_LONG} and Assisted Setup is free — we&rsquo;ll concierge your switch at no charge.
+          Join during our launch window (targeting {FOUNDERS_YEAR_END_LONG}) and Assisted Setup is free — we&rsquo;ll concierge your switch at no charge.
         </span>
       </div>
 

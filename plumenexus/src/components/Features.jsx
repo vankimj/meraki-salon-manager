@@ -24,8 +24,8 @@ const PILLARS = [
     eyebrow:  'III',
     title:    'Communications',
     accent:   'in one inbox.',
-    body:     'Two-way SMS auto-threads by client. Send email confirmations, receipts, and campaigns from the same place. Per-client channel preferences. No more lost texts; no more "did I tell her already?"',
-    foot:     'Two-way SMS · Email · Preferences · STOP',
+    body:     'Two-way SMS auto-threads by client — rolling out as carrier registration completes. Email confirmations, receipts, and campaigns send today from the same place. Per-client channel preferences. No more lost texts; no more "did I tell her already?"',
+    foot:     'Email · Preferences · STOP · Two-way SMS (rolling out)',
   },
   {
     eyebrow:  'IV',
@@ -38,8 +38,8 @@ const PILLARS = [
     eyebrow:  'V',
     title:    'Payroll',
     accent:   'handled.',
-    body:     'Per-tech earnings dashboards, compensation models that actually fit booth-rent vs commission vs hybrid, and a one-click Gusto sync when payday hits. Gusto runs W-2 + contractor payroll and files the tax forms — Plume Nexus owns the salon side: the ledger, the splits, the tips.',
-    foot:     'Commission · Booth-rent · Tips · Gusto sync',
+    body:     'Per-tech earnings dashboards, compensation models that actually fit commission, hourly, or a hybrid of both, and a one-click Gusto sync when payday hits. Gusto runs W-2 + contractor payroll and files the tax forms — Plume Nexus owns the salon side: the ledger, the splits, the tips.',
+    foot:     'Commission · Hourly · Tips · Gusto sync',
   },
 ];
 

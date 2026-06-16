@@ -42,9 +42,9 @@ export default function VerticalsGallery() {
             <span style={{ fontStyle: 'italic', color: C.muted }}> Not last.</span>
           </h2>
           <p style={{ marginTop: 20, maxWidth: 620, fontSize: 17, lineHeight: 1.65, color: C.muted }}>
-            The same scheduling, POS, two-way messaging, and AI-powered reporting built for a
-            10-tech nail studio fit a barbershop, a med spa, a grooming salon, or a wellness
-            studio just as well.
+            The same scheduling, POS, client messaging (two-way SMS rolling out as carrier
+            registration completes), and AI-powered reporting built for a 10-tech nail studio
+            is designed to fit a barbershop, a med spa, a grooming salon, or a wellness studio too.
           </p>
         </header>
 

@@ -13,10 +13,10 @@ const CAL_BRAND        = '#6a4fa0'; // brand plum
 const IS_PLACEHOLDER   = !CAL_LINK.trim();
 
 const POINTS = [
-  { icon: '🎙️', title: 'Live AI walkthrough',     body: 'See voice-command booking, AI reports, and conflict-resolution drafts on real data.' },
+  { icon: '🎙️', title: 'Live AI walkthrough',     body: 'See voice-command booking, AI reports, and the time-off and off-hours warnings that keep the schedule honest.' },
   { icon: '📊', title: 'Migration plan',          body: 'We map your current setup to Plume Nexus modules in real time.' },
   { icon: '💬', title: 'Q&A with the founder',    body: 'Honest answers about gaps, roadmap, pricing, integrations.' },
-  { icon: '🎁', title: 'Custom 30-day trial',     body: 'You leave the call with a sandbox loaded with your data.' },
+  { icon: '🎁', title: 'Custom 30-day trial',     body: "You leave with a 30-day trial sandbox. On GlossGenius? We can load your exported data live on the call; from other platforms we hand-import it within one business day." },
 ];
 
 export default function DemoBooking() {
@@ -25,7 +25,7 @@ export default function DemoBooking() {
       id="demo"
       eyebrow="Book a demo"
       title="20 minutes. No slide deck."
-      subtitle="A live walkthrough on real salon data with the founder. No sales engineer, no scripted pitch — just answers."
+      subtitle="A live walkthrough with the founder — built by a salon owner for his own 10-tech studio. No sales engineer, no scripted pitch — just answers."
     >
       {/* What you'll get — a row of points above the calendar */}
       <div style={{

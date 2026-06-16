@@ -8,7 +8,7 @@ const STEPS = [
   {
     when: 'Day 1',
     title: 'Migrate your history',
-    body: 'Drop your client list and last-12-months of receipts in. Our import tool dedupes refunds, splits, and tip allocations correctly. By end-of-day, every client profile is loaded and ready.',
+    body: 'Coming from GlossGenius? Our CSV importer brings in your client list and last 12 months of receipts — handling tips, multi-tech splits, and refunds correctly, and deduping on GlossGenius transaction IDs so re-running is safe. On Vagaro, Square, Boulevard, Mindbody, or Fresha, we hand-import your export for you while we finish those parsers.',
     icon: '📦',
   },
   {
@@ -20,19 +20,19 @@ const STEPS = [
   {
     when: 'Week 1',
     title: 'First live shifts',
-    body: 'Front desk takes its first appointments and walk-ins. Tap-to-Pay checkout, multi-tech splits, gift cards — all working day one. AI is quietly observing your data.',
+    body: 'Front desk takes its first appointments and walk-ins, with checkout, multi-tech commission splits, and gift cards built in. Tap-to-Pay on iPhone and iPad is rolling out, pending Apple approval. And Ask AI is ready to query your data from day one — no waiting period.',
     icon: '✂️',
   },
   {
     when: 'Week 2',
     title: 'Marketing in motion',
-    body: 'Send your first campaign through the unified inbox — birthday wishes, lapsed-client win-back, or a flash promo. Per-recipient delivery analytics show you what landed.',
+    body: 'Send your first email campaign — birthday wishes, lapsed-client win-back, or a flash promo — with per-recipient delivery analytics that show you exactly what landed. SMS campaigns are built and unlock the moment your salon\'s text number clears carrier registration.',
     icon: '📣',
   },
   {
     when: 'Day 30',
-    title: 'AI starts paying off',
-    body: 'Ask Plume Nexus your first real question: "Who lapsed in the last 60 days?" or "What\'s my retention rate this quarter?" Get answers in seconds, not spreadsheets.',
+    title: 'Enough history to lean on AI',
+    body: 'By now you\'ve logged a month of real activity — enough for Ask AI to give you answers worth acting on. "Who lapsed in the last 60 days?" or "How did Saturday go?" Get them in seconds, not spreadsheets.',
     icon: '✨',
   },
 ];
