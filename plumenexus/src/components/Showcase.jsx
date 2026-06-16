@@ -17,13 +17,13 @@ const ITEMS = [
   },
   {
     eyebrow: 'Communications Hub',
-    title: 'Every text, every email, one inbox.',
-    body: 'Inbound SMS + email replies thread to the right client automatically. Send marketing campaigns through the same surface where your front desk handles confirmations. Per-client channel preferences mean the older crowd gets calls, everyone else gets the channel they actually read.',
+    title: 'Every text, one threaded inbox.',
+    body: 'Inbound texts auto-thread to the right client. Send confirmations, receipts, and marketing campaigns — by SMS or email — from the same surface your front desk works in. Per-client channel preferences so each client gets the channel they actually read.',
     bullets: [
       'Two-way SMS with auto-routed inbound',
-      'Email threads with auto reply-routing',
-      'Per-client channel preferences (SMS / email / voice)',
-      'Marketing-grade analytics on every send',
+      'Email confirmations, receipts & campaigns',
+      'Per-client channel preferences (SMS / email)',
+      'Delivery analytics on every send',
       'CAN-SPAM compliant + STOP keyword handling',
     ],
     visual: CommsVisual,

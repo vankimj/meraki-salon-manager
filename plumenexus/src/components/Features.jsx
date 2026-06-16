@@ -24,8 +24,8 @@ const PILLARS = [
     eyebrow:  'III',
     title:    'Communications',
     accent:   'in one inbox.',
-    body:     'Two-way SMS and email threaded by client. Per-client channel preferences. Inbound replies route themselves. No more lost texts; no more "did I tell her already?"',
-    foot:     'Two-way SMS · Email · Threading · Preferences',
+    body:     'Two-way SMS auto-threads by client. Send email confirmations, receipts, and campaigns from the same place. Per-client channel preferences. No more lost texts; no more "did I tell her already?"',
+    foot:     'Two-way SMS · Email · Preferences · STOP',
   },
   {
     eyebrow:  'IV',
