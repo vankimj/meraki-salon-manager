@@ -11936,10 +11936,10 @@ CRITICAL RULES:
 - Smart Scheduling: drag-to-reschedule, recurring bookings, smart walk-in management, time-off blocks, store-hours guard, birthday banner, VIP highlight, geo check-in.
 - Client CRM: profiles, full visit history, photos, social handles, notes, allergies, marketing preferences, referral tracking, automated lapsed-client alerts.
 - POS & Checkout: Stripe-powered, multi-tech credit splits, tip-per-service, gift cards, promo codes, store credit, refunds with photos. Tap-to-Pay on iOS coming Q3.
-- Communications Hub: two-way SMS + email in one threaded inbox. Per-client channel preferences (SMS/email/voice). CAN-SPAM compliant + STOP keyword handling.
+- Communications Hub: two-way SMS auto-threaded by client; send confirmations, receipts, and campaigns by SMS or email. Per-client channel preferences (SMS/email; a voice channel is planned but not yet active). CAN-SPAM compliant + STOP keyword handling. (Inbound email threading is planned, not yet built.)
 - Marketing Engine: campaigns with audience segmentation (8+ built-in audiences), AI-drafted body copy, personalized promo codes per client, scheduled sends, real-time per-recipient delivery analytics, channel-aware templates.
 - Gift Cards & Loyalty: digital gift cards with auto-emailed delivery, points-per-dollar loyalty, tiers (Silver/Gold/Platinum), birthday bonuses, referral bonuses.
-- AI-Powered Reports: chatbot answers natural-language questions about your data ("top three techs in March?", "lapsed clients who used to come monthly?"). IRS-ready tax export, real-time revenue, leaderboards, retention/rebook rate per tech.
+- AI-Powered Reports: chatbot answers natural-language questions about your data ("top three techs in March?", "lapsed clients who used to come monthly?"). IRS-ready tax export, real-time revenue, and per-tech leaderboards (revenue, average ticket, visit count).
 - Voice Commands: hands-free booking ("Book Emma Klein with Riley tomorrow at 2 for a gel mani") — proposes the action and waits for your confirmation before writing.
 - Employee & HR: profiles, photos, social links, compensation models, performance reviews, and one-click Gusto payroll sync (Gusto handles W-2 + contractor 1099-NEC filing).
 - Online Booking: public page, embeddable widget, magic-link self-service reschedule, post-visit Google review prompts.
@@ -11964,7 +11964,7 @@ Base tiers:
 - Salon Pro — $149/mo: unlimited staff, multi-location (Q3), founder-direct support, 2FA, dedicated onboarding.
 
 Power Packs (stack on any tier):
-- Comms Pack ($19/mo) — two-way SMS + dedicated phone + email reply parsing + STOP keyword handling.
+- Comms Pack ($19/mo) — two-way SMS + dedicated phone number + email sending + STOP keyword handling.
 - Marketing Pack ($19/mo) — loyalty + tiers + auto-rebook + send-time optimizer + advanced segments.
 - AI Pack ($19/mo) — voice-command booking + AI-drafted marketing copy + conflict-resolution drafts.
 - Operations Pack ($29/mo) — one-click Gusto payroll integration (bring your own Gusto account, or set one up in onboarding; Gusto handles W-2 + contractor 1099-NEC filing end-to-end), advanced earnings reports, and multi-location. Already included on Salon Pro.
@@ -12001,7 +12001,7 @@ Examples:
 
 ━━━ DATA EXPORT IS ALWAYS FREE ━━━
 - One click in Settings exports the customer's entire account: clients, appointments, services, employees, receipts, photos, marketing history. CSV + JSON.
-- Free on every plan, including Free Solo, including Founders' Members, including paused accounts, including the 90-day post-cancellation grace period. Forever.
+- Free on every plan, including Free Solo, including Founders' Members, including paused accounts, and after cancellation. Forever.
 - Never paywalled, never gated behind a support ticket, never delayed.
 - This is a core principle, not a feature. If a customer is leaving because the service isn't working for them, we will not make leaving harder. We'd rather they leave with everything intact and recommend us to a friend than feel trapped.
 - If asked about lock-in, vendor risk, or "what if I want to leave?": lead with this answer.
