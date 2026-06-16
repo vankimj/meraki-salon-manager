@@ -89,9 +89,16 @@ export default function TicketsQueue() {
                   cursor: 'pointer',
                 }} onClick={() => setSelected({ tenantId: t.tenantId, ticketId: t.id })}>
                   <Td>
-                    <div style={{ fontWeight: 600, color: C.ink }}>{t.subject}</div>
+                    <div style={{ fontWeight: 600, color: C.ink, display: 'flex', alignItems: 'center', gap: 6 }}>
+                      {t.source === 'feedback' && <FeedbackChip feedbackType={t.feedbackType} />}
+                      <span>{t.subject}</span>
+                    </div>
                     <div style={{ fontSize: 11, color: C.mutedSoft, marginTop: 2 }}>
                       from {t.createdBy?.email || 'unknown'}
+                      {t.githubIssueNumber && (
+                        <a href={t.githubIssueUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                           style={{ marginLeft: 6, color: C.plum, fontWeight: 600 }}>#{t.githubIssueNumber}</a>
+                      )}
                       {t.lastReplyFrom === 'owner' && t.repliesCount > 0 && (
                         <span style={{ marginLeft: 6, color: '#1e40af', fontWeight: 600 }}>· owner replied</span>
                       )}
@@ -270,6 +277,13 @@ function TicketDetail({ tenantId, ticketId, onClose }) {
               <span style={{ flex: 1 }} />
               <button onClick={() => setOnly('resolved')} style={btnInk(ticket.status === 'resolved', C.success)}>Mark resolved</button>
               <button onClick={() => setOnly('closed')}   style={btnInk(ticket.status === 'closed',   C.muted)}>Close</button>
+              {ticket.githubIssueUrl && (
+                <a href={ticket.githubIssueUrl} target="_blank" rel="noreferrer" style={{
+                  padding: '5px 11px', fontSize: 11, fontWeight: 600,
+                  background: 'transparent', color: C.ink,
+                  border: `1px solid ${C.rule}`, borderRadius: 6, textDecoration: 'none', fontFamily: 'inherit',
+                }}>GitHub #{ticket.githubIssueNumber} →</a>
+              )}
               <a href={`/t/${tenantId}`} style={{
                 padding: '5px 11px', fontSize: 11, fontWeight: 600,
                 background: 'transparent', color: C.plum,
@@ -442,6 +456,18 @@ function MessageBubble({ from, body, at, authorName }) {
         {isOwner ? (authorName || 'Owner') : 'You'} · {relTime(at)}
       </div>
     </div>
+  );
+}
+
+function FeedbackChip({ feedbackType }) {
+  const isBug = feedbackType === 'bug';
+  return (
+    <span title="Submitted via Report a bug or idea" style={{
+      fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 4, whiteSpace: 'nowrap',
+      background: isBug ? C.dangerSoft : '#faf5ff',
+      color:      isBug ? C.danger     : '#6a4fa0',
+      textTransform: 'uppercase', letterSpacing: '.04em',
+    }}>{isBug ? '🐛 Bug' : '💡 Idea'}</span>
   );
 }
 

@@ -12,6 +12,15 @@ import {
 const _submitTicket    = callFn('submitSupportTicket');
 const _submitReply     = callFn('submitTicketReply');
 const _chatWithAdmin   = callFn('chatWithSalonAdmin');
+const _submitFeedback  = callFn('submitFeedbackTicket');
+
+// "Report a bug or idea" → a tracked support ticket (source:'feedback'). Any
+// signed-in staff member can file; it shows up in the salon's Support list with
+// live status + replies, and reaches the Plume team.
+export async function submitFeedbackTicket({ type, text }) {
+  const r = await _submitFeedback({ tenantId: TENANT_ID, type, text });
+  return r.data;
+}
 
 export async function submitSupportTicket({ subject, body, priority }) {
   let recentLogs = [];

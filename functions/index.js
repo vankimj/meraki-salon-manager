@@ -110,6 +110,14 @@ const stripeWebhookSecret  = defineSecret('STRIPE_WEBHOOK_SECRET');
 // (~7-21 day evidence window) so this MUST be a real, monitored inbox.
 // Defaults to the bootstrap admin documented in CLAUDE.md.
 const platformOwnerEmail   = defineString('PLATFORM_OWNER_EMAIL',    { default: '' });
+// GitHub feedback→Kanban sync. Token is a fine-grained PAT (repo issues +
+// project) stored as a secret; owner/repo/project default to the documented
+// Plume Nexus repo + Roadmap board (CLAUDE.md). The sync is a no-op until the
+// secret is set.
+const githubToken       = defineSecret('GITHUB_TOKEN');
+const githubOwner       = defineString('GITHUB_OWNER',       { default: 'vankimj' });
+const githubRepo        = defineString('GITHUB_REPO',        { default: 'Plumenexus-Salon-Manager' });
+const githubProjectId   = defineString('GITHUB_PROJECT_ID',  { default: 'PVT_kwHOBbclvc4BZ3cw' });
 const gustoClientId     = defineString('GUSTO_CLIENT_ID',     { default: '' });
 const gustoClientSecret = defineString('GUSTO_CLIENT_SECRET', { default: '' });
 const gustoRedirectUri  = defineString('GUSTO_REDIRECT_URI',  { default: '' });
@@ -3162,7 +3170,12 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 // Function declarations are hoisted, so callers above this point (e.g.
 // creditTurnsOnReceipt) resolve them fine at invocation time.
 function rosterDocId(date, locationId) {
-  return (!locationId || locationId === 'main') ? date : `${date}_${locationId}`;
+  // Strip anything but [A-Za-z0-9_-] from the location segment so a stray '/'
+  // (or other path char) on a client-influenced field (e.g. a receipt's
+  // locationId in creditTurnsOnReceipt) can never inject extra Firestore path
+  // segments. Valid location ids are already in this charset → no-op for them.
+  const loc = (typeof locationId === 'string' ? locationId : '').replace(/[^A-Za-z0-9_-]/g, '');
+  return (!loc || loc === 'main') ? date : `${date}_${loc}`;
 }
 // Parse a roster doc id back to {date, locationId}. date is always YYYY-MM-DD
 // (10 chars) so a char-11 underscore unambiguously marks a location suffix even
@@ -15431,6 +15444,119 @@ exports.submitSupportTicket = onCall(
   }
 );
 
+// "Report a bug or idea" → a real support ticket. Distinct from
+// submitSupportTicket in two ways: (1) any tenant STAFF member can file (the
+// feedback button is shown to non-admin roles), not just admins; (2) it carries
+// source:'feedback' + feedbackType so the platform queue, the tenant's "my
+// reports" view, and the GitHub-board sync can treat product feedback specially.
+// Reuses the exact ticket pipeline: platform notify + AI triage + reply thread
+// + status the submitter can see.
+exports.submitFeedbackTicket = onCall(
+  { cors: true, timeoutSeconds: 30, secrets: [twilioToken] },
+  async (request) => {
+    const db = getFirestore();
+    const { tenantId: tid, type, text } = request.data || {};
+    const tenantId = String(tid || '').slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    }
+    await requireTenantStaff(db, tenantId, request);
+
+    const feedbackType = type === 'bug' ? 'bug' : 'idea';
+    const cleanText = safeTicketString(text, 8000).trim();
+    if (cleanText.length < 5) throw new HttpsError('invalid-argument', 'Please add a bit more detail.');
+
+    const email = await callerEmail(request);
+    const authorName = request.auth?.token?.name || '';
+    const brand = await tenantBranding(db, tenantId);
+    const tenantName = brand?.salonName || tenantId;
+
+    const firstLine = cleanText.split('\n')[0].slice(0, 80);
+    const subject = `${feedbackType === 'bug' ? '🐛 Bug' : '💡 Idea'}: ${firstLine}`;
+
+    const now = new Date().toISOString();
+    const ticketRef = db.collection(`tenants/${tenantId}/supportTickets`).doc();
+    await ticketRef.set({
+      subject,
+      initialBody:   cleanText,
+      priority:      'low',
+      status:        'open',
+      source:        'feedback',     // distinguishes product feedback from support
+      feedbackType,                  // 'bug' | 'idea' (user-declared, vs AI category)
+      createdBy:     { email, name: authorName || null },
+      createdAt:     now,
+      updatedAt:     now,
+      lastReplyAt:   now,
+      lastReplyFrom: 'owner',
+      repliesCount:  0,
+      tenantName,
+      salonId:       tenantId,
+      diagnostics:   null,
+    });
+
+    await notifyAdminsOfTicket(db, {
+      tenantId, tenantName, ticketId: ticketRef.id,
+      priority: 'low', subject, body: cleanText,
+      authorEmail: email, authorName, isReply: false, brand,
+    });
+
+    return { ok: true, ticketId: ticketRef.id };
+  }
+);
+
+// Mirror a feedback ticket to a GitHub issue on the Roadmap board + store the
+// link back on the ticket. Fires alongside aiTriageTicket (multiple triggers on
+// one path is fine). No-op unless source==='feedback' AND GITHUB_TOKEN is set.
+exports.syncFeedbackTicketToGitHub = onDocumentCreated(
+  { document: 'tenants/{tenantId}/supportTickets/{ticketId}', secrets: [githubToken] },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const t = snap.data() || {};
+    if (t.source !== 'feedback') return;
+    const token = githubToken.value();
+    if (!token) { console.log('[feedbackGitHub] GITHUB_TOKEN not set; skipping'); return; }
+
+    const { tenantId, ticketId } = event.params;
+    const gh = require('./lib/github');
+    const fb = require('./lib/feedback');
+    try {
+      const issue = await gh.createIssue({
+        token,
+        owner: githubOwner.value(),
+        repo:  githubRepo.value(),
+        title: fb.feedbackIssueTitle({ feedbackType: t.feedbackType, subject: t.subject }),
+        body:  fb.feedbackIssueBody({
+          tenantName: t.tenantName, tenantId,
+          authorEmail: t.createdBy?.email, text: t.initialBody,
+          ticketUrl: `${PLATFORM_ADMIN_DASH_URL}/t/${tenantId}`,
+        }),
+        labels: fb.feedbackIssueLabels(t.feedbackType),
+      });
+
+      let projectItemId = null;
+      try {
+        projectItemId = await gh.addIssueToProject({
+          token, projectId: githubProjectId.value(), contentNodeId: issue.nodeId,
+        });
+      } catch (e) {
+        console.warn('[feedbackGitHub] add-to-board failed (issue still created):', e?.message);
+      }
+
+      await snap.ref.set({
+        githubIssueNumber:   issue.number,
+        githubIssueUrl:      issue.url,
+        githubNodeId:        issue.nodeId,
+        githubProjectItemId: projectItemId,
+        updatedAt:           new Date().toISOString(),
+      }, { merge: true });
+      console.log(`[feedbackGitHub] tenant=${tenantId} ticket=${ticketId} -> issue #${issue.number}`);
+    } catch (e) {
+      console.error(`[feedbackGitHub] tenant=${tenantId} ticket=${ticketId} failed:`, e?.message);
+    }
+  }
+);
+
 exports.submitTicketReply = onCall(
   { cors: true, timeoutSeconds: 30, secrets: [twilioToken] },
   async (request) => {
@@ -15547,7 +15673,7 @@ exports.submitAdminTicketReply = onCall(
   }
 );
 
-exports.updateSupportTicketStatus = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+exports.updateSupportTicketStatus = onCall({ cors: true, timeoutSeconds: 20, secrets: [githubToken] }, async (request) => {
   const email = (request.auth?.token?.email || '').toLowerCase();
   if (!await isPlatformAdmin(email)) throw new HttpsError('permission-denied', 'Platform admin only');
   const { tenantId: tid, ticketId, status } = request.data || {};
@@ -15557,11 +15683,78 @@ exports.updateSupportTicketStatus = onCall({ cors: true, timeoutSeconds: 15 }, a
   if (!['open','pending_owner','resolved','closed'].includes(status)) {
     throw new HttpsError('invalid-argument', 'Invalid status');
   }
-  await getFirestore().doc(`tenants/${tenantId}/supportTickets/${ticketId}`).update({
-    status, updatedAt: new Date().toISOString(),
-  });
+  const ref = getFirestore().doc(`tenants/${tenantId}/supportTickets/${ticketId}`);
+  await ref.update({ status, updatedAt: new Date().toISOString() });
+
+  // If this feedback ticket has a linked GitHub issue, drive the issue state to
+  // match (resolved→closed/completed, closed→closed/not_planned, open→reopen) so
+  // the Roadmap board stays in sync. Best-effort — never fail the status update.
+  const token = githubToken.value();
+  if (token) {
+    try {
+      const snap = await ref.get();
+      const t = snap.exists ? snap.data() : {};
+      if (t.source === 'feedback' && t.githubIssueNumber) {
+        const fb = require('./lib/feedback');
+        const gh = require('./lib/github');
+        const target = fb.issueStateForTicketStatus(status);
+        if (target) {
+          await gh.setIssueState({
+            token, owner: githubOwner.value(), repo: githubRepo.value(),
+            number: t.githubIssueNumber, state: target.state, stateReason: target.stateReason,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('[updateSupportTicketStatus] GitHub issue sync failed:', e?.message);
+    }
+  }
   return { ok: true };
 });
+
+// Reflect GitHub issue state back onto feedback tickets: when an admin closes
+// the issue on the Roadmap board, the salon's ticket flips to resolved/closed so
+// the submitter sees the outcome. Hourly; only feedback tickets still open with a
+// linked issue. Best-effort. (Composite CG index source+status — see indexes.)
+exports.syncFeedbackFromGitHub = onSchedule(
+  { schedule: 'every 60 minutes', secrets: [githubToken], timeoutSeconds: 120 },
+  async () => {
+    const token = githubToken.value();
+    if (!token) { console.log('[syncFeedbackFromGitHub] GITHUB_TOKEN not set; skipping'); return; }
+    const db = getFirestore();
+    const fb = require('./lib/feedback');
+    const gh = require('./lib/github');
+    const owner = githubOwner.value(), repo = githubRepo.value();
+
+    let snap;
+    try {
+      snap = await db.collectionGroup('supportTickets')
+        .where('source', '==', 'feedback')
+        .where('status', 'in', ['open', 'pending_owner'])
+        .limit(200).get();
+    } catch (e) {
+      console.error('[syncFeedbackFromGitHub] query failed (missing composite index?):', e?.message);
+      return;
+    }
+
+    let updated = 0;
+    for (const doc of snap.docs) {
+      const t = doc.data();
+      if (!t.githubIssueNumber) continue;
+      try {
+        const issue = await gh.getIssue({ token, owner, repo, number: t.githubIssueNumber });
+        const next = fb.ticketStatusForIssueState(issue);
+        if (next && next !== t.status) {
+          await doc.ref.update({ status: next, updatedAt: new Date().toISOString() });
+          updated++;
+        }
+      } catch (e) {
+        console.warn(`[syncFeedbackFromGitHub] issue #${t.githubIssueNumber} sync failed:`, e?.message);
+      }
+    }
+    console.log(`[syncFeedbackFromGitHub] checked ${snap.size}, updated ${updated}`);
+  }
+);
 
 // Self-service: a platform admin sets / clears their own SMS contact for
 // high-priority alerts. No "set someone else's phone" — only your own.

@@ -1,24 +1,22 @@
 import { useState } from 'react';
-import { useApp } from '../context/AppContext';
-import { createFeedback } from '../lib/firestore';
+import { submitFeedbackTicket } from '../lib/support';
 
 export default function FeedbackModal({ onClose }) {
-  const { gUser } = useApp();
   const [type,    setType]    = useState('idea');
   const [text,    setText]    = useState('');
   const [sending, setSending] = useState(false);
   const [done,    setDone]    = useState(false);
+  const [error,   setError]   = useState('');
 
   async function handleSubmit() {
     if (!text.trim()) return;
     setSending(true);
+    setError('');
     try {
-      await createFeedback({
-        type,
-        text: text.trim(),
-        submittedBy: { email: gUser?.email || '', name: gUser?.displayName || '' },
-      });
+      await submitFeedbackTicket({ type, text: text.trim() });
       setDone(true);
+    } catch (e) {
+      setError(e?.message || 'Could not send. Please try again.');
     } finally {
       setSending(false);
     }
@@ -41,7 +39,7 @@ export default function FeedbackModal({ onClose }) {
               <div style={{ fontSize: 32, marginBottom: 10 }}>{type === 'bug' ? '🐛' : '💡'}</div>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Thanks!</div>
               <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 18 }}>
-                Your {type === 'bug' ? 'bug report' : 'idea'} has been submitted.
+                Your {type === 'bug' ? 'bug report' : 'idea'} is now a tracked ticket. Watch its status anytime under <strong>Support</strong> — we'll reply there.
               </div>
               <button onClick={onClose} style={btnStyle('#3D95CE')}>Close</button>
             </div>
@@ -75,6 +73,8 @@ export default function FeedbackModal({ onClose }) {
                   style={{ width: '100%', fontFamily: 'inherit', fontSize: 13, border: `1px solid ${text.trim() ? 'var(--pn-border-strong)' : '#fca5a5'}`, borderRadius: 8, padding: '8px 12px', resize: 'vertical', outline: 'none', boxSizing: 'border-box', lineHeight: 1.5 }}
                 />
               </div>
+
+              {error && <div style={{ fontSize: 12, color: 'var(--pn-danger)', marginBottom: 10 }}>{error}</div>}
 
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={onClose} style={btnStyle('var(--pn-surface-alt)', 'var(--pn-text)')}>Cancel</button>
