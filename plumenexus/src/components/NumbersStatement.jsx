@@ -77,9 +77,10 @@ export default function NumbersStatement() {
             color: C.muted,
             fontStyle: 'italic',
           }}>
-            Plume Nexus has been running Meraki Nail Studio since opening
-            day — every release tested against real bookings, real payroll,
-            real walk-ins. No theoretical features. No untested edge cases.
+            Built by a salon owner, for a real salon — not a whiteboard.
+            Meraki Nail Studio, a 10-tech shop in Columbus, Ohio, is the
+            founding customer Plume Nexus is designed around as it prepares
+            to switch off GlossGenius.
           </p>
         </Reveal>
       </div>
