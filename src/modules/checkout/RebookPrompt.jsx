@@ -8,6 +8,7 @@ import {
   fetchServices, fetchEmployees, fetchAppointments,
   fetchAppointmentsByRange, createAppointment,
 } from '../../lib/firestore';
+import { currentLocationId } from '../../lib/locations';
 import {
   cartTotalDuration, isTechFreeAt, getSlots, techCanDo,
 } from '../../lib/booking';
@@ -195,6 +196,7 @@ export default function RebookPrompt({
         source:      'rebook_prompt',
         createdAt:   new Date().toISOString(),
         updatedAt:   new Date().toISOString(),
+        locationId:  currentLocationId(),
       });
       logActivity('rebook_booked', `${clientName} for ${pickedDate} ${minsToStr(pickedSlot)}`);
       setBookedAt({ date: pickedDate, slot: pickedSlot });

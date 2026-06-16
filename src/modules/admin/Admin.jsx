@@ -52,6 +52,8 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [replyToEmail,   setReplyToEmail]  = useState(settings.replyToEmail || '');
   const [ein,            setEin]           = useState(settings.ein || '');
   const [reminderHour,   setReminderHour]  = useState(settings.reminderHour ?? 9);
+  const [reminder2Enabled, setReminder2Enabled] = useState(settings.reminder2Enabled === true);
+  const [reminder2Lead,    setReminder2Lead]    = useState(settings.reminder2LeadHours ?? 2);
   const [birthdayHour,   setBirthdayHour]  = useState(settings.birthdayHour ?? 10);
   const [lapsedHour,     setLapsedHour]    = useState(settings.lapsedHour   ?? 11);
   const [timezone,       setTimezone]      = useState(settings.timezone || 'America/New_York');
@@ -583,6 +585,25 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                   })}
                 </select>
               </div>
+              <div style={{ padding: '12px 16px', borderTop: '1px solid var(--pn-border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, cursor: 'pointer' }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Second reminder (hours before)</div>
+                    <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Also send a same-day reminder a set number of hours before each appointment (in addition to the day-before one).</div>
+                  </div>
+                  <input type="checkbox" checked={reminder2Enabled} onChange={e => setReminder2Enabled(e.target.checked)} />
+                </label>
+                {reminder2Enabled && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginTop: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Send</span>
+                    <select value={reminder2Lead} onChange={e => setReminder2Lead(Number(e.target.value))}
+                      style={{ width: 100, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13, background: 'var(--pn-surface)' }}>
+                      {[1, 2, 3, 4, 6, 8, 12].map(h => <option key={h} value={h}>{h} hour{h > 1 ? 's' : ''}</option>)}
+                    </select>
+                    <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>before</span>
+                  </div>
+                )}
+              </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Birthday campaign hour</div>
@@ -628,7 +649,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </select>
               </div>
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
-                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, replyToEmail: replyToEmail.trim() || null, ein: ein.trim() || null, reminderHour, birthdayHour, lapsedHour, timezone })}>Save</Btn>
+                <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={() => updateSettings({ ...settings, timeoutMin: timeout, adminPin: pin || null, googleReviewUrl: reviewUrl.trim() || null, replyToEmail: replyToEmail.trim() || null, ein: ein.trim() || null, reminderHour, reminder2Enabled, reminder2LeadHours: Number(reminder2Lead), birthdayHour, lapsedHour, timezone })}>Save</Btn>
               </div>
             </Section>
             <ModulesSection nested />

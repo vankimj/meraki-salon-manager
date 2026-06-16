@@ -21,6 +21,7 @@ import {
   fetchAppointments, fetchAppointmentsByRange, createClient,
   saveBookingConfig, fetchTurnRoster, callMyClientRecord,
 } from '../lib/firestore';
+import { subscribeLocations, isMultiLocation, activeLocations, employeeInLocation, resolveLocation } from '../lib/locations';
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { groupByCategory, formatPrice, formatDuration, resolveServicePricing } from '../utils/serviceHelpers';
 import {
@@ -194,6 +195,20 @@ export default function BookingScreen() {
   const [techs,    setTechs]    = useState([]);
   const [theme,    setTheme]    = useState(getTheme('meraki'));
   const [webCfg,   setWebCfg]   = useState(null);
+
+  // Multi-location: the customer picks which site they're booking. For a
+  // single-location tenant this is invisible (effectiveBookingLoc resolves to
+  // the lone location and the chooser screen never renders).
+  const [locState, setLocState] = useState(null);
+  const [bookingLocationId, setBookingLocationId] = useState(null);
+  useEffect(() => subscribeLocations(setLocState), []);
+  const multiLoc   = isMultiLocation(locState);
+  const activeLocs = activeLocations(locState);
+  const effectiveBookingLoc = multiLoc ? bookingLocationId : (activeLocs[0]?.id || null);
+  // Techs scoped to the chosen site (an unassigned tech works everywhere).
+  const locTechs = (multiLoc && bookingLocationId)
+    ? techs.filter(t => employeeInLocation(t, bookingLocationId))
+    : techs;
 
   // auth
   const [gUser,   setGUser]   = useState(undefined); // undefined=loading, null=signed out
@@ -782,7 +797,7 @@ export default function BookingScreen() {
         let requestType = 'specific';
         if (pickedTech === null) {
           requestType = 'auto';
-          const elig = techsForServices(techs, items.map(c => c.service));
+          const elig = techsForServices(locTechs, items.map(c => c.service));
           const free = elig.filter(t => isTechFreeAt(t, startSlot, cartTotalDuration(items, removalDur, t), dayAppts));
           let weekAppts = [];
           if (method === 'leastBusyWeek' || method === 'lowestRevenueWeek') {
@@ -793,7 +808,7 @@ export default function BookingScreen() {
           let turnRoster = null;
           const today = dateStr(todayDate());
           if (method === 'turnQueue' && cartDate === today) {
-            const r = await fetchTurnRoster(today).catch(() => null);
+            const r = await fetchTurnRoster(today, effectiveBookingLoc).catch(() => null);
             turnRoster = (r && r.roster) || [];
           }
           // #222: for SAME-DAY no-preference bookings, prefer techs who are
@@ -837,6 +852,7 @@ export default function BookingScreen() {
           status:      'scheduled',
           notes:       form.notes.trim() || null,
           source:      'online_booking',
+          locationId:  effectiveBookingLoc || undefined,
           createdAt:   new Date().toISOString(),
           updatedAt:   new Date().toISOString(),
         };
@@ -1055,6 +1071,7 @@ export default function BookingScreen() {
           status: 'scheduled',
           notes: form.notes.trim() || null,
           source: 'online_booking',
+          locationId: effectiveBookingLoc || undefined,
           bookingGroupId: groupId,
           groupBooking: true,
           // Exactly one appt is the 'organizer' (guest 0's primary lane) so the
@@ -1093,6 +1110,27 @@ export default function BookingScreen() {
     </FullCenter>
   );
   if (confirmed) return <SuccessScreen appts={confirmed} techs={techs} webCfg={webCfg} />;
+
+  // Multi-location: pick a site before anything else. Single-location tenants
+  // skip this entirely (multiLoc is false → effectiveBookingLoc is the lone site).
+  if (multiLoc && !bookingLocationId) return (
+    <FullCenter>
+      <div style={{ textAlign: 'center', maxWidth: 420, padding: 24 }}>
+        <div style={{ fontSize: 44, marginBottom: 14 }}>📍</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#1a1a1a', marginBottom: 6 }}>Choose a location</div>
+        <div style={{ fontSize: 14, color: '#888', lineHeight: 1.6, marginBottom: 20 }}>Where would you like to book?</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {activeLocs.map(l => (
+            <button key={l.id} onClick={() => setBookingLocationId(l.id)}
+              style={{ padding: '14px 18px', borderRadius: 12, border: '1px solid #ddd', background: '#fff', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>{l.name || l.id}</div>
+              {l.address && <div style={{ fontSize: 13, color: '#888', marginTop: 3 }}>{l.address}</div>}
+            </button>
+          ))}
+        </div>
+      </div>
+    </FullCenter>
+  );
 
   return (
     <div style={{ position: 'fixed', inset: 0, overflowY: 'auto', overflowX: 'hidden', background: '#f5f6f8', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
@@ -1187,7 +1225,7 @@ export default function BookingScreen() {
         )}
         {step === 1 && flow === 'group' && (
           <GroupGuestsStep
-            services={services} allTechs={techs} guests={groupGuests}
+            services={services} allTechs={locTechs} guests={groupGuests}
             guestIdx={groupGuestIdx} setGuestIdx={setGroupGuestIdx}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
             removalPromptMode={flowCfg.removalPromptMode}
@@ -1201,7 +1239,7 @@ export default function BookingScreen() {
         {step === 2 && flow === 'group' && (
           <GroupResultsStep
             results={groupResults} searching={groupSearching} choice={groupChoice}
-            guests={groupGuests} allTechs={techs} form={form} webCfg={webCfg}
+            guests={groupGuests} allTechs={locTechs} form={form} webCfg={webCfg}
             preferredDate={groupPreferredDate} setPreferredDate={setGroupPreferredDate}
             maxLeadDays={Math.max(1, Number(flowCfg?.maxLeadDays) || 30)}
             onSearch={runGroupSearch} onPick={setGroupChoice}
@@ -1222,7 +1260,7 @@ export default function BookingScreen() {
         )}
         {step === 1 && flow === 'tech-first' && (
           <Step1PickStylist
-            techs={techs}
+            techs={locTechs}
             picked={pickedTech}
             onPick={t => { setPickedTech(t); setCartTech(t); }}
             onProceed={() => setStep(2)}
@@ -1231,7 +1269,7 @@ export default function BookingScreen() {
         )}
         {step === 2 && flow === 'time-first' && (
           <Step2PickTech
-            cart={cart} allTechs={techs}
+            cart={cart} allTechs={locTechs}
             cartTech={cartTech} setCartTech={setCartTech}
             cartTechByLane={cartTechByLane} setCartTechByLane={setCartTechByLane}
             onProceed={() => {
@@ -1258,7 +1296,7 @@ export default function BookingScreen() {
         )}
         {step === 3 && (
           <Step3PickSlot
-            cart={cart} cartTech={cartTech} cartTechByLane={cartTechByLane} allTechs={techs}
+            cart={cart} cartTech={cartTech} cartTechByLane={cartTechByLane} allTechs={locTechs}
             cartDate={cartDate} setCartDate={setCartDate}
             cartSlot={cartSlot} setCartSlot={setCartSlot}
             apptsByDate={apptsByDate} ensureApptsForDate={ensureApptsForDate}
@@ -1293,7 +1331,7 @@ export default function BookingScreen() {
         )}
         {step === 5 && flow === 'group' && (
           <GroupConfirmStep
-            guests={groupGuests} allTechs={techs} choice={groupChoice}
+            guests={groupGuests} allTechs={locTechs} choice={groupChoice}
             form={form} submitting={submitting} bookingError={bookingError}
             onEditInfo={() => setStep(4)} onConfirm={handleGroupBook}
             onBack={() => setStep(form.name.trim() && form.phone.trim() ? 2 : 4)}
@@ -1301,7 +1339,7 @@ export default function BookingScreen() {
         )}
         {step === 5 && flow !== 'group' && (
           <Step5Confirm
-            cart={cart} allTechs={techs}
+            cart={cart} allTechs={locTechs}
             cartTech={cartTech} cartTechByLane={cartTechByLane}
             cartDate={cartDate} cartSlot={cartSlot}
             apptsByDate={apptsByDate}

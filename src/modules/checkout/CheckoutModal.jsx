@@ -670,6 +670,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         walkIn:      hasServiceVisit ? isWalkIn : false,
         apptIds:     payment.apptIds,
         payment,
+        locationId:  primaryAppt?.locationId || currentLocationId(),
       }).catch(() => {});
 
       // For rebook: collect each visit-service with its original id + option,

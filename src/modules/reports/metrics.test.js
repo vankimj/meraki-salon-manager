@@ -58,6 +58,14 @@ describe('apptToSyntheticReceipt', () => {
     expect(r.createdAt).toBe('2026-04-30T15:00:00.000Z');
     expect(r.payment._synthetic).toBe(false);
   });
+  it('propagates the appointment locationId so per-location revenue scopes', () => {
+    const r = apptToSyntheticReceipt({ id: 'a1', date: '2026-04-30', services: [], locationId: 'north' });
+    expect(r.locationId).toBe('north');
+  });
+  it('leaves locationId null for an untagged (legacy) appointment', () => {
+    const r = apptToSyntheticReceipt({ id: 'a1', date: '2026-04-30', services: [] });
+    expect(r.locationId).toBe(null);
+  });
 });
 
 describe('buildTransactions', () => {

@@ -4,6 +4,7 @@ import { createAppointment, saveAppointment, fetchClient } from '../../lib/fires
 import { logActivity } from '../../lib/logger';
 import { TENANT_ID } from '../../lib/tenant';
 import { resolveBookedDurations } from '../../utils/serviceHelpers';
+import { currentLocationId } from '../../lib/locations';
 
 // Web Speech API wrapper. Returns null if unsupported (Firefox, etc.).
 function getSpeechRecognition() {
@@ -183,6 +184,7 @@ export default function VoiceAssistant({ clients = [], services = [], techs = []
           updatedAt:       new Date().toISOString(),
           techRequestType: payload.techRequestType || 'scheduler',
           createdBy:       gUser?.email || null,
+          locationId:      currentLocationId(),
         };
         await createAppointment(apptData);
         logActivity('appt_created', `${apptData.clientName || 'Walk-in'} with ${apptData.techName} on ${apptData.date} at ${apptData.startTime} (voice)`);

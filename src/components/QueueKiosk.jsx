@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { fetchServices, fetchEmployees, addToWaitlist, subscribeQueue, fetchWebfrontConfig, kioskWalkinOptions, kioskRegisterClient } from '../lib/firestore';
+import { currentLocationId } from '../lib/locations';
 import { getTheme, detectAutoTheme } from '../lib/themes';
 import { IconChair, IconCalendar, IconCheck, IconArrowLeft, IconClock, IconChevronRight } from './Icons';
 import { formatPrice, formatDuration } from '../utils/serviceHelpers';
@@ -121,7 +122,7 @@ export default function QueueKiosk() {
   useEffect(() => {
     const unsub = subscribeQueue(todayStr(), entries => {
       setQueueCount(entries.filter(e => e.status === 'waiting').length);
-    });
+    }, currentLocationId());
     return unsub;
   }, []);
 
@@ -187,6 +188,7 @@ export default function QueueKiosk() {
     setWorking(true);
     try {
       await addToWaitlist({
+        locationId:  currentLocationId(),
         clientId:    identity?.clientId || '',
         clientName:  identity?.firstName || 'Guest',
         clientPhone: fmtPhoneStored(phone),
@@ -214,6 +216,7 @@ export default function QueueKiosk() {
       // Await the queue write — only claim "checked in" once the front desk
       // actually has the arrival. A failed write routes to the front-desk screen.
       await addToWaitlist({
+        locationId:  currentLocationId(),
         clientId:    res.clientId || '',
         clientName:  res.firstName || 'Guest',
         clientPhone: fmtPhoneStored(arrPhone),

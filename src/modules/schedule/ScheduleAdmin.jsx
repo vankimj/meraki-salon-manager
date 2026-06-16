@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
-import { currentLocationId, isMultiLocation, appointmentInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
+import { currentLocationId, isMultiLocation, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
@@ -383,11 +383,12 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     });
   }, [appts]);
 
-  // Real-time queue listener — always on so badge stays current
+  // Real-time queue listener — always on so badge stays current. Re-subscribes
+  // when the location switches so the queue/badge reflect the current site.
   useEffect(() => {
-    const unsub = subscribeQueue(todayStr(), setQueueEntries);
+    const unsub = subscribeQueue(todayStr(), setQueueEntries, curLoc);
     return unsub;
-  }, []);
+  }, [curLoc]);
 
   // Live time-off subscription so blocked-out periods render on the day grid
   // and slot interactions can respect them.
@@ -397,10 +398,11 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   }, []);
 
   // Real-time turn roster (today only) for the walk-in rotation panel.
+  // Re-subscribes on location switch so each site shows its own rotation.
   useEffect(() => {
-    const unsub = subscribeTurnRoster(todayStr(), setTurnRoster);
+    const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, curLoc);
     return unsub;
-  }, []);
+  }, [curLoc]);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -647,7 +649,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
           const credited = (turnRoster.roster || []).map(r =>
             r.techName === full.techName ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
           );
-          await saveTurnRoster(todayStr(), credited).catch(() => {});
+          await saveTurnRoster(todayStr(), credited, curLoc).catch(() => {});
         }
         await updateWaitlistEntry(pendingSeat.entryId, { status: 'seated' }).catch(() => {});
         logActivity('walkin_seated', `${full.clientName || 'walk-in'} → ${full.techName || '—'}`);
@@ -869,11 +871,17 @@ function openNew(techName, slotMins) {
 
   const dow            = dayOfWeek(date);
   const isStoreClosed  = !!settings.storeHours?.[dow]?.closed;
-  const displayTechs   = isTech && !showAll
+  const displayTechs0  = isTech && !showAll
     ? techs.filter(t => t === myTechName)
     : (focusedTech && techs.includes(focusedTech))
       ? [focusedTech]
       : visibleTechNames ? techs.filter(t => visibleTechNames.includes(t)) : techs;
+  // Multi-location: only show columns for techs who work at the current
+  // location. A tech with no employee record (fallback) or no locationIds
+  // (unassigned) is shown everywhere — employeeInLocation's back-compat rule.
+  const displayTechs   = isMultiLocation(locState)
+    ? displayTechs0.filter(t => { const e = employees.find(emp => emp.name === t); return !e || employeeInLocation(e, curLoc); })
+    : displayTechs0;
 
   const personalView   = isTech && !showAll;
   // Focused (single-tech zoom) mode gets a wide column so overlapping
@@ -1036,20 +1044,20 @@ function openNew(techName, slotMins) {
           allTechs={(employees && employees.length > 0) ? employees : techs.map(n => ({ id: n, name: n }))}
           onAddTech={async tech => {
             const next = [...(turnRoster.roster || []), { techId: tech.id, techName: tech.name, clockInAt: new Date().toISOString(), turnsTaken: 0 }];
-            await saveTurnRoster(todayStr(), next).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), next, curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
             logActivity('turn_clockin', tech.name);
           }}
           onRemoveTech={async techId => {
             const next = (turnRoster.roster || []).filter(r => r.techId !== techId);
-            await saveTurnRoster(todayStr(), next).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), next, curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onResetDay={async () => {
             if (!window.confirm('Clear today\'s turn roster? Everyone will need to clock back in.')) return;
-            await saveTurnRoster(todayStr(), []).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), [], curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onRecount={async () => {
             try {
-              const result = await recomputeTodayTurns(resolveTurnMode(settings), services);
+              const result = await recomputeTodayTurns(resolveTurnMode(settings), services, curLoc);
               const lines = Object.entries(result.byTech).map(([n, c]) => `${n}: ${c}`).join(' · ');
               showToast(`Recounted ${result.recounted} done appts today${lines ? ' — ' + lines : ''}`, 5000);
             } catch (e) {
@@ -1064,7 +1072,7 @@ function openNew(techName, slotMins) {
           services={services}
           turnMode={resolveTurnMode(settings)}
           initialDate={date}
-          fetchDay={async (d) => ({ appointments: await fetchAppointments(d), roster: ((await fetchTurnRoster(d)) || {}).roster || [] })}
+          fetchDay={async (d) => ({ appointments: (await fetchAppointments(d)).filter(a => appointmentInLocation(a, curLoc)), roster: ((await fetchTurnRoster(d, curLoc)) || {}).roster || [] })}
           onClose={() => setShowReplay(false)}
         />
       )}

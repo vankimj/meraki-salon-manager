@@ -8,6 +8,7 @@ import { resizeImg } from '../../utils/helpers';
 import { SEED_EMPLOYEES } from '../../data/seedEmployees';
 import { useApp } from '../../context/AppContext';
 import { logActivity, logError } from '../../lib/logger';
+import { subscribeLocations, isMultiLocation, activeLocations, DEFAULT_LOCATION_ID } from '../../lib/locations';
 import EmptyState from '../../components/EmptyState';
 
 
@@ -261,8 +262,21 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
   const [tab,    setTab]    = useState('profile');
   const [saving, setSaving] = useState(false);
   const [restoreOpen, setRestoreOpen] = useState(false);
+  const [locState, setLocState] = useState(null);
+  useEffect(() => subscribeLocations(setLocState), []);
   const fileRef = useRef(null);
   const isNew   = !emp.id;
+
+  // Toggle a location in the employee's locationIds. Keeps primaryLocationId
+  // valid: clearing the primary's location, or assigning the first one, resets
+  // the primary to a sensible value. Only surfaced when multi-location is on.
+  function toggleEmpLocation(lid) {
+    const cur = Array.isArray(emp.locationIds) ? emp.locationIds : [];
+    const next = cur.includes(lid) ? cur.filter(x => x !== lid) : [...cur, lid];
+    const patch = { locationIds: next };
+    if (!next.includes(emp.primaryLocationId)) patch.primaryLocationId = next[0] || null;
+    onChange(patch);
+  }
 
   // Find the user record linked to this employee (by techName or by email)
   // so the Schedule tab can mirror the per-tech "Can edit / View only"
@@ -369,6 +383,38 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
                 <input type="checkbox" checked={!!emp.extendedHoursAllowed} onChange={e => onChange({ extendedHoursAllowed: e.target.checked })} />
                 Available during appointment-only hours
               </label>
+
+              {/* ── Locations (multi-location tenants only) ──────────────
+                  An employee with NO locations selected works at EVERY
+                  location (back-compat: employeeInLocation treats empty as
+                  all). The "primary" location is where clocking in joins the
+                  walk-in rotation. Hidden entirely for single-location tenants. */}
+              {isMultiLocation(locState) && (
+                <div style={{ marginTop: 18, padding: '12px 14px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>📍 Locations</div>
+                  {activeLocations(locState).map(l => {
+                    const checked = Array.isArray(emp.locationIds) ? emp.locationIds.includes(l.id) : false;
+                    const isPrimary = (emp.primaryLocationId || (emp.locationIds || [])[0]) === l.id;
+                    return (
+                      <div key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                        <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', flex: 1 }}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleEmpLocation(l.id)} />
+                          {l.name || l.id}
+                        </label>
+                        {checked && (
+                          <label style={{ fontSize: 11, color: isPrimary ? '#3D95CE' : 'var(--pn-text-faint)', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                            <input type="radio" name="primaryLoc" checked={isPrimary} onChange={() => onChange({ primaryLocationId: l.id })} />
+                            primary
+                          </label>
+                        )}
+                      </div>
+                    );
+                  })}
+                  <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', marginTop: 4 }}>
+                    No locations selected = works at all locations. Primary = where clock-in joins the walk-in rotation.
+                  </div>
+                </div>
+              )}
 
               {/* ── Notifications (per-tech reminder prefs) ────────────
                   Tenant-wide on/off switch lives in Admin → Settings →

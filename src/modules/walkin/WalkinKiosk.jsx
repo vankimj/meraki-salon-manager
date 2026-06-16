@@ -10,6 +10,7 @@ import { logActivity } from '../../lib/logger';
 import { resolveServicePricing } from '../../utils/serviceHelpers';
 import TurnHelpModal from '../../components/TurnHelpModal';
 import { resolveTurnMode } from '../../lib/turnValue';
+import { currentLocationId, employeeInLocation, appointmentInLocation } from '../../lib/locations';
 
 function todayStr() {
   const d = new Date();
@@ -114,9 +115,12 @@ export default function WalkinKiosk() {
   }
 
   // Live subscriptions
-  useEffect(() => subscribeTurnRoster(today, data => setRoster((data && data.roster) || [])), []);
-  useEffect(() => subscribeQueue(today, setQueue), []);
-  useEffect(() => subscribeToAppointments(today, setAppts), []);
+  // Walk-in kiosk is pinned to ONE site (the device's currentLocationId): its
+  // roster, queue and today's appointments are all scoped to that location so
+  // two sites never share a rotation. Single-location → 'main' → legacy keys.
+  useEffect(() => subscribeTurnRoster(today, data => setRoster((data && data.roster) || []), currentLocationId()), []);
+  useEffect(() => subscribeQueue(today, setQueue, currentLocationId()), []);
+  useEffect(() => subscribeToAppointments(today, list => setAppts(list.filter(a => appointmentInLocation(a, currentLocationId())))), []);
 
   // Audio chime on new walk-in. Tracks queue length and plays a short
   // pleasant tone via Web Audio API when it grows. First mount initializes
@@ -130,7 +134,7 @@ export default function WalkinKiosk() {
     prevQueueLenRef.current = waitingNow;
   }, [queue]);
   useEffect(() => {
-    fetchEmployees().then(emps => setEmployees(emps.filter(e => e.active !== false))).catch(() => {});
+    fetchEmployees().then(emps => setEmployees(emps.filter(e => e.active !== false && employeeInLocation(e, currentLocationId())))).catch(() => {});
     fetchServices().then(svcs => setServices(svcs.filter(s => s.active !== false))).catch(() => {});
     fetchClients().then(setClients).catch(() => {});
   }, []);
@@ -196,7 +200,7 @@ export default function WalkinKiosk() {
           ? (valueMode ? { ...r, serving: true } : { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 })
           : r
       );
-      await saveTurnRoster(today, updated).catch(() => {});
+      await saveTurnRoster(today, updated, currentLocationId()).catch(() => {});
 
       // 2) Create the appointment for "now". Resolve the per-tech duration so a
       // slower tech gets the longer block they configured for this service.
@@ -216,6 +220,7 @@ export default function WalkinKiosk() {
         techRequestType: 'auto',
         _turnCredited: new Date().toISOString(),
         createdBy:  gUser?.email || null,
+        locationId: currentLocationId(),
       });
 
       // 3) Mark the queue entry seated
@@ -601,6 +606,7 @@ function AddWalkinModal({ services, employees, clients, onClose, onAdded }) {
     try {
       await addToWaitlist({
         date: today,
+        locationId:  currentLocationId(),
         clientId:    resolvedId,
         clientName:  resolvedName,
         clientPhone: resolvedPhone,

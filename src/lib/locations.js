@@ -88,6 +88,23 @@ export function appointmentInLocation(appt, locationId) {
   return !loc || loc === locationId;
 }
 
+// Does an employee work at the given location? Same back-compat philosophy as
+// appointmentInLocation: an employee with NO locationIds (legacy / not yet
+// assigned) is treated as working at EVERY location so they never silently
+// vanish from a schedule column or tech picker. Pure.
+export function employeeInLocation(emp, locationId) {
+  const ids = emp?.locationIds;
+  return !Array.isArray(ids) || ids.length === 0 || ids.includes(locationId);
+}
+
+// The turnRoster doc id for a date + location. 'main' (or no location) keeps the
+// LEGACY date-only key so single-location tenants' existing roster docs never
+// move — multi-location ids get a `${date}_${lid}` suffix. Pure; shared by the
+// client (firestore.js) and mirrored server-side in functions/index.js.
+export function rosterDocId(date, locationId) {
+  return (!locationId || locationId === DEFAULT_LOCATION_ID) ? date : `${date}_${locationId}`;
+}
+
 // Per-location tax rate, falling back to the tenant-wide rate when a location
 // has no explicit override. Pure. `fallbackRate` is settings.taxRate.
 export function locationTaxRate(state, locationId, fallbackRate = 0) {
