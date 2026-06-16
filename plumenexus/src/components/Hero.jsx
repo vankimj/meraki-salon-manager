@@ -182,18 +182,18 @@ function HeroVisual() {
       { svc: 'Acrylic · cont.', cont: true },
       null,
       { svc: 'Spa Pedi · cont.', cont: true },
-      { svc: 'Gel Mani',    cli: 'VIP · Isabella R.', dur: '45m', $: '$48', vip: true },
+      { svc: 'Gel Mani',    cli: 'Isabella R.', dur: '45m', $: '$48' },
     ]},
     { t: '11:30', cells: [
       null,
-      { svc: 'Fill + Polish', cli: 'Zoe T.',      dur: '75m', $: '$62' },
+      { svc: 'Fill + Polish', cli: 'Zoe T.',      dur: '75m', $: '$62', drag: true },
       null,
       { svc: 'Gel Mani · cont.', cont: true },
     ]},
   ];
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="pnHeroStage" style={{ position: 'relative' }}>
       <div style={{
         position: 'relative',
         background: '#fff',
@@ -271,12 +271,12 @@ function HeroVisual() {
       </div>
 
       {/* Floating chip — kiosk preview */}
-      <div style={{
+      <div className="pnHeroChip1" style={{
         position: 'absolute', bottom: -28, left: -22,
         background: '#fff', padding: '12px 16px',
         borderRadius: 14, boxShadow: shadow.md, border: `1px solid ${C.rule}`,
         display: 'flex', alignItems: 'center', gap: 10,
-        transform: 'rotate(-3deg)',
+        transform: 'rotate(-3deg)', willChange: 'transform',
       }}>
         <div style={{ width: 36, height: 36, borderRadius: 10, background: grad.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>💳</div>
         <div>
@@ -286,16 +286,45 @@ function HeroVisual() {
       </div>
 
       {/* Floating chip — review */}
-      <div style={{
+      <div className="pnHeroChip2" style={{
         position: 'absolute', top: 12, right: -16,
         background: '#fff', padding: '10px 14px',
         borderRadius: 14, boxShadow: shadow.md, border: `1px solid ${C.rule}`,
         display: 'flex', alignItems: 'center', gap: 8,
-        transform: 'rotate(3deg)',
+        transform: 'rotate(3deg)', willChange: 'transform',
       }}>
         <div style={{ fontSize: 14, color: C.gold }}>★★★★★</div>
         <div style={{ fontSize: 11, color: C.text }}>Review request sent · routed to Google</div>
       </div>
+
+      {/* Looping drag-to-reschedule demo + ambient motion. Honors
+          prefers-reduced-motion: all animation is gated behind the media
+          query, so the static layout above is the reduced-motion fallback. */}
+      <style>{`
+        @media (prefers-reduced-motion: no-preference) {
+          .pnHeroStage { animation: pnHeroIn .8s cubic-bezier(0.16,1,0.3,1) both; }
+          .pnHeroChip1 { animation: pnHeroBob1 6s ease-in-out infinite; }
+          .pnHeroChip2 { animation: pnHeroBob2 7s ease-in-out infinite; }
+          .pnHeroDrag  { animation: pnHeroDrag 9s cubic-bezier(.5,.02,.3,1) infinite; }
+          .pnHeroGhost { animation: pnHeroGhost 9s linear infinite; }
+          .pnHeroToast { animation: pnHeroToast 9s ease infinite; }
+        }
+        @keyframes pnHeroIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes pnHeroBob1 { 0%,100% { transform: rotate(-3deg) translateY(0); } 50% { transform: rotate(-3deg) translateY(-8px); } }
+        @keyframes pnHeroBob2 { 0%,100% { transform: rotate(3deg) translateY(0); } 50% { transform: rotate(3deg) translateY(6px); } }
+        @keyframes pnHeroDrag {
+          0%,14%  { transform: translateY(0) scale(1) rotate(0); }
+          20%     { transform: translateY(0) scale(1.05) rotate(1.2deg); box-shadow: 0 12px 22px rgba(26,20,16,.22); }
+          44%     { transform: translateY(-57px) scale(1.05) rotate(1.2deg); box-shadow: 0 12px 22px rgba(26,20,16,.22); }
+          52%     { transform: translateY(-57px) scale(1) rotate(0); }
+          72%     { transform: translateY(-57px) scale(1) rotate(0); }
+          78%     { transform: translateY(-57px) scale(1.05) rotate(-1.2deg); box-shadow: 0 12px 22px rgba(26,20,16,.22); }
+          96%     { transform: translateY(0) scale(1.05) rotate(-1.2deg); box-shadow: 0 12px 22px rgba(26,20,16,.22); }
+          100%    { transform: translateY(0) scale(1) rotate(0); }
+        }
+        @keyframes pnHeroGhost { 0%,16% { opacity: 0; } 22% { opacity: .9; } 70% { opacity: .9; } 78%,100% { opacity: 0; } }
+        @keyframes pnHeroToast { 0%,46% { opacity: 0; transform: translate(-50%,4px); } 54% { opacity: 1; transform: translate(-50%,0); } 70% { opacity: 1; transform: translate(-50%,0); } 78%,100% { opacity: 0; transform: translate(-50%,-4px); } }
+      `}</style>
     </div>
   );
 }
@@ -335,23 +364,46 @@ function Row({ time, cells, techs }) {
                 opacity: 0.7,
               }} />
             ) : (
-              <div style={{
-                background: techs[i].tint,
-                borderLeft: `3px solid ${techs[i].stroke}`,
-                padding: '6px 8px', borderRadius: 5,
-                fontSize: 10, color: C.text,
-                height: 'calc(100% - 0px)',
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
-                  <div style={{ fontWeight: 700, color: techs[i].stroke, lineHeight: 1.2 }}>{cell.svc}</div>
-                  {cell.$ && <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, whiteSpace: 'nowrap' }}>{cell.$}</div>}
+              <>
+                {cell.drag && (
+                  <div className="pnHeroGhost" aria-hidden="true" style={{
+                    position: 'absolute', inset: 4,
+                    border: `1.5px dashed ${C.rule}`, borderRadius: 5,
+                    opacity: 0, pointerEvents: 'none',
+                  }} />
+                )}
+                <div className={cell.drag ? 'pnHeroDrag' : undefined} style={{
+                  background: techs[i].tint,
+                  borderLeft: `3px solid ${techs[i].stroke}`,
+                  padding: '6px 8px', borderRadius: 5,
+                  fontSize: 10, color: C.text,
+                  height: 'calc(100% - 0px)',
+                  position: 'relative',
+                  zIndex: cell.drag ? 5 : undefined,
+                  willChange: cell.drag ? 'transform' : undefined,
+                  cursor: cell.drag ? 'grab' : undefined,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 4 }}>
+                    <div style={{ fontWeight: 700, color: techs[i].stroke, lineHeight: 1.2 }}>{cell.svc}</div>
+                    {cell.$ && <div style={{ fontSize: 9, color: C.muted, fontWeight: 600, whiteSpace: 'nowrap' }}>{cell.$}</div>}
+                  </div>
+                  <div style={{ color: C.muted, fontSize: 9, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span>{cell.cli}</span>
+                    {cell.dur && <span style={{ color: C.mutedSoft }}>· {cell.dur}</span>}
+                  </div>
                 </div>
-                <div style={{ color: C.muted, fontSize: 9, marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {cell.vip && <span style={{ background: '#d4576b', color: '#fff', padding: '0 4px', borderRadius: 3, fontSize: 8, fontWeight: 700 }}>VIP</span>}
-                  <span>{cell.cli}</span>
-                  {cell.dur && <span style={{ color: C.mutedSoft }}>· {cell.dur}</span>}
-                </div>
-              </div>
+                {cell.drag && (
+                  <div className="pnHeroToast" style={{
+                    position: 'absolute', left: '50%', top: -24,
+                    transform: 'translate(-50%,4px)', opacity: 0,
+                    whiteSpace: 'nowrap', zIndex: 6,
+                    background: C.ink, color: '#fff',
+                    fontSize: 9, fontWeight: 600,
+                    padding: '4px 9px', borderRadius: 999,
+                    boxShadow: '0 8px 18px rgba(26,20,16,.28)',
+                  }}>Moved to 11:00 ✓</div>
+                )}
+              </>
             )
           ) : null}
         </div>
