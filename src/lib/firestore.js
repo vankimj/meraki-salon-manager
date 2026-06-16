@@ -1285,22 +1285,10 @@ export async function savePromoCode(id, data) {
 export const deletePromoCode = (id, deletedBy) => softDelete(doc(PROMO_COL, id), deletedBy);
 export const purgePromoCode  = (id) => deleteDoc(doc(PROMO_COL, id));
 
-// ── Feedback ───────────────────────────────────────────
-const FEEDBACK_COL = tenantCol('feedback');
-
-export async function createFeedback(data) {
-  const ref = await addDoc(FEEDBACK_COL, { ...data, createdAt: new Date().toISOString(), status: 'open' });
-  return ref.id;
-}
-
-export async function fetchFeedback() {
-  const snap = await getDocs(query(FEEDBACK_COL, orderBy('createdAt', 'desc')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-export async function updateFeedbackStatus(id, status) {
-  await updateDoc(doc(FEEDBACK_COL, id), { status, updatedAt: new Date().toISOString() });
-}
+// "Report a bug or idea" now files a support ticket (source:'feedback') via the
+// submitFeedbackTicket Cloud Function — see src/lib/support.js. The old
+// tenant-scoped `feedback` collection + its admin triage tab were retired
+// 2026-06-16 in favor of the unified ticket pipeline.
 
 // ── Performance reviews ────────────────────────────────
 const REVIEWS_COL = tenantCol('reviews');

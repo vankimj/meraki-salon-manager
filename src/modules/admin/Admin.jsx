@@ -7,7 +7,6 @@ import JSZip from 'jszip';
 import { TENANT_ID, currentSubdomain } from '../../lib/tenant';
 import { ALLOWED_EMAILS } from '../../lib/firebase';
 import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
-         fetchFeedback, updateFeedbackStatus,
          fetchNotificationCenter,
          fetchAllForBackup, restoreFromBackup, fetchTenantRecord,
          fetchBookingConfig, saveBookingConfig,
@@ -107,7 +106,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [reqsLoading,  setReqsLoading] = useState(false);
   const [employees,    setEmployees]   = useState([]);
   const [logs,     setLogs]      = useState(null);
-  const [feedback, setFeedback]  = useState(null);
   const [notifs,   setNotifs]    = useState(null);
   const [tab,          setTab]          = useState(initialTab || 'settings');
   const [settingsQuery, setSettingsQuery] = useState('');
@@ -125,7 +123,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
     { id: 'sms',      label: 'SMS'      },
     { id: 'templates', label: 'Messages' },
     { id: 'onboarding', label: 'Onboarding' },
-    { id: 'feedback', label: 'Feedback' },
     // Trash exposes tombstone records (including deleted client names,
     // deletion attribution). Admin-only — scheduler/readonly shouldn't
     // see who deleted what. Server-side rules still enforce per-write,
@@ -155,7 +152,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   useEffect(() => { if (tab === 'settings' && !bookingCfg) fetchBookingConfig().then(setBookingCfg).catch(() => {}); }, [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'webfront' && !webfrontCfg) fetchWebfrontConfig().then(wf => setWebfrontCfg({ tagline: '', about: '', phone: '', address: '', mapsUrl: '', instagram: '', facebook: '', tiktok: '', hours: {}, showBookingCta: true, showServices: true, showTeam: true, hiddenEmployeeIds: [], ...wf })).catch(() => {}); }, [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'logs')     loadLogs(); },     [tab]);
-  useEffect(() => { if (tab === 'feedback') loadFeedback(); }, [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'notifs')   loadNotifs(); },   [tab]); // eslint-disable-line
   useEffect(() => { if (tab === 'reviews')  loadReviews(); },  [tab]); // eslint-disable-line
   useEffect(() => {
@@ -178,23 +174,12 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
     catch { setNotifs([]); }
   }
 
-  async function loadFeedback() {
-    setFeedback(null);
-    try { setFeedback(await fetchFeedback()); }
-    catch { setFeedback([]); }
-  }
-
   async function loadReviews() {
     setReviewsData(null);
     try {
       const [requests, received] = await Promise.all([fetchReviewRequests(), fetchReviewReceived()]);
       setReviewsData({ requests, received });
     } catch { setReviewsData({ requests: [], received: [] }); }
-  }
-
-  async function handleFeedbackStatus(id, status) {
-    await updateFeedbackStatus(id, status);
-    setFeedback(fb => fb.map(f => f.id === id ? { ...f, status } : f));
   }
 
   if (!isAdmin) return null;
@@ -331,10 +316,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
         {tab === 'onboarding' && (
           <OnboardingTab onOpenWizard={onOpenWizard} />
-        )}
-
-        {tab === 'feedback' && (
-          <FeedbackTab items={feedback} onStatus={handleFeedbackStatus} onRefresh={loadFeedback} />
         )}
 
         {tab === 'trash' && (
@@ -1853,146 +1834,6 @@ function OnboardingTab({ onOpenWizard }) {
       <Btn color="#6a4fa0" onClick={() => onOpenWizard?.()}>
         {done ? '🎯 Re-open wizard' : '🎯 Continue setup'}
       </Btn>
-    </div>
-  );
-}
-
-// ── Feedback tab ───────────────────────────────────────
-function FeedbackTab({ items, onStatus, onRefresh }) {
-  const [statusFilter, setStatusFilter] = useState('open');
-  const [typeFilter,   setTypeFilter]   = useState('all');
-  const [sortBy,       setSortBy]       = useState('newest');
-  const [copied,       setCopied]       = useState(false);
-
-  if (!items) return <Empty>Loading…</Empty>;
-
-  const counts = {
-    open:           items.filter(f => f.status === 'open').length,
-    resolved:       items.filter(f => f.status === 'resolved').length,
-    not_considered: items.filter(f => f.status === 'not_considered').length,
-    bugs:           items.filter(f => f.type === 'bug').length,
-    ideas:          items.filter(f => f.type === 'idea').length,
-  };
-
-  const visible = items
-    .filter(f => {
-      const statusOk = statusFilter === 'all' || f.status === statusFilter;
-      const typeOk   = typeFilter   === 'all' || f.type   === typeFilter;
-      return statusOk && typeOk;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'newest') return new Date(b.createdAt) - new Date(a.createdAt);
-      if (sortBy === 'oldest') return new Date(a.createdAt) - new Date(b.createdAt);
-      if (sortBy === 'type')   return (a.type || '').localeCompare(b.type || '');
-      if (sortBy === 'status') return (a.status || '').localeCompare(b.status || '');
-      return 0;
-    });
-
-  function copyAll() {
-    const src = visible.length ? visible : items;
-    const lines = src.map((f, i) => {
-      const date = new Date(f.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-      return `${i + 1}. [${(f.type || '?').toUpperCase()}] [${f.status || 'open'}] ${date}\n   ${f.text}`;
-    });
-    const text = `Meraki Feedback — ${src.length} items\n${'='.repeat(40)}\n\n` + lines.join('\n\n');
-    navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
-  }
-
-  const STATUS_FILTERS = [
-    { id: 'all',            label: `All (${items.length})` },
-    { id: 'open',           label: `Open (${counts.open})` },
-    { id: 'resolved',       label: `Resolved (${counts.resolved})` },
-    { id: 'not_considered', label: `Ignored (${counts.not_considered})` },
-  ];
-  const TYPE_FILTERS = [
-    { id: 'all',  label: 'All types' },
-    { id: 'bug',  label: `🐛 Bugs (${counts.bugs})` },
-    { id: 'idea', label: `💡 Ideas (${counts.ideas})` },
-  ];
-
-  const pillStyle = (active) => ({
-    fontSize: 11, padding: '4px 11px', borderRadius: 20, cursor: 'pointer', fontFamily: 'inherit',
-    border: `1px solid ${active ? '#3D95CE' : 'var(--pn-border)'}`,
-    background: active ? 'var(--pn-info-bg)' : 'var(--pn-surface)',
-    color: active ? 'var(--pn-info)' : 'var(--pn-text-muted)',
-    fontWeight: active ? 600 : 400,
-  });
-
-  return (
-    <div>
-      {/* Toolbar */}
-      <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 12, marginBottom: 12, overflow: 'hidden' }}>
-        {/* Status filter */}
-        <div style={{ display: 'flex', gap: 6, padding: '10px 14px', borderBottom: '1px solid var(--pn-border)', flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Status</span>
-          {STATUS_FILTERS.map(f => (
-            <button key={f.id} onClick={() => setStatusFilter(f.id)} style={pillStyle(statusFilter === f.id)}>{f.label}</button>
-          ))}
-        </div>
-        {/* Type filter + sort + actions */}
-        <div style={{ display: 'flex', gap: 6, padding: '10px 14px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginRight: 4 }}>Type</span>
-          {TYPE_FILTERS.map(f => (
-            <button key={f.id} onClick={() => setTypeFilter(f.id)} style={pillStyle(typeFilter === f.id)}>{f.label}</button>
-          ))}
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-            <select value={sortBy} onChange={e => setSortBy(e.target.value)}
-              style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--pn-border)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', fontFamily: 'inherit', cursor: 'pointer' }}>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="type">By type</option>
-              <option value="status">By status</option>
-            </select>
-            <Btn onClick={copyAll} color={copied ? '#10B981' : undefined}>{copied ? '✓ Copied!' : '📋 Copy'}</Btn>
-            <Btn onClick={onRefresh}>Refresh</Btn>
-          </div>
-        </div>
-      </div>
-
-      {visible.length === 0
-        ? <Empty>{items.length === 0 ? 'No feedback yet.' : 'No items match current filters.'}</Empty>
-        : visible.map(f => <FeedbackCard key={f.id} item={f} onStatus={onStatus} />)
-      }
-    </div>
-  );
-}
-
-function FeedbackCard({ item, onStatus }) {
-  const isOpen = item.status === 'open';
-  const date = new Date(item.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const typeBg    = item.type === 'bug' ? 'var(--pn-danger-bg)' : 'var(--pn-warning-bg)';
-  const typeFg    = item.type === 'bug' ? 'var(--pn-danger)'   : 'var(--pn-warning)';
-  const statusColors = { open: '#3B82F6', resolved: '#10B981', not_considered: '#9ca3af' };
-  const statusLabel  = { open: 'Open', resolved: 'Resolved', not_considered: 'Not considered' };
-
-  return (
-    <div style={{ background: 'var(--pn-surface)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 10, background: typeBg, color: typeFg, textTransform: 'uppercase', letterSpacing: '.04em' }}>
-          {item.type === 'bug' ? '🐛 Bug' : '💡 Idea'}
-        </span>
-        <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 10, background: `${statusColors[item.status]}22`, color: statusColors[item.status], textTransform: 'uppercase', letterSpacing: '.04em' }}>
-          {statusLabel[item.status] || item.status}
-        </span>
-        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 'auto' }}>{date}</span>
-      </div>
-
-      <p style={{ fontSize: 13, color: 'var(--pn-text)', lineHeight: 1.55, margin: '0 0 8px' }}>{item.text}</p>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', flex: 1 }}>
-          {item.submittedBy?.name || item.submittedBy?.email || 'Anonymous'}
-        </span>
-        {item.status !== 'resolved' && (
-          <Btn color="#10B981" onClick={() => onStatus(item.id, 'resolved')}>✓ Resolve</Btn>
-        )}
-        {item.status !== 'not_considered' && (
-          <Btn color="#9ca3af" onClick={() => onStatus(item.id, 'not_considered')}>✕ Ignore</Btn>
-        )}
-        {item.status !== 'open' && (
-          <Btn onClick={() => onStatus(item.id, 'open')}>↩ Reopen</Btn>
-        )}
-      </div>
     </div>
   );
 }
