@@ -3,7 +3,43 @@ import {
   DEFAULT_REMINDER_HOUR, DEFAULT_TIMEZONE,
   currentHourInTimezone, resolveReminderHour, resolveTimezone, shouldSendRemindersNow,
   shouldFireDayHourNow, apptInstantUnix, apptExpUnix,
+  dueForLeadReminder, resolveReminder2Lead,
 } from './tenantTime.js';
+
+describe('dueForLeadReminder', () => {
+  const tz = 'America/New_York';
+  const appt = { date: '2026-06-01', startTime: '15:00' };
+  const startMs = apptInstantUnix(appt, tz) * 1000;
+  it('fires when the appt is within the [lead, lead+1h) window', () => {
+    // 2.5h before a 2h-lead reminder → 2.5 ∈ [2,3) → due
+    expect(dueForLeadReminder(appt, tz, startMs - 2.5 * 3600 * 1000, 2)).toBe(true);
+  });
+  it('does NOT fire before the window opens', () => {
+    // 1.5h before with a 2h lead → too late this run (will have fired earlier)
+    expect(dueForLeadReminder(appt, tz, startMs - 1.5 * 3600 * 1000, 2)).toBe(false);
+  });
+  it('does NOT fire after the window closes', () => {
+    // 3.5h before with a 2h lead → window not open yet
+    expect(dueForLeadReminder(appt, tz, startMs - 3.5 * 3600 * 1000, 2)).toBe(false);
+  });
+  it('does not fire for past appts or bad input', () => {
+    expect(dueForLeadReminder(appt, tz, startMs + 3600 * 1000, 2)).toBe(false); // appt already passed
+    expect(dueForLeadReminder({}, tz, startMs, 2)).toBe(false);                 // malformed
+    expect(dueForLeadReminder(appt, tz, startMs, 0)).toBe(false);              // non-positive lead
+  });
+});
+
+describe('resolveReminder2Lead', () => {
+  it('defaults to 2h when unset/garbage', () => {
+    expect(resolveReminder2Lead({})).toBe(2);
+    expect(resolveReminder2Lead({ reminder2LeadHours: 'x' })).toBe(2);
+  });
+  it('honors a valid value and clamps to 1..72', () => {
+    expect(resolveReminder2Lead({ reminder2LeadHours: 4 })).toBe(4);
+    expect(resolveReminder2Lead({ reminder2LeadHours: 0 })).toBe(1);
+    expect(resolveReminder2Lead({ reminder2LeadHours: 999 })).toBe(72);
+  });
+});
 
 describe('currentHourInTimezone', () => {
   // 2026-06-01T13:30:00Z = 09:30 Eastern (EDT, UTC-4)

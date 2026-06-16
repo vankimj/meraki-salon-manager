@@ -109,6 +109,29 @@ function apptInstantUnix(appt, tz) {
   return Math.floor((asUtcMs - offsetMs) / 1000);
 }
 
+// True when an appointment's start instant falls in the [leadHours, leadHours+1)
+// window ahead of `nowMs` — i.e. it's time to send the "N hours before" reminder
+// on this hourly cron run. The 1-hour window matches the hourly cron so each
+// appt fires exactly once. Returns false for a malformed appt or a non-positive
+// lead. `nowMs` is Date.now()-style ms; `leadHours` is the configured lead.
+function dueForLeadReminder(appt, tz, nowMs, leadHours) {
+  const lead = Number(leadHours);
+  if (!Number.isFinite(lead) || lead <= 0) return false;
+  const startSec = apptInstantUnix(appt, tz);
+  if (startSec == null) return false;
+  const deltaMs = startSec * 1000 - nowMs;
+  const lo = lead * 3600 * 1000;
+  return deltaMs >= lo && deltaMs < lo + 3600 * 1000;
+}
+
+// Clamp a configured second-reminder lead (hours before). 1–72h; anything
+// missing/garbage falls back to 2h. Keeps the cron from sending at absurd leads.
+function resolveReminder2Lead(settings) {
+  const n = Number(settings?.reminder2LeadHours);
+  if (!Number.isFinite(n)) return 2;
+  return Math.min(72, Math.max(1, Math.floor(n)));
+}
+
 // Token expiry: 24h after the appointment's real start instant in `tz`.
 // Covers late confirms and absorbs DST ambiguity. Falls back to 0 (treated
 // as expired) on a malformed appt.
@@ -151,6 +174,8 @@ module.exports = {
   resolveTimezone,
   shouldSendRemindersNow,
   shouldFireDayHourNow,
+  dueForLeadReminder,
+  resolveReminder2Lead,
   apptInstantUnix,
   apptExpUnix,
   tenantTimezone,

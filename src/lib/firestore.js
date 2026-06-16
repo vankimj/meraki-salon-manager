@@ -7,6 +7,7 @@ import {
 import { db, callFn } from './firebase';
 import { TENANT_ID } from './tenant';
 import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
+import { rosterDocId, appointmentInLocation } from './locations';
 
 // ── Tenant root helpers ────────────────────────────────
 // Document refs need even-segment paths; 'data' is the sub-collection that provides the 4th segment.
@@ -555,20 +556,24 @@ export async function clearServices() {
 // at read time so the "next up" tech is always the one with the fewest turns.
 const TURN_ROSTER_COL = tenantCol('turnRoster');
 
-export async function fetchTurnRoster(date) {
-  const snap = await getDoc(doc(TURN_ROSTER_COL, date));
+// All three accept an optional `locationId`. Multi-location tenants pass the
+// current site so each location keeps its own daily rotation; omitting it (or
+// passing 'main') uses the LEGACY date-only doc key — so single-location
+// tenants' existing roster docs and every un-updated caller are unchanged.
+export async function fetchTurnRoster(date, locationId) {
+  const snap = await getDoc(doc(TURN_ROSTER_COL, rosterDocId(date, locationId)));
   if (!snap.exists()) return { date, roster: [] };
   return { date, ...snap.data() };
 }
 
-export function subscribeTurnRoster(date, cb) {
-  return onSnapshot(doc(TURN_ROSTER_COL, date), s => {
+export function subscribeTurnRoster(date, cb, locationId) {
+  return onSnapshot(doc(TURN_ROSTER_COL, rosterDocId(date, locationId)), s => {
     cb(s.exists() ? { date, ...s.data() } : { date, roster: [] });
   });
 }
 
-export async function saveTurnRoster(date, roster) {
-  await setDoc(doc(TURN_ROSTER_COL, date), { date, roster, updatedAt: new Date().toISOString() });
+export async function saveTurnRoster(date, roster, locationId) {
+  await setDoc(doc(TURN_ROSTER_COL, rosterDocId(date, locationId)), { date, roster, updatedAt: new Date().toISOString() });
 }
 
 // ── Attendance / time cards (per-day doc) ──────────────
@@ -3105,10 +3110,18 @@ export async function fetchTodayQueue() {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export function subscribeQueue(date, callback) {
+// Optional `locationId` scopes the queue to one site. Filtering is client-side
+// (the daily list is tiny) so no composite index is needed; an untagged entry
+// matches every location via appointmentInLocation's back-compat rule. Omitting
+// locationId returns the whole day's queue (single-location behaviour).
+export function subscribeQueue(date, callback, locationId) {
   return onSnapshot(
     query(WAITLIST_COL, where('date', '==', date), orderBy('addedAt', 'asc')),
-    snap => callback(snap.docs.map(d => ({ id: d.id, ...d.data() })))
+    snap => {
+      let rows = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (locationId) rows = rows.filter(e => appointmentInLocation(e, locationId));
+      callback(rows);
+    }
   );
 }
 

@@ -58,6 +58,7 @@ export function apptToSyntheticReceipt(a) {
   return {
     id:           `appt:${a.id}`,
     apptIds:      [a.id],
+    locationId:   a.locationId || null,
     clientId:     a.clientId || null,
     clientName:   a.clientName || '',
     clientEmail:  a.clientEmail || null,

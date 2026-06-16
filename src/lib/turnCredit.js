@@ -1,5 +1,6 @@
 import { fetchTurnRoster, saveTurnRoster, fetchAppointments, saveAppointment } from './firestore';
 import { buildTurnValueMap, turnValueForLineName } from './turnValue';
+import { appointmentInLocation } from './locations';
 
 function todayStr() {
   const d = new Date();
@@ -28,15 +29,18 @@ export async function applyTurnCredit(appt, turnMode = 'count') {
   if (appt._turnCredited) return false;       // already credited — no-op
 
   const today = todayStr();
+  // Credit the roster of the appointment's OWN location (multi-site). Untagged
+  // appts (appt.locationId undefined) fall through to the legacy date-only key.
+  const locationId = appt.locationId || undefined;
   try {
-    const data = await fetchTurnRoster(today);
+    const data = await fetchTurnRoster(today, locationId);
     const roster = (data && data.roster) || [];
     const idx = roster.findIndex(r => r.techName === appt.techName);
     if (idx < 0) return false;                 // tech not in today's roster
     const next = roster.map((r, i) =>
       i === idx ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
     );
-    await saveTurnRoster(today, next);
+    await saveTurnRoster(today, next, locationId);
     // Stamp the appt so we don't credit again.
     if (appt.id) {
       const { id, createdAt, ...rest } = appt;
@@ -53,14 +57,16 @@ export async function applyTurnCredit(appt, turnMode = 'count') {
 // non-cancelled, non-no_show appointment that's marked done today. Used
 // to catch up after the rule changed (e.g., past checkouts that didn't
 // credit) or to manually fix drift. Returns { recounted, byTech }.
-export async function recomputeTodayTurns(turnMode = 'count', services = []) {
+export async function recomputeTodayTurns(turnMode = 'count', services = [], locationId) {
   const today = todayStr();
-  const data = await fetchTurnRoster(today);
+  const data = await fetchTurnRoster(today, locationId);
   const roster = (data && data.roster) || [];
   if (roster.length === 0) return { recounted: 0, byTech: {} };
 
   const todayAppts = await fetchAppointments(today);
-  const counted = todayAppts.filter(a => a.status === 'done');
+  // Only count appts at this roster's location (multi-site). Untagged appts
+  // match every location, so single-location behaviour is unchanged.
+  const counted = todayAppts.filter(a => a.status === 'done' && (!locationId || appointmentInLocation(a, locationId)));
   // 'value' mode sums each done appt's per-service turn value; 'count' = +1 each.
   const valueMap = turnMode === 'value' ? buildTurnValueMap(services) : null;
   const byTech = {};
@@ -72,6 +78,6 @@ export async function recomputeTodayTurns(turnMode = 'count', services = []) {
     byTech[a.techName] = (byTech[a.techName] || 0) + add;
   });
   const next = roster.map(r => ({ ...r, turnsTaken: byTech[r.techName] || 0 }));
-  await saveTurnRoster(today, next);
+  await saveTurnRoster(today, next, locationId);
   return { recounted: counted.length, byTech };
 }

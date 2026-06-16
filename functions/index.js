@@ -149,6 +149,7 @@ const {
   shouldSendRemindersNow, shouldFireDayHourNow, currentHourInTimezone,
   apptInstantUnix, apptExpUnix, tenantTimezone, resolveTimezone,
   resolveBirthdayHour, resolveLapsedHour,
+  dueForLeadReminder, resolveReminder2Lead,
 } = require('./lib/tenantTime');
 const { mintShortLink, lookupShortLink } = require('./lib/apptShortLink');
 const {
@@ -361,6 +362,43 @@ async function tenantBranding(db, tenantId) {
   }
   _brandCache.set(tenantId, brand);
   return brand;
+}
+
+// Cached read of a tenant's locations doc (5-min TTL), for per-branch reminder/
+// confirmation addressing. Returns { list, defaultLocationId } or null.
+const _locsCache = new Map();
+const _LOCS_TTL_MS = 5 * 60 * 1000;
+async function loadTenantLocations(db, tenantId) {
+  const hit = _locsCache.get(tenantId);
+  if (hit && Date.now() - hit.at < _LOCS_TTL_MS) return hit.data;
+  let data = null;
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/locations`).get();
+    if (snap.exists) data = snap.data();
+  } catch (e) {
+    console.warn(`[loadTenantLocations] ${tenantId} read failed:`, e?.message);
+  }
+  _locsCache.set(tenantId, { data, at: Date.now() });
+  return data;
+}
+
+// Override a base brand's address with a specific location's, so a multi-site
+// reminder/confirmation names the BOOKED branch instead of the generic tenant
+// address. Pure. Returns baseBrand unchanged when there's no location id, no
+// match, or the branch has no name/address — so single-location tenants and
+// untagged appts are unaffected. Mirrors tenantBranding's address collapsing.
+function brandForLocation(baseBrand, locationsData, locationId) {
+  if (!locationId || !locationsData || !Array.isArray(locationsData.list)) return baseBrand;
+  const loc = locationsData.list.find(l => l && l.id === locationId);
+  if (!loc) return baseBrand;
+  const addr = String(loc.address || '').split('\n').map(s => s.trim()).filter(Boolean).join(', ').slice(0, 200);
+  const label = [loc.name, addr].filter(Boolean).join(', ').slice(0, 220);
+  if (!label) return baseBrand;
+  return {
+    ...baseBrand,
+    addressLine: label,
+    footerLine:  `${baseBrand.salonName} · ${label}`,
+  };
 }
 
 // ── Email-sending abstraction ───────────────
@@ -1097,10 +1135,11 @@ exports.creditTurnsOnReceipt = onDocumentCreated(
       });
       if (!Object.keys(byTech).length) return;
 
-      // Credit TODAY's roster (rotation is per-day; checkout happens today).
+      // Credit TODAY's roster (rotation is per-day; checkout happens today) at
+      // the RECEIPT's location (multi-site). Untagged receipts → legacy key.
       const tz    = await tenantTimezone(db, tenantId);
       const today = new Date().toLocaleDateString('en-CA', { timeZone: tz }); // YYYY-MM-DD
-      const rosterRef = db.doc(`tenants/${tenantId}/turnRoster/${today}`);
+      const rosterRef = db.doc(`tenants/${tenantId}/turnRoster/${rosterDocId(today, r.locationId)}`);
 
       // Transaction: re-check the stamp (idempotent across retries) + credit + clear serving atomically.
       await db.runTransaction(async tx => {
@@ -1909,9 +1948,18 @@ exports.findOrCreateClient = onCall({ cors: true }, async (request) => {
 // payment totals / arbitrary status). clientId is forced to the server-validated
 // value; source / status / IP / geo / deposit / timestamps are set by the caller
 // of this helper, not trusted from the client.
-function sanitizeBookingAppt(a, { clientId }) {
+function sanitizeBookingAppt(a, { clientId, locationIds, defaultLocationId }) {
   const str = (v, n) => (v == null ? null : String(v).slice(0, n));
   const num = (v, d = 0) => { const x = Number(v); return Number.isFinite(x) ? x : d; };
+  // Clamp the client-supplied locationId to a KNOWN tenant location id (it
+  // scopes revenue + schedules, so an arbitrary string is never trusted). An
+  // unknown/stale id falls back to the tenant default. When the tenant has no
+  // locations configured, default to 'main' so single-site behaviour is
+  // unchanged and consistent with the client's DEFAULT_LOCATION_ID.
+  const validLocs = Array.isArray(locationIds) ? locationIds : [];
+  const reqLoc = a && a.locationId ? str(a.locationId, 64) : null;
+  const locFallback = defaultLocationId || 'main';
+  const locationId = (reqLoc && validLocs.includes(reqLoc)) ? reqLoc : locFallback;
   const out = {
     date:            /^\d{4}-\d{2}-\d{2}$/.test(String(a && a.date)) ? String(a.date) : null,
     startTime:       /^\d{2}:\d{2}$/.test(String(a && a.startTime)) ? String(a.startTime) : null,
@@ -1944,6 +1992,7 @@ function sanitizeBookingAppt(a, { clientId }) {
   if (a && a.groupBooking)   out.groupBooking = true;
   if (a && a.groupRole)      out.groupRole = str(a.groupRole, 16);
   if (a && a.groupSize)      out.groupSize = Math.max(1, Math.min(6, Number(a.groupSize) || 1));
+  if (locationId)            out.locationId = locationId;
   return out;
 }
 
@@ -2027,6 +2076,18 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const settingsSnap = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
   const settings = settingsSnap && settingsSnap.exists ? settingsSnap.data() : {};
   const bcp = resolveBookingCardPolicy(settings);
+
+  // Valid (active) location ids for this tenant — used to clamp the client's
+  // locationId in sanitizeBookingAppt so an online booking is tagged to a real
+  // site. Empty list / no doc → single-site, falls back to 'main'.
+  const locsSnap = await db.doc(`tenants/${tenantId}/data/locations`).get().catch(() => null);
+  const locsData = locsSnap && locsSnap.exists ? locsSnap.data() : null;
+  const locationIds = Array.isArray(locsData?.list)
+    ? locsData.list.filter(l => l && l.active !== false).map(l => l.id).filter(Boolean)
+    : [];
+  const defaultLocationId = locsData?.defaultLocationId
+    || (locationIds.includes('main') ? 'main' : locationIds[0])
+    || 'main';
   const isGroupSubmit = apptsIn.some(a => a && a.groupBooking);
   const cxEnabled = settings?.cancellationPolicy?.enabled === true;
   const overrideMatters = clientData && (clientData.cardRequiredOverride === true || clientData.cardRequiredOverride === false);
@@ -2061,7 +2122,7 @@ exports.submitOnlineBooking = onCall({ cors: true }, async (request) => {
   const ids = [];
   apptsIn.forEach((a, i) => {
     const ref = db.collection(`tenants/${tenantId}/appointments`).doc();
-    const clean = sanitizeBookingAppt(a, { clientId });
+    const clean = sanitizeBookingAppt(a, { clientId, locationIds, defaultLocationId });
     clean.source    = 'online_booking';
     clean.status    = 'scheduled';
     clean.bookingIp = meta.ip || '';
@@ -3095,17 +3156,42 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
 // Date for the attendance doc is computed in the tenant's tz so a 11:50 PM
 // clock-out doesn't roll into tomorrow's doc when interpreted as UTC.
 
-// Keep the walk-in turn rotation (tenants/{tid}/turnRoster/{date}) in sync with
-// the time clock so a tech who clocks in via the kiosk automatically joins the
-// walk-in rotation (and leaves it when they clock out) — without anyone having
-// to also add them by hand on Schedule → Turn rotation. Only 'in'/'out' change
-// roster membership; breaks keep the tech in rotation (still on shift). A
-// re-entry within the same day preserves the existing turnsTaken so they don't
-// jump the queue. Best-effort and run post-commit — a roster hiccup must never
-// fail or roll back the clock event the tech already saw confirmed.
-async function syncTurnRosterForClock(db, tenantId, date, kind, { employeeId, name, at }) {
+// Roster doc id <-> {date, locationId}. Mirrors src/lib/locations.js rosterDocId:
+// 'main' / no location keeps the LEGACY YYYY-MM-DD key (so single-location
+// tenants are unchanged); other locations get a `${date}_${locationId}` suffix.
+// Function declarations are hoisted, so callers above this point (e.g.
+// creditTurnsOnReceipt) resolve them fine at invocation time.
+function rosterDocId(date, locationId) {
+  return (!locationId || locationId === 'main') ? date : `${date}_${locationId}`;
+}
+// Parse a roster doc id back to {date, locationId}. date is always YYYY-MM-DD
+// (10 chars) so a char-11 underscore unambiguously marks a location suffix even
+// if the location id itself contains underscores.
+function parseRosterDocId(id) {
+  if (typeof id === 'string' && id.length > 10 && id[10] === '_') {
+    return { date: id.slice(0, 10), locationId: id.slice(11) };
+  }
+  return { date: id, locationId: null };
+}
+// Which location's rotation a tech joins on clock-in: their primary location,
+// else their first assigned location, else 'main' (legacy / single-site).
+function empPrimaryLocation(emp) {
+  return (emp && emp.primaryLocationId)
+    || (emp && Array.isArray(emp.locationIds) && emp.locationIds[0])
+    || 'main';
+}
+
+// Keep the walk-in turn rotation (tenants/{tid}/turnRoster/{rosterDocId}) in
+// sync with the time clock so a tech who clocks in via the kiosk automatically
+// joins the walk-in rotation OF THEIR LOCATION (and leaves it when they clock
+// out) — without anyone having to also add them by hand on Schedule → Turn
+// rotation. Only 'in'/'out' change roster membership; breaks keep the tech in
+// rotation (still on shift). A re-entry within the same day preserves the
+// existing turnsTaken so they don't jump the queue. Best-effort and run
+// post-commit — a roster hiccup must never fail or roll back the clock event.
+async function syncTurnRosterForClock(db, tenantId, date, kind, { employeeId, name, at, locationId }) {
   if (kind !== 'in' && kind !== 'out') return;
-  const ref = db.doc(`tenants/${tenantId}/turnRoster/${date}`);
+  const ref = db.doc(`tenants/${tenantId}/turnRoster/${rosterDocId(date, locationId)}`);
   await db.runTransaction(async (tx) => {
     const snap   = await tx.get(ref);
     const roster = (snap.exists && Array.isArray(snap.data().roster)) ? snap.data().roster.slice() : [];
@@ -3222,7 +3308,7 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
 
   // Join/leave the walk-in turn rotation to match the clock state (best-effort).
   if (!result?.duplicate) {
-    syncTurnRosterForClock(db, tenantId, date, kind, { employeeId, name: emp.name || '', at })
+    syncTurnRosterForClock(db, tenantId, date, kind, { employeeId, name: emp.name || '', at, locationId: empPrimaryLocation(emp) })
       .catch(e => console.warn('[clockEvent] turnRoster sync failed:', e?.message));
   }
 
@@ -4355,7 +4441,10 @@ exports.notifyRotationChange = onDocumentWritten(
   `tenants/{tenantId}/turnRoster/{date}`,
   async (event) => {
     const tenantId = event.params?.tenantId;
-    const date = event.params?.date;
+    // The doc id may be a multi-location key (`${date}_${locationId}`). Parse it
+    // so the time-window check, waitlist query and waiting count all use the real
+    // date + scope to this location's queue.
+    const { date, locationId } = parseRosterDocId(event.params?.date);
     // Only recent rosters (the kiosk only writes today's). ±36h covers any
     // tenant timezone while skipping historical/backfill edits.
     const utcToday = new Date().toISOString().slice(0, 10);
@@ -4375,7 +4464,13 @@ exports.notifyRotationChange = onDocumentWritten(
     const seniority = !!(setSnap.exists && setSnap.data().walkinSeniorityOrder);
     const empById = {};
     empSnap.docs.forEach(d => { empById[d.id] = d.data() || {}; });
-    const waiting = waitSnap.docs.filter(d => (d.data()?.status) !== 'seated').length;
+    // Count only this location's waiting guests (untagged entries match any
+    // location via the same back-compat rule used everywhere else).
+    const waiting = waitSnap.docs.filter(d => {
+      const w = d.data() || {};
+      if (w.status === 'seated') return false;
+      return !locationId || !w.locationId || w.locationId === locationId;
+    }).length;
 
     const sortRoster = (roster) => [...roster].sort((a, b) =>
       (a.away ? 1 : 0) - (b.away ? 1 : 0)
@@ -4777,6 +4872,52 @@ exports.sendMeetingReminders = onSchedule(
   }
 );
 
+// Send ONE appointment reminder (email + optional SMS) to a client, honoring
+// their comm preferences. Shared by the day-before cron AND the configurable
+// "N hours before" cron. `brand` should already be location-resolved by the
+// caller (brandForLocation) so multi-site reminders name the booked branch.
+// Returns { emailOk, smsOk, skipped }; the CALLER writes the dedupe flag so each
+// pass owns its own field (reminderSent vs reminder2Sent).
+async function deliverApptReminder(db, tenantId, appt, client, brand, fromAddr) {
+  const email = client?.email?.trim();
+  const phone = client?.phone || '';
+  const wantsEmail = email && client?.commPreferences?.appointmentEmail !== false;
+  const wantsSms   = phone && client?.commPreferences?.appointmentSms !== false && client?.smsOptIn !== false;
+  if (!wantsEmail && !wantsSms) return { emailOk: false, smsOk: false, skipped: true };
+
+  const firstName = (client?.name || 'there').split(' ')[0];
+  let emailOk = false, smsOk = false;
+  const tenantTz   = await tenantTimezone(db, tenantId);
+  const manageLink = await apptManageUrl(db, tenantId, appt.id, apptExpUnix(appt, tenantTz));
+
+  if (wantsEmail) {
+    try {
+      const replyTo = await tenantReplyTo(db, tenantId);
+      const { subject: remSubject, html: remHtml } = await buildReminderHtml(db, tenantId, appt, client, brand, manageLink, replyTo);
+      const { error } = await sendEmail({ from: fromAddr, to: email, replyTo: replyTo || undefined, subject: remSubject, html: remHtml, tenantId });
+      if (error) throw new Error(error.message || JSON.stringify(error));
+      emailOk = true;
+    } catch (e) {
+      console.error(`[Reminders] EMAIL failed for ${client?.name} (tenant=${tenantId}):`, e.message);
+    }
+  }
+
+  if (wantsSms) {
+    const techShort  = appt.techRequestType === 'auto' ? ' with a member of our team'
+      : (appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '');
+    const confirmSuffix = manageLink ? ` Confirm/reschedule: ${manageLink}` : '';
+    const { body: smsBody } = await renderTemplate(db, tenantId, 'reminder_sms', {
+      clientName: firstName, salonName: brand.salonName,
+      timeShort: fmtTime(appt.startTime), techSuffix: techShort, confirmSuffix,
+    });
+    const r = await sendSms({ to: phone, body: smsBody, tenantId, kind: 'transactional', clientId: appt.clientId });
+    if (r.ok) smsOk = true;
+    else if (r.error && !r.optedOut && !r.quotaBlocked) console.warn(`[Reminders] SMS failed for ${client?.name} (tenant=${tenantId}):`, r.error);
+  }
+
+  return { emailOk, smsOk, skipped: false };
+}
+
 exports.sendDailyReminders = onSchedule(
   // Hourly so each tenant can pick their own reminder hour + timezone in
   // settings. Most tenants will mismatch and skip in <50ms via the per-tenant
@@ -4804,6 +4945,7 @@ exports.sendDailyReminders = onSchedule(
       if (!shouldSendRemindersNow(now, settings)) return;
       const fromAddr = await tenantFromAddress(db, tenantId);
       const brand    = await tenantBranding(db, tenantId);
+      const locsData = await loadTenantLocations(db, tenantId);
 
       const apptSnap = await db
         .collection(`tenants/${tenantId}/appointments`)
@@ -4826,73 +4968,13 @@ exports.sendDailyReminders = onSchedule(
       let sent = 0, smsSent = 0, skipped = 0;
       await Promise.all(toRemind.map(async appt => {
         const client = clientMap[appt.clientId];
-        const email  = client?.email?.trim();
-        const phone  = client?.phone || '';
-        const wantsEmail = email && client?.commPreferences?.appointmentEmail !== false;
-        const wantsSms   = phone && client?.commPreferences?.appointmentSms !== false && client?.smsOptIn !== false;
-        if (!wantsEmail && !wantsSms) { skipped++; return; }
-
-        const firstName = (client?.name || 'there').split(' ')[0];
-        let emailOk = false;
-        let smsOk   = false;
-
-        // Resolve once: tenantBaseUrl and tenantTimezone are both cached so
-        // subsequent appts in this loop hit memory.
-        const tenantTz   = await tenantTimezone(db, tenantId);
-        const manageLink = await apptManageUrl(db, tenantId, appt.id, apptExpUnix(appt, tenantTz));
-
-        if (wantsEmail) {
-          try {
-            const replyTo = await tenantReplyTo(db, tenantId);
-            const { subject: remSubject, html: remHtml } = await buildReminderHtml(db, tenantId, appt, client, brand, manageLink, replyTo);
-            const { error } = await sendEmail({
-              from:    fromAddr,
-              to:      email,
-              replyTo: replyTo || undefined,
-              subject: remSubject,
-              html:    remHtml,
-              tenantId,
-            });
-            if (error) throw new Error(error.message || JSON.stringify(error));
-            emailOk = true;
-            sent++;
-          } catch (e) {
-            console.error(`[Reminders] EMAIL failed for ${client?.name} (tenant=${tenantId}):`, e.message);
-          }
-        }
-
-        if (wantsSms) {
-          // Lead with salonName so clients recognize the sender on the shared
-          // platform TFN (multiple tenants share one number; the body is the
-          // only signal of identity). Embed the tokenized manage URL — clients
-          // tap it to confirm/reschedule/cancel in the browser. Replaces the
-          // legacy "Reply C to confirm" reply-handler path, which can't
-          // disambiguate tenant on a shared inbound number.
-          const techShort  = appt.techRequestType === 'auto' ? ' with a member of our team'
-            : (appt.techName && appt.techName !== 'TBD' ? ` with ${appt.techName}` : '');
-          const confirmSuffix = manageLink ? ` Confirm/reschedule: ${manageLink}` : '';
-          const { body: smsBody } = await renderTemplate(db, tenantId, 'reminder_sms', {
-            clientName: firstName, salonName: brand.salonName,
-            timeShort: fmtTime(appt.startTime), techSuffix: techShort, confirmSuffix,
-          });
-          const r = await sendSms({
-            to: phone,
-            body: smsBody,
-            tenantId,
-            kind: 'transactional',
-            clientId: appt.clientId,
-          });
-          if (r.ok) {
-            smsOk = true;
-            smsSent++;
-          } else if (r.error && !r.optedOut && !r.quotaBlocked) {
-            console.warn(`[Reminders] SMS failed for ${client?.name} (tenant=${tenantId}):`, r.error);
-          }
-        }
-
-        // Mark reminderSent only if at least one channel succeeded so a
-        // total failure doesn't get swept under "already reminded" and
-        // miss tomorrow's retry on the next cron run.
+        // Per-branch address (multi-site): name the booked location, not the
+        // generic tenant address. No-op for single-location / untagged appts.
+        const apptBrand = brandForLocation(brand, locsData, appt.locationId);
+        const { emailOk, smsOk, skipped: sk } = await deliverApptReminder(db, tenantId, appt, client, apptBrand, fromAddr);
+        if (sk) { skipped++; return; }
+        if (emailOk) sent++;
+        if (smsOk)   smsSent++;
         if (emailOk || smsOk) {
           try {
             await db.doc(`tenants/${tenantId}/appointments/${appt.id}`).update({
@@ -4907,6 +4989,78 @@ exports.sendDailyReminders = onSchedule(
       }));
 
       console.log(`[Reminders] tenant=${tenantId} email=${sent} sms=${smsSent} skipped=${skipped} (date=${tomorrow})`);
+    });
+  }
+);
+
+// ── Second appointment reminder ("N hours before") ─────
+// Optional same-day reminder gated by settings.reminder2Enabled. Runs hourly
+// and sends to any scheduled appt whose start is within the configured lead
+// window (reminder2LeadHours, default 2h) that hasn't been second-reminded yet.
+// Independent dedupe flag (reminder2Sent) so it never collides with the
+// day-before reminder. Reuses deliverApptReminder + per-branch addressing.
+exports.sendUpcomingReminders = onSchedule(
+  { schedule: 'every 1 hours', timeZone: 'America/New_York' },
+  async () => {
+    const apiKey = awsAccessKey.value();
+    if (!apiKey) { console.warn('[Reminders2] AWS SES not configured — skipping'); return; }
+    const now = new Date();
+
+    await forEachActiveTenant('Reminders2', async (tenantId) => {
+      const db = getFirestore();
+      const sSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const settings = sSnap.exists ? sSnap.data() : {};
+      if (settings.reminder2Enabled !== true) return;
+      if (!isCustomerNotifEnabled(settings, 'appointment_reminder')) return;
+
+      const tz   = resolveTimezone(settings);
+      const lead = resolveReminder2Lead(settings);
+      // Candidate dates: tenant-local today + tomorrow, so a late-night run can
+      // still catch an early-morning appt. dueForLeadReminder does the precise
+      // per-appt window check against the real start instant.
+      const todayLocal = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+      const tomLocal   = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(now.getTime() + 24 * 3600 * 1000));
+      const dates = [...new Set([todayLocal, tomLocal])];
+
+      const apptSnap = await db
+        .collection(`tenants/${tenantId}/appointments`)
+        .where('date', 'in', dates)
+        .get();
+
+      const nowMs = now.getTime();
+      const toRemind = apptSnap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .filter(a => a.status === 'scheduled' && a.clientId && !a.reminder2Sent && dueForLeadReminder(a, tz, nowMs, lead));
+
+      if (!toRemind.length) return;
+
+      const fromAddr = await tenantFromAddress(db, tenantId);
+      const brand    = await tenantBranding(db, tenantId);
+      const locsData = await loadTenantLocations(db, tenantId);
+      const clientIds = [...new Set(toRemind.map(a => a.clientId))];
+      const clientSnaps = await Promise.all(clientIds.map(id => db.doc(`tenants/${tenantId}/clients/${id}`).get()));
+      const clientMap = {};
+      clientSnaps.forEach(snap => { if (snap.exists) clientMap[snap.id] = snap.data(); });
+
+      let sent = 0, smsSent = 0;
+      await Promise.all(toRemind.map(async appt => {
+        const client = clientMap[appt.clientId];
+        const apptBrand = brandForLocation(brand, locsData, appt.locationId);
+        const { emailOk, smsOk } = await deliverApptReminder(db, tenantId, appt, client, apptBrand, fromAddr);
+        if (emailOk) sent++;
+        if (smsOk)   smsSent++;
+        if (emailOk || smsOk) {
+          try {
+            await db.doc(`tenants/${tenantId}/appointments/${appt.id}`).update({
+              reminder2Sent:    true,
+              reminder2SentAt:  new Date().toISOString(),
+              reminder2Channels: [emailOk && 'email', smsOk && 'sms'].filter(Boolean),
+            });
+          } catch (e) { console.warn('[Reminders2] mark-sent write failed:', e?.message); }
+        }
+      }));
+
+      console.log(`[Reminders2] tenant=${tenantId} email=${sent} sms=${smsSent} lead=${lead}h`);
     });
   }
 );
@@ -5275,9 +5429,13 @@ exports.sendBookingConfirmation = onDocumentCreated(
       : (appt.techName && appt.techName !== 'TBD' ? appt.techName : 'an available stylist');
     const tenantTz   = await tenantTimezone(db, tenantId);
     const manageLink = await apptManageUrl(db, tenantId, event.params?.apptId || snap.id, apptExpUnix(appt, tenantTz));
-    const locationLine = brand.addressLine
-      ? `${brand.salonName}, ${brand.addressLine}`
-      : brand.salonName;
+    // Per-branch address (multi-site): the confirmation names the BOOKED
+    // location, not the generic tenant address. No-op for single-location /
+    // untagged appts (brandForLocation returns the base brand unchanged).
+    const apptBrand = brandForLocation(brand, await loadTenantLocations(db, tenantId), appt.locationId);
+    const locationLine = apptBrand.addressLine
+      ? `${apptBrand.salonName}, ${apptBrand.addressLine}`
+      : apptBrand.salonName;
 
     const replyTo = await tenantReplyTo(db, tenantId);
     const detailsCard = `<div style="background:#f8f9fa;border-radius:8px;padding:14px 16px;border:1px solid #e8e8e8;">

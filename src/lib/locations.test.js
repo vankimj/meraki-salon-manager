@@ -6,7 +6,7 @@ vi.mock('./tenant', () => ({ TENANT_ID: 'test-tenant' }));
 import {
   isMultiLocation, activeLocations, resolveLocation, locationTaxRate,
   setCurrentLocationId, subscribeCurrentLocation, DEFAULT_LOCATION_ID,
-  appointmentInLocation,
+  appointmentInLocation, employeeInLocation, rosterDocId,
 } from './locations';
 
 const single = { list: [{ id: 'main', name: 'Main', isPrimary: true, active: true, taxRate: 7.5 }], defaultLocationId: 'main' };
@@ -60,6 +60,29 @@ describe('appointmentInLocation', () => {
     expect(appointmentInLocation({}, 'main')).toBe(true);
     expect(appointmentInLocation({ locationId: '' }, 'north')).toBe(true);
     expect(appointmentInLocation(null, 'main')).toBe(true);
+  });
+});
+
+describe('employeeInLocation', () => {
+  it('matches when the location is in the employee list', () =>
+    expect(employeeInLocation({ locationIds: ['main', 'north'] }, 'north')).toBe(true));
+  it('excludes when not in the list', () =>
+    expect(employeeInLocation({ locationIds: ['main'] }, 'north')).toBe(false));
+  it('unassigned employee (no/empty locationIds) works EVERYWHERE', () => {
+    expect(employeeInLocation({}, 'main')).toBe(true);
+    expect(employeeInLocation({ locationIds: [] }, 'north')).toBe(true);
+    expect(employeeInLocation(null, 'main')).toBe(true);
+  });
+});
+
+describe('rosterDocId', () => {
+  it('keeps the LEGACY date-only key for main / no location', () => {
+    expect(rosterDocId('2026-06-15')).toBe('2026-06-15');
+    expect(rosterDocId('2026-06-15', 'main')).toBe('2026-06-15');
+    expect(rosterDocId('2026-06-15', DEFAULT_LOCATION_ID)).toBe('2026-06-15');
+  });
+  it('suffixes other locations so each site has its own daily rotation', () => {
+    expect(rosterDocId('2026-06-15', 'north')).toBe('2026-06-15_north');
   });
 });
 
