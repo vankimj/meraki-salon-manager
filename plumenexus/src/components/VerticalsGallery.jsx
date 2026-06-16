@@ -10,10 +10,12 @@ import EditorialPhoto from './EditorialPhoto.jsx';
 // has a pool; one is picked at random on mount, so the set re-rolls on refresh.
 const VERTICALS = [
   { label: 'Barbershops',        alt: 'A barber mid-cut',            pool: ['/photos/v-barber.jpg', '/photos/v-barber-2.jpg', '/photos/v-barber-3.jpg'] },
-  { label: 'Med spas',           alt: 'A relaxing facial treatment', pool: ['/photos/v-medspa.jpg'] },
   { label: 'Hair salons',        alt: 'A salon cut in progress',     pool: ['/photos/v-hair.jpg', '/photos/v-hair-2.jpg'] },
-  { label: 'Pet grooming',       alt: 'Grooming day',                pool: ['/photos/v-petgroom.jpg', '/photos/v-petgroom-2.jpg', '/photos/v-petgroom-3.jpg'] },
+  { label: 'Nail studios',       alt: 'A manicure in progress',      pool: ['/photos/v-nail.jpg'] },
+  { label: 'Med spas',           alt: 'A relaxing facial treatment', pool: ['/photos/v-medspa.jpg'] },
   { label: 'Wellness & massage', alt: 'A therapeutic massage',       pool: ['/photos/v-massage.jpg', '/photos/v-massage-2.jpg', '/photos/v-massage-3.jpg'] },
+  { label: 'Tattoo parlors',     alt: 'A tattoo in progress',        pool: ['/photos/v-tattoo.jpg'] },
+  { label: 'Pet grooming',       alt: 'Grooming day',                pool: ['/photos/v-petgroom.jpg', '/photos/v-petgroom-2.jpg', '/photos/v-petgroom-3.jpg'] },
 ];
 
 export default function VerticalsGallery() {
@@ -40,8 +42,8 @@ export default function VerticalsGallery() {
             <span style={{ fontStyle: 'italic', color: C.muted }}> Not last.</span>
           </h2>
           <p style={{ marginTop: 20, maxWidth: 620, fontSize: 17, lineHeight: 1.65, color: C.muted }}>
-            The same scheduling, POS, two-way messaging, and AI-powered reporting that run a
-            10-tech nail studio run a barbershop, a med spa, a grooming salon, or a wellness
+            The same scheduling, POS, two-way messaging, and AI-powered reporting built for a
+            10-tech nail studio fit a barbershop, a med spa, a grooming salon, or a wellness
             studio just as well.
           </p>
         </header>
