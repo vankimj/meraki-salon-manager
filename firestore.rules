@@ -367,7 +367,12 @@ service cloud.firestore {
       // enforced at the rules layer (admin SDK Cloud Functions could
       // add it later if abuse appears).
       match /data/locations {
-        allow read:  if isTenantAdmin(tenantId);
+        // Public read: the location list (name/address/phone/hours/taxRate) is
+        // public-facing info — same class as data/webfront (read: if true) — and
+        // the unauthenticated booking page needs it to render the location
+        // chooser for multi-site tenants. No PII/secrets in this doc. Write
+        // stays admin-only.
+        allow read:  if true;
         allow write: if isTenantAdmin(tenantId)
           && request.resource.data.keys().hasAny(['list', 'defaultLocationId'])
           && (
