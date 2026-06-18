@@ -15346,6 +15346,7 @@ async function notifyAdminsOfTicket(db, { tenantId, tenantName, ticketId, priori
   const fromAddr = brand?.fromAddress || 'Plume Nexus Support <support@send.plumenexus.com>';
   const replyTo  = authorEmail || undefined;
 
+  // Email every platform admin.
   for (const a of admins) {
     try {
       await sendEmail({
@@ -15359,30 +15360,43 @@ async function notifyAdminsOfTicket(db, { tenantId, tenantName, ticketId, priori
     } catch (e) {
       console.error(`[notifyAdminsOfTicket] email to ${a.email} failed:`, e?.message);
     }
+  }
 
-    if (priority === 'high' && a.phone && a.smsEnabled) {
-      const smsBody = `Plume Nexus support [${priority}] · ${tenantName}: ${subject.slice(0, 80)}\nOpen: ${PLATFORM_ADMIN_DASH_URL}/t/${tenantId}`;
-      try {
-        // Skip the per-tenant quota + opt-in checks (this is an internal
-        // platform alert, not a customer message) by calling Twilio
-        // directly with the platform's own from-number. Use the
-        // bootstrap TWILIO_FROM since per-tenant TFNs would carry the
-        // wrong sender identity.
-        const sid       = twilioSid.value();
-        const tokenV    = twilioToken.value();
-        const apiKeySid = twilioApiKeySid.value();
-        const from      = twilioFrom.value();
-        if (!sid || !tokenV || !from) {
-          console.warn('[notifyAdminsOfTicket] Twilio not configured; skipping SMS');
-          continue;
-        }
+  // SMS — high-priority (outage / business-impacting) tickets only. Recipients =
+  // per-admin opted-in phones ∪ the configurable platform alert list
+  // (platform/admins.alertPhones, managed in the platform-admin Support tab),
+  // deduped so a number listed twice gets one text.
+  if (priority === 'high') {
+    const targets = new Set();
+    for (const a of admins) if (a.phone && a.smsEnabled) targets.add(a.phone);
+    try {
+      const ps = await db.doc('platform/admins').get();
+      const list = ps.exists ? (ps.data().alertPhones || []) : [];
+      for (const p of list) {
+        const t = String(p || '').trim();
+        if (/^\+[1-9]\d{6,14}$/.test(t)) targets.add(t);
+      }
+    } catch (e) {
+      console.warn('[notifyAdminsOfTicket] alertPhones read failed:', e?.message);
+    }
+    if (targets.size) {
+      // Internal platform alert — call Twilio directly with the platform's own
+      // from-number (skip per-tenant quota / opt-in, which are for customer SMS).
+      const sid       = twilioSid.value();
+      const tokenV    = twilioToken.value();
+      const apiKeySid = twilioApiKeySid.value();
+      const from      = twilioFrom.value();
+      if (!sid || !tokenV || !from) {
+        console.warn('[notifyAdminsOfTicket] Twilio not configured; skipping SMS');
+      } else {
         const twilioSDK = require('twilio');
-        const tw = apiKeySid
-          ? twilioSDK(apiKeySid, tokenV, { accountSid: sid })
-          : twilioSDK(sid, tokenV);
-        await tw.messages.create({ from, to: a.phone, body: smsBody });
-      } catch (e) {
-        console.error(`[notifyAdminsOfTicket] SMS to ${a.email}@${a.phone} failed:`, e?.message);
+        const tw = apiKeySid ? twilioSDK(apiKeySid, tokenV, { accountSid: sid }) : twilioSDK(sid, tokenV);
+        const smsBody = `🚨 URGENT · Plume Nexus\n${tenantName}: ${subject.slice(0, 90)}\nfrom ${authorEmail || 'salon'}\nopen: ${PLATFORM_ADMIN_DASH_URL}/t/${tenantId}`;
+        for (const to of targets) {
+          try { await tw.messages.create({ from, to, body: smsBody }); }
+          catch (e) { console.error(`[notifyAdminsOfTicket] SMS to ${to} failed:`, e?.message); }
+        }
+        console.log(`[notifyAdminsOfTicket] urgent SMS sent to ${targets.size} number(s) for ${tenantId}/${ticketId}`);
       }
     }
   }
@@ -15782,6 +15796,29 @@ exports.setMyPlatformAdminAlertContact = onCall({ cors: true, timeoutSeconds: 15
   }
   await ref.set({ phones, smsEnabled: smsEnabledMap }, { merge: true });
   return { ok: true, phone: phones[email] || null, smsEnabled: !!smsEnabledMap[email] };
+});
+
+// Configurable list of phone numbers that receive urgent / outage ticket SMS
+// (stored at platform/admins.alertPhones; consumed by notifyAdminsOfTicket).
+// Managed from the platform-admin Support tab. Replaces the whole list each
+// call (dedup + E.164-validated). Platform-admin only.
+exports.setPlatformAlertPhones = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const email = (request.auth?.token?.email || '').toLowerCase();
+  if (!await isPlatformAdmin(email)) throw new HttpsError('permission-denied', 'Platform admin only');
+  const raw = Array.isArray(request.data?.phones) ? request.data.phones : [];
+  const seen = new Set();
+  const phones = [];
+  for (const p of raw) {
+    const t = String(p || '').trim();
+    if (!t) continue;
+    if (!/^\+[1-9]\d{6,14}$/.test(t)) {
+      throw new HttpsError('invalid-argument', `"${t}" isn't valid — use E.164, e.g. +16145551234`);
+    }
+    if (!seen.has(t)) { seen.add(t); phones.push(t); }
+  }
+  if (phones.length > 20) throw new HttpsError('invalid-argument', 'Max 20 alert numbers');
+  await getFirestore().doc('platform/admins').set({ alertPhones: phones }, { merge: true });
+  return { ok: true, phones };
 });
 
 // Platform-admin read for the cross-tenant ticket queue. Returns
