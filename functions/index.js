@@ -12951,6 +12951,38 @@ exports.markOnboardingPhase = onCall({ cors: true, timeoutSeconds: 30 }, async (
 
   await ref.set(updates, { merge: true });
 
+  // Vertical / tenant-template side-effects (welcome phase only). Only a
+  // DIVERGENT vertical (non-nail, e.g. personal training) gets a settings
+  // `vertical` field + seeded membership-plan templates. Nail / legacy / not-
+  // yet-wired industries (nails/hair/both/other) clamp to 'nails' and are left
+  // with NO vertical field, so their behavior — including the client-side nail
+  // auto-seed — is byte-identical to before. Seeding is idempotent.
+  if (phaseKey === 'welcome') {
+    try {
+      const { membershipPlansForVertical, normalizeVertical } = require('./lib/verticals');
+      const vertical = normalizeVertical(updates.industry);
+      if (vertical !== 'nails') {
+        await db.doc(`tenants/${tenantId}/data/settings`)
+          .set({ vertical, updatedAt: now }, { merge: true });
+
+        const planTemplates = membershipPlansForVertical(vertical);
+        if (planTemplates.length) {
+          const plansCol = db.collection(`tenants/${tenantId}/membershipPlans`);
+          const existing = await plansCol.limit(1).get();
+          if (existing.empty) {
+            const batch = db.batch();
+            for (const p of planTemplates) {
+              batch.set(plansCol.doc(), { ...p, active: p.active !== false, createdAt: now, updatedAt: now });
+            }
+            await batch.commit();
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[markOnboardingPhase] vertical template seed failed:', e?.message);
+    }
+  }
+
   // Mirror completion to data/webfront — public-readable. SalonWebfront
   // checks this flag and redirects to /manage when false, so an
   // unfinished tenant never shows a half-built public page. Set once;

@@ -9,9 +9,11 @@ import EmptyState from '../../components/EmptyState';
 import CoachMark from '../../components/CoachMark';
 import { resizeImg } from '../../utils/helpers';
 import { useApp } from '../../context/AppContext';
+import { resolveVertical } from '../../data/verticals';
+import { fetchOnboarding } from '../../lib/onboarding';
 
 export default function ServicesAdmin() {
-  const { isTech, showToast } = useApp();
+  const { isTech, showToast, settings } = useApp();
   const [services,   setServices]   = useState([]);
   const [loading,    setLoading]    = useState(true);
   const [editing,    setEditing]    = useState(null);
@@ -38,7 +40,7 @@ export default function ServicesAdmin() {
     setLoading(true);
     try {
       let svcs = await fetchServices();
-      if (!svcs.length) {
+      if (!svcs.length && await shouldAutoSeedNailMenu()) {
         await seedAll();
         svcs = await fetchServices();
       }
@@ -47,6 +49,23 @@ export default function ServicesAdmin() {
       console.error('[ServicesAdmin] load failed:', e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // The legacy nail starter menu must seed ONLY for nail / legacy tenants. A
+  // vertical that brings its own service template (e.g. personal training) must
+  // never get it. The onboarding wizard writes settings.vertical server-side
+  // without refreshing in-memory state, so when the in-memory value is absent we
+  // re-read the onboarding industry fresh to avoid the stale-undefined window.
+  // resolveVertical(...).serviceTemplateId === 'nail-salon' covers nails + every
+  // not-yet-registered industry (hair/both/other), keeping their behavior intact.
+  async function shouldAutoSeedNailMenu() {
+    const isNailSeed = (key) => resolveVertical(key).serviceTemplateId === 'nail-salon';
+    if (settings?.vertical) return isNailSeed(settings.vertical);
+    try {
+      return isNailSeed((await fetchOnboarding())?.industry);
+    } catch {
+      return true;
     }
   }
 

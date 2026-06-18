@@ -3,7 +3,7 @@
 // State lives at tenants/{tid}/data/onboarding:
 //   {
 //     branch:        'migrate' | 'fresh',
-//     industry:      'nails' | 'hair' | 'both' | 'other',
+//     industry:      'nails' | 'hair' | 'personalTraining' | 'both' | 'other',
 //     phases: {
 //       welcome:    { status: 'pending'|'done'|'skipped', updatedAt },
 //       profile:    { status, updatedAt },

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
 import { createService } from '../../lib/firestore';
-import { SERVICE_TEMPLATES } from '../../data/serviceTemplates';
+import { SERVICE_TEMPLATES, TEMPLATE_DEFAULTS } from '../../data/serviceTemplates';
 import { logActivity, logError } from '../../lib/logger';
 import CsvImportSection from '../../components/CsvImportSection';
 
@@ -12,6 +12,20 @@ import CsvImportSection from '../../components/CsvImportSection';
 //     hand-import for you" while we build per-source parsers.
 //   - fresh:   services-template picker (Nail Salon has full polish;
 //     Hair / Both / None / Other are placeholders or skip-this-step).
+
+// Service templates wired end-to-end (seedable + supported at onboarding).
+// The other entries in SERVICE_TEMPLATES are real starter menus but still
+// marked "SOON" until validated per-vertical.
+const SUPPORTED_TEMPLATES = ['nail-salon', 'personal-training'];
+
+// Default the services template from the industry chosen in Phase 0, falling
+// back to the nail menu (the historical default) for industries whose template
+// isn't fully wired yet.
+const INDUSTRY_TEMPLATE = { nails: 'nail-salon', personalTraining: 'personal-training' };
+function defaultTemplateFor(industry) {
+  const t = INDUSTRY_TEMPLATE[industry];
+  return SUPPORTED_TEMPLATES.includes(t) ? t : 'nail-salon';
+}
 
 const SOURCES = [
   { id: 'glossgenius', label: 'GlossGenius', supported: true, icon: '💎',
@@ -146,14 +160,14 @@ function SourceCard({ src, selected, onClick }) {
 function FreshPath({ onboarding, onAdvance, saving }) {
   const { showToast } = useApp();
   const stored = onboarding?.phases?.import || {};
-  const [templateId, setTemplateId] = useState(stored.templateId || 'nail-salon');
+  const [templateId, setTemplateId] = useState(stored.templateId || defaultTemplateFor(onboarding?.industry));
   const [seedSample, setSeedSample] = useState(Boolean(stored.seedSample));
   const [importing,  setImporting]  = useState(false);
   const [importedCount, setImportedCount] = useState(stored.servicesImported || 0);
   const [error, setError] = useState('');
 
   const TEMPLATE_OPTIONS = [
-    ...SERVICE_TEMPLATES.map(t => ({ id: t.id, label: t.label, desc: t.description, icon: t.icon, supported: t.id === 'nail-salon' })),
+    ...SERVICE_TEMPLATES.map(t => ({ id: t.id, label: t.label, desc: t.description, icon: t.icon, supported: SUPPORTED_TEMPLATES.includes(t.id) })),
     { id: 'none', label: 'None — I\'ll add my own', desc: 'Start with an empty service menu', icon: '✍️', supported: true },
   ];
 
@@ -169,6 +183,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
     try {
       for (const svc of tpl.services) {
         await createService({
+          ...TEMPLATE_DEFAULTS,
           ...svc,
           active: svc.active !== false,
           updatedAt: new Date().toISOString(),
@@ -210,7 +225,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
           ))}
         </div>
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8 }}>
-          Hair / Brows / Massage templates are placeholders today — you'll likely want to customize heavily.
+          Nail-salon and personal-training templates seed a full starter menu; other industries seed a basic list you'll likely customize.
         </div>
       </Section>
 

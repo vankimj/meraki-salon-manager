@@ -114,6 +114,21 @@ export const SERVICE_TEMPLATES = [
       { category: 'IV',          name: 'B12 Shot',               basePrice: 35,  duration: 15, priceFrom: false, sortOrder: 1 },
     ],
   },
+  {
+    id: 'personal-training',
+    label: 'Personal Training',
+    description: '1-on-1 sessions, assessments, small-group training, session packs',
+    icon: '🏋️',
+    services: [
+      { category: 'Sessions',   name: '60-min 1-on-1',      basePrice: 75,  duration: 60, priceFrom: false, sortOrder: 0 },
+      { category: 'Sessions',   name: '30-min 1-on-1',      basePrice: 45,  duration: 30, priceFrom: false, sortOrder: 1 },
+      { category: 'Sessions',   name: 'Small-Group (2-4)',  basePrice: 35,  duration: 60, priceFrom: false, sortOrder: 2 },
+      { category: 'Assessment', name: 'Free Consultation',  basePrice: 0,   duration: 30, priceFrom: false, sortOrder: 0 },
+      { category: 'Assessment', name: 'Fitness Assessment', basePrice: 60,  duration: 45, priceFrom: false, sortOrder: 1 },
+      { category: 'Packages',   name: '5-Session Pack',     basePrice: 350, duration: 60, priceFrom: true,  sortOrder: 0 },
+      { category: 'Packages',   name: '10-Session Pack',    basePrice: 650, duration: 60, priceFrom: true,  sortOrder: 1 },
+    ],
+  },
 ];
 
 // Mark all template entries as active and durationMin: true so they show up

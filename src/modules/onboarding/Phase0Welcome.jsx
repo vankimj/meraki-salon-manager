@@ -6,10 +6,11 @@ import { useState } from 'react';
 // Subdomain selection is deferred to Phase 1 (Salon profile) where it
 // belongs next to the legal-name + address fields.
 const INDUSTRIES = [
-  { id: 'nails', label: 'Nail salon',         desc: 'Manicures, pedicures, gel, nail art' },
-  { id: 'hair',  label: 'Hair salon',         desc: 'Cuts, color, styling' },
-  { id: 'both',  label: 'Nails + hair',       desc: 'Mixed service salon' },
-  { id: 'other', label: 'Something else',     desc: 'Brows, lashes, massage, spa' },
+  { id: 'nails',            label: 'Nail salon',        desc: 'Manicures, pedicures, gel, nail art' },
+  { id: 'hair',             label: 'Hair salon',        desc: 'Cuts, color, styling' },
+  { id: 'personalTraining', label: 'Personal training', desc: 'Sessions, packages, memberships' },
+  { id: 'both',             label: 'Nails + hair',      desc: 'Mixed service salon' },
+  { id: 'other',            label: 'Something else',    desc: 'Brows, lashes, massage, spa' },
 ];
 
 export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
