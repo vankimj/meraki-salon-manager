@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Button from '../../components/Button';
-import { fetchClients, createClient, saveClient, deleteClient, fetchServices, fetchClientAppointments, createReviewRequest, saveReviewReceived } from '../../lib/firestore';
+import { fetchClients, createClient, saveClient, deleteClient, fetchServices, fetchClientAppointments, createReviewRequest, saveReviewReceived, fetchClientInsurance, saveClientInsurance } from '../../lib/firestore';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
 import TrashButton from '../../components/TrashButton';
 import { resizeImg, formatTime } from '../../utils/helpers';
@@ -411,7 +411,7 @@ function CreditAdjuster({ client, onReload, onChange, showToast }) {
 }
 
 function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, onSave, onClose, onReload }) {
-  const { gUser, settings, showToast, isAdmin, isTech } = useApp();
+  const { gUser, settings, showToast, isAdmin, isTech, hasCap } = useApp();
   const [mode,             setMode]             = useState(initialMode);
   const [tab,              setTab]              = useState('profile');
   const [saving,           setSaving]           = useState(false);
@@ -426,9 +426,33 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
   const [newVisit,     setNewVisit]     = useState(blankVisit());
   const [restoreOpen,  setRestoreOpen]  = useState(false);
   const fileRef = useRef(null);
+  const cardFrontRef = useRef(null);
+  const cardBackRef  = useRef(null);
   const isNew   = !client.id;
   const isView  = mode === 'view';
-  const TABS    = ['profile', 'social', 'visits', 'cards'];
+  // Insurance intake is ADMIN-ONLY (matches the Cards tab) AND gated on the
+  // paid 'insurance' add-on. The data lives in an admin-only sub-doc — the
+  // Firestore rules, not just this UI gate, withhold it from non-admin staff.
+  const canInsurance = isAdmin && hasCap('insurance');
+  const TABS    = ['profile', 'social', 'visits', ...(canInsurance ? ['insurance'] : []), 'cards'];
+
+  // Loaded lazily from clients/{id}/private/insurance when the tab opens. Kept
+  // in LOCAL state + a ref for the latest value, so an in-flight card upload
+  // (the resize await) can't clobber a concurrent field edit, and persisted
+  // straight to the sub-doc — never onto the staff-readable parent client doc.
+  const [insData, setInsData] = useState(null);   // null = not loaded yet
+  const insRef = useRef({});
+  const ins = insData || {};
+  // Local-only edit (persisted on Save, like the profile fields). insRef holds
+  // the latest value so an in-flight card-resize await applies its patch on top
+  // of any field typed in the meantime instead of a stale snapshot.
+  const setIns = (patch) => {
+    const next = { ...insRef.current, ...patch };
+    insRef.current = next;
+    setInsData(next);
+  };
+  const insLabel = { fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', margin: '0 0 4px', display: 'block' };
+  const insInput = { width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '7px 10px', fontSize: 13, background: 'var(--pn-bg)', color: 'var(--pn-text)' };
 
   useEffect(() => {
     fetchServices().then(s => setServices(s.map(sv => sv.name))).catch(() => {});
@@ -442,6 +466,14 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
     }
   }, [tab, client.id]); // eslint-disable-line
 
+  useEffect(() => {
+    if (tab === 'insurance' && canInsurance && client.id && insData === null) {
+      fetchClientInsurance(client.id)
+        .then(d => { insRef.current = d || {}; setInsData(d || {}); })
+        .catch(() => { insRef.current = {}; setInsData({}); });
+    }
+  }, [tab, canInsurance, client.id]); // eslint-disable-line
+
   async function handlePhoto(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -449,10 +481,25 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
     catch (err) { logError('client_photo', err, { fileType: file.type, fileSize: file.size }); }
   }
 
+  async function handleCardPhoto(side, e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try { setIns({ [side]: await resizeImg(file, 600, 380, 0.72) }); }
+    catch (err) { logError('client_insurance_card', err, { side, fileType: file.type }); }
+  }
+
   async function submit() {
     if (!client.name?.trim()) return;
     setSaving(true);
-    try { await onSave(); } finally { setSaving(false); }
+    try {
+      await onSave();
+      // Persist insurance to its admin-only sub-doc (only if the tab was
+      // opened + loaded for this existing client). Never written for new
+      // clients (no id) or when the add-on/admin gate is off.
+      if (canInsurance && client.id && insData !== null) {
+        await saveClientInsurance(client.id, insRef.current);
+      }
+    } finally { setSaving(false); }
   }
 
   async function handleRequestReview() {
@@ -1123,6 +1170,107 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
                 )
               )}
             </>
+          )}
+
+          {/* ── Insurance tab (admin-only + 'insurance' add-on; admin-only sub-doc) ── */}
+          {tab === 'insurance' && (
+            isNew ? (
+              <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', padding: '8px 2px', lineHeight: 1.5 }}>
+                Save the client first, then reopen to add insurance details.
+              </div>
+            ) : insData === null ? (
+              <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', padding: '8px 2px' }}>Loading…</div>
+            ) : (
+            <>
+              <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', lineHeight: 1.5, marginBottom: 14 }}>
+                Insurance details for superbills / out-of-network reimbursement. Intake only — Plume does not file claims. Stored admin-only.
+              </div>
+
+              <div style={{ marginBottom: 12 }}>
+                <label style={insLabel}>Insurance carrier</label>
+                <input style={insInput} value={ins.carrier || ''} disabled={isView} placeholder="e.g. Blue Cross Blue Shield"
+                  onChange={e => setIns({ carrier: e.target.value })} />
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={insLabel}>Member / Subscriber ID</label>
+                  <input style={insInput} value={ins.memberId || ''} disabled={isView}
+                    onChange={e => setIns({ memberId: e.target.value })} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={insLabel}>Group number</label>
+                  <input style={insInput} value={ins.groupNumber || ''} disabled={isView}
+                    onChange={e => setIns({ groupNumber: e.target.value })} />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={insLabel}>Plan type</label>
+                  <select style={insInput} value={ins.planType || ''} disabled={isView}
+                    onChange={e => setIns({ planType: e.target.value })}>
+                    <option value="">—</option>
+                    <option>PPO</option><option>HMO</option><option>EPO</option><option>POS</option><option>HDHP</option><option>Other</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={insLabel}>Relationship to holder</label>
+                  <select style={insInput} value={ins.holderRelationship || 'self'} disabled={isView}
+                    onChange={e => setIns({ holderRelationship: e.target.value })}>
+                    <option value="self">Self</option><option value="spouse">Spouse</option><option value="child">Child</option><option value="other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              {ins.holderRelationship && ins.holderRelationship !== 'self' && (
+                <div style={{ marginBottom: 12 }}>
+                  <label style={insLabel}>Policy holder name</label>
+                  <input style={insInput} value={ins.holderName || ''} disabled={isView}
+                    onChange={e => setIns({ holderName: e.target.value })} />
+                </div>
+              )}
+
+              <label style={insLabel}>Insurance card</label>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                {['cardFront', 'cardBack'].map((side, i) => {
+                  const ref = i === 0 ? cardFrontRef : cardBackRef;
+                  return (
+                    <div key={side} style={{ flex: 1 }}>
+                      <div
+                        onClick={isView ? undefined : () => ref.current?.click()}
+                        style={{ aspectRatio: '1.6 / 1', borderRadius: 8, overflow: 'hidden', background: 'var(--pn-surface-muted)', border: '1px dashed var(--pn-border-strong)', cursor: isView ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {ins[side]
+                          ? <img src={ins[side]} alt={side} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>{i === 0 ? 'Front' : 'Back'}</span>}
+                      </div>
+                      {!isView && (
+                        <>
+                          <div style={{ fontSize: 10, color: 'var(--pn-text-faint)', textAlign: 'center', marginTop: 3, cursor: 'pointer' }} onClick={() => ref.current?.click()}>
+                            {ins[side] ? 'replace' : 'upload'} {i === 0 ? 'front' : 'back'}
+                          </div>
+                          <input ref={ref} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={e => handleCardPhoto(side, e)} />
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, cursor: isView ? 'default' : 'pointer' }}>
+                <input type="checkbox" checked={!!ins.verified} disabled={isView}
+                  onChange={e => setIns({ verified: e.target.checked, verifiedAt: e.target.checked ? new Date().toISOString() : '' })}
+                  style={{ accentColor: '#2D7A5F' }} />
+                <span style={{ fontSize: 13, color: 'var(--pn-text)' }}>Eligibility verified{ins.verified && ins.verifiedAt ? ` · ${ins.verifiedAt.slice(0, 10)}` : ''}</span>
+              </label>
+
+              <div>
+                <label style={insLabel}>Notes (authorization #, referral, copay…)</label>
+                <textarea style={{ ...insInput, minHeight: 60, resize: 'vertical' }} value={ins.notes || ''} disabled={isView}
+                  onChange={e => setIns({ notes: e.target.value })} />
+              </div>
+            </>
+            )
           )}
 
           {/* ── Cards tab ── */}

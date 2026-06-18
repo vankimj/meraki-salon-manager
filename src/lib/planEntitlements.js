@@ -66,6 +66,12 @@ export const ATOMS = [
   { id: 'loyalty',      label: 'Loyalty + tiers',                  price: 15, partOf: 'marketing',  unlocks: ['marketing'], caps: ['loyalty'] },
   { id: 'gusto',        label: 'Gusto payroll sync',               price: 25, partOf: 'operations', unlocks: ['hr'],        caps: [] },
   { id: 'customDomain', label: 'Custom email sender domain',       price: 15, partOf: 'brand',      unlocks: [],            caps: ['customDomain'] },
+  // Standalone à-la-carte add-on (not bundled in any pack). Enables an
+  // Insurance intake section on client profiles — for clinical-adjacent
+  // verticals (therapy, chiro, PT, acupuncture, massage) that collect a
+  // client's insurance details for superbills / out-of-network reimbursement.
+  // Captures intake data only — NOT claims filing / EHR / HIPAA-billing.
+  { id: 'insurance',    label: 'Insurance intake',                 price: 19, partOf: null,         unlocks: [],            caps: ['insurance'] },
 ];
 
 const PACK_BY_ID = Object.fromEntries(PACKS.map(p => [p.id, p]));
