@@ -19,8 +19,6 @@ import {
 import { callFn } from '../../lib/firebase';
 import { TENANT_ID } from '../../lib/tenant';
 
-const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
-
 // Wraps any embedded Connect component with the provider + session-fetch
 // boilerplate. Pass the component names you need and we'll mint a session
 // with exactly those scopes. Re-fetches on session expiry automatically.
@@ -32,6 +30,12 @@ function ConnectShell({ components, children, onError }) {
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
+
+    // Read the publishable key lazily (not at module load): Vite inlines it at
+    // build time so prod is unchanged, but reading it here makes the component
+    // robust to env being set after this module is imported (e.g. in tests,
+    // where ES import hoisting runs the import before the env stub).
+    const PUBLISHABLE_KEY = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
 
     if (!PUBLISHABLE_KEY) {
       const msg = 'VITE_STRIPE_PUBLISHABLE_KEY not configured';
