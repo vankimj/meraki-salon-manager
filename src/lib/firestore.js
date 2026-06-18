@@ -512,6 +512,24 @@ export async function saveClient(id, data) {
   await setDoc(doc(CLIENTS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+// Insurance intake lives in an admin-only sub-doc `clients/{id}/private/insurance`
+// (Firestore rules: isTenantAdmin only), NOT on the staff-readable parent client
+// doc — so insurance member IDs + card photos are withheld from non-admin staff
+// server-side and stay off the BigQuery clients mirror. Mirrors the employee
+// private/comp split.
+const clientPrivateRef = (id) => doc(CLIENTS_COL, id, 'private', 'insurance');
+
+export async function fetchClientInsurance(id) {
+  if (!id) return {};
+  const snap = await getDoc(clientPrivateRef(id));
+  return snap.exists() ? snap.data() : {};
+}
+
+export async function saveClientInsurance(id, data) {
+  if (!id) throw new Error('saveClientInsurance: client id required');
+  await setDoc(clientPrivateRef(id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+
 // Bulk-update N clients in batches of 450. Caller supplies an array of
 // { id, data }. Used by demo backfills that touch many existing clients.
 export async function saveClientsBatch(updates, onProgress) {

@@ -391,6 +391,12 @@ service cloud.firestore {
       // Clients: only this tenant's staff can read/write
       match /clients/{clientId} {
         allow read, write: if isTenantStaff(tenantId);
+        // Private sub-doc (insurance intake) — admin-only. Keeps sensitive PII
+        // (insurance member IDs, card photos) off the staff-readable parent doc
+        // and off the BigQuery clients mirror. Mirrors employees/{id}/private.
+        match /private/{docId} {
+          allow read, write: if isTenantAdmin(tenantId);
+        }
       }
 
       // Employees.

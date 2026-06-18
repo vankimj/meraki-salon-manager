@@ -8,6 +8,7 @@ import { logActivity, setLoggerUser } from '../lib/logger';
 import { phSVG } from '../utils/helpers';
 import { isFeatureOn } from '../lib/featureFlags';
 import { resolveTerms } from '../data/verticals';
+import { unlockedCapsFor } from '../lib/planEntitlements';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -673,6 +674,13 @@ export function AppProvider({ children }) {
   const vertical = settings?.vertical || 'nails';
   const terms    = resolveTerms(vertical);
 
+  // Capability flags unlocked by purchased Power Packs / atomic add-ons (e.g.
+  // the Insurance-intake add-on grants 'insurance'). `hasCap(id)` is the
+  // feature-level gate for paid add-on capabilities; defaults to false, so the
+  // gated UI is hidden until the add-on is on the tenant.
+  const caps   = unlockedCapsFor(settings?.packs || [], settings?.atomicAddOns || []);
+  const hasCap = (c) => caps.has(c);
+
   return (
     <Ctx.Provider value={{
       slides, def, cur, setCur,
@@ -692,7 +700,7 @@ export function AppProvider({ children }) {
       ticketCheckoutOpen, setTicketCheckoutOpen,
       requirePin, pinPrompt, acceptPinPrompt, dismissPinPrompt,
       activeTheme,
-      tenantCtx, hasFeature,
+      tenantCtx, hasFeature, hasCap,
       vertical, terms,
     }}>
       {children}

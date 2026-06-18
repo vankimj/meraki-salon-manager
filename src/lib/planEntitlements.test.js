@@ -43,9 +43,9 @@ describe('PACKS / ATOMS metadata', () => {
     const byId = Object.fromEntries(PACKS.map(p => [p.id, p.price]));
     expect(byId).toEqual({ comms: 19, marketing: 19, ai: 19, operations: 29, brand: 39 });
   });
-  it('has the five atomic add-ons at their published prices', () => {
+  it('has the atomic add-ons at their published prices', () => {
     const byId = Object.fromEntries(ATOMS.map(a => [a.id, a.price]));
-    expect(byId).toEqual({ sms: 15, voice: 15, loyalty: 15, gusto: 25, customDomain: 15 });
+    expect(byId).toEqual({ sms: 15, voice: 15, loyalty: 15, gusto: 25, customDomain: 15, insurance: 19 });
   });
 });
 
@@ -78,5 +78,9 @@ describe('unlockedCapsFor', () => {
     const caps = unlockedCapsFor(['brand'], []);
     expect(caps.has('whiteLabel')).toBe(true);
     expect(caps.has('customDomain')).toBe(true);
+  });
+  it('Insurance-intake add-on (atom) grants the insurance capability; off by default', () => {
+    expect(unlockedCapsFor([], ['insurance']).has('insurance')).toBe(true);
+    expect(unlockedCapsFor([], []).has('insurance')).toBe(false);
   });
 });
