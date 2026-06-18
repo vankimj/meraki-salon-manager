@@ -14,6 +14,7 @@ const _listOpenSupportTickets = httpsCallable(fns, 'listOpenSupportTickets');
 const _submitAdminTicketReply = httpsCallable(fns, 'submitAdminTicketReply');
 const _updateSupportTicketStatus = httpsCallable(fns, 'updateSupportTicketStatus');
 const _setMyPlatformAdminAlertContact = httpsCallable(fns, 'setMyPlatformAdminAlertContact');
+const _setPlatformAlertPhones         = httpsCallable(fns, 'setPlatformAlertPhones');
 
 // Cross-tenant queue view. The cloud function uses a collection-group
 // query (admin SDK bypasses rules) and returns the ticket docs plus the
@@ -87,4 +88,21 @@ export async function fetchMyAlertContact(email) {
 export async function setMyAlertContact(phone, smsEnabled) {
   const res = await _setMyPlatformAdminAlertContact({ phone, smsEnabled });
   return res.data;
+}
+
+// Configurable list of phone numbers texted on urgent/outage (high-priority)
+// tickets — stored at platform/admins.alertPhones, read here for the editor.
+export async function fetchPlatformAlertPhones() {
+  try {
+    const s = await getDoc(doc(db, 'platform', 'admins'));
+    return s.exists() ? (s.data().alertPhones || []) : [];
+  } catch (e) {
+    console.warn('[fetchPlatformAlertPhones] read failed:', e?.message);
+    return [];
+  }
+}
+
+export async function setPlatformAlertPhones(phones) {
+  const res = await _setPlatformAlertPhones({ phones });
+  return res.data?.phones || [];
 }

@@ -868,7 +868,10 @@ service cloud.firestore {
     }
 
     match /platform/admins {
-      allow read:  if isAuthenticated();
+      // Holds platform-admin phone PII + the alertPhones on-call list — must NOT
+      // be world-readable. Only platform admins (incl. bootstrap founder) read;
+      // server callables use the Admin SDK (bypass rules) for the urgent-SMS path.
+      allow read:  if isPlatformAdmin();
       allow write: if isBootstrapAdmin();
     }
 
