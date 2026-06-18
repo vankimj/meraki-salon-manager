@@ -3,6 +3,7 @@ import {
   listOpenSupportTickets, fetchTicket, subscribeToReplies, subscribeToTicket,
   submitAdminReply, updateTicketStatus,
   fetchMyAlertContact, setMyAlertContact,
+  fetchPlatformAlertPhones, setPlatformAlertPhones,
 } from '../lib/tickets.js';
 import { auth } from '../lib/firebase.js';
 import { C, FONT, radius, shadow } from '../theme.js';
@@ -57,6 +58,7 @@ export default function TicketsQueue() {
       </div>
 
       <AlertContactCard />
+      <AlertPhonesCard />
 
       {error && (
         <div style={{ padding: '10px 14px', marginBottom: 16, background: C.dangerSoft, border: `1px solid ${C.danger}40`, borderRadius: 8, fontSize: 13, color: '#991b1b' }}>
@@ -201,6 +203,95 @@ function AlertContactCard() {
       </div>
       {msg && <div style={{ fontSize: 11, color: C.success, flexBasis: '100%' }}>{msg}</div>}
       {err && <div style={{ fontSize: 11, color: C.danger,  flexBasis: '100%' }}>{err}</div>}
+    </div>
+  );
+}
+
+// Configurable list of phone numbers texted on every urgent / outage
+// (high-priority) ticket — independent of the per-admin self-service phone
+// above. This is the on-call / escalation list. Stored at
+// platform/admins.alertPhones via the setPlatformAlertPhones callable.
+function AlertPhonesCard() {
+  const [phones,  setPhones]  = useState(null); // null = loading
+  const [draft,   setDraft]   = useState('');
+  const [saving,  setSaving]  = useState(false);
+  const [msg,     setMsg]     = useState('');
+  const [err,     setErr]     = useState('');
+
+  useEffect(() => { fetchPlatformAlertPhones().then(setPhones).catch(() => setPhones([])); }, []);
+
+  const E164 = /^\+[1-9]\d{6,14}$/;
+
+  async function persist(next) {
+    setSaving(true); setErr(''); setMsg('');
+    try {
+      const saved = await setPlatformAlertPhones(next);
+      setPhones(saved);
+      setMsg(saved.length ? `Saved — ${saved.length} number${saved.length === 1 ? '' : 's'} will be texted on urgent tickets.` : 'Saved — no numbers (urgent SMS off).');
+      setTimeout(() => setMsg(''), 4000);
+    } catch (e) {
+      setErr(e?.message || 'Save failed.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function add() {
+    const t = draft.trim();
+    if (!E164.test(t)) { setErr('Use E.164 format, e.g. +16145551234'); return; }
+    if ((phones || []).includes(t)) { setErr('Already in the list.'); return; }
+    setErr('');
+    setDraft('');
+    persist([...(phones || []), t]);
+  }
+  function remove(p) { persist((phones || []).filter(x => x !== p)); }
+
+  if (phones === null) return null;
+
+  return (
+    <div style={{
+      background: C.bgCard, border: `1px solid ${C.rule}`, borderRadius: radius.md,
+      padding: 14, marginBottom: 16,
+    }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 4 }}>
+        🚨 Outage / urgent alert numbers
+      </div>
+      <div style={{ fontSize: 11, color: C.muted, maxWidth: 520, lineHeight: 1.45, marginBottom: 10 }}>
+        Every number here is <strong>texted immediately</strong> when a salon files an urgent / business-impacting ticket. This is the shared on-call list (separate from your personal alert phone above). E.164 format.
+      </div>
+
+      {phones.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
+          {phones.map(p => (
+            <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+              <span style={{ fontFamily: 'monospace', color: C.ink, background: C.bgCode, padding: '3px 8px', borderRadius: 6 }}>{p}</span>
+              <button onClick={() => remove(p)} disabled={saving} style={{
+                background: 'transparent', color: C.danger, border: 'none', cursor: saving ? 'default' : 'pointer',
+                fontSize: 12, fontWeight: 600, fontFamily: 'inherit', padding: 0,
+              }}>Remove</button>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ fontSize: 12, color: C.mutedSoft, marginBottom: 10 }}>No numbers yet — add one to start getting outage texts.</div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') add(); }}
+          placeholder="+16145551234"
+          style={{ padding: '8px 12px', fontSize: 13, border: `1px solid ${C.rule}`, borderRadius: 8, fontFamily: 'inherit', outline: 'none', minWidth: 190 }}
+        />
+        <button onClick={add} disabled={saving} style={{
+          padding: '8px 14px', fontSize: 12, fontWeight: 600,
+          background: saving ? C.muted : C.plum, color: '#fff',
+          border: 'none', borderRadius: 8, cursor: saving ? 'default' : 'pointer', fontFamily: 'inherit',
+        }}>{saving ? 'Saving…' : 'Add number'}</button>
+      </div>
+      {msg && <div style={{ fontSize: 11, color: C.success, marginTop: 8 }}>{msg}</div>}
+      {err && <div style={{ fontSize: 11, color: C.danger,  marginTop: 8 }}>{err}</div>}
     </div>
   );
 }

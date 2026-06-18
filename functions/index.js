@@ -98,6 +98,36 @@ const twilioSid       = defineString('TWILIO_ACCOUNT_SID', { default: '' });
 const twilioToken     = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
 const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
+// ── AWS End User Messaging SMS (provider migration off Twilio) ────────────────
+// SMS_PROVIDER selects the dispatch path in sendSms(): 'twilio' (default) keeps
+// the existing path untouched; 'aws' sends via AWS End User Messaging from the
+// shared platform origination number. A tenant overrides per-tenant via
+// settings.smsProvider. Reuses the SES IAM creds (awsAccessKey/awsSecretKey) —
+// same key/account; only the IAM policy needs sms-voice added. NOT active until
+// AWS_SMS_ORIGINATION is set + the sms-voice IAM grant lands; default stays twilio.
+const smsProvider       = defineString('SMS_PROVIDER',        { default: 'twilio' });
+const awsSmsRegion      = defineString('AWS_SMS_REGION',      { default: '' }); // falls back to AWS_SES_REGION
+const awsSmsOrigination = defineString('AWS_SMS_ORIGINATION', { default: '' }); // shared #/pool, filled after provisioning
+const { sendViaAwsSms } = require('./lib/awsSms');
+const _smsProviderCache = new Map(); // tenantId → { provider, at }
+
+// Resolve the SMS provider for a tenant: per-tenant settings.smsProvider beats
+// the global SMS_PROVIDER default. Cached 5 min per tenant.
+async function resolveSmsProvider(db, tenantId) {
+  const fallback = (smsProvider.value() || 'twilio').toLowerCase() === 'aws' ? 'aws' : 'twilio';
+  if (!tenantId) return fallback;
+  const cached = _smsProviderCache.get(tenantId);
+  if (cached && Date.now() - cached.at < 5 * 60 * 1000) return cached.provider;
+  let provider = fallback;
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+    const s = snap.exists ? snap.data() : null;
+    const v = s && typeof s.smsProvider === 'string' ? s.smsProvider.toLowerCase() : null;
+    if (v === 'aws' || v === 'twilio') provider = v;
+  } catch (_) { /* fall back to global default */ }
+  _smsProviderCache.set(tenantId, { provider, at: Date.now() });
+  return provider;
+}
 const stripePriceId        = defineString('STRIPE_PRO_PRICE_ID',     { default: '' });
 const stripeStudioPriceId  = defineString('STRIPE_STUDIO_PRICE_ID',  { default: '' });
 const stripeStarterPriceId = defineString('STRIPE_STARTER_PRICE_ID', { default: '' });
@@ -922,6 +952,36 @@ async function sendSms({
     return { ok: true, sandboxed: true, sid: 'SANDBOX' };
   }
 
+  // Real dispatch — provider selected per tenant (settings.smsProvider) with a
+  // global SMS_PROVIDER default. The AWS path sends via the shared platform
+  // origination number; everything above (prefix, footer, quota, opt-in/out) is
+  // provider-agnostic and already applied.
+  const provider = await resolveSmsProvider(db, tenantId);
+  if (provider === 'aws') {
+    const origination = awsSmsOrigination.value();
+    if (!origination) return { ok: false, error: 'aws_sms_no_origination' };
+    const res = await sendViaAwsSms({
+      to:                phone,
+      body:              finalBody,
+      originationNumber: origination,
+      messageType:       kind === 'marketing' ? 'PROMOTIONAL' : 'TRANSACTIONAL',
+      config: {
+        region:          awsSmsRegion.value() || awsSesRegion.value() || 'us-west-2',
+        accessKeyId:     awsAccessKey.value(),
+        secretAccessKey: awsSecretKey.value(),
+      },
+    });
+    if (!res.ok) {
+      console.error(`[sendSms] tenant=${tenantId} to=${phone} kind=${kind} aws failed:`, res.error);
+      return { ok: false, error: res.error || 'send_failed' };
+    }
+    setClientLastSalon(db, phone, tenantId, clientId).catch(() => {});
+    usageLog.logSmsUsage(db, tenantId, {
+      kind: `appt_${kind}`, to: phone, body: finalBody, sid: res.messageId, provider: 'aws',
+    }).catch(() => {});
+    return { ok: true, sid: res.messageId, twilioStatus: null };
+  }
+
   // Real Twilio dispatch.
   const sid       = twilioSid.value();
   const token     = twilioToken.value();
@@ -954,6 +1014,38 @@ async function sendSms({
     };
   } catch (e) {
     console.error(`[sendSms] tenant=${tenantId} to=${phone} kind=${kind} failed:`, e?.message);
+    return { ok: false, error: e?.message || 'send_failed' };
+  }
+}
+
+// Provider-aware sender for INTERNAL platform alerts (urgent-ticket SMS to the
+// on-call list). Unlike sendSms (customer path) there's no tenant quota /
+// opt-in / salon-name prefix — these go to the Plume team. Honors the global
+// SMS_PROVIDER ('aws' → AWS End User Messaging, else Twilio). Never throws.
+async function sendPlatformSms({ to, body }) {
+  const phone = normalizePhone(to);
+  if (!phone || !body) return { ok: false, error: 'missing_to_or_body' };
+  const provider = (smsProvider.value() || 'twilio').toLowerCase() === 'aws' ? 'aws' : 'twilio';
+  if (provider === 'aws') {
+    const origination = awsSmsOrigination.value();
+    if (!origination) return { ok: false, error: 'aws_sms_no_origination' };
+    return sendViaAwsSms({
+      to: phone, body, originationNumber: origination, messageType: 'TRANSACTIONAL',
+      config: {
+        region:          awsSmsRegion.value() || awsSesRegion.value() || 'us-west-2',
+        accessKeyId:     awsAccessKey.value(),
+        secretAccessKey: awsSecretKey.value(),
+      },
+    });
+  }
+  const sid = twilioSid.value(), token = twilioToken.value(), apiKeySid = twilioApiKeySid.value(), from = twilioFrom.value();
+  if (!sid || !token || !from) return { ok: false, error: 'twilio_not_configured' };
+  try {
+    const twilioSDK = require('twilio');
+    const tw = apiKeySid ? twilioSDK(apiKeySid, token, { accountSid: sid }) : twilioSDK(sid, token);
+    const msg = await tw.messages.create({ from, to: phone, body });
+    return { ok: true, sid: msg?.sid || null };
+  } catch (e) {
     return { ok: false, error: e?.message || 'send_failed' };
   }
 }
@@ -12951,38 +13043,6 @@ exports.markOnboardingPhase = onCall({ cors: true, timeoutSeconds: 30 }, async (
 
   await ref.set(updates, { merge: true });
 
-  // Vertical / tenant-template side-effects (welcome phase only). Only a
-  // DIVERGENT vertical (non-nail, e.g. personal training) gets a settings
-  // `vertical` field + seeded membership-plan templates. Nail / legacy / not-
-  // yet-wired industries (nails/hair/both/other) clamp to 'nails' and are left
-  // with NO vertical field, so their behavior — including the client-side nail
-  // auto-seed — is byte-identical to before. Seeding is idempotent.
-  if (phaseKey === 'welcome') {
-    try {
-      const { membershipPlansForVertical, normalizeVertical } = require('./lib/verticals');
-      const vertical = normalizeVertical(updates.industry);
-      if (vertical !== 'nails') {
-        await db.doc(`tenants/${tenantId}/data/settings`)
-          .set({ vertical, updatedAt: now }, { merge: true });
-
-        const planTemplates = membershipPlansForVertical(vertical);
-        if (planTemplates.length) {
-          const plansCol = db.collection(`tenants/${tenantId}/membershipPlans`);
-          const existing = await plansCol.limit(1).get();
-          if (existing.empty) {
-            const batch = db.batch();
-            for (const p of planTemplates) {
-              batch.set(plansCol.doc(), { ...p, active: p.active !== false, createdAt: now, updatedAt: now });
-            }
-            await batch.commit();
-          }
-        }
-      }
-    } catch (e) {
-      console.warn('[markOnboardingPhase] vertical template seed failed:', e?.message);
-    }
-  }
-
   // Mirror completion to data/webfront — public-readable. SalonWebfront
   // checks this flag and redirects to /manage when false, so an
   // unfinished tenant never shows a half-built public page. Set once;
@@ -15378,6 +15438,7 @@ async function notifyAdminsOfTicket(db, { tenantId, tenantName, ticketId, priori
   const fromAddr = brand?.fromAddress || 'Plume Nexus Support <support@send.plumenexus.com>';
   const replyTo  = authorEmail || undefined;
 
+  // Email every platform admin.
   for (const a of admins) {
     try {
       await sendEmail({
@@ -15391,31 +15452,37 @@ async function notifyAdminsOfTicket(db, { tenantId, tenantName, ticketId, priori
     } catch (e) {
       console.error(`[notifyAdminsOfTicket] email to ${a.email} failed:`, e?.message);
     }
+  }
 
-    if (priority === 'high' && a.phone && a.smsEnabled) {
-      const smsBody = `Plume Nexus support [${priority}] · ${tenantName}: ${subject.slice(0, 80)}\nOpen: ${PLATFORM_ADMIN_DASH_URL}/t/${tenantId}`;
-      try {
-        // Skip the per-tenant quota + opt-in checks (this is an internal
-        // platform alert, not a customer message) by calling Twilio
-        // directly with the platform's own from-number. Use the
-        // bootstrap TWILIO_FROM since per-tenant TFNs would carry the
-        // wrong sender identity.
-        const sid       = twilioSid.value();
-        const tokenV    = twilioToken.value();
-        const apiKeySid = twilioApiKeySid.value();
-        const from      = twilioFrom.value();
-        if (!sid || !tokenV || !from) {
-          console.warn('[notifyAdminsOfTicket] Twilio not configured; skipping SMS');
-          continue;
-        }
-        const twilioSDK = require('twilio');
-        const tw = apiKeySid
-          ? twilioSDK(apiKeySid, tokenV, { accountSid: sid })
-          : twilioSDK(sid, tokenV);
-        await tw.messages.create({ from, to: a.phone, body: smsBody });
-      } catch (e) {
-        console.error(`[notifyAdminsOfTicket] SMS to ${a.email}@${a.phone} failed:`, e?.message);
+  // SMS — high-priority (outage / business-impacting) tickets only. Recipients =
+  // per-admin opted-in phones ∪ the configurable platform alert list
+  // (platform/admins.alertPhones, managed in the platform-admin Support tab),
+  // deduped so a number listed twice gets one text.
+  if (priority === 'high') {
+    const targets = new Set();
+    for (const a of admins) if (a.phone && a.smsEnabled) targets.add(a.phone);
+    try {
+      const ps = await db.doc('platform/admins').get();
+      const list = ps.exists ? (ps.data().alertPhones || []) : [];
+      for (const p of list) {
+        const t = String(p || '').trim();
+        if (/^\+[1-9]\d{6,14}$/.test(t)) targets.add(t);
       }
+    } catch (e) {
+      console.warn('[notifyAdminsOfTicket] alertPhones read failed:', e?.message);
+    }
+    if (targets.size) {
+      // Internal platform alert — provider-aware (AWS End User Messaging or
+      // Twilio per SMS_PROVIDER), skipping per-tenant quota / opt-in (those are
+      // for customer SMS, not internal on-call alerts).
+      const smsBody = `🚨 URGENT · Plume Nexus\n${tenantName}: ${subject.slice(0, 90)}\nfrom ${authorEmail || 'salon'}\nopen: ${PLATFORM_ADMIN_DASH_URL}/t/${tenantId}`;
+      let sent = 0;
+      for (const to of targets) {
+        const r = await sendPlatformSms({ to, body: smsBody });
+        if (r.ok) sent++;
+        else console.error(`[notifyAdminsOfTicket] SMS to ${to} failed:`, r.error);
+      }
+      console.log(`[notifyAdminsOfTicket] urgent SMS: ${sent}/${targets.size} sent for ${tenantId}/${ticketId}`);
     }
   }
 }
@@ -15814,6 +15881,29 @@ exports.setMyPlatformAdminAlertContact = onCall({ cors: true, timeoutSeconds: 15
   }
   await ref.set({ phones, smsEnabled: smsEnabledMap }, { merge: true });
   return { ok: true, phone: phones[email] || null, smsEnabled: !!smsEnabledMap[email] };
+});
+
+// Configurable list of phone numbers that receive urgent / outage ticket SMS
+// (stored at platform/admins.alertPhones; consumed by notifyAdminsOfTicket).
+// Managed from the platform-admin Support tab. Replaces the whole list each
+// call (dedup + E.164-validated). Platform-admin only.
+exports.setPlatformAlertPhones = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const email = (request.auth?.token?.email || '').toLowerCase();
+  if (!await isPlatformAdmin(email)) throw new HttpsError('permission-denied', 'Platform admin only');
+  const raw = Array.isArray(request.data?.phones) ? request.data.phones : [];
+  const seen = new Set();
+  const phones = [];
+  for (const p of raw) {
+    const t = String(p || '').trim();
+    if (!t) continue;
+    if (!/^\+[1-9]\d{6,14}$/.test(t)) {
+      throw new HttpsError('invalid-argument', `"${t}" isn't valid — use E.164, e.g. +16145551234`);
+    }
+    if (!seen.has(t)) { seen.add(t); phones.push(t); }
+  }
+  if (phones.length > 20) throw new HttpsError('invalid-argument', 'Max 20 alert numbers');
+  await getFirestore().doc('platform/admins').set({ alertPhones: phones }, { merge: true });
+  return { ok: true, phones };
 });
 
 // Platform-admin read for the cross-tenant ticket queue. Returns

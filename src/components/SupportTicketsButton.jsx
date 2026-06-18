@@ -187,7 +187,7 @@ function Tab({ active, onClick, children }) {
 function SubmitForm({ onSubmitted }) {
   const [subject,  setSubject]  = useState('');
   const [body,     setBody]     = useState('');
-  const [priority, setPriority] = useState('high');
+  const [priority, setPriority] = useState('low');
   const [sending,  setSending]  = useState(false);
   const [err,      setErr]      = useState('');
   const [done,     setDone]     = useState(false);
@@ -229,10 +229,15 @@ function SubmitForm({ onSubmitted }) {
         style={input}
       />
 
-      <label style={lbl}>Priority</label>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
-        <PrioPill active={priority === 'low'}  onClick={() => setPriority('low')}  color={C.muted}>Low (email)</PrioPill>
-        <PrioPill active={priority === 'high'} onClick={() => setPriority('high')} color={C.danger}>High (email + SMS)</PrioPill>
+      <label style={lbl}>How urgent is this?</label>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+        <PrioPill active={priority === 'low'}  onClick={() => setPriority('low')}  color={C.muted}>Normal (email)</PrioPill>
+        <PrioPill active={priority === 'high'} onClick={() => setPriority('high')} color={C.danger}>🚨 Urgent — outage / business down</PrioPill>
+      </div>
+      <div style={{ fontSize: 11, color: priority === 'high' ? C.danger : C.mutedSoft, marginBottom: 14, lineHeight: 1.45 }}>
+        {priority === 'high'
+          ? 'This texts the Plume Nexus team right away — use it for outages or anything stopping you from running the business.'
+          : 'Normal tickets reach us by email. Pick Urgent only when your business is impacted.'}
       </div>
 
       <label style={lbl}>Message</label>
