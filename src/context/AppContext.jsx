@@ -7,6 +7,7 @@ import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetc
 import { logActivity, setLoggerUser } from '../lib/logger';
 import { phSVG } from '../utils/helpers';
 import { isFeatureOn } from '../lib/featureFlags';
+import { resolveTerms } from '../data/verticals';
 
 const Ctx = createContext(null);
 export const useApp = () => useContext(Ctx);
@@ -664,6 +665,14 @@ export function AppProvider({ children }) {
   const tenantCtx  = { tier: settings?.tier || 'free', featureFlags: settings?.featureFlags || {} };
   const hasFeature = (name) => isFeatureOn(name, tenantCtx);
 
+  // Vertical / tenant template (salon, personal training, …). `vertical` keys
+  // the registry in data/verticals.js; `terms` is the resolved terminology map
+  // (trainer/client/session vs stylist/client/visit). Defaults to 'nails', so
+  // every existing tenant is unchanged. Consumers read `terms`/`vertical` from
+  // useApp(); literal-string swaps are migrated incrementally.
+  const vertical = settings?.vertical || 'nails';
+  const terms    = resolveTerms(vertical);
+
   return (
     <Ctx.Provider value={{
       slides, def, cur, setCur,
@@ -684,6 +693,7 @@ export function AppProvider({ children }) {
       requirePin, pinPrompt, acceptPinPrompt, dismissPinPrompt,
       activeTheme,
       tenantCtx, hasFeature,
+      vertical, terms,
     }}>
       {children}
     </Ctx.Provider>
