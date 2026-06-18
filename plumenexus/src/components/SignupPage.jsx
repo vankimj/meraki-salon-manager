@@ -17,7 +17,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  auth, signInWithGoogle, signOutUser, watchAuth,
+  auth, signInWithGoogle, signInWithApple, signOutUser, watchAuth,
+  sendMagicLink, completeMagicLink, magicLinkInUrl, rememberedMagicEmail,
   checkSlugAvailability, callProvisionTenant, watchProvisioningJob,
 } from '../lib/firebase';
 import { RecaptchaVerifier, linkWithPhoneNumber, PhoneAuthProvider, linkWithCredential } from 'firebase/auth';
@@ -118,6 +119,49 @@ function deriveSlug(salonName) {
 export default function SignupPage() {
   const [user, setUser] = useState(undefined); // undefined=loading, null=signed-out, object=signed-in
   useEffect(() => watchAuth(setUser), []);
+
+  // ── Passwordless (email magic link) ──────────────────────
+  const [magicEmail, setMagicEmail] = useState('');
+  const [magicSent,  setMagicSent]  = useState(false);
+  const [sendingMagic, setSendingMagic] = useState(false);
+  const [authErr, setAuthErr] = useState('');
+  // Returning from a magic link: complete sign-in with the remembered email
+  // (same device) or prompt for it (different device).
+  const [completingLink, setCompletingLink] = useState(() => magicLinkInUrl());
+  const [needEmailForLink, setNeedEmailForLink] = useState(false);
+  useEffect(() => {
+    if (!magicLinkInUrl()) return;
+    const saved = rememberedMagicEmail();
+    if (saved) {
+      completeMagicLink(saved)
+        .catch(() => setAuthErr('That sign-in link was invalid or expired — request a new one.'))
+        .finally(() => setCompletingLink(false));
+    } else {
+      setNeedEmailForLink(true); setCompletingLink(false);
+    }
+  }, []); // eslint-disable-line
+
+  const emailValid = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(magicEmail.trim());
+
+  async function handleApple() {
+    setAuthErr('');
+    try { await signInWithApple(); }
+    catch (e) { if (e?.code !== 'auth/popup-closed-by-user' && e?.code !== 'auth/cancelled-popup-request') setAuthErr(e?.message || 'Apple sign-in failed.'); }
+  }
+  async function handleSendMagic() {
+    if (!emailValid || sendingMagic) return;
+    setSendingMagic(true); setAuthErr('');
+    try { await sendMagicLink(magicEmail.trim()); setMagicSent(true); }
+    catch (e) { setAuthErr(e?.message || "Couldn't send the sign-in link. Try again."); }
+    finally { setSendingMagic(false); }
+  }
+  async function finishLinkWithEmail() {
+    if (!emailValid) return;
+    setCompletingLink(true);
+    try { await completeMagicLink(magicEmail.trim()); setNeedEmailForLink(false); }
+    catch { setAuthErr('That sign-in link was invalid or expired — request a new one.'); }
+    finally { setCompletingLink(false); }
+  }
 
   // Step state
   const [step, setStep]               = useState('form'); // 'form' | 'provisioning' | 'done'
@@ -308,10 +352,41 @@ export default function SignupPage() {
 
         <Section title="1 · Sign in">
           {user === undefined && <div style={muted}>Checking…</div>}
-          {user === null && (
-            <button onClick={signInWithGoogle} style={btnPrimary}>
-              <GoogleIcon /> Continue with Google
-            </button>
+          {(completingLink || needEmailForLink) && user === null ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {completingLink && <div style={muted}>Finishing sign-in…</div>}
+              {needEmailForLink && (
+                <>
+                  <div style={muted}>Confirm the email you used to request the sign-in link.</div>
+                  <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email"
+                    value={magicEmail} onChange={e => setMagicEmail(e.target.value)} placeholder="you@example.com" style={input} />
+                  <button onClick={finishLinkWithEmail} style={btnPrimary} disabled={!emailValid}>Finish signing in</button>
+                </>
+              )}
+              {authErr && <div style={authErrStyle}>{authErr}</div>}
+            </div>
+          ) : user === null && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button onClick={signInWithGoogle} style={btnPrimary}>
+                <GoogleIcon /> Continue with Google
+              </button>
+              <button onClick={handleApple} style={btnApple}>
+                <AppleIcon /> Continue with Apple
+              </button>
+              <div style={orRow}><span style={orLine} /><span style={orText}>or</span><span style={orLine} /></div>
+              {magicSent ? (
+                <div style={magicSentBox}>✓ Check your inbox — we sent a sign-in link to <strong>{magicEmail.trim()}</strong>. Open it on this device to finish.</div>
+              ) : (
+                <>
+                  <input type="email" inputMode="email" autoCapitalize="none" autoComplete="email"
+                    value={magicEmail} onChange={e => setMagicEmail(e.target.value)} placeholder="you@example.com" style={input} />
+                  <button onClick={handleSendMagic} style={btnGhost} disabled={!emailValid || sendingMagic}>
+                    {sendingMagic ? 'Sending…' : '✉  Email me a sign-in link'}
+                  </button>
+                </>
+              )}
+              {authErr && <div style={authErrStyle}>{authErr}</div>}
+            </div>
           )}
           {user && (
             <div style={signedInRow}>
@@ -652,6 +727,14 @@ function GoogleIcon() {
   );
 }
 
+function AppleIcon() {
+  return (
+    <svg width="16" height="18" viewBox="0 0 16 18" aria-hidden style={{ verticalAlign: '-3px', marginRight: 8 }}>
+      <path fill="#fff" d="M13.07 9.55c-.02-1.86 1.52-2.75 1.59-2.79-.87-1.27-2.22-1.44-2.7-1.46-1.15-.12-2.24.67-2.83.67-.58 0-1.48-.65-2.43-.64-1.25.02-2.4.73-3.04 1.84-1.29 2.24-.33 5.56.93 7.38.62.89 1.36 1.89 2.32 1.85.93-.04 1.28-.6 2.41-.6 1.12 0 1.44.6 2.42.58 1-.02 1.63-.91 2.24-1.8.7-1.03.99-2.03 1.01-2.08-.02-.01-1.94-.74-1.96-2.95zM11.3 3.86c.51-.62.86-1.49.76-2.36-.74.03-1.64.49-2.17 1.11-.47.55-.89 1.43-.78 2.27.83.07 1.67-.42 2.19-1.02z"/>
+    </svg>
+  );
+}
+
 function BrandMark({ size = 36 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-hidden>
@@ -786,6 +869,12 @@ const btnPrimary    = { ...btnBase, background: C.plum,  color: '#fff', boxShado
 const btnPrimaryLg  = { ...btnBase, background: C.plum,  color: '#fff', padding: '14px 28px', fontSize: 15, textDecoration: 'none', display: 'inline-block', boxShadow: shadow.brand };
 const btnGhost      = { ...btnBase, background: '#fff', color: C.plum, border: `1px solid ${C.rule}` };
 const btnGhostSmall = { padding: '7px 12px', fontSize: 12, fontWeight: 600, borderRadius: 999, border: `1px solid ${C.rule}`, background: '#fff', color: C.muted, cursor: 'pointer', fontFamily: 'inherit' };
+const btnApple      = { ...btnBase, background: '#000', color: '#fff' };
+const orRow   = { display: 'flex', alignItems: 'center', gap: 10, margin: '2px 0' };
+const orLine  = { flex: 1, height: 1, background: C.rule };
+const orText  = { fontSize: 12, color: C.muted, fontWeight: 600 };
+const magicSentBox = { padding: '12px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: radius.sm, color: '#166534', fontSize: 13, lineHeight: 1.5 };
+const authErrStyle = { fontSize: 12.5, color: '#b91c1c', lineHeight: 1.4 };
 
 const errBox = {
   marginTop: 18, padding: '12px 16px', background: '#fef2f2',

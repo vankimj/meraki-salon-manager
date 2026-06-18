@@ -1,6 +1,6 @@
 import { initializeApp }   from 'firebase/app';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { getAuth, connectAuthEmulator, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'firebase/auth';
+import { getAuth, connectAuthEmulator, GoogleAuthProvider, OAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { getFirestore, doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -43,8 +43,39 @@ export async function signInWithGoogle() {
   const provider = new GoogleAuthProvider();
   return signInWithPopup(auth, provider);
 }
+// Apple sign-in (web OAuth popup). Apple is already enabled as a Firebase Auth
+// provider for this project (the main app + iOS app use it), so no extra config.
+export async function signInWithApple() {
+  const provider = new OAuthProvider('apple.com');
+  provider.addScope('email');
+  provider.addScope('name');
+  return signInWithPopup(auth, provider);
+}
 export function watchAuth(cb)    { return onAuthStateChanged(auth, cb); }
 export function signOutUser()    { return signOut(auth); }
+
+// Passwordless email-link sign-in (magic link). Email-link sign-in is already
+// enabled on this Firebase project (the main app uses it). The link returns to
+// the current signup page; on return we complete sign-in with the remembered
+// email (same-device) or one the user re-enters (cross-device).
+export async function sendMagicLink(email) {
+  await sendSignInLinkToEmail(auth, email, {
+    url: window.location.origin + window.location.pathname + window.location.search,
+    handleCodeInApp: true,
+  });
+  window.localStorage.setItem('emailForSignIn', email);
+}
+export function magicLinkInUrl() { return isSignInWithEmailLink(auth, window.location.href); }
+export function rememberedMagicEmail() { return window.localStorage.getItem('emailForSignIn') || ''; }
+export async function completeMagicLink(email) {
+  const e = (email || rememberedMagicEmail()).trim();
+  if (!e) throw new Error('need-email');
+  const res = await signInWithEmailLink(auth, e, window.location.href);
+  window.localStorage.removeItem('emailForSignIn');
+  // Strip the magic-link params so a refresh doesn't re-trigger completion.
+  window.history.replaceState({}, document.title, window.location.pathname);
+  return res;
+}
 
 // Slug availability check — slugs/ is public-readable so the signup form
 // can do this without any Cloud Function call. Returns one of:
