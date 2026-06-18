@@ -33,5 +33,12 @@ describe('vertical registry', () => {
     expect(resolveVertical('nails').serviceTemplateId).toBe('nail-salon');
     expect(resolveVertical('hair').serviceTemplateId).toBe('nail-salon'); // unregistered -> fallback
     expect(resolveVertical('personalTraining').serviceTemplateId).toBe('personal-training');
+    expect(resolveVertical('makeupArtist').serviceTemplateId).toBe('makeup-artist');
+  });
+
+  it('make-up artist resolves its own terminology + is a known server vertical', () => {
+    expect(resolveTerms('makeupArtist').staff).toBe('makeup artist');
+    expect(resolveTerms('makeupArtist').emoji).toBe('💄');
+    expect(serverNormalizeVertical('makeupArtist')).toBe('makeupArtist');
   });
 });

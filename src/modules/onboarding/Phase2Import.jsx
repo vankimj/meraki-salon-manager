@@ -16,12 +16,12 @@ import CsvImportSection from '../../components/CsvImportSection';
 // Service templates wired end-to-end (seedable + supported at onboarding).
 // The other entries in SERVICE_TEMPLATES are real starter menus but still
 // marked "SOON" until validated per-vertical.
-const SUPPORTED_TEMPLATES = ['nail-salon', 'personal-training'];
+const SUPPORTED_TEMPLATES = ['nail-salon', 'personal-training', 'makeup-artist'];
 
 // Default the services template from the industry chosen in Phase 0, falling
 // back to the nail menu (the historical default) for industries whose template
 // isn't fully wired yet.
-const INDUSTRY_TEMPLATE = { nails: 'nail-salon', personalTraining: 'personal-training' };
+const INDUSTRY_TEMPLATE = { nails: 'nail-salon', personalTraining: 'personal-training', makeupArtist: 'makeup-artist' };
 function defaultTemplateFor(industry) {
   const t = INDUSTRY_TEMPLATE[industry];
   return SUPPORTED_TEMPLATES.includes(t) ? t : 'nail-salon';
@@ -225,7 +225,7 @@ function FreshPath({ onboarding, onAdvance, saving }) {
           ))}
         </div>
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 8 }}>
-          Nail-salon and personal-training templates seed a full starter menu; other industries seed a basic list you'll likely customize.
+          Your selected template seeds a full starter menu; you can edit, add, or delete anything afterward.
         </div>
       </Section>
 

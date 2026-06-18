@@ -10,6 +10,7 @@ const VERTICAL_MEMBERSHIP_PLANS = {
     { name: '4 Sessions / Month',  price: 240, billingPeriod: 'monthly', description: 'Four 1-on-1 sessions each month',           active: true },
     { name: 'Small-Group Monthly', price: 99,  billingPeriod: 'monthly', description: '8 small-group sessions per month',          active: true },
   ],
+  makeupArtist: [],   // event/package-based — no recurring membership templates by default
 };
 
 // Known registry verticals. Anything else (hair/both/other and legacy) clamps

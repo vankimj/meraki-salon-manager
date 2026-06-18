@@ -9,6 +9,7 @@ const INDUSTRIES = [
   { id: 'nails',            label: 'Nail salon',        desc: 'Manicures, pedicures, gel, nail art' },
   { id: 'hair',             label: 'Hair salon',        desc: 'Cuts, color, styling' },
   { id: 'personalTraining', label: 'Personal training', desc: 'Sessions, packages, memberships' },
+  { id: 'makeupArtist',     label: 'Make-up artist',    desc: 'Bridal, events, lessons' },
   { id: 'both',             label: 'Nails + hair',      desc: 'Mixed service salon' },
   { id: 'other',            label: 'Something else',    desc: 'Brows, lashes, massage, spa' },
 ];

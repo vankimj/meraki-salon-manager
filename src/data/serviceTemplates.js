@@ -129,6 +129,23 @@ export const SERVICE_TEMPLATES = [
       { category: 'Packages',   name: '10-Session Pack',    basePrice: 650, duration: 60, priceFrom: true,  sortOrder: 1 },
     ],
   },
+  {
+    id: 'makeup-artist',
+    label: 'Make-up Artist',
+    description: 'Bridal, special-event, editorial, lessons, lashes & airbrush',
+    icon: '💄',
+    services: [
+      { category: 'Bridal',  name: 'Bridal Makeup',         basePrice: 150, duration: 75, priceFrom: true,  sortOrder: 0 },
+      { category: 'Bridal',  name: 'Bridal Trial / Preview', basePrice: 90,  duration: 60, priceFrom: false, sortOrder: 1 },
+      { category: 'Bridal',  name: 'Bridal Party Makeup',   basePrice: 85,  duration: 45, priceFrom: false, sortOrder: 2 },
+      { category: 'Events',  name: 'Special-Event Makeup',  basePrice: 95,  duration: 60, priceFrom: false, sortOrder: 0 },
+      { category: 'Events',  name: 'Prom / Formal Makeup',  basePrice: 75,  duration: 45, priceFrom: false, sortOrder: 1 },
+      { category: 'Events',  name: 'Photoshoot / Editorial', basePrice: 150, duration: 75, priceFrom: true,  sortOrder: 2 },
+      { category: 'Lessons', name: '1-on-1 Makeup Lesson',  basePrice: 120, duration: 90, priceFrom: false, sortOrder: 0 },
+      { category: 'Add-ons', name: 'Strip Lash Application', basePrice: 20,  duration: 10, priceFrom: false, sortOrder: 0 },
+      { category: 'Add-ons', name: 'Airbrush Upgrade',      basePrice: 25,  duration: 15, priceFrom: false, sortOrder: 1 },
+    ],
+  },
 ];
 
 // Mark all template entries as active and durationMin: true so they show up

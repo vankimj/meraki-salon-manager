@@ -60,6 +60,30 @@ export const VERTICALS = {
       { name: 'Small-Group Monthly', price: 99,  billingPeriod: 'monthly', description: '8 small-group sessions per month',          active: true },
     ],
   },
+
+  makeupArtist: {
+    key: 'makeupArtist',
+    label: 'Make-up Artist',
+    serviceTemplateId: 'makeup-artist',
+    terms: {
+      business:      'studio',
+      staff:         'makeup artist',
+      staffPlural:   'makeup artists',
+      staffNoun:     'artist',
+      client:        'client',
+      clientPlural:  'clients',
+      service:       'service',
+      servicePlural: 'services',
+      visit:         'appointment',
+      appointment:   'appointment',
+      bookCta:       'Book',
+      emoji:         '💄',
+    },
+    // Make-up work is event / package-based (bridal, special occasion), not
+    // subscription-based — no recurring membership templates seeded by default.
+    // The Memberships module still works if the artist wants to add one.
+    membershipPlans: [],
+  },
 };
 
 export function resolveVertical(verticalKey) {
