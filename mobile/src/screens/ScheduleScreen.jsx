@@ -192,7 +192,6 @@ export default function ScheduleScreen({ navigation }) {
   // Who may view the WHOLE salon's schedule (RBAC schedule_all): owner/manager/
   // scheduler. A plain tech stays scoped to their own. (admin === owner.)
   const canSeeAll = isAdmin || role === 'manager' || role === 'scheduler';
-  const { isTablet } = useResponsive();
   useTrashHeader(navigation, ['appointments', 'timeOff'], isAdmin);
   const [date,    setDate]    = useState(todayStr());
   const [appts,   setAppts]   = useState([]);
@@ -409,11 +408,15 @@ export default function ScheduleScreen({ navigation }) {
         )}
         {/* Walk-in queue + who's clocked in — opens the existing Walk-in
             Manager (rotation + waitlist) in the Manage stack, matching the
-            web schedule's turn roster. */}
+            web schedule's turn roster. `initial: false` puts the Manage
+            grid (ManageGrid, the stack's initialRouteName) beneath Walkin so
+            the back button works and tapping the Manage tab returns to the
+            grid — without it, a never-yet-opened Manage stack initializes
+            with Walkin as its only route and gets stuck on the queue. */}
         {canSeeAll && (
           <TouchableOpacity
             style={[styles.chip, styles.chipGreen]}
-            onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'Walkin' })}
+            onPress={() => navigation.getParent()?.navigate('Manage', { screen: 'Walkin', initial: false })}
           >
             <Text style={styles.chipGreenText}>📋 Queue</Text>
           </TouchableOpacity>
@@ -495,7 +498,11 @@ export default function ScheduleScreen({ navigation }) {
       {view === 'day' && (
         (empLoading || loading) ? (
           <ActivityIndicator style={{ marginTop: 40 }} color={theme.blue} />
-        ) : (isTablet && showAll) ? (
+        ) : showAll ? (
+          /* Tech-column grid (headers per tech, gaps visible at a glance) on
+             phone AND tablet now — columns size to the screen and the tech
+             filter chips above narrow which columns show. Single-tech ("Just
+             me") still uses the roomier single timeline. */
           <DayGridView
             appts={filtered}
             allTechs={everyone ? allTechs : visibleTechs}
@@ -819,12 +826,25 @@ const GRID_COL_W    = 156;
 function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTapAppt, onTapEmpty, onReschedule }) {
   const { theme } = useTheme();
   const styles = useThemedStyles(makeStyles);
+  const { width: screenW } = useResponsive();
   const [moving, setMoving] = useState(null);   // appt picked up to reschedule
   const GRID_H = SLOT_COUNT * SLOT_PX;
   // Show every active tech as a column; fall back to whoever has appts.
-  const techs = (allTechs && allTechs.length)
+  const baseTechs = (allTechs && allTechs.length)
     ? allTechs
     : Array.from(new Set(appts.map(a => a.techName).filter(Boolean)));
+  // Append a "No preference" column ('') whenever any appt is unassigned (a
+  // staff-created no-preference booking, techRequestType 'auto') so it stays
+  // visible — drag it onto a tech column to assign. Without this it'd vanish.
+  const hasUnassigned = appts.some(a => !(a.techName || '').trim());
+  const techs = hasUnassigned ? [...baseTechs, ''] : baseTechs;
+  // Column width adapts to how many techs are shown so filtering down (via the
+  // chips above) fills the screen — 1–2 techs span the full width so gaps read
+  // clearly; more techs fall back to a fixed width and scroll horizontally.
+  const AXIS_W = 52;
+  const avail  = Math.max(0, screenW - AXIS_W);
+  const fit    = techs.length > 0 ? Math.floor(avail / techs.length) : GRID_COL_W;
+  const colW   = fit >= 132 ? Math.min(fit, 240) : GRID_COL_W;
 
   // Per-tech occupancy: which slot each appt starts in, and which slots
   // it covers (so we don't draw a "+" under a booked block).
@@ -878,9 +898,9 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
           <View>
             <View style={{ flexDirection: 'row', height: GRID_HEADER_H }}>
               {techs.map(t => (
-                <View key={t} style={[styles.gridHeadCell, { width: GRID_COL_W }]}>
-                  <View style={[styles.gridHeadDot, { backgroundColor: getTechColor(t, allTechs).solid }]} />
-                  <Text style={styles.gridHeadText} numberOfLines={1}>{t}</Text>
+                <View key={t || 'none'} style={[styles.gridHeadCell, { width: colW }]}>
+                  <View style={[styles.gridHeadDot, { backgroundColor: t ? getTechColor(t, allTechs).solid : theme.textMuted }]} />
+                  <Text style={styles.gridHeadText} numberOfLines={1}>{t || 'No preference'}</Text>
                 </View>
               ))}
             </View>
@@ -889,7 +909,7 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
               {techs.map(t => {
                 const occ = byTech[t] || { starts: {}, covered: {} };
                 return (
-                  <View key={t} style={[styles.gridCol, { width: GRID_COL_W, height: GRID_H }]}>
+                  <View key={t || 'none'} style={[styles.gridCol, { width: colW, height: GRID_H }]}>
                     {Array.from({ length: SLOT_COUNT }).map((_, idx) => {
                       const slotMin = DAY_START_MIN + idx * SLOT_MINUTES;
                       const isHour  = slotMin % 60 === 0;
@@ -900,7 +920,7 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
                           activeOpacity={free ? 0.5 : 1}
                           disabled={!free}
                           onPress={() => onTapEmpty(minToHHMM(slotMin), t)}
-                          style={[styles.gridSlot, { top: idx * SLOT_PX, height: SLOT_PX, width: GRID_COL_W }, isHour && styles.gridSlotHour]}
+                          style={[styles.gridSlot, { top: idx * SLOT_PX, height: SLOT_PX, width: colW }, isHour && styles.gridSlotHour]}
                         >
                           {free && <Text style={styles.gridPlus}>＋</Text>}
                         </TouchableOpacity>
@@ -920,7 +940,7 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
                           style={[styles.gridBlock, {
                             top: idx * SLOT_PX + 2,
                             height: span * SLOT_PX - 4,
-                            width: GRID_COL_W - 7,
+                            width: colW - 7,
                             backgroundColor: c.bg,
                             borderLeftColor: c.border,
                             opacity: moving?.id === a.id ? 0.4 : (c.faded ? 0.7 : 1),
@@ -944,7 +964,7 @@ function DayGridView({ appts, allTechs, clientsById, refreshing, onRefresh, onTa
                         key={`drop-${didx}`}
                         activeOpacity={0.4}
                         onPress={() => { onReschedule(moving, { startTime: minToHHMM(DAY_START_MIN + didx * SLOT_MINUTES), techName: t }); setMoving(null); }}
-                        style={[styles.gridDrop, { top: didx * SLOT_PX, height: SLOT_PX, width: GRID_COL_W }]}
+                        style={[styles.gridDrop, { top: didx * SLOT_PX, height: SLOT_PX, width: colW }]}
                       />
                     ))}
                   </View>
@@ -1161,6 +1181,10 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
   const [pickedClient, setPickedClient] = useState(null);
   const [clientQuery, setClientQuery] = useState('');
   const [pickedServices, setPickedServices] = useState([]);
+  // Which tech the appt is assigned to. '' = no preference (techRequestType
+  // 'auto', same as an online "any available" booking). Seeded from the
+  // column/slot the user tapped, but now editable here.
+  const [pickedTech, setPickedTech] = useState('');
   // Editable time fields — only used in edit mode but the state stays
   // declared unconditionally to keep hook order stable.
   const [editStartTime, setEditStartTime] = useState('');
@@ -1199,10 +1223,12 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
         id: s.id, name: s.name, duration: Number(s.duration) || 30, price: Number(s.price) || 0,
       })));
       setEditStartTime(editAppt.startTime || '');
+      setPickedTech(editAppt.techName || '');
     } else {
       setPickedClient(null);
       setPickedServices([]);
       setEditStartTime('');
+      setPickedTech(prefill?.techName || '');
     }
     setClientQuery('');
   }, [prefill?.date, prefill?.startTime, editAppt?.id]);
@@ -1211,8 +1237,9 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
 
   // Surface the services THIS tech performs first (employee.serviceIds, same
   // field the web edits). Soft sort + a ★ marker — never hides a service, so
-  // an off-menu booking is still possible.
-  const apptTechName = (isEdit ? editAppt?.techName : prefill?.techName) || '';
+  // an off-menu booking is still possible. Follows the picked tech so the
+  // ★ services + per-tech pricing update when the assignment changes.
+  const apptTechName = pickedTech || '';
   const apptTech = useMemo(
     () => employees.find(e => (e.name || '') === apptTechName) || null,
     [employees, apptTechName],
@@ -1304,14 +1331,22 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
     setWorking(true);
     try {
       if (isEdit) {
-        await updateAppointment(editAppt.id, {
+        const patch = {
           startTime: editStartTime,
           clientId:  pickedClient.id,
           clientName: pickedClient.name,
           services:  pickedServices,
           duration:  totalDuration,
-        });
-        notifyAffectedTechs(editAppt, { ...editAppt, startTime: editStartTime, clientId: pickedClient.id, clientName: pickedClient.name, services: pickedServices }).catch(() => {});
+          techName:  pickedTech,
+          // '' (no preference) = auto-assign, mirroring online bookings; an
+          // explicit tech is a scheduler assignment. Don't clobber a client's
+          // own 'specific' request when the tech is left unchanged.
+          techRequestType: pickedTech
+            ? (editAppt.techName === pickedTech ? (editAppt.techRequestType || 'scheduler') : 'scheduler')
+            : 'auto',
+        };
+        await updateAppointment(editAppt.id, patch);
+        notifyAffectedTechs(editAppt, { ...editAppt, ...patch }).catch(() => {});
       } else {
         // Recurring series: create N appts stepped by the chosen interval,
         // linked by a shared recurringGroupId.
@@ -1329,14 +1364,16 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
           await createAppointment({
             date:      d,
             startTime: prefill.startTime,
-            techName:  prefill.techName || '',
+            techName:  pickedTech,
             clientId:  pickedClient.id,
             clientName: pickedClient.name,
             services:  pickedServices,
             duration:  totalDuration,
             status:    'scheduled',
             notes:     '',
-            techRequestType: 'scheduler',
+            // '' (no preference) → 'auto' (assign later / any available), same
+            // as an online booking with no stylist picked.
+            techRequestType: pickedTech ? 'scheduler' : 'auto',
             // Records who entered the booking — shown as "Staff · Name" in
             // Reports (parity with web ScheduleAdmin).
             bookedByName: myStaffName || auth.currentUser?.displayName || auth.currentUser?.email?.split('@')[0] || null,
@@ -1344,7 +1381,7 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
           });
           d = stepDate(d, repeat);
         }
-        notifyAffectedTechs(null, { date: prefill.date, startTime: prefill.startTime, techName: prefill.techName || '', clientName: pickedClient.name }).catch(() => {});
+        notifyAffectedTechs(null, { date: prefill.date, startTime: prefill.startTime, techName: pickedTech, clientName: pickedClient.name }).catch(() => {});
       }
       onCreated?.();
     } catch (e) {
@@ -1364,8 +1401,7 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
               <Text style={styles.modalSubtitle}>
                 {(() => {
                   const ctx = isEdit ? editAppt : prefill;
-                  const tech = ctx.techName;
-                  return `${new Date(ctx.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${fmtTime(isEdit ? editStartTime : ctx.startTime)}${tech ? ' · ' + tech : ' · (no tech)'}`;
+                  return `${new Date(ctx.date + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${fmtTime(isEdit ? editStartTime : ctx.startTime)} · ${pickedTech || 'No preference'}`;
                 })()}
               </Text>
             </View>
@@ -1469,6 +1505,35 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
                   </ScrollView>
                 </>
               )}
+
+              <Text style={[styles.sectionLabel, { marginTop: 18 }]}>Tech</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={{ flexGrow: 0 }}
+                contentContainerStyle={{ gap: 8, paddingVertical: 2, paddingRight: 12 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                <TouchableOpacity
+                  onPress={() => setPickedTech('')}
+                  style={[styles.chip, !pickedTech ? styles.chipBlue : styles.chipMuted]}
+                >
+                  <Text style={!pickedTech ? styles.chipBlueText : styles.chipMutedText}>No preference</Text>
+                </TouchableOpacity>
+                {employees.filter(e => e.name).map(e => {
+                  const on = pickedTech === e.name;
+                  return (
+                    <TouchableOpacity
+                      key={e.id || e.name}
+                      onPress={() => setPickedTech(e.name)}
+                      style={[styles.chip, on ? styles.chipBlue : styles.chipMuted, { flexDirection: 'row', alignItems: 'center', gap: 7 }]}
+                    >
+                      <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: getTechColor(e.name, employees.map(x => x.name)).solid }} />
+                      <Text style={on ? styles.chipBlueText : styles.chipMutedText} numberOfLines={1}>{e.name}{e.name === myStaffName ? ' (me)' : ''}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
 
               <Text style={[styles.sectionLabel, { marginTop: 18 }]}>
                 Services ({pickedServices.length} · {totalDuration} min)
@@ -2139,7 +2204,7 @@ const makeStyles = (t) => StyleSheet.create({
   dayApptBlock:       { backgroundColor: t.blueSoft, borderLeftWidth: 3, borderLeftColor: t.blue, borderRadius: 6, padding: 8, justifyContent: 'center' },
   dayApptClient:      { fontSize: 13, fontWeight: '700', color: t.text },
   dayApptMeta:        { fontSize: 11, color: t.textMuted, marginTop: 2 },
-  dayEmptyHint:       { fontSize: 14, color: t.borderStrong, textAlign: 'center', lineHeight: 18 },
+  dayEmptyHint:       { fontSize: 22, color: t.textMuted, textAlign: 'center', lineHeight: 26, fontWeight: '800' },
   gridTimeLabel:      { position: 'absolute', right: 6, fontSize: 11, color: t.textMuted, fontWeight: '600' },
   gridHeadCell:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 6, borderBottomWidth: 1, borderBottomColor: t.border, borderLeftWidth: 1, borderLeftColor: t.border, backgroundColor: t.surfaceAlt },
   gridHeadDot:        { width: 8, height: 8, borderRadius: 4 },
@@ -2147,7 +2212,7 @@ const makeStyles = (t) => StyleSheet.create({
   gridCol:            { borderLeftWidth: 1, borderLeftColor: t.border },
   gridSlot:           { position: 'absolute', left: 0, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: t.border },
   gridSlotHour:       { borderBottomColor: t.borderStrong },
-  gridPlus:           { fontSize: 13, color: t.borderStrong, fontWeight: '700' },
+  gridPlus:           { fontSize: 22, color: t.textMuted, fontWeight: '800' },
   gridBlock:          { position: 'absolute', left: 3, borderLeftWidth: 3, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, overflow: 'hidden' },
   gridBlockClient:    { fontSize: 12.5, fontWeight: '800' },
   gridBlockMeta:      { fontSize: 10.5, marginTop: 1, opacity: 0.8 },

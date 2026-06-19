@@ -2,12 +2,18 @@
 // front-desk kiosk (iPad) to pick up and take a card on the M2 reader.
 //
 // The shape MUST match what the mobile KioskCheckout reads (see
-// mobile/.../KioskCheckout.jsx + CheckoutScreen.buildHandoff). Two deliberate
+// mobile/.../KioskCheckout.jsx + CheckoutScreen.buildHandoff). Three deliberate
 // choices keep web↔kiosk money correct:
 //   1. Discount is precomputed to a fixed $ amount (discType:'amount') — the web
 //      and mobile encode discount TYPES differently ('ff'/'fixed' vs
 //      'percent'/'amount'), so sending a literal $ sidesteps the mismatch.
-//   2. The caller must gate OUT promo / gift-card / gift-card-sale carts — their
+//   2. Store credit is ALSO precomputed to a fixed $ (creditApplied) for the same
+//      reason: the dedicated kiosk identity can't read the client to derive the
+//      balance, so it would charge the un-credited bill while the server applied
+//      the credit → "Captured ≠ bill" and a captured-but-unsaved sale. Sending
+//      the resolved $ lets the kiosk charge the right amount; the server still
+//      clamps it to the client's real balance.
+//   3. The caller must gate OUT promo / gift-card / gift-card-sale carts — their
 //      object shapes + usage side-effects don't round-trip cleanly yet. See
 //      kioskHandoffAvailable().
 
@@ -44,6 +50,7 @@ export function buildKioskHandoff({
   cartItems = [],
   discountAmount = 0,
   applyCredit = false,
+  creditApplied = 0,
   primaryClient = null,
   createdBy = null,
   receiptPhone = null,
@@ -87,6 +94,7 @@ export function buildKioskHandoff({
   }));
 
   const disc = Math.max(0, Number(discountAmount) || 0);
+  const credit = Math.max(0, Number(creditApplied) || 0);
 
   return {
     sessionId,
@@ -96,12 +104,16 @@ export function buildKioskHandoff({
     clientId: primaryClient?.id || null,
     clientName: primaryClient?.name || apptsPayload[0]?.clientName || 'Walk-in',
     createdBy: createdBy || null,
-    // Fixed-$ discount — see file header (#2).
+    // Fixed-$ discount — see file header (#1).
     discType: disc > 0 ? 'amount' : 'none',
     discVal: disc,
     promo: null,
     giftCard: null,
+    // Fixed-$ store credit — see file header (#2). applyCredit stays as the
+    // server's gate to even consult the balance; creditApplied is the $ to apply
+    // (the server clamps it to the client's real balance).
     applyCredit: !!applyCredit,
+    creditApplied: credit,
     receiptPhone: receiptPhone || null,
     status: 'pending',
   };
