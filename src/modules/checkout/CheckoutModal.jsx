@@ -47,7 +47,7 @@ export default function CheckoutModal(props) {
   );
 }
 
-function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, onComplete, onClose, techs = [] }) {
+function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialProducts = null, initialGcSales = null, onComplete, onClose, techs = [] }) {
   const { settings, isOnline, isAdmin, showToast, gUser, hasFeature } = useApp();
   // Tax follows the location the sale is rung up at (the current-location
   // switcher); falls back to the tenant-wide rate for single-location tenants
@@ -137,7 +137,10 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [cartItems,    setCartItems]    = useState(() => Array.isArray(initialProducts) ? initialProducts : []);
   const [allProducts,  setAllProducts]  = useState(null);
   const [showPicker,   setShowPicker]   = useState(false);
-  const [gcSales,      setGcSales]      = useState([]);  // [{ id, code, amount, recipientName, recipientEmail }]
+  // [{ id, code, amount, recipientName, recipientEmail, recipientPhone?, purchaserName?, purchaserPhone?, note? }]
+  // Seeded from initialGcSales when a gift-card purchase is sent here from the
+  // Gift Cards admin (the card is created only after this sale is paid).
+  const [gcSales,      setGcSales]      = useState(() => Array.isArray(initialGcSales) ? initialGcSales : []);
   const [showGcSale,   setShowGcSale]   = useState(false);
   const [saving,       setSaving]       = useState(false);
   const [receipt,      setReceipt]      = useState(null);
@@ -363,7 +366,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
       const sessionId = genSessionToken(16);
       const payload = buildKioskHandoff({
         appts, serviceLines, prices, techNames, cartItems,
-        discountAmount, applyCredit, primaryClient,
+        discountAmount, applyCredit, creditApplied: creditApply, primaryClient,
         createdBy: gUser?.email || null, sessionId, flow,
       });
       await setCheckoutSession(payload);
@@ -533,14 +536,24 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           const id = await createGiftCard({
             code: g.code.toUpperCase(),
             balance: g.amount,
+            // Write both initialBalance (admin-issued shape, drives the list's
+            // balance bar) and originalAmount so cards are identical regardless
+            // of whether they were sold at the POS or from the Gift Cards admin.
+            initialBalance: g.amount,
             originalAmount: g.amount,
-            recipientName: g.recipientName || null,
+            recipientName:  g.recipientName || null,
             recipientEmail: g.recipientEmail || null,
-            purchaserName:  buyerName,
-            purchaserPhone: buyerPhone,
+            recipientPhone: g.recipientPhone || null,
+            issuedTo:       g.recipientName || null,
+            // Prefer the gift sale's own purchaser fields (the admin form
+            // collects them); fall back to the client being checked out.
+            purchaserName:  g.purchaserName || buyerName,
+            purchaserPhone: g.purchaserPhone || buyerPhone,
+            note:           g.note || null,
             soldAt: new Date().toISOString(),
             soldVia: 'checkout',
             active: true,
+            voided: false,
           });
           giftCardsSold.push({ id, code: g.code.toUpperCase(), amount: g.amount, recipientName: g.recipientName || null, recipientEmail: g.recipientEmail || null });
         } catch (e) {

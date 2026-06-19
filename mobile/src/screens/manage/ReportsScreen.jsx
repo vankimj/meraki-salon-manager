@@ -10,7 +10,7 @@ import useResponsive from '../../hooks/useResponsive';
 import useTrashHeader from '../../hooks/useTrashHeader';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
-const PERIODS = [{ days: 0, label: 'Today' }, { days: 7, label: '7d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }];
+const PERIODS = [{ days: 0, label: 'Today' }, { days: 7, label: '7d' }, { days: 14, label: '14d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }];
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 const isoDay = (d) => d.toISOString().slice(0, 10);
 

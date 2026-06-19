@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import {
-  fetchGiftCards, createGiftCard, updateGiftCard,
+  fetchGiftCards, updateGiftCard,
   fetchPromoCodes, createPromoCode, savePromoCode, deletePromoCode,
   subscribeToGiftCard, retryGiftCardEmail,
 } from '../../lib/firestore';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import TrashButton from '../../components/TrashButton';
+import CheckoutModal from '../checkout/CheckoutModal';
 
 // ── helpers ─────────────────────────────────────────────
 function genCode() {
@@ -46,6 +47,7 @@ export default function GiftCardsAdmin() {
   const [promos,     setPromos]     = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [showGCModal,setShowGCModal]= useState(false);
+  const [gcCheckout, setGcCheckout] = useState(null);   // gift-card sale routed to the POS checkout
   const [showPromoModal, setShowPromoModal] = useState(false);
   const [detailGC,   setDetailGC]   = useState(null);
 
@@ -77,14 +79,12 @@ export default function GiftCardsAdmin() {
     }
   }
 
-  async function handleCreateGC(data) {
-    try {
-      await createGiftCard(data);
-      logActivity('gift_card_created', data.code);
-      showToast('Gift card created');
-      setShowGCModal(false);
-      loadAll();
-    } catch (e) { showToast('Failed: ' + e.message, 3000); }
+  // Selling a gift card is a real sale: hand the entered card off to the POS
+  // checkout (as a non-taxable line item). The card is only created + emailed
+  // once payment completes — there's no free-issue path. See onComplete below.
+  function startGiftCardSale(entry) {
+    setShowGCModal(false);
+    setGcCheckout(entry);
   }
 
   async function handleVoidGC(gc) {
@@ -190,7 +190,20 @@ export default function GiftCardsAdmin() {
       )}
 
       {showGCModal && (
-        <GiftCardModal onSave={handleCreateGC} onClose={() => setShowGCModal(false)} />
+        <GiftCardModal onProceed={startGiftCardSale} onClose={() => setShowGCModal(false)} />
+      )}
+      {gcCheckout && (
+        <CheckoutModal
+          walkInClient={{ name: gcCheckout.purchaserName || 'Walk-in', phone: gcCheckout.purchaserPhone || '' }}
+          initialGcSales={[gcCheckout]}
+          onComplete={() => {
+            logActivity('gift_card_sold', `${gcCheckout.code} · ${fmt$(gcCheckout.amount)}`);
+            setGcCheckout(null);
+            showToast('Gift card sold');
+            loadAll();
+          }}
+          onClose={() => setGcCheckout(null)}
+        />
       )}
       {showPromoModal && (
         <PromoModal onSave={handleCreatePromo} onClose={() => setShowPromoModal(false)} />
@@ -525,7 +538,7 @@ function PromoEditModal({ promo, onSave, onClose }) {
 }
 
 // ── Gift Card create modal ────────────────────────────────
-function GiftCardModal({ onSave, onClose }) {
+function GiftCardModal({ onProceed, onClose }) {
   const [amount,         setAmount]         = useState('');
   const [code,           setCode]           = useState(genCode());
   const [purchaserName,  setPurchaserName]  = useState('');
@@ -534,35 +547,28 @@ function GiftCardModal({ onSave, onClose }) {
   const [recipientEmail, setRecipientEmail] = useState('');
   const [recipientPhone, setRecipientPhone] = useState('');
   const [note,           setNote]           = useState('');
-  const [saving,         setSaving]         = useState(false);
 
   // Email is required because the Cloud Function emails the recipient the
   // code on creation. Without an email the recipient never gets it.
   const validEmail = /^[^@\s]+@[^@\s.]+\.[^@\s]+$/.test(recipientEmail.trim());
   const canSave = !!amount && Number(amount) > 0 && !!code.trim() && validEmail;
 
-  async function handleSave() {
+  // No free-issue: hand the card details to the POS checkout. The card is
+  // created + emailed only once that sale is paid (see GiftCardsAdmin →
+  // CheckoutModal initialGcSales). Shape matches the checkout's gcSales entry.
+  function handleProceed() {
     if (!canSave) return;
-    setSaving(true);
-    await onSave({
+    onProceed({
+      id:             `gc_${Date.now()}_${Math.floor(Math.random() * 9999)}`,
       code:           code.trim().toUpperCase(),
-      initialBalance: Number(amount),
-      balance:        Number(amount),
-      // Naming aligned with the checkout flow + Cloud Function
-      // sendGiftCardEmail (recipientName / recipientEmail). issuedTo is
-      // kept populated for backward-compat with existing UI references.
+      amount:         Number(amount),
       recipientName:  recipientName.trim() || null,
       recipientEmail: recipientEmail.trim(),
       recipientPhone: recipientPhone.trim() || null,
-      issuedTo:       recipientName.trim() || null,
-      // Who bought the card — used for record-keeping + lookup (search by
-      // buyer or recipient in the Gift Cards list and at checkout).
       purchaserName:  purchaserName.trim() || null,
       purchaserPhone: purchaserPhone.trim() || null,
       note:           note.trim() || null,
-      voided:         false,
     });
-    setSaving(false);
   }
 
   return (
@@ -638,12 +644,13 @@ function GiftCardModal({ onSave, onClose }) {
             <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2 }}>Bought by {purchaserName}</div>
           )}
           {validEmail && (
-            <div style={{ fontSize: 11, color: 'var(--pn-success)', marginTop: 3 }}>📧 Code will be emailed to {recipientEmail}</div>
+            <div style={{ fontSize: 11, color: 'var(--pn-success)', marginTop: 3 }}>📧 Code will be emailed to {recipientEmail} once paid</div>
           )}
+          <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 3 }}>💳 You'll take payment on the next screen — the card is created once the sale is paid.</div>
         </div>
 
-        <SaveBtn onClick={handleSave} saving={saving} disabled={!canSave}>
-          Issue Gift Card
+        <SaveBtn onClick={handleProceed} disabled={!canSave}>
+          Continue to payment →
         </SaveBtn>
       </ModalBox>
     </Overlay>

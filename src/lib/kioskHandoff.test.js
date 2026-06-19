@@ -59,6 +59,21 @@ describe('buildKioskHandoff', () => {
     expect(p.giftCard).toBeNull();
   });
 
+  it('pre-resolves store credit to a fixed $ amount (kiosk identity cannot read the balance)', () => {
+    const p = buildKioskHandoff({
+      appts, serviceLines, prices: ['35', '40'], techNames: ['Tess D', 'Tess D'],
+      applyCredit: true, creditApplied: 27,
+      primaryClient: { id: 'c1', name: 'Jane Doe' }, sessionId: 'SID',
+    });
+    expect(p.applyCredit).toBe(true);
+    expect(p.creditApplied).toBe(27);
+  });
+
+  it('defaults creditApplied to 0 and clamps negatives', () => {
+    expect(buildKioskHandoff({ appts, serviceLines, prices: ['35', '40'], techNames: ['Tess D', 'Tess D'], sessionId: 'SID' }).creditApplied).toBe(0);
+    expect(buildKioskHandoff({ appts, serviceLines, prices: ['35', '40'], techNames: ['Tess D', 'Tess D'], creditApplied: -5, sessionId: 'SID' }).creditApplied).toBe(0);
+  });
+
   it('uses discType none when there is no discount', () => {
     const p = buildKioskHandoff({ appts, serviceLines, prices: ['35', '40'], techNames: ['Tess D', 'Tess D'], sessionId: 'SID' });
     expect(p.discType).toBe('none');

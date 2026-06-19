@@ -172,7 +172,16 @@ export default function KioskCheckout({ session, settings, email, local = false,
   const discount   = priced ? sessionDiscount : memberDiscount;
   const promo      = priced ? (session.promo || null) : null;
   const giftCard   = priced ? (session.giftCard || null) : null;
-  const applyCredit = priced ? (!!session.applyCredit && clientCredit > 0) : (clientCredit > 0);
+  // A dedicated kiosk identity can't read the client's real credit balance, so a
+  // priced hand-off carries the exact credit $ to apply (pre-resolved upstream,
+  // like the discount). Use that so the kiosk charges the credited total the
+  // server will also compute. A staff device (can read the client) keeps using
+  // the live balance. See kioskHandoff.js header + recordKioskSale.
+  const handoffCredit = priced ? (Number(session.creditApplied) || 0) : 0;
+  const effCredit     = isKioskSession ? handoffCredit : clientCredit;
+  const applyCredit   = isKioskSession
+    ? handoffCredit > 0
+    : (priced ? (!!session.applyCredit && clientCredit > 0) : (clientCredit > 0));
   const discountLabel = priced
     ? (session.discType === 'member' ? `★ Member (${Number(session.discVal) || 0}%)`
        : session.discType === 'amount' ? 'Discount'
@@ -197,13 +206,13 @@ export default function KioskCheckout({ session, settings, email, local = false,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
     method, noCardTips: !!settings?.noCardTips, tip: tipArg,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
-    clientCredit, applyCredit,
+    clientCredit: effCredit, applyCredit,
   });
-  const cashTotals = useMemo(() => totalsFor('cash', tipForCharge), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, membership, clientCredit, priced]);
-  const cardTotals = useMemo(() => totalsFor('card', tipForCharge), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, membership, clientCredit, priced]);
+  const cashTotals = useMemo(() => totalsFor('cash', tipForCharge), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, membership, effCredit, applyCredit, priced]);
+  const cardTotals = useMemo(() => totalsFor('card', tipForCharge), [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, membership, effCredit, applyCredit, priced]);
   // The tip amount the customer selected (drives the Venmo QR), regardless of
   // whether it's charged — so the QR shows the right amount even when off-bill.
-  const selectedTipAmt = useMemo(() => totalsFor('card', tip).tipAmt || 0, [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, clientCredit, priced]);
+  const selectedTipAmt = useMemo(() => totalsFor('card', tip).tipAmt || 0, [lines, productsTotal, tipMode, tipPct, tipAmtStr, perTechTips, settings, membership, effCredit, applyCredit, priced]);
 
   // Venmo tips: customers can tip a tech directly (QR to their Venmo) instead of
   // (or on top of) a card tip. Amount prefilled from the selected tip, split per

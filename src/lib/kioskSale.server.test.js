@@ -31,6 +31,23 @@ describe('server computeTotals', () => {
     expect(t.charged).toBe(25);        // 40 - 15
     expect(t.total).toBe(30);          // 25 + 5 tip
   });
+  // Regression: the kiosk "Captured $X ≠ bill $0.00" bug. A $30 bill, $3 fixed
+  // discount, and $27 of store credit must net to $0 — recordKioskSale now feeds
+  // the pre-resolved credit $ here so this matches what the kiosk charged.
+  it('fixed discount + full store credit nets to $0 (kiosk credit round-trip)', () => {
+    const t = computeTotals({ lines: [{ price: 30, taxable: true }], taxRate: 0, discount: { value: 3, isPercent: false }, method: 'card', clientCredit: 27, applyCredit: true });
+    expect(t.afterDiscounts).toBe(27);
+    expect(t.creditApply).toBe(27);
+    expect(t.total).toBe(0);
+  });
+  // A percent discount must round-trip too — recordKioskSale now decodes any
+  // non-'amount' discType as a percentage (mobile hand-offs send raw types).
+  it('percent discount reduces the subtotal before credit', () => {
+    const t = computeTotals({ lines: [{ price: 30, taxable: true }], taxRate: 0, discount: { value: 10, isPercent: true }, method: 'card', clientCredit: 100, applyCredit: true });
+    expect(t.discountAmount).toBe(3); // 10% of 30
+    expect(t.creditApply).toBe(27);   // clamped to the $27 bill
+    expect(t.total).toBe(0);
+  });
   it('non-taxable line is excluded from tax', () => {
     const t = computeTotals({ lines: [{ price: 40, taxable: true }, { price: 20, taxable: false }], taxRate: 10, method: 'cash' });
     expect(t.subtotal).toBe(60);

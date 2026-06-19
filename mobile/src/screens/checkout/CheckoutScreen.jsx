@@ -341,6 +341,19 @@ export default function CheckoutScreen({ navigation }) {
     }));
     const clientName = Array.from(new Set((tab.appts || []).map(a => a.clientName || 'Walk-in').filter(Boolean))).join(' + ') || 'Walk-in';
     const sessionId = genReceiptToken(16);
+    // A pre-tip snapshot of the bill for the tech's "sent" summary — also the
+    // source of the resolved store-credit $ baked into the hand-off (the kiosk
+    // identity can't read the client to derive it; see kioskHandoff.js header).
+    const summaryTotals = computeTotals({
+      lines, productsTotal,
+      discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
+      promo: normalizePromo(promo), taxRate: Number(settings?.taxRate) || 0,
+      ccFeePct: 0, ccFeeFlat: 0, method: 'cash', noCardTips: false,
+      tip: { custom: true, amount: 0, pct: null },
+      giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
+      clientCredit, applyCredit: applyCredit && clientCredit > 0,
+    });
+    const creditApplied = Math.max(0, Number(summaryTotals.creditApply) || 0);
     const payload = {
       sessionId,
       cart: { appts, products },
@@ -353,18 +366,9 @@ export default function CheckoutScreen({ navigation }) {
       promo: promo || null,
       giftCard: giftCard || null,
       applyCredit: !!applyCredit,
+      creditApplied,
       receiptPhone: receiptPhone || null,
     };
-    // A pre-tip snapshot of the bill for the tech's "sent" summary.
-    const summaryTotals = computeTotals({
-      lines, productsTotal,
-      discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
-      promo: normalizePromo(promo), taxRate: Number(settings?.taxRate) || 0,
-      ccFeePct: 0, ccFeeFlat: 0, method: 'cash', noCardTips: false,
-      tip: { custom: true, amount: 0, pct: null },
-      giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
-      clientCredit, applyCredit: applyCredit && clientCredit > 0,
-    });
     const discountLabel = discType === 'member' ? `★ Member (${Number(discVal) || 0}%)`
       : discType === 'amount' ? 'Discount'
       : discType === 'percent' ? `Discount (${Number(discVal) || 0}%)` : null;
