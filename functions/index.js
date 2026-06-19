@@ -3326,7 +3326,9 @@ exports.createStaffInvite = onCall({ cors: true }, async (request) => {
   // Keep the invite even if the SMS fails so the admin can copy the link
   // manually; just report the failure.
   if (!r.ok) return { ok: false, error: r.error || 'sms_failed', token, link, employeeId: empRef.id };
-  return { ok: true, token, link, sentTo: phone, employeeId: empRef.id };
+  // Surface the sandbox short-circuit so the UI can tell the admin the text
+  // was logged (not actually sent) and to share the link manually instead.
+  return { ok: true, token, link, sentTo: phone, employeeId: empRef.id, sandboxed: !!r.sandboxed };
 });
 
 // Redeemed by the invitee AFTER they sign in (Google/Apple) on the claim page.

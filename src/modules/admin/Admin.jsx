@@ -1757,7 +1757,13 @@ function StaffSmsInvite() {
           {sending ? 'Sending…' : 'Send invite'}
         </button>
       </div>
-      {result?.ok && (
+      {result?.ok && result.sandboxed && (
+        <div style={{ fontSize: 12, color: 'var(--pn-warning)', background: 'var(--pn-warning-bg)', border: '1px solid #fde68a', borderRadius: 8, padding: '8px 10px', lineHeight: 1.45 }}>
+          ⚠ SMS sandbox is on — the invite was <b>logged, not actually texted</b> to {result.sentTo}. The team member and invite link were still created, so share this link manually:
+          {result.link && <div style={{ fontFamily: 'monospace', wordBreak: 'break-all', marginTop: 4 }}>{result.link}</div>}
+        </div>
+      )}
+      {result?.ok && !result.sandboxed && (
         <div style={{ fontSize: 12, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 10px' }}>
           ✓ Invite texted to {result.sentTo}. They’ll appear in your team list once they accept.
         </div>
