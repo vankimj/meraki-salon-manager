@@ -289,6 +289,9 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </UserRow>
               )) : <Empty>No users yet</Empty>}
             </Section>
+            <Section title="📲 Invite a teammate by text">
+              <StaffSmsInvite employees={employees} />
+            </Section>
           </>
         )}
 
@@ -1702,6 +1705,67 @@ function LogRow({ log }) {
           {log.fileSize  && <div><strong>File size:</strong> {(log.fileSize / 1024).toFixed(0)} KB</div>}
           {log._ua       && <div style={{ marginTop: 4, color: 'var(--pn-text-faint)' }}><strong>UA:</strong> {log._ua}</div>}
           {log._stack    && <div style={{ marginTop: 4, color: 'var(--pn-text-faint)' }}><strong>Stack:</strong>{'\n'}{log._stack}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Text a personalized invite link to a new hire's phone. They open it, sign in
+// with Google/Apple, and claimStaffInvite links them to this tenant with the
+// chosen role — no need to be pre-added by email or to sign in on the web first.
+function StaffSmsInvite() {
+  const [phone,   setPhone]   = useState('');
+  const [name,    setName]    = useState('');
+  const [role,    setRole]    = useState('tech');
+  const [sending, setSending] = useState(false);
+  const [result,  setResult]  = useState(null);   // { ok, link, sentTo } | { error, link? }
+  const sel = { fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' };
+  const inp = { ...sel, flex: 1, minWidth: 0 };
+
+  async function send() {
+    const p = phone.trim();
+    if (!p) { setResult({ error: 'Enter a mobile number.' }); return; }
+    setSending(true); setResult(null);
+    try {
+      // Admin.jsx's local callFn(name, data) returns the callable's `.data`.
+      const r = await callFn('createStaffInvite', { tenantId: TENANT_ID, phone: p, role, name: name.trim() });
+      setResult(r || { error: 'Unknown error' });
+      if (r?.ok) { setPhone(''); setName(''); }
+    } catch (e) {
+      setResult({ error: friendlyFnError(e) });
+    } finally { setSending(false); }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.45 }}>
+        We text a one-time setup link. They sign in with Google or Apple and are added to your team automatically.
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Name (optional)" style={inp} />
+        <input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile number" inputMode="tel" style={inp} />
+        <select value={role} onChange={e => setRole(e.target.value)} style={sel}>
+          <option value="tech">Staff (tech)</option>
+          <option value="scheduler">Front desk</option>
+          <option value="manager">Manager</option>
+          <option value="readonly">View only</option>
+          <option value="admin">Owner / admin</option>
+        </select>
+        <button onClick={send} disabled={sending || !phone.trim()}
+          style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sending || !phone.trim() ? 'var(--pn-border-strong)' : '#2D7A5F', color: '#fff', fontSize: 13, fontWeight: 700, cursor: sending || !phone.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+          {sending ? 'Sending…' : 'Send invite'}
+        </button>
+      </div>
+      {result?.ok && (
+        <div style={{ fontSize: 12, color: 'var(--pn-success)', background: 'var(--pn-success-bg)', border: '1px solid #bbf7d0', borderRadius: 8, padding: '8px 10px' }}>
+          ✓ Invite texted to {result.sentTo}. They’ll appear in your team list once they accept.
+        </div>
+      )}
+      {result && !result.ok && (
+        <div style={{ fontSize: 12, color: 'var(--pn-danger)', background: 'var(--pn-danger-bg)', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 10px' }}>
+          Couldn’t text the invite{result.error ? ` (${result.error})` : ''}.
+          {result.link && <> You can share this link manually: <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{result.link}</span></>}
         </div>
       )}
     </div>

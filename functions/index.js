@@ -3246,6 +3246,180 @@ exports.emailEmployeeInvite = onCall({ cors: true }, async (request) => {
   return { ok: true, sentTo: email };
 });
 
+// ── Staff SMS invite → web-first claim ──────────────────────────────────────
+// An owner/admin texts a personalized link to a new staff member's mobile.
+// They open it, sign in with Google OR Apple, and claimStaffInvite links that
+// account (email + phone) to THIS tenant with the chosen role — no need to be
+// pre-added by email or to sign in on the web first.
+//
+// Security model (this is the PII / access-control path):
+//   • Minting is admin-only (requireTenantAdmin).
+//   • Token is 22 url-safe chars (~130 bits), single-use, 7-day expiry.
+//   • The token ALONE grants nothing — tenant access is written only at claim
+//     time and only to the email that actually authenticates. Role is taken
+//     from the admin-minted invite (never from the client) against a whitelist.
+//   • Stored role uses the legacy vocabulary the projections key on
+//     (admin/manager/scheduler/tech/readonly) — see src/lib/userProjections.js.
+const STAFF_INVITE_ROLES = {
+  tech:      { store: 'tech',      label: 'a nail tech' },
+  scheduler: { store: 'scheduler', label: 'front desk (scheduler)' },
+  manager:   { store: 'manager',   label: 'a manager' },
+  admin:     { store: 'admin',     label: 'an owner/admin' },
+  readonly:  { store: 'readonly',  label: 'read-only' },
+};
+const STAFF_PROJ_ROLES = ['admin', 'manager', 'readonly', 'tech', 'scheduler'];
+
+exports.createStaffInvite = onCall({ cors: true }, async (request) => {
+  const d = request.data || {};
+  const tenantId = String(d.tenantId || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const phone = normalizePhone(d.phone);
+  if (!phone) throw new HttpsError('invalid-argument', 'Enter a valid mobile number (e.g. (614) 555-0123).');
+  const roleDef = STAFF_INVITE_ROLES[String(d.role || '').trim().toLowerCase()];
+  if (!roleDef) throw new HttpsError('invalid-argument', 'Pick a valid role.');
+  const name = String(d.name || '').trim().slice(0, 80);
+
+  const token = genServerReceiptToken(22);
+  const nowIso = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+  // Create an employee profile up front so the new hire shows on the team /
+  // schedule immediately; the claim stamps uid + email once they sign in.
+  const empRef = db.collection(`tenants/${tenantId}/employees`).doc();
+  await empRef.set({
+    name: name || 'New team member',
+    phone,
+    role: roleDef.store,
+    active: true,
+    pendingInvite: true,
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  });
+
+  await db.doc(`staffInvites/${token}`).set({
+    tenantId,
+    phone,
+    role: roleDef.store,
+    name: name || null,
+    employeeId: empRef.id,
+    status: 'pending',
+    createdBy: (await callerEmail(request)) || null,
+    createdAt: nowIso,
+    expiresAt,
+  });
+
+  const tenSnap = await db.doc(`tenants/${tenantId}`).get();
+  const salonName = tenSnap.exists ? (tenSnap.data().name || 'the salon') : 'the salon';
+  const base = (await tenantBaseUrl(db, tenantId)).replace(/\/+$/, '');
+  const link = `${base}/invite?token=${token}`;
+
+  const r = await sendSms({
+    to: phone,
+    body: `${salonName} invited you to join their team on Plume Nexus as ${roleDef.label}. Tap to set up your account: ${link}`,
+    tenantId,
+    kind: 'transactional',
+    clientId: null,
+  });
+  // Keep the invite even if the SMS fails so the admin can copy the link
+  // manually; just report the failure.
+  if (!r.ok) return { ok: false, error: r.error || 'sms_failed', token, link, employeeId: empRef.id };
+  return { ok: true, token, link, sentTo: phone, employeeId: empRef.id };
+});
+
+// Redeemed by the invitee AFTER they sign in (Google/Apple) on the claim page.
+// Links their authenticated email + phone to the tenant with the invited role.
+exports.claimStaffInvite = onCall({ cors: true }, async (request) => {
+  if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in to accept your invite.');
+  const token = String(request.data?.token || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) throw new HttpsError('invalid-argument', 'Invalid invite link.');
+  const email = (request.auth.token.email || '').toLowerCase();
+  if (!email) throw new HttpsError('failed-precondition', 'Your sign-in has no email. Use Google or Apple with an email address.');
+  const uid = request.auth.uid;
+  const phoneClaim = request.auth.token.phone_number || null;
+  const db = getFirestore();
+  const inviteRef = db.doc(`staffInvites/${token}`);
+
+  const result = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(inviteRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'This invite no longer exists.');
+    const inv = snap.data();
+    if (inv.status !== 'pending') throw new HttpsError('failed-precondition', 'This invite was already used.');
+    if (inv.expiresAt && inv.expiresAt < new Date().toISOString()) {
+      throw new HttpsError('failed-precondition', 'This invite has expired — ask your manager for a new one.');
+    }
+    const tenantId = inv.tenantId;
+    const role = STAFF_PROJ_ROLES.includes(inv.role) ? inv.role : 'tech';
+
+    // Rich users[] + reprojected allow-lists must move together (the 2026-05-10
+    // split-write incident) — do both in this transaction.
+    const fullRef = db.doc(`tenants/${tenantId}/data/usersFull`);
+    const projRef = db.doc(`tenants/${tenantId}/data/users`);
+    const fullSnap = await tx.get(fullRef);
+    const users = (fullSnap.exists ? (fullSnap.data().users || []) : []).slice();
+    const idx = users.findIndex(u => String(u.email || '').toLowerCase() === email);
+    const prior = idx >= 0 ? users[idx] : {};
+    const merged = {
+      ...prior,
+      email,
+      role,
+      uid,
+      name:     inv.name || prior.name || prior.techName || '',
+      techName: inv.name || prior.techName || prior.name || '',
+      phone:    inv.phone || prior.phone || phoneClaim || null,
+      addedAt:  prior.addedAt || new Date().toISOString(),
+      joinedViaInvite: token,
+    };
+    if (idx >= 0) users[idx] = merged; else users.push(merged);
+
+    const lower = (e) => String(e || '').trim().toLowerCase();
+    const staffEmails = Array.from(new Set(users.filter(u => u.email && STAFF_PROJ_ROLES.includes(u.role)).map(u => lower(u.email))));
+    const adminEmails = Array.from(new Set(users.filter(u => u.email && u.role === 'admin').map(u => lower(u.email))));
+
+    tx.set(fullRef, { users }, { merge: true });
+    tx.set(projRef, { staffEmails, adminEmails }, { merge: true });
+    tx.set(inviteRef, { status: 'claimed', claimedByUid: uid, claimedByEmail: email, claimedAt: new Date().toISOString() }, { merge: true });
+
+    return { tenantId, role, employeeId: inv.employeeId || null };
+  });
+
+  // Stamp the pre-created employee profile with the now-known identity
+  // (best-effort, outside the transaction — access is already granted).
+  if (result.employeeId) {
+    await db.doc(`tenants/${result.tenantId}/employees/${result.employeeId}`).set({
+      email, uid, pendingInvite: false, inviteClaimedAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    }, { merge: true }).catch(() => {});
+  }
+
+  const tenSnap = await db.doc(`tenants/${result.tenantId}`).get();
+  const t = tenSnap.exists ? tenSnap.data() : {};
+  return { ok: true, tenantId: result.tenantId, role: result.role, salonName: t.name || 'your salon', subdomain: t.subdomain || result.tenantId };
+});
+
+// Public, no-auth display for the claim page (so it can show "{Salon} invited
+// you as {role}" before the visitor signs in). Returns ONLY the salon name +
+// role label + status — never the phone/email on the invite. The token is the
+// capability; surfacing those two display fields to its holder is intended.
+exports.peekStaffInvite = onCall({ cors: true }, async (request) => {
+  const token = String(request.data?.token || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) return { ok: false, error: 'invalid' };
+  const db = getFirestore();
+  const snap = await db.doc(`staffInvites/${token}`).get();
+  if (!snap.exists) return { ok: false, error: 'not_found' };
+  const inv = snap.data();
+  const expired = inv.expiresAt && inv.expiresAt < new Date().toISOString();
+  const status = inv.status !== 'pending' ? 'used' : (expired ? 'expired' : 'pending');
+  const tenSnap = await db.doc(`tenants/${inv.tenantId}`).get();
+  return {
+    ok: true,
+    status,
+    salonName: (tenSnap.exists ? tenSnap.data().name : null) || 'the salon',
+    roleLabel: (STAFF_INVITE_ROLES[inv.role] || {}).label || inv.role,
+  };
+});
+
 // ── Tech time clock — kiosk (PIN) + admin override paths ───────────────
 //
 // Single callable handles both surfaces because they share state machine and
