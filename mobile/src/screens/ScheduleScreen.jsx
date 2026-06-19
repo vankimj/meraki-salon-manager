@@ -983,22 +983,29 @@ function DayGridView({ appts, allTechs, clientsById, date, timeOff, onDeleteBloc
                 const occ = byTech[t] || { starts: {}, covered: {} };
                 return (
                   <View key={t || 'none'} style={[styles.gridCol, { width: colW, height: GRID_H }]}>
+                    {/* Gridlines + "+" hints are non-interactive Views (cheap).
+                        A SINGLE tap layer per column handles empty-slot taps via
+                        the touch's locationY — instead of one TouchableOpacity
+                        per 30-min slot, which mounted ~220 gesture responders on
+                        a 10-tech phone view and made the schedule lag. */}
                     {Array.from({ length: SLOT_COUNT }).map((_, idx) => {
-                      const slotMin = DAY_START_MIN + idx * SLOT_MINUTES;
-                      const isHour  = slotMin % 60 === 0;
-                      const free    = !occ.covered[idx];
+                      const isHour = (DAY_START_MIN + idx * SLOT_MINUTES) % 60 === 0;
                       return (
-                        <TouchableOpacity
-                          key={idx}
-                          activeOpacity={free ? 0.5 : 1}
-                          disabled={!free}
-                          onPress={() => onTapEmpty(minToHHMM(slotMin), t)}
-                          style={[styles.gridSlot, { top: idx * SLOT_PX, height: SLOT_PX, width: colW }, isHour && styles.gridSlotHour]}
-                        >
-                          {free && <Text style={styles.gridPlus}>＋</Text>}
-                        </TouchableOpacity>
+                        <View key={idx} pointerEvents="none"
+                          style={[styles.gridSlot, { top: idx * SLOT_PX, height: SLOT_PX, width: colW }, isHour && styles.gridSlotHour]}>
+                          {!occ.covered[idx] && <Text style={styles.gridPlus}>＋</Text>}
+                        </View>
                       );
                     })}
+                    <TouchableOpacity
+                      activeOpacity={0.6}
+                      style={[styles.gridTapLayer, { width: colW, height: GRID_H }]}
+                      onPress={(e) => {
+                        const idx = Math.floor((e.nativeEvent.locationY || 0) / SLOT_PX);
+                        if (idx < 0 || idx >= SLOT_COUNT || occ.covered[idx]) return;
+                        onTapEmpty(minToHHMM(DAY_START_MIN + idx * SLOT_MINUTES), t);
+                      }}
+                    />
                     {Object.entries(occ.starts).map(([idxStr, a]) => {
                       const idx  = Number(idxStr);
                       const span = Math.max(1, Math.ceil((Number(a.duration) || 30) / SLOT_MINUTES));
@@ -1046,15 +1053,21 @@ function DayGridView({ appts, allTechs, clientsById, date, timeOff, onDeleteBloc
                         <Text style={styles.blockBandText} numberOfLines={2}>⛔ {b.reason}</Text>
                       </TouchableOpacity>
                     ))}
-                    {/* While moving an appt, the whole column becomes drop targets. */}
-                    {moving && Array.from({ length: SLOT_COUNT }).map((_, didx) => (
+                    {/* While moving an appt, one full-column drop layer (on top)
+                        turns any tap into a reschedule at that slot — slot from
+                        locationY, not 22 per-slot targets. */}
+                    {moving && (
                       <TouchableOpacity
-                        key={`drop-${didx}`}
                         activeOpacity={0.4}
-                        onPress={() => { onReschedule(moving, { startTime: minToHHMM(DAY_START_MIN + didx * SLOT_MINUTES), techName: t }); setMoving(null); }}
-                        style={[styles.gridDrop, { top: didx * SLOT_PX, height: SLOT_PX, width: colW }]}
+                        style={[styles.gridDrop, { top: 0, height: GRID_H, width: colW }]}
+                        onPress={(e) => {
+                          const didx = Math.floor((e.nativeEvent.locationY || 0) / SLOT_PX);
+                          if (didx < 0 || didx >= SLOT_COUNT) return;
+                          onReschedule(moving, { startTime: minToHHMM(DAY_START_MIN + didx * SLOT_MINUTES), techName: t });
+                          setMoving(null);
+                        }}
                       />
-                    ))}
+                    )}
                   </View>
                 );
               })}
@@ -2381,6 +2394,7 @@ const makeStyles = (t) => StyleSheet.create({
   gridHeadText:       { fontSize: 12.5, fontWeight: '800', color: t.text, flexShrink: 1 },
   gridCol:            { borderLeftWidth: 1, borderLeftColor: t.border },
   gridSlot:           { position: 'absolute', left: 0, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: t.border },
+  gridTapLayer:       { position: 'absolute', top: 0, left: 0 },
   gridSlotHour:       { borderBottomColor: t.borderStrong },
   gridPlus:           { fontSize: 30, color: t.textMuted, fontWeight: '400' },
   gridBlock:          { position: 'absolute', left: 3, borderLeftWidth: 3, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, overflow: 'hidden' },
