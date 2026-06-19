@@ -2382,7 +2382,7 @@ const makeStyles = (t) => StyleSheet.create({
   gridCol:            { borderLeftWidth: 1, borderLeftColor: t.border },
   gridSlot:           { position: 'absolute', left: 0, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: t.border },
   gridSlotHour:       { borderBottomColor: t.borderStrong },
-  gridPlus:           { fontSize: 22, color: t.textMuted, fontWeight: '800' },
+  gridPlus:           { fontSize: 30, color: t.textMuted, fontWeight: '400' },
   gridBlock:          { position: 'absolute', left: 3, borderLeftWidth: 3, borderRadius: 6, paddingHorizontal: 7, paddingVertical: 5, overflow: 'hidden' },
   gridBlockClient:    { fontSize: 12.5, fontWeight: '800' },
   gridBlockMeta:      { fontSize: 10.5, marginTop: 1, opacity: 0.8 },

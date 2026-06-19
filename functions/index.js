@@ -3927,12 +3927,22 @@ exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (re
   const products = session.cart.products || [];
   const lines    = kioskSaleLib.linesFromCart(session.cart);
   const productsTotal = products.reduce((s, p) => s + (Number(p.product?.price) || 0) * (Number(p.qty) || 1), 0);
+  // Store credit is pre-resolved by the checkout into a fixed $ on the session
+  // (the kiosk identity can't read the client to derive it — it would otherwise
+  // charge the un-credited bill while we applied the credit → "Captured ≠ bill").
+  // Trust that amount — the session is written by authenticated staff under
+  // rules — but never apply more than the client actually has, so a stale or
+  // oversized hand-off can't hand out phantom credit.
   let clientCredit = 0;
   if (session.applyCredit && session.clientId) {
-    clientCredit = Number((await db.doc(`tenants/${tenantId}/clients/${session.clientId}`).get()).data()?.credit) || 0;
+    const realCredit = Number((await db.doc(`tenants/${tenantId}/clients/${session.clientId}`).get()).data()?.credit) || 0;
+    clientCredit = Math.max(0, Math.min(Number(session.creditApplied) || 0, realCredit));
   }
-  const discount = (session.discType === 'amount' && Number(session.discVal) > 0)
-    ? { value: Number(session.discVal), isPercent: false } : null;
+  // Mirror the kiosk client's discount decode (KioskCheckout): any non-'amount'
+  // type is a percentage of the subtotal. The web pre-resolves to 'amount', but a
+  // mobile hand-off can carry 'percent'/'member' — both must round-trip here.
+  const discount = (session.discType && session.discType !== 'none' && Number(session.discVal) > 0)
+    ? { value: Number(session.discVal), isPercent: session.discType !== 'amount' } : null;
   const safeTip = {
     custom: !!tipIn.custom,
     amount: Math.max(0, Number(tipIn.amount) || 0),
@@ -3943,7 +3953,7 @@ exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (re
     taxRate: Number(settings.taxRate) || 0,
     ccFeePct: Number(settings.ccFeePct) || 0, ccFeeFlat: Number(settings.ccFeeFlat) || 0,
     method, noCardTips: !!settings.noCardTips, tip: safeTip,
-    clientCredit, applyCredit: !!session.applyCredit,
+    clientCredit, applyCredit: clientCredit > 0,
   });
   // Anti-abuse: tip can't exceed the bill itself (a sane cap; blocks a compromised
   // kiosk skewing a tip split into a payout).

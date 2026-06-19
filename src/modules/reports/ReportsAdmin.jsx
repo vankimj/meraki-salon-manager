@@ -147,6 +147,7 @@ function filterTransactions(appts, f) {
 // ── main component ─────────────────────────────────────
 const PERIODS = [
   { label: '7D',       days: 7   },
+  { label: '14D',      days: 14  },
   { label: '30D',      days: 30  },
   { label: '90D',      days: 90  },
   { label: 'All time', days: 3650 }, // ~10 years — covers any imported salon history

@@ -970,11 +970,22 @@ function openNew(techName, slotMins) {
 
         <TrashButton collections={['appointments', 'timeOff']} scope="Schedule" />
 
-        {/* Overflow menu — keeps the toolbar focused on daily controls
-            (date nav, view toggle, queue) and tucks infrequent ones
-            (Hours, Time Off) under a single ⚙ button. Closed by
-            default; clicking outside dismisses it. */}
+        {/* Block time — promoted to a visible toolbar button (was buried in
+            the ⚙ overflow) so blocking vacation / sick / personal time is
+            discoverable. Anyone who can manage the schedule sees it. */}
         {(isAdmin || isScheduler || isTech) && (
+          <button onClick={() => setShowTimeOff(true)}
+            title="Block personal time — vacation, sick, breaks"
+            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            🌴 Block time
+          </button>
+        )}
+
+        {/* Overflow menu — keeps the toolbar focused on daily controls
+            (date nav, view toggle, queue) and tucks infrequent admin ones
+            (Store hours) under a single ⚙ button. Closed by default;
+            clicking outside dismisses it. */}
+        {isAdmin && (
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <button onClick={() => setShowToolbarMenu(o => !o)}
               title="Schedule options"
@@ -992,26 +1003,14 @@ function openNew(techName, slotMins) {
                   boxShadow: '0 8px 24px rgba(0,0,0,.12)', zIndex: 20,
                   minWidth: 200, padding: 4,
                 }}>
-                  {isAdmin && (
-                    <button onClick={() => { setShowHours(true); setShowToolbarMenu(false); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text)', borderRadius: 6 }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                      <span>🕐</span>
-                      <div>
-                        <div style={{ fontWeight: 600 }}>Store hours</div>
-                        <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>Open / close times by day</div>
-                      </div>
-                    </button>
-                  )}
-                  <button onClick={() => { setShowTimeOff(true); setShowToolbarMenu(false); }}
+                  <button onClick={() => { setShowHours(true); setShowToolbarMenu(false); }}
                     style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 10px', border: 'none', background: 'none', textAlign: 'left', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: 'var(--pn-text)', borderRadius: 6 }}
                     onMouseEnter={e => e.currentTarget.style.background = 'var(--pn-surface-alt)'}
                     onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                    <span>🌴</span>
+                    <span>🕐</span>
                     <div>
-                      <div style={{ fontWeight: 600 }}>Time off</div>
-                      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>Vacation / sick / personal</div>
+                      <div style={{ fontWeight: 600 }}>Store hours</div>
+                      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>Open / close times by day</div>
                     </div>
                   </button>
                 </div>
@@ -1970,9 +1969,11 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
                   }
                 >
                   {interactive && !drag && (
-                    <div style={{ position: 'absolute', inset: 0, transition: 'background .1s' }}
-                         onMouseEnter={e => e.currentTarget.style.background = inWalkIn ? 'rgba(59,130,246,.08)' : 'rgba(59,130,246,.13)'}
-                         onMouseLeave={e => e.currentTarget.style.background = ''} />
+                    <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .1s' }}
+                         onMouseEnter={e => { e.currentTarget.style.background = inWalkIn ? 'rgba(59,130,246,.08)' : 'rgba(59,130,246,.13)'; if (e.currentTarget.firstChild) e.currentTarget.firstChild.style.opacity = '0.9'; }}
+                         onMouseLeave={e => { e.currentTarget.style.background = ''; if (e.currentTarget.firstChild) e.currentTarget.firstChild.style.opacity = '0.22'; }}>
+                      <span style={{ fontSize: 22, lineHeight: 1, fontWeight: 300, color: '#3D95CE', opacity: 0.22, transition: 'opacity .1s', pointerEvents: 'none', userSelect: 'none' }}>+</span>
+                    </div>
                   )}
                 </div>
               );
@@ -2195,6 +2196,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
   // + imported GG receipts joined client-side, newest-first.
   const [historyLoading, setHistoryLoading] = useState(false);
   const [history,        setHistory]        = useState(null);
+  const [rebooking,      setRebooking]      = useState(false);
   const [expandedVisitId, setExpandedVisitId] = useState(null);
   // New-client mini-form state. Replaces the inline phone/email walk-in
   // panel — when the user has no client linked, they tap "+ Create new
@@ -2378,13 +2380,36 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
     const svc = services.find(s => s.name === name);
     const r = svc ? resolveServicePricing(svc, null, apptTech) : null;
     const duration = r?.duration || 60;
-    patchService(i, { name, duration, price: r != null ? r.price : (svc?.basePrice || '') });
+    // Clear any prior sub-service option when the base service changes.
+    patchService(i, { name, optionId: null, optionName: null, duration, price: r != null ? r.price : (svc?.basePrice || '') });
+  }
+
+  // Sub-service / option picker: applies the option's price + duration
+  // override (or add) for the chosen service, resolved against the
+  // performing tech. Empty optionId reverts to the service's standard price.
+  function pickOption(i, optionId) {
+    const sv  = appt.services[i];
+    const svc = services.find(s => s.name === sv?.name);
+    const opt = optionId ? (svc?.options || []).find(o => o.id === optionId) || null : null;
+    const r   = svc ? resolveServicePricing(svc, opt, apptTech) : null;
+    patchService(i, {
+      optionId:   opt ? opt.id : null,
+      optionName: opt ? opt.name : null,
+      duration:   r?.duration || sv?.duration || 60,
+      price:      r != null ? r.price : (sv?.price ?? ''),
+    });
   }
 
   // Re-resolve every service's duration for the newly-assigned tech so their
   // per-service times take effect. Items carrying an explicit option override
   // (e.g. created via online booking) keep their resolved duration.
   function pickTechName(name) {
+    // "No preference" sentinel — clears the assigned tech and marks the
+    // appointment for automatic assignment (techRequestType 'auto').
+    if (name === '__any__') {
+      onChange({ techName: '', techRequestType: 'auto' });
+      return;
+    }
     const newTech = employees.find(e => e.name === name) || null;
     const next = (appt.services || []).map(sv => {
       if (sv.optionId) return sv;
@@ -2393,7 +2418,45 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
       const r = resolveServicePricing(svc, null, newTech);
       return { ...sv, duration: r.duration || sv.duration || 60, price: r.price };
     });
-    onChange({ techName: name, services: next });
+    // Picking a real tech leaves a client-requested ('specific') flag intact
+    // but clears the 'auto' no-preference state to the scheduler default.
+    const techRequestType = name
+      ? (appt.techRequestType === 'specific' ? 'specific' : 'scheduler')
+      : appt.techRequestType;
+    onChange({ techName: name, services: next, techRequestType });
+  }
+
+  // Rebook-from-last-visit (#14): prefill the service list from this
+  // client's most recent visit (appointments + imported receipts), dropping
+  // removal-only line items and re-resolving price/duration for the tech.
+  async function rebookFromLastVisit() {
+    if (!appt.clientId || rebooking) return;
+    setRebooking(true);
+    try {
+      let visits = history;
+      if (!visits) visits = await fetchClientVisits(appt.clientId, linkedClient).catch(() => []);
+      const rebookable = s => !(s.isRemoval || s.id === 'removal') && (s.name || s.customName);
+      const last = (visits || []).find(v => (v.services || []).some(rebookable));
+      if (!last) { window.alert('No prior visit with services found for this client.'); return; }
+      const tech = employees.find(e => e.id === appt.techId || e.name === appt.techName) || null;
+      const mapped = (last.services || []).filter(rebookable).map(s => {
+        const svcDoc = services.find(d => d.id === s.id || d.name === s.name);
+        const opt = s.optionId && svcDoc ? (svcDoc.options || []).find(o => o.id === s.optionId) || null : null;
+        const r = svcDoc ? resolveServicePricing(svcDoc, opt, tech) : null;
+        return {
+          name:       s.name || '',
+          customName: s.customName || '',
+          id:         s.id,
+          optionId:   s.optionId || null,
+          optionName: s.optionName || (opt?.name ?? null),
+          duration:   r?.duration ?? Number(s.duration) ?? 60,
+          price:      r != null ? r.price : (s.price ?? ''),
+        };
+      });
+      if (mapped.length) onChange({ services: mapped });
+    } finally {
+      setRebooking(false);
+    }
   }
 
   // Save-time validation, consolidated into a single inline panel above
@@ -2774,8 +2837,9 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
               {isView ? (
                 <ViewVal>{appt.techName || '—'}</ViewVal>
               ) : (
-                <select value={appt.techName} onChange={e => pickTechName(e.target.value)} style={inp}>
+                <select value={appt.techRequestType === 'auto' && !appt.techName ? '__any__' : (appt.techName || '')} onChange={e => pickTechName(e.target.value)} style={inp}>
                   <option value="">Pick tech…</option>
+                  <option value="__any__">🎲 No preference (any tech)</option>
                   {techs.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               )}
@@ -2789,14 +2853,31 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             </Field>
           </div>
 
-          {/* "Client asked for this tech" — view-mode shows the active
-              flag inline; the edit-mode checkbox lives under the
-              "More options" disclosure further down (uncommon setting,
-              kept off the default form to reduce clutter). */}
+          {/* Tech preference — surfaced inline right under the tech picker
+              (was previously buried under "More options"). Edit mode shows
+              the "client asked for this tech" toggle when a real tech is
+              assigned; view mode shows whichever flag is active. */}
+          {!isView && appt.techName && (
+            <label style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${appt.techRequestType === 'specific' ? '#ef4444' : 'var(--pn-border)'}`, background: appt.techRequestType === 'specific' ? 'var(--pn-danger-bg)' : 'var(--pn-bg)', cursor: 'pointer' }}>
+              <input type="checkbox"
+                checked={appt.techRequestType === 'specific'}
+                onChange={e => onChange({ techRequestType: e.target.checked ? 'specific' : 'scheduler' })}
+                style={{ accentColor: '#ef4444', cursor: 'pointer' }} />
+              <span style={{ fontSize: 13, fontWeight: 600, color: appt.techRequestType === 'specific' ? 'var(--pn-danger)' : 'var(--pn-text-muted)' }}>
+                <span style={{ color: '#ef4444', fontWeight: 700, marginRight: 4 }}>★</span>
+                Client asked for this tech
+              </span>
+            </label>
+          )}
           {isView && appt.techRequestType === 'specific' && (
             <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--pn-text)', fontWeight: 600 }}>
               <span style={{ fontSize: 14, color: '#ef4444', fontWeight: 700 }}>★</span>
               Client asked for {appt.techName}
+            </div>
+          )}
+          {isView && appt.techRequestType === 'auto' && !appt.techName && (
+            <div style={{ marginBottom: 10, fontSize: 12, color: 'var(--pn-text-muted)', fontWeight: 600 }}>
+              🎲 No tech preference — assign automatically
             </div>
           )}
 
@@ -2811,9 +2892,18 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
 
           {/* Services */}
           <div style={{ marginBottom: 10 }}>
-            <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6 }}>
-              Services {totalDur > 0 && <span style={{ color: 'var(--pn-text-faint)' }}>· {totalDur} min total</span>}
-            </label>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <label style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
+                Services {totalDur > 0 && <span style={{ color: 'var(--pn-text-faint)' }}>· {totalDur} min total</span>}
+              </label>
+              {!isView && appt.clientId && (
+                <button onClick={rebookFromLastVisit} disabled={rebooking} type="button"
+                  title="Prefill the services from this client's most recent visit"
+                  style={{ fontSize: 11, color: '#3D95CE', background: 'none', border: '1px solid #b3d4ef', borderRadius: 6, cursor: rebooking ? 'default' : 'pointer', padding: '3px 8px', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {rebooking ? 'Loading…' : '↻ Rebook last visit'}
+                </button>
+              )}
+            </div>
             {(appt.services || []).map((svc, i) => (
               <div key={i} style={{ background: 'var(--pn-bg)', borderRadius: 8, border: '1px solid var(--pn-border)', padding: 8, marginBottom: 6 }}>
                 {isView ? (
@@ -2838,6 +2928,23 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                     {svc.name === '__other__' && (
                       <input value={svc.customName || ''} onChange={e => patchService(i, { customName: e.target.value })} placeholder="Service name" style={{ ...inp, marginBottom: 6 }} />
                     )}
+                    {(() => {
+                      // Sub-service options (e.g. Gel-X variants, nail-art tiers).
+                      // Only render when the chosen service actually defines options.
+                      const svcDoc = services.find(s => s.name === svc.name);
+                      const opts = svcDoc?.options || [];
+                      if (!opts.length) return null;
+                      const base = resolveServicePricing(svcDoc, null, apptTech);
+                      return (
+                        <select value={svc.optionId || ''} onChange={e => pickOption(i, e.target.value)} style={{ ...inp, marginBottom: 6 }}>
+                          <option value="">Standard · {base.duration} min · ${base.price}{svcDoc.priceFrom ? '+' : ''}</option>
+                          {opts.map(o => {
+                            const r = resolveServicePricing(svcDoc, o, apptTech);
+                            return <option key={o.id} value={o.id}>{o.name} · {r.duration} min · ${r.price}{o.priceFrom ? '+' : ''}</option>;
+                          })}
+                        </select>
+                      );
+                    })()}
                     <div style={{ display: 'flex', gap: 6 }}>
                       <input type="number" min={5} step={5} value={svc.duration} onChange={e => patchService(i, { duration: Number(e.target.value) })}
                         placeholder="min" style={{ ...inp, width: 70 }} />
@@ -3018,37 +3125,24 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             </div>
           )}
 
-          {/* More options — disclosure for infrequent fields. Most
-              bookings don't touch the "client asked for this tech" flag
-              or recurring schedules, so they're hidden behind a single
-              link to keep the default modal short. */}
-          {!isView && (
+          {/* More options — disclosure for infrequent fields. The "client
+              asked for this tech" toggle now lives inline under the tech
+              picker; this keeps the recurring/repeat schedule behind a link
+              to keep the default modal short. New appointments only. */}
+          {!isView && !appt.id && (
             <div style={{ marginBottom: 10 }}>
               <button onClick={() => setAdvancedOpen(o => !o)} type="button"
                 style={{ background: 'none', border: 'none', color: '#3D95CE', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: '6px 0', fontFamily: 'inherit' }}>
-                {advancedOpen ? '▾ Hide more options' : '▸ More options · client asked for tech, repeat'}
+                {advancedOpen ? '▾ Hide more options' : '▸ More options · repeat'}
               </button>
               {advancedOpen && (
                 <div style={{ marginTop: 8, paddingTop: 10, borderTop: '1px dashed var(--pn-border)' }}>
-                  {/* "Client asked for this tech" checkbox */}
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${appt.techRequestType === 'specific' ? '#ef4444' : 'var(--pn-border)'}`, background: appt.techRequestType === 'specific' ? 'var(--pn-danger-bg)' : 'var(--pn-bg)', cursor: 'pointer', marginBottom: 10 }}>
-                    <input type="checkbox"
-                      checked={appt.techRequestType === 'specific'}
-                      onChange={e => onChange({ techRequestType: e.target.checked ? 'specific' : 'scheduler' })}
-                      style={{ accentColor: '#ef4444', cursor: 'pointer' }} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: appt.techRequestType === 'specific' ? 'var(--pn-danger)' : 'var(--pn-text-muted)' }}>
-                      <span style={{ color: '#ef4444', fontWeight: 700, marginRight: 4 }}>★</span>
-                      Client asked for this tech
-                    </span>
-                  </label>
                   {/* Recurring repeat — new appointments only */}
-                  {!appt.id && (
-                    <RepeatSection
-                      recurrence={appt.recurrence}
-                      date={appt.date}
-                      onChange={onChange}
-                    />
-                  )}
+                  <RepeatSection
+                    recurrence={appt.recurrence}
+                    date={appt.date}
+                    onChange={onChange}
+                  />
                 </div>
               )}
             </div>

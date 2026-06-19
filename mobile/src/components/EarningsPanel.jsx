@@ -89,7 +89,7 @@ function computeTechSlice(receipts, appointments, techName) {
   return { revenue, tips, serviceCount, clientCount: clientIds.size, tipEntries, redoEntries, serviceList, byDay };
 }
 
-const RANGES = [{ id: 'today', label: 'Today' }, { id: 'week', label: 'This week' }, { id: 'month', label: 'This month' }];
+const RANGES = [{ id: 'today', label: 'Today' }, { id: 'week', label: 'This week' }, { id: 'biweekly', label: '2 weeks' }, { id: 'month', label: 'This month' }];
 
 export default function EarningsPanel({ techName }) {
   const { theme } = useTheme();
@@ -112,6 +112,11 @@ export default function EarningsPanel({ techName }) {
     const today = todayStr();
     if (range === 'today') return { startDate: today, endDate: today };
     if (range === 'week') return { startDate: startOfWeekISO(today), endDate: today };
+    if (range === 'biweekly') {
+      const d = new Date(today + 'T12:00:00');
+      d.setDate(d.getDate() - 13); // inclusive 14-day window
+      return { startDate: d.toLocaleDateString('en-CA'), endDate: today };
+    }
     return { startDate: startOfMonthISO(today), endDate: today };
   }, [range]);
 
