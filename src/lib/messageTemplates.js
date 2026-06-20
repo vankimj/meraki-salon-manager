@@ -25,6 +25,7 @@ export const SAMPLE_VARS = {
   bookingLink: '<a href="https://merakinailstudio.plumenexus.com/book" style="color:#2D7A5F;">our online booking page</a>',
   rebookUrl: 'https://merakinailstudio.plumenexus.com/book',
   paymentLink: 'https://buy.stripe.com/test', priceLine: '$45/month', planName: 'VIP',
+  formName: 'Health History & Goals', intakeLink: 'https://merakinailstudio.plumenexus.com/?intake=abc123',
   amount: '50.00', total: '64.00', email: 'jordan@example.com',
   intro: "We're sorry — your appointment below has been cancelled. We'd love to find you a new time whenever you're ready.",
   apology: "we're sorry — ", helpLine: 'Need help? Reply to this email or call the salon.',

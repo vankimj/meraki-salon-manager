@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { fetchClient, saveClient, fetchClientAppointments, subscribeToChat, sendChatMessage } from '../lib/firestore';
+import { fetchClient, saveClient, fetchClientAppointments, subscribeToChat, sendChatMessage, fetchMyProgramsByEmail, fetchMyProgress } from '../lib/firestore';
 import { resizeImg } from '../utils/helpers';
+import { programStats } from '../lib/programs';
+import TrendChart from './TrendChart';
 
 function fmtDate(str) {
   if (!str) return '—';
@@ -16,8 +18,9 @@ function fmtTime(str) {
 }
 
 export default function ClientPortal() {
-  const { gUser, portalClientId, signOut, showToast, settings } = useApp();
+  const { gUser, portalClientId, signOut, showToast, settings, vertical, terms } = useApp();
   const salonName = settings?.salonName || 'Plume Nexus';
+  const isPT = vertical === 'personalTraining';
   const [tab,      setTab]      = useState('upcoming');
   const [client,   setClient]   = useState(null);
   const [appts,    setAppts]    = useState(null);
@@ -25,6 +28,8 @@ export default function ClientPortal() {
   const [draft,    setDraft]    = useState(null);
   const [saving,   setSaving]   = useState(false);
   const [chat,     setChat]     = useState(null);
+  const [programs, setPrograms] = useState(null);
+  const [progress, setProgress] = useState(null);
   const fileRef = useRef(null);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -34,6 +39,12 @@ export default function ClientPortal() {
     const unsub = subscribeToChat(portalClientId, setChat);
     return unsub;
   }, [portalClientId]); // eslint-disable-line
+
+  useEffect(() => {
+    if (!isPT) return;
+    fetchMyProgramsByEmail(gUser?.email).then(setPrograms).catch(() => setPrograms([]));
+    fetchMyProgress().then(setProgress).catch(() => setProgress([]));
+  }, [isPT, gUser?.email]);
 
   const upcoming = (appts || []).filter(a => a.date >= today && a.status !== 'done').sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''));
   const past     = (appts || []).filter(a => a.date < today || a.status === 'done').sort((a, b) => b.date.localeCompare(a.date));
@@ -107,6 +118,10 @@ export default function ClientPortal() {
       <div style={{ display: 'flex', background: '#fff', borderBottom: '1px solid #e8e8e8', flexShrink: 0 }}>
         {[
           { id: 'upcoming', label: `Upcoming${upcoming.length ? ` (${upcoming.length})` : ''}` },
+          ...(isPT ? [
+            { id: 'program',  label: 'My Plan' },
+            { id: 'progress', label: 'Progress' },
+          ] : []),
           { id: 'history',  label: `History${past.length ? ` (${past.length})` : ''}` },
           { id: 'messages', label: 'Messages' },
           { id: 'profile',  label: 'Profile' },
@@ -142,6 +157,20 @@ export default function ClientPortal() {
                 : past.map(a => <ApptCard key={a.id} appt={a} past />)
             }
           </>
+        )}
+
+        {/* My Plan (personal-training) */}
+        {tab === 'program' && (
+          programs === null ? <Loading />
+            : programs.length === 0 ? <Empty>No training plan assigned yet.</Empty>
+            : programs.filter(p => (p.status || 'active') !== 'completed').map(p => <PortalProgram key={p.id} program={p} />)
+        )}
+
+        {/* Progress (personal-training) */}
+        {tab === 'progress' && (
+          progress === null ? <Loading />
+            : progress.length === 0 ? <Empty>No progress logged yet. Your {terms.staff} will add measurements as you go.</Empty>
+            : <PortalProgress entries={progress} />
         )}
 
         {/* Messages */}
@@ -219,6 +248,78 @@ export default function ClientPortal() {
         )}
 
       </div>
+    </div>
+  );
+}
+
+function PortalProgram({ program }) {
+  const [openWeek, setOpenWeek] = useState(0);
+  const s = programStats(program);
+  const weeks = Array.isArray(program.weeks) ? program.weeks : [];
+  return (
+    <div style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: 16, marginBottom: 12 }}>
+      <div style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a' }}>{program.name}</div>
+      {program.description && <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>{program.description}</div>}
+      <div style={{ fontSize: 11, color: '#aaa', margin: '4px 0 12px' }}>{s.weeks} weeks · {s.exercises} exercises{program.currentWeek ? ` · on week ${program.currentWeek}` : ''}</div>
+      {weeks.map((w, wi) => (
+        <div key={w.id || wi} style={{ border: '1px solid #eee', borderRadius: 8, marginBottom: 6, overflow: 'hidden' }}>
+          <button onClick={() => setOpenWeek(openWeek === wi ? -1 : wi)}
+            style={{ width: '100%', textAlign: 'left', padding: '9px 12px', background: '#f8f9fa', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, fontFamily: 'inherit', display: 'flex', justifyContent: 'space-between' }}>
+            <span>{w.name || `Week ${wi + 1}`}</span><span style={{ color: '#aaa' }}>{openWeek === wi ? '▾' : '▸'}</span>
+          </button>
+          {openWeek === wi && (
+            <div style={{ padding: 12 }}>
+              {(w.days || []).map((d, di) => (
+                <div key={d.id || di} style={{ marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#3D95CE', marginBottom: 4 }}>{d.name || `Day ${di + 1}`}</div>
+                  {(d.exercises || []).map((ex, ei) => (
+                    <div key={ex.id || ei} style={{ fontSize: 13, color: '#333', padding: '4px 0', borderBottom: '1px solid #f3f3f3', display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <span>
+                        {ex.videoUrl ? <a href={ex.videoUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#6a4fa0', textDecoration: 'none' }}>▶ {ex.name}</a> : ex.name}
+                        {ex.notes && <span style={{ color: '#aaa', fontSize: 11 }}> — {ex.notes}</span>}
+                      </span>
+                      <span style={{ color: '#888', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
+                        {[ex.sets && `${ex.sets}×${ex.reps || '?'}`, ex.load].filter(Boolean).join(' @ ')}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PortalProgress({ entries }) {
+  const FIELDS = [
+    { key: 'weight', label: 'Weight', unit: 'lb', color: '#6a4fa0' },
+    { key: 'bodyFat', label: 'Body fat', unit: '%', color: '#3D95CE' },
+  ];
+  const charts = FIELDS.map(f => ({ ...f, points: entries.map(e => ({ x: (e.date || '').slice(5), y: e[f.key] })).filter(p => p.y != null) }));
+  return (
+    <div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>
+        {charts.map(c => c.points.length > 0 && (
+          <div key={c.key} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 12, padding: 12 }}>
+            <TrendChart points={c.points} color={c.color} unit={c.unit} label={c.label} />
+          </div>
+        ))}
+      </div>
+      {[...entries].reverse().map((e, i) => (
+        <div key={i} style={{ background: '#fff', border: '1px solid #e8e8e8', borderRadius: 10, padding: 12, marginBottom: 8, display: 'flex', gap: 12 }}>
+          {e.photo && <img src={e.photo} alt="" style={{ width: 50, height: 50, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />}
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 13 }}>{e.date}</div>
+            <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+              {[e.weight != null && `${e.weight} lb`, e.bodyFat != null && `${e.bodyFat}% bf`].filter(Boolean).join(' · ') || '—'}
+            </div>
+            {Array.isArray(e.prs) && e.prs.length > 0 && <div style={{ fontSize: 12, color: '#6a4fa0', marginTop: 2 }}>🏆 {e.prs.map(p => `${p.exercise}: ${p.value}`).join(', ')}</div>}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

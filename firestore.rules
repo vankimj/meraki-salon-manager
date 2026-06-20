@@ -402,6 +402,13 @@ service cloud.firestore {
         match /private/{docId} {
           allow read, write: if isTenantAdmin(tenantId);
         }
+        // Training progress (measurements / body-comp / PRs / before-after
+        // photos). Staff read+write; the portal client reads their own via the
+        // getMyProgress Cloud Function (a subcollection can't cheaply match the
+        // caller's email in a rule), so no direct client read here.
+        match /progress/{entryId} {
+          allow read, write: if isTenantStaff(tenantId);
+        }
       }
 
       // Employees.
@@ -610,6 +617,50 @@ service cloud.firestore {
           || (isTenantStaff(tenantId)
               && request.resource.data.diff(resource.data).affectedKeys()
                    .hasOnly(['stock', 'updatedAt', 'lastSoldAt']));
+      }
+
+      // ── Personal-training vertical ──────────────────────────────────────
+      // Intake / waiver form templates: admin manages. No client PII, but the
+      // public fill page reads the form through the getPublicIntakeForm Cloud
+      // Function (Admin SDK), so no public read is granted here.
+      match /intakeForms/{formId} {
+        allow read, write: if isTenantAdmin(tenantId);
+      }
+      // Intake responses contain health PII + e-signatures. Read: admin only.
+      // Create: server-only — written by submit*Intake Cloud Functions via the
+      // Admin SDK, so a tampered client payload can't be inserted. Admin update/
+      // delete is allowed only for the soft-delete (_deleted) markers.
+      match /intakeResponses/{responseId} {
+        allow read:          if isTenantAdmin(tenantId);
+        allow create:        if false;
+        allow update, delete: if isTenantAdmin(tenantId);
+      }
+      // Program templates (week→day→exercise plans): staff (trainers) build and
+      // reuse them. No client PII.
+      match /programTemplates/{programId} {
+        allow read, write: if isTenantStaff(tenantId);
+      }
+      // Assigned client programs: staff full access; the portal client whose
+      // email matches `clientEmail` can READ their own program (same pattern as
+      // chats) so the portal can render it without a Cloud Function.
+      match /clientPrograms/{cpId} {
+        allow read:  if isTenantStaff(tenantId) ||
+                        (isAuthenticated() && resource.data.clientEmail == request.auth.token.email);
+        allow write: if isTenantStaff(tenantId);
+      }
+      // Session-credit packs: staff read (balance shown on the client profile),
+      // portal client reads their own by email match. Writes come from the
+      // grantSessionPack Cloud Function + the appointment-done trigger (Admin
+      // SDK); admin may write to correct a balance by hand.
+      match /sessionPacks/{packId} {
+        allow read:  if isTenantStaff(tenantId) ||
+                        (isAuthenticated() && resource.data.clientEmail == request.auth.token.email);
+        allow write: if isTenantAdmin(tenantId);
+        // Immutable per-pack ledger — every grant/decrement, written server-only.
+        match /ledger/{entryId} {
+          allow read:  if isTenantStaff(tenantId);
+          allow write: if false;
+        }
       }
 
       // Receipts (post-checkout outreach): staff create — this triggers an

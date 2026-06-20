@@ -13,6 +13,7 @@ import NotesEditor from '../../components/NotesEditor';
 import EmptyState from '../../components/EmptyState';
 import CoachMark from '../../components/CoachMark';
 import SavedCardsTab from './SavedCardsTab';
+import ProgressTab from './ProgressTab';
 
 // ── helpers ────────────────────────────────────────────
 function blankClient() {
@@ -177,7 +178,8 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
   // they don't mutate the surviving rows). Each takes the row's own client.
   const handleViewClient   = useCallback((c) => setModal({ client: { ...c }, mode: 'view' }), []);
   const handleEditClient   = useCallback((c) => setModal({ client: { ...c }, mode: 'edit' }), []);
-  const handleDeleteClient = useCallback((c) => handleDelete(c), []); // eslint-disable-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line -- handleDelete is stable for the row's lifetime; omit from deps to keep memoized rows from re-rendering on every keystroke
+  const handleDeleteClient = useCallback((c) => handleDelete(c), []);
 
   function exportCSV() {
     const refCounts = {};
@@ -429,7 +431,7 @@ function CreditAdjuster({ client, onReload, onChange, showToast }) {
 }
 
 function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, onSave, onClose, onReload }) {
-  const { gUser, settings, showToast, isAdmin, isTech, hasCap } = useApp();
+  const { gUser, settings, showToast, isAdmin, isTech, hasCap, vertical } = useApp();
   const [mode,             setMode]             = useState(initialMode);
   const [tab,              setTab]              = useState('profile');
   const [saving,           setSaving]           = useState(false);
@@ -452,7 +454,10 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
   // paid 'insurance' add-on. The data lives in an admin-only sub-doc — the
   // Firestore rules, not just this UI gate, withhold it from non-admin staff.
   const canInsurance = isAdmin && hasCap('insurance');
-  const TABS    = ['profile', 'social', 'visits', ...(canInsurance ? ['insurance'] : []), 'cards'];
+  // Personal-training tenants get a Progress tab (measurements / body-comp /
+  // PRs / before-after photos) on each client.
+  const showProgress = vertical === 'personalTraining' && !isNew;
+  const TABS    = ['profile', 'social', 'visits', ...(showProgress ? ['progress'] : []), ...(canInsurance ? ['insurance'] : []), 'cards'];
 
   // Loaded lazily from clients/{id}/private/insurance when the tab opens. Kept
   // in LOCAL state + a ref for the latest value, so an in-flight card upload
@@ -1289,6 +1294,11 @@ function ClientModal({ client, allClients = [], initialMode = 'edit', onChange, 
               </div>
             </>
             )
+          )}
+
+          {/* ── Progress tab (personal-training vertical) ── */}
+          {tab === 'progress' && client.id && (
+            <ProgressTab clientId={client.id} isView={isView} />
           )}
 
           {/* ── Cards tab ── */}

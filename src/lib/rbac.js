@@ -56,6 +56,8 @@ export const CAPS = [
   'meetings',        // internal meetings
   'marketing',       // campaigns
   'memberships',     // recurring plans
+  'intake',          // intake & waiver forms
+  'programs',        // personalized training programs
   'chat',            // communications
   'walkin',          // walk-in manager
   'hr',              // payroll / compensation        (owner-only)
@@ -71,7 +73,7 @@ const OWNER_ONLY = ['hr', 'settings', 'users', 'billing'];
 export const ROLE_CAPS = {
   owner:     [...CAPS],
   manager:   CAPS.filter(c => !OWNER_ONLY.includes(c)),
-  staff:     ['pos', 'schedule', 'clients', 'earnings_own', 'chat'],
+  staff:     ['pos', 'schedule', 'clients', 'earnings_own', 'chat', 'programs'],
   scheduler: ['pos', 'schedule', 'schedule_all', 'clients', 'giftcards_sell', 'walkin', 'chat'],
   kiosk:     [],
   readonly:  ['schedule', 'clients', 'reports'],

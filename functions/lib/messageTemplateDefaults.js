@@ -177,6 +177,26 @@ Click the button below to add your payment method. Your subscription starts imme
     email: { subtitle: '{planName} membership', footerNote: 'Reply to unsubscribe.' },
   },
 
+  intake_request_email: {
+    channel: 'email', group: 'customer_email',
+    label: 'Intake / waiver request',
+    description: 'Emailed to a client with a secure link to complete an intake form or sign a waiver.',
+    subject: 'Please complete: {formName}',
+    body:
+`# Hi {clientName}!
+
+Before your next visit with {salonName}, please take a moment to complete this form: **{formName}**.
+
+[[Complete the form|{intakeLink}]]
+
+> It only takes a couple of minutes. The link is secure and unique to you — no login required.
+
+— The {salonName} Team`,
+    vars: ['clientName', 'salonName', 'formName', 'intakeLink'],
+    htmlVars: [],
+    email: { subtitle: '{formName}' },
+  },
+
   birthday_email: {
     channel: 'email', group: 'customer_email',
     label: 'Birthday',
@@ -238,6 +258,14 @@ It's been a while since your last visit, and we genuinely miss you! We have exci
     description: 'Texted after checkout with a link to view and rate the visit.',
     body: "{salonName}: Your receipt for today's ${total} visit with {tech} is ready — view & rate: {viewLink}",
     vars: ['salonName', 'total', 'tech', 'viewLink'],
+  },
+
+  intake_request_sms: {
+    channel: 'sms', group: 'customer_sms',
+    label: 'Intake / waiver request',
+    description: 'Texted to a client with a secure link to complete an intake form or sign a waiver.',
+    body: '{salonName}: Hi {clientName}! Please complete "{formName}" before your next visit: {intakeLink}',
+    vars: ['clientName', 'salonName', 'formName', 'intakeLink'],
   },
 
   cancellation_sms: {
