@@ -8,6 +8,8 @@ import { logActivity } from '../../lib/logger';
 import EmptyState from '../../components/EmptyState';
 import CoachMark from '../../components/CoachMark';
 import { resizeImg } from '../../utils/helpers';
+import { callFn } from '../../lib/firebase';
+import { TENANT_ID } from '../../lib/tenant';
 import { useApp } from '../../context/AppContext';
 import { resolveVertical } from '../../data/verticals';
 import { fetchOnboarding } from '../../lib/onboarding';
@@ -584,6 +586,15 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
 }
 
 function ServiceOptionsEditor({ options, onChange }) {
+  const { settings, updateSettings } = useApp();
+  const [rate,    setRate]    = useState(Number(settings?.hourlyNailArtRate) || 60);
+  const [estIdx,  setEstIdx]  = useState(null);   // option index showing an estimate
+  const [estBusy, setEstBusy] = useState(false);
+  const [estRes,  setEstRes]  = useState(null);   // { estimatedMinutes, complexity, reasoning }
+  const [estErr,  setEstErr]  = useState('');
+  const fileRef    = useRef(null);
+  const pendingIdx = useRef(null);
+
   function patch(idx, patchObj) {
     onChange(options.map((o, i) => i === idx ? { ...o, ...patchObj } : o));
   }
@@ -592,8 +603,38 @@ function ServiceOptionsEditor({ options, onChange }) {
     onChange([...options, { id: `opt_${Date.now()}_${options.length}`, name: '', price: 0, duration: 0, priceFrom: false }]);
   }
 
+  function startEstimate(idx) { pendingIdx.current = idx; setEstErr(''); setEstRes(null); fileRef.current?.click(); }
+  async function onPhoto(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const idx = pendingIdx.current;
+    if (!file || idx == null) return;
+    setEstIdx(idx); setEstBusy(true); setEstErr(''); setEstRes(null);
+    try {
+      const dataUrl = await resizeImg(file, 1000, 1000, 0.72);
+      const m = /^data:(image\/[a-z]+);base64,(.+)$/i.exec(dataUrl || '');
+      if (!m) throw new Error('Could not read that image.');
+      const res = await callFn('estimateNailArtDuration')({ tenantId: TENANT_ID, imageData: m[2], mediaType: m[1], hourlyRate: Number(rate) || 0 });
+      setEstRes(res.data);
+    } catch (err) {
+      setEstErr(err?.message || 'Estimate failed — try a clearer photo.');
+    } finally { setEstBusy(false); }
+  }
+  function acceptEstimate() {
+    if (estIdx == null || !estRes) return;
+    const mins  = Math.max(0, Math.round(Number(estRes.estimatedMinutes) || 0));
+    const price = Math.round((Number(rate) || 0) * mins / 60 * 100) / 100;
+    patch(estIdx, { duration: mins, price, priceFrom: true });
+    if (Number(rate) > 0 && Number(rate) !== Number(settings?.hourlyNailArtRate)) {
+      try { updateSettings?.({ ...settings, hourlyNailArtRate: Number(rate) }); } catch (_) {}
+    }
+    setEstIdx(null); setEstRes(null);
+  }
+  const previewPrice = estRes ? Math.round((Number(rate) || 0) * (Number(estRes.estimatedMinutes) || 0) / 60 * 100) / 100 : 0;
+
   return (
     <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: 10 }}>
+      <input ref={fileRef} type="file" accept="image/*" onChange={onPhoto} style={{ display: 'none' }} />
       {options.length === 0 && (
         <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', padding: '6px 4px 10px', lineHeight: 1.5 }}>
           No options yet. Use options to offer variants like Short/Medium/Long or add-ons (Nail Art, Removal). Each option has its own price and duration.
@@ -609,7 +650,8 @@ function ServiceOptionsEditor({ options, onChange }) {
         </div>
       )}
       {options.map((opt, i) => (
-        <div key={opt.id || i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
+        <div key={opt.id || i} style={{ marginBottom: 8 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input value={opt.name || ''} onChange={e => patch(i, { name: e.target.value })}
             placeholder="Option name (e.g. Gel-X with removal)"
             style={{ flex: 2, minWidth: 0, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '7px 9px', fontSize: 12, background: 'var(--pn-surface)' }} />
@@ -623,8 +665,41 @@ function ServiceOptionsEditor({ options, onChange }) {
             style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 28, fontSize: 11, color: 'var(--pn-text-muted)', cursor: 'pointer', userSelect: 'none' }}>
             <input type="checkbox" checked={!!opt.priceFrom} onChange={e => patch(i, { priceFrom: e.target.checked })} />
           </label>
+          <button onClick={() => startEstimate(i)} title="Estimate time + price from a nail-art photo (AI)" disabled={estBusy}
+            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #b3d4ef', background: 'var(--pn-info-bg)', color: '#3D95CE', cursor: estBusy ? 'default' : 'pointer', fontSize: 14, fontFamily: 'inherit', flexShrink: 0 }}>✨</button>
           <button onClick={() => remove(i)} title="Remove option"
             style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontSize: 14, fontFamily: 'inherit', flexShrink: 0 }}>×</button>
+        </div>
+        {estIdx === i && (estBusy || estRes || estErr) && (
+          <div style={{ marginTop: 6, padding: 10, borderRadius: 8, border: '1px solid #b3d4ef', background: 'var(--pn-info-bg)' }}>
+            {estBusy && <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>✨ Analyzing the photo…</div>}
+            {estErr && !estBusy && <div style={{ fontSize: 12, color: 'var(--pn-danger)' }}>{estErr}</div>}
+            {estRes && !estBusy && (
+              <>
+                <div style={{ fontSize: 12.5, color: 'var(--pn-text)', fontWeight: 600 }}>
+                  ≈ {estRes.estimatedMinutes} min · <span style={{ textTransform: 'capitalize' }}>{estRes.complexity}</span>
+                </div>
+                {estRes.reasoning && <div style={{ fontSize: 11.5, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.4 }}>{estRes.reasoning}</div>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Hourly rate $</span>
+                  <input type="number" value={rate} onChange={e => setRate(e.target.value)}
+                    style={{ width: 64, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '5px 8px', fontSize: 12, background: 'var(--pn-surface)' }} />
+                  <span style={{ fontSize: 12.5, color: 'var(--pn-text)', fontWeight: 700 }}>→ suggested ${previewPrice.toFixed(2)}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  <button onClick={acceptEstimate}
+                    style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: 'none', background: '#2D7A5F', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>
+                    Use {estRes.estimatedMinutes} min · ${previewPrice.toFixed(2)}
+                  </button>
+                  <button onClick={() => { setEstIdx(null); setEstRes(null); }}
+                    style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
         </div>
       ))}
       <button onClick={add}

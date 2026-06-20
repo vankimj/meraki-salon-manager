@@ -6712,6 +6712,59 @@ exports.growPhotoCritique = onCall(
   }
 );
 
+// AI nail-art duration estimate from a photo (Wave 5). Mirrors growPhotoCritique's
+// vision template; staff-callable (any tech can estimate). Returns a JSON estimate
+// of the nail-ART add-on time + complexity, and a time-based suggested price when
+// an hourly rate is supplied.
+exports.estimateNailArtDuration = onCall(
+  { secrets: [anthropicKey], cors: true, timeoutSeconds: 60 },
+  async (request) => {
+    const apiKey = anthropicKey.value();
+    if (!apiKey) throw new HttpsError('unavailable', 'AI not configured');
+    const { tenantId: tid, imageData, mediaType = 'image/jpeg', hourlyRate } = request.data || {};
+    const tenantId = String(tid || TENANT_ID).slice(0, 64);
+    if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+    if (typeof imageData !== 'string' || imageData.length < 100) throw new HttpsError('invalid-argument', 'imageData required');
+    if (imageData.length > 7000000) throw new HttpsError('invalid-argument', 'Image too large — resize before sending');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(mediaType)) throw new HttpsError('invalid-argument', 'Unsupported image type');
+
+    const db = getFirestore();
+    await requireTenantStaff(db, tenantId, request);
+    await growAiGuard(db, tenantId);
+
+    const system = 'You are an experienced nail technician estimating service time from a photo of finished nail art. Respond with ONLY minified JSON — no prose, no code fence: {"estimatedMinutes":<integer>,"complexity":"simple|moderate|complex|intricate","reasoning":"<one short sentence>"}. estimatedMinutes is the nail-ART add-on time only (hand-painting, fine detail, layering, charms, chrome, 3D, etc.) — NOT the base manicure. Be realistic for a salon.';
+    const client = new Anthropic({ apiKey });
+    const resp = await client.messages.create({
+      model: 'claude-sonnet-4-6', max_tokens: 400,
+      system,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageData } },
+        { type: 'text', text: 'Estimate how long this nail-art design takes to apply, and rate its complexity.' },
+      ] }],
+    });
+    usageLog.logAiUsage(db, tenantId, { endpoint: 'estimateNailArtDuration', model: resp?.model || 'claude-sonnet-4-6', usage: resp?.usage }).catch(() => {});
+
+    let parsed = {};
+    try {
+      const raw = (resp.content[0]?.text || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+      parsed = JSON.parse(raw);
+    } catch (e) {
+      throw new HttpsError('internal', 'Could not read the AI estimate — try a clearer photo.');
+    }
+    const estimatedMinutes = Math.max(0, Math.round(Number(parsed.estimatedMinutes) || 0));
+    const rate = Number(hourlyRate) || 0;
+    const suggestedPrice = (rate > 0 && estimatedMinutes > 0)
+      ? Math.round((rate * estimatedMinutes / 60) * 100) / 100
+      : null;
+    return {
+      estimatedMinutes,
+      complexity: String(parsed.complexity || 'moderate').slice(0, 20),
+      reasoning:  String(parsed.reasoning || '').slice(0, 300),
+      suggestedPrice,
+    };
+  }
+);
+
 // Per-step helper — answers a question (or "how do I do this?") scoped strictly
 // to ONE Launch & Grow step. Haiku + 500 tokens + the shared daily cap keep cost
 // bounded; the system prompt refuses anything outside this step.
