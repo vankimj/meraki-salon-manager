@@ -86,31 +86,33 @@ export function AppProvider({ children }) {
     try { localStorage.setItem(TICKET_STORAGE_KEY, JSON.stringify(ticket)); } catch {}
   }, [ticket]);
 
-  function addApptToTicket(appt) {
+  // useCallback (setTicket is a stable setter) so these don't change identity
+  // every render and invalidate the memoized context value below.
+  const addApptToTicket = useCallback((appt) => {
     if (!appt?.id) return;
     setTicket(t => {
       if (t.appts.some(a => a.id === appt.id)) return t;
       return { ...t, appts: [...t.appts, appt] };
     });
-  }
-  function removeApptFromTicket(apptId) {
+  }, []);
+  const removeApptFromTicket = useCallback((apptId) => {
     setTicket(t => ({ ...t, appts: t.appts.filter(a => a.id !== apptId) }));
-  }
-  function addProductToTicket(product) {
+  }, []);
+  const addProductToTicket = useCallback((product) => {
     if (!product?.id) return;
     setTicket(t => {
       const existing = t.products.find(p => p.product.id === product.id);
       if (existing) return { ...t, products: t.products.map(p => p.product.id === product.id ? { ...p, qty: p.qty + 1 } : p) };
       return { ...t, products: [...t.products, { product, qty: 1 }] };
     });
-  }
-  function setTicketProductQty(productId, qty) {
+  }, []);
+  const setTicketProductQty = useCallback((productId, qty) => {
     setTicket(t => {
       if (qty < 1) return { ...t, products: t.products.filter(p => p.product.id !== productId) };
       return { ...t, products: t.products.map(p => p.product.id === productId ? { ...p, qty } : p) };
     });
-  }
-  function clearTicket() { setTicket({ appts: [], products: [] }); }
+  }, []);
+  const clearTicket = useCallback(() => setTicket({ appts: [], products: [] }), []);
   const ticketCount = ticket.appts.length + ticket.products.reduce((s, p) => s + p.qty, 0);
   const [viewAs,            setViewAs]            = useState(null); // null | { role: 'tech', techName: string } | { role: 'scheduler' } | { role: 'readonly' }
 
@@ -653,7 +655,7 @@ export function AppProvider({ children }) {
   // the server enforces the same). viewAs preview impersonates a role. The
   // bootstrap admin resolves to 'owner' (role is forced to 'admin' above).
   const role = normalizeRole(viewAs?.role || _rec?.role || null);
-  const can  = (cap) => roleCan(role, cap);
+  const can  = useCallback((cap) => roleCan(role, cap), [role]);
 
   // Canary tier + feature flags — see src/lib/featureFlags.js for the
   // resolution chain. Stored on data/settings (already loaded above),
@@ -663,8 +665,8 @@ export function AppProvider({ children }) {
   //
   // Consumers use `hasFeature('name')` from useApp(), which is just
   // isFeatureOn() pre-bound to the current tenant context.
-  const tenantCtx  = { tier: settings?.tier || 'free', featureFlags: settings?.featureFlags || {} };
-  const hasFeature = (name) => isFeatureOn(name, tenantCtx);
+  const tenantCtx  = useMemo(() => ({ tier: settings?.tier || 'free', featureFlags: settings?.featureFlags || {} }), [settings?.tier, settings?.featureFlags]);
+  const hasFeature = useCallback((name) => isFeatureOn(name, tenantCtx), [tenantCtx]);
 
   // Vertical / tenant template (salon, personal training, …). `vertical` keys
   // the registry in data/verticals.js; `terms` is the resolved terminology map
@@ -672,37 +674,59 @@ export function AppProvider({ children }) {
   // every existing tenant is unchanged. Consumers read `terms`/`vertical` from
   // useApp(); literal-string swaps are migrated incrementally.
   const vertical = settings?.vertical || 'nails';
-  const terms    = resolveTerms(vertical);
+  const terms    = useMemo(() => resolveTerms(vertical), [vertical]);
 
   // Capability flags unlocked by purchased Power Packs / atomic add-ons (e.g.
   // the Insurance-intake add-on grants 'insurance'). `hasCap(id)` is the
   // feature-level gate for paid add-on capabilities; defaults to false, so the
   // gated UI is hidden until the add-on is on the tenant.
-  const caps   = unlockedCapsFor(settings?.packs || [], settings?.atomicAddOns || []);
-  const hasCap = (c) => caps.has(c);
+  const caps   = useMemo(() => unlockedCapsFor(settings?.packs || [], settings?.atomicAddOns || []), [settings?.packs, settings?.atomicAddOns]);
+  const hasCap = useCallback((c) => caps.has(c), [caps]);
+
+  // Memoized so consumers (52 files / 80 useApp() sites) only re-render when a
+  // value they use actually changes — not on every global state tick (toast,
+  // sync dot, notif/chat snapshots…). All the action callbacks are useCallback'd
+  // and the derived objects/fns above (tenantCtx/terms/caps/can/hasFeature/
+  // hasCap) are memoized, so the dep list below is honest and stable.
+  const ctxValue = useMemo(() => ({
+    slides, def, cur, setCur,
+    users, settings, setSettings,
+    gUser, syncState, toast, toastAction, loaded, isOnline,
+    isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
+    role, can,
+    isPortalUser, portalClientId,
+    showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
+    addSlide, updateSlide, deleteSlide, setDefault,
+    grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings,
+    signIn, appleSignIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
+    handbookPending, handbookDoc, signHandbook,
+    totalChatUnread,
+    recentNotifs, unreadNotifCount, markNotifRead,
+    ticket, ticketCount, addApptToTicket, removeApptFromTicket, addProductToTicket, setTicketProductQty, clearTicket,
+    ticketCheckoutOpen, setTicketCheckoutOpen,
+    requirePin, pinPrompt, acceptPinPrompt, dismissPinPrompt,
+    activeTheme,
+    tenantCtx, hasFeature, hasCap,
+    vertical, terms,
+  }), [
+    slides, def, cur, setCur, users, settings, setSettings,
+    gUser, syncState, toast, toastAction, loaded, isOnline,
+    isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
+    role, can, isPortalUser, portalClientId,
+    showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
+    addSlide, updateSlide, deleteSlide, setDefault,
+    grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings,
+    signIn, appleSignIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
+    handbookPending, handbookDoc, signHandbook,
+    totalChatUnread, recentNotifs, unreadNotifCount, markNotifRead,
+    ticket, ticketCount, addApptToTicket, removeApptFromTicket, addProductToTicket, setTicketProductQty, clearTicket,
+    ticketCheckoutOpen, setTicketCheckoutOpen,
+    requirePin, pinPrompt, acceptPinPrompt, dismissPinPrompt,
+    activeTheme, tenantCtx, hasFeature, hasCap, vertical, terms,
+  ]);
 
   return (
-    <Ctx.Provider value={{
-      slides, def, cur, setCur,
-      users, settings, setSettings,
-      gUser, syncState, toast, toastAction, loaded, isOnline,
-      isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
-      role, can,
-      isPortalUser, portalClientId,
-      showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
-      addSlide, updateSlide, deleteSlide, setDefault,
-      grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings,
-      signIn, appleSignIn, signOut, switchAccount, sendMagicLink, completeMagicLink, magicLinkPending,
-      handbookPending, handbookDoc, signHandbook,
-      totalChatUnread,
-      recentNotifs, unreadNotifCount, markNotifRead,
-      ticket, ticketCount, addApptToTicket, removeApptFromTicket, addProductToTicket, setTicketProductQty, clearTicket,
-      ticketCheckoutOpen, setTicketCheckoutOpen,
-      requirePin, pinPrompt, acceptPinPrompt, dismissPinPrompt,
-      activeTheme,
-      tenantCtx, hasFeature, hasCap,
-      vertical, terms,
-    }}>
+    <Ctx.Provider value={ctxValue}>
       {children}
     </Ctx.Provider>
   );

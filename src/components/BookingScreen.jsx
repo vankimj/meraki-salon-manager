@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { onAuthStateChanged, signInWithPopup, GoogleAuthProvider, OAuthProvider, signOut as fbSignOut,
          sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
          RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
@@ -491,12 +491,12 @@ export default function BookingScreen() {
   // Derive the effective booking-flow config every render. Cheap — just
   // merges defaults ⊕ template ⊕ overrides. Used throughout the flow for
   // gating, copy, and behavior toggles.
-  const baseFlowCfg = getEffectiveFlow(cfg?.flow);
+  const baseFlowCfg = useMemo(() => getEffectiveFlow(cfg?.flow), [cfg?.flow]);
   // Tier 7: per-service overrides win when ANY service in the cart sets
   // them. Multiple cart items: take the strongest signal — require
   // sign-in if any service requires it, take the MAX of any min-lead-time
   // values, and surface ALL custom notes (deduped, joined).
-  const svcOverrides = cart.reduce((acc, item) => {
+  const svcOverrides = useMemo(() => cart.reduce((acc, item) => {
     const o = item.service?.flowOverrides;
     if (!o) return acc;
     if (o.requireSignIn === true) acc.requireSignIn = true;
@@ -505,16 +505,16 @@ export default function BookingScreen() {
     }
     if (o.customNote && typeof o.customNote === 'string') acc.customNotes = [...(acc.customNotes || []), o.customNote];
     return acc;
-  }, {});
+  }, {}), [cart]);
   // Merge: service overrides have FINAL say. minLead winner = max(global, svc).
-  const flowCfg = {
+  const flowCfg = useMemo(() => ({
     ...baseFlowCfg,
     requireSignIn:      svcOverrides.requireSignIn === true ? true : baseFlowCfg.requireSignIn,
     minLeadTimeMinutes: Math.max(baseFlowCfg.minLeadTimeMinutes || 0, svcOverrides.minLeadTimeMinutes || 0),
     // Custom notes from services are surfaced separately, not as a flowCfg
     // toggle — Step5 + the cart bar can render them.
     serviceCustomNotes: svcOverrides.customNotes || [],
-  };
+  }), [baseFlowCfg, svcOverrides]);
 
   // Cart helpers ─────────────────────────────────────────
   // Removal-prompt state. Fires when a service with canRequireRemoval=true
@@ -530,7 +530,7 @@ export default function BookingScreen() {
   // We add THIS as a separate cart item when a customer confirms they're
   // wearing a previous set — rather than toggling a side-flag — so the
   // booking carries real pricing + duration + options from the catalog.
-  const removalSvc = services.find(s => /^removal$/i.test((s.name || '').trim()));
+  const removalSvc = useMemo(() => services.find(s => /^removal$/i.test((s.name || '').trim())), [services]);
 
   function addToCart(svc, opt, extras = {}) {
     // Defense-in-depth: the ServiceRow + Add button is greyed out when the
@@ -2109,7 +2109,7 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 // single-guest flow (Step1Cart) and each group-guest page. `cart` is the
 // person's current selection (used to show ✓ Added / block duplicates).
 function ServiceCatalog({ services, cart, onAdd, onRemove }) {
-  const groups = groupByCategory(services || []);
+  const groups = useMemo(() => groupByCategory(services || []), [services]);
   const [pendingOptions, setPendingOptions] = useState({});
   return (
     <div>
@@ -2297,16 +2297,19 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
   const minLead = Math.max(0, Number(flowCfg?.minLeadTimeMinutes) || 0);
   const maxDays = Math.max(1, Number(flowCfg?.maxLeadDays) || 30);
   const multiLane = isMultiLane(cart);
-  const eligible = techsForServices(allTechs, cart.map(c => c.service));
+  const eligible = useMemo(() => techsForServices(allTechs, cart.map(c => c.service)), [allTechs, cart]);
   const dayAppts = cartDate ? apptsByDate[cartDate] : null;
 
   // For multi-lane carts, compute per-lane items + eligible techs once so
   // the availability check (called per slot) doesn't re-derive them.
-  const lanes        = multiLane ? cartLanes(cart) : null;
-  const maniItems    = multiLane ? [...lanes.Manicures, ...lanes._orphan] : null;
-  const pediItems    = multiLane ? lanes.Pedicures : null;
-  const maniEligible = multiLane ? techsForServices(allTechs, maniItems.map(c => c.service)) : null;
-  const pediEligible = multiLane ? techsForServices(allTechs, pediItems.map(c => c.service)) : null;
+  // Memoized so they keep a stable reference across the parent's re-renders
+  // (e.g. every keystroke in the info form) — both to avoid the work and so
+  // the availability memo below isn't invalidated by fresh references.
+  const lanes        = useMemo(() => (multiLane ? cartLanes(cart) : null), [multiLane, cart]);
+  const maniItems    = useMemo(() => (multiLane ? [...lanes.Manicures, ...lanes._orphan] : null), [multiLane, lanes]);
+  const pediItems    = useMemo(() => (multiLane ? lanes.Pedicures : null), [multiLane, lanes]);
+  const maniEligible = useMemo(() => (multiLane ? techsForServices(allTechs, maniItems.map(c => c.service)) : null), [multiLane, allTechs, maniItems]);
+  const pediEligible = useMemo(() => (multiLane ? techsForServices(allTechs, pediItems.map(c => c.service)) : null), [multiLane, allTechs, pediItems]);
 
   // Total duration depends on lane mode + shape. Back-to-back: sum of both
   // lanes. Simultaneous: max of both (they run in parallel).
@@ -2317,7 +2320,7 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
   const totalDur = multiLane
     ? (simultaneous ? Math.max(maniDurRep, pediDurRep) : (maniDurRep + pediDurRep))
     : cartTotalDuration(cart, removalDur, cartTech || undefined);
-  const allSlots = getSlots(totalDur);
+  const allSlots = useMemo(() => getSlots(totalDur), [totalDur]);
 
   useEffect(() => { if (cartDate) ensureApptsForDate(cartDate); }, [cartDate]); // eslint-disable-line
 
@@ -2325,40 +2328,86 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
   // span. Multi-lane: mani-tech free in [slot, slot+maniDur] AND pedi-tech
   // free in [slot+maniDur, slot+maniDur+pediDur]. "No preference" on a lane
   // means we accept the slot if SOMEONE eligible for that lane is free.
-  function isAvailable(slotMins) {
-    if (!dayAppts) return false;
-    // Min-lead enforcement: if the chosen date is today, hide slots that
-    // start before now+minLead.
-    const today = dateStr(todayDate());
-    if (cartDate === today) {
-      const now = new Date();
-      const cutoff = now.getHours() * 60 + now.getMinutes() + minLead;
-      if (slotMins < cutoff) return false;
+  //
+  // Perf: this matrix is O(slots × techs × appts) and was recomputed on every
+  // render (every keystroke in the form). We compute each slot's availability
+  // ONCE in a memo keyed on its actual inputs, and pre-bucket the day's
+  // appointments by tech so the inner free-check reads only that tech's appts
+  // instead of re-filtering the whole day. The logic below is identical to
+  // isTechFreeAt (src/lib/booking.js) — only the appt lookup is faster.
+  const availBySlot = useMemo(() => {
+    const map = new Map();
+    if (!dayAppts) return map;
+
+    // Pre-bucket the day's appointments by tech identity. isTechFreeAt matches
+    // a tech via techId OR techName, so we index each (occupying) appt under
+    // both keys and de-dup per tech at lookup time. Start/end precomputed once.
+    const byTechId = new Map();
+    const byTechName = new Map();
+    for (const a of dayAppts) {
+      if (a.status === 'cancelled' || a.status === 'no_show') continue;
+      const aStart = strToMins(a.startTime);
+      const aDur = (a.services || []).reduce((s, sv) => s + (Number(sv.duration) || 0), 0) || (a.duration || 60);
+      const slot = { start: aStart, end: aStart + aDur };
+      if (a.techId != null) {
+        let arr = byTechId.get(a.techId); if (!arr) byTechId.set(a.techId, (arr = [])); arr.push(slot);
+      }
+      if (a.techName != null) {
+        let arr = byTechName.get(a.techName); if (!arr) byTechName.set(a.techName, (arr = [])); arr.push(slot);
+      }
     }
-    if (multiLane) {
-      // Mani window starts at the slot.
-      const maniTech = cartTechByLane?.Manicures || null;
-      const checkMani = (t) => isTechFreeAt(t, slotMins, cartTotalDuration(maniItems, removalDur, t), dayAppts);
-      const maniOk = maniTech ? checkMani(maniTech) : maniEligible.some(checkMani);
-      if (!maniOk) return false;
-      // Pedi window start depends on shape: same time (simultaneous) or
-      // after mani finishes (back-to-back).
-      const maniRep = maniTech || maniEligible.find(checkMani) || maniEligible[0];
-      const maniDur = cartTotalDuration(maniItems, removalDur, maniRep);
-      const pediStart = simultaneous ? slotMins : (slotMins + maniDur);
-      const pediTech = cartTechByLane?.Pedicures || null;
-      const checkPedi = (t) => isTechFreeAt(t, pediStart, cartTotalDuration(pediItems, removalDur, t), dayAppts);
-      const pediOk = pediTech ? checkPedi(pediTech) : pediEligible.some(checkPedi);
-      if (!pediOk) return false;
-      // For simultaneous: same tech can't be both mani AND pedi at the
-      // overlap. If both lanes ended up with the same person, reject.
-      if (simultaneous && maniTech && pediTech && maniTech.id === pediTech.id) return false;
+    const freeAt = (tech, slotMins, durationMins) => {
+      const end = slotMins + durationMins;
+      const ranges = byTechId.get(tech.id);
+      if (ranges) {
+        for (const r of ranges) { if (r.start < end && r.end > slotMins) return false; }
+      }
+      const named = byTechName.get(tech.name);
+      if (named && tech.name !== tech.id) {
+        for (const r of named) { if (r.start < end && r.end > slotMins) return false; }
+      }
       return true;
-    }
-    if (cartTech) return isTechFreeAt(cartTech, slotMins, totalDur, dayAppts);
-    return eligible.some(t => isTechFreeAt(t, slotMins, cartTotalDuration(cart, removalDur, t), dayAppts));
-  }
-  const hasAny = dayAppts && allSlots.some(s => isAvailable(s));
+    };
+
+    const today = dateStr(todayDate());
+    const isTodayDate = cartDate === today;
+    const now = new Date();
+    const cutoff = now.getHours() * 60 + now.getMinutes() + minLead;
+
+    const isAvailable = (slotMins) => {
+      // Min-lead enforcement: if the chosen date is today, hide slots that
+      // start before now+minLead.
+      if (isTodayDate && slotMins < cutoff) return false;
+      if (multiLane) {
+        // Mani window starts at the slot.
+        const maniTech = cartTechByLane?.Manicures || null;
+        const checkMani = (t) => freeAt(t, slotMins, cartTotalDuration(maniItems, removalDur, t));
+        const maniOk = maniTech ? checkMani(maniTech) : maniEligible.some(checkMani);
+        if (!maniOk) return false;
+        // Pedi window start depends on shape: same time (simultaneous) or
+        // after mani finishes (back-to-back).
+        const maniRep = maniTech || maniEligible.find(checkMani) || maniEligible[0];
+        const maniDur = cartTotalDuration(maniItems, removalDur, maniRep);
+        const pediStart = simultaneous ? slotMins : (slotMins + maniDur);
+        const pediTech = cartTechByLane?.Pedicures || null;
+        const checkPedi = (t) => freeAt(t, pediStart, cartTotalDuration(pediItems, removalDur, t));
+        const pediOk = pediTech ? checkPedi(pediTech) : pediEligible.some(checkPedi);
+        if (!pediOk) return false;
+        // For simultaneous: same tech can't be both mani AND pedi at the
+        // overlap. If both lanes ended up with the same person, reject.
+        if (simultaneous && maniTech && pediTech && maniTech.id === pediTech.id) return false;
+        return true;
+      }
+      if (cartTech) return freeAt(cartTech, slotMins, totalDur);
+      return eligible.some(t => freeAt(t, slotMins, cartTotalDuration(cart, removalDur, t)));
+    };
+
+    for (const s of allSlots) map.set(s, isAvailable(s));
+    return map;
+  }, [dayAppts, cartDate, minLead, multiLane, cartTech, cartTechByLane, eligible,
+      maniItems, pediItems, maniEligible, pediEligible, simultaneous, removalDur, totalDur, cart, allSlots]);
+
+  const hasAny = dayAppts && allSlots.some(s => availBySlot.get(s));
   const techLabel = multiLane
     ? `${cartTechByLane?.Manicures?.name || 'any stylist'} (mani) & ${cartTechByLane?.Pedicures?.name || 'any stylist'} (pedi)`
     : (cartTech ? cartTech.name : 'No preference');
@@ -2388,7 +2437,7 @@ function Step3PickSlot({ cart, cartTech, cartTechByLane, allTechs, cartDate, set
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(75px, 1fr))', gap: 6 }}>
                     {allSlots.map(m => {
-                      const avail = isAvailable(m);
+                      const avail = availBySlot.get(m);
                       const isSel = cartSlot === m;
                       return (
                         <button key={m} onClick={() => avail && setCartSlot(m)} disabled={!avail}

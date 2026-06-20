@@ -1620,6 +1620,9 @@ function QueuePanel({ entries, turnRoster, onAutoSeatNext, onSeat, onRemove, onD
 function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick, onDayClick }) {
   const today = todayStr();
   const days  = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  // O(1) client lookup keyed by id — avoids an O(clients) .find() per
+  // appointment block (×~600 clients ×N appts every render).
+  const clientById = useMemo(() => new Map((clients || []).map(c => [c.id, c])), [clients]);
 
   // Birthday map: date → [names]
   const bdayMap = {};
@@ -1695,7 +1698,7 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
                       // tech sees it before opening the appt. Falls back
                       // to no-op for walk-ins / unlinked appts.
                       const apptAllergies = appt.clientId
-                        ? (clients.find(c => c.id === appt.clientId)?.allergies || '')
+                        ? (clientById.get(appt.clientId)?.allergies || '')
                         : '';
                       return (
                         <div key={appt.id} onClick={e => { e.stopPropagation(); onApptClick(appt); }}
@@ -1810,6 +1813,55 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
   const TIME_COL = 54;
   const TECH_COL = techColWidth || 120;
   const dow = dayOfWeek(date);
+  // O(1) client lookup keyed by id — avoids an O(clients) .find() per
+  // appointment overlay block (×~600 clients) on every render, including
+  // every pointermove frame during a drag.
+  const clientById = useMemo(() => new Map((clients || []).map(c => [c.id, c])), [clients]);
+
+  // Per-(tech, appt) overlap layout: { lane, laneCount }. This sweep-line
+  // clustering is O(appts log appts) and depends ONLY on the day's appts +
+  // tech columns — NOT on drag state. Memoizing it means a drag (which fires
+  // setDrag on every pointermove) no longer rebuilds the whole layout each
+  // frame; the moving block is repositioned via transform instead.
+  const layoutById = useMemo(() => {
+    // Standard sweep-line: sort by startTime, place each appt in the
+    // lowest free lane, expand laneCount whenever a cluster grows.
+    const map = {};
+    techs.forEach(techName => {
+      const techAppts = appts
+        .filter(a => a.techName === techName && a.status !== 'cancelled')
+        .map(a => ({
+          id: a.id,
+          start: strToMins(a.startTime || '00:00'),
+          end: strToMins(a.startTime || '00:00') + (Number(a.duration) || 60),
+        }))
+        .sort((x, y) => x.start - y.start || y.end - x.end);
+      // Cluster: appts that all transitively overlap. Lay each out.
+      let cluster = [];
+      const flush = () => {
+        if (!cluster.length) return;
+        // Greedy lane assignment within the cluster.
+        const lanes = []; // each lane = end-time of last appt placed
+        cluster.forEach(c => {
+          let laneIdx = lanes.findIndex(end => end <= c.start);
+          if (laneIdx === -1) { laneIdx = lanes.length; lanes.push(0); }
+          lanes[laneIdx] = c.end;
+          c.lane = laneIdx;
+        });
+        const laneCount = lanes.length;
+        cluster.forEach(c => { map[c.id] = { lane: c.lane, laneCount }; });
+        cluster = [];
+      };
+      let clusterEnd = -1;
+      techAppts.forEach(c => {
+        if (c.start >= clusterEnd) flush();
+        cluster.push(c);
+        clusterEnd = Math.max(clusterEnd, c.end);
+      });
+      flush();
+    });
+    return map;
+  }, [appts, techs]);
 
   const isToday = date === todayStr();
   const nowMins = isToday ? (new Date().getHours() * 60 + new Date().getMinutes()) : -1;
@@ -1994,43 +2046,8 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
             split width side-by-side (Google-Calendar style) instead of
             stacking on top of each other and hiding what's underneath. */}
         {(() => {
-          // Build per-(tech, appt) layout: { laneIndex, laneCount }.
-          // Standard sweep-line: sort by startTime, place each appt in the
-          // lowest free lane, expand laneCount whenever a cluster grows.
-          const layoutById = {};
-          techs.forEach(techName => {
-            const techAppts = appts
-              .filter(a => a.techName === techName && a.status !== 'cancelled')
-              .map(a => ({
-                id: a.id,
-                start: strToMins(a.startTime || '00:00'),
-                end: strToMins(a.startTime || '00:00') + (Number(a.duration) || 60),
-              }))
-              .sort((x, y) => x.start - y.start || y.end - x.end);
-            // Cluster: appts that all transitively overlap. Lay each out.
-            let cluster = [];
-            const flush = () => {
-              if (!cluster.length) return;
-              // Greedy lane assignment within the cluster.
-              const lanes = []; // each lane = end-time of last appt placed
-              cluster.forEach(c => {
-                let laneIdx = lanes.findIndex(end => end <= c.start);
-                if (laneIdx === -1) { laneIdx = lanes.length; lanes.push(0); }
-                lanes[laneIdx] = c.end;
-                c.lane = laneIdx;
-              });
-              const laneCount = lanes.length;
-              cluster.forEach(c => { layoutById[c.id] = { lane: c.lane, laneCount }; });
-              cluster = [];
-            };
-            let clusterEnd = -1;
-            techAppts.forEach(c => {
-              if (c.start >= clusterEnd) flush();
-              cluster.push(c);
-              clusterEnd = Math.max(clusterEnd, c.end);
-            });
-            flush();
-          });
+          // layoutById (sweep-line overlap clustering) is memoized above on
+          // [appts, techs] so a drag's per-frame setDrag doesn't rebuild it.
           return appts.map(appt => {
           const techIdx = techs.indexOf(appt.techName);
           if (techIdx === -1) return null;
@@ -2143,7 +2160,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
                 )}
                 {(() => {
                   const allergies = appt.clientId
-                    ? (clients.find(c => c.id === appt.clientId)?.allergies || '')
+                    ? (clientById.get(appt.clientId)?.allergies || '')
                     : '';
                   return allergies ? (
                     <span title={`Allergies: ${allergies}`} style={{ fontSize: 12, color: '#b45309', fontWeight: 700, lineHeight: 1, flexShrink: 0 }}>⚠</span>

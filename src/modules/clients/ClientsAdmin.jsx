@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import Button from '../../components/Button';
 import { fetchClients, createClient, saveClient, deleteClient, fetchServices, fetchClientAppointments, createReviewRequest, saveReviewReceived, fetchClientInsurance, saveClientInsurance } from '../../lib/firestore';
 import RestoreFromBQModal from '../../components/RestoreFromBQModal';
@@ -172,6 +172,13 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
     setPage(0);
   }
 
+  // Stable per-row handlers so React.memo(ClientRow) can skip re-rendering rows
+  // whose client/referralCount didn't change (search keystrokes only re-filter,
+  // they don't mutate the surviving rows). Each takes the row's own client.
+  const handleViewClient   = useCallback((c) => setModal({ client: { ...c }, mode: 'view' }), []);
+  const handleEditClient   = useCallback((c) => setModal({ client: { ...c }, mode: 'edit' }), []);
+  const handleDeleteClient = useCallback((c) => handleDelete(c), []); // eslint-disable-line react-hooks/exhaustive-deps
+
   function exportCSV() {
     const refCounts = {};
     clients.forEach(c => { if (c.referredBy?.id) refCounts[c.referredBy.id] = (refCounts[c.referredBy.id] || 0) + 1; });
@@ -195,10 +202,16 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
     logActivity('export_csv', `${clients.length} clients`);
   }
 
-  const refCounts  = {};
-  clients.forEach(c => { if (c.referredBy?.id) refCounts[c.referredBy.id] = (refCounts[c.referredBy.id] || 0) + 1; });
+  const refCounts = useMemo(() => {
+    const counts = {};
+    clients.forEach(c => { if (c.referredBy?.id) counts[c.referredBy.id] = (counts[c.referredBy.id] || 0) + 1; });
+    return counts;
+  }, [clients]);
 
-  const visible   = search ? clients.filter(c => matchesSearch(c, search)) : clients;
+  const visible = useMemo(
+    () => (search ? clients.filter(c => matchesSearch(c, search)) : clients),
+    [clients, search],
+  );
   const totalPages = Math.ceil(visible.length / PAGE_SIZE);
   const pageSlice  = visible.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const rangeStart = visible.length ? page * PAGE_SIZE + 1 : 0;
@@ -247,9 +260,9 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
                   client={c}
                   referralCount={refCounts[c.id] || 0}
                   last={i === pageSlice.length - 1}
-                  onView={() => setModal({ client: { ...c }, mode: 'view' })}
-                  onEdit={() => setModal({ client: { ...c }, mode: 'edit' })}
-                  onDelete={() => handleDelete(c)}
+                  onView={handleViewClient}
+                  onEdit={handleEditClient}
+                  onDelete={handleDeleteClient}
                 />
               ))}
             </div>
@@ -303,11 +316,11 @@ export default function ClientsAdmin({ initialClientId, onInitialClientOpened } 
   );
 }
 
-function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
+const ClientRow = memo(function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
   const lastVisit = client.visits?.slice(-1)[0];
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: last ? 'none' : '1px solid var(--pn-border)' }}>
-      <div onClick={onView} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, cursor: 'pointer' }}>
+      <div onClick={() => onView(client)} style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, cursor: 'pointer' }}>
         <Avatar picture={client.picture} name={client.name} size={40} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -337,12 +350,12 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
         </div>
       </div>
       <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-        <Btn onClick={onEdit}>Edit</Btn>
-        <Btn color="#ef4444" onClick={onDelete}>Del</Btn>
+        <Btn onClick={() => onEdit(client)}>Edit</Btn>
+        <Btn color="#ef4444" onClick={() => onDelete(client)}>Del</Btn>
       </div>
     </div>
   );
-}
+});
 
 // ── modal ──────────────────────────────────────────────
 // Add / remove store credit on a client's account (admin or tech). Backed by the

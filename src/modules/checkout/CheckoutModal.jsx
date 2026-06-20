@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { saveAppointment, fetchClient, saveClient, redeemLoyaltyPoints,
          fetchGiftCardByCode, fetchGiftCardsByContact, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
@@ -196,88 +196,115 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   }, [cashConfirmed]);
 
   // ── Math ───────────────────────────────────────────────
-  const productsTotal = cartItems.reduce((s, item) => s + (item.product.price || 0) * item.qty, 0);
-  const gcSalesTotal  = gcSales.reduce((s, g) => s + (Number(g.amount) || 0), 0);
-  const subtotal = prices.reduce((s, p) => s + (Number(p) || 0), 0) + productsTotal + gcSalesTotal;
+  // Memoized so a keystroke in any single price/tip/qty input only re-runs the
+  // bill chain that actually depends on the changed value — not on every render
+  // (which would also churn the Stripe CardElement). Formulas are unchanged;
+  // they're only relocated inside useMemo with their real inputs as deps.
+  const { productsTotal, gcSalesTotal, subtotal } = useMemo(() => {
+    const productsTotal = cartItems.reduce((s, item) => s + (item.product.price || 0) * item.qty, 0);
+    const gcSalesTotal  = gcSales.reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    const subtotal = prices.reduce((s, p) => s + (Number(p) || 0), 0) + productsTotal + gcSalesTotal;
+    return { productsTotal, gcSalesTotal, subtotal };
+  }, [cartItems, gcSales, prices]);
 
-  const discountDef    = DISCOUNT_TYPES.find(d => d.id === discountType);
-  const discountAmount = (() => {
-    if (!discountType || !discountValue) return 0;
-    const v = Number(discountValue) || 0;
-    return discountDef.isPercent
-      ? Math.round(subtotal * v / 100 * 100) / 100
-      : Math.min(v, subtotal);
-  })();
+  const { discountDef, discountAmount, promoAmount, afterDiscounts, taxAmt } = useMemo(() => {
+    const discountDef    = DISCOUNT_TYPES.find(d => d.id === discountType);
+    const discountAmount = (() => {
+      if (!discountType || !discountValue) return 0;
+      const v = Number(discountValue) || 0;
+      return discountDef.isPercent
+        ? Math.round(subtotal * v / 100 * 100) / 100
+        : Math.min(v, subtotal);
+    })();
 
-  const promoAmount = (() => {
-    if (!promo) return 0;
-    return promo.type === 'percent'
-      ? Math.round(subtotal * (promo.value || 0) / 100 * 100) / 100
-      : Math.min(promo.value || 0, subtotal);
-  })();
+    const promoAmount = (() => {
+      if (!promo) return 0;
+      return promo.type === 'percent'
+        ? Math.round(subtotal * (promo.value || 0) / 100 * 100) / 100
+        : Math.min(promo.value || 0, subtotal);
+    })();
 
-  const afterDiscounts = Math.max(subtotal - discountAmount - promoAmount, 0);
+    const afterDiscounts = Math.max(subtotal - discountAmount - promoAmount, 0);
 
-  // Tax — computed on the post-discount taxable base.
-  // Services and retail products are taxable by default; gift card sales
-  // and any service explicitly flagged taxable:false (e.g. cancellation
-  // fees, no-show fees) are not.
-  const nonTaxableServiceTotal = serviceLines.reduce((s, line, i) =>
-    line.taxable === false ? s + (Number(prices[i]) || 0) : s, 0);
-  const taxableSubtotal  = Math.max(subtotal - gcSalesTotal - nonTaxableServiceTotal, 0);
-  const taxableShare     = subtotal > 0 ? taxableSubtotal / subtotal : 0;
-  const taxableAfterDisc = Math.max(taxableSubtotal - (discountAmount + promoAmount) * taxableShare, 0);
-  const taxAmt           = Math.round(taxableAfterDisc * taxRate) / 100;
+    // Tax — computed on the post-discount taxable base.
+    // Services and retail products are taxable by default; gift card sales
+    // and any service explicitly flagged taxable:false (e.g. cancellation
+    // fees, no-show fees) are not.
+    const nonTaxableServiceTotal = serviceLines.reduce((s, line, i) =>
+      line.taxable === false ? s + (Number(prices[i]) || 0) : s, 0);
+    const taxableSubtotal  = Math.max(subtotal - gcSalesTotal - nonTaxableServiceTotal, 0);
+    const taxableShare     = subtotal > 0 ? taxableSubtotal / subtotal : 0;
+    const taxableAfterDisc = Math.max(taxableSubtotal - (discountAmount + promoAmount) * taxableShare, 0);
+    const taxAmt           = Math.round(taxableAfterDisc * taxRate) / 100;
+    return { discountDef, discountAmount, promoAmount, afterDiscounts, taxAmt };
+  }, [subtotal, gcSalesTotal, discountType, discountValue, promo, serviceLines, prices, taxRate]);
 
   // Service revenue per tech → default proportional tip split + the optional
   // per-tech tip fields (2+ techs only).
-  const techRevenue = (() => {
+  const techRevenue = useMemo(() => {
     const m = {};
     serviceLines.forEach((line, i) => { const t = techNames[i] || line.techName || ''; m[t] = (m[t] || 0) + (Number(prices[i]) || 0); });
     return m;
-  })();
+  }, [serviceLines, techNames, prices]);
   const multiTech = Object.keys(techRevenue).length > 1;
-  const tipByTech = perTechMode
+  const tipByTech = useMemo(() => perTechMode
     ? Object.keys(techRevenue).map(t => ({ techName: t, amount: Number(perTechTips[t]) || 0 }))
-    : null;
+    : null, [perTechMode, techRevenue, perTechTips]);
 
-  const billBeforeTip  = afterDiscounts + taxAmt;
-  const tipsDisabled   = method === 'card' && noCardTips;
-  const tipAmt         = tipsDisabled ? 0
-    : perTechMode
-      ? Math.round((tipByTech || []).reduce((s, t) => s + t.amount, 0) * 100) / 100
-    : customTip
-      ? (Number(tip) || 0)
-      : (tipPct ? Math.round(subtotal * tipPct) / 100 : 0);
-  const gcApply        = giftCard && applyGC ? Math.min(giftCard.balance, billBeforeTip) : 0;
-  const creditApply    = applyCredit && clientCredit > 0
-    ? Math.min(clientCredit, billBeforeTip - gcApply)
-    : 0;
-  // Loyalty redemption — gated on the Marketing-Pack `loyalty` cap + the salon
-  // enabling it. Redeems whole points against what's left after gift card/credit.
-  const loyCfg         = resolveLoyaltyConfig(settings);
-  const loyaltyOn      = !!hasFeature?.('loyalty') && loyCfg.enabled;
-  const loyaltyPreview = loyaltyOn
-    ? redeemableLoyalty(loyCfg, clientPoints, billBeforeTip - gcApply - creditApply)
-    : { redeemPts: 0, dollars: 0 };
-  const loyaltyPts     = applyLoyalty ? loyaltyPreview.redeemPts : 0;
-  const loyaltyApply   = applyLoyalty ? loyaltyPreview.dollars   : 0;
-  const charged        = Math.max(billBeforeTip - gcApply - creditApply - loyaltyApply, 0);
-  const total          = charged + tipAmt;
-  const ccFee          = method === 'card' && total > 0
-    ? Math.round((total * ccFeePct / 100 + ccFeeFlat) * 100) / 100
-    : 0;
+  const {
+    tipsDisabled, tipAmt, gcApply, creditApply,
+    loyCfg, loyaltyOn, loyaltyPreview, loyaltyPts, loyaltyApply,
+    charged, total, ccFee,
+  } = useMemo(() => {
+    const billBeforeTip  = afterDiscounts + taxAmt;
+    const tipsDisabled   = method === 'card' && noCardTips;
+    const tipAmt         = tipsDisabled ? 0
+      : perTechMode
+        ? Math.round((tipByTech || []).reduce((s, t) => s + t.amount, 0) * 100) / 100
+      : customTip
+        ? (Number(tip) || 0)
+        : (tipPct ? Math.round(subtotal * tipPct) / 100 : 0);
+    const gcApply        = giftCard && applyGC ? Math.min(giftCard.balance, billBeforeTip) : 0;
+    const creditApply    = applyCredit && clientCredit > 0
+      ? Math.min(clientCredit, billBeforeTip - gcApply)
+      : 0;
+    // Loyalty redemption — gated on the Marketing-Pack `loyalty` cap + the salon
+    // enabling it. Redeems whole points against what's left after gift card/credit.
+    const loyCfg         = resolveLoyaltyConfig(settings);
+    const loyaltyOn      = !!hasFeature?.('loyalty') && loyCfg.enabled;
+    const loyaltyPreview = loyaltyOn
+      ? redeemableLoyalty(loyCfg, clientPoints, billBeforeTip - gcApply - creditApply)
+      : { redeemPts: 0, dollars: 0 };
+    const loyaltyPts     = applyLoyalty ? loyaltyPreview.redeemPts : 0;
+    const loyaltyApply   = applyLoyalty ? loyaltyPreview.dollars   : 0;
+    const charged        = Math.max(billBeforeTip - gcApply - creditApply - loyaltyApply, 0);
+    const total          = charged + tipAmt;
+    const ccFee          = method === 'card' && total > 0
+      ? Math.round((total * ccFeePct / 100 + ccFeeFlat) * 100) / 100
+      : 0;
+    return { tipsDisabled, tipAmt, gcApply, creditApply, loyCfg, loyaltyOn, loyaltyPreview, loyaltyPts, loyaltyApply, charged, total, ccFee };
+  }, [afterDiscounts, taxAmt, method, noCardTips, perTechMode, tipByTech, customTip, tip, tipPct,
+      subtotal, giftCard, applyGC, applyCredit, clientCredit, settings, hasFeature, clientPoints, applyLoyalty, ccFeePct, ccFeeFlat]);
 
   // Card on web is taken at the front-desk kiosk (the iPad/M2 reader) — the web
   // can't run the Bluetooth reader. Default to the kiosk handoff; keep keyed
   // entry as a fallback (and force it when promo/gift cards are present, which
   // don't round-trip to the kiosk yet).
-  const kioskAvail   = kioskHandoffAvailable({ promo, giftCard, gcSales });
+  const kioskAvail   = useMemo(() => kioskHandoffAvailable({ promo, giftCard, gcSales }), [promo, giftCard, gcSales]);
   const cardViaKiosk = method === 'card' && kioskAvail && !keyedCard;
   // Cash also routes through the kiosk so the client reviews the bill + adds a
   // tip; the kiosk confirms and the WEB collects the cash + records the sale.
   const cashViaKiosk = method === 'cash' && kioskAvail && !cashHere;
   const viaKiosk     = cardViaKiosk || cashViaKiosk;
+
+  // Stable per-line edit handlers so each <ServiceLineRow> only re-renders when
+  // its own price/tech changes (state setters are stable; deps are []).
+  const handlePriceChange = useCallback((idx, value) => {
+    setPrices(p => p.map((v, i) => i === idx ? value : v));
+  }, []);
+  const handleTechChange = useCallback((idx, value) => {
+    setTechNames(n => n.map((v, i) => i === idx ? value : v));
+  }, []);
 
   // ── Product cart ───────────────────────────────────────
   async function openProductPicker() {
@@ -831,25 +858,18 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
                       </div>
                     )}
                     {apptLines.map((l, lidx) => (
-                      <div key={l.flatIdx} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 0', borderBottom: lidx < apptLines.length - 1 ? '1px solid var(--pn-border)' : 'none' }}>
-                        <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name || '—'}</span>
-                        {techs.length > 1 && (
-                          <select
-                            value={techNames[l.flatIdx] || ''}
-                            onChange={e => setTechNames(n => n.map((v, idx) => idx === l.flatIdx ? e.target.value : v))}
-                            style={{ fontFamily: 'inherit', fontSize: 11, border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '3px 4px', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', maxWidth: 90, flexShrink: 0 }}
-                          >
-                            {techs.map(t => <option key={t} value={t}>{t.split(' ')[0]}</option>)}
-                          </select>
-                        )}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-                          <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>$</span>
-                          <input type="number" min={0} value={prices[l.flatIdx]}
-                            onChange={e => setPrices(p => p.map((v, idx) => idx === l.flatIdx ? e.target.value : v))}
-                            style={{ width: 68, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 13, textAlign: 'right', background: 'var(--pn-bg)', color: 'var(--pn-text)' }}
-                          />
-                        </div>
-                      </div>
+                      <ServiceLineRow
+                        key={l.flatIdx}
+                        flatIdx={l.flatIdx}
+                        name={l.name}
+                        showTechSelect={techs.length > 1}
+                        techs={techs}
+                        techValue={techNames[l.flatIdx] || ''}
+                        priceValue={prices[l.flatIdx]}
+                        isLast={lidx >= apptLines.length - 1}
+                        onTechChange={handleTechChange}
+                        onPriceChange={handlePriceChange}
+                      />
                     ))}
                   </div>
                 );
@@ -1711,6 +1731,34 @@ function MoreOptions({ enabled, openByDefault, children }) {
     </div>
   );
 }
+
+// One editable service line (name + optional tech select + price). React.memo'd
+// with stable (idx, value) callbacks so editing one line doesn't re-render the
+// whole modal (incl. the Stripe CardElement) or sibling lines. Markup + styles
+// are identical to the previous inline rows.
+const ServiceLineRow = memo(function ServiceLineRow({ flatIdx, name, showTechSelect, techs, techValue, priceValue, isLast, onTechChange, onPriceChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 0', borderBottom: !isLast ? '1px solid var(--pn-border)' : 'none' }}>
+      <span style={{ fontSize: 13, color: 'var(--pn-text)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name || '—'}</span>
+      {showTechSelect && (
+        <select
+          value={techValue}
+          onChange={e => onTechChange(flatIdx, e.target.value)}
+          style={{ fontFamily: 'inherit', fontSize: 11, border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '3px 4px', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', maxWidth: 90, flexShrink: 0 }}
+        >
+          {techs.map(t => <option key={t} value={t}>{t.split(' ')[0]}</option>)}
+        </select>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: 'var(--pn-text-faint)' }}>$</span>
+        <input type="number" min={0} value={priceValue}
+          onChange={e => onPriceChange(flatIdx, e.target.value)}
+          style={{ width: 68, fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 13, textAlign: 'right', background: 'var(--pn-bg)', color: 'var(--pn-text)' }}
+        />
+      </div>
+    </div>
+  );
+});
 
 function Section({ title, action, children }) {
   return (

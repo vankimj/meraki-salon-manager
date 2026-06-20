@@ -546,6 +546,11 @@ function WalkInVsScheduled({ metrics }) {
 
 // ── Payment methods breakdown ──────────────────────────
 const METHOD_TXN_CAP = 100;
+// Cap rendered <tr> count in the big transaction tables so an "All time" range
+// (thousands of rows) doesn't commit them all in one synchronous pass. Totals,
+// KPIs and CSV exports keep operating on the full array — only the rendered row
+// slice is capped, with a "Show all N" button to expand on demand.
+const TABLE_ROW_CAP = 200;
 
 function PaymentMethodsBreakdown({ metrics, transactions }) {
   const [expanded, setExpanded] = useState(null); // method id when open
@@ -2081,6 +2086,8 @@ function TransactionList({ receipts }) {
   const { isAdmin } = useApp();
   const [restoreId, setRestoreId] = useState(null);
   const [restoreLabel, setRestoreLabel] = useState('');
+  const [showAll, setShowAll] = useState(false);
+  const rows = showAll ? receipts : receipts.slice(0, TABLE_ROW_CAP);
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, minWidth: isAdmin ? 920 : 880 }}>
@@ -2101,7 +2108,7 @@ function TransactionList({ receipts }) {
           </tr>
         </thead>
         <tbody>
-          {receipts.map(r => {
+          {rows.map(r => {
             const p = r.payment || {};
             const dt = (r.createdAt || '').slice(0, 16).replace('T', ' ');
             const svcRev = (r.services || []).reduce((s, sv) => s + (Number(sv.price) || 0), 0);
@@ -2141,6 +2148,17 @@ function TransactionList({ receipts }) {
           })}
         </tbody>
       </table>
+      {!showAll && receipts.length > TABLE_ROW_CAP && (
+        <div style={{ textAlign: 'center', padding: '10px 0 2px' }}>
+          <button onClick={() => setShowAll(true)}
+            style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            Show all {receipts.length.toLocaleString()} transactions
+          </button>
+          <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 6 }}>
+            Showing the first {TABLE_ROW_CAP} of {receipts.length.toLocaleString()}.
+          </div>
+        </div>
+      )}
       {restoreId && (
         <RestoreFromBQModal
           collection="receipts"
@@ -2394,6 +2412,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
   const [kind,    setKind]    = useState('all');      // 'all' | 'cancelled' | 'no_show'
   const [techFilter, setTechFilter] = useState('all');
   const [modalClient, setModalClient] = useState(null);
+  const [showAllDetail, setShowAllDetail] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -2575,7 +2594,7 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(r => (
+                  {(showAllDetail ? filtered : filtered.slice(0, TABLE_ROW_CAP)).map(r => (
                     <tr key={r.id} style={{ borderTop: '1px solid var(--pn-border)' }}>
                       <Td>
                         <div style={{ fontWeight: 600 }}>{r.date}</div>
@@ -2630,6 +2649,17 @@ function CancellationsReport({ startDate, endDate, isCustom, periodDays, setPeri
                 </tbody>
               </table>
             </div>
+            {!showAllDetail && filtered.length > TABLE_ROW_CAP && (
+              <div style={{ textAlign: 'center', padding: '10px 0 2px' }}>
+                <button onClick={() => setShowAllDetail(true)}
+                  style={{ fontSize: 12, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Show all {filtered.length.toLocaleString()} records
+                </button>
+                <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 6 }}>
+                  Showing the first {TABLE_ROW_CAP} of {filtered.length.toLocaleString()}.
+                </div>
+              </div>
+            )}
           </Card>
         </>
       )}
