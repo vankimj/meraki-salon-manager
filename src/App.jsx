@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
 import { TENANT_ID } from './lib/tenant';
@@ -10,44 +10,51 @@ import Toast from './components/Toast';
 import ThemeProvider from './components/ThemeProvider';
 import HomeScreen from './components/HomeScreen';
 import ModuleShell from './components/ModuleShell';
-import TipFlow from './modules/tipflow/TipFlow';
-import Admin from './modules/admin/Admin';
-import ScheduleAdmin from './modules/schedule/ScheduleAdmin';
-import ClientsAdmin from './modules/clients/ClientsAdmin';
-import ServicesAdmin from './modules/services/ServicesAdmin';
-import EmployeesAdmin from './modules/employees/EmployeesAdmin';
-import ReportsAdmin from './modules/reports/ReportsAdmin';
-import ReceiptsAdmin from './modules/receipts/ReceiptsAdmin';
-import HRAdmin from './modules/hr/HRAdmin';
-import TechEarnings from './modules/earnings/TechEarnings';
-import WalkinKiosk from './modules/walkin/WalkinKiosk';
-import MembershipsAdmin from './modules/memberships/MembershipsAdmin';
-import AttendanceAdmin from './modules/attendance/AttendanceAdmin';
-import GiftCardsAdmin from './modules/giftcards/GiftCardsAdmin';
-import MeetingsAdmin from './modules/meetings/MeetingsAdmin';
-import ProductsAdmin from './modules/products/ProductsAdmin';
-import MarketingAdmin from './modules/marketing/MarketingAdmin';
-import GrowGuide from './modules/grow/GrowGuide';
-import ChatAdmin from './modules/chat/ChatAdmin';
-import CheckInScreen from './components/CheckInScreen';
-import BookingScreen from './components/BookingScreen';
-import QueueKiosk from './components/QueueKiosk';
-import HandbookModal from './components/HandbookModal';
-import ClientPortal from './components/ClientPortal';
-import SalonWebfront from './modules/webfront/SalonWebfront';
-import OnboardingScreen from './components/OnboardingScreen';
-import TipFlowLanding from './components/TipFlowLanding';
-import TimeClockKiosk from './modules/timeclock/TimeClockKiosk';
 import TicketCheckoutLauncher from './components/TicketCheckoutLauncher';
-import RsvpScreen from './components/RsvpScreen';
-import UnsubscribeScreen from './components/UnsubscribeScreen';
-import ManageAppointmentScreen from './components/ManageAppointmentScreen';
-import { TermsScreen, PrivacyScreen, SmsConsentScreen } from './components/PolicyScreen';
-import ReceiptViewPage from './components/ReceiptViewPage';
-import StaffInviteScreen from './components/StaffInviteScreen';
-import GiftCardPurchaseScreen from './components/GiftCardPurchaseScreen';
 import PinModal from './components/PinModal';
-import OnboardingWizard from './modules/onboarding/OnboardingWizard';
+
+// Code-split: heavy management modules + the distinct public/standalone surfaces
+// load on demand, so a public booking/webfront visitor never downloads the
+// whole staff app, and opening one module doesn't pull all 18. Each renders
+// inside a <Suspense> (top-level for surfaces, and inside AppShell for modules).
+const TipFlow          = lazy(() => import('./modules/tipflow/TipFlow'));
+const Admin            = lazy(() => import('./modules/admin/Admin'));
+const ScheduleAdmin    = lazy(() => import('./modules/schedule/ScheduleAdmin'));
+const ClientsAdmin     = lazy(() => import('./modules/clients/ClientsAdmin'));
+const ServicesAdmin    = lazy(() => import('./modules/services/ServicesAdmin'));
+const EmployeesAdmin   = lazy(() => import('./modules/employees/EmployeesAdmin'));
+const ReportsAdmin     = lazy(() => import('./modules/reports/ReportsAdmin'));
+const ReceiptsAdmin    = lazy(() => import('./modules/receipts/ReceiptsAdmin'));
+const HRAdmin          = lazy(() => import('./modules/hr/HRAdmin'));
+const TechEarnings     = lazy(() => import('./modules/earnings/TechEarnings'));
+const WalkinKiosk      = lazy(() => import('./modules/walkin/WalkinKiosk'));
+const MembershipsAdmin = lazy(() => import('./modules/memberships/MembershipsAdmin'));
+const AttendanceAdmin  = lazy(() => import('./modules/attendance/AttendanceAdmin'));
+const GiftCardsAdmin   = lazy(() => import('./modules/giftcards/GiftCardsAdmin'));
+const MeetingsAdmin    = lazy(() => import('./modules/meetings/MeetingsAdmin'));
+const ProductsAdmin    = lazy(() => import('./modules/products/ProductsAdmin'));
+const MarketingAdmin   = lazy(() => import('./modules/marketing/MarketingAdmin'));
+const GrowGuide        = lazy(() => import('./modules/grow/GrowGuide'));
+const ChatAdmin        = lazy(() => import('./modules/chat/ChatAdmin'));
+const OnboardingWizard = lazy(() => import('./modules/onboarding/OnboardingWizard'));
+const CheckInScreen    = lazy(() => import('./components/CheckInScreen'));
+const BookingScreen    = lazy(() => import('./components/BookingScreen'));
+const QueueKiosk       = lazy(() => import('./components/QueueKiosk'));
+const HandbookModal    = lazy(() => import('./components/HandbookModal'));
+const ClientPortal     = lazy(() => import('./components/ClientPortal'));
+const SalonWebfront    = lazy(() => import('./modules/webfront/SalonWebfront'));
+const OnboardingScreen = lazy(() => import('./components/OnboardingScreen'));
+const TipFlowLanding   = lazy(() => import('./components/TipFlowLanding'));
+const TimeClockKiosk   = lazy(() => import('./modules/timeclock/TimeClockKiosk'));
+const RsvpScreen       = lazy(() => import('./components/RsvpScreen'));
+const UnsubscribeScreen = lazy(() => import('./components/UnsubscribeScreen'));
+const ManageAppointmentScreen = lazy(() => import('./components/ManageAppointmentScreen'));
+const ReceiptViewPage  = lazy(() => import('./components/ReceiptViewPage'));
+const StaffInviteScreen = lazy(() => import('./components/StaffInviteScreen'));
+const GiftCardPurchaseScreen = lazy(() => import('./components/GiftCardPurchaseScreen'));
+const TermsScreen      = lazy(() => import('./components/PolicyScreen').then(m => ({ default: m.TermsScreen })));
+const PrivacyScreen    = lazy(() => import('./components/PolicyScreen').then(m => ({ default: m.PrivacyScreen })));
+const SmsConsentScreen = lazy(() => import('./components/PolicyScreen').then(m => ({ default: m.SmsConsentScreen })));
 import OnboardingBanner from './components/OnboardingBanner';
 import { subscribeOnboarding, isOnboardingComplete } from './lib/onboarding';
 import { isModuleAvailableForPlan, isModuleEnabled, effectivePlan } from './lib/modules';
@@ -71,6 +78,15 @@ const MODULE_TITLES = {
   memberships: 'Memberships',
   grow:        'Launch & Grow',
 };
+
+// Fallback shown while a lazily code-split surface/module chunk downloads.
+function ChunkFallback() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', minHeight: '60vh', color: 'var(--pn-text-faint, #9aa3ad)', fontSize: 13 }}>
+      Loading…
+    </div>
+  );
+}
 
 function MagicLinkPrompt() {
   const { completeMagicLink } = useApp();
@@ -280,6 +296,7 @@ function AppShell({ initialView = 'home' }) {
         <OnboardingBanner onboarding={onboarding} onOpen={() => { setShowWizard(true); setDismissedThisSession(false); }} />
       )}
 
+      <Suspense fallback={<ChunkFallback />}>
       {/* Home */}
       {isHome && (
         <HomeScreen
@@ -336,9 +353,10 @@ function AppShell({ initialView = 'home' }) {
         </ModuleShell>
         )
       ))}
+      </Suspense>
 
       {/* Admin settings overlay */}
-      {showAdmin && <Admin
+      {showAdmin && <Suspense fallback={null}><Admin
         initialTab={adminInitial?.tab}
         scrollTo={adminInitial?.scrollTo}
         onClose={() => { setShowAdmin(false); setAdminInitial(null); }}
@@ -351,9 +369,10 @@ function AppShell({ initialView = 'home' }) {
           setShowWizard(true);
           setDismissedThisSession(false);
         }}
-      />}
+      /></Suspense>}
 
       {showWizard && (
+        <Suspense fallback={null}>
         <OnboardingWizard
           initialPhase={wizardInitialPhase}
           onDismiss={() => {
@@ -362,10 +381,11 @@ function AppShell({ initialView = 'home' }) {
             setWizardInitialPhase(null);
           }}
         />
+        </Suspense>
       )}
 
       {/* Handbook signing — shown to non-admin staff on first login after publish */}
-      {handbookPending && <HandbookModal />}
+      {handbookPending && <Suspense fallback={null}><HandbookModal /></Suspense>}
 
       {/* Magic link completion — shown when user arrives via link on a different device */}
       {magicLinkPending && <MagicLinkPrompt />}
@@ -501,5 +521,5 @@ export default function App() {
     else content = <SalonWebfront />;
   }
 
-  return <><EnvBanner />{content}<VersionBadge /></>;
+  return <><EnvBanner /><Suspense fallback={<ChunkFallback />}>{content}</Suspense><VersionBadge /></>;
 }

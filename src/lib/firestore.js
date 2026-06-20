@@ -2566,7 +2566,10 @@ export async function saveBookingConfig(data) {
 const CHATS_COL = tenantCol('chats');
 
 export function subscribeToChats(cb) {
-  const q = query(CHATS_COL, orderBy('lastAt', 'desc'));
+  // Cap the thread list: each chat doc inlines its full messages[] array, and
+  // this is subscribed app-wide (unread badge) + in ChatAdmin, so without a
+  // limit every message re-emitted the entire collection. 50 newest threads.
+  const q = query(CHATS_COL, orderBy('lastAt', 'desc'), limit(50));
   return onSnapshot(q, snap => cb(snap.docs.map(d => ({ id: d.id, ...d.data() }))));
 }
 
