@@ -1,13 +1,14 @@
 import { useEffect, useState, useMemo } from 'react';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { View } from 'react-native';
+import { View, TouchableOpacity, Text } from 'react-native';
 import Svg, { Path, Circle, Rect } from 'react-native-svg';
 import ScheduleStack  from './ScheduleStack';
 import ClientsStack   from './ClientsStack';
 import DashboardScreen from '../screens/DashboardScreen';
 import ManageStack    from './ManageStack';
 import ProfileScreen  from '../screens/ProfileScreen';
+import HelpScreen     from '../screens/HelpScreen';
 import usePushRegistration from '../hooks/usePushRegistration';
 import { getCurrentTenant, subscribeTenant } from '../lib/currentTenant';
 import { useTheme } from '../theme/ThemeContext';
@@ -45,6 +46,7 @@ const HEADER_TITLES = {
   Schedule:  'Appointments',
   Dashboard: 'Dashboard',
   Profile:   'Profile',
+  Help:      'Help & Support',
 };
 function titleFor(routeName) { return HEADER_TITLES[routeName] || routeName; }
 
@@ -98,7 +100,16 @@ export default function RootNav() {
         initialRouteName="Dashboard"
         screenOptions={screenOptions}
       >
-        <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
+        <Tab.Screen name="Dashboard" component={DashboardScreen}
+          options={({ navigation }) => ({
+            title: 'Dashboard',
+            headerRight: () => (
+              <TouchableOpacity onPress={() => navigation.navigate('Help')}
+                style={{ width: 32, height: 32, borderRadius: 16, borderWidth: 1.5, borderColor: theme.border, alignItems: 'center', justifyContent: 'center', marginRight: 14 }}>
+                <Text style={{ fontSize: 16, fontWeight: '800', color: theme.green }}>?</Text>
+              </TouchableOpacity>
+            ),
+          })} />
         <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Appointments' }} />
         <Tab.Screen
           name="Clients"
@@ -111,6 +122,8 @@ export default function RootNav() {
           options={{ headerShown: false /* the inner stack provides its own header */ }}
         />
         <Tab.Screen name="Profile"  component={ProfileScreen} />
+        {/* Help is reachable from the Dashboard header "?" — hidden from the tab bar. */}
+        <Tab.Screen name="Help" component={HelpScreen} options={{ title: 'Help & Support', tabBarButton: () => null }} />
       </Tab.Navigator>
     </NavigationContainer>
   );
