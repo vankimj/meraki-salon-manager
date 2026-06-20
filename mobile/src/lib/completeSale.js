@@ -1,6 +1,6 @@
 import { buildTechSplit, genReceiptToken } from './checkout';
 import { defaultWalkIn } from './metrics';
-import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient, saveClient, claimSaleSideEffects } from './firestore';
+import { updateAppointment, updateGiftCard, savePromoCode, saveProduct, createReceipt, fetchClient, saveClient, redeemLoyaltyPoints, claimSaleSideEffects } from './firestore';
 
 // Writes a completed sale, shared by the tech checkout (CheckoutScreen) and the
 // front-desk kiosk so both produce IDENTICAL receipts (no duplicated money
@@ -46,6 +46,8 @@ export async function completeSale({
     tax: t.taxAmt, taxRate: Number(settings?.taxRate) || 0,
     giftCard: giftCard && t.gcApply > 0 ? { code: giftCard.code, id: giftCard.id, applied: t.gcApply } : null,
     creditApplied: t.creditApply,
+    loyaltyRedeemed: t.loyaltyApply || 0,
+    loyaltyPointsUsed: t.loyaltyPts || 0,
     charged: t.charged, tip: t.tipAmt, total: t.total,
     method, ccFee: t.ccFee,
     ccFeePct: Number(settings?.ccFeePct) || 0, ccFeeFlat: Number(settings?.ccFeeFlat) || 0,
@@ -93,6 +95,12 @@ export async function completeSale({
         const newCredit = Math.max((Number(c?.credit) || 0) - t.creditApply, 0) + issued;
         await saveClient(creditClientId, { credit: newCredit });
       } catch (e) { sideEffectErrors.push('Store credit not updated: ' + (e?.message || 'failed')); }
+    }
+    // Loyalty redemption — atomic decrement (own helper), race-safe vs the
+    // server earn trigger's atomic increment.
+    if (Number(t.loyaltyPts) > 0 && creditClientId) {
+      try { await redeemLoyaltyPoints(creditClientId, t.loyaltyPts, saleId); }
+      catch (e) { sideEffectErrors.push('Loyalty points not updated: ' + (e?.message || 'failed')); }
     }
   }
 

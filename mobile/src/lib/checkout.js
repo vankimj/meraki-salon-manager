@@ -24,6 +24,7 @@ export function computeTotals(input) {
     tip = { custom: false, amount: 0, pct: null },
     giftCardBalance = 0, applyGC = false,
     clientCredit = 0, applyCredit = false,
+    clientPoints = 0, applyLoyalty = false, loyaltyConfig = null,
   } = input || {};
 
   const r2 = (n) => Math.round(n * 100) / 100;
@@ -56,11 +57,23 @@ export function computeTotals(input) {
 
   const gcApply     = applyGC && giftCardBalance > 0 ? Math.min(giftCardBalance, billBeforeTip) : 0;
   const creditApply = applyCredit && clientCredit > 0 ? Math.min(clientCredit, billBeforeTip - gcApply) : 0;
-  const charged     = Math.max(billBeforeTip - gcApply - creditApply, 0);
+  // Loyalty redemption — whole points against what's left after gift card/credit.
+  let loyaltyPts = 0, loyaltyApply = 0;
+  if (applyLoyalty && loyaltyConfig) {
+    const rv = Number(loyaltyConfig.redemptionValue) || 0;
+    const min = Number(loyaltyConfig.minRedeemPoints) || 0;
+    const remain = billBeforeTip - gcApply - creditApply;
+    if (rv > 0 && remain > 0 && clientPoints >= Math.max(min, 1)) {
+      loyaltyPts = Math.min(clientPoints, Math.floor(remain / rv));
+      if (loyaltyPts >= min && loyaltyPts > 0) loyaltyApply = Math.round(loyaltyPts * rv * 100) / 100;
+      else loyaltyPts = 0;
+    }
+  }
+  const charged     = Math.max(billBeforeTip - gcApply - creditApply - loyaltyApply, 0);
   const total       = charged + tipAmt;
   const ccFee       = method === 'card' && total > 0 ? r2(total * ccFeePct / 100 + ccFeeFlat) : 0;
 
-  return { subtotal, discountAmount, promoAmount, afterDiscounts, taxAmt, billBeforeTip, tipAmt, gcApply, creditApply, charged, total, ccFee };
+  return { subtotal, discountAmount, promoAmount, afterDiscounts, taxAmt, billBeforeTip, tipAmt, gcApply, creditApply, loyaltyApply, loyaltyPts, charged, total, ccFee };
 }
 
 // Per-tech revenue split + tip allocation. Returns null for a single tech (no

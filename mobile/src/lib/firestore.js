@@ -182,6 +182,18 @@ export async function saveClient(id, data) {
     { merge: true });
 }
 
+// Redeem loyalty points at checkout — atomic decrement (race-safe vs the server
+// earn trigger) + a redeem entry in the client's loyaltyHistory subcollection.
+export async function redeemLoyaltyPoints(clientId, points, receiptRef = null) {
+  const pts = Math.round(Number(points) || 0);
+  if (!clientId || pts <= 0) return;
+  const cRef = doc(tenantCol('clients'), clientId);
+  await updateDoc(cRef, { loyaltyPoints: increment(-pts), updatedAt: new Date().toISOString() });
+  await addDoc(collection(cRef, 'loyaltyHistory'), {
+    type: 'redeem', points: -pts, receiptId: receiptRef || null, reason: 'Redeemed at checkout', createdAt: new Date().toISOString(),
+  });
+}
+
 // Pull a client's appointment history. Same query the web ClientsAdmin
 // uses — appointments where clientId matches. Sorted newest first.
 export async function fetchClientAppointments(clientId) {

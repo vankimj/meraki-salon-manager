@@ -11,6 +11,7 @@ import {
 import KioskCheckout from '../kiosk/KioskCheckout';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { computeTotals, buildTechSplit, normalizePromo, genReceiptToken, parseReceiptContact } from '../../lib/checkout';
+import { resolveLoyaltyConfig } from '../../lib/loyalty';
 import { completeSale } from '../../lib/completeSale';
 import { defaultWalkIn } from '../../lib/metrics';
 import { recordSale, syncOfflineSales } from '../../lib/resilientSale';
@@ -74,6 +75,8 @@ export default function CheckoutScreen({ navigation }) {
   const [clientCredit, setClientCredit] = useState(0);  // primary client's store-credit balance
   const [clientEmailOnFile, setClientEmailOnFile] = useState(''); // for the receipt email field
   const [applyCredit, setApplyCredit] = useState(false);
+  const [clientPoints, setClientPoints] = useState(0); // primary client's loyalty balance
+  const [applyLoyalty, setApplyLoyalty] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [promo, setPromo]         = useState(null);
   const [gcCode, setGcCode]       = useState('');
@@ -139,7 +142,7 @@ export default function CheckoutScreen({ navigation }) {
       setDiscType(prev => (prev === 'none' ? 'member' : prev));
       setDiscVal(prev => (prev === '' ? String(m.discountPct) : prev));
     }).catch(() => {});
-    fetchClient(primaryClientId).then(c => { if (alive) { setClientCredit(Number(c?.credit) || 0); setClientEmailOnFile(c?.email || ''); } }).catch(() => {});
+    fetchClient(primaryClientId).then(c => { if (alive) { setClientCredit(Number(c?.credit) || 0); setClientPoints(Number(c?.loyaltyPoints) || 0); setClientEmailOnFile(c?.email || ''); } }).catch(() => {});
     return () => { alive = false; };
   }, [primaryClientId]);
 
@@ -190,6 +193,8 @@ export default function CheckoutScreen({ navigation }) {
   }
   function removeProduct(id) { setProducts(prev => prev.filter(it => it.product.id !== id)); }
 
+  const loyaltyCfg = resolveLoyaltyConfig(settings);
+  const loyaltyOn  = loyaltyCfg.enabled;
   const totals = useMemo(() => computeTotals({
     lines, productsTotal,
     discount: discType === 'none' ? null : { isPercent: discType !== 'amount', value: Number(discVal) || 0 },
@@ -202,7 +207,8 @@ export default function CheckoutScreen({ navigation }) {
     tip: tipForCharge,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [lines, productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, clientCredit, applyCredit]);
+    clientPoints, applyLoyalty: applyLoyalty && loyaltyOn, loyaltyConfig: loyaltyCfg,
+  }), [lines, productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, clientCredit, applyCredit, clientPoints, applyLoyalty, loyaltyOn]);
 
   // Card total can differ from cash when the salon passes the card fee to the
   // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
@@ -219,7 +225,8 @@ export default function CheckoutScreen({ navigation }) {
     tip: tipForCharge,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [lines, productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, clientCredit, applyCredit]);
+    clientPoints, applyLoyalty: applyLoyalty && loyaltyOn, loyaltyConfig: loyaltyCfg,
+  }), [lines, productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, clientCredit, applyCredit, clientPoints, applyLoyalty, loyaltyOn]);
 
   const split = buildTechSplit(lines, totals.tipAmt, chargedTipByTech);
 
@@ -352,6 +359,7 @@ export default function CheckoutScreen({ navigation }) {
       tip: { custom: true, amount: 0, pct: null },
       giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
       clientCredit, applyCredit: applyCredit && clientCredit > 0,
+      clientPoints, applyLoyalty: applyLoyalty && loyaltyOn, loyaltyConfig: loyaltyCfg,
     });
     const creditApplied = Math.max(0, Number(summaryTotals.creditApply) || 0);
     const payload = {
@@ -576,6 +584,16 @@ export default function CheckoutScreen({ navigation }) {
         </TouchableOpacity>
       )}
 
+      {loyaltyOn && clientPoints >= loyaltyCfg.minRedeemPoints && (
+        <TouchableOpacity activeOpacity={0.7} onPress={() => setApplyLoyalty(v => !v)} style={[styles.creditRow, applyLoyalty && styles.creditRowOn]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.creditLabel}>⭐ Redeem loyalty points</Text>
+            <Text style={styles.creditSub}>{clientPoints} pts available{applyLoyalty && totals.loyaltyApply > 0 ? ` · using ${totals.loyaltyPts} pts (${money(totals.loyaltyApply)})` : ''}</Text>
+          </View>
+          <View style={[styles.toggle, applyLoyalty && styles.toggleOn]}><View style={[styles.knob, applyLoyalty && styles.knobOn]} /></View>
+        </TouchableOpacity>
+      )}
+
 
       {hasServiceVisit && (
         <TouchableOpacity style={styles.walkInRow} onPress={() => setIsWalkIn(v => !v)} activeOpacity={0.7}>
@@ -607,6 +625,7 @@ export default function CheckoutScreen({ navigation }) {
         {totals.tipAmt > 0 && <Row label="Tip" value={money(totals.tipAmt)} />}
         {totals.gcApply > 0 && <Row label="Gift card" value={`-${money(totals.gcApply)}`} />}
         {totals.creditApply > 0 && <Row label="Store credit" value={`-${money(totals.creditApply)}`} />}
+        {totals.loyaltyApply > 0 && <Row label={`Loyalty (${totals.loyaltyPts} pts)`} value={`-${money(totals.loyaltyApply)}`} />}
         <View style={styles.divider} />
         <Row label="Total" value={money(totals.total)} big />
       </View>
@@ -759,6 +778,7 @@ function SentStatus({ sent, styles, theme, onDone }) {
         {t.taxAmt > 0 && <Row label="Tax" value={money(t.taxAmt)} />}
         {t.gcApply > 0 && <Row label="Gift card" value={`-${money(t.gcApply)}`} />}
         {t.creditApply > 0 && <Row label="Store credit" value={`-${money(t.creditApply)}`} />}
+        {t.loyaltyApply > 0 && <Row label={`Loyalty (${t.loyaltyPts} pts)`} value={`-${money(t.loyaltyApply)}`} />}
         <View style={styles.divider} />
         <Row label="Total before tip" value={money(t.total)} big />
       </View>
