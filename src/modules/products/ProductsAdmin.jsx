@@ -194,6 +194,8 @@ function ProductModal({ product, onSave, onClose }) {
   const [desc,     setDesc]     = useState(product?.description || '');
   const [image,    setImage]    = useState(product?.image     || '');
   const [active,   setActive]   = useState(product?.active   !== false);
+  const [affiliateUrl,  setAffiliateUrl]  = useState(product?.affiliateUrl  || '');
+  const [isRecommended, setIsRecommended] = useState(!!product?.isRecommended);
   const [saving,   setSaving]   = useState(false);
   const [imgErr,   setImgErr]   = useState(false);
 
@@ -211,6 +213,11 @@ function ProductModal({ product, onSave, onClose }) {
       description: desc.trim()    || null,
       image:       image.trim()   || null,
       active,
+      // Affiliate storefront: external referral URL + "recommended" flag. The
+      // trainer keeps the third-party kickback; we only host the link + count
+      // clicks. clickCount is server-incremented, so never overwrite it here.
+      affiliateUrl:  affiliateUrl.trim() || null,
+      isRecommended: !!isRecommended,
     };
     await onSave(data, product?.id);
     setSaving(false);
@@ -268,6 +275,13 @@ function ProductModal({ product, onSave, onClose }) {
               )}
             </div>
           </F>
+          <F label="Affiliate link (optional)">
+            <input value={affiliateUrl} onChange={e => setAffiliateUrl(e.target.value)} placeholder="https://amzn.to/… (your affiliate URL)" style={inp} />
+          </F>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10 }}>
+            <input type="checkbox" checked={isRecommended} onChange={e => setIsRecommended(e.target.checked)} />
+            Show on my public “Recommended Gear” page
+          </label>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 16 }}>
             <input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} />
             Active (available for sale)

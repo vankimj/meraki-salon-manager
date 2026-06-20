@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+<meta name="googlebot" content="noindex, nofollow" />
+<title>Plume Nexus for Personal Trainers — Coach, get paid, keep your kickbacks</title>
+<meta name="description" content="One platform to build client programs, collect intake & waivers, take payments, run memberships, and earn affiliate kickbacks — with no per-client seat fees." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Great+Vibes&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1a1410; --inkSoft:#2a221c; --muted:#6b6258; --mutedSoft:#9a9286;
+    --rule:#d8d2c6; --ruleSoft:#ebe5d8;
+    --bg:#fbf8f1; --bgSoft:#f6f2ea; --bgCream:#efe9dc;
+    --plum:#6a4fa0; --plumDeep:#3f2767; --plumSoft:#8b6fc4;
+    --blue:#3d95ce; --blueDeep:#1f6ea3; --teal:#2a9d8f;
+    --gold:#c19a4a; --goldDeep:#9c7a32; --success:#2D7A5F; --danger:#c0563f;
+    --display:'Fraunces',Georgia,serif; --script:'Great Vibes',cursive;
+    --body:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+    --grad:linear-gradient(135deg,var(--plum),var(--blue));
+    --gradDeep:linear-gradient(135deg,var(--plumDeep),var(--blueDeep));
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:var(--body); color:var(--ink); background:var(--bg);
+    line-height:1.55; -webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(ellipse 80% 50% at 50% -10%, rgba(106,79,160,.06), transparent 60%);
+  }
+  .wrap{max-width:1040px; margin:0 auto; padding:0 28px}
+  .eyebrow{font-size:12px; letter-spacing:.22em; text-transform:uppercase; font-weight:600; color:var(--goldDeep)}
+  h1,h2,h3{font-family:var(--display); font-weight:600; line-height:1.08; letter-spacing:-.01em}
+  .grad-text{background:var(--grad); -webkit-background-clip:text; background-clip:text; color:transparent}
+  a{color:var(--blueDeep); text-decoration:none}
+
+  /* ── Top bar ── */
+  header{padding:26px 0 0}
+  .brandbar{display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap}
+  .brand{display:flex; align-items:center; gap:13px}
+  .mark{width:42px; height:42px; flex:none}
+  .wordmark{font-family:var(--display); font-weight:600; font-size:21px; letter-spacing:.01em}
+  .wordmark small{display:block; font-family:var(--body); font-weight:600; font-size:10.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--goldDeep); margin-top:1px}
+  .topcta{font-family:var(--body); font-weight:600; font-size:14px; color:#fff; background:var(--ink); padding:10px 18px; border-radius:999px}
+
+  /* ── Hero ── */
+  .hero{padding:54px 0 30px; text-align:center; position:relative}
+  .hero .script{font-family:var(--script); font-size:30px; color:var(--plum); line-height:1; margin-bottom:6px}
+  .hero h1{font-size:clamp(38px,6vw,62px); max-width:16ch; margin:6px auto 0}
+  .hero p.lede{font-size:clamp(17px,2.2vw,21px); color:var(--muted); max-width:60ch; margin:20px auto 0}
+  .chips{display:flex; gap:10px; justify-content:center; flex-wrap:wrap; margin:30px auto 0}
+  .chip{display:inline-flex; align-items:center; gap:8px; background:#fff; border:1px solid var(--rule); border-radius:999px; padding:9px 16px; font-size:13.5px; font-weight:600; box-shadow:0 2px 8px rgba(15,25,35,.05)}
+  .chip b{color:var(--plumDeep)}
+  .cta-row{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin:30px 0 0}
+  .btn{font-family:var(--body); font-weight:600; font-size:15px; padding:14px 26px; border-radius:999px; cursor:pointer; border:0; display:inline-block}
+  .btn-primary{color:#fff; background:var(--grad); box-shadow:0 12px 30px rgba(106,79,160,.28)}
+  .btn-ghost{color:var(--ink); background:transparent; border:1.5px solid var(--ink)}
+
+  /* ── Section frame ── */
+  section{padding:48px 0}
+  .sec-head{text-align:center; max-width:64ch; margin:0 auto 36px}
+  .sec-head h2{font-size:clamp(28px,4vw,40px)}
+  .sec-head p{color:var(--muted); font-size:17px; margin-top:12px}
+
+  /* ── Feature grid ── */
+  .features{display:grid; grid-template-columns:repeat(4,1fr); gap:16px}
+  .feat{background:#fff; border:1px solid var(--ruleSoft); border-radius:18px; padding:22px 20px; transition:transform .25s ease, box-shadow .25s ease}
+  .feat:hover{transform:translateY(-3px); box-shadow:0 16px 40px rgba(15,25,35,.09)}
+  .feat .ic{width:44px; height:44px; border-radius:12px; display:grid; place-items:center; font-size:22px; background:linear-gradient(135deg,rgba(106,79,160,.12),rgba(61,149,206,.12)); border:1px solid rgba(106,79,160,.18); margin-bottom:14px}
+  .feat h3{font-size:17px; letter-spacing:0}
+  .feat p{font-size:13.5px; color:var(--muted); margin-top:6px}
+
+  /* ── Why switch ── */
+  .why{background:var(--bgSoft); border-top:1px solid var(--ruleSoft); border-bottom:1px solid var(--ruleSoft)}
+  .why-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:22px}
+  .why-card{background:#fff; border:1px solid var(--ruleSoft); border-radius:18px; padding:26px 24px}
+  .why-card .num{font-family:var(--display); font-size:15px; font-weight:600; color:#fff; background:var(--grad); width:34px; height:34px; border-radius:10px; display:grid; place-items:center; margin-bottom:14px}
+  .why-card h3{font-size:19px}
+  .why-card p{font-size:14.5px; color:var(--muted); margin-top:9px}
+
+  /* ── Comparison table ── */
+  .compare{overflow-x:auto; border:1px solid var(--rule); border-radius:18px; background:#fff; box-shadow:0 8px 28px rgba(15,25,35,.06)}
+  table{border-collapse:collapse; width:100%; min-width:760px; font-size:13.5px}
+  th,td{padding:13px 14px; text-align:center; border-bottom:1px solid var(--ruleSoft)}
+  thead th{font-family:var(--body); font-weight:600; font-size:12.5px; color:var(--muted); background:var(--bgSoft); position:sticky; top:0}
+  tbody th{text-align:left; font-weight:600; color:var(--ink); white-space:nowrap}
+  td.us, th.us{background:rgba(106,79,160,.07)}
+  thead th.us{background:var(--grad); color:#fff; font-weight:700; border-radius:12px 12px 0 0}
+  .yes{color:var(--success); font-weight:700; font-size:15px}
+  .no{color:var(--mutedSoft); font-weight:600}
+  .part{color:var(--goldDeep); font-weight:600; font-size:12px}
+  tbody tr:last-child td, tbody tr:last-child th{border-bottom:0}
+  .pricing-row th, .pricing-row td{font-size:12px}
+  .tag-uniq{display:inline-block; font-size:10px; font-weight:700; letter-spacing:.05em; color:#fff; background:var(--teal); border-radius:6px; padding:2px 7px; margin-left:7px; vertical-align:middle}
+
+  /* ── Pricing ── */
+  .price-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:18px; max-width:840px; margin:0 auto}
+  .tier{background:#fff; border:1px solid var(--ruleSoft); border-radius:18px; padding:26px 24px; text-align:center; position:relative}
+  .tier.pop{border:1.5px solid var(--plum); box-shadow:0 14px 40px rgba(106,79,160,.16)}
+  .tier .pop-flag{position:absolute; top:-12px; left:50%; transform:translateX(-50%); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:#fff; background:var(--grad); padding:5px 14px; border-radius:999px}
+  .tier .tn{font-family:var(--display); font-size:21px; font-weight:600}
+  .tier .tp{font-size:34px; font-family:var(--display); font-weight:600; margin:8px 0 2px}
+  .tier .tp small{font-size:14px; font-family:var(--body); color:var(--muted); font-weight:500}
+  .tier .td{font-size:13.5px; color:var(--muted); min-height:38px; margin-top:6px}
+  .founders{text-align:center; margin:26px auto 0; max-width:60ch; font-size:13.5px; color:var(--muted)}
+  .founders b{color:var(--plumDeep)}
+
+  /* ── CTA ── */
+  .closer{background:var(--gradDeep); color:#fff; border-radius:26px; padding:52px 32px; text-align:center; margin:20px auto 0}
+  .closer h2{font-size:clamp(28px,4vw,42px); color:#fff}
+  .closer p{color:rgba(255,255,255,.85); font-size:17px; max-width:54ch; margin:14px auto 0}
+  .closer .btn-primary{background:#fff; color:var(--plumDeep); margin-top:26px; box-shadow:0 12px 30px rgba(0,0,0,.25)}
+
+  footer{padding:36px 0 48px; text-align:center; color:var(--mutedSoft); font-size:12.5px}
+  footer .fnote{max-width:70ch; margin:0 auto 14px; line-height:1.5}
+
+  @media (max-width:880px){
+    .features{grid-template-columns:repeat(2,1fr)}
+    .why-grid,.price-grid{grid-template-columns:1fr}
+  }
+  @media print{
+    body{background:#fff} .topcta,.cta-row,.closer .btn-primary{display:none}
+    .feat:hover{transform:none; box-shadow:none}
+    section{padding:24px 0} .compare{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap brandbar">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="64" y2="64">
+          <stop offset="0" stop-color="#6a4fa0"/><stop offset="1" stop-color="#3d95ce"/>
+        </linearGradient></defs>
+        <g stroke="url(#g)" stroke-width="2.4" stroke-linecap="round">
+          <path d="M32 6 C20 18 20 34 32 58 C44 34 44 18 32 6 Z" fill="rgba(106,79,160,.08)"/>
+          <path d="M32 14 V52"/>
+          <path d="M32 22 C27 24 24 28 23 33 M32 22 C37 24 40 28 41 33"/>
+          <path d="M32 33 C26 35 22 40 21 46 M32 33 C38 35 42 40 43 46"/>
+        </g>
+        <circle cx="32" cy="32" r="3.4" fill="url(#g)"/>
+      </svg>
+      <div class="wordmark">Plume&nbsp;Nexus<small>Salon &amp; Studio Manager</small></div>
+    </div>
+    <a class="topcta" href="https://plumenexus.com">plumenexus.com →</a>
+  </div>
+</header>
+
+<main>
+  <!-- HERO -->
+  <section class="hero">
+    <div class="wrap">
+      <div class="script">for personal trainers &amp; coaches</div>
+      <h1>Coach your clients, get paid, and <span class="grad-text">keep your kickbacks.</span></h1>
+      <p class="lede">One platform to build training programs, collect intake &amp; waivers, take payments, run monthly memberships, and earn affiliate commissions on the gear you already recommend — with <b>no per-client seat fees.</b></p>
+      <div class="chips">
+        <span class="chip">🏋️ Structured <b>program builder</b></span>
+        <span class="chip">💳 Card, Venmo &amp; <b>memberships</b></span>
+        <span class="chip">🛒 Affiliate <b>gear storefront</b></span>
+        <span class="chip">📈 Progress <b>tracking</b></span>
+      </div>
+      <div class="cta-row">
+        <a class="btn btn-primary" href="https://plumenexus.com">Start free →</a>
+        <a class="btn btn-ghost" href="#compare">See how we compare</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT IT DOES -->
+  <section>
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Everything in one place</div>
+        <h2>Replace your program app, booking tool, and payment processor</h2>
+        <p>Stop stitching together five subscriptions. Plume Nexus runs the whole coaching business from a single login.</p>
+      </div>
+      <div class="features">
+        <div class="feat"><div class="ic">🏋️</div><h3>Personalized programs</h3><p>Build week-by-week plans — sets, reps, load, tempo, rest, and demo videos. Save templates, assign, then tweak per client.</p></div>
+        <div class="feat"><div class="ic">📋</div><h3>Intake &amp; waivers</h3><p>Send a health history, PAR-Q, and goals form. Clients e-sign a liability waiver — stored, timestamped, tamper-evident.</p></div>
+        <div class="feat"><div class="ic">📅</div><h3>Scheduling &amp; reminders</h3><p>Online booking, 1-on-1 and small-group sessions, recurring slots, plus automatic SMS &amp; email reminders.</p></div>
+        <div class="feat"><div class="ic">💳</div><h3>Payments your way</h3><p>Charge a card on the spot, save a card on file, or show your Venmo QR. No clunky workarounds.</p></div>
+        <div class="feat"><div class="ic">🔁</div><h3>Memberships</h3><p>Bill clients monthly or annually for unlimited, 4-pack, or small-group plans. Clients self-manage in a billing portal.</p></div>
+        <div class="feat"><div class="ic">🎟️</div><h3>Session packs</h3><p>Sell a 10-session pack and the balance auto-decrements as you train. Low-balance alerts before they run out.</p></div>
+        <div class="feat"><div class="ic">📈</div><h3>Progress tracking</h3><p>Log weight, body-fat, measurements, PRs, and before/after photos — with trend charts your clients can see.</p></div>
+        <div class="feat"><div class="ic">🛒</div><h3>Affiliate gear store</h3><p>Curate a “Recommended Gear” page of supplements and equipment. Your affiliate links, your kickbacks.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHY SWITCH -->
+  <section class="why">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Why trainers switch</div>
+        <h2>Built for your margins, not ours</h2>
+      </div>
+      <div class="why-grid">
+        <div class="why-card"><div class="num">1</div><h3>No per-client seat fees</h3><p>Most coaching apps charge more as you add active clients — your success becomes their upsell. Plume Nexus is one flat monthly price, unlimited clients.</p></div>
+        <div class="why-card"><div class="num">2</div><h3>You keep the kickbacks</h3><p>The gear storefront uses <i>your</i> affiliate links (Amazon Associates and more). The commission goes straight to you — we don’t touch it.</p></div>
+        <div class="why-card"><div class="num">3</div><h3>One tool, not five</h3><p>Programs, waivers, scheduling, memberships, POS, and a client portal in one place — instead of paying for a program app, a booking tool, a waiver service, and a payment plugin.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- COMPARISON -->
+  <section id="compare">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Head to head</div>
+        <h2>How we compare</h2>
+        <p>The all-in-one coaching apps are great at programming — but they nickel-and-dime per client and stop at the program. Here’s the full picture.</p>
+      </div>
+      <div class="compare">
+        <table>
+          <thead>
+            <tr>
+              <th style="text-align:left">Feature</th>
+              <th class="us">Plume&nbsp;Nexus</th>
+              <th>Trainerize</th>
+              <th>TrueCoach</th>
+              <th>PT&nbsp;Distinction</th>
+              <th>Mindbody</th>
+              <th>Everfit</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><th>Structured program builder</th><td class="us yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="yes">✓</td></tr>
+            <tr><th>Client mobile portal</th><td class="us yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><th>Intake + waiver e-signature</th><td class="us yes">✓</td><td class="part">forms only</td><td class="part">forms only</td><td class="yes">✓</td><td class="part">add-on</td><td class="part">forms only</td></tr>
+            <tr><th>In-app card payments (POS)</th><td class="us yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="part">limited</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><th>Venmo / ad-hoc collection <span class="tag-uniq">ours</span></th><td class="us yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><th>Monthly / annual memberships</th><td class="us yes">✓</td><td class="yes">✓</td><td class="no">—</td><td class="part">limited</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr><th>Session-credit packs</th><td class="us yes">✓</td><td class="part">limited</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="part">limited</td></tr>
+            <tr><th>Affiliate gear storefront <span class="tag-uniq">ours</span></th><td class="us yes">✓</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td></tr>
+            <tr><th>Automated SMS + email reminders</th><td class="us yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+            <tr class="pricing-row"><th>Pricing model</th><td class="us"><b>Flat / unlimited clients</b></td><td>Per active client</td><td>Per active client</td><td>Per client tiers</td><td>$$$ flat (studio)</td><td>Per active client</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section>
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">Simple, flat pricing</div>
+        <h2>Pick a plan, add unlimited clients</h2>
+      </div>
+      <div class="price-grid">
+        <div class="tier">
+          <div class="tn">Solo</div>
+          <div class="tp">$49<small>/mo</small></div>
+          <div class="td">Solo trainer essentials: scheduling, POS, programs, intake &amp; waivers, reports.</div>
+        </div>
+        <div class="tier pop">
+          <div class="pop-flag">Most popular</div>
+          <div class="tn">Studio</div>
+          <div class="tp">$79<small>/mo</small></div>
+          <div class="td">Adds SMS reminders, 2-way messaging, memberships &amp; the affiliate gear store.</div>
+        </div>
+        <div class="tier">
+          <div class="tn">Pro</div>
+          <div class="tp">$149<small>/mo</small></div>
+          <div class="td">Multiple trainers, payroll, marketing campaigns &amp; multi-location.</div>
+        </div>
+      </div>
+      <p class="founders"><b>Founding members</b> who join before June 30, 2027 get Solo <b>free for life</b>. 30-day free trial on every plan — no card required to start.</p>
+    </div>
+  </section>
+
+  <!-- CLOSER -->
+  <section>
+    <div class="wrap">
+      <div class="closer">
+        <h2>Your whole coaching business, one login.</h2>
+        <p>Build the program, send the waiver, take the payment, and earn on the gear — without juggling five apps or paying more every time you sign a client.</p>
+        <a class="btn btn-primary" href="https://plumenexus.com">Start your free trial →</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p class="fnote">Competitor capabilities summarized for comparison and may vary by plan, region, and date. “Forms only” means digital intake without a built-in waiver e-signature; “limited” indicates a partial or add-on capability. Pricing shown is the Plume Nexus list price; Founding-member terms apply through June 30, 2027.</p>
+    <div>Plume Nexus Salon &amp; Studio Manager · <a href="https://plumenexus.com">plumenexus.com</a></div>
+  </div>
+</footer>
+
+</body>
+</html>

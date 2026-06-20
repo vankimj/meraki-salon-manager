@@ -18,6 +18,8 @@ const CAPS = [
   'meetings',
   'marketing',
   'memberships',
+  'intake',
+  'programs',
   'chat',
   'walkin',
   'hr', 'settings', 'users', 'billing',
@@ -26,7 +28,7 @@ const CAPS = [
 const ROLE_CAPS = {
   owner:     [...CAPS],
   manager:   CAPS.filter(c => !OWNER_ONLY.includes(c)),
-  staff:     ['pos', 'schedule', 'clients', 'earnings_own', 'chat'],
+  staff:     ['pos', 'schedule', 'clients', 'earnings_own', 'chat', 'programs'],
   scheduler: ['pos', 'schedule', 'schedule_all', 'clients', 'giftcards_sell', 'walkin', 'chat'],
   kiosk:     [],
   readonly:  ['schedule', 'clients', 'reports'],

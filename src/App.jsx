@@ -29,6 +29,8 @@ const HRAdmin          = lazy(() => import('./modules/hr/HRAdmin'));
 const TechEarnings     = lazy(() => import('./modules/earnings/TechEarnings'));
 const WalkinKiosk      = lazy(() => import('./modules/walkin/WalkinKiosk'));
 const MembershipsAdmin = lazy(() => import('./modules/memberships/MembershipsAdmin'));
+const IntakeAdmin      = lazy(() => import('./modules/intake/IntakeAdmin'));
+const ProgramsAdmin    = lazy(() => import('./modules/programs/ProgramsAdmin'));
 const AttendanceAdmin  = lazy(() => import('./modules/attendance/AttendanceAdmin'));
 const GiftCardsAdmin   = lazy(() => import('./modules/giftcards/GiftCardsAdmin'));
 const MeetingsAdmin    = lazy(() => import('./modules/meetings/MeetingsAdmin'));
@@ -49,6 +51,8 @@ const TimeClockKiosk   = lazy(() => import('./modules/timeclock/TimeClockKiosk')
 const RsvpScreen       = lazy(() => import('./components/RsvpScreen'));
 const UnsubscribeScreen = lazy(() => import('./components/UnsubscribeScreen'));
 const ManageAppointmentScreen = lazy(() => import('./components/ManageAppointmentScreen'));
+const IntakeFormScreen = lazy(() => import('./components/IntakeFormScreen'));
+const GearStorefront   = lazy(() => import('./components/GearStorefront'));
 const ReceiptViewPage  = lazy(() => import('./components/ReceiptViewPage'));
 const StaffInviteScreen = lazy(() => import('./components/StaffInviteScreen'));
 const GiftCardPurchaseScreen = lazy(() => import('./components/GiftCardPurchaseScreen'));
@@ -76,6 +80,8 @@ const MODULE_TITLES = {
   earnings:   'Earnings',
   walkin:     'Walk-in Kiosk',
   memberships: 'Memberships',
+  intake:      'Intake & Waivers',
+  programs:    'Programs',
   grow:        'Launch & Grow',
 };
 
@@ -343,6 +349,8 @@ function AppShell({ initialView = 'home' }) {
           {id === 'earnings'   && <TechEarnings />}
           {id === 'walkin'     && <WalkinKiosk />}
           {id === 'memberships' && <MembershipsAdmin />}
+          {id === 'intake'     && <IntakeAdmin />}
+          {id === 'programs'   && <ProgramsAdmin />}
           {id === 'grow' && (
             <GrowGuide
               onOpenWizard={(phaseKey) => { setWizardInitialPhase(phaseKey || null); setShowWizard(true); setDismissedThisSession(false); }}
@@ -495,7 +503,13 @@ export default function App() {
     const isRsvp     = params.has('rsvp');
     const isUnsub    = params.has('unsub');
     const isManageToken = params.has('manage');
+    // `?intake=<formId>&tid=&c=&t=&exp=` — HMAC-signed intake / waiver fill link.
+    const isIntake   = params.has('intake');
+    // `?gear` (optionally &tid=) — public "Recommended Gear" affiliate storefront.
+    const isGear     = params.has('gear');
     if      (isManageToken) content = <ManageAppointmentScreen />;
+    else if (isIntake)  content = <IntakeFormScreen />;
+    else if (isGear)    content = <GearStorefront />;
     else if (isUnsub)   content = <UnsubscribeScreen />;
     else if (isTerms)      content = <TermsScreen />;
     else if (isPrivacy)    content = <PrivacyScreen />;

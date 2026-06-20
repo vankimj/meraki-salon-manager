@@ -77,6 +77,11 @@ const SOFT_DELETED_COLLECTIONS = [
   { key: 'meetings',        col: () => MEETINGS_COL,         restorable: false },
   { key: 'products',        col: () => PRODUCTS_COL,         restorable: false },
   { key: 'campaigns',       col: () => CAMPAIGNS_COL,        restorable: false },
+  { key: 'intakeForms',     col: () => INTAKE_FORMS_COL,     restorable: false },
+  { key: 'intakeResponses', col: () => INTAKE_RESPONSES_COL, restorable: false },
+  { key: 'programTemplates',col: () => PROGRAM_TEMPLATES_COL,restorable: false },
+  { key: 'clientPrograms',  col: () => CLIENT_PROGRAMS_COL,  restorable: false },
+  { key: 'sessionPacks',    col: () => SESSION_PACKS_COL,    restorable: false },
 ];
 export async function fetchRecentlyDeleted({ maxPerCollection = 50, collections = null } = {}) {
   // `collections` (optional) scopes the scan to specific collection keys —
@@ -1151,6 +1156,140 @@ export async function deleteMembership(id, deletedBy) {
 }
 export async function purgeMembership(id) {
   await deleteDoc(doc(MEMBERSHIPS_COL, id));
+}
+
+// ── Personal-training vertical collections ─────────────
+// Defined together so the SOFT_DELETED_COLLECTIONS arrows above resolve even
+// before each wave's CRUD is wired. Programs CRUD = Wave 2, session packs =
+// Wave 3; intake CRUD lives here (Wave 1).
+const INTAKE_FORMS_COL     = tenantCol('intakeForms');
+const INTAKE_RESPONSES_COL = tenantCol('intakeResponses');
+const PROGRAM_TEMPLATES_COL = tenantCol('programTemplates');
+const CLIENT_PROGRAMS_COL   = tenantCol('clientPrograms');
+const SESSION_PACKS_COL      = tenantCol('sessionPacks');
+
+// ── Intake & waiver forms (templates) ──────────────────
+export function subscribeIntakeForms(cb) {
+  return onSnapshot(INTAKE_FORMS_COL, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+  });
+}
+export async function fetchIntakeForms() {
+  const snap = await getDocs(INTAKE_FORMS_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function createIntakeForm(data) {
+  const ref = await addDoc(INTAKE_FORMS_COL, {
+    ...data, active: data.active !== false,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveIntakeForm(id, data) {
+  await setDoc(doc(INTAKE_FORMS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteIntakeForm(id, by) { await softDelete(doc(INTAKE_FORMS_COL, id), by); }
+
+// ── Intake responses (submitted by clients; created server-side) ──
+export function subscribeIntakeResponses(cb) {
+  return onSnapshot(INTAKE_RESPONSES_COL, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+      .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || '')));
+  });
+}
+export async function deleteIntakeResponse(id, by) { await softDelete(doc(INTAKE_RESPONSES_COL, id), by); }
+
+// ── Program templates (week→day→exercise) ──────────────
+export function subscribeProgramTemplates(cb) {
+  return onSnapshot(PROGRAM_TEMPLATES_COL, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '')));
+  });
+}
+export async function createProgramTemplate(data) {
+  const ref = await addDoc(PROGRAM_TEMPLATES_COL, {
+    ...data, active: data.active !== false,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveProgramTemplate(id, data) {
+  await setDoc(doc(PROGRAM_TEMPLATES_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteProgramTemplate(id, by) { await softDelete(doc(PROGRAM_TEMPLATES_COL, id), by); }
+
+// ── Assigned client programs (per-client editable copy) ──
+export function subscribeClientPrograms(cb) {
+  return onSnapshot(CLIENT_PROGRAMS_COL, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+      .sort((a, b) => (b.assignedAt || '').localeCompare(a.assignedAt || '')));
+  });
+}
+export async function fetchClientProgramsFor(clientId) {
+  if (!clientId) return [];
+  const snap = await getDocs(query(CLIENT_PROGRAMS_COL, where('clientId', '==', clientId)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
+export async function createClientProgram(data) {
+  const ref = await addDoc(CLIENT_PROGRAMS_COL, {
+    ...data, status: data.status || 'active',
+    assignedAt: data.assignedAt || new Date().toISOString(),
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function saveClientProgram(id, data) {
+  await setDoc(doc(CLIENT_PROGRAMS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteClientProgram(id, by) { await softDelete(doc(CLIENT_PROGRAMS_COL, id), by); }
+// Portal: a client reads their OWN assigned programs. The clientEmail-match
+// Firestore rule permits this query (every returned doc matches the caller's
+// verified email), so no Cloud Function is needed.
+export async function fetchMyProgramsByEmail(email) {
+  if (!email) return [];
+  const snap = await getDocs(query(CLIENT_PROGRAMS_COL, where('clientEmail', '==', String(email).toLowerCase())));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+    .sort((a, b) => (b.assignedAt || '').localeCompare(a.assignedAt || ''));
+}
+// Portal: a client reads their OWN progress entries (subcollection is staff-only
+// at the rules layer, so this goes through a Cloud Function).
+export async function fetchMyProgress() {
+  const res = await callFn('getMyProgress')({ tenantId: TENANT_ID });
+  return res.data?.entries || [];
+}
+
+// ── Client progress entries (clients/{id}/progress subcollection) ──
+const progressCol = (clientId) => collection(doc(CLIENTS_COL, clientId), 'progress');
+export function subscribeClientProgress(clientId, cb) {
+  if (!clientId) { cb([]); return () => {}; }
+  return onSnapshot(progressCol(clientId), snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+      .sort((a, b) => (a.date || '').localeCompare(b.date || '')));
+  });
+}
+export async function addProgressEntry(clientId, data) {
+  const ref = await addDoc(progressCol(clientId), {
+    ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+export async function deleteProgressEntry(clientId, entryId) {
+  await deleteDoc(doc(progressCol(clientId), entryId));
+}
+
+// ── Session-credit packs ───────────────────────────────
+export function subscribeSessionPacks(cb) {
+  return onSnapshot(SESSION_PACKS_COL, snap => {
+    cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
+      .sort((a, b) => (b.grantedAt || '').localeCompare(a.grantedAt || '')));
+  });
+}
+// Grant goes through a Cloud Function (mints the pack + an immutable ledger
+// entry server-side) rather than a direct write.
+export async function grantSessionPack(clientId, name, totalSessions) {
+  const res = await callFn('grantSessionPack')({ tenantId: TENANT_ID, clientId, name, totalSessions });
+  return res.data;
 }
 
 // ── Time off (vacation / sick / personal) ──────────────

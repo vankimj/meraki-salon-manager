@@ -42,7 +42,7 @@ export const MODULES = [
   { id: 'clients',     label: 'Clients',          desc: 'Profiles & visit history',          plan: 'solo',    adminOnly: false, cap: 'clients',          group: 'core'  },
   { id: 'services',    label: 'Services',         desc: 'Menu & pricing',                    plan: 'solo',    adminOnly: false, cap: 'services_edit',     group: 'core'  },
   { id: 'employees',   label: 'Employees',        desc: 'Team & profiles',                   plan: 'solo',    adminOnly: true,  cap: 'employees',        group: 'admin' },
-  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'solo',    adminOnly: false, cap: 'walkin',           group: 'grow'  },
+  { id: 'walkin',      label: 'Walk-in Manager',  desc: 'Turn rotation + waitlist',          plan: 'solo',    adminOnly: false, cap: 'walkin',           group: 'grow', hideForVerticals: ['personalTraining'] },
   { id: 'reports',     label: 'Reports',          desc: 'Revenue & analytics + AI assistant', plan: 'solo',   adminOnly: false, cap: 'reports',          group: 'core'  },
   { id: 'receipts',    label: 'Sales & Receipts', desc: 'Browse, search, resend & refund sales', plan: 'solo', adminOnly: false, cap: 'reports',         group: 'core'  },
   { id: 'earnings',    label: 'Earnings',         desc: 'Tips, services & take-home',        plan: 'solo',    adminOnly: false, cap: 'earnings_own',     group: 'grow'  },
@@ -62,6 +62,13 @@ export const MODULES = [
   { id: 'marketing',   label: 'Marketing',        desc: 'Email campaigns & outreach',        plan: 'salonPro', adminOnly: true,  cap: 'marketing',       group: 'grow'  },
   { id: 'hr',          label: 'HR',               desc: 'Payroll & compensation',            plan: 'salonPro', adminOnly: true,  cap: 'hr',              group: 'admin' },
   { id: 'memberships', label: 'Memberships',      desc: 'Recurring plans & members',         plan: 'salonPro', adminOnly: true,  cap: 'memberships',     group: 'grow'  },
+
+  // ── Personal-training vertical modules ──────────────────────────────────
+  // `intake` is broadly useful (consent/waiver/health forms) so it shows for
+  // every vertical. `programs` is training-specific, so it's gated to the
+  // personalTraining vertical via showForVerticals.
+  { id: 'intake',      label: 'Intake & Waivers', desc: 'Forms, health history & e-signatures', plan: 'solo',  adminOnly: true,  cap: 'intake',          group: 'grow'  },
+  { id: 'programs',    label: 'Programs',         desc: 'Personalized training plans',          plan: 'solo',  adminOnly: false, cap: 'programs',        group: 'core', showForVerticals: ['personalTraining'] },
 
   // Launch & Grow — guided business setup + growth (Phase 2). Owner-only and
   // gated behind the `launchGrow` feature flag so it ships dark until rolled out.
@@ -160,9 +167,12 @@ export function modulesLostOnDowngrade(currentPlan, targetPlan, unlocked = new S
 // fallback (adminOnly) for callers not yet migrated to roles.
 export function getVisibleModules(settings, { role, isAdmin, hiddenTiles, hasFeature } = {}) {
   const hidden = new Set(hiddenTiles || settings?.hiddenTiles || []);
+  const vertical = settings?.vertical || 'nails';
   const r = role ? normalizeRole(role) : null;
   return MODULES.filter(m => {
     if (m.flag && !(typeof hasFeature === 'function' && hasFeature(m.flag))) return false;  // flag-gated module (ships dark)
+    if (m.hideForVerticals && m.hideForVerticals.includes(vertical)) return false;          // tile not relevant to this vertical (e.g. walk-in turn rotation for personal training)
+    if (m.showForVerticals && !m.showForVerticals.includes(vertical)) return false;         // tile is specific to other verticals (e.g. training programs only show for personalTraining)
     if (r) { if (m.cap && !roleCan(r, m.cap)) return false; }   // RBAC capability gate
     else if (m.adminOnly && !isAdmin) return false;             // legacy fallback
     if (!hasModuleAccess(settings, m)) return false;            // base tier OR purchased pack

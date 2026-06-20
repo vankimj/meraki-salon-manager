@@ -108,6 +108,11 @@ describe('getEntitlements', () => {
 describe('getVisibleModules', () => {
   const adminCtx = { isAdmin: true };
   const techCtx  = { isAdmin: false };
+  // A module is visible for the default (nails) vertical unless it's restricted
+  // to other verticals via showForVerticals or explicitly hidden for nails.
+  const visibleForNails = (m) =>
+    !(m.showForVerticals && !m.showForVerticals.includes('nails')) &&
+    !(m.hideForVerticals && m.hideForVerticals.includes('nails'));
 
   it('admin on solo sees solo modules (incl. reports/gift cards) but not comms/marketing', () => {
     const ids = getVisibleModules({ plan: 'solo' }, adminCtx).map(m => m.id);
@@ -131,7 +136,8 @@ describe('getVisibleModules', () => {
     expect(ids).toContain('marketing');
     expect(ids).toContain('hr');
     expect(ids).not.toContain('grow'); // flag-gated, hidden until the flag is on
-    expect(ids.length).toBe(MODULES.filter(m => !m.flag).length);
+    expect(ids).not.toContain('programs'); // vertical-restricted to personalTraining
+    expect(ids.length).toBe(MODULES.filter(m => !m.flag && visibleForNails(m)).length);
   });
 
   it('a purchased pack reveals the unlocked tile on a lower tier', () => {
@@ -139,12 +145,29 @@ describe('getVisibleModules', () => {
     expect(ids).toContain('chat');
   });
 
+  it('hides walk-in turn rotation for the personalTraining vertical but keeps it for nails', () => {
+    const pt = getVisibleModules({ plan: 'salonPro', vertical: 'personalTraining' }, adminCtx).map(m => m.id);
+    expect(pt).not.toContain('walkin');
+    expect(pt).toContain('schedule'); // generic tiles unaffected
+    const nails = getVisibleModules({ plan: 'salonPro' }, adminCtx).map(m => m.id); // vertical absent -> nails
+    expect(nails).toContain('walkin');
+  });
+
+  it('shows Programs only for the personalTraining vertical; Intake shows for all', () => {
+    const pt = getVisibleModules({ plan: 'solo', vertical: 'personalTraining' }, adminCtx).map(m => m.id);
+    expect(pt).toContain('programs');
+    expect(pt).toContain('intake');
+    const nails = getVisibleModules({ plan: 'solo' }, adminCtx).map(m => m.id);
+    expect(nails).not.toContain('programs');
+    expect(nails).toContain('intake');
+  });
+
   it('a flag-gated module appears only when hasFeature enables its flag', () => {
     const off = getVisibleModules({ plan: 'salonPro' }, adminCtx).map(m => m.id);
     expect(off).not.toContain('grow');
     const on = getVisibleModules({ plan: 'salonPro' }, { ...adminCtx, hasFeature: (f) => f === 'launchGrow' }).map(m => m.id);
     expect(on).toContain('grow');
-    expect(on.length).toBe(MODULES.length);
+    expect(on.length).toBe(MODULES.filter(m => visibleForNails(m)).length);
   });
 
   it('non-admin (e.g. tech) on salonPro hides admin-only modules', () => {

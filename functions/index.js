@@ -16,6 +16,7 @@ const usageLog             = require('./lib/usage');
 const { roleCan, normalizeRole } = require('./lib/rbac');
 const { resolveInternalRouting, isCustomerNotifEnabled } = require('./lib/notificationRouting');
 const { resolveTurnMode, buildTurnValueMap, turnValueForLineName } = require('./lib/turnValue');
+const { normalizeVertical, membershipPlansForVertical } = require('./lib/verticals');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
 const { renderTemplate, getTemplatePhrases } = require('./lib/messageTemplates');
@@ -182,6 +183,8 @@ function unsubUrl(tenantId, clientId) {
 // natural expiry (24h after start) into the HMAC so a leaked SMS can't be
 // replayed once the appt has passed.
 const { buildApptManageToken, verifyApptManageToken } = require('./lib/apptManage');
+const { buildIntakeToken, verifyIntakeToken } = require('./lib/intakeToken');
+const { pickActivePack, decrementState } = require('./lib/sessionPacks');
 const { tenantBaseUrl } = require('./lib/tenantUrl');
 const {
   shouldSendRemindersNow, shouldFireDayHourNow, currentHourInTimezone,
@@ -3127,6 +3130,406 @@ exports.getMyTenants = onCall({ cors: true, timeoutSeconds: 30 }, async (request
   });
 
   return { tenants: results };
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Intake & waiver forms (personal-training vertical) — send + fill flow
+// ─────────────────────────────────────────────────────────────────────
+// Links are HMAC-signed (reusing APPT_MANAGE_SECRET with an `intake:`-namespaced
+// payload, so an appt-manage token can't be replayed here and vice-versa). The
+// public fill page reads the form + writes the response ONLY through these
+// callables (Admin SDK), so intakeResponses stays server-only at the rules
+// layer and a tampered client payload can't be inserted.
+
+const INTAKE_LINK_TTL_SEC = 60 * 60 * 24 * 30; // 30 days
+
+// Coerce + length-cap a single answer to its question kind. Defensive: the
+// public submit endpoint is unauthenticated, so never trust shapes/sizes.
+function sanitizeIntakeAnswer(kind, value) {
+  if (value == null) return null;
+  if (kind === 'yes_no') return value === true || value === 'true' || value === 'Yes';
+  if (kind === 'number') { const n = Number(value); return Number.isFinite(n) ? n : null; }
+  if (kind === 'multi_choice') {
+    if (!Array.isArray(value)) return [];
+    return value.slice(0, 50).map(v => String(v).slice(0, 200));
+  }
+  return String(value).slice(0, 5000);
+}
+
+function isEmptyAnswer(kind, a) {
+  if (kind === 'yes_no') return a !== true && a !== false;
+  if (kind === 'multi_choice') return !Array.isArray(a) || a.length === 0;
+  return a == null || a === '';
+}
+
+// Build the intakeResponses doc from a form + raw answers, enforcing required
+// fields, a valid signature for waivers, and a snapshot of the form version
+// for tamper-evidence. Throws HttpsError on a validation failure. Shared by the
+// public and the authenticated-portal submit paths.
+function buildIntakeResponse({ form, formId, answers = {}, signature, client, source, ip }) {
+  const questions = Array.isArray(form.questions) ? form.questions : [];
+  const cleaned = {};
+  for (const q of questions) {
+    if (q.kind === 'signature' || q.readOnly) continue;
+    const a = sanitizeIntakeAnswer(q.kind, answers[q.id]);
+    if (q.required && isEmptyAnswer(q.kind, a)) {
+      throw new HttpsError('invalid-argument', `Please answer: ${q.label}`);
+    }
+    cleaned[q.id] = a;
+  }
+
+  let sig = null;
+  const sigQ = questions.find(q => q.kind === 'signature');
+  if (form.type === 'waiver' || sigQ) {
+    const dataUrl = signature?.dataUrl;
+    const signedName = String(signature?.signedName || '').slice(0, 120).trim();
+    if (sigQ?.required || form.type === 'waiver') {
+      if (!dataUrl || !/^data:image\/(png|jpeg);base64,/.test(dataUrl) || dataUrl.length > 400000) {
+        throw new HttpsError('invalid-argument', 'A valid signature is required.');
+      }
+      if (!signedName) throw new HttpsError('invalid-argument', 'Please type your name to sign.');
+    }
+    if (dataUrl) {
+      sig = { dataUrl: String(dataUrl).slice(0, 400000), signedName, signedAt: new Date().toISOString(), ip: ip || '' };
+    }
+  }
+
+  const now = new Date().toISOString();
+  return {
+    formId,
+    formName: String(form.name || '').slice(0, 200),
+    formType: form.type || 'intake',
+    formVersion: questions,            // snapshot for tamper-evidence
+    clientId: client?.id || '',
+    clientName: String(client?.name || '').slice(0, 200),
+    clientEmail: String(client?.email || '').toLowerCase().slice(0, 200),
+    clientPhone: String(client?.phone || '').slice(0, 40),
+    answers: cleaned,
+    signature: sig,
+    source: source || 'public_link',
+    ip: ip || '',
+    submittedAt: now,
+    createdAt: now,
+  };
+}
+
+// sendIntakeLink (authed admin): email/text a client a secure link to a form.
+exports.sendIntakeLink = onCall({ cors: true, secrets: [apptManageSecret, twilioToken] }, async (request) => {
+  const db = getFirestore();
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  await requireTenantAdmin(db, tenantId, request);
+  const { formId, clientId, channel = 'email' } = request.data || {};
+  if (!formId || !clientId) throw new HttpsError('invalid-argument', 'formId and clientId required');
+
+  const [formSnap, clientSnap] = await Promise.all([
+    db.doc(`tenants/${tenantId}/intakeForms/${formId}`).get(),
+    db.doc(`tenants/${tenantId}/clients/${clientId}`).get(),
+  ]);
+  if (!formSnap.exists)   throw new HttpsError('not-found', 'Form not found');
+  if (!clientSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const form = formSnap.data();
+  const client = { id: clientSnap.id, ...clientSnap.data() };
+
+  const exp = Math.floor(Date.now() / 1000) + INTAKE_LINK_TTL_SEC;
+  const token = buildIntakeToken(apptManageSecret.value(), tenantId, formId, clientId, exp);
+  const base = (await tenantBaseUrl(db, tenantId)).replace(/\/+$/, '');
+  const intakeLink = `${base}/?intake=${encodeURIComponent(formId)}&tid=${encodeURIComponent(tenantId)}&c=${encodeURIComponent(clientId)}&t=${token}&exp=${exp}`;
+
+  const brand = await tenantBranding(db, tenantId);
+  const firstName = (client.name || 'there').split(' ')[0];
+
+  if (channel === 'sms') {
+    if (!client.phone) throw new HttpsError('failed-precondition', 'Client has no phone number');
+    const { body } = await renderTemplate(db, tenantId, 'intake_request_sms', {
+      clientName: firstName, salonName: brand.salonName, formName: form.name, intakeLink,
+    }, brand);
+    const r = await sendSms({ to: client.phone, body, tenantId, clientId, kind: 'transactional' });
+    if (!r.ok && !r.sandboxed) throw new HttpsError('internal', `SMS failed: ${r.error || 'unknown'}`);
+    await clientSnap.ref.update({ lastIntakeSentAt: new Date().toISOString() }).catch(() => {});
+    return { ok: true, sandboxed: !!r.sandboxed };
+  }
+
+  if (!client.email) throw new HttpsError('failed-precondition', 'Client has no email address');
+  const { subject, html } = await renderTemplate(db, tenantId, 'intake_request_email', {
+    clientName: firstName, salonName: brand.salonName, formName: form.name, intakeLink,
+  }, brand);
+  const fromAddr = await tenantFromAddress(db, tenantId);
+  const { error } = await sendEmail({
+    from: fromAddr, to: client.email,
+    replyTo: (await tenantReplyTo(db, tenantId)) || undefined,
+    subject, html, tenantId,
+  });
+  if (error) throw new HttpsError('internal', `Email failed: ${error.message || 'unknown'}`);
+  await clientSnap.ref.update({ lastIntakeSentAt: new Date().toISOString() }).catch(() => {});
+  return { ok: true, sandboxed: false };
+});
+
+// getPublicIntakeForm (PUBLIC, HMAC-gated): returns the form for the fill page.
+// Safe fields only — no other tenant data. Needs run.invoker=allUsers.
+exports.getPublicIntakeForm = onCall({ cors: true, secrets: [apptManageSecret] }, async (request) => {
+  const { tid, formId, c: clientId, t: token, exp } = request.data || {};
+  if (!tid || !formId || !clientId || !token || exp == null) {
+    throw new HttpsError('invalid-argument', 'Missing parameters');
+  }
+  if (!verifyIntakeToken(apptManageSecret.value(), tid, formId, clientId, exp, token)) {
+    throw new HttpsError('permission-denied', 'This link is invalid or has expired.');
+  }
+  const db = getFirestore();
+  const [formSnap, clientSnap, brand] = await Promise.all([
+    db.doc(`tenants/${tid}/intakeForms/${formId}`).get(),
+    db.doc(`tenants/${tid}/clients/${clientId}`).get(),
+    tenantBranding(db, tid),
+  ]);
+  if (!formSnap.exists || formSnap.data()._deleted) throw new HttpsError('not-found', 'Form not found');
+  const form = formSnap.data();
+  const client = clientSnap.exists ? clientSnap.data() : {};
+  return {
+    form: { id: formId, name: form.name, type: form.type || 'intake', description: form.description || '', questions: form.questions || [] },
+    salonName: brand.salonName,
+    clientName: client.name || '',
+  };
+});
+
+// submitPublicIntake (PUBLIC, HMAC-gated): writes the response server-side.
+// Needs run.invoker=allUsers.
+exports.submitPublicIntake = onCall({ cors: true, secrets: [apptManageSecret] }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many submissions. Try again later.');
+  }
+  const { tid, formId, c: clientId, t: token, exp, answers, signature } = request.data || {};
+  if (!tid || !formId || !clientId || !token || exp == null) {
+    throw new HttpsError('invalid-argument', 'Missing parameters');
+  }
+  if (!verifyIntakeToken(apptManageSecret.value(), tid, formId, clientId, exp, token)) {
+    throw new HttpsError('permission-denied', 'This link is invalid or has expired.');
+  }
+  const db = getFirestore();
+  const [formSnap, clientSnap] = await Promise.all([
+    db.doc(`tenants/${tid}/intakeForms/${formId}`).get(),
+    db.doc(`tenants/${tid}/clients/${clientId}`).get(),
+  ]);
+  if (!formSnap.exists || formSnap.data()._deleted) throw new HttpsError('not-found', 'Form not found');
+  const client = clientSnap.exists ? { id: clientSnap.id, ...clientSnap.data() } : { id: clientId };
+  const response = buildIntakeResponse({ form: formSnap.data(), formId, answers, signature, client, source: 'public_link', ip });
+  const ref = await db.collection(`tenants/${tid}/intakeResponses`).add(response);
+  // Best-effort: flag the client as having a completed intake on file.
+  await db.doc(`tenants/${tid}/clients/${clientId}`)
+    .set({ lastIntakeAt: response.submittedAt }, { merge: true }).catch(() => {});
+  return { ok: true, id: ref.id };
+});
+
+// submitMyIntake (authed portal): the logged-in client submits a form for
+// themselves. Re-derives the client from the verified token (never trusts a
+// client id from the payload).
+exports.submitMyIntake = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many submissions. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const { formId, answers, signature } = request.data || {};
+  if (!formId) throw new HttpsError('invalid-argument', 'formId required');
+  const tokenEmail = String(request.auth.token?.email || '').toLowerCase();
+  if (!tokenEmail) throw new HttpsError('failed-precondition', 'Auth token has no verified email.');
+
+  const db = getFirestore();
+  const formSnap = await db.doc(`tenants/${tenantId}/intakeForms/${formId}`).get();
+  if (!formSnap.exists || formSnap.data()._deleted) throw new HttpsError('not-found', 'Form not found');
+  const cSnap = await db.collection(`tenants/${tenantId}/clients`).where('email', '==', tokenEmail).limit(1).get();
+  const client = cSnap.empty ? { id: '', email: tokenEmail } : { id: cSnap.docs[0].id, ...cSnap.docs[0].data() };
+  const response = buildIntakeResponse({ form: formSnap.data(), formId, answers, signature, client, source: 'portal', ip });
+  const ref = await db.collection(`tenants/${tenantId}/intakeResponses`).add(response);
+  if (client.id) {
+    await db.doc(`tenants/${tenantId}/clients/${client.id}`).set({ lastIntakeAt: response.submittedAt }, { merge: true }).catch(() => {});
+  }
+  return { ok: true, id: ref.id };
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Session-credit packs (personal-training vertical)
+// ─────────────────────────────────────────────────────────────────────
+// grantSessionPack mints a pack (admin); the redeemSessionOnApptDone trigger
+// auto-decrements the client's oldest active pack when an appointment is marked
+// done, idempotent per-appt via a sessionRedemptions marker doc.
+
+// grantSessionPack (authed admin): create a prepaid pack for a client.
+exports.grantSessionPack = onCall({ cors: true }, async (request) => {
+  const db = getFirestore();
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  await requireTenantAdmin(db, tenantId, request);
+  const { clientId, name, totalSessions } = request.data || {};
+  const total = Math.floor(Number(totalSessions));
+  if (!clientId || !Number.isFinite(total) || total <= 0 || total > 1000) {
+    throw new HttpsError('invalid-argument', 'clientId and a valid totalSessions (1–1000) are required');
+  }
+  const cSnap = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
+  if (!cSnap.exists) throw new HttpsError('not-found', 'Client not found');
+  const client = cSnap.data();
+  const now = new Date().toISOString();
+  const packRef = db.collection(`tenants/${tenantId}/sessionPacks`).doc();
+  await packRef.set({
+    clientId,
+    clientName:  client.name || '',
+    clientEmail: String(client.email || '').toLowerCase(),
+    name:        String(name || 'Session Pack').slice(0, 120),
+    totalSessions: total,
+    remaining:   total,
+    status:      'active',
+    grantedAt:   now,
+    createdAt:   now,
+    updatedAt:   now,
+  });
+  await packRef.collection('ledger').doc().set({ type: 'grant', delta: total, at: now, by: request.auth?.token?.email || 'admin' });
+  return { ok: true, id: packRef.id };
+});
+
+// redeemSessionOnApptDone: when an appointment transitions INTO 'done', burn one
+// credit from the client's oldest active pack. Idempotent per-appt via the
+// sessionRedemptions/{apptId} marker (server-only collection). No appt mutation,
+// so this trigger never re-fires itself.
+exports.redeemSessionOnApptDone = onDocumentUpdated(
+  `tenants/{tenantId}/appointments/{apptId}`,
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after  = event.data?.after?.data()  || {};
+    if (before.status === 'done' || after.status !== 'done') return; // only the transition into done
+    const clientId = after.clientId;
+    if (!clientId) return;                                           // walk-in / no client
+    const tenantId = event.params.tenantId;
+    const apptId   = event.params.apptId;
+    const db = getFirestore();
+    try {
+      const markerRef  = db.doc(`tenants/${tenantId}/sessionRedemptions/${apptId}`);
+      const packsQuery = db.collection(`tenants/${tenantId}/sessionPacks`).where('clientId', '==', clientId);
+      let low = null;
+      await db.runTransaction(async (tx) => {
+        const marker = await tx.get(markerRef);
+        if (marker.exists) return;                                   // already redeemed for this appt
+        const packsSnap = await tx.get(packsQuery);
+        const pack = pickActivePack(packsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+        if (!pack) return;                                           // no active pack — nothing to burn
+        const st = decrementState(pack.remaining);
+        const packRef = db.doc(`tenants/${tenantId}/sessionPacks/${pack.id}`);
+        const now = new Date().toISOString();
+        tx.update(packRef, { remaining: st.remaining, status: st.status, updatedAt: now });
+        tx.set(packRef.collection('ledger').doc(), { type: 'redeem', delta: -1, apptId, at: now });
+        tx.set(markerRef, { apptId, packId: pack.id, clientId, at: now });
+        if (st.low || st.status === 'depleted') low = { remaining: st.remaining, name: pack.name, clientName: after.clientName };
+      });
+      if (low) {
+        await db.collection(`tenants/${tenantId}/notifications`).add({
+          changeType: 'low_session_balance',
+          clientName: low.clientName || 'A client',
+          message: low.remaining === 0
+            ? `${low.clientName || 'A client'} just used the last session in "${low.name}".`
+            : `${low.clientName || 'A client'} has ${low.remaining} session${low.remaining === 1 ? '' : 's'} left in "${low.name}".`,
+          createdAt: new Date().toISOString(), sent: false,
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn(`[redeemSessionOnApptDone] tenant=${tenantId}:`, e && e.message);
+    }
+  }
+);
+
+// getMyProgress (authed portal): the logged-in client's own progress entries.
+// Re-derives the client from the verified token email (never trusts a payload
+// id) since clients/{id}/progress is a staff-only subcollection at the rules
+// layer.
+exports.getMyProgress = onCall({ cors: true }, async (request) => {
+  if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 60)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+  const tenantId = String(request.data?.tenantId || TENANT_ID);
+  const tokenEmail = String(request.auth.token?.email || '').toLowerCase();
+  if (!tokenEmail) return { entries: [] };
+  const db = getFirestore();
+  const cSnap = await db.collection(`tenants/${tenantId}/clients`).where('email', '==', tokenEmail).limit(1).get();
+  if (cSnap.empty) return { entries: [] };
+  const clientId = cSnap.docs[0].id;
+  const pSnap = await db.collection(`tenants/${tenantId}/clients/${clientId}/progress`).limit(200).get();
+  const entries = pSnap.docs.map(d => d.data()).filter(e => !e._deleted).map(e => ({
+    date: e.date || '', weight: e.weight ?? null, bodyFat: e.bodyFat ?? null,
+    waist: e.waist ?? null, chest: e.chest ?? null, hips: e.hips ?? null, arms: e.arms ?? null, thighs: e.thighs ?? null,
+    prs: Array.isArray(e.prs) ? e.prs : [], notes: e.notes || '', photo: e.photo || '',
+  })).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  return { entries };
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Affiliate "Recommended Gear" storefront (personal-training vertical)
+// ─────────────────────────────────────────────────────────────────────
+// getRecommendedGear returns SAFE product fields for the public ?gear page
+// (never `cost`, never the raw affiliate URL — clicks route through the
+// tracker). trackAffiliateClick counts the click and 302-redirects to the
+// trainer's own affiliate URL. Both are PUBLIC → need run.invoker=allUsers.
+
+const CF_BASE = 'https://us-central1-plumenexus-prod.cloudfunctions.net';
+
+exports.getRecommendedGear = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 120)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+  const tid = String(request.data?.tid || request.data?.tenantId || TENANT_ID);
+  const db = getFirestore();
+  const [snap, brand] = await Promise.all([
+    db.collection(`tenants/${tid}/products`).where('isRecommended', '==', true).get(),
+    tenantBranding(db, tid),
+  ]);
+  const items = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(p => p.active !== false && !p._deleted && safeUrl(p.affiliateUrl))
+    .map(p => ({
+      id: p.id,
+      name: String(p.name || '').slice(0, 200),
+      brand: p.brand || null,
+      category: p.category || null,
+      price: Number(p.price) || 0,           // retail reference price only
+      description: p.description ? String(p.description).slice(0, 600) : null,
+      image: safeUrl(p.image) ? p.image : null,
+      // Click goes through the tracker (counts + hides the raw URL). Direct
+      // cloudfunctions.net URL bypasses the *.plumenexus.com Worker, which
+      // would otherwise proxy the external redirect target.
+      shopUrl: `${CF_BASE}/trackAffiliateClick?tid=${encodeURIComponent(tid)}&pid=${encodeURIComponent(p.id)}`,
+    }));
+  return { salonName: brand.salonName, items };
+});
+
+exports.trackAffiliateClick = onRequest({ cors: false }, async (req, res) => {
+  const tid = String(req.query.tid || '');
+  const pid = String(req.query.pid || '');
+  const fallback = 'https://plumenexus.com';
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(tid) || !/^[A-Za-z0-9_-]{1,64}$/.test(pid)) {
+    return res.redirect(302, fallback);
+  }
+  const ip = req.headers['x-forwarded-for'] || req.ip || '';
+  let redirectTo = fallback;
+  try {
+    const db = getFirestore();
+    const ref = db.doc(`tenants/${tid}/products/${pid}`);
+    const snap = await ref.get();
+    if (snap.exists) {
+      const data = snap.data();
+      const candidate = data.isRecommended && data.active !== false ? safeUrl(data.affiliateUrl) : null;
+      if (candidate) {
+        redirectTo = candidate;
+        // Best-effort, rate-limited counter — a click failure must not block
+        // the redirect to the merchant.
+        if (checkRate(`gear:${ip}:${pid}`, Date.now(), 60 * 1000, 5)) {
+          const { FieldValue } = require('firebase-admin/firestore');
+          await ref.update({ clickCount: FieldValue.increment(1), lastClickAt: new Date().toISOString() }).catch(() => {});
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[trackAffiliateClick]', e && e.message);
+  }
+  res.redirect(302, redirectTo);
 });
 
 // Returns the CALLER's own client record for the public booking flow.
@@ -13529,6 +13932,38 @@ exports.markOnboardingPhase = onCall({ cors: true, timeoutSeconds: 30 }, async (
   if (allDone && !cur.completedAt) updates.completedAt = now;
 
   await ref.set(updates, { merge: true });
+
+  // Light up the chosen vertical: write settings.vertical (the live source the
+  // app + resolveTerms read) and idempotently seed its recurring membership
+  // plans. Nail / legacy / "hair|both|other" tenants clamp to 'nails' and keep
+  // NO vertical field, so their behavior is byte-for-byte unchanged. Guarded by
+  // the `verticalSeeded` marker (runs once) AND an emptiness check (never
+  // clobbers plans the owner added by hand). Best-effort: a failure here must
+  // not fail the onboarding phase write above.
+  try {
+    const vertical = normalizeVertical(updates.industry);
+    if (vertical !== 'nails') {
+      await db.doc(`tenants/${tenantId}/data/settings`)
+        .set({ vertical, updatedAt: now }, { merge: true });
+      if (cur.verticalSeeded !== vertical) {
+        const plans = membershipPlansForVertical(vertical);
+        if (plans.length) {
+          const plansCol = db.collection(`tenants/${tenantId}/membershipPlans`);
+          const existing = await plansCol.limit(1).get();
+          if (existing.empty) {
+            const batch = db.batch();
+            plans.forEach((p, i) => {
+              batch.set(plansCol.doc(), { ...p, sortOrder: i, createdAt: now, updatedAt: now });
+            });
+            await batch.commit();
+          }
+        }
+        await ref.set({ verticalSeeded: vertical }, { merge: true });
+      }
+    }
+  } catch (e) {
+    console.warn('[markOnboardingPhase] vertical seed failed:', e?.message);
+  }
 
   // Mirror completion to data/webfront — public-readable. SalonWebfront
   // checks this flag and redirects to /manage when false, so an
