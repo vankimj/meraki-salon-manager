@@ -3422,6 +3422,63 @@ exports.peekStaffInvite = onCall({ cors: true }, async (request) => {
   };
 });
 
+// Admin-only: list this tenant's PENDING staff invites so they can be reviewed
+// and revoked from the UI (keeps stale pendingInvite placeholders off the
+// roster). Display fields only.
+exports.listStaffInvites = onCall({ cors: true }, async (request) => {
+  const tenantId = String(request.data?.tenantId || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const snap = await db.collection('staffInvites')
+    .where('tenantId', '==', tenantId).where('status', '==', 'pending').get();
+  const nowIso = new Date().toISOString();
+  const invites = snap.docs.map((doc) => {
+    const v = doc.data();
+    return {
+      token:      doc.id,
+      phone:      v.phone || null,
+      name:       v.name || null,
+      role:       v.role || null,
+      roleLabel:  (STAFF_INVITE_ROLES[v.role] || {}).label || v.role || null,
+      createdAt:  v.createdAt || null,
+      expiresAt:  v.expiresAt || null,
+      expired:    !!(v.expiresAt && v.expiresAt < nowIso),
+      employeeId: v.employeeId || null,
+    };
+  }).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+  return { ok: true, invites };
+});
+
+// Admin-only: revoke a pending invite — kills the link (status 'revoked') and
+// soft-deletes the unclaimed placeholder employee so it leaves the roster.
+exports.revokeStaffInvite = onCall({ cors: true }, async (request) => {
+  const tenantId = String(request.data?.tenantId || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const token = String(request.data?.token || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,64}$/.test(token)) throw new HttpsError('invalid-argument', 'Invalid invite token.');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  const inviteRef = db.doc(`staffInvites/${token}`);
+  const snap = await inviteRef.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Invite not found.');
+  const inv = snap.data();
+  if (inv.tenantId !== tenantId) throw new HttpsError('permission-denied', 'Invite belongs to another tenant.');
+  const nowIso = new Date().toISOString();
+  const by = (await callerEmail(request)) || null;
+  await inviteRef.set({ status: 'revoked', revokedAt: nowIso, revokedBy: by, updatedAt: nowIso }, { merge: true });
+  // Only remove the placeholder if it was never claimed (still pendingInvite);
+  // soft-delete (recoverable from Trash), matching the app's tombstone convention.
+  if (inv.employeeId) {
+    const empRef = db.doc(`tenants/${tenantId}/employees/${inv.employeeId}`);
+    const empSnap = await empRef.get();
+    if (empSnap.exists && empSnap.data().pendingInvite === true) {
+      await empRef.set({ _deleted: true, _deletedAt: nowIso, _deletedBy: by, updatedAt: nowIso }, { merge: true }).catch(() => {});
+    }
+  }
+  return { ok: true };
+});
+
 // ── Tech time clock — kiosk (PIN) + admin override paths ───────────────
 //
 // Single callable handles both surfaces because they share state machine and

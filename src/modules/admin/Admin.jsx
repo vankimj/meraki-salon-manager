@@ -1720,8 +1720,32 @@ function StaffSmsInvite() {
   const [role,    setRole]    = useState('tech');
   const [sending, setSending] = useState(false);
   const [result,  setResult]  = useState(null);   // { ok, link, sentTo } | { error, link? }
+  const [invites, setInvites] = useState(null);   // null = loading; [] = none
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [revoking, setRevoking] = useState(null); // token being revoked
   const sel = { fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' };
   const inp = { ...sel, flex: 1, minWidth: 0 };
+
+  async function loadInvites() {
+    setInvitesLoading(true);
+    try {
+      const r = await callFn('listStaffInvites', { tenantId: TENANT_ID });
+      setInvites(r?.invites || []);
+    } catch { setInvites([]); }
+    finally { setInvitesLoading(false); }
+  }
+  useEffect(() => { loadInvites(); }, []);
+
+  async function revoke(token) {
+    if (!window.confirm('Revoke this invite? The setup link will stop working and the placeholder is removed from your team list.')) return;
+    setRevoking(token);
+    try {
+      await callFn('revokeStaffInvite', { tenantId: TENANT_ID, token });
+      await loadInvites();
+    } catch (e) {
+      window.alert(friendlyFnError(e));
+    } finally { setRevoking(null); }
+  }
 
   async function send() {
     const p = phone.trim();
@@ -1731,7 +1755,7 @@ function StaffSmsInvite() {
       // Admin.jsx's local callFn(name, data) returns the callable's `.data`.
       const r = await callFn('createStaffInvite', { tenantId: TENANT_ID, phone: p, role, name: name.trim() });
       setResult(r || { error: 'Unknown error' });
-      if (r?.ok) { setPhone(''); setName(''); }
+      if (r?.ok) { setPhone(''); setName(''); loadInvites(); }
     } catch (e) {
       setResult({ error: friendlyFnError(e) });
     } finally { setSending(false); }
@@ -1774,6 +1798,45 @@ function StaffSmsInvite() {
           {result.link && <> You can share this link manually: <span style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{result.link}</span></>}
         </div>
       )}
+
+      {/* Pending invites — review + revoke so stale placeholders don't clutter the roster */}
+      <div style={{ marginTop: 6 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', textTransform: 'uppercase', letterSpacing: '.04em' }}>
+            Pending invites{Array.isArray(invites) && invites.length ? ` · ${invites.length}` : ''}
+          </div>
+          <button onClick={loadInvites} disabled={invitesLoading} type="button"
+            style={{ fontSize: 11, color: '#3D95CE', background: 'none', border: 'none', cursor: invitesLoading ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+            {invitesLoading ? 'Loading…' : '↻ Refresh'}
+          </button>
+        </div>
+        {invites == null ? (
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>Loading…</div>
+        ) : invites.length === 0 ? (
+          <div style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>No pending invites.</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {invites.map(inv => (
+              <div key={inv.token} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text)' }}>
+                    {inv.name || 'New team member'}
+                    <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--pn-text-muted)' }}> · {inv.roleLabel || inv.role}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)' }}>
+                    {inv.phone || '—'}
+                    {inv.expired && <span style={{ color: 'var(--pn-warning)', fontWeight: 700 }}> · expired</span>}
+                  </div>
+                </div>
+                <button onClick={() => revoke(inv.token)} disabled={revoking === inv.token} type="button"
+                  style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: revoking === inv.token ? 'default' : 'pointer', fontFamily: 'inherit', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {revoking === inv.token ? 'Removing…' : 'Revoke'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
