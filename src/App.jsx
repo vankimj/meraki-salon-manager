@@ -45,6 +45,7 @@ import ManageAppointmentScreen from './components/ManageAppointmentScreen';
 import { TermsScreen, PrivacyScreen, SmsConsentScreen } from './components/PolicyScreen';
 import ReceiptViewPage from './components/ReceiptViewPage';
 import StaffInviteScreen from './components/StaffInviteScreen';
+import GiftCardPurchaseScreen from './components/GiftCardPurchaseScreen';
 import PinModal from './components/PinModal';
 import OnboardingWizard from './modules/onboarding/OnboardingWizard';
 import OnboardingBanner from './components/OnboardingBanner';
@@ -463,6 +464,8 @@ export default function App() {
     const isSmsConsent  = params.has('sms-consent') || path === '/sms-consent';
     // Staff SMS invite claim — `/invite?token=…` texted to a new hire.
     const isStaffInvite = params.has('invite')      || path === '/invite';
+    // Public "Buy a Gift Card" page.
+    const isGiftCard    = params.has('giftcard')    || path === '/gift';
     // Hosted receipt view — `/r/{token}` is the canonical SMS/email link.
     // Path is dynamic, so we match by prefix rather than equality.
     const isReceiptView = /^\/r\/[A-Za-z0-9_-]{16,128}\/?$/.test(path) || params.has('r');
@@ -478,6 +481,7 @@ export default function App() {
     else if (isPrivacy)    content = <PrivacyScreen />;
     else if (isSmsConsent) content = <SmsConsentScreen />;
     else if (isStaffInvite) content = <StaffInviteScreen />;
+    else if (isGiftCard)    content = <GiftCardPurchaseScreen />;
     else if (isReceiptView) content = <ReceiptViewPage />;
     else if (isRsvp)    content = <RsvpScreen />;
     else if (checkinId) content = <CheckInScreen apptId={checkinId} />;

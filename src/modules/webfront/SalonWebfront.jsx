@@ -398,6 +398,10 @@ export default function SalonWebfront() {
                 style={{ height:54, borderRadius:27, background:'transparent', color:'rgba(255,255,255,.85)', fontSize:15, fontWeight:600, padding:'0 36px', border:'1.5px solid rgba(255,255,255,.22)', cursor:'pointer', fontFamily:'inherit', letterSpacing:'.02em', backdropFilter:'blur(4px)' }}>
                 View Services
               </button>
+              <a href={`${window.location.origin}/gift`}
+                style={{ display:'inline-flex', alignItems:'center', gap:8, height:54, borderRadius:27, background:'transparent', color:'rgba(255,255,255,.85)', fontSize:15, fontWeight:600, padding:'0 32px', border:'1.5px solid rgba(255,255,255,.22)', textDecoration:'none', fontFamily:'inherit', letterSpacing:'.02em', backdropFilter:'blur(4px)' }}>
+                🎁 Gift Cards
+              </a>
             </div>
           </div>
           <div onClick={() => scrollTo('about')} style={{ position:'absolute', bottom:36, left:'50%', transform:'translateX(-50%)', cursor:'pointer', color:'rgba(255,255,255,.3)', fontSize:11, letterSpacing:'.1em', textTransform:'uppercase', display:'flex', flexDirection:'column', alignItems:'center', gap:6, animation:'float 2.5s ease-in-out infinite' }}>

@@ -9995,6 +9995,140 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
   };
 });
 
+// ── Public "Buy a Gift Card" online ────────────────────────────────────
+// Server-authoritative end-to-end: the browser NEVER writes the gift card
+// (that would be a free-gift-card hole). Flow:
+//   1. createGiftCardPurchaseIntent — server clamps the amount, builds a
+//      destination-charge PaymentIntent on the salon's connected account
+//      (funds land in the SALON's balance), stashes recipient/purchaser in
+//      the PI metadata, returns the clientSecret.
+//   2. browser confirms the card via Stripe Elements (confirmCardPayment).
+//   3. finalizeGiftCardPurchase — server re-reads the PI from Stripe, verifies
+//      it actually SUCCEEDED, and idempotently mints the giftCards doc (which
+//      fires sendGiftCardEmail to the recipient). The stripeWebhook
+//      payment_intent.succeeded branch is a backstop for the rare
+//      tab-closed-before-finalize case (shares the same idempotent helper).
+const GIFTCARD_MIN_CENTS = 500;      // $5 floor
+const GIFTCARD_MAX_CENTS = 100000;   // $1,000 ceiling (anti-fraud / money-transmitter caution)
+
+function genGiftCardCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no ambiguous chars (matches admin genCode)
+  const bytes = require('crypto').randomBytes(12);
+  let s = '';
+  for (let i = 0; i < 12; i++) { if (i > 0 && i % 4 === 0) s += '-'; s += chars[bytes[i] % chars.length]; }
+  return s;   // e.g. ABCD-EFGH-JKLM
+}
+
+// Idempotently mint a giftCards doc from a SUCCEEDED gift-card PaymentIntent.
+// Keyed on paymentIntentId so finalize + webhook can both run safely.
+async function mintGiftCardFromPaidIntent(db, tenantId, pi) {
+  const existing = await db.collection(`tenants/${tenantId}/giftCards`)
+    .where('paymentIntentId', '==', pi.id).limit(1).get();
+  if (!existing.empty) return { created: false, id: existing.docs[0].id };
+  const m = pi.metadata || {};
+  const amount = Math.round(Number(pi.amount_received || pi.amount) || 0) / 100;
+  const nowIso = new Date().toISOString();
+  const ref = await db.collection(`tenants/${tenantId}/giftCards`).add({
+    code:            genGiftCardCode(),
+    balance:         amount,
+    initialBalance:  amount,
+    originalAmount:  amount,
+    recipientName:   m.recipientName || null,
+    recipientEmail:  m.recipientEmail || null,
+    recipientPhone:  null,
+    issuedTo:        m.recipientName || null,
+    purchaserName:   m.purchaserName || null,
+    purchaserEmail:  m.purchaserEmail || null,
+    message:         m.message || null,
+    note:            m.message || null,
+    soldAt:          nowIso,
+    soldVia:         'online',
+    purchasedOnline: true,
+    paymentIntentId: pi.id,
+    active:          true,
+    voided:          false,
+    createdAt:       nowIso,
+    // emailStatus intentionally unset → sendGiftCardEmail fires + emails the code.
+  });
+  return { created: true, id: ref.id };
+}
+
+exports.createGiftCardPurchaseIntent = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  requireAppCheck(request, 'createGiftCardPurchaseIntent');
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(ip, Date.now(), 60 * 60 * 1000, 20)) {
+    throw new HttpsError('resource-exhausted', 'Too many attempts. Try again later.');
+  }
+  const d = request.data || {};
+  const tenantId = String(d.tenantId || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+
+  const amountCents = Math.round(Number(d.amountCents) || 0);
+  if (amountCents < GIFTCARD_MIN_CENTS || amountCents > GIFTCARD_MAX_CENTS) {
+    throw new HttpsError('invalid-argument', `Amount must be between $${GIFTCARD_MIN_CENTS / 100} and $${GIFTCARD_MAX_CENTS / 100}.`);
+  }
+  const clean = (v, n) => String(v || '').trim().slice(0, n);
+  const recipientEmail = clean(d.recipientEmail, 120).toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(recipientEmail)) {
+    throw new HttpsError('invalid-argument', 'A valid recipient email is required — that\'s where the gift code is sent.');
+  }
+  const recipientName  = clean(d.recipientName, 80);
+  const purchaserName  = clean(d.purchaserName, 80);
+  const purchaserEmail = clean(d.purchaserEmail, 120).toLowerCase();
+  const message        = clean(d.message, 200);
+
+  const db = getFirestore();
+  if (!(await fsRateAllow(db, tenantId, `gcBuy:${new Date().toISOString().slice(0, 13)}:${ipKeyPart(ip)}`, 15, 60 * 60 * 1000))) {
+    throw new HttpsError('resource-exhausted', 'Too many gift-card purchases right now. Try again shortly.');
+  }
+  const ten = (await db.doc(`tenants/${tenantId}`).get()).data() || {};
+  if (!ten.stripeConnectAccountId) {
+    throw new HttpsError('failed-precondition', 'This salon hasn\'t finished payment setup, so gift cards can\'t be purchased online yet.');
+  }
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+
+  let chargeReq;
+  try {
+    chargeReq = buildPosChargeRequest({
+      amount: amountCents, currency: 'usd',
+      connectAccountId: ten.stripeConnectAccountId,
+      tenantId,
+      description: `${ten.name || tenantId} gift card`,
+    });
+  } catch (e) { throw new HttpsError('invalid-argument', e.message); }
+  chargeReq.metadata = {
+    ...chargeReq.metadata,
+    kind: 'gift_card_purchase',
+    tenantId, recipientName, recipientEmail, purchaserName, purchaserEmail, message,
+  };
+  if (purchaserEmail || recipientEmail) chargeReq.receipt_email = purchaserEmail || recipientEmail;
+
+  const stripe = require('stripe')(key);
+  const pi = await stripe.paymentIntents.create(chargeReq);
+  return { clientSecret: pi.client_secret, paymentIntentId: pi.id };
+});
+
+exports.finalizeGiftCardPurchase = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  requireAppCheck(request, 'finalizeGiftCardPurchase');
+  const d = request.data || {};
+  const tenantId = String(d.tenantId || TENANT_ID).slice(0, 64);
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const piId = String(d.paymentIntentId || '');
+  if (!/^pi_[A-Za-z0-9]+$/.test(piId)) throw new HttpsError('invalid-argument', 'Invalid payment reference.');
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+
+  const stripe = require('stripe')(key);
+  const pi = await stripe.paymentIntents.retrieve(piId);
+  if (!pi || pi.metadata?.kind !== 'gift_card_purchase' || pi.metadata?.tenantId !== tenantId) {
+    throw new HttpsError('not-found', 'No matching gift-card payment.');
+  }
+  if (pi.status !== 'succeeded') return { ok: false, status: pi.status };
+  const r = await mintGiftCardFromPaidIntent(getFirestore(), tenantId, pi);
+  return { ok: true, created: r.created };
+});
+
 // Detach a PaymentMethod from the Stripe Customer + remove from the
 // client doc. Safe to call repeatedly on the same pm — Stripe returns
 // already-detached gracefully.
@@ -10770,6 +10904,17 @@ exports.stripeWebhook = onRequest(
           }, { merge: true });
         }
       }
+    }
+
+    // Public gift-card purchase backstop. finalizeGiftCardPurchase is the
+    // primary path (called by the browser right after confirmCardPayment);
+    // this catches the rare tab-closed-before-finalize case. Idempotent on
+    // paymentIntentId, so running both is safe. (Requires the endpoint to be
+    // subscribed to payment_intent.succeeded; harmless no-op if it isn't.)
+    if (event.type === 'payment_intent.succeeded' && obj.metadata?.kind === 'gift_card_purchase') {
+      const tid = obj.metadata.tenantId || TENANT_ID;
+      try { await mintGiftCardFromPaidIntent(db, tid, obj); }
+      catch (e) { console.warn('[stripeWebhook] gift-card mint failed:', e?.message); }
     }
 
     // Subscription lifecycle: active / past_due / cancelled / unpaid / paused.
