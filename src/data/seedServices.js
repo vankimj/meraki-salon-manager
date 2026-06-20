@@ -38,7 +38,7 @@ export const SEED_SERVICES = [
     image: '/services/gel-manicure.jpg',
   },
   {
-    category: 'Manicures', name: 'Dip Manicure', basePrice: 45, priceFrom: true, duration: 45, durationMin: true, active: true, sortOrder: 7, canRequireRemoval: true,
+    category: 'Manicures', name: 'Dip Manicure', basePrice: 45, priceFrom: true, duration: 45, durationMin: true, active: true, sortOrder: 7,
     description: 'Full manicure with pigmented dip powder for a long-lasting, durable finish. 9 color options available.',
     image: '/services/dip.jpg',
   },

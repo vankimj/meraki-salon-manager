@@ -94,7 +94,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
-  const [removalPrice,   setRemovalPrice]  = useState(settings.removalPrice ?? 15);
   const [noCardTips,     setNoCardTips]    = useState(!!settings.noCardTips);
   const [refundCommDefault, setRefundCommDefault] = useState(settings.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
   const [finSaving,      setFinSaving]     = useState(false);
@@ -866,18 +865,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </div>
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
-                <div>
-                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Removal service price</div>
-                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Charged when a customer says "yes" to the removal question on a service that allows it.</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
-                  <input type="number" value={removalPrice} step="1" min={0} max={200}
-                    onChange={e => setRemovalPrice(Number(e.target.value))}
-                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-                </div>
-              </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Disable tips on credit card</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Hide the tip selector during checkout when payment method is card. Cash, Venmo, and other methods still prompt for a tip.</div>
@@ -911,14 +898,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
-                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips, refundCommissionDefault: refundCommDefault });
-                  // Mirror removalPrice onto bookingConfig so the public-facing
-                  // booking page can read it without admin permissions.
-                  if (bookingCfg) {
-                    const next = { ...bookingCfg, removalPrice };
-                    setBookingCfg(next);
-                    try { await saveBookingConfig(next); } catch (e) { console.warn('[bookingCfg removalPrice mirror]', e); }
-                  }
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, noCardTips, refundCommissionDefault: refundCommDefault });
                   setFinSaving(false);
                 }}>{finSaving ? 'Saving…' : 'Save Financial Settings'}</Btn>
               </div>
@@ -1396,16 +1376,6 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
               <option value="back-to-back">Back-to-back</option>
               <option value="simultaneous">Simultaneous</option>
               <option value="ask">Ask the customer</option>
-            </select>
-          } />
-        <FlowRow label="Removal prompt cadence"
-          desc="When to ask 'are you wearing a previous gel/dip set?'. Always = every qualifying service. First-only = once per booking."
-          control={
-            <select value={eff.removalPromptMode} onChange={e => patchFlow({ removalPromptMode: e.target.value })}
-              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', cursor: 'pointer' }}>
-              <option value="always">Always</option>
-              <option value="first-only">First-only</option>
-              <option value="never">Never</option>
             </select>
           } />
       </FlowSubGroup>

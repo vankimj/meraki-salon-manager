@@ -501,15 +501,6 @@ function ServiceModal({ svc, allServices = [], errors, saving, onChange, onSave,
           </span>
         </label>
         <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14 }}>
-          <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.canRequireRemoval} onChange={e => onChange({ canRequireRemoval: e.target.checked })} />
-          <span>
-            Can require removal
-            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
-              When booking online, customers will be asked if they need an existing set removed first. The fee is set in <strong>Admin → 💰 Financial</strong>.
-            </div>
-          </span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14 }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.categoryExclusive} onChange={e => onChange({ categoryExclusive: e.target.checked })} />
           <span>
             Exclusive in category
