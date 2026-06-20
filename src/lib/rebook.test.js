@@ -80,6 +80,15 @@ describe('rebookCartFromVisit', () => {
     const cart = rebookCartFromVisit([{ id: 'mani' }], byId);
     expect(cart[0].removal).toBe(false);
   });
+  it('add-on lines (addOnOf set, NOT isRemoval) are rebookable too', () => {
+    // An add-on is a real service line tagged addOnOf; it should come back on
+    // rebook (unlike removal, which is one-time). It re-enters as its own line.
+    const cart = rebookCartFromVisit(
+      [{ id: 'mani' }, { id: 'pedi', addOnOf: 'mani' }],
+      byId,
+    );
+    expect(cart.map(c => c.service.id)).toEqual(['mani', 'pedi']);
+  });
 });
 
 describe('hasFutureAppointment', () => {

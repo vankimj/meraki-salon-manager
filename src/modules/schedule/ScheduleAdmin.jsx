@@ -2417,6 +2417,26 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
     });
   }
 
+  // Toggle an optional add-on (a reference to another catalog service) for the
+  // base service at line i. Adds/removes a separate service line tagged
+  // addOnOf: <base service id> so it stacks its own price + time, resolved
+  // against the performing tech. Mirrors the customer-booking add-on path.
+  function toggleAddOn(baseDoc, addOnSvc) {
+    const isOn = (appt.services || []).some(s => s.addOnOf === baseDoc.id && (s.id === addOnSvc.id || s.name === addOnSvc.name));
+    if (isOn) {
+      onChange({ services: (appt.services || []).filter(s => !(s.addOnOf === baseDoc.id && (s.id === addOnSvc.id || s.name === addOnSvc.name))) });
+      return;
+    }
+    const opt = addOnSvc.options?.[0] || null;
+    const r = resolveServicePricing(addOnSvc, opt, apptTech);
+    onChange({ services: [...(appt.services || []), {
+      id: addOnSvc.id, name: addOnSvc.name,
+      optionId: opt?.id || null, optionName: opt?.name || null,
+      duration: r.duration || 30, price: r.price ?? '',
+      taxable: addOnSvc.taxable !== false, addOnOf: baseDoc.id,
+    }] });
+  }
+
   // Re-resolve every service's duration for the newly-assigned tech so their
   // per-service times take effect. Items carrying an explicit option override
   // (e.g. created via online booking) keep their resolved duration.
@@ -2970,6 +2990,32 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                         placeholder="price" style={{ ...inp, width: 70 }} />
                       <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', alignSelf: 'center' }}>$</span>
                     </div>
+                    {/* Add-on toggles — only on base lines (not on an add-on's
+                        own line). Each toggle adds/removes a linked service line. */}
+                    {!svc.addOnOf && (() => {
+                      const svcDoc = services.find(s => s.name === svc.name);
+                      const addOns = (svcDoc?.addOnServiceIds || []).map(id => services.find(s => s.id === id)).filter(a => a && a.active !== false);
+                      if (!svcDoc || !addOns.length) return null;
+                      return (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--pn-border)' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Add-ons</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {addOns.map(a => {
+                              const on = (appt.services || []).some(s => s.addOnOf === svcDoc.id && (s.id === a.id || s.name === a.name));
+                              const r = resolveServicePricing(a, a.options?.[0] || null, apptTech);
+                              return (
+                                <button key={a.id} type="button" onClick={() => toggleAddOn(svcDoc, a)}
+                                  style={{ fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                                    border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'var(--pn-success-bg, #eaf5ef)' : 'var(--pn-surface)',
+                                    color: on ? '#2D7A5F' : 'var(--pn-text)', borderRadius: 999, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                  <span>{on ? '✓' : '+'}</span><span>{a.name}</span><span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>+${r.price} · {r.duration}m</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

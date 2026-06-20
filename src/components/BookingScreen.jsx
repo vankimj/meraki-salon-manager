@@ -536,7 +536,12 @@ export default function BookingScreen() {
     // Defense-in-depth: the ServiceRow + Add button is greyed out when the
     // service can't be added, but if any other path calls addToCart
     // (keyboard, deep-link, future code), enforce the rules here too.
-    if (!canAddService(svc, cart)) return;
+    // Add-on toggles (extras.isAddOn) may bypass the per-service "duplicate"
+    // cap — the same add-on (e.g. Removal) can legitimately attach to two
+    // different base services in one cart — but still respect category
+    // exclusivity (add-on targets should be non-exclusive anyway).
+    const why = whyCantAddService(svc, cart);
+    if (why && !(extras.isAddOn && why === 'duplicate')) return;
     const id = `cart_${Date.now()}_${Math.floor(Math.random() * 9999)}`;
     // extras.parentSvcId links a Removal cart item back to the mani/pedi it
     // was added for, so the booking flow can put each Removal in the right
@@ -769,6 +774,11 @@ export default function BookingScreen() {
             optionId: opt?.id || null,
             optionName: opt?.name || null,
             taxable: svc.taxable !== false,
+            // Tag add-on lines with the base service they were attached to
+            // (parentSvcId is the base service's id). Null for base/standalone
+            // lines. Lets receipts/reports group/label add-ons without
+            // affecting the option-blind consumers that ignore unknown keys.
+            addOnOf: item.parentSvcId || null,
           });
           // Legacy in-line removal flag (kept for back-compat). Modern
           // bookings use the standalone Removal cart item, which already
@@ -1000,7 +1010,7 @@ export default function BookingScreen() {
         items.forEach(item => {
           const { service: svc, option: opt } = item;
           const r = resolveServicePricing(svc, opt, tech);
-          out.push({ id: svc.id, name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name, price: r.price || 0, duration: r.duration || 60, optionId: opt?.id || null, optionName: opt?.name || null, taxable: svc.taxable !== false });
+          out.push({ id: svc.id, name: opt?.name ? `${svc.name} — ${opt.name}` : svc.name, price: r.price || 0, duration: r.duration || 60, optionId: opt?.id || null, optionName: opt?.name || null, taxable: svc.taxable !== false, addOnOf: item.parentSvcId || null });
           if (item.removal && svc.canRequireRemoval && removalPrice > 0) out.push({ id: 'removal', name: `Removal (${svc.name})`, price: removalPrice, duration: removalDur, isRemoval: true });
         });
         return out;
@@ -1957,7 +1967,9 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
       )}
       <div style={{ marginBottom: 12 }} />
       <ServiceCatalog services={services} cart={cart} onAdd={onAdd}
-        onRemove={(svc) => { const item = cart.find(i => i.service.id === svc.id); if (item) onRemove(item.id); }} />
+        onRemove={(svc) => { const item = cart.find(i => i.service.id === svc.id); if (item) onRemove(item.id); }}
+        onAddAddOn={(base, addOnSvc) => onAdd(addOnSvc, addOnSvc.options?.[0] || null, { parentSvcId: base.id, isAddOn: true })}
+        onRemoveAddOn={(base, addOnSvc) => { const item = cart.find(i => i.service.id === addOnSvc.id && i.parentSvcId === base.id); if (item) onRemove(item.id); }} />
 
       {/* Sticky cart strip */}
       {cart.length > 0 && (
@@ -1992,7 +2004,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
   );
 }
 
-function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd, onRemove, blockedReason }) {
+function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd, onRemove, blockedReason, addOnServices = [], addOnSelectedIds, onToggleAddOn }) {
   // Display state for the Add button:
   //   • null              → enabled "+ Add"
   //   • 'duplicate'       → "✓ Added" (already chosen) — tap again to remove
@@ -2078,6 +2090,30 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
             <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
           </div>
         )}
+
+        {/* Add-ons — shown once the base service is in the cart. Each toggle
+            adds/removes a linked service line that stacks its own price + time. */}
+        {isInCart && addOnServices.length > 0 && (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed #eee' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 6 }}>Add-ons</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {addOnServices.map(a => {
+                const on = addOnSelectedIds?.has(a.id);
+                const { price, duration } = resolveServicePricing(a, a.options?.[0] || null);
+                return (
+                  <button key={a.id} onClick={e => { e.stopPropagation(); onToggleAddOn?.(a); }}
+                    style={{ fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                      border: `1.5px solid ${on ? color : '#e0e0e0'}`, background: on ? `${color}14` : '#fff',
+                      color: on ? color : '#444', borderRadius: 999, padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span>{on ? '✓' : '+'}</span>
+                    <span>{a.name}</span>
+                    <span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>+${price}{a.priceFrom ? '+' : ''} · {duration}m</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, paddingTop: 2 }}>
@@ -2108,9 +2144,14 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 // Shared rich service picker (photos / descriptions / prices) used by both the
 // single-guest flow (Step1Cart) and each group-guest page. `cart` is the
 // person's current selection (used to show ✓ Added / block duplicates).
-function ServiceCatalog({ services, cart, onAdd, onRemove }) {
+function ServiceCatalog({ services, cart, onAdd, onRemove, onAddAddOn, onRemoveAddOn }) {
   const groups = useMemo(() => groupByCategory(services || []), [services]);
+  const servicesById = useMemo(() => Object.fromEntries((services || []).filter(s => s.id).map(s => [s.id, s])), [services]);
   const [pendingOptions, setPendingOptions] = useState({});
+  // Add-on toggles are opt-in: only rendered when the parent passes the
+  // add/remove handlers (single-guest booking). The group flow omits them
+  // (deferred), so it behaves exactly as before.
+  const addOnsEnabled = !!onAddAddOn;
   return (
     <div>
       {groups.map(({ category, services: svcs }) => {
@@ -2122,18 +2163,29 @@ function ServiceCatalog({ services, cart, onAdd, onRemove }) {
               <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
             </div>
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #ececec', overflow: 'hidden' }}>
-              {svcs.map((s, i) => (
+              {svcs.map((s, i) => {
+                const addOnServices = addOnsEnabled
+                  ? (s.addOnServiceIds || []).map(id => servicesById[id]).filter(a => a && a.active !== false)
+                  : [];
+                const addOnSelectedIds = addOnsEnabled
+                  ? new Set((cart || []).filter(it => it.parentSvcId === s.id).map(it => it.service.id))
+                  : null;
+                return (
                 <ServiceRow key={s.id} svc={s} color={color}
                   selectedOption={pendingOptions[s.id] || null}
                   divider={i < svcs.length - 1}
                   blockedReason={whyCantAddService(s, cart)}
                   onSelectOption={(opt) => setPendingOptions(p => ({ ...p, [s.id]: opt }))}
                   onRemove={onRemove ? () => onRemove(s) : undefined}
+                  addOnServices={addOnServices}
+                  addOnSelectedIds={addOnSelectedIds}
+                  onToggleAddOn={addOnsEnabled ? (a) => (addOnSelectedIds.has(a.id) ? onRemoveAddOn(s, a) : onAddAddOn(s, a)) : undefined}
                   onAdd={(opt) => {
                     onAdd(s, opt || pendingOptions[s.id] || (s.options?.[0] ?? null));
                     setPendingOptions(p => ({ ...p, [s.id]: null }));
                   }} />
-              ))}
+                );
+              })}
             </div>
           </div>
         );

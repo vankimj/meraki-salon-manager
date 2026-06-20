@@ -346,6 +346,7 @@ export default function ServicesAdmin() {
       {editing && (
         <ServiceModal
           svc={editing}
+          allServices={services}
           errors={errors}
           saving={saving}
           onChange={patch => setEditing(e => ({ ...e, ...patch }))}
@@ -384,7 +385,7 @@ function ServiceThumb({ image, name }) {
   );
 }
 
-function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
+function ServiceModal({ svc, allServices = [], errors, saving, onChange, onSave, onClose }) {
   const isNew = !svc.id;
   const fileRef = useRef(null);
   const [imgErr, setImgErr] = useState(false);
@@ -518,6 +519,10 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           </span>
         </label>
 
+        <Field label="Add-ons offered" hint="Optional services a customer (or staff) can add when booking this one. Each keeps its own price + time and stacks on top — e.g. offer Removal and a Manicure upgrade on Gel-X. Pick from your other services below.">
+          <AddOnPicker svc={svc} allServices={allServices} onChange={onChange} />
+        </Field>
+
         <Field label="Max in cart per booking" hint="How many copies of this service a customer can add to one booking. Default 1. Set to 2 for Removal so customers can book one removal for hands and one for feet. Higher values only make sense for repeatable add-ons (e.g. extra nail art).">
           <input type="number" min={1} max={10} value={svc.maxInCart ?? 1}
             onChange={e => onChange({ maxInCart: Math.max(1, Number(e.target.value) || 1) })}
@@ -580,6 +585,47 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             {saving ? 'Saving…' : (isNew ? 'Add Service' : 'Save Changes')}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Multi-select picker: which OTHER active services are offered as optional
+// add-ons when this base service is booked. Stores their ids in
+// svc.addOnServiceIds; each add-on is a real catalog service that stacks its
+// own price + time as a separate line (generalizes the Removal pattern).
+function AddOnPicker({ svc, allServices = [], onChange }) {
+  const selected = svc.addOnServiceIds || [];
+  const candidates = (allServices || []).filter(s => s.id && s.id !== svc.id && s.active !== false);
+  const groups = groupByCategory(candidates);
+
+  function toggle(id) {
+    const next = selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id];
+    onChange({ addOnServiceIds: next });
+  }
+
+  if (!candidates.length) {
+    return <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Add more services first — then you can offer them as add-ons here.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '6px 10px', background: 'var(--pn-surface)' }}>
+        {groups.map(g => (
+          <div key={g.category} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--pn-text-faint)', margin: '4px 0 2px' }}>{g.category}</div>
+            {g.services.map(s => (
+              <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', padding: '3px 0' }}>
+                <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
+                <span style={{ flex: 1 }}>{s.name}</span>
+                <span style={{ fontSize: 11, color: 'var(--pn-text-muted)', whiteSpace: 'nowrap' }}>{formatPrice(s)} · {formatDuration(s.duration, s.durationMin)}</span>
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
+        {selected.length ? `${selected.length} add-on${selected.length === 1 ? '' : 's'} offered on this service.` : 'No add-ons selected — this service books on its own.'}
       </div>
     </div>
   );

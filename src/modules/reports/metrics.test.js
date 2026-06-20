@@ -31,6 +31,15 @@ describe('apptRevenue', () => {
   it('skips invalid prices without crashing', () => {
     expect(apptRevenue({ services: [{ price: 'abc' }, { price: 10 }] })).toBe(10);
   });
+  it('counts add-on lines (addOnOf set) toward revenue like any other line', () => {
+    // Add-ons are independent services[] lines, so they sum into revenue with
+    // no special handling — Gel-X $70 + Removal add-on $15 + Mani add-on $20.
+    expect(apptRevenue({ services: [
+      { id: 'gelx', price: 70 },
+      { id: 'removal', price: 15, addOnOf: 'gelx' },
+      { id: 'mani', price: 20, addOnOf: 'gelx' },
+    ] })).toBe(105);
+  });
 });
 
 describe('apptToSyntheticReceipt', () => {
