@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, RefreshControl, Dimensions, Platform, Share, Modal } from 'react-native';
 import Svg, { Rect } from 'react-native-svg';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -11,6 +11,7 @@ import useTrashHeader from '../../hooks/useTrashHeader';
 import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 
 const PERIODS = [{ days: 0, label: 'Today' }, { days: 7, label: '7d' }, { days: 14, label: '14d' }, { days: 30, label: '30d' }, { days: 90, label: '90d' }];
+const LIST_CAP = 50;  // initial render cap for the unbounded cancellations + fraud lists
 const money = (n) => `$${(Number(n) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
 const isoDay = (d) => d.toISOString().slice(0, 10);
 
@@ -102,6 +103,8 @@ export default function ReportsScreen({ navigation }) {
   const [clientList, setClientList] = useState(null);  // clients for joining full contact info
   const [cxKind, setCxKind] = useState('all');         // all | cancelled | no_show
   const [fraudBlocks, setFraudBlocks] = useState([]);  // honeypot/bot blocks
+  const [cxShowAll, setCxShowAll] = useState(false);   // expand the capped cancellations list
+  const [fraudShowAll, setFraudShowAll] = useState(false); // expand the capped fraud list
 
   const range = custom ? { startDate: cStart, endDate: cEnd } : presetRange(days);
   // KPIs go 4-up on a tablet (2-up on phone); chart sizes to the capped column.
@@ -150,18 +153,18 @@ export default function ReportsScreen({ navigation }) {
   }, [custom, days, cStart, cEnd]);
   useEffect(() => { load(); }, [load]);
 
-  const techs = metrics ? Object.entries(metrics.byTech).map(([name, t]) => ({ name, ...t })).sort((a, b) => b.revenue - a.revenue) : [];
-  const services = metrics ? Object.entries(metrics.byService).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 8) : [];
+  const techs = useMemo(() => metrics ? Object.entries(metrics.byTech).map(([name, t]) => ({ name, ...t })).sort((a, b) => b.revenue - a.revenue) : [], [metrics]);
+  const services = useMemo(() => metrics ? Object.entries(metrics.byService).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 8) : [], [metrics]);
 
   // Per-tech drill-down — driven off the already-split byTech / tipsByTech
   // aggregates so multi-tech bookings attribute correctly (no re-query).
-  const tb        = techFilter ? (metrics?.byTech?.[techFilter] || { revenue: 0, count: 0, services: {}, clientCount: 0 }) : null;
+  const tb        = useMemo(() => techFilter ? (metrics?.byTech?.[techFilter] || { revenue: 0, count: 0, services: {}, clientCount: 0 }) : null, [techFilter, metrics]);
   const tbPrev    = techFilter ? (prev?.byTech?.[techFilter] || null) : null;
   const ptTips    = techFilter ? (metrics?.tipsByTech?.[techFilter] || 0) : 0;
   const ptTipsPrev= techFilter ? (prev?.tipsByTech?.[techFilter] ?? null) : null;
   const ptAvg     = tb && tb.count ? tb.revenue / tb.count : 0;
   const ptAvgPrev = tbPrev && tbPrev.count ? tbPrev.revenue / tbPrev.count : null;
-  const ptServices= tb ? Object.entries(tb.services).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 12) : [];
+  const ptServices= useMemo(() => tb ? Object.entries(tb.services).map(([name, s]) => ({ name, ...s })).sort((a, b) => b.revenue - a.revenue).slice(0, 12) : [], [tb]);
   const ptCancel  = techFilter ? (cancels?.byTech?.[techFilter] || null) : null;
 
   async function shareSummary() {
@@ -173,12 +176,12 @@ export default function ReportsScreen({ navigation }) {
     setVisitClient({ id: clientId, name }); setVisits(null);
     try { setVisits(await fetchClientAppointments(clientId) || []); } catch { setVisits([]); }
   }
-  const topClients = metrics ? Object.entries(metrics.byClient || {}).map(([id, c]) => ({ id, ...c })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) : [];
+  const topClients = useMemo(() => metrics ? Object.entries(metrics.byClient || {}).map(([id, c]) => ({ id, ...c })).sort((a, b) => b.revenue - a.revenue).slice(0, 10) : [], [metrics]);
 
   // Cancelled + no-show rows, joined with the client record for full contact
   // info, newest first. Respects the active tech filter + the kind toggle.
-  const clientById = (clientList || []).reduce((m, c) => { m[c.id] = c; return m; }, {});
-  const cxRows = (rawAppts || [])
+  const clientById = useMemo(() => (clientList || []).reduce((m, c) => { m[c.id] = c; return m; }, {}), [clientList]);
+  const cxRows = useMemo(() => (rawAppts || [])
     .filter(a => a.status === 'cancelled' || a.status === 'no_show')
     .filter(a => cxKind === 'all' || a.status === cxKind)
     .filter(a => !techFilter || a.techName === techFilter)
@@ -194,10 +197,10 @@ export default function ReportsScreen({ navigation }) {
         _sort:  a.cancelledAt || `${a.date}T${a.startTime || '00:00'}`,
       };
     })
-    .sort((x, y) => String(y._sort).localeCompare(String(x._sort)));
-  const cxLost = cxRows.reduce((s, r) => s + r._lost, 0);
-  const cxCancelled = cxRows.filter(r => r.status === 'cancelled').length;
-  const cxNoShow = cxRows.filter(r => r.status === 'no_show').length;
+    .sort((x, y) => String(y._sort).localeCompare(String(x._sort))), [rawAppts, clientById, cxKind, techFilter]);
+  const cxLost = useMemo(() => cxRows.reduce((s, r) => s + r._lost, 0), [cxRows]);
+  const cxCancelled = useMemo(() => cxRows.filter(r => r.status === 'cancelled').length, [cxRows]);
+  const cxNoShow = useMemo(() => cxRows.filter(r => r.status === 'no_show').length, [cxRows]);
 
   async function shareCancellations() {
     const L = [`Plume Nexus — Cancellations & No-Shows (${periodLabel(custom, days, range)})`,
@@ -499,7 +502,7 @@ export default function ReportsScreen({ navigation }) {
             <Text style={styles.empty}>No cancellations or no-shows in this period.</Text>
           ) : (
             <>
-              {cxRows.map(r => (
+              {(cxShowAll ? cxRows : cxRows.slice(0, LIST_CAP)).map(r => (
                 <TouchableOpacity key={r.id} style={styles.cxCard} activeOpacity={r.clientId ? 0.7 : 1}
                   onPress={() => r.clientId && openVisits(r.clientId, r._name)}>
                   <View style={styles.cxHead}>
@@ -517,6 +520,11 @@ export default function ReportsScreen({ navigation }) {
                   {(r._geo || r.bookingIp) && <Text style={styles.cxLineFaint}>Booked from {[r._geo, r.bookingIp].filter(Boolean).join('  ·  ')}</Text>}
                 </TouchableOpacity>
               ))}
+              {!cxShowAll && cxRows.length > LIST_CAP && (
+                <TouchableOpacity onPress={() => setCxShowAll(true)} style={styles.shareBtn} activeOpacity={0.85}>
+                  <Text style={styles.shareBtnText}>Show all {cxRows.length}</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity onPress={shareCancellations} style={styles.shareBtn} activeOpacity={0.85}>
                 <Text style={styles.shareBtnText}>⤴  Share / export list</Text>
               </TouchableOpacity>
@@ -527,7 +535,7 @@ export default function ReportsScreen({ navigation }) {
             <>
               <Text style={styles.section}>🤖 Blocked booking attempts ({fraudBlocks.length})</Text>
               <Text style={styles.note}>Suspicious/automated submissions caught by the anti-bot checks (honeypot, disposable-email, velocity) — no client or appointment was created.</Text>
-              {fraudBlocks.map(f => (
+              {(fraudShowAll ? fraudBlocks : fraudBlocks.slice(0, LIST_CAP)).map(f => (
                 <View key={f.id} style={styles.cxCard}>
                   <View style={styles.cxHead}>
                     <Text style={styles.cxName} numberOfLines={1}>{f.name || '(no name)'}</Text>
@@ -541,6 +549,11 @@ export default function ReportsScreen({ navigation }) {
                   {!!f.userAgent && <Text style={styles.cxLineFaint} numberOfLines={1}>{f.userAgent}</Text>}
                 </View>
               ))}
+              {!fraudShowAll && fraudBlocks.length > LIST_CAP && (
+                <TouchableOpacity onPress={() => setFraudShowAll(true)} style={styles.shareBtn} activeOpacity={0.85}>
+                  <Text style={styles.shareBtnText}>Show all {fraudBlocks.length}</Text>
+                </TouchableOpacity>
+              )}
             </>
           )}
         </>

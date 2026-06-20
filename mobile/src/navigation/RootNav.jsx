@@ -70,24 +70,33 @@ export default function RootNav() {
     return { ...base, colors: { ...base.colors, background: theme.bg, card: theme.navBar, text: theme.text, border: theme.border, primary: theme.blue } };
   }, [scheme, theme]);
 
+  // Memoized so the options factory (and its render-prop closures) keeps a
+  // stable identity across re-renders — only rebuilt when the theme changes.
+  // `lazy` defers mounting a tab until it's first focused, and `freezeOnBlur`
+  // suspends off-screen tabs (react-native-screens) — so we don't run all five
+  // tabs' data effects at launch.
+  const screenOptions = useMemo(() => ({ route }) => ({
+    lazy: true,
+    freezeOnBlur: true,
+    headerStyle:     { backgroundColor: theme.headerBg },
+    headerTintColor: theme.green,
+    // Custom 2-line title: screen name on top, current salon name
+    // beneath, so multi-tenant users can never lose track of which
+    // salon they're scoped to. Sourced from the per-screen options
+    // `title` (or the route name as fallback).
+    headerTitle: () => <HeaderTitle title={titleFor(route.name)} />,
+    tabBarActiveTintColor:   theme.blue,
+    tabBarInactiveTintColor: theme.textMuted,
+    tabBarLabelStyle:        { fontSize: 11, fontWeight: '600' },
+    tabBarStyle:             { backgroundColor: theme.navBar, borderTopColor: theme.border },
+    tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
+  }), [theme]);
+
   return (
     <NavigationContainer key={tenantId} theme={navTheme}>
       <Tab.Navigator
         initialRouteName="Dashboard"
-        screenOptions={({ route }) => ({
-          headerStyle:     { backgroundColor: theme.headerBg },
-          headerTintColor: theme.green,
-          // Custom 2-line title: screen name on top, current salon name
-          // beneath, so multi-tenant users can never lose track of which
-          // salon they're scoped to. Sourced from the per-screen options
-          // `title` (or the route name as fallback).
-          headerTitle: () => <HeaderTitle title={titleFor(route.name)} />,
-          tabBarActiveTintColor:   theme.blue,
-          tabBarInactiveTintColor: theme.textMuted,
-          tabBarLabelStyle:        { fontSize: 11, fontWeight: '600' },
-          tabBarStyle:             { backgroundColor: theme.navBar, borderTopColor: theme.border },
-          tabBarIcon: ({ color }) => <TabIcon name={route.name} color={color} />,
-        })}
+        screenOptions={screenOptions}
       >
         <Tab.Screen name="Dashboard" component={DashboardScreen} options={{ title: 'Dashboard' }} />
         <Tab.Screen name="Schedule" component={ScheduleStack} options={{ headerShown: false, title: 'Appointments' }} />

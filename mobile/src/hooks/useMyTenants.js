@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, callFn } from '../lib/firebase';
 import { getCurrentTenant, setCurrentTenant } from '../lib/currentTenant';
+import { dedupe } from '../lib/inflight';
 
 // Lists every tenant the signed-in user has staff/admin/owner access to,
 // via the getMyTenants Cloud Function. Auto-selects the only tenant if
@@ -33,7 +34,7 @@ export default function useMyTenants() {
       setLoading(true);
       setError(null);
       try {
-        const res = await callFn('getMyTenants')({});
+        const res = await dedupe(`tenants:${(user.email || user.uid || '').toLowerCase()}`, () => callFn('getMyTenants')({}));
         if (cancelled) return;
         const list = res?.data?.tenants || [];
         setTenants(list);

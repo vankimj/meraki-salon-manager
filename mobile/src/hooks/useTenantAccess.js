@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, callFn, ALLOWED_EMAILS } from '../lib/firebase';
 import { getCurrentTenant, subscribeTenant } from '../lib/currentTenant';
+import { dedupe } from '../lib/inflight';
 import useMyTenants from './useMyTenants';
 
 // Resolves the signed-in user's access in the CURRENT tenant — the
@@ -43,7 +44,10 @@ export default function useTenantAccess() {
       if (!user?.email) { setGranular(null); setLoading(false); return; }
       setLoading(true);
       try {
-        const res = await callFn('getMyTenantRole')({ tenantId: getCurrentTenant() });
+        const tid = getCurrentTenant();
+        // Collapse the concurrent burst when several mounted components each
+        // resolve access at once — they share one getMyTenantRole call.
+        const res = await dedupe(`role:${tid}:${user.email.toLowerCase()}`, () => callFn('getMyTenantRole')({ tenantId: tid }));
         if (!cancelled) setGranular(res?.data || null);
       } catch {
         if (!cancelled) setGranular(null);

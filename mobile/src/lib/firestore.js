@@ -193,9 +193,30 @@ export async function fetchClientAppointments(clientId) {
 }
 
 // ── Employees ─────────────────────────────────────────
+// Short-TTL cache for near-static reference reads (employees/services/settings),
+// keyed by current tenant. These are read on nearly every screen mount and by
+// the walk-in poll; a few seconds of caching collapses the redundant reads with
+// negligible staleness. Writes bust the relevant key immediately (see savers),
+// and the TTL bounds any cross-process (e.g. web edit) staleness.
+const _refCache = new Map();   // `${tenant}:${kind}` → { at, data }
+const REF_TTL_MS = 20000;       // > the 15s walk-in poll, so polling hits cache
+async function cachedRef(kind, loader) {
+  const key = `${getCurrentTenant()}:${kind}`;
+  const hit = _refCache.get(key);
+  if (hit && (Date.now() - hit.at) < REF_TTL_MS) return hit.data;
+  const data = await loader();
+  _refCache.set(key, { at: Date.now(), data });
+  return data;
+}
+export function bustRefCache(kind) {
+  for (const k of _refCache.keys()) if (!kind || k.endsWith(`:${kind}`)) _refCache.delete(k);
+}
+
 export async function fetchEmployees() {
-  const snap = await getDocs(query(tenantCol('employees'), orderBy('sortOrder')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  return cachedRef('employees', async () => {
+    const snap = await getDocs(query(tenantCol('employees'), orderBy('sortOrder')));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  });
 }
 
 // Save editable fields on an employee doc. The Firestore rule for
@@ -208,6 +229,7 @@ export async function saveEmployee(id, data) {
   await setDoc(doc(tenantCol('employees'), id),
     { ...data, updatedAt: new Date().toISOString() },
     { merge: true });
+  bustRefCache('employees');
 }
 
 // Look up the current user's employee record by email (employees doc
@@ -327,26 +349,33 @@ export async function deleteTimeOff(id) {
 
 // ── Services ───────────────────────────────────────────
 export async function fetchServices() {
-  const snap = await getDocs(query(tenantCol('services'), orderBy('sortOrder')));
-  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+  return cachedRef('services', async () => {
+    const snap = await getDocs(query(tenantCol('services'), orderBy('sortOrder')));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+  });
 }
 export async function createService(data) {
   const ref = await addDoc(tenantCol('services'), {
     ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   });
+  bustRefCache('services');
   return ref.id;
 }
 export async function saveService(id, data) {
   await setDoc(doc(tenantCol('services'), id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
+  bustRefCache('services');
 }
 export async function deleteService(id) {
   await softDelete(doc(tenantCol('services'), id));
+  bustRefCache('services');
 }
 
 // ── Settings ───────────────────────────────────────────
 export async function fetchSettings() {
-  const snap = await getDoc(tenantDoc('settings'));
-  return snap.exists() ? snap.data() : {};
+  return cachedRef('settings', async () => {
+    const snap = await getDoc(tenantDoc('settings'));
+    return snap.exists() ? snap.data() : {};
+  });
 }
 
 // ── Client chat ───────────────────────────────────────
@@ -355,7 +384,10 @@ export async function fetchSettings() {
 const CHATS_COL = tenantCol('chats');
 
 export function subscribeToChats(cb) {
-  const q = query(CHATS_COL, orderBy('lastAt', 'desc'));
+  // Cap the thread list — each chat doc carries its full inline messages[]
+  // array, so streaming the whole collection re-emitted everything on every
+  // message. 50 most-recent threads is plenty for the list view.
+  const q = query(CHATS_COL, orderBy('lastAt', 'desc'), limit(50));
   return onSnapshot(q, (snap) => {
     cb(snap.docs.map(d => ({ id: d.id, ...d.data() })));
   }, (err) => {
@@ -791,6 +823,7 @@ export async function fetchLogs(n = 100) {
 // updateSettings — only the passed keys change.
 export async function updateSettings(payload) {
   await setDoc(tenantDoc('settings'), { ...payload, updatedAt: new Date().toISOString() }, { merge: true });
+  bustRefCache('settings');
 }
 
 // ── Front-desk kiosk checkout session ──────────────────
@@ -918,10 +951,12 @@ export async function createEmployee(data) {
   const ref = await addDoc(tenantCol('employees'), {
     ...data, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
   });
+  bustRefCache('employees');
   return ref.id;
 }
 export async function deleteEmployee(id) {
   await softDelete(doc(tenantCol('employees'), id));
+  bustRefCache('employees');
 }
 
 // ── Meetings (Studio, admin) ───────────────────────────

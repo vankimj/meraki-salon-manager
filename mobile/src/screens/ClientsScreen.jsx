@@ -1,10 +1,38 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import { View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, Image, ActivityIndicator, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { fetchClients } from '../lib/firestore';
 import useTenantAccess from '../hooks/useTenantAccess';
 import useTrashHeader from '../hooks/useTrashHeader';
 import { useTheme, useThemedStyles } from '../theme/ThemeContext';
+
+const ClientRow = memo(function ClientRow({ client: c, styles, onPress }) {
+  const handlePress = useCallback(() => onPress(c.id, c.name), [onPress, c.id, c.name]);
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      activeOpacity={0.7}
+      onPress={handlePress}
+    >
+      {c.picture
+        ? <Image source={{ uri: c.picture }} style={styles.avatar} />
+        : <View style={[styles.avatar, styles.avatarFallback]}>
+            <Text style={styles.avatarInitial}>{(c.name || '?')[0].toUpperCase()}</Text>
+          </View>
+      }
+      <View style={styles.info}>
+        <Text style={styles.clientName}>{c.name}</Text>
+        <Text style={styles.clientSub}>
+          {[c.phone, c.email].filter(Boolean).join(' · ') || 'No contact info'}
+        </Text>
+        {Number(c.credit) > 0 && <Text style={styles.creditPill}>💳 ${Number(c.credit).toFixed(2)} credit</Text>}
+      </View>
+      {c.visits?.length > 0 && (
+        <Text style={styles.visitCount}>{c.visits.length} visit{c.visits.length !== 1 ? 's' : ''}</Text>
+      )}
+    </TouchableOpacity>
+  );
+});
 
 export default function ClientsScreen({ navigation }) {
   const { theme } = useTheme();
@@ -16,9 +44,12 @@ export default function ClientsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [query,   setQuery]   = useState('');
 
+  const lastLoadedAt = useRef(0);
+
   const load = useCallback(async () => {
     try {
       setClients(await fetchClients());
+      lastLoadedAt.current = Date.now();
     } catch {
       setClients([]);
     }
@@ -29,8 +60,14 @@ export default function ClientsScreen({ navigation }) {
   }, [load]);
 
   // Refresh when the user returns to the list (e.g. after editing a
-  // client in the detail screen) so changes show without a hard reload.
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  // client in the detail screen) so changes show without a hard reload —
+  // but skip the refetch on the initial focus and whenever we loaded the
+  // full collection within the last 30s, so a quick back/forward doesn't
+  // re-pull 500+ base64 avatars on every focus.
+  useFocusEffect(useCallback(() => {
+    if (Date.now() - lastLoadedAt.current < 30000) return;
+    load();
+  }, [load]));
 
   const filtered = useMemo(() => {
     if (!query.trim()) return clients;
@@ -41,6 +78,18 @@ export default function ClientsScreen({ navigation }) {
       (c.phone || '').includes(q)
     );
   }, [clients, query]);
+
+  const openClient = useCallback(
+    (clientId, clientName) => navigation.navigate('ClientDetail', { clientId, clientName }),
+    [navigation]
+  );
+
+  const keyExtractor = useCallback(c => c.id, []);
+
+  const renderItem = useCallback(
+    ({ item: c }) => <ClientRow client={c} styles={styles} onPress={openClient} />,
+    [styles, openClient]
+  );
 
   return (
     <View style={styles.container}>
@@ -60,9 +109,13 @@ export default function ClientsScreen({ navigation }) {
         : (
           <FlatList
             data={filtered}
-            keyExtractor={c => c.id}
+            keyExtractor={keyExtractor}
             contentContainerStyle={{ paddingBottom: 24 }}
             ListEmptyComponent={<Text style={styles.empty}>No clients found</Text>}
+            removeClippedSubviews
+            initialNumToRender={10}
+            maxToRenderPerBatch={10}
+            windowSize={7}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -74,30 +127,7 @@ export default function ClientsScreen({ navigation }) {
                 tintColor={theme.blue}
               />
             }
-            renderItem={({ item: c }) => (
-              <TouchableOpacity
-                style={styles.row}
-                activeOpacity={0.7}
-                onPress={() => navigation.navigate('ClientDetail', { clientId: c.id, clientName: c.name })}
-              >
-                {c.picture
-                  ? <Image source={{ uri: c.picture }} style={styles.avatar} />
-                  : <View style={[styles.avatar, styles.avatarFallback]}>
-                      <Text style={styles.avatarInitial}>{(c.name || '?')[0].toUpperCase()}</Text>
-                    </View>
-                }
-                <View style={styles.info}>
-                  <Text style={styles.clientName}>{c.name}</Text>
-                  <Text style={styles.clientSub}>
-                    {[c.phone, c.email].filter(Boolean).join(' · ') || 'No contact info'}
-                  </Text>
-                  {Number(c.credit) > 0 && <Text style={styles.creditPill}>💳 ${Number(c.credit).toFixed(2)} credit</Text>}
-                </View>
-                {c.visits?.length > 0 && (
-                  <Text style={styles.visitCount}>{c.visits.length} visit{c.visits.length !== 1 ? 's' : ''}</Text>
-                )}
-              </TouchableOpacity>
-            )}
+            renderItem={renderItem}
           />
         )
       }

@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { View, Text, Image, StyleSheet } from 'react-native';
 import { useThemedStyles } from '../theme/ThemeContext';
 
@@ -7,7 +8,7 @@ const initials = (n) => {
 };
 
 // Small round tech avatar — photo if on file, else initials.
-export default function TechAvatar({ name, photo, size = 28 }) {
+function TechAvatar({ name, photo, size = 28 }) {
   const styles = useThemedStyles(makeStyles);
   const dim = { width: size, height: size, borderRadius: size / 2 };
   if (photo) return <Image source={{ uri: photo }} style={dim} />;
@@ -17,6 +18,8 @@ export default function TechAvatar({ name, photo, size = 28 }) {
     </View>
   );
 }
+
+export default memo(TechAvatar);
 
 const makeStyles = (t) => StyleSheet.create({
   fallback: { backgroundColor: t.greenSoft, alignItems: 'center', justifyContent: 'center' },

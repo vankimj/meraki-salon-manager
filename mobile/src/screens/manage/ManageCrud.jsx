@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, memo } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator,
   Modal, TextInput, ScrollView, Alert, RefreshControl, Switch,
@@ -23,6 +23,29 @@ import { useTheme, useThemedStyles } from '../../theme/ThemeContext';
 //   subtitleOf(item)      row subtitle
 //   addLabel              FAB / header label e.g. "New service"
 //   headerNote(items)     optional summary string shown atop the list
+
+// Memoized list row — skips re-render when its props are unchanged so a tap
+// elsewhere in the list doesn't rebuild every row tree.
+const CrudRow = memo(function CrudRow({ item, styles, canEdit, dangerColor, titleOf, subtitleOf, onPress, onRemove }) {
+  return (
+    <TouchableOpacity
+      style={styles.row}
+      activeOpacity={canEdit ? 0.6 : 1}
+      onPress={() => onPress(item)}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={styles.rowTitle} numberOfLines={1}>{titleOf(item)}</Text>
+        <Text style={styles.rowSub} numberOfLines={1}>{subtitleOf(item)}</Text>
+      </View>
+      {canEdit && (
+        <TouchableOpacity onPress={() => onRemove(item)} style={styles.rowDel} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Icon name="trash" size={16} color={dangerColor} />
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+});
+
 export default function ManageCrud({
   load, create, save, remove, canEdit = false, blank, fields,
   titleOf, subtitleOf, addLabel = 'Add', headerNote,
@@ -42,7 +65,7 @@ export default function ManageCrud({
   useEffect(() => { refresh().finally(() => setLoading(false)); }, [refresh]);
 
   function openNew()  { setEditing({ ...blank() }); }
-  function openEdit(item) { if (canEdit) setEditing({ ...item }); }
+  const openEdit = useCallback((item) => { if (canEdit) setEditing({ ...item }); }, [canEdit]);
 
   async function doSave() {
     for (const f of fields) {
@@ -65,7 +88,7 @@ export default function ManageCrud({
     }
   }
 
-  function confirmRemove(item) {
+  const confirmRemove = useCallback((item) => {
     Alert.alert('Delete?', `${titleOf(item)} will be removed. An admin can restore it from the web Trash within 30 days.`, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: async () => {
@@ -73,7 +96,20 @@ export default function ManageCrud({
         catch (e) { Alert.alert('Couldn\'t delete', e?.message || 'Please try again.'); }
       } },
     ]);
-  }
+  }, [titleOf, remove, refresh]);
+
+  const renderItem = useCallback(({ item }) => (
+    <CrudRow
+      item={item}
+      styles={styles}
+      canEdit={canEdit}
+      dangerColor={theme.danger}
+      titleOf={titleOf}
+      subtitleOf={subtitleOf}
+      onPress={openEdit}
+      onRemove={confirmRemove}
+    />
+  ), [styles, canEdit, theme.danger, titleOf, subtitleOf, openEdit, confirmRemove]);
 
   if (loading) return <View style={styles.center}><ActivityIndicator color={theme.green} /></View>;
 
@@ -86,23 +122,7 @@ export default function ManageCrud({
         refreshControl={<RefreshControl refreshing={false} onRefresh={refresh} tintColor={theme.green} />}
         ListHeaderComponent={headerNote ? <Text style={styles.note}>{headerNote(items)}</Text> : null}
         ListEmptyComponent={<Text style={styles.empty}>Nothing here yet.</Text>}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.row}
-            activeOpacity={canEdit ? 0.6 : 1}
-            onPress={() => openEdit(item)}
-          >
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle} numberOfLines={1}>{titleOf(item)}</Text>
-              <Text style={styles.rowSub} numberOfLines={1}>{subtitleOf(item)}</Text>
-            </View>
-            {canEdit && (
-              <TouchableOpacity onPress={() => confirmRemove(item)} style={styles.rowDel} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Icon name="trash" size={16} color={theme.danger} />
-              </TouchableOpacity>
-            )}
-          </TouchableOpacity>
-        )}
+        renderItem={renderItem}
       />
 
       {canEdit && (

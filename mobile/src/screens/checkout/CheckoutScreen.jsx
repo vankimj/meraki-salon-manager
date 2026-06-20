@@ -143,7 +143,7 @@ export default function CheckoutScreen({ navigation }) {
     return () => { alive = false; };
   }, [primaryClientId]);
 
-  const lines = lines0.map((l, i) => ({ ...l, price: Number(prices[i]) || 0 }));
+  const lines = useMemo(() => lines0.map((l, i) => ({ ...l, price: Number(prices[i]) || 0 })), [lines0, prices]);
   const productsTotal = products.reduce((s, it) => s + (Number(it.product.price) || 0) * it.qty, 0);
 
   // Clock-in gate: while the salon is open, every tech credited on this sale
@@ -159,7 +159,7 @@ export default function CheckoutScreen({ navigation }) {
     const m = {};
     lines.forEach(l => { const t = l.techName || ''; m[t] = (m[t] || 0) + (Number(l.price) || 0); });
     return m;
-  }, [JSON.stringify(prices)]);
+  }, [lines]);
   const multiTech = Object.keys(techRevenue).length >= 2;
   const tipByTech = (tipMode === 'perTech')
     ? Object.keys(techRevenue).map(t => ({ techName: t, amount: Number(perTechTips[t]) || 0 }))
@@ -202,7 +202,7 @@ export default function CheckoutScreen({ navigation }) {
     tip: tipForCharge,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), tipMethod, settings, clientCredit, applyCredit]);
+  }), [lines, productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, clientCredit, applyCredit]);
 
   // Card total can differ from cash when the salon passes the card fee to the
   // client (ccFeePct/Flat) or suppresses tips on card (noCardTips). The card
@@ -219,7 +219,7 @@ export default function CheckoutScreen({ navigation }) {
     tip: tipForCharge,
     giftCardBalance: giftCard?.balance || 0, applyGC: !!giftCard,
     clientCredit, applyCredit: applyCredit && clientCredit > 0,
-  }), [JSON.stringify(prices), productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), tipMethod, settings, clientCredit, applyCredit]);
+  }), [lines, productsTotal, discType, discVal, promo, giftCard, tipMode, tipPct, tipAmtStr, perTechTips, tipMethod, settings, clientCredit, applyCredit]);
 
   const split = buildTechSplit(lines, totals.tipAmt, chargedTipByTech);
 
@@ -231,7 +231,7 @@ export default function CheckoutScreen({ navigation }) {
     promo: normalizePromo(promo), taxRate: Number(settings?.taxRate) || 0,
     ccFeePct: 0, ccFeeFlat: 0, method: 'cash', noCardTips: false, tip: tipObj,
     giftCardBalance: 0, applyGC: false, clientCredit: 0, applyCredit: false,
-  }).tipAmt || 0, [JSON.stringify(prices), productsTotal, discType, discVal, promo, tipMode, tipPct, tipAmtStr, JSON.stringify(perTechTips), settings]);
+  }).tipAmt || 0, [lines, productsTotal, discType, discVal, promo, tipMode, tipPct, tipAmtStr, perTechTips, settings]);
 
   // Venmo tips: client tips a tech directly (QR to their Venmo), split per tech by
   // service revenue (or the per-tech amounts when "Per tech"). Off the bill.

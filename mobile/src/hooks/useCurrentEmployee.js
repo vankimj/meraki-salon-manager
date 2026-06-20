@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../lib/firebase';
 import { fetchEmployeeByEmail } from '../lib/firestore';
-import { subscribeTenant } from '../lib/currentTenant';
+import { getCurrentTenant, subscribeTenant } from '../lib/currentTenant';
+import { dedupe } from '../lib/inflight';
 
 // Looks up the signed-in user's employee record (by email) so screens
 // can scope to "my appointments", "my earnings", etc. Returns null while
@@ -27,7 +28,7 @@ export default function useCurrentEmployee() {
       }
       setLoading(true);
       try {
-        const e = await fetchEmployeeByEmail(user.email);
+        const e = await dedupe(`emp:${getCurrentTenant()}:${user.email.toLowerCase()}`, () => fetchEmployeeByEmail(user.email));
         if (!cancelled) setEmp(e);
       } catch (err) {
         console.warn('[useCurrentEmployee] lookup failed:', err?.message);

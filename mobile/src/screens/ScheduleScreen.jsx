@@ -282,13 +282,15 @@ export default function ScheduleScreen({ navigation }) {
   // client so we don't refresh on every schedule update.
   const [clientsById, setClientsById] = useState({});
 
-  // Stable tech list + time-off snapshot + client allergies map — all
-  // fetched on mount, refreshed on tenant change (RootNav re-mounts on
-  // tenant switch, so this re-runs).
+  // Stable tech list + time-off snapshot — fetched on mount, refreshed on
+  // tenant change (RootNav re-mounts on tenant switch, so this re-runs). Client
+  // allergies are loaded lazily per visible day below (NOT the whole client
+  // collection — each client doc carries a base64 photo, so the old full fetch
+  // pulled multi-MB on every schedule open).
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchEmployees(), fetchTimeOff(), fetchClients()])
-      .then(([emps, off, clients]) => {
+    Promise.all([fetchEmployees(), fetchTimeOff()])
+      .then(([emps, off]) => {
         if (cancelled) return;
         const names = (emps || [])
           .filter(e => e.active !== false)
@@ -297,19 +299,30 @@ export default function ScheduleScreen({ navigation }) {
           .filter(Boolean);
         setAllTechs(names);
         setTimeOff(off || []);
-        // Slim projection — id → { allergies } so we don't keep huge
-        // base64 client photos in memory just to look up an allergy
-        // string. Built once; never mutated, so calendar renders are
-        // O(1) per appt block.
-        const map = {};
-        (clients || []).forEach(c => {
-          if (c.id) map[c.id] = { allergies: c.allergies || '' };
-        });
-        setClientsById(map);
       })
-      .catch(() => { if (!cancelled) { setAllTechs([]); setTimeOff([]); setClientsById({}); } });
+      .catch(() => { if (!cancelled) { setAllTechs([]); setTimeOff([]); } });
     return () => { cancelled = true; };
   }, []);
+
+  // Allergy flags: fetch only the clients actually on the loaded day (deduped,
+  // and cached across days in clientsById) instead of the entire collection.
+  useEffect(() => {
+    const need = Array.from(new Set((appts || []).map(a => a.clientId).filter(Boolean)))
+      .filter(id => !(id in clientsById));
+    if (!need.length) return;
+    let cancelled = false;
+    Promise.all(need.map(id =>
+      fetchClient(id).then(c => [id, { allergies: c?.allergies || '' }]).catch(() => [id, { allergies: '' }]),
+    )).then(entries => {
+      if (cancelled) return;
+      setClientsById(prev => {
+        const next = { ...prev };
+        entries.forEach(([id, v]) => { next[id] = v; });
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+  }, [appts]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Re-pull time-off after a block-out is created or deleted (it's a one-shot
   // fetch, not a live subscription like appointments).
