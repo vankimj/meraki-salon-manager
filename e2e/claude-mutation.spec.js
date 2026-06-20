@@ -41,8 +41,24 @@ test.describe('claude mutation pass', () => {
     const steps = [];
     const rec = async (name, fn) => { try { const d = await fn(); steps.push(`  ✓ ${name}${d ? ` — ${d}` : ''}`); } catch (e) { steps.push(`  ✗ ${name} — ${String(e).replace(/\s+/g, ' ').slice(0, 130)}`); throw e; } };
 
-    const enterShell = async () => { const t = page.getByRole('button', { name: /Schedule/ }).first(); await t.waitFor({ state: 'visible', timeout: 25000 }); await t.click().catch(() => {}); await page.waitForTimeout(1400); };
-    const navTo = async (label) => { current = label; const b = page.locator(`button[title="${label}"]`).first(); try { await b.click({ timeout: 4000 }); } catch { await b.evaluate((el) => el.click()); } await page.waitForTimeout(1500); };
+    // Robust: retry the home-tile click until the in-shell sidebar appears
+    // (the click occasionally fires before the grid wires its handler).
+    const enterShell = async () => {
+      for (let i = 0; i < 4; i++) {
+        const t = page.getByRole('button', { name: /^Schedule/ }).first();
+        await t.waitFor({ state: 'visible', timeout: 20000 }).catch(() => {});
+        await t.click().catch(() => {});
+        try { await page.locator('button[title="Clients"]').first().waitFor({ state: 'attached', timeout: 6000 }); return; } catch { await page.waitForTimeout(900); }
+      }
+      throw new Error('could not enter ModuleShell');
+    };
+    const navTo = async (label) => {
+      current = label;
+      const b = page.locator(`button[title="${label}"]`).first();
+      await b.waitFor({ state: 'attached', timeout: 8000 }); // fail fast instead of hanging
+      try { await b.click({ timeout: 4000 }); } catch { await b.evaluate((el) => el.click()); }
+      await page.waitForTimeout(1500);
+    };
 
     await signIn(page);
     await enterShell();
@@ -66,6 +82,27 @@ test.describe('claude mutation pass', () => {
       await navTo('Services');
       await expect(page.getByText(MARKER_SVC).first()).toBeVisible({ timeout: 10000 });
       return 'still present after reload';
+    });
+
+    await rec('Service: edit price + save (UPDATE)', async () => {
+      const row = page.locator('div').filter({ hasText: MARKER_SVC }).filter({ has: page.getByRole('button', { name: 'Edit', exact: true }) }).last();
+      await row.getByRole('button', { name: 'Edit', exact: true }).click();
+      await page.waitForTimeout(800);
+      const price = page.locator('input[type="number"]').first(); // basePrice
+      await price.fill('137');
+      await page.getByRole('button', { name: 'Save Changes', exact: true }).first().click();
+      await page.waitForTimeout(1500);
+      await expect(page.locator('div').filter({ hasText: MARKER_SVC }).filter({ hasText: '137' }).first()).toBeVisible({ timeout: 8000 });
+      return 'price → 137, reflected in list';
+    });
+
+    await rec('Service: edit PERSISTS across reload', async () => {
+      await page.reload();
+      await page.waitForFunction((e) => window.__plumeAuth?.currentUser?.email === e, EMAIL, { timeout: 30000 });
+      await enterShell();
+      await navTo('Services');
+      await expect(page.locator('div').filter({ hasText: MARKER_SVC }).filter({ hasText: '137' }).first()).toBeVisible({ timeout: 10000 });
+      return 'edited price survived reload';
     });
 
     await rec('Service: delete (confirm auto-accepted)', async () => {
