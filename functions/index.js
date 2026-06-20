@@ -1266,6 +1266,52 @@ exports.creditTurnsOnReceipt = onDocumentCreated(
   }
 );
 
+// Loyalty earn — fires on receipt creation, mirrors creditTurnsOnReceipt.
+// Idempotent (_loyaltyCredited), server-authoritative, atomic increment so it
+// can't race the client-side redeem deduction (also an increment).
+exports.creditLoyaltyOnReceipt = onDocumentCreated(
+  `tenants/{tenantId}/receipts/{receiptId}`,
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const r = snap.data();
+    if (!r || r._loyaltyCredited) return;
+    const clientId = r.clientId;
+    if (!clientId) return;                       // walk-in / no client → no points
+    const tenantId = event.params.tenantId;
+    const db = getFirestore();
+    try {
+      const setSnap = await db.doc(`tenants/${tenantId}/data/settings`).get();
+      const cfg = (setSnap.exists ? setSnap.data() : {}).loyaltyConfig || {};
+      if (cfg.enabled !== true) return;
+      const perDollar = Number(cfg.pointsPerDollar) || 0;
+      if (perDollar <= 0) return;
+      // Earn on the amount actually PAID (excludes gift-card/credit/loyalty
+      // redemptions + tip) so points aren't minted on discounts or redemptions.
+      const base   = Number(r.payment && r.payment.charged) || 0;
+      const earned = Math.floor(base * perDollar);
+      if (earned <= 0) return;
+
+      const { FieldValue } = require('firebase-admin/firestore');
+      const clientRef = db.doc(`tenants/${tenantId}/clients/${clientId}`);
+      await db.runTransaction(async tx => {
+        const rFresh = await tx.get(snap.ref);
+        if (!rFresh.exists || rFresh.data()._loyaltyCredited) return;
+        const cSnap = await tx.get(clientRef);
+        if (cSnap.exists) {
+          tx.set(clientRef, { loyaltyPoints: FieldValue.increment(earned), updatedAt: new Date().toISOString() }, { merge: true });
+          tx.set(clientRef.collection('loyaltyHistory').doc(), {
+            type: 'earn', points: earned, receiptId: event.params.receiptId, reason: 'Purchase', createdAt: new Date().toISOString(),
+          });
+        }
+        tx.set(snap.ref, { _loyaltyCredited: new Date().toISOString(), loyaltyEarned: earned }, { merge: true });
+      });
+    } catch (e) {
+      console.warn(`[creditLoyaltyOnReceipt] tenant=${tenantId}:`, e && e.message);
+    }
+  }
+);
+
 exports.sendReceiptEmail = onDocumentCreated(
   `tenants/{tenantId}/receipts/{receiptId}`,
   async (event) => {

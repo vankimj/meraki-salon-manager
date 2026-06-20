@@ -44,7 +44,7 @@ import SlideModal from '../tipflow/SlideModal';
 const SettingsSearchCtx = createContext('');
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
-  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast } = useApp();
+  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast, hasFeature } = useApp();
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
@@ -701,6 +701,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               </div>
             </Section>
             <TechRemindersSection settings={settings} updateSettings={updateSettings} nested />
+            {hasFeature?.('loyalty') && <LoyaltySection settings={settings} updateSettings={updateSettings} nested />}
             <WalkinTurnModeSection settings={settings} updateSettings={updateSettings} nested />
             <NotificationRoutingSection settings={settings} updateSettings={updateSettings} users={users} nested />
             <CancellationPolicySection settings={settings} updateSettings={updateSettings} nested />
@@ -3546,6 +3547,68 @@ function TechRemindersSection({ settings, updateSettings, nested = false }) {
           <span style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>· tenant-wide on/off switch</span>
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto' }}>✓ Saved</span>}
         </label>
+      </div>
+    </Section>
+  );
+}
+
+// ── Loyalty Points ────────────────────────────────────────────────────────
+// Clients earn points on the amount actually paid (creditLoyaltyOnReceipt
+// trigger) and redeem them at checkout (CheckoutModal). Schema lives on
+// settings.loyaltyConfig — see src/lib/loyalty.js for the shared math.
+function LoyaltySection({ settings, updateSettings, nested = false }) {
+  const cfg = settings.loyaltyConfig || {};
+  const [enabled,   setEnabled]   = useState(cfg.enabled === true);
+  const [perDollar, setPerDollar] = useState(cfg.pointsPerDollar ?? 1);
+  const [redValue,  setRedValue]  = useState(cfg.redemptionValue ?? 0.05);
+  const [minRedeem, setMinRedeem] = useState(cfg.minRedeemPoints ?? 100);
+  const [saving,    setSaving]    = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateSettings({
+        ...settings,
+        loyaltyConfig: {
+          enabled,
+          pointsPerDollar: Math.max(0, Number(perDollar) || 0),
+          redemptionValue: Math.max(0, Number(redValue) || 0),
+          minRedeemPoints: Math.max(0, Math.round(Number(minRedeem) || 0)),
+        },
+      });
+    } finally { setSaving(false); }
+  }
+
+  const ptsPerReward = Number(redValue) > 0 ? Math.round(1 / Number(redValue)) : 0;
+  const inp = { width: 92, padding: '7px 9px', fontSize: 13, borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', fontFamily: 'inherit' };
+  const row = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 };
+
+  return (
+    <Section title="⭐ Loyalty Points" keywords="loyalty points rewards redeem earn marketing" nested={nested}>
+      <div style={{ padding: '12px 16px' }}>
+        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5, marginBottom: 12 }}>
+          Clients earn points on what they pay and redeem them at checkout. Points are credited automatically on every paid receipt (walk-ins without a client record don’t earn).
+        </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 8, border: '1px solid var(--pn-border)', background: 'var(--pn-bg)', cursor: 'pointer', marginBottom: 14 }}>
+          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--pn-text-muted)' }}>Enabled · tenant-wide</span>
+        </label>
+        <div style={row}>
+          <span style={{ fontSize: 13, color: 'var(--pn-text)' }}>Points earned per $1 paid</span>
+          <input type="number" min={0} step={0.5} value={perDollar} onChange={e => setPerDollar(e.target.value)} style={inp} />
+        </div>
+        <div style={row}>
+          <span style={{ fontSize: 13, color: 'var(--pn-text)' }}>
+            Dollar value per point
+            {ptsPerReward > 0 && <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 6 }}>({ptsPerReward} pts = $1)</span>}
+          </span>
+          <input type="number" min={0} step={0.01} value={redValue} onChange={e => setRedValue(e.target.value)} style={inp} />
+        </div>
+        <div style={{ ...row, marginBottom: 14 }}>
+          <span style={{ fontSize: 13, color: 'var(--pn-text)' }}>Minimum points to redeem</span>
+          <input type="number" min={0} step={10} value={minRedeem} onChange={e => setMinRedeem(e.target.value)} style={inp} />
+        </div>
+        <Btn color="#3D95CE" savedLabel="✓ Saved" onClick={save} disabled={saving}>Save loyalty settings</Btn>
       </div>
     </Section>
   );
