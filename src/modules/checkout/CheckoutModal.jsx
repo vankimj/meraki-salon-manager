@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { saveAppointment, fetchClient, saveClient,
+import { saveAppointment, fetchClient, saveClient, redeemLoyaltyPoints,
          fetchGiftCardByCode, fetchGiftCardsByContact, updateGiftCard, createGiftCard,
          fetchPromoByCode, savePromoCode, createReceipt,
          fetchProducts, saveProduct, createReviewRequest,
          fetchClientMembership, fetchAttendance,
          setCheckoutSession, subscribeCheckoutSession, clearCheckoutSession, getCheckoutSession } from '../../lib/firestore';
+import { resolveLoyaltyConfig, redeemableLoyalty } from '../../lib/loyalty';
 import { buildKioskHandoff, kioskHandoffAvailable, genSessionToken } from '../../lib/kioskHandoff';
 import { isSalonOpenNow, offClockTechNames, attendanceKey } from '../../lib/shiftGate';
 import { logActivity } from '../../lib/logger';
@@ -120,6 +121,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const [gcResults,    setGcResults]    = useState(null);
   const [gcSearching,  setGcSearching]  = useState(false);
   const [clientCredit, setClientCredit] = useState(0);
+  const [clientPoints, setClientPoints] = useState(0);
+  const [applyLoyalty, setApplyLoyalty] = useState(false);
   const [savedPm,      setSavedPm]      = useState(null);   // client's card on file (Stripe pm), if any
   const [saleId]       = useState(() => genUrlSafeToken(24)); // stable idempotency key for a card-on-file charge
   const [membership,   setMembership]   = useState(null);   // active membership for primaryClient (or null)
@@ -159,6 +162,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
         const cr = Number(c?.credit) || 0;
         setClientCredit(cr);
         if (cr > 0) setApplyCredit(true);
+        setClientPoints(Number(c?.loyaltyPoints) || 0);
         setSavedPm(c?.paymentMethods?.find(p => p.id === c.defaultPaymentMethodId) || c?.paymentMethods?.[0] || null);
       }).catch(() => {});
       fetchClientMembership(primaryClient.id).then(m => {
@@ -249,7 +253,16 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   const creditApply    = applyCredit && clientCredit > 0
     ? Math.min(clientCredit, billBeforeTip - gcApply)
     : 0;
-  const charged        = Math.max(billBeforeTip - gcApply - creditApply, 0);
+  // Loyalty redemption — gated on the Marketing-Pack `loyalty` cap + the salon
+  // enabling it. Redeems whole points against what's left after gift card/credit.
+  const loyCfg         = resolveLoyaltyConfig(settings);
+  const loyaltyOn      = !!hasFeature?.('loyalty') && loyCfg.enabled;
+  const loyaltyPreview = loyaltyOn
+    ? redeemableLoyalty(loyCfg, clientPoints, billBeforeTip - gcApply - creditApply)
+    : { redeemPts: 0, dollars: 0 };
+  const loyaltyPts     = applyLoyalty ? loyaltyPreview.redeemPts : 0;
+  const loyaltyApply   = applyLoyalty ? loyaltyPreview.dollars   : 0;
+  const charged        = Math.max(billBeforeTip - gcApply - creditApply - loyaltyApply, 0);
   const total          = charged + tipAmt;
   const ccFee          = method === 'card' && total > 0
     ? Math.round((total * ccFeePct / 100 + ccFeeFlat) * 100) / 100
@@ -574,6 +587,8 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           ? { code: giftCard.code, id: giftCard.id, applied: gcApply }
           : null,
         creditApplied:  creditApply,
+        loyaltyRedeemed: loyaltyApply,
+        loyaltyPointsUsed: loyaltyPts,
         charged,
         tip:            tipAmt,
         total,
@@ -649,6 +664,11 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             const newCredit = Math.max((c.credit || 0) - creditApply, 0);
             const { id: cid, createdAt: cc, ...cd } = c;
             await saveClient(cid, { ...cd, credit: newCredit });
+          }
+          // Loyalty redemption — atomic decrement (own helper), separate from the
+          // credit read-modify-write so it can't be clobbered by the earn trigger.
+          if (loyaltyPts > 0) {
+            await redeemLoyaltyPoints(primaryClient.id, loyaltyPts, saleId).catch(() => {});
           }
         }
       }
@@ -1079,6 +1099,19 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
               </label>
             </Section>
           )}
+
+          {/* Loyalty points */}
+          {loyaltyOn && clientPoints >= loyCfg.minRedeemPoints && loyaltyPreview.redeemPts > 0 && (
+            <Section title="Loyalty Points">
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                <input type="checkbox" checked={applyLoyalty} onChange={e => setApplyLoyalty(e.target.checked)} />
+                <span style={{ color: 'var(--pn-text)' }}>
+                  Redeem {loyaltyPreview.redeemPts} points <strong>(−${loyaltyPreview.dollars.toFixed(2)})</strong>
+                  <span style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginLeft: 6 }}>(balance: {clientPoints} pts)</span>
+                </span>
+              </label>
+            </Section>
+          )}
           </MoreOptions>
 
           {/* Tip is collected on the customer-facing checkout (the front-desk
@@ -1214,6 +1247,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
             {taxAmt > 0         && <SummaryRow label={`Tax (${taxRate}%)`} value={`+$${taxAmt.toFixed(2)}`} />}
             {gcApply > 0        && <SummaryRow label={`Gift Card: ${giftCard.code}`} value={`−$${gcApply.toFixed(2)}`} valueColor="#22c55e" />}
             {creditApply > 0    && <SummaryRow label="Store Credit" value={`−$${creditApply.toFixed(2)}`} valueColor="#22c55e" />}
+            {loyaltyApply > 0   && <SummaryRow label={`Loyalty (${loyaltyPts} pts)`} value={`−$${loyaltyApply.toFixed(2)}`} valueColor="#22c55e" />}
             {tipAmt > 0         && <SummaryRow label="Tip" value={`+$${tipAmt.toFixed(2)}`} />}
             <div style={{ borderTop: '1px solid var(--pn-border)', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)' }}>Total</span>

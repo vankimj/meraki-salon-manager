@@ -322,6 +322,11 @@ function ClientRow({ client, referralCount, last, onView, onEdit, onDelete }) {
                 💳 ${Number(client.credit).toFixed(2)} credit
               </span>
             )}
+            {Number(client.loyaltyPoints) > 0 && (
+              <span style={{ fontSize: 10, background: 'var(--pn-info-bg)', color: '#3D95CE', borderRadius: 10, padding: '1px 7px', fontWeight: 700, flexShrink: 0 }}>
+                ⭐ {Number(client.loyaltyPoints)} pts
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 1 }}>
             {[client.phone, client.email].filter(Boolean).join(' · ') || 'No contact info'}

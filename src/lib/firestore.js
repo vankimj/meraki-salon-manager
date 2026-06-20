@@ -512,6 +512,19 @@ export async function saveClient(id, data) {
   await setDoc(doc(CLIENTS_COL, id), { ...data, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
+// Redeem loyalty points at checkout — atomic decrement (race-safe against the
+// server earn trigger's atomic increment) + a redeem entry in the client's
+// loyaltyHistory subcollection.
+export async function redeemLoyaltyPoints(clientId, points, receiptRef = null) {
+  const pts = Math.round(Number(points) || 0);
+  if (!clientId || pts <= 0) return;
+  const cRef = doc(CLIENTS_COL, clientId);
+  await updateDoc(cRef, { loyaltyPoints: increment(-pts), updatedAt: new Date().toISOString() });
+  await addDoc(collection(cRef, 'loyaltyHistory'), {
+    type: 'redeem', points: -pts, receiptId: receiptRef || null, reason: 'Redeemed at checkout', createdAt: new Date().toISOString(),
+  });
+}
+
 // Insurance intake lives in an admin-only sub-doc `clients/{id}/private/insurance`
 // (Firestore rules: isTenantAdmin only), NOT on the staff-readable parent client
 // doc — so insurance member IDs + card photos are withheld from non-admin staff
