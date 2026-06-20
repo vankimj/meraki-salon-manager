@@ -414,9 +414,10 @@ describe('buildDisputeRecord', () => {
 });
 
 describe('formatDueBy', () => {
-  it('formats an ISO date in a human-friendly form', () => {
-    const out = formatDueBy('2026-05-22T10:00:00.000Z');
-    expect(out).toMatch(/Friday|May/);  // locale-dependent but contains date parts
+  it('formats the due-by date as a UTC-labeled deadline (timezone-stable)', () => {
+    // Pinned to UTC + explicit label so the dispute deadline is unambiguous and
+    // deterministic regardless of the server's timezone.
+    expect(formatDueBy('2026-05-22T10:00:00.000Z')).toBe('Friday, May 22, 2026 at 10:00 AM UTC');
   });
   it('returns null for missing or invalid input', () => {
     expect(formatDueBy(null)).toBeNull();
