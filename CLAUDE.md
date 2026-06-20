@@ -120,6 +120,7 @@ All demo records tagged `_demo: true` for targeted deletion.
 
 ## Key patterns & conventions
 
+- **Clickable links, ALWAYS (in replies to Jonathan).** Every file path, URL, dashboard (EAS/GitHub/Firebase), and console destination must be a markdown link — `[name](src/path#Lnn)` for files, `[text](https://…)` for URLs — never plain text or prose like "go to Firebase Console → Auth". He works in the VSCode extension where links are clickable; plain text forces manual navigation. He has asked for this many times — this is non-negotiable, scan every reply before sending.
 - **No comments** unless the WHY is non-obvious.
 - **All styling is inline** (`style={{...}}`). No CSS modules, no Tailwind.
 - **Brand colors:** Green `#2D7A5F`, Blue `#3D95CE`, Teal `#3D9E8A`
