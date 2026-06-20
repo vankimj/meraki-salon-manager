@@ -5,12 +5,12 @@ const { initializeApp }    = require('firebase-admin/app');
 const { getFirestore }     = require('firebase-admin/firestore');
 const { getAuth }          = require('firebase-admin/auth');
 const { defineString, defineSecret } = require('firebase-functions/params');
-const Anthropic            = require('@anthropic-ai/sdk');
-const {
-  SESv2Client, SendEmailCommand,
-  CreateTenantCommand, DeleteTenantCommand,
-  CreateTenantResourceAssociationCommand,
-} = require('@aws-sdk/client-sesv2');
+// Lazy-load the heaviest SDKs so they aren't parsed for every one of the ~176
+// functions in this single-module deploy — only the AI / SES functions need
+// them. require() caches per instance, so the first use loads once.
+let _Anthropic, _awsSes;
+function getAnthropic(opts) { _Anthropic = _Anthropic || require('@anthropic-ai/sdk'); return new _Anthropic(opts); }
+function awsSes() { _awsSes = _awsSes || require('@aws-sdk/client-sesv2'); return _awsSes; }
 const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
 const { roleCan, normalizeRole } = require('./lib/rbac');
@@ -456,7 +456,7 @@ function brandForLocation(baseBrand, locationsData, locationId) {
 let _sesClientCache = null;
 function getSesClient() {
   if (_sesClientCache) return _sesClientCache;
-  _sesClientCache = new SESv2Client({
+  _sesClientCache = new (awsSes().SESv2Client)({
     region: awsSesRegion.value() || 'us-west-2',
     credentials: {
       accessKeyId:     awsAccessKey.value(),
@@ -606,7 +606,7 @@ async function ensureSesTenant(tenantId) {
   if (!tenantId) return false;
   try {
     const ses = getSesClient();
-    await ses.send(new CreateTenantCommand({ TenantName: tenantId }));
+    await ses.send(new (awsSes().CreateTenantCommand)({ TenantName: tenantId }));
     return true;
   } catch (e) {
     if (e?.name === 'AlreadyExistsException' || /already exists/i.test(e?.message || '')) {
@@ -623,7 +623,7 @@ async function ensureSesTenant(tenantId) {
 // the identity is not assigned to tenant X. Idempotent.
 async function associateSesResourceToTenant(ses, tenantId, resourceArn) {
   try {
-    await ses.send(new CreateTenantResourceAssociationCommand({
+    await ses.send(new (awsSes().CreateTenantResourceAssociationCommand)({
       TenantName:  tenantId,
       ResourceArn: resourceArn,
     }));
@@ -666,7 +666,7 @@ async function deleteSesTenant(tenantId) {
   if (!tenantId) return false;
   try {
     const ses = getSesClient();
-    await ses.send(new DeleteTenantCommand({ TenantName: tenantId }));
+    await ses.send(new (awsSes().DeleteTenantCommand)({ TenantName: tenantId }));
     return true;
   } catch (e) {
     if (e?.name === 'NotFoundException' || /not found|does not exist/i.test(e?.message || '')) {
@@ -798,7 +798,7 @@ async function sendViaSES({ from, to, subject, html, replyTo, tags, tenantId, un
     { Name: 'List-Unsubscribe',      Value: `<${unsubscribeUrl}>` },
     { Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' },
   ] : undefined;
-  const cmd = new SendEmailCommand({
+  const cmd = new (awsSes().SendEmailCommand)({
     FromEmailAddress: from,
     Destination:      { ToAddresses: [to] },
     Content: {
@@ -6546,7 +6546,7 @@ ${svcText || 'See website for full service menu'}
 ━━━ CANCELLATION POLICY ━━━
 ${cfg.policy || 'Appointments canceled with less than 24 hours notice may incur a cancellation fee.'}`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const response = await client.messages.create({
       model:      'claude-haiku-4-5-20251001',
       max_tokens: 400,
@@ -6625,7 +6625,7 @@ exports.growCoachSuggest = onCall(
     const system = `You are a marketing coach for ${brief.name}${brief.city ? ` in ${brief.city}` : ''}, a nail salon. Write copy the owner can use immediately — specific, warm, concise. Never invent prices or claims.${brief.services.length ? ` Their services include: ${brief.services.join(', ')}.` : ''}`;
     const user = `${task}${context ? `\n\nExtra context from the owner: ${String(context).slice(0, 1000)}` : ''}`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001', max_tokens: 700,
       system, messages: [{ role: 'user', content: user }],
@@ -6664,7 +6664,7 @@ exports.growDraftDocument = onCall(
     const system = `You are a small-business assistant drafting documents for ${brief.name}${brief.city ? ` (${brief.city})` : ''}, a nail salon. Produce a clear, well-structured draft the owner can edit. Use placeholders like [Owner Name], [Date], [State] where specifics are unknown — never invent legal specifics, dollar amounts, or addresses.`;
     const user = `${task}${context ? `\n\nOwner context: ${String(context).slice(0, 1500)}` : ''}`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const resp = await client.messages.create({
       model: 'claude-sonnet-4-6', max_tokens: 2500,
       system, messages: [{ role: 'user', content: user }],
@@ -6698,7 +6698,7 @@ exports.growPhotoCritique = onCall(
 
     const subject = kind === 'salon' ? 'a photo of the salon space' : 'a photo of nail work';
     const system = 'You are a professional photographer + brand stylist helping a nail salon choose photos for their website and Instagram. Critique the photo concisely and kindly across: lighting, composition/framing, focus/sharpness, clutter/background, and color. End with a clear verdict — KEEP, CROP (say how), or RESHOOT (say what to change). 4-6 short bullet points max.';
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const resp = await client.messages.create({
       model: 'claude-sonnet-4-6', max_tokens: 600,
       system,
@@ -6733,7 +6733,7 @@ exports.estimateNailArtDuration = onCall(
     await growAiGuard(db, tenantId);
 
     const system = 'You are an experienced nail technician estimating service time from a photo of finished nail art. Respond with ONLY minified JSON — no prose, no code fence: {"estimatedMinutes":<integer>,"complexity":"simple|moderate|complex|intricate","reasoning":"<one short sentence>"}. estimatedMinutes is the nail-ART add-on time only (hand-painting, fine detail, layering, charms, chrome, 3D, etc.) — NOT the base manicure. Be realistic for a salon.';
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const resp = await client.messages.create({
       model: 'claude-sonnet-4-6', max_tokens: 400,
       system,
@@ -6798,7 +6798,7 @@ Rules:
 - For legal/tax/accounting matters, recommend confirming with a licensed professional rather than giving definitive advice.`;
     const user = q || `Help me understand and complete this step: ${stepTitle}.`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001', max_tokens: 500,
       system, messages: [{ role: 'user', content: user }],
@@ -7157,7 +7157,7 @@ When using tools:
 - After getting tool results, answer in 1–4 short paragraphs. For lists, use compact bullets. Format numbers with $ and commas.
 - Never fabricate values not in tool output. If you didn't call a tool, say so.`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     let convo = messages.map(m => ({ role: m.role, content: m.content }));
     let toolRounds = 0;
 
@@ -7471,7 +7471,7 @@ Critical rules:
 
 You MUST call finalizeAction exactly once at the end.`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     let convo = [{ role: 'user', content: transcript }];
     let toolRounds = 0;
 
@@ -7659,7 +7659,7 @@ ${apptList}
 
 Output the JSON only.`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const resp = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 4000,
@@ -12662,7 +12662,7 @@ exports.chatWithMarketing = onCall(
       throw new HttpsError('invalid-argument', 'Last message must be from user');
     }
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const response = await client.messages.create({
       model:      'claude-haiku-4-5-20251001',
       max_tokens: 500,
@@ -16565,7 +16565,7 @@ exports.aiTriageTicket = onDocumentCreated(
 
     let response;
     try {
-      const client = new Anthropic({ apiKey });
+      const client = getAnthropic({ apiKey });
       response = await client.messages.create({
         model:      'claude-haiku-4-5-20251001',
         max_tokens: 600,
@@ -17318,7 +17318,7 @@ exports.chatWithSalonAdmin = onCall(
       `${SALON_ADMIN_SYSTEM_PROMPT}\n\n` +
       `CONTEXT\nSalon: ${tenantName}\nCurrent view: ${currentView || 'unknown'}\nUser: ${callerEmail}\nToday: ${new Date().toISOString().slice(0, 10)}`;
 
-    const client = new Anthropic({ apiKey });
+    const client = getAnthropic({ apiKey });
     const convo = messages
       .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
       .map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
