@@ -83,6 +83,18 @@ export let TENANT_ID = bootGuess();
 // can be rendered after async lookup.
 let resolveState = { status: 'pending', reason: null };
 
+// Whether THIS tenant is flagged live/production, read from the public
+// slugs/{slug} doc at boot (default false = pre-production). The env banner
+// reads this synchronously — it renders outside the app context on every
+// surface (incl. the logged-out booking page), so the flag must resolve at the
+// tenant layer, not from authenticated settings. Hosts that don't do a slug
+// lookup (localhost, *.web.app, ?tenant= overrides, preview channels) stay
+// false → pre-production banner, which is the safe default.
+let _isProductionTenant = false;
+export function isProductionTenant() {
+  return _isProductionTenant;
+}
+
 export function getTenantResolveState() {
   return resolveState;
 }
@@ -164,6 +176,7 @@ export async function resolveTenant() {
     const data = snap.data() || {};
     if (data.kind === 'primary' && isValidTenantId(data.tenantId)) {
       TENANT_ID = data.tenantId;
+      _isProductionTenant = data.isProduction === true;
       resolveState = { status: 'ok' };
       return;
     }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { BUILD_LABEL } from './lib/version';
-import { TENANT_ID } from './lib/tenant';
+import { TENANT_ID, isProductionTenant } from './lib/tenant';
 import { startConnHealth, subscribeConnHealth, pingConn } from './lib/connHealth';
 import { useStripeConnectOAuthCallback } from './hooks/useStripeConnectOAuthCallback';
 import { recordNav } from './lib/diagnostics';
@@ -435,10 +435,13 @@ function VersionBadge() {
   );
 }
 
-// Visual marker so it's obvious when you're not on the canonical Meraki tenant
-// (e.g. on a staging preview channel reading from a staging tenant).
+// Visual marker shown on any tenant NOT flagged live/production (Admin →
+// Settings → "This tenant is live"). Production-flagged tenants show nothing;
+// everyone else (demo, staging, and any tenant not yet taken live) gets a
+// pre-production ribbon. Driven by the public slugs/{slug}.isProduction flag
+// resolved at boot, so it's correct even on the logged-out booking page.
 function EnvBanner() {
-  if (TENANT_ID === 'merakinailstudio') return null;
+  if (isProductionTenant()) return null;
   const label = TENANT_ID === 'merakinailstudio-staging' ? 'STAGING' : TENANT_ID.toUpperCase();
   return (
     <div style={{
@@ -453,7 +456,7 @@ function EnvBanner() {
         background: 'rgba(255,255,255,.55)',
         borderBottom: '1px solid rgba(0,0,0,.1)',
       }}>
-        ⚠ {label} ENVIRONMENT — data writes here will not affect production
+        ⚠ {label} · PRE-PRODUCTION — not yet live
       </div>
     </div>
   );
