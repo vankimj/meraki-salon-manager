@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
 import { currentLocationId, isMultiLocation, effectiveLocationId, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
-import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, subscribeAttendance, fetchReceiptByApptId } from '../../lib/firestore';
+import { isSalonOpenNow, clockedInNameSet, clockedInTodayNameSet, techWorkStatus, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
 import ClientSearch from './ClientSearch';
 import { callFn, startTrace } from '../../lib/firebase';
@@ -406,6 +406,15 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, effLoc);
     return unsub;
   }, [effLoc]);
+
+  // Today's attendance (time-clock) so the schedule's "working today / right
+  // now" filters and the working/off column split reflect who's actually
+  // clocked in — Meraki uses the clock, not configured shift hours.
+  const [attendanceToday, setAttendanceToday] = useState({ entries: [] });
+  useEffect(() => {
+    const unsub = subscribeAttendance(todayStr(), setAttendanceToday);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -887,6 +896,45 @@ function openNew(techName, slotMins) {
     : displayTechs0;
 
   const personalView   = isTech && !showAll;
+
+  // Per-tech "working today / right now" — unifies the time clock (attendance)
+  // with configured shift hours. Drives both the quick filters and the
+  // working-left / off-right column split.
+  const isToday         = date === todayStr();
+  const nowMinsForWork  = new Date().getHours() * 60 + new Date().getMinutes();
+  const clockedInNowSet   = clockedInNameSet(attendanceToday);
+  const clockedInTodaySet = clockedInTodayNameSet(attendanceToday);
+  const normName = (s) => String(s || '').trim().toLowerCase();
+  const techStatusFor = (t) => {
+    const wd = empWorkDays[t]?.[dow];
+    const hasShift = !!empWorkDays[t] && Object.keys(empWorkDays[t]).length > 0;
+    const blocks = timeOffOnDate(timeOff, t, date);
+    const start = wd?.start ? strToMins(wd.start) : strToMins(settings.apptHours?.open  || '09:00');
+    const end   = wd?.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
+    return techWorkStatus({
+      isToday,
+      clockedInToday: isToday && clockedInTodaySet.has(normName(t)),
+      clockedInNow:   isToday && clockedInNowSet.has(normName(t)),
+      hasShift,
+      shiftOnToday:   !!wd && wd.on !== false,
+      withinShiftNow: nowMinsForWork >= start && nowMinsForWork < end,
+      allDayOff:      blocks.some(b => b.allDay !== false),
+      blockedNow:     isToday && isSlotBlocked(timeOff, t, date, nowMinsForWork),
+    });
+  };
+  // "Off today" only applies once at least one tech is known to be working
+  // (clocked in or on shift); before anyone clocks in, no one is greyed out.
+  const someWorking  = displayTechs.some(t => techStatusFor(t).today);
+  const offTodaySet  = new Set(someWorking ? displayTechs.filter(t => !techStatusFor(t).today) : []);
+  const hasWorkingShown = displayTechs.some(t => !offTodaySet.has(t));
+  // Split working-left / off-right (with a divider) whenever the shown columns
+  // mix working + off — i.e. "All techs". A narrowing filter (Working today/now)
+  // shows only working techs, so there's nothing to split.
+  const splitWorkingOff = !personalView && !focusedTech && offTodaySet.size > 0 && hasWorkingShown;
+  const orderedTechs = splitWorkingOff
+    ? [...displayTechs.filter(t => !offTodaySet.has(t)), ...displayTechs.filter(t => offTodaySet.has(t))]
+    : displayTechs;
+  const firstOffTech = splitWorkingOff ? orderedTechs.find(t => offTodaySet.has(t)) : null;
   // Focused (single-tech zoom) mode gets a wide column so overlapping
   // appointments split into readable lanes even at 4–5 deep. On a phone
   // (≤480px) the single-tech view shrinks to fit the viewport so a tech
@@ -1151,37 +1199,19 @@ function openNew(techName, slotMins) {
       {/* Tech overlay filter pills — day view only, hidden when there are
           no techs (the empty state below carries the call-to-action). */}
       {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && techs.length > 0 && (() => {
-        // Quick-filter helpers. "Working today" = the tech's per-day shift
-        // (empWorkDays) is not explicitly off AND no all-day time-off block
-        // covers today. "Working now" tightens that to: current clock time
-        // falls inside the shift window AND no partial-day time-off covers
-        // it. We derive on every render — no extra state — so the buttons
-        // stay accurate as the day rolls forward.
-        const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-        const techIsWorkingToday = (t) => {
-          const wd = empWorkDays[t]?.[dow];
-          if (wd && wd.on === false) return false;
-          // All-day time off blocks count the tech as off today.
-          const blocks = timeOffOnDate(timeOff, t, date);
-          if (blocks.some(b => b.allDay !== false)) return false;
-          return true;
-        };
-        const techIsWorkingNow = (t) => {
-          if (!techIsWorkingToday(t)) return false;
-          const wd = empWorkDays[t]?.[dow] || {};
-          const start = wd.start ? strToMins(wd.start) : strToMins(settings.apptHours?.open  || '09:00');
-          const end   = wd.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
-          if (nowMins < start || nowMins >= end) return false;
-          if (isSlotBlocked(timeOff, t, date, nowMins)) return false;
-          return true;
-        };
+        // "Working today" = clocked in today (time clock) OR scheduled on a
+        // configured shift; "Working right now" = currently clocked in OR within
+        // today's shift window. Unified in techStatusFor (clock + shift), so the
+        // filters work for clock-based salons like Meraki that set no shift hours.
+        const techIsWorkingToday = (t) => techStatusFor(t).today;
+        const techIsWorkingNow   = (t) => techStatusFor(t).now;
         const applyFilter = (predicate) => {
           const next = techs.filter(predicate);
+          if (!next.length) showToast('No techs match that filter right now — showing all.');
           setVisibleTechNames(next.length ? next : techs);
           localStorage.setItem(OVERLAY_KEY, JSON.stringify(next.length ? next : techs));
         };
         const showAllTechs = () => { setVisibleTechNames(techs); localStorage.setItem(OVERLAY_KEY, JSON.stringify(techs)); };
-        const isToday = date === todayStr();
         const Btn = ({ label, onClick, hint }) => (
           <button onClick={onClick} title={hint}
             style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1.5px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
@@ -1307,7 +1337,9 @@ function openNew(techName, slotMins) {
               date={date}
               appts={visibleAppts}
               timeOff={timeOff}
-              techs={displayTechs}
+              techs={orderedTechs}
+              offToday={offTodaySet}
+              dividerTech={firstOffTech}
               allTechs={techs}
               clients={clients}
               techExtended={techExtended}
@@ -1806,7 +1838,7 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
 }
 
 // ── Day grid ──────────────────────────────────────────
-function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, focusedTech, onToggleFocusTech, onSlotClick, onApptClick, onApptReschedule }) {
+function DayGrid({ date, appts, timeOff = [], techs, offToday, dividerTech, allTechs, clients = [], techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, focusedTech, onToggleFocusTech, onSlotClick, onApptClick, onApptReschedule }) {
   // Pointer-event drag-to-reschedule. Works on both mouse and touch
   // (iPad/iPhone) — HTML5 D&D doesn't work on touch devices natively.
   // Dragging happens in two phases:
@@ -1940,7 +1972,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
       <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 10, background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)' }}>
         <div style={{ width: TIME_COL, flexShrink: 0 }} />
         {techs.map(tech => {
-          const isOff = empWorkDays[tech]?.[dow]?.on === false;
+          const isOff = offToday ? offToday.has(tech) : (empWorkDays[tech]?.[dow]?.on === false);
           const col   = getTechColor(tech, allTechs || techs);
           const todayTimeOff = timeOffOnDate(timeOff, tech, date);
           const hasTimeOff = todayTimeOff.length > 0;
@@ -1956,7 +1988,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
               key={tech}
               onClick={canFocus ? () => onToggleFocusTech(tech) : undefined}
               title={canFocus ? (isFocused ? 'Click to back out and show all techs' : `Click to zoom into ${tech}'s schedule only`) : undefined}
-              style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? 'var(--pn-text-faint)' : col.text, textAlign: 'center', borderLeft: '1px solid var(--pn-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? 'var(--pn-bg)' : col.bg, paddingBottom: 6, cursor: canFocus ? 'pointer' : 'default', userSelect: 'none' }}>
+              style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? 'var(--pn-text-faint)' : col.text, textAlign: 'center', borderLeft: tech === dividerTech ? '2px solid var(--pn-border-strong)' : '1px solid var(--pn-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? 'var(--pn-bg)' : col.bg, paddingBottom: 6, cursor: canFocus ? 'pointer' : 'default', userSelect: 'none' }}>
               <div style={{ height: 3, background: isOff ? 'var(--pn-border-strong)' : col.solid, marginBottom: 6 }} />
               <div style={{ padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: canFocus ? 'underline dotted' : 'none', textUnderlineOffset: 3, textDecorationColor: 'var(--pn-text-faint)' }}>
                 {isFocused ? `← ${tech}` : tech}
@@ -2019,7 +2051,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
 
             {/* Tech cells */}
             {techs.map(tech => {
-              const isOff  = empWorkDays[tech]?.[dow]?.on === false;
+              const isOff  = offToday ? offToday.has(tech) : (empWorkDays[tech]?.[dow]?.on === false);
               const blockedBy = isSlotBlocked(timeOff, tech, date, slotMins);
               // `interactive` controls drag-drop reschedule (drop targets are
               // limited to slots where the tech is actually working).
@@ -2059,7 +2091,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
                     onSlotClick(tech, slotMins);
                   }}
                   style={{
-                    width: TECH_COL, flexShrink: 0, borderLeft: '1px solid var(--pn-border)',
+                    width: TECH_COL, flexShrink: 0, borderLeft: tech === dividerTech ? '2px solid var(--pn-border-strong)' : '1px solid var(--pn-border)',
                     cursor: clickable ? 'pointer' : 'default',
                     position: 'relative',
                     background: isDropHover

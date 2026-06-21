@@ -3,8 +3,10 @@ import {
   isSalonOpenNow,
   isEntryClockedIn,
   clockedInNameSet,
+  clockedInTodayNameSet,
   offClockTechNames,
   attendanceKey,
+  techWorkStatus,
 } from './shiftGate';
 
 // A Wednesday at 14:30 local. storeHours keys are en-US short weekday names.
@@ -111,5 +113,55 @@ describe('attendanceKey', () => {
   it('formats salon-local YYYY-MM-DD', () => {
     expect(attendanceKey(new Date('2026-06-08T09:05:00'))).toBe('2026-06-08');
     expect(attendanceKey(new Date('2026-01-03T23:59:00'))).toBe('2026-01-03');
+  });
+});
+
+describe('clockedInTodayNameSet', () => {
+  it('includes anyone with an entry today, even after clock-out', () => {
+    const att = { entries: [
+      { employeeName: 'Yasmin D', events: [{ kind: 'in' }, { kind: 'out' }] }, // clocked out
+      { employeeName: 'Ana P',    events: [{ kind: 'in' }] },                   // still in
+    ] };
+    const today = clockedInTodayNameSet(att);
+    expect(today.has('yasmin d')).toBe(true);   // worked today (now off)
+    expect(today.has('ana p')).toBe(true);
+    // ...but only Ana P is currently on the clock:
+    expect(clockedInNameSet(att).has('yasmin d')).toBe(false);
+    expect(clockedInNameSet(att).has('ana p')).toBe(true);
+  });
+});
+
+describe('techWorkStatus', () => {
+  it('clock-based salon (no shift config): clocked in now ⇒ working today + now', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: true, clockedInNow: true, hasShift: false }))
+      .toEqual({ today: true, now: true });
+  });
+  it('clocked in earlier but now out ⇒ working today, not now', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: true, clockedInNow: false, hasShift: false }))
+      .toEqual({ today: true, now: false });
+  });
+  it('no clock-in and no shift ⇒ unknown ⇒ off (so the filter/split can narrow)', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: false, hasShift: false }))
+      .toEqual({ today: false, now: false });
+  });
+  it('shift-based salon: scheduled + within window ⇒ working now', () => {
+    expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: true }))
+      .toEqual({ today: true, now: true });
+  });
+  it('shift marks today off ⇒ not working', () => {
+    expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: false }))
+      .toEqual({ today: false, now: false });
+  });
+  it('all-day time off ⇒ off even if a shift exists', () => {
+    expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: true, allDayOff: true }))
+      .toEqual({ today: false, now: false });
+  });
+  it('a clock-in overrides time off (they showed up)', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: true, clockedInNow: true, allDayOff: true }))
+      .toEqual({ today: true, now: true });
+  });
+  it('blocked right now ⇒ working today but not "now"', () => {
+    expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: true, blockedNow: true }))
+      .toEqual({ today: true, now: false });
   });
 });
