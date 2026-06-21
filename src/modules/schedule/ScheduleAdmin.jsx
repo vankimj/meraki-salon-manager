@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
 import { currentLocationId, isMultiLocation, effectiveLocationId, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
-import { isSalonOpenNow, clockedInNameSet, techWorkStatus, isScheduledOnDay, attendanceKey } from '../../lib/shiftGate';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, subscribeAttendance, fetchReceiptByApptId } from '../../lib/firestore';
+import { isSalonOpenNow, clockedInNameSet, clockedInTodayNameSet, techWorkStatus, isScheduledOnDay, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
 import ClientSearch from './ClientSearch';
 import { callFn, startTrace } from '../../lib/firebase';
@@ -406,6 +406,14 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, effLoc);
     return unsub;
   }, [effLoc]);
+
+  // Today's attendance (time clock) so "Working today / right now" + the
+  // working/off split reflect who's actually clocked in (union with profile hrs).
+  const [attendanceToday, setAttendanceToday] = useState({ entries: [] });
+  useEffect(() => {
+    const unsub = subscribeAttendance(todayStr(), setAttendanceToday);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -893,6 +901,9 @@ function openNew(techName, slotMins) {
   // the turn roster). Drives the quick filters and the working/off column split.
   const isToday         = date === todayStr();
   const nowMinsForWork  = new Date().getHours() * 60 + new Date().getMinutes();
+  const clockedInNowSet   = clockedInNameSet(attendanceToday);
+  const clockedInTodaySet = clockedInTodayNameSet(attendanceToday);
+  const normName = (s) => String(s || '').trim().toLowerCase();
   const techStatusFor = (t) => {
     const wd = empWorkDays[t]?.[dow];
     const hasShift = !!empWorkDays[t] && Object.keys(empWorkDays[t]).length > 0;
@@ -901,6 +912,10 @@ function openNew(techName, slotMins) {
     const end   = wd?.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
     return techWorkStatus({
       isToday,
+      // Clocked in today/now (union with profile hours) so the buttons reflect
+      // who's actually here even on a day their profile marks off.
+      clockedInToday: isToday && clockedInTodaySet.has(normName(t)),
+      clockedInNow:   isToday && clockedInNowSet.has(normName(t)),
       hasShift,
       // An absent weekday defaults to ON when the tech has any hours configured
       // (the editor only writes the days you toggle off) — see isScheduledOnDay.
@@ -1087,6 +1102,13 @@ function openNew(techName, slotMins) {
           }}
           onRemoveTech={async techId => {
             const next = (turnRoster.roster || []).filter(r => r.techId !== techId);
+            await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+          }}
+          onAdjustTurns={async (techId, delta) => {
+            const next = (turnRoster.roster || []).map(r =>
+              r.techId === techId
+                ? { ...r, turnsTaken: Math.max(0, Math.round(((Number(r.turnsTaken) || 0) + delta) * 2) / 2) }
+                : r);
             await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onResetDay={async () => {
@@ -1503,9 +1525,15 @@ function rotationReason(r, i, sorted) {
 // title=) because native tooltips don't appear on the iPad kiosk's touch and
 // lag on desktop. Hover shows it; tapping the chip toggles it (touch); the
 // clock-out × stops propagation so it doesn't toggle the tip.
-function RotationChip({ r, i, sorted, onRemove }) {
+function RotationChip({ r, i, sorted, onRemove, onAdjust }) {
   const [show, setShow] = useState(false);
-  const turns = (Number(r.turnsTaken) || 0) % 1 === 0 ? (Number(r.turnsTaken) || 0) : (Number(r.turnsTaken) || 0).toFixed(1);
+  const t = Number(r.turnsTaken) || 0;
+  const turns = t % 1 === 0 ? t : t.toFixed(1);
+  const stepBtn = (delta, label) => (
+    <button onClick={(e) => { e.stopPropagation(); onAdjust(r.techId, delta); }}
+      title={`${delta > 0 ? 'Add' : 'Remove'} half a turn`} disabled={delta < 0 && t <= 0}
+      style={{ width: 17, height: 17, borderRadius: 5, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: (delta < 0 && t <= 0) ? 'default' : 'pointer', opacity: (delta < 0 && t <= 0) ? .4 : 1, fontSize: 12, lineHeight: 1, padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</button>
+  );
   return (
     <div
       onMouseEnter={() => setShow(true)}
@@ -1514,8 +1542,16 @@ function RotationChip({ r, i, sorted, onRemove }) {
       style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'help' }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
-      <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)} · {turns} turn{(Number(r.turnsTaken) || 0) === 1 ? '' : 's'}</span>
-      <button onClick={(e) => { e.stopPropagation(); onRemove(r.techId); }} title="Clock out"
+      <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)}</span>
+      {onAdjust && (
+        <span onClick={e => e.stopPropagation()} title="Adjust this tech's turn count by half a turn"
+          style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'default' }}>
+          {stepBtn(-0.5, '−')}
+          <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', minWidth: 40, textAlign: 'center' }}>{turns} turn{t === 1 ? '' : 's'}</span>
+          {stepBtn(0.5, '+')}
+        </span>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Remove ${r.techName} from the walk-in rotation?\n\nYou can add them back with "+ Clock in", but their turn count resets to 0.`)) onRemove(r.techId); }} title="Remove from rotation"
         style={{ background: 'none', border: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, marginLeft: 2, fontFamily: 'inherit' }}>×</button>
       {show && (
         <div role="tooltip" style={{
@@ -1532,7 +1568,7 @@ function RotationChip({ r, i, sorted, onRemove }) {
 }
 
 // ── Turn roster panel — today's walk-in rotation ──────
-function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount, onReplay }) {
+function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onAdjustTurns, onResetDay, onRecount, onReplay }) {
   const [showPicker, setShowPicker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const inRoster = new Set(roster.map(r => r.techId));
@@ -1601,7 +1637,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 10 }}>
           {sorted.map((r, i) => (
-            <RotationChip key={r.techId} r={r} i={i} sorted={sorted} onRemove={onRemoveTech} />
+            <RotationChip key={r.techId} r={r} i={i} sorted={sorted} onRemove={onRemoveTech} onAdjust={onAdjustTurns} />
           ))}
         </div>
       )}

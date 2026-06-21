@@ -5,6 +5,7 @@ import {
   clockedInNameSet,
   offClockTechNames,
   attendanceKey,
+  clockedInTodayNameSet,
   techWorkStatus,
   isScheduledOnDay,
 } from './shiftGate';
@@ -136,33 +137,61 @@ describe('isScheduledOnDay (editor default-on semantics)', () => {
   });
 });
 
-describe('techWorkStatus (profile working hours)', () => {
-  it('scheduled today + within shift window ⇒ working today + now', () => {
+describe('clockedInTodayNameSet', () => {
+  it('includes anyone with an entry today, even after clock-out', () => {
+    const att = { entries: [
+      { employeeName: 'Yasmin D', events: [{ kind: 'in' }, { kind: 'out' }] },
+      { employeeName: 'Ana P',    events: [{ kind: 'in' }] },
+    ] };
+    const today = clockedInTodayNameSet(att);
+    expect(today.has('yasmin d')).toBe(true);
+    expect(today.has('ana p')).toBe(true);
+    expect(clockedInNameSet(att).has('yasmin d')).toBe(false); // currently out
+    expect(clockedInNameSet(att).has('ana p')).toBe(true);
+  });
+});
+
+describe('techWorkStatus (clock-in OR profile schedule)', () => {
+  // ── clock-in branch ──
+  it('clocked in now ⇒ working today + now, even with no profile hours', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: true, clockedInNow: true, hasShift: false }))
+      .toEqual({ today: true, now: true });
+  });
+  it('clocked in earlier but now out ⇒ working today, not now', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: true, clockedInNow: false, hasShift: false }))
+      .toEqual({ today: true, now: false });
+  });
+  it('a clock-in overrides an all-day time-off block (they showed up)', () => {
+    expect(techWorkStatus({ isToday: true, clockedInToday: true, clockedInNow: true, allDayOff: true }))
+      .toEqual({ today: true, now: true });
+  });
+  // ── profile branch (nobody clocked in) ──
+  it('scheduled today + within window ⇒ working today + now', () => {
     expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: true }))
       .toEqual({ today: true, now: true });
   });
-  it('scheduled today but outside the shift window ⇒ today yes, now no', () => {
+  it('scheduled today but outside the window ⇒ today yes, now no', () => {
     expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: false }))
       .toEqual({ today: true, now: false });
   });
-  it('shift marks today off ⇒ not working', () => {
+  it('shift marks today off AND not clocked in ⇒ off', () => {
     expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: false }))
       .toEqual({ today: false, now: false });
   });
-  it('NO profile hours ⇒ unknown ⇒ off (clock-in is ignored here)', () => {
+  it('no clock-in and no profile hours ⇒ unknown ⇒ off (so the filter can narrow)', () => {
     expect(techWorkStatus({ isToday: true, hasShift: false }))
       .toEqual({ today: false, now: false });
   });
-  it('all-day time off ⇒ off even if scheduled', () => {
+  it('all-day off + not clocked in ⇒ off even if scheduled', () => {
     expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: true, allDayOff: true }))
       .toEqual({ today: false, now: false });
   });
-  it('blocked right now ⇒ working today but not "now"', () => {
+  it('blocked right now (not clocked in) ⇒ working today but not now', () => {
     expect(techWorkStatus({ isToday: true, hasShift: true, shiftOnToday: true, withinShiftNow: true, blockedNow: true }))
       .toEqual({ today: true, now: false });
   });
-  it('"now" never true when not viewing today', () => {
-    expect(techWorkStatus({ isToday: false, hasShift: true, shiftOnToday: true, withinShiftNow: true }))
+  it('future date: profile schedule only, never "now"', () => {
+    expect(techWorkStatus({ isToday: false, hasShift: true, shiftOnToday: true, withinShiftNow: true, clockedInToday: true }))
       .toEqual({ today: true, now: false });
   });
 });
