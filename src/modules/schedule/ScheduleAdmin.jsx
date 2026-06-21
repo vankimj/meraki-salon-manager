@@ -13,7 +13,7 @@ import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
-import { resolveTurnMode } from '../../lib/turnValue';
+import { resolveTurnMode, buildTurnValueMap, turnValueForLineName } from '../../lib/turnValue';
 import { fetchTurnRoster } from '../../lib/firestore';
 import DayReplayModal from '../../components/DayReplayModal';
 import { notifyAffectedTechs } from '../../lib/notifications';
@@ -927,6 +927,23 @@ function openNew(techName, slotMins) {
   };
   // "Off today" only applies once at least one tech is known to be working
   // (has profile hours covering today); with nobody working, no one is greyed out.
+  // Per-tech breakdown of today's COMPLETED (done) services + each service's
+  // turn value, for the roster chip detail. Mirrors recomputeTodayTurns: a done
+  // appt's services each contribute their configured turnValue (value mode) /
+  // the visit counts as 1 (count mode).
+  const turnMode      = resolveTurnMode(settings);
+  const turnValueMap  = buildTurnValueMap(services);
+  const turnDetailFor = (techName) => {
+    const items = [];
+    (appts || []).forEach(a => {
+      if (a.techName !== techName || a.status !== 'done' || a.date !== todayStr()) return;
+      (Array.isArray(a.services) ? a.services : []).forEach(sv => {
+        const name = (sv && (sv.name || sv.customName)) || 'Service';
+        items.push({ name, tv: turnValueForLineName(name, turnValueMap), time: a.startTime, client: a.clientName });
+      });
+    });
+    return items.sort((x, y) => String(x.time || '').localeCompare(String(y.time || '')));
+  };
   const someWorking  = displayTechs.some(t => techStatusFor(t).today);
   const offTodaySet  = new Set(someWorking ? displayTechs.filter(t => !techStatusFor(t).today) : []);
   const hasWorkingShown = displayTechs.some(t => !offTodaySet.has(t));
@@ -1125,6 +1142,8 @@ function openNew(techName, slotMins) {
             }
           }}
           onReplay={() => setShowReplay(true)}
+          turnMode={turnMode}
+          turnDetailFor={turnDetailFor}
         />
       )}
       {showReplay && (
@@ -1525,10 +1544,12 @@ function rotationReason(r, i, sorted) {
 // title=) because native tooltips don't appear on the iPad kiosk's touch and
 // lag on desktop. Hover shows it; tapping the chip toggles it (touch); the
 // clock-out × stops propagation so it doesn't toggle the tip.
-function RotationChip({ r, i, sorted, onRemove, onAdjust }) {
+function RotationChip({ r, i, sorted, onRemove, onAdjust, turnMode, detail }) {
   const [show, setShow] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const t = Number(r.turnsTaken) || 0;
   const turns = t % 1 === 0 ? t : t.toFixed(1);
+  const fmtTv = (v) => { const n = Number(v) || 0; return `${n % 1 === 0 ? n : n.toFixed(1)} turn${n === 1 ? '' : 's'}`; };
   const stepBtn = (delta, label) => (
     <button onClick={(e) => { e.stopPropagation(); onAdjust(r.techId, delta); }}
       title={`${delta > 0 ? 'Add' : 'Remove'} half a turn`} disabled={delta < 0 && t <= 0}
@@ -1538,8 +1559,8 @@ function RotationChip({ r, i, sorted, onRemove, onAdjust }) {
     <div
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
-      onClick={() => setShow(s => !s)}
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'help' }}>
+      onClick={() => setPinned(p => !p)}
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'pointer' }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
       <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
       <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)}</span>
@@ -1553,14 +1574,39 @@ function RotationChip({ r, i, sorted, onRemove, onAdjust }) {
       )}
       <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Remove ${r.techName} from the walk-in rotation?\n\nYou can add them back with "+ Clock in", but their turn count resets to 0.`)) onRemove(r.techId); }} title="Remove from rotation"
         style={{ background: 'none', border: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, marginLeft: 2, fontFamily: 'inherit' }}>×</button>
-      {show && (
+      {(show || pinned) && (
         <div role="tooltip" style={{
           position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, zIndex: 60,
-          width: 240, maxWidth: '70vw', background: 'var(--pn-text)', color: 'var(--pn-surface)',
+          width: 270, maxWidth: '80vw', maxHeight: 260, overflowY: 'auto', background: 'var(--pn-text)', color: 'var(--pn-surface)',
           fontSize: 11.5, lineHeight: 1.5, fontWeight: 500, textAlign: 'left',
-          padding: '8px 10px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.28)', pointerEvents: 'none',
+          padding: '8px 10px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.28)', pointerEvents: pinned ? 'auto' : 'none',
         }}>
           {rotationReason(r, i, sorted)}
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,.18)' }}>
+            <div style={{ fontWeight: 700, opacity: .85, marginBottom: 4 }}>
+              Completed today · {turns} turn{t === 1 ? '' : 's'}
+            </div>
+            {(!detail || detail.length === 0) ? (
+              <div style={{ opacity: .7 }}>No completed services yet today.</div>
+            ) : (
+              <>
+                {detail.map((it, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '1px 0' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {it.time ? minsToStr(strToMins(it.time)) + ' · ' : ''}{it.name}
+                    </span>
+                    <span style={{ flexShrink: 0, opacity: .85 }}>{fmtTv(it.tv)}</span>
+                  </div>
+                ))}
+                {turnMode !== 'value' && (
+                  <div style={{ marginTop: 5, opacity: .7, fontStyle: 'italic' }}>
+                    Turns are counted 1 per visit (turn-value mode is off, so the per-service values above are informational).
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {pinned && <div style={{ marginTop: 6, opacity: .55, fontSize: 10 }}>Tap the chip again to close.</div>}
         </div>
       )}
     </div>
@@ -1568,7 +1614,7 @@ function RotationChip({ r, i, sorted, onRemove, onAdjust }) {
 }
 
 // ── Turn roster panel — today's walk-in rotation ──────
-function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onAdjustTurns, onResetDay, onRecount, onReplay }) {
+function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onAdjustTurns, onResetDay, onRecount, onReplay, turnMode, turnDetailFor }) {
   const [showPicker, setShowPicker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const inRoster = new Set(roster.map(r => r.techId));
@@ -1637,7 +1683,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onAdjustTu
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 10 }}>
           {sorted.map((r, i) => (
-            <RotationChip key={r.techId} r={r} i={i} sorted={sorted} onRemove={onRemoveTech} onAdjust={onAdjustTurns} />
+            <RotationChip key={r.techId} r={r} i={i} sorted={sorted} onRemove={onRemoveTech} onAdjust={onAdjustTurns} turnMode={turnMode} detail={turnDetailFor ? turnDetailFor(r.techName) : null} />
           ))}
         </div>
       )}
