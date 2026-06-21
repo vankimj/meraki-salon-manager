@@ -1446,6 +1446,38 @@ function fmtClockIn(iso) {
   return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function fmtTurns(n) {
+  const t = Number(n) || 0;
+  const v = t % 1 === 0 ? t : t.toFixed(1);
+  return `${v} turn${t === 1 ? '' : 's'}`;
+}
+
+// Plain-language reason a tech sits where they do in the walk-in rotation —
+// mirrors the sort in nextUpInRotation: on a ticket sinks → fewest turns →
+// earliest clock-in breaks ties. `sorted` is the already-ordered roster.
+// Shown as the hover tooltip on each tech chip.
+function rotationReason(r, i, sorted) {
+  const turns = Number(r.turnsTaken) || 0;
+  const clock = fmtClockIn(r.clockInAt);
+  if (r.serving) {
+    return `On a ticket right now — drops to the back of the rotation until checkout. ${fmtTurns(turns)} today${clock ? `, clocked in ${clock}` : ''}.`;
+  }
+  if (i === 0) {
+    return `Next up — the rotation seats whoever has the fewest turns today (${fmtTurns(turns)})${clock ? `, clocked in ${clock}` : ''}. Earliest clock-in breaks ties.`;
+  }
+  const ahead = sorted[i - 1];
+  const aheadTurns = Number(ahead.turnsTaken) || 0;
+  let because;
+  if (turns > aheadTurns) {
+    because = `more turns so far than ${ahead.techName} (${fmtTurns(turns)} vs ${fmtTurns(aheadTurns)})`;
+  } else if (turns === aheadTurns) {
+    because = `tied with ${ahead.techName} on ${fmtTurns(turns)}, but clocked in later${clock ? ` (${clock})` : ''}`;
+  } else {
+    because = `behind ${ahead.techName} in the rotation`;
+  }
+  return `#${i + 1} of ${sorted.length} — ${because}. Moves up as the techs ahead take walk-ins.`;
+}
+
 // ── Turn roster panel — today's walk-in rotation ──────
 function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount, onReplay }) {
   const [showPicker, setShowPicker] = useState(false);
@@ -1516,7 +1548,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 10 }}>
           {sorted.map((r, i) => (
-            <div key={r.techId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}` }}>
+            <div key={r.techId} title={rotationReason(r, i, sorted)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'help' }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
               <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
               <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)} · {(r.turnsTaken || 0) % 1 === 0 ? (r.turnsTaken || 0) : (r.turnsTaken || 0).toFixed(1)} turn{(r.turnsTaken || 0) === 1 ? '' : 's'}</span>
