@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
 import { currentLocationId, isMultiLocation, effectiveLocationId, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
-import { isSalonOpenNow, clockedInNameSet, techWorkStatus, attendanceKey } from '../../lib/shiftGate';
+import { isSalonOpenNow, clockedInNameSet, techWorkStatus, isScheduledOnDay, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
 import ClientSearch from './ClientSearch';
 import { callFn, startTrace } from '../../lib/firebase';
@@ -902,14 +902,16 @@ function openNew(techName, slotMins) {
     return techWorkStatus({
       isToday,
       hasShift,
-      shiftOnToday:   !!wd && wd.on !== false,
+      // An absent weekday defaults to ON when the tech has any hours configured
+      // (the editor only writes the days you toggle off) — see isScheduledOnDay.
+      shiftOnToday:   isScheduledOnDay(empWorkDays[t], dow),
       withinShiftNow: nowMinsForWork >= start && nowMinsForWork < end,
       allDayOff:      blocks.some(b => b.allDay !== false),
       blockedNow:     isToday && isSlotBlocked(timeOff, t, date, nowMinsForWork),
     });
   };
   // "Off today" only applies once at least one tech is known to be working
-  // (clocked in or on shift); before anyone clocks in, no one is greyed out.
+  // (has profile hours covering today); with nobody working, no one is greyed out.
   const someWorking  = displayTechs.some(t => techStatusFor(t).today);
   const offTodaySet  = new Set(someWorking ? displayTechs.filter(t => !techStatusFor(t).today) : []);
   const hasWorkingShown = displayTechs.some(t => !offTodaySet.has(t));

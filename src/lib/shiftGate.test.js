@@ -6,6 +6,7 @@ import {
   offClockTechNames,
   attendanceKey,
   techWorkStatus,
+  isScheduledOnDay,
 } from './shiftGate';
 
 // A Wednesday at 14:30 local. storeHours keys are en-US short weekday names.
@@ -112,6 +113,26 @@ describe('attendanceKey', () => {
   it('formats salon-local YYYY-MM-DD', () => {
     expect(attendanceKey(new Date('2026-06-08T09:05:00'))).toBe('2026-06-08');
     expect(attendanceKey(new Date('2026-01-03T23:59:00'))).toBe('2026-01-03');
+  });
+});
+
+describe('isScheduledOnDay (editor default-on semantics)', () => {
+  it('present day uses its on flag', () => {
+    expect(isScheduledOnDay({ Mon: { on: true }, Sat: { on: false } }, 'Mon')).toBe(true);
+    expect(isScheduledOnDay({ Mon: { on: true }, Sat: { on: false } }, 'Sat')).toBe(false);
+  });
+  it('ABSENT day defaults to ON when the tech has any hours (only off-days were written) — the bug fix', () => {
+    // Tech "works Mon–Fri, off Sat/Sun" is saved by the editor as ONLY the
+    // toggled-off days; the working weekdays are absent and must read as on.
+    const wd = { Sat: { on: false }, Sun: { on: false } };
+    expect(isScheduledOnDay(wd, 'Mon')).toBe(true);
+    expect(isScheduledOnDay(wd, 'Wed')).toBe(true);
+    expect(isScheduledOnDay(wd, 'Sat')).toBe(false);
+    expect(isScheduledOnDay(wd, 'Sun')).toBe(false);
+  });
+  it('NO workDays at all ⇒ off (unknown, so the filter can narrow)', () => {
+    expect(isScheduledOnDay({}, 'Mon')).toBe(false);
+    expect(isScheduledOnDay(undefined, 'Mon')).toBe(false);
   });
 });
 

@@ -80,6 +80,19 @@ export function attendanceKey(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+// Is a tech scheduled to work `dayKey` per their profile workDays? A day that's
+// PRESENT uses its `on` flag; a day that's ABSENT defaults to ON *if the tech
+// has any workDays configured at all* — because the profile editor shows
+// untouched days as "On" (DEFAULT_WORK_DAY) and only writes the days you toggle
+// OFF. With NO workDays at all the tech is "unknown" → off, so the schedule
+// filters/split can still narrow. (Treating an absent day as off was the bug
+// that made techs who'd only marked their days-off disappear entirely.)
+export function isScheduledOnDay(workDays, dayKey) {
+  const hasAny = !!workDays && Object.keys(workDays).length > 0;
+  const d = workDays && workDays[dayKey];
+  return d ? d.on !== false : hasAny;
+}
+
 // Decide a tech's "working today / working right now" status for the schedule's
 // quick filters + working/off column split, based on the tech's PROFILE working
 // hours (configured shift) — NOT the time clock. (Who's clocked in is shown
