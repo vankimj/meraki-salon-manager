@@ -305,7 +305,8 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   const [viewMode,         setViewMode]         = useState('day');
   const [weekAppts,        setWeekAppts]        = useState([]);
   const [weekLoading,      setWeekLoading]      = useState(false);
-  const [showQueue,        setShowQueue]        = useState(false);
+  // The walk-in queue + turn roster are always shown on today's day view (the
+  // old "Queue" toggle was removed — they default open).
   const [showReplay,       setShowReplay]       = useState(false);
   const [queueEntries,     setQueueEntries]     = useState([]);
   const [turnRoster,       setTurnRoster]       = useState({ date: '', roster: [] });
@@ -1019,26 +1020,6 @@ function openNew(techName, slotMins) {
           ))}
         </div>
 
-        {/* Queue button with waiting-count badge */}
-        {(() => {
-          const waiting = queueEntries.filter(e => e.status === 'waiting').length;
-          return (
-            <button onClick={() => setShowQueue(v => !v)} style={{
-              position: 'relative', fontSize: 12, padding: '5px 10px', borderRadius: 6, flexShrink: 0,
-              border: `1px solid ${showQueue ? '#2D7A5F' : 'var(--pn-border-strong)'}`,
-              background: showQueue ? 'var(--pn-success-bg)' : 'var(--pn-surface)',
-              color: showQueue ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: showQueue ? 600 : 400,
-            }}>
-              📋 Queue
-              {waiting > 0 && (
-                <span style={{ position: 'absolute', top: -5, right: -5, width: 17, height: 17, borderRadius: '50%', background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {waiting}
-                </span>
-              )}
-            </button>
-          );
-        })()}
-
         <TrashButton collections={['appointments', 'timeOff']} scope="Schedule" />
 
         {/* Block time — promoted to a visible toolbar button (was buried in
@@ -1108,7 +1089,7 @@ function openNew(techName, slotMins) {
       )}
 
       {/* Turn roster — walk-in rotation (visible whenever the queue is open or when there's a roster) */}
-      {(showQueue || (turnRoster.roster && turnRoster.roster.length > 0)) && date === todayStr() && (
+      {date === todayStr() && (
         <TurnRosterPanel
           roster={turnRoster.roster || []}
           allTechs={(employees && employees.length > 0) ? employees : techs.map(n => ({ id: n, name: n }))}
@@ -1157,7 +1138,7 @@ function openNew(techName, slotMins) {
       )}
 
       {/* Queue panel */}
-      {showQueue && (
+      {date === todayStr() && (
         <QueuePanel
           entries={queueEntries}
           turnRoster={turnRoster.roster || []}
@@ -1167,7 +1148,6 @@ function openNew(techName, slotMins) {
               showToast('No techs in turn rotation. Clock someone in first.', 3500);
               return;
             }
-            setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
             // Default the start time to the up-next tech's next opening today.
@@ -1192,7 +1172,6 @@ function openNew(techName, slotMins) {
             });
           }}
           onSeat={entry => {
-            setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
             // Default the start time to this tech's next opening today (or, for an
