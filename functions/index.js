@@ -13385,6 +13385,30 @@ exports.markSharedTfn = onCall({ cors: true }, async (request) => {
   return { ok: true, phone };
 });
 
+// Flip a tenant between live/production and pre-production. The flag lives on
+// the tenant's PUBLIC slug doc(s) so the env banner can read it at boot on
+// every surface (incl. the logged-out booking page); it's mirrored to
+// data/settings so the Admin toggle reflects current state. Tenant-admin gated.
+// The deploy guard reads slugs.isProduction to decide whether a prod tenant
+// exists (and thus whether the live deploy must be gated).
+exports.setTenantProduction = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const db = getFirestore();
+  const tenantId = String(request.data?.tenantId || '').trim();
+  if (!tenantId) throw new HttpsError('invalid-argument', 'tenantId required');
+  await requireTenantAdmin(db, tenantId, request);
+  const isProduction = request.data?.isProduction === true;
+  const now = new Date().toISOString();
+  // Stamp every slug that points at this tenant (primary + aliases) so the
+  // banner is correct regardless of which subdomain the visitor arrives on.
+  const slugs = await db.collection('slugs').where('tenantId', '==', tenantId).get();
+  const batch = db.batch();
+  slugs.forEach(d => batch.set(d.ref, { isProduction, updatedAt: now }, { merge: true }));
+  batch.set(db.doc(`tenants/${tenantId}/data/settings`), { isProduction, updatedAt: now }, { merge: true });
+  await batch.commit();
+  await logAdminAction(db, request, 'tenant.setProduction', { tenantId, isProduction, slugs: slugs.size });
+  return { ok: true, isProduction, slugsUpdated: slugs.size };
+});
+
 exports.listInboundOrphans = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   if (!await isPlatformAdmin(request.auth.token.email)) {

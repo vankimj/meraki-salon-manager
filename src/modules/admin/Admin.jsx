@@ -512,6 +512,17 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
             {/* ══ GROUP 2 · General ══ */}
             <Section title="⚙ General" keywords="app settings auto logout timeout idle modules tiles visibility notes pin admin reminders birthday lapsed timezone review url google ein pause">
+            <Section title="🚦 Environment" keywords="production live pre-prod preproduction environment banner deploy gate go-live launch staging test" nested>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>This salon is LIVE (production)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, lineHeight: 1.45 }}>
+                    <strong>Off</strong> = pre-production: shows the amber “PRE-PRODUCTION” banner and lets engineers deploy freely. <strong>On</strong> = live: hides the banner and <strong>gates production deploys</strong> (must ship from a clean <code>main</code>). Turn on only when the salon is truly serving real customers.
+                  </div>
+                </div>
+                <ProductionToggle settings={settings} showToast={showToast} />
+              </div>
+            </Section>
             <Section title="⚙ App Settings" keywords="auto logout timeout idle admin pin reminders birthday lapsed timezone review url google ein" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -1233,6 +1244,29 @@ function Toggle({ active, onChange, disabled }) {
       <div style={{ position: 'absolute', top: 3, left: active ? 21 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,.2)' }} />
     </button>
   );
+}
+
+// Live/production flag for this tenant. Writes through setTenantProduction
+// (stamps the public slug doc + mirrors to settings) so the env banner + the
+// deploy guard both see it. Confirmed because going live gates prod deploys.
+function ProductionToggle({ settings, showToast }) {
+  const [busy, setBusy] = useState(false);
+  const isProd = settings?.isProduction === true;
+  async function flip() {
+    const next = !isProd;
+    const msg = next
+      ? 'Mark this salon LIVE (production)?\n\nHides the pre-production banner and GATES production deploys (engineers must ship from a clean main). Do this only when real customers are being served.'
+      : 'Mark this salon PRE-PRODUCTION?\n\nShows the pre-production banner and lets engineers deploy freely.';
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      await callFn('setTenantProduction', { tenantId: TENANT_ID, isProduction: next });
+      showToast(next ? 'Marked LIVE (production)' : 'Marked pre-production');
+    } catch (e) {
+      showToast('Failed: ' + (e?.message || 'unknown error'));
+    } finally { setBusy(false); }
+  }
+  return <Toggle active={isProd} onChange={flip} disabled={busy} />;
 }
 
 function AutoAssignSection({ method, onChange, saving }) {
