@@ -1478,6 +1478,39 @@ function rotationReason(r, i, sorted) {
   return `#${i + 1} of ${sorted.length} — ${because}. Moves up as the techs ahead take walk-ins.`;
 }
 
+// One tech pill in the walk-in rotation, with a styled hover/tap tooltip that
+// explains why they're in this slot. Uses a real popover (not the native
+// title=) because native tooltips don't appear on the iPad kiosk's touch and
+// lag on desktop. Hover shows it; tapping the chip toggles it (touch); the
+// clock-out × stops propagation so it doesn't toggle the tip.
+function RotationChip({ r, i, sorted, onRemove }) {
+  const [show, setShow] = useState(false);
+  const turns = (Number(r.turnsTaken) || 0) % 1 === 0 ? (Number(r.turnsTaken) || 0) : (Number(r.turnsTaken) || 0).toFixed(1);
+  return (
+    <div
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onClick={() => setShow(s => !s)}
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'help' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
+      <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)} · {turns} turn{(Number(r.turnsTaken) || 0) === 1 ? '' : 's'}</span>
+      <button onClick={(e) => { e.stopPropagation(); onRemove(r.techId); }} title="Clock out"
+        style={{ background: 'none', border: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, marginLeft: 2, fontFamily: 'inherit' }}>×</button>
+      {show && (
+        <div role="tooltip" style={{
+          position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, zIndex: 60,
+          width: 240, maxWidth: '70vw', background: 'var(--pn-text)', color: 'var(--pn-surface)',
+          fontSize: 11.5, lineHeight: 1.5, fontWeight: 500, textAlign: 'left',
+          padding: '8px 10px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.28)', pointerEvents: 'none',
+        }}>
+          {rotationReason(r, i, sorted)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Turn roster panel — today's walk-in rotation ──────
 function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount, onReplay }) {
   const [showPicker, setShowPicker] = useState(false);
@@ -1548,13 +1581,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 10 }}>
           {sorted.map((r, i) => (
-            <div key={r.techId} title={rotationReason(r, i, sorted)} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'help' }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
-              <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)} · {(r.turnsTaken || 0) % 1 === 0 ? (r.turnsTaken || 0) : (r.turnsTaken || 0).toFixed(1)} turn{(r.turnsTaken || 0) === 1 ? '' : 's'}</span>
-              <button onClick={() => onRemoveTech(r.techId)} title="Clock out"
-                style={{ background: 'none', border: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, marginLeft: 2, fontFamily: 'inherit' }}>×</button>
-            </div>
+            <RotationChip key={r.techId} r={r} i={i} sorted={sorted} onRemove={onRemoveTech} />
           ))}
         </div>
       )}
