@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
 import { currentLocationId, isMultiLocation, effectiveLocationId, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, subscribeAttendance, fetchReceiptByApptId } from '../../lib/firestore';
-import { isSalonOpenNow, clockedInNameSet, clockedInTodayNameSet, techWorkStatus, attendanceKey } from '../../lib/shiftGate';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
+import { isSalonOpenNow, clockedInNameSet, techWorkStatus, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
 import ClientSearch from './ClientSearch';
 import { callFn, startTrace } from '../../lib/firebase';
@@ -406,15 +406,6 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, effLoc);
     return unsub;
   }, [effLoc]);
-
-  // Today's attendance (time-clock) so the schedule's "working today / right
-  // now" filters and the working/off column split reflect who's actually
-  // clocked in — Meraki uses the clock, not configured shift hours.
-  const [attendanceToday, setAttendanceToday] = useState({ entries: [] });
-  useEffect(() => {
-    const unsub = subscribeAttendance(todayStr(), setAttendanceToday);
-    return unsub;
-  }, []);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -897,14 +888,11 @@ function openNew(techName, slotMins) {
 
   const personalView   = isTech && !showAll;
 
-  // Per-tech "working today / right now" — unifies the time clock (attendance)
-  // with configured shift hours. Drives both the quick filters and the
-  // working-left / off-right column split.
+  // Per-tech "working today / right now" — based on each tech's PROFILE working
+  // hours (configured shift), not the time clock (who's clocked in is shown in
+  // the turn roster). Drives the quick filters and the working/off column split.
   const isToday         = date === todayStr();
   const nowMinsForWork  = new Date().getHours() * 60 + new Date().getMinutes();
-  const clockedInNowSet   = clockedInNameSet(attendanceToday);
-  const clockedInTodaySet = clockedInTodayNameSet(attendanceToday);
-  const normName = (s) => String(s || '').trim().toLowerCase();
   const techStatusFor = (t) => {
     const wd = empWorkDays[t]?.[dow];
     const hasShift = !!empWorkDays[t] && Object.keys(empWorkDays[t]).length > 0;
@@ -913,8 +901,6 @@ function openNew(techName, slotMins) {
     const end   = wd?.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
     return techWorkStatus({
       isToday,
-      clockedInToday: isToday && clockedInTodaySet.has(normName(t)),
-      clockedInNow:   isToday && clockedInNowSet.has(normName(t)),
       hasShift,
       shiftOnToday:   !!wd && wd.on !== false,
       withinShiftNow: nowMinsForWork >= start && nowMinsForWork < end,

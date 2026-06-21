@@ -80,33 +80,19 @@ export function attendanceKey(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
-// Set of lowercased names with ANY attendance entry today — i.e. clocked in at
-// some point, even if they've since clocked out. Used by the schedule's
-// "Working today" filter.
-export function clockedInTodayNameSet(attendance) {
-  const set = new Set();
-  ((attendance && attendance.entries) || []).forEach(e => {
-    if (e && e.employeeName) set.add(norm(e.employeeName));
-  });
-  return set;
-}
-
 // Decide a tech's "working today / working right now" status for the schedule's
-// quick filters, unifying the TIME CLOCK (attendance) with configured shifts so
-// the filters work whether a salon clocks in or sets shift hours (or neither).
-// Pure — all signals are pre-computed booleans by the caller:
-//   clockedInToday / clockedInNow — from the attendance doc (today only).
+// quick filters + working/off column split, based on the tech's PROFILE working
+// hours (configured shift) — NOT the time clock. (Who's clocked in is shown
+// separately in the walk-in turn roster.) Pure — signals pre-computed by caller:
 //   hasShift       — the tech has configured work-day hours at all.
-//   shiftOnToday   — that shift marks today as a working day.
+//   shiftOnToday   — that shift marks the viewed day as a working day.
 //   withinShiftNow — current time falls inside today's shift window.
 //   allDayOff      — an all-day time-off block covers the date.
 //   blockedNow     — a time-off block covers the current moment.
-//   isToday        — the viewed date is today (clock signals only apply then).
-// Priority: a clock-in is ground truth; otherwise fall back to the shift; with
-// neither signal the tech is "unknown" (false) so the filter can actually
+//   isToday        — the viewed date is today ("now" only applies then).
+// A tech with no configured hours is "unknown" (false) so the filter/split can
 // narrow instead of matching everyone.
 export function techWorkStatus(s = {}) {
-  if (s.isToday && s.clockedInToday) return { today: true, now: !!s.clockedInNow };
   if (s.allDayOff) return { today: false, now: false };
   if (s.hasShift) {
     const today = !!s.shiftOnToday;
