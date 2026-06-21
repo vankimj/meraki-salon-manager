@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
-import { currentLocationId, isMultiLocation, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
+import { currentLocationId, isMultiLocation, effectiveLocationId, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
 import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
 import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
@@ -270,6 +270,9 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     () => (isMultiLocation(locState) ? appts.filter(a => appointmentInLocation(a, curLoc)) : appts),
     [appts, locState, curLoc],
   );
+  // Location key for per-location docs (turnRoster, queue scoping). Collapses
+  // to the bare/default key for single-location tenants — see effectiveLocationId.
+  const effLoc = useMemo(() => effectiveLocationId(locState, curLoc), [locState, curLoc]);
   const [modal,        setModal]       = useState(null);
   const [checkout,     setCheckout]    = useState(null);
   const [refund,       setRefund]      = useState(null);
@@ -386,9 +389,9 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   // Real-time queue listener — always on so badge stays current. Re-subscribes
   // when the location switches so the queue/badge reflect the current site.
   useEffect(() => {
-    const unsub = subscribeQueue(todayStr(), setQueueEntries, curLoc);
+    const unsub = subscribeQueue(todayStr(), setQueueEntries, effLoc);
     return unsub;
-  }, [curLoc]);
+  }, [effLoc]);
 
   // Live time-off subscription so blocked-out periods render on the day grid
   // and slot interactions can respect them.
@@ -400,9 +403,9 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   // Real-time turn roster (today only) for the walk-in rotation panel.
   // Re-subscribes on location switch so each site shows its own rotation.
   useEffect(() => {
-    const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, curLoc);
+    const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, effLoc);
     return unsub;
-  }, [curLoc]);
+  }, [effLoc]);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -649,7 +652,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
           const credited = (turnRoster.roster || []).map(r =>
             r.techName === full.techName ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
           );
-          await saveTurnRoster(todayStr(), credited, curLoc).catch(() => {});
+          await saveTurnRoster(todayStr(), credited, effLoc).catch(() => {});
         }
         await updateWaitlistEntry(pendingSeat.entryId, { status: 'seated' }).catch(() => {});
         logActivity('walkin_seated', `${full.clientName || 'walk-in'} → ${full.techName || '—'}`);
@@ -1043,16 +1046,16 @@ function openNew(techName, slotMins) {
           allTechs={(employees && employees.length > 0) ? employees : techs.map(n => ({ id: n, name: n }))}
           onAddTech={async tech => {
             const next = [...(turnRoster.roster || []), { techId: tech.id, techName: tech.name, clockInAt: new Date().toISOString(), turnsTaken: 0 }];
-            await saveTurnRoster(todayStr(), next, curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
             logActivity('turn_clockin', tech.name);
           }}
           onRemoveTech={async techId => {
             const next = (turnRoster.roster || []).filter(r => r.techId !== techId);
-            await saveTurnRoster(todayStr(), next, curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onResetDay={async () => {
             if (!window.confirm('Clear today\'s turn roster? Everyone will need to clock back in.')) return;
-            await saveTurnRoster(todayStr(), [], curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), [], effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onRecount={async () => {
             try {
