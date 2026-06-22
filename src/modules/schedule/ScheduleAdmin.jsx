@@ -283,6 +283,10 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   const [showAll,          setShowAll]          = useState(false);
   const [showHours,        setShowHours]        = useState(false);
   const [showTimeOff,      setShowTimeOff]      = useState(false);
+  // When the Time Off modal is opened from the New Appointment modal's
+  // "🌴 Block time", this prefills the add-form with the tapped slot
+  // (tech + date + start/end). Null = opened blank.
+  const [blockPrefill,     setBlockPrefill]     = useState(null);
   // Toolbar overflow menu — collapses infrequent controls (Hours,
   // Time Off, future settings) under a single ⚙ button so the daily
   // toolbar stays uncluttered for non-tech-savvy salon owners.
@@ -1022,16 +1026,9 @@ function openNew(techName, slotMins) {
 
         <TrashButton collections={['appointments', 'timeOff']} scope="Schedule" />
 
-        {/* Block time — promoted to a visible toolbar button (was buried in
-            the ⚙ overflow) so blocking vacation / sick / personal time is
-            discoverable. Anyone who can manage the schedule sees it. */}
-        {(isAdmin || isScheduler || isTech) && (
-          <button onClick={() => setShowTimeOff(true)}
-            title="Block personal time — vacation, sick, breaks"
-            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap' }}>
-            🌴 Block time
-          </button>
-        )}
+        {/* "Block time" moved into the New Appointment modal (tap an empty slot
+            → 🌴 Block time) so blocking a tech's time is part of the same flow
+            and prefills the tapped slot. */}
 
         {/* Overflow menu — keeps the toolbar focused on daily controls
             (date nav, view toggle, queue) and tucks infrequent admin ones
@@ -1084,7 +1081,8 @@ function openNew(techName, slotMins) {
           isTech={isTech}
           myTechName={myTechName}
           gUser={gUser}
-          onClose={() => setShowTimeOff(false)}
+          prefill={blockPrefill}
+          onClose={() => { setShowTimeOff(false); setBlockPrefill(null); }}
         />
       )}
 
@@ -1392,6 +1390,14 @@ function openNew(techName, slotMins) {
           onSave={() => handleSave(modal.appt, modal.original, modal.pendingSeat)}
           onDelete={() => handleDelete(modal.appt)}
           onClose={() => setModal(null)}
+          onBlockTime={(techName, dateStr, startTime) => {
+            const sMin = startTime ? strToMins(startTime) : 9 * 60;
+            const eMin = Math.min(sMin + 60, 23 * 60 + 59);
+            const to24 = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+            setBlockPrefill({ techName: techName || '', date: dateStr || todayStr(), start: startTime || '09:00', end: to24(eMin) });
+            setModal(null);
+            setShowTimeOff(true);
+          }}
           onCheckout={appt => { setModal(null); setCheckout({ appts: [appt], walkInClient: null }); }}
           onAddToTicket={appt => { setModal(null); addApptToTicket(appt); showToast(`Added ${appt.clientName || 'walk-in'} to ticket`); }}
           onRefund={appt => requestRefund(appt)}
@@ -2346,7 +2352,7 @@ function DayGrid({ date, appts, timeOff = [], techs, offToday, dividerTech, allT
 }
 
 // ── Appointment modal ─────────────────────────────────
-function ApptModal({ appt, mode, clients, services, techs, employees = [], onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
+function ApptModal({ appt, mode, clients, services, techs, employees = [], onChange, onSwitchEdit, onSave, onDelete, onClose, onBlockTime, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const { gUser, settings } = useApp();
   const [saving,    setSaving]    = useState(false);
@@ -2740,7 +2746,16 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             </span>
             {isView && !isNew && <ViewBadge />}
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isNew && !viewOnly && onBlockTime && (
+              <button onClick={() => onBlockTime(appt.techName, appt.date, appt.startTime)}
+                title="Block this time off instead — vacation, sick, a break"
+                style={{ fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                🌴 Block time
+              </button>
+            )}
+            <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          </div>
         </div>
 
         {/* Body */}
@@ -3788,7 +3803,7 @@ const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid var(-
 const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 14px', color: 'var(--pn-text)' };
 
 // ── Time Off modal (vacation / sick / personal) ────────
-function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdmin, isScheduler, isTech, myTechName, gUser, onClose }) {
+function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdmin, isScheduler, isTech, myTechName, gUser, prefill, onClose }) {
   // Admins/schedulers see and manage everyone's time off; techs see only their own.
   const canManageOthers = isAdmin || isScheduler;
   const visible = canManageOthers
@@ -3802,7 +3817,7 @@ function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdm
     .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''))
     .slice(0, 10);
 
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState(!!prefill);
   const canAdd = canManageOthers || (isTech && !!myTechName);
 
   function fmtDate(d) {
@@ -3848,8 +3863,9 @@ function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdm
               isTech={isTech}
               myTechName={myTechName}
               gUser={gUser}
-              onCancel={() => setShowAdd(false)}
-              onSaved={() => setShowAdd(false)}
+              prefill={prefill}
+              onCancel={() => (prefill ? onClose() : setShowAdd(false))}
+              onSaved={() => (prefill ? onClose() : setShowAdd(false))}
             />
           ) : (
             <>
@@ -3913,17 +3929,19 @@ function TimeOffRow({ t, typeLabel, fmtRange, canEdit, onDelete, muted }) {
   );
 }
 
-function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmin, isScheduler, isTech, myTechName, gUser, onCancel, onSaved }) {
+function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmin, isScheduler, isTech, myTechName, gUser, prefill, onCancel, onSaved }) {
   const canManageOthers = isAdmin || isScheduler;
   const defaultTech = canManageOthers ? '' : (myTechName || '');
-  const [techName, setTechName] = useState(defaultTech);
-  const [type, setType] = useState('vacation');
   const today = todayStr();
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
-  const [allDay, setAllDay] = useState(true);
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('17:00');
+  // When opened from a tapped schedule slot (New Appointment → 🌴 Block time),
+  // prefill the tech + date + a partial-day window starting at that slot.
+  const [techName, setTechName] = useState(prefill?.techName || defaultTech);
+  const [type, setType] = useState('vacation');
+  const [startDate, setStartDate] = useState(prefill?.date || today);
+  const [endDate, setEndDate] = useState(prefill?.date || today);
+  const [allDay, setAllDay] = useState(prefill ? false : true);
+  const [startTime, setStartTime] = useState(prefill?.start || '09:00');
+  const [endTime, setEndTime] = useState(prefill?.end || '17:00');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');
