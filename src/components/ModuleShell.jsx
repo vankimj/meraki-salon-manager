@@ -11,10 +11,10 @@ import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } f
 import { isManagementRole } from '../lib/rbac';
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
-  const { isAdmin, isReadOnly, isTech, isScheduler, role, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
+  const { isAdmin, isReadOnly, isTech, isScheduler, role, rawRole, customRoles, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
   const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
   const plan = effectivePlan(settings);
-  const canManage = isAdmin || isReadOnly || isManagementRole(role);
+  const canManage = isAdmin || isReadOnly || isManagementRole(rawRole, customRoles);
 
   // Build the per-role sidebar list. Single catalog (src/lib/modules.js) is
   // the source of truth for plan gating + admin-only flags + per-tile hide
@@ -32,7 +32,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         .filter(m => isModuleAvailableForPlan(m, plan));
     }
     if (canManage) {
-      return getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
+      return getVisibleModules(settings, { role: rawRole, customRoles, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
     }
     return [];
   })();

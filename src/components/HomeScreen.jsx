@@ -36,7 +36,7 @@ function splitBrandName(name) {
 const WELCOME_STYLES = ['centered', 'hairlineSplit', 'stacked', 'photo', 'photoSplit', 'merakiSite'];
 
 export default function HomeScreen({ onNavigate, onAdmin }) {
-  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, role, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
+  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, role, rawRole, customRoles, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [webCfg,       setWebCfg]       = useState(null);
@@ -62,7 +62,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     }).catch(() => setTechNameFromEmployee(null));
   }, [gUser?.email, realIsAdmin, techNameFromUserRec]);
   const myTechEmpName = techNameFromUserRec || techNameFromEmployee;
-  const canManage = isAdmin || isReadOnly || isManagementRole(role);
+  const canManage = isAdmin || isReadOnly || isManagementRole(rawRole, customRoles);
   const plan = effectivePlan(settings);
 
   // Pre-login, settings is rules-blocked (staff-only). Fall back to the
@@ -238,7 +238,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
         ) : canManage ? (
           hasFeature?.('curatedHome') ? (
             <CuratedManageGrid
-              settings={settings} role={role} isAdmin={isAdmin} hasFeature={hasFeature}
+              settings={settings} role={rawRole} customRoles={customRoles} isAdmin={isAdmin} hasFeature={hasFeature}
               navigate={navigate} totalChatUnread={totalChatUnread}
               density={prefs.density} homeExpanded={prefs.homeExpanded}
               onToggleExpanded={(v) => setPrefs({ homeExpanded: v })}
@@ -247,7 +247,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             <>
               <SectionLabel>Manage</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-                {getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature }).map(m => (
+                {getVisibleModules(settings, { role: rawRole, customRoles, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature }).map(m => (
                   <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
                 ))}
               </div>
@@ -302,8 +302,8 @@ function SectionLabel({ children }) {
 // "Show more" toggle (per-user `homeExpanded` remembers the choice). Density
 // 'everything' expands all groups; 'simple'/'standard' collapse the advanced
 // ones. Gated by the `curatedHome` feature flag so it ships dark.
-function CuratedManageGrid({ settings, role, isAdmin, hasFeature, navigate, totalChatUnread, density, homeExpanded, onToggleExpanded }) {
-  const groups   = getGroupedModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
+function CuratedManageGrid({ settings, role, customRoles, isAdmin, hasFeature, navigate, totalChatUnread, density, homeExpanded, onToggleExpanded }) {
+  const groups   = getGroupedModules(settings, { role, customRoles, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
   const showAll  = density === 'everything';
   const [expanded, setExpanded] = useState(density === 'simple' ? false : !!homeExpanded);
   const advanced = [...groups.grow, ...groups.admin];

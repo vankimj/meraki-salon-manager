@@ -19,7 +19,7 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
 import { INTERNAL_EVENTS, CUSTOMER_EVENTS, NOTIF_ROLES, NOTIF_CHANNELS, ROLE_LABELS_SHORT, CHANNEL_LABELS, resolveInternalRouting, isCustomerNotifEnabled } from '../../lib/notificationRouting';
-import { normalizeRole } from '../../lib/rbac';
+import { normalizeRole, resolveRoleCaps } from '../../lib/rbac';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { normalizePlan, PACKS, ATOMS } from '../../lib/planEntitlements';
 import { fetchMemberships } from '../../lib/firestore';
@@ -36,6 +36,7 @@ import CsvImportSection from '../../components/CsvImportSection';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 import LocationsTab from './LocationsTab';
 import MessageTemplatesTab from './MessageTemplatesTab';
+import RolesTab from './RolesTab';
 import SlideModal from '../tipflow/SlideModal';
 
 // Live filter query for the Settings tab. Default '' = no filter, so any
@@ -44,7 +45,7 @@ import SlideModal from '../tipflow/SlideModal';
 const SettingsSearchCtx = createContext('');
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
-  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast, hasFeature } = useApp();
+  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast, hasFeature, customRoles } = useApp();
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
@@ -117,6 +118,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
     { id: 'notifs',   label: 'Notifs'   },
     { id: 'reviews',  label: 'Reviews'  },
     { id: 'settings', label: 'Settings' },
+    ...(isAdmin ? [{ id: 'roles', label: 'Roles' }] : []),
     ...(isAdmin ? [{ id: 'locations', label: 'Locations' }] : []),
     { id: 'webfront', label: 'Webfront' },
     { id: 'sms',      label: 'SMS'      },
@@ -253,13 +255,18 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                       <option value="tech">Staff (tech)</option>
                       <option value="scheduler">Front desk</option>
                       <option value="readonly">View only</option>
+                      {(customRoles?.roles || []).length > 0 && (
+                        <optgroup label="Custom roles">
+                          {customRoles.roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                        </optgroup>
+                      )}
                       <option value="denied">Denied</option>
                     </select>
-                    {/* Tech-name picker — required for 'tech' role, optional for
-                        owner/manager/scheduler/readonly so someone who's also a
-                        working tech can flip into their own tech view. Hidden for
-                        kiosk (not a person-role) and denied. */}
-                    {(u.role === 'tech' || u.role === 'admin' || u.role === 'manager' || u.role === 'scheduler' || u.role === 'readonly') && (
+                    {/* Tech-name picker — shown for any role that can use the
+                        schedule (built-ins + custom roles with the 'schedule'
+                        cap) so a working tech can flip into their own view.
+                        Hidden for kiosk/denied (no schedule cap). */}
+                    {resolveRoleCaps(u.role, customRoles).includes('schedule') && (
                       <select value={u.techName || ''} onChange={async e => {
                         const newTechName = e.target.value || null;
                         grantAccess(u.email, u.role, newTechName);
@@ -305,6 +312,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
           }} />
         )}
 
+        {tab === 'roles' && isAdmin && <RolesTab />}
         {tab === 'locations' && <LocationsTab />}
         {tab === 'templates' && <MessageTemplatesTab />}
 

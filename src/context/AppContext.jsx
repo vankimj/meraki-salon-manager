@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { getTheme, detectAutoTheme } from '../lib/themes';
-import { normalizeRole, roleCan } from '../lib/rbac';
+import { normalizeRole, roleCan, roleExists } from '../lib/rbac';
+import { subscribeCustomRoles } from '../lib/customRoles';
 import { onAuthStateChanged, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut as fbSignOut, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from 'firebase/auth';
 import { auth, ALLOWED_EMAILS } from '../lib/firebase';
 import { loadAll, saveSlides, saveUsers, saveSettings, submitAccessRequest, fetchAccessRequests, deleteAccessRequest, fetchHandbook, fetchMyHandbookSig, signHandbookDoc, fetchClientByEmail, subscribeToChats, subscribeToRecentNotifications, markNotificationRead, ensureStaffEmailsBackfill, healUsersFullIfMissing } from '../lib/firestore';
@@ -33,6 +34,9 @@ export function AppProvider({ children }) {
   // coworker's (email, role) tuple to all staff. Empty for admin
   // users (they read the rich users[] from data/usersFull instead).
   const [myRecord, setMyRecord] = useState(null);
+  // Tenant custom-role overlay ({ roles, overrides }) — drives capability
+  // resolution for owner-defined roles. null = built-in roles only.
+  const [customRoles, setCustomRoles] = useState(null);
   const [settings, setSettings] = useState({ timeoutMin: 5 });
   const [gUser,           setGUser]           = useState(null);
   const [syncState,       setSyncState]       = useState('idle');
@@ -283,6 +287,7 @@ export function AppProvider({ children }) {
           const stub = { email: user.email, role: me.role };
           if (me.techName) stub.techName = me.techName;
           if (me.scheduleAccess) stub.scheduleAccess = me.scheduleAccess;
+          if (Array.isArray(me.caps)) stub.caps = me.caps;   // server-resolved caps (custom-role aware)
           currentUsers = [stub];
           setMyRecord(stub);
         }
@@ -392,6 +397,13 @@ export function AppProvider({ children }) {
   // HomeScreen "My tech view" toggle keys off of. Pass `techName: null`
   // explicitly to clear it.
   const grantAccess = useCallback(async (email, role, techName, scheduleAccess) => {
+    // Only allow a real built-in/custom role (or the access STATES). Stops a
+    // tampered client from writing a bogus role that would resolve to no caps
+    // (and silently lock the user out). The server is still the boundary.
+    if (!roleExists(role, customRoles) && role !== 'denied' && role !== 'pending') {
+      showToast('That role no longer exists.');
+      return;
+    }
     const prev    = users.find(u => u.email === email)?.role;
     const updated = users.map(u => u.email === email ? {
       ...u, role,
@@ -406,7 +418,7 @@ export function AppProvider({ children }) {
     setSyncDot('syncing');
     try { await saveUsers(updated); setSyncDot('ok'); showToast('Access updated'); }
     catch (e) { setSyncDot('err'); showToast('Save failed: ' + e.message, 4000); }
-  }, [users, showToast]);
+  }, [users, showToast, customRoles]);
 
   // ── Bulk: create tech user records for missing employees ──
   // Given a list of employees, creates a 'tech' user for each one that doesn't
@@ -564,6 +576,13 @@ export function AppProvider({ children }) {
     return unsub;
   }, [gUser, portalClientId]); // eslint-disable-line
 
+  // ── Custom-role overlay subscription (staff-readable doc) ──
+  useEffect(() => {
+    if (!gUser || portalClientId) { setCustomRoles(null); return; }
+    const unsub = subscribeCustomRoles(setCustomRoles);
+    return unsub;
+  }, [gUser, portalClientId]); // eslint-disable-line
+
   const markNotifRead = useCallback(async (id) => {
     if (!gUser?.email || !id) return;
     try { await markNotificationRead(id, gUser.email); } catch (_) {}
@@ -651,11 +670,19 @@ export function AppProvider({ children }) {
     : (_rec?.scheduleAccess || 'edit');
   const canEditOwnSchedule = !(isTech && effScheduleAccess === 'view');
 
-  // RBAC: the normalized role + a capability check (lib/rbac.js is the matrix;
-  // the server enforces the same). viewAs preview impersonates a role. The
-  // bootstrap admin resolves to 'owner' (role is forced to 'admin' above).
-  const role = normalizeRole(viewAs?.role || _rec?.role || null);
-  const can  = useCallback((cap) => roleCan(role, cap), [role]);
+  // RBAC: the RAW role string (custom_* keys survive) drives capability
+  // resolution; `role` stays normalized for built-in comparisons/back-compat.
+  // viewAs preview impersonates a role. The server enforces the same matrix.
+  const rawRole = viewAs?.role || _rec?.role || null;
+  const role    = normalizeRole(rawRole);
+  // Caps resolved server-side for this user (getMyTenantRole) — the fallback
+  // when the client can't read the customRoles overlay (it usually can: staff).
+  const myCaps  = Array.isArray(_rec?.caps) ? _rec.caps : null;
+  const can = useCallback((cap) => {
+    if (customRoles) return roleCan(rawRole, cap, customRoles);  // overlay = custom-role aware
+    if (myCaps)      return myCaps.includes(cap);                // server-resolved fallback
+    return roleCan(rawRole, cap);                                // static built-in matrix
+  }, [rawRole, customRoles, myCaps]);
 
   // Canary tier + feature flags — see src/lib/featureFlags.js for the
   // resolution chain. Stored on data/settings (already loaded above),
@@ -693,7 +720,7 @@ export function AppProvider({ children }) {
     users, settings, setSettings,
     gUser, syncState, toast, toastAction, loaded, isOnline,
     isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
-    role, can,
+    role, rawRole, can, customRoles,
     isPortalUser, portalClientId,
     showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
     addSlide, updateSlide, deleteSlide, setDefault,
@@ -712,7 +739,7 @@ export function AppProvider({ children }) {
     slides, def, cur, setCur, users, settings, setSettings,
     gUser, syncState, toast, toastAction, loaded, isOnline,
     isAdmin, isReadOnly, isTech, isScheduler, myTechName, canEditOwnSchedule, realIsAdmin, viewAs, setViewAs,
-    role, can, isPortalUser, portalClientId,
+    role, rawRole, can, customRoles, isPortalUser, portalClientId,
     showToast, resetInactivity, resetLogoutTimer, pauseLogoutTimer, resumeLogoutTimer,
     addSlide, updateSlide, deleteSlide, setDefault,
     grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings,

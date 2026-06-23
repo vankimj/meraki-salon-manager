@@ -7,6 +7,7 @@ import {
 import { db, callFn } from './firebase';
 import { TENANT_ID } from './tenant';
 import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
+import { getCustomRoles } from './customRoles';
 import { rosterDocId, appointmentInLocation } from './locations';
 
 // ── Tenant root helpers ────────────────────────────────
@@ -301,12 +302,13 @@ export async function healUsersFullIfMissing(loadedData) {
 // failure was the suspected cause of the 2026-05-10 Meraki users incident.
 export async function ensureStaffEmailsBackfill(users) {
   try {
+    const overlay = await getCustomRoles();   // custom-role aware projection
     const batch = writeBatch(db);
     batch.set(USERS_REF, {
       users:       deleteField(),         // purge legacy users[]
       byEmail:     deleteField(),         // purge legacy byEmail leak
-      staffEmails: buildStaffEmails(users),
-      adminEmails: buildAdminEmails(users),
+      staffEmails: buildStaffEmails(users, overlay),
+      adminEmails: buildAdminEmails(users, overlay),
       scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
     }, { merge: true });
     batch.set(USERS_FULL_REF, { users }, { merge: true });
@@ -346,12 +348,16 @@ export function buildByEmail() { return undefined; }
 // 2026-05-10 Meraki incident where data/usersFull went missing while
 // data/users.staffEmails survived.
 export const saveUsers = async (users) => {
+  // Load the custom-role overlay so a custom-role member projects into
+  // staffEmails/adminEmails correctly (a static role list would drop them and
+  // lock them out at the rules layer). Built-ins are unaffected.
+  const overlay = await getCustomRoles();
   const batch = writeBatch(db);
   batch.set(USERS_REF, {
     users:       deleteField(),         // purge legacy users[]
     byEmail:     deleteField(),         // purge legacy byEmail map (was leaking coworker roles)
-    staffEmails: buildStaffEmails(users),
-    adminEmails: buildAdminEmails(users),
+    staffEmails: buildStaffEmails(users, overlay),
+    adminEmails: buildAdminEmails(users, overlay),
     scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
   }, { merge: true });
   batch.set(USERS_FULL_REF, { users }, { merge: true });

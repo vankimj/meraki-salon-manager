@@ -13,7 +13,7 @@ function getAnthropic(opts) { _Anthropic = _Anthropic || require('@anthropic-ai/
 function awsSes() { _awsSes = _awsSes || require('@aws-sdk/client-sesv2'); return _awsSes; }
 const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
-const { roleCan, normalizeRole } = require('./lib/rbac');
+const { roleCan, normalizeRole, resolveRoleCaps, sanitizeCaps, roleExists, CAPS, ROLES, OWNER_ONLY } = require('./lib/rbac');
 const { resolveInternalRouting, isCustomerNotifEnabled } = require('./lib/notificationRouting');
 const { resolveTurnMode, buildTurnValueMap, turnValueForLineName } = require('./lib/turnValue');
 const { normalizeVertical, membershipPlansForVertical } = require('./lib/verticals');
@@ -287,13 +287,42 @@ async function callerRole(db, tenantId, request) {
   const u = users.find(x => (x.email || '').toLowerCase() === email);
   return u?.role || null;
 }
+// Tenant custom-role overlay for server-side cap checks. null = no custom roles
+// → built-in matrix only. Fail closed: any read error → null (built-ins).
+async function loadCustomRoles(db, tenantId) {
+  try {
+    const snap = await db.doc(`tenants/${tenantId}/data/customRoles`).get();
+    return snap.exists ? snap.data() : null;
+  } catch { return null; }
+}
+// Capability-based staffEmails/adminEmails projection (rules read these). MUST
+// match src/lib/userProjections.js: staff = any role with ≥1 cap (excludes
+// kiosk/pending/denied); admin = owner OR a role with an owner-only cap. Pass
+// the tenant overlay so custom roles project correctly — rebuilding WITHOUT it
+// would drop custom-role members from staffEmails and lock them out.
+function buildStaffProjection(users, overlay) {
+  const lc = (e) => String(e || '').trim().toLowerCase();
+  const staffEmails = Array.from(new Set((users || [])
+    .filter(u => u && u.email && resolveRoleCaps(u.role, overlay).length > 0)
+    .map(u => lc(u.email)).filter(Boolean)));
+  // Admin = built-in Owner ONLY. Owner-only caps are never delegated to custom
+  // roles/overrides (saveCustomRoles strips them), so a custom role can never
+  // become a tenant admin — this is the belt to saveCustomRoles' suspenders.
+  const adminEmails = Array.from(new Set((users || [])
+    .filter(u => u && u.email && normalizeRole(u.role) === 'owner')
+    .map(u => lc(u.email)).filter(Boolean)));
+  return { staffEmails, adminEmails };
+}
 // RBAC server enforcement: throw unless the caller's role has `cap` (see
 // lib/rbac.js — kept in sync with src/lib/rbac.js). The UI hides the control;
-// this is what actually blocks a forged/replayed request.
+// this is what actually blocks a forged/replayed request. Overlay-aware so
+// owner-defined custom roles are enforced, not just the built-ins.
 async function requireCap(db, tenantId, request, cap) {
   if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
+  if (await isBootstrapAdmin(request)) return;            // bootstrap = full access
   const role = await callerRole(db, tenantId, request);
-  if (!roleCan(role, cap)) {
+  const overlay = await loadCustomRoles(db, tenantId);
+  if (!roleCan(role, cap, overlay)) {
     throw new HttpsError('permission-denied', `This action requires the "${cap}" permission.`);
   }
 }
@@ -3041,17 +3070,21 @@ exports.getMyTenantRole = onCall({ cors: true }, async (request) => {
 
   const db = getFirestore();
   // Bootstrap admin (platform-founder) returns admin role globally.
-  if (await isBootstrapAdmin(request)) return { role: 'admin' };
+  if (await isBootstrapAdmin(request)) return { role: 'admin', caps: [...CAPS] };
   // Tenant owner returns admin
   const tenDoc = await db.doc(`tenants/${tenantId}`).get();
   if (tenDoc.exists && (tenDoc.data().ownerEmail || '').toLowerCase() === callerEmail) {
-    return { role: 'admin' };
+    return { role: 'admin', caps: [...CAPS] };
   }
   // Otherwise look up the caller in the rich users[] (admin-only doc).
   const fullDoc = await db.doc(`tenants/${tenantId}/data/usersFull`).get();
   const users = fullDoc.exists ? (fullDoc.data().users || []) : [];
   const me = users.find(u => (u.email || '').toLowerCase() === callerEmail);
   if (!me) return null;
+  // Resolve the caller's effective caps server-side (built-ins + any custom
+  // role overlay) so the client can gate its UI even when it can't read the
+  // customRoles doc itself. The server still re-checks every sensitive action.
+  const overlay = await loadCustomRoles(db, tenantId);
   // Return ONLY the slim slice the client needs for self-lookup. Names,
   // pictures, addedAt timestamps, etc. stay server-side.
   return {
@@ -3060,6 +3093,7 @@ exports.getMyTenantRole = onCall({ cors: true }, async (request) => {
     // 'edit' (default) | 'view' — drives the UI's read-only schedule for a
     // view-only tech. The rules enforce the actual write restriction.
     scheduleAccess: me.scheduleAccess || 'edit',
+    caps:           resolveRoleCaps(me.role, overlay),
   };
 });
 
@@ -3809,6 +3843,10 @@ exports.claimStaffInvite = onCall({ cors: true }, async (request) => {
     const fullRef = db.doc(`tenants/${tenantId}/data/usersFull`);
     const projRef = db.doc(`tenants/${tenantId}/data/users`);
     const fullSnap = await tx.get(fullRef);
+    // Custom-role overlay (transactional read, before any write) so rebuilding
+    // the projection here can't drop a custom-role member from staffEmails.
+    const ovSnap  = await tx.get(db.doc(`tenants/${tenantId}/data/customRoles`));
+    const overlay = ovSnap.exists ? ovSnap.data() : null;
     const users = (fullSnap.exists ? (fullSnap.data().users || []) : []).slice();
     const idx = users.findIndex(u => String(u.email || '').toLowerCase() === email);
     const prior = idx >= 0 ? users[idx] : {};
@@ -3825,9 +3863,7 @@ exports.claimStaffInvite = onCall({ cors: true }, async (request) => {
     };
     if (idx >= 0) users[idx] = merged; else users.push(merged);
 
-    const lower = (e) => String(e || '').trim().toLowerCase();
-    const staffEmails = Array.from(new Set(users.filter(u => u.email && STAFF_PROJ_ROLES.includes(u.role)).map(u => lower(u.email))));
-    const adminEmails = Array.from(new Set(users.filter(u => u.email && u.role === 'admin').map(u => lower(u.email))));
+    const { staffEmails, adminEmails } = buildStaffProjection(users, overlay);
 
     tx.set(fullRef, { users }, { merge: true });
     tx.set(projRef, { staffEmails, adminEmails }, { merge: true });
@@ -13409,6 +13445,65 @@ exports.setTenantProduction = onCall({ cors: true, timeoutSeconds: 15 }, async (
   return { ok: true, isProduction, slugsUpdated: slugs.size };
 });
 
+// Owner-defined custom roles + built-in overrides — the overlay consumed by
+// rbac.js (resolveRoleCaps/roleCan). Tenant-admin gated. SECURITY: validates
+// every cap ⊆ CAPS (sanitizeCaps), forces a `custom_` key prefix so a custom
+// role can NEVER shadow a built-in/alias, and refuses to edit the Owner role.
+// The client cannot write data/customRoles directly (firestore.rules write:false).
+exports.saveCustomRoles = onCall({ cors: true, timeoutSeconds: 15 }, async (request) => {
+  const db = getFirestore();
+  const tenantId = String(request.data?.tenantId || '').trim();
+  if (!tenantId) throw new HttpsError('invalid-argument', 'tenantId required');
+  await requireTenantAdmin(db, tenantId, request);
+
+  const slug = (s) => String(s || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  // Owner-only caps (hr/settings/users/billing) are NEVER delegatable to a
+  // custom role or a built-in override — they stay with the Owner role. This is
+  // the primary guard against a non-owner minting an admin-equivalent role.
+  const delegatable = (caps) => sanitizeCaps(caps).filter(c => !OWNER_ONLY.includes(c));
+
+  const seen = new Set();
+  const cleanRoles = (Array.isArray(request.data?.roles) ? request.data.roles : []).map((r) => {
+    const base = slug(String(r?.key || '').replace(/^custom_/, '')) || slug(r?.label);
+    if (!base) throw new HttpsError('failed-precondition', 'Every role needs a name.');
+    const key = 'custom_' + base;                       // prefix prevents shadowing built-ins/aliases
+    if (seen.has(key)) throw new HttpsError('failed-precondition', `Two roles resolve to the same name ("${r?.label || key}"). Rename one.`);
+    seen.add(key);
+    const caps = delegatable(r?.caps);
+    // A zero-capability custom role would lock out anyone assigned it (excluded
+    // from staffEmails). Refuse it rather than silently brick a user.
+    if (caps.length === 0) throw new HttpsError('failed-precondition', `“${String(r?.label || base)}” needs at least one permission.`);
+    return {
+      key,
+      label: String(r?.label || '').trim().slice(0, 40) || base,
+      description: String(r?.description || '').trim().slice(0, 140),
+      caps,
+      baseRole: ROLES.includes(r?.baseRole) ? r.baseRole : null,
+    };
+  });
+
+  const cleanOverrides = {};
+  const ovIn = (request.data?.overrides && typeof request.data.overrides === 'object') ? request.data.overrides : {};
+  for (const [role, def] of Object.entries(ovIn)) {
+    if (role === 'owner' || role === 'admin') {
+      throw new HttpsError('failed-precondition', 'The Owner role cannot be edited.');
+    }
+    const r = normalizeRole(role);
+    if (!r || r === 'owner' || r === 'kiosk' || !ROLES.includes(r)) continue;  // owner sacrosanct; kiosk stays locked
+    const ovCaps = delegatable(def?.caps);
+    if (ovCaps.length === 0) throw new HttpsError('failed-precondition', `The ${r} role needs at least one permission.`);
+    cleanOverrides[r] = { caps: ovCaps };
+  }
+
+  await db.doc(`tenants/${tenantId}/data/customRoles`).set({
+    roles: cleanRoles,
+    overrides: cleanOverrides,
+    updatedAt: new Date().toISOString(),
+  });
+  await logAdminAction(db, request, 'tenant.saveCustomRoles', { tenantId, roleCount: cleanRoles.length, overrides: Object.keys(cleanOverrides) });
+  return { ok: true, roles: cleanRoles, overrides: cleanOverrides };
+});
+
 exports.listInboundOrphans = onCall({ cors: true }, async (request) => {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   if (!await isPlatformAdmin(request.auth.token.email)) {
@@ -13625,11 +13720,11 @@ exports.recoverUsersFullFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, asyn
   }
 
   // Atomic write-back: usersFull + reproject staffEmails/adminEmails so the
-  // rules layer stays consistent with the rich array.
-  const STAFF_ROLES = new Set(['admin', 'readonly', 'tech', 'scheduler']);
-  const lower = (e) => String(e || '').trim().toLowerCase();
-  const staffEmails = Array.from(new Set(parsed.users.filter(u => u && STAFF_ROLES.has(u.role) && u.email).map(u => lower(u.email))));
-  const adminEmails = Array.from(new Set(parsed.users.filter(u => u && u.role === 'admin' && u.email).map(u => lower(u.email))));
+  // rules layer stays consistent with the rich array. Capability-based +
+  // overlay-aware so custom-role members (and managers) aren't dropped from
+  // staffEmails on recovery — a static role list here would lock them out.
+  const overlay = await loadCustomRoles(db, tenantId);
+  const { staffEmails, adminEmails } = buildStaffProjection(parsed.users, overlay);
 
   const snapshotIso = row.timestamp?.value || String(row.timestamp);
   const batch = db.batch();
@@ -15029,9 +15124,10 @@ exports.runIntegrityScan = onSchedule(
         const staffEmails = (usersSnap.exists ? (usersSnap.data().staffEmails || []) : []);
         const usersFull   = (usersFullSnap.exists ? (usersFullSnap.data().users || []) : []);
         // staffEmails excludes pending/denied, usersFull includes everyone.
-        // Compare staffEmail count to (usersFull where role is staff).
-        const STAFF_ROLES = new Set(['admin', 'readonly', 'tech', 'scheduler']);
-        const usersFullStaff = usersFull.filter(u => u && STAFF_ROLES.has(u.role));
+        // Compare staffEmail count to (usersFull whose role resolves to ≥1 cap),
+        // overlay-aware so custom roles + managers aren't counted as a mismatch.
+        const scanOverlay = await loadCustomRoles(db, tenantId);
+        const usersFullStaff = usersFull.filter(u => u && resolveRoleCaps(u.role, scanOverlay).length > 0);
         const match = staffEmails.length === usersFullStaff.length;
         checks.usersFullSync = {
           status: match ? 'green' : 'red',
