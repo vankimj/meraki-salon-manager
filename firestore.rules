@@ -235,6 +235,14 @@ service cloud.firestore {
         allow read:  if isTenantStaff(tenantId) || isKiosk(tenantId);  // kiosk needs taxRate/ccFee/terminal cfg
         allow write: if isTenantAdmin(tenantId);
       }
+      // Custom role definitions (owner-defined roles + built-in cap overrides).
+      // Staff read so the client can resolve its own capabilities; writes are
+      // callable-only (saveCustomRoles) which validates caps + protects Owner —
+      // never a direct client write, so a staffer can't grant themselves caps.
+      match /data/customRoles {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if false;
+      }
       // Sensitive credentials (OAuth tokens, third-party API keys cached
       // at runtime, anything that grants out-of-band access). Admin-only
       // read so a non-admin tenant staff member can't pull stored Gusto

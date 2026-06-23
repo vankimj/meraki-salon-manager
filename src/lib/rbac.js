@@ -66,7 +66,7 @@ export const CAPS = [
   'billing',         // subscription / billing         (owner-only)
 ];
 
-const OWNER_ONLY = ['hr', 'settings', 'users', 'billing'];
+export const OWNER_ONLY = ['hr', 'settings', 'users', 'billing'];
 
 // Role → the capabilities it has. Owner is the full set; manager is everything
 // minus the owner-only group; the rest are explicit allow-lists.
@@ -93,18 +93,105 @@ export function roleCaps(role)   { const r = normalizeRole(role); return r ? ROL
 
 // Does this role have the capability? readonly is view-only: it never gets
 // edit/action caps even if a future matrix tweak adds one by mistake.
-export function roleCan(role, cap) {
-  const r = normalizeRole(role);
-  if (!r) return false;
-  return ROLE_CAPS[r].includes(cap);
+//
+// Tenant-aware: pass the tenant's custom-role `overlay` to honor owner-defined
+// roles. With NO overlay this is the original static behavior, byte-for-byte
+// (fast path) — every existing call site is unchanged.
+export function roleCan(role, cap, overlay) {
+  if (!overlay) {
+    const r = normalizeRole(role);
+    return !!r && ROLE_CAPS[r].includes(cap);
+  }
+  return resolveRoleCaps(role, overlay).includes(cap);
+}
+
+// Drop any cap not in the canonical CAPS list — defense in depth so a forged
+// doc/payload can never smuggle an undefined privilege.
+export function sanitizeCaps(caps) {
+  return (Array.isArray(caps) ? caps : []).filter(c => CAPS.includes(c));
+}
+
+// Resolve a role's EFFECTIVE capabilities given an optional tenant overlay:
+//   overlay = { roles?: [{ key, caps }], overrides?: { <builtInRole>: { caps } } }
+//   1. a custom_* role in overlay.roles  → its caps
+//   2. a built-in role (after aliasing) with an override → the override's caps
+//   3. owner                              → ALWAYS the full set (never overridable)
+//   4. a built-in role                    → static ROLE_CAPS
+//   5. unknown                            → [] (no access)
+export function resolveRoleCaps(role, overlay) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (!raw) return [];
+  const custom = overlay && Array.isArray(overlay.roles) && overlay.roles.find(r => r && r.key === raw);
+  if (custom) return sanitizeCaps(custom.caps);
+  const r = normalizeRole(raw);
+  if (!r) return [];
+  if (r === 'owner') return [...CAPS];                         // owner is sacrosanct
+  const ov = overlay && overlay.overrides && overlay.overrides[r];
+  if (ov && Array.isArray(ov.caps)) return sanitizeCaps(ov.caps);
+  return ROLE_CAPS[r];
+}
+
+// Is `role` something the tenant can legitimately assign — a canonical role, a
+// legacy alias, or a known custom_* key in the overlay? (normalizeRole stays
+// strict to canonical names; custom keys validate here.)
+export function roleExists(role, overlay) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (!raw) return false;
+  if (normalizeRole(raw)) return true;
+  return !!(overlay && Array.isArray(overlay.roles) && overlay.roles.some(r => r && r.key === raw));
 }
 
 // True for roles that should reach the management app at all (everyone but a
-// kiosk user / no-access). Drives the "you have no modules" empty state.
-export function isManagementRole(role) {
-  const r = normalizeRole(role);
-  return !!r && r !== 'kiosk' && ROLE_CAPS[r].length > 0;
+// kiosk user / no-access). Overlay-aware so custom roles light up the nav.
+export function isManagementRole(role, overlay) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (raw === 'kiosk') return false;
+  return resolveRoleCaps(raw, overlay).length > 0;
 }
 
 // Owner check that survives the rename (admin → owner).
 export function isOwner(role) { return normalizeRole(role) === 'owner'; }
+
+// ── UI metadata: plain-language capability groups for the Roles editor ───────
+// NOT a security boundary — purely how the owner-facing toggles are organized
+// and labeled. The security matrix is CAPS / ROLE_CAPS above. `danger:true`
+// marks the sensitive owner-only group (assigning these warns the owner).
+export const CAP_GROUPS = [
+  { title: 'Front desk & checkout', caps: [
+    { cap: 'pos',            label: 'Take payments / run checkout' },
+    { cap: 'giftcards_sell', label: 'Sell gift cards at checkout' },
+    { cap: 'refund',         label: 'Issue refunds & store credit' },
+    { cap: 'walkin',         label: 'Manage the walk-in waitlist' },
+  ] },
+  { title: 'Calendar', caps: [
+    { cap: 'schedule',     label: 'See & use the schedule' },
+    { cap: 'schedule_all', label: "Edit anyone's calendar (not just their own)" },
+  ] },
+  { title: 'Clients & services', caps: [
+    { cap: 'clients',       label: 'View & edit client profiles' },
+    { cap: 'services_edit', label: 'Edit the service menu & prices' },
+    { cap: 'products_edit', label: 'Manage retail products & stock' },
+    { cap: 'intake',        label: 'Manage intake & waiver forms' },
+    { cap: 'programs',      label: 'Manage training programs' },
+  ] },
+  { title: 'Money & reports', caps: [
+    { cap: 'reports',          label: 'View reports, sales & receipts' },
+    { cap: 'earnings_own',     label: 'See their own earnings' },
+    { cap: 'earnings_all',     label: "See everyone's earnings" },
+    { cap: 'giftcards_manage', label: 'Manage gift cards & promo codes' },
+    { cap: 'memberships',      label: 'Manage memberships' },
+  ] },
+  { title: 'Team & communication', caps: [
+    { cap: 'chat',       label: 'Send messages (SMS / email / in-app)' },
+    { cap: 'employees',  label: 'Manage team profiles' },
+    { cap: 'attendance', label: 'View clock-in / clock-out records' },
+    { cap: 'meetings',   label: 'Manage internal meetings' },
+    { cap: 'marketing',  label: 'Run marketing campaigns' },
+  ] },
+  { title: 'Owner-only (sensitive)', danger: true, caps: [
+    { cap: 'hr',       label: 'Payroll & compensation' },
+    { cap: 'settings', label: 'Admin settings' },
+    { cap: 'users',    label: 'Manage users & roles' },
+    { cap: 'billing',  label: 'Subscription & billing' },
+  ] },
+];

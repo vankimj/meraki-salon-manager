@@ -16,7 +16,7 @@
 // adminOnly is independent of plan: even a non-admin with a Pro plan
 // won't see HR.
 
-import { roleCan, normalizeRole } from './rbac';
+import { roleCan, roleExists } from './rbac';
 import { PLAN_RANK, normalizePlan, unlockedModulesFor } from './planEntitlements';
 
 export { PLAN_RANK } from './planEntitlements';
@@ -165,16 +165,19 @@ export function modulesLostOnDowngrade(currentPlan, targetPlan, unlocked = new S
 // for this user. Combines: plan gate + RBAC capability gate + owner-disabled +
 // per-tile hide. Pass `role` for capability gating; `isAdmin` is the legacy
 // fallback (adminOnly) for callers not yet migrated to roles.
-export function getVisibleModules(settings, { role, isAdmin, hiddenTiles, hasFeature } = {}) {
+export function getVisibleModules(settings, { role, isAdmin, hiddenTiles, hasFeature, customRoles } = {}) {
   const hidden = new Set(hiddenTiles || settings?.hiddenTiles || []);
   const vertical = settings?.vertical || 'nails';
-  const r = role ? normalizeRole(role) : null;
+  // Use the RAW role (custom_* keys survive) + the tenant overlay so custom
+  // roles are gated by their capabilities, exactly like built-in roles.
+  const r = role || null;
+  const known = !!(r && roleExists(r, customRoles));
   return MODULES.filter(m => {
     if (m.flag && !(typeof hasFeature === 'function' && hasFeature(m.flag))) return false;  // flag-gated module (ships dark)
     if (m.hideForVerticals && m.hideForVerticals.includes(vertical)) return false;          // tile not relevant to this vertical (e.g. walk-in turn rotation for personal training)
     if (m.showForVerticals && !m.showForVerticals.includes(vertical)) return false;         // tile is specific to other verticals (e.g. training programs only show for personalTraining)
-    if (r) { if (m.cap && !roleCan(r, m.cap)) return false; }   // RBAC capability gate
-    else if (m.adminOnly && !isAdmin) return false;             // legacy fallback
+    if (known) { if (m.cap && !roleCan(r, m.cap, customRoles)) return false; }  // RBAC capability gate (every tile has a cap)
+    else if (m.adminOnly && !isAdmin) return false;                            // legacy fallback (no/unknown role)
     if (!hasModuleAccess(settings, m)) return false;            // base tier OR purchased pack
     if (!isModuleEnabled(settings, m.id)) return false;
     if (hidden.has(m.id)) return false;

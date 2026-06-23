@@ -44,10 +44,39 @@ function normalizeRole(role) {
   return ROLES.includes(r) ? r : null;
 }
 
-function roleCan(role, cap) {
-  const r = normalizeRole(role);
-  if (!r) return false;
-  return ROLE_CAPS[r].includes(cap);
+// Tenant-aware capability check. overlay omitted => original static behavior
+// (fast path) — every existing call site is unchanged. MUST match the web copy.
+function roleCan(role, cap, overlay) {
+  if (!overlay) {
+    const r = normalizeRole(role);
+    return !!r && ROLE_CAPS[r].includes(cap);
+  }
+  return resolveRoleCaps(role, overlay).includes(cap);
 }
 
-module.exports = { CAPS, ROLE_CAPS, normalizeRole, roleCan };
+function sanitizeCaps(caps) {
+  return (Array.isArray(caps) ? caps : []).filter(c => CAPS.includes(c));
+}
+
+// overlay = { roles?: [{ key, caps }], overrides?: { <builtInRole>: { caps } } }
+function resolveRoleCaps(role, overlay) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (!raw) return [];
+  const custom = overlay && Array.isArray(overlay.roles) && overlay.roles.find(r => r && r.key === raw);
+  if (custom) return sanitizeCaps(custom.caps);
+  const r = normalizeRole(raw);
+  if (!r) return [];
+  if (r === 'owner') return [...CAPS];
+  const ov = overlay && overlay.overrides && overlay.overrides[r];
+  if (ov && Array.isArray(ov.caps)) return sanitizeCaps(ov.caps);
+  return ROLE_CAPS[r];
+}
+
+function roleExists(role, overlay) {
+  const raw = String(role || '').trim().toLowerCase();
+  if (!raw) return false;
+  if (normalizeRole(raw)) return true;
+  return !!(overlay && Array.isArray(overlay.roles) && overlay.roles.some(r => r && r.key === raw));
+}
+
+module.exports = { CAPS, OWNER_ONLY, ROLES, ALIASES, ROLE_CAPS, normalizeRole, roleCan, sanitizeCaps, resolveRoleCaps, roleExists };
