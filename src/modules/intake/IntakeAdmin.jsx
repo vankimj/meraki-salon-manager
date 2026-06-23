@@ -28,7 +28,7 @@ export default function IntakeAdmin() {
   const [sendFor,    setSendFor]    = useState(null);    // form obj to send
 
   if (!isAdmin) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Admin only.</div>;
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Intake forms are managed by the salon owner.</div>;
   }
 
   useEffect(() => subscribeIntakeForms(setForms), []);

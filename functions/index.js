@@ -13,7 +13,7 @@ function getAnthropic(opts) { _Anthropic = _Anthropic || require('@anthropic-ai/
 function awsSes() { _awsSes = _awsSes || require('@aws-sdk/client-sesv2'); return _awsSes; }
 const crypto               = require('crypto');
 const usageLog             = require('./lib/usage');
-const { roleCan, normalizeRole, resolveRoleCaps, sanitizeCaps, roleExists, CAPS, ROLES, OWNER_ONLY } = require('./lib/rbac');
+const { roleCan, normalizeRole, resolveRoleCaps, sanitizeCaps, roleExists, CAPS, ROLES, OWNER_ONLY, DELEGATED_RULE_CAPS } = require('./lib/rbac');
 const { resolveInternalRouting, isCustomerNotifEnabled } = require('./lib/notificationRouting');
 const { resolveTurnMode, buildTurnValueMap, turnValueForLineName } = require('./lib/turnValue');
 const { normalizeVertical, membershipPlansForVertical } = require('./lib/verticals');
@@ -311,7 +311,16 @@ function buildStaffProjection(users, overlay) {
   const adminEmails = Array.from(new Set((users || [])
     .filter(u => u && u.email && normalizeRole(u.role) === 'owner')
     .map(u => lc(u.email)).filter(Boolean)));
-  return { staffEmails, adminEmails };
+  // Per-capability allow-lists for the rules' hasCap() (owner is admin, so it
+  // short-circuits and need not appear). MUST match src/lib/userProjections.js
+  // buildCapEmails — empty arrays written so a revoke takes effect immediately.
+  const capEmails = {};
+  for (const cap of DELEGATED_RULE_CAPS) {
+    capEmails[cap] = Array.from(new Set((users || [])
+      .filter(u => u && u.email && resolveRoleCaps(u.role, overlay).includes(cap))
+      .map(u => lc(u.email)).filter(Boolean)));
+  }
+  return { staffEmails, adminEmails, capEmails };
 }
 // RBAC server enforcement: throw unless the caller's role has `cap` (see
 // lib/rbac.js — kept in sync with src/lib/rbac.js). The UI hides the control;
@@ -3863,10 +3872,10 @@ exports.claimStaffInvite = onCall({ cors: true }, async (request) => {
     };
     if (idx >= 0) users[idx] = merged; else users.push(merged);
 
-    const { staffEmails, adminEmails } = buildStaffProjection(users, overlay);
+    const { staffEmails, adminEmails, capEmails } = buildStaffProjection(users, overlay);
 
     tx.set(fullRef, { users }, { merge: true });
-    tx.set(projRef, { staffEmails, adminEmails }, { merge: true });
+    tx.set(projRef, { staffEmails, adminEmails, capEmails }, { merge: true });
     tx.set(inviteRef, { status: 'claimed', claimedByUid: uid, claimedByEmail: email, claimedAt: new Date().toISOString() }, { merge: true });
 
     return { tenantId, role, employeeId: inv.employeeId || null };
@@ -4065,13 +4074,16 @@ exports.clockEvent = onCall({ cors: true }, async (request) => {
       throw new HttpsError('permission-denied', 'Wrong PIN');
     }
   } else {
-    // admin_override: front desk punches FOR a tech. Admin OR scheduler only
-    // (techs can't override each other; readonly is excluded too).
+    // admin_override: front desk / a manager punches FOR a tech. Owner, a role
+    // granted the `attendance` capability (manager / custom role), OR a scheduler
+    // (front desk — kept for back-compat though it lacks the attendance cap).
+    // Techs can't override each other; readonly is excluded.
     if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
     if (!(await isBootstrapAdmin(request))) {
       const role = await callerRole(db, tenantId, request);
-      if (role !== 'admin' && role !== 'scheduler') {
-        throw new HttpsError('permission-denied', 'admin or scheduler role required');
+      const overlay = await loadCustomRoles(db, tenantId);
+      if (role !== 'scheduler' && !roleCan(role, 'attendance', overlay)) {
+        throw new HttpsError('permission-denied', 'attendance permission or scheduler role required');
       }
     }
     byUserId = request.auth.uid || null;
@@ -13724,7 +13736,7 @@ exports.recoverUsersFullFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, asyn
   // overlay-aware so custom-role members (and managers) aren't dropped from
   // staffEmails on recovery — a static role list here would lock them out.
   const overlay = await loadCustomRoles(db, tenantId);
-  const { staffEmails, adminEmails } = buildStaffProjection(parsed.users, overlay);
+  const { staffEmails, adminEmails, capEmails } = buildStaffProjection(parsed.users, overlay);
 
   const snapshotIso = row.timestamp?.value || String(row.timestamp);
   const batch = db.batch();
@@ -13734,7 +13746,7 @@ exports.recoverUsersFullFromBQ = onCall({ cors: true, timeoutSeconds: 30 }, asyn
     _recoveredAt:   new Date().toISOString(),
   });
   batch.set(db.doc(`tenants/${tenantId}/data/users`), {
-    staffEmails, adminEmails,
+    staffEmails, adminEmails, capEmails,
   }, { merge: true });
   await batch.commit();
 

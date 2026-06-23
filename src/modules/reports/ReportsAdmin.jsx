@@ -165,7 +165,7 @@ const TABS = [
 ];
 
 export default function ReportsAdmin() {
-  const { isTech, isScheduler } = useApp();
+  const { can } = useApp();
   const [activeTab,  setActiveTab]  = useState('overview');
   const [periodDays,  setPeriodDays]  = useState(30); // number | 'custom'
   const [customStart, setCustomStart] = useState(startOf(30));
@@ -181,12 +181,12 @@ export default function ReportsAdmin() {
   const [locState,    setLocState]    = useState(null);
   useEffect(() => subscribeLocations(setLocState), []);
 
-  if (isTech || isScheduler) {
+  if (!can('reports')) {
     return (
       <div style={{ textAlign: 'center', padding: '64px 20px', color: 'var(--pn-text-faint)', fontSize: 14 }}>
         <div style={{ fontSize: 32, marginBottom: 16 }}>🔒</div>
         <div style={{ fontWeight: 600, color: 'var(--pn-text-muted)', marginBottom: 8 }}>Access Restricted</div>
-        <div>Reports are available to admin and management staff only.</div>
+        <div>Reports are available to staff with the Reports permission.</div>
       </div>
     );
   }

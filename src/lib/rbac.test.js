@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRole, roleCan, roleCaps, roleLabel, isManagementRole, isOwner, ROLE_CAPS, CAPS, resolveRoleCaps, sanitizeCaps, roleExists, CAP_GROUPS } from './rbac';
+import { normalizeRole, roleCan, roleCaps, roleLabel, isManagementRole, isOwner, ROLE_CAPS, CAPS, resolveRoleCaps, sanitizeCaps, roleExists, CAP_GROUPS, DELEGATED_RULE_CAPS, OWNER_ONLY } from './rbac';
 
 describe('normalizeRole', () => {
   it('maps legacy aliases to canonical roles', () => {
@@ -129,6 +129,16 @@ describe('server matrix is in sync (functions/lib/rbac.js)', () => {
       for (const cap of ['pos', 'reports', 'hr', 'clients']) {
         expect(server.roleCan(role, cap, overlay)).toBe(roleCan(role, cap, overlay));
       }
+    }
+  });
+  it('DELEGATED_RULE_CAPS in sync across copies, all real + none owner-only', async () => {
+    const server = await import('../../functions/lib/rbac.js');
+    expect(server.DELEGATED_RULE_CAPS.slice().sort()).toEqual(DELEGATED_RULE_CAPS.slice().sort());
+    for (const cap of DELEGATED_RULE_CAPS) {
+      expect(CAPS).toContain(cap);
+      // A delegated cap must NOT be owner-only — else the rules would hand an
+      // owner-only collection to a non-owner via capEmails.
+      expect(OWNER_ONLY).not.toContain(cap);
     }
   });
 });
