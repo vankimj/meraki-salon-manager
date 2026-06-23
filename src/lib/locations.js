@@ -114,7 +114,12 @@ export function employeeInLocation(emp, locationId) {
 // move — multi-location ids get a `${date}_${lid}` suffix. Pure; shared by the
 // client (firestore.js) and mirrored server-side in functions/index.js.
 export function rosterDocId(date, locationId) {
-  return (!locationId || locationId === DEFAULT_LOCATION_ID) ? date : `${date}_${locationId}`;
+  // Strip anything but [A-Za-z0-9_-] from the location segment so a stray '/'
+  // (or other path char) can never inject extra Firestore path segments when
+  // this id is interpolated into a doc path. Valid location ids are already in
+  // this charset, so this is a no-op for them.
+  const loc = (typeof locationId === 'string' ? locationId : '').replace(/[^A-Za-z0-9_-]/g, '');
+  return (!loc || loc === DEFAULT_LOCATION_ID) ? date : `${date}_${loc}`;
 }
 
 // Per-location tax rate, falling back to the tenant-wide rate when a location
