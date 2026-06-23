@@ -3,6 +3,9 @@
 // actually blocks a forged request. CommonJS (Cloud Functions runtime).
 
 const OWNER_ONLY = ['hr', 'settings', 'users', 'billing'];
+// Caps that gate a Firestore-rules collection by capability (projected into
+// data/users.capEmails, read by rules' hasCap()). Must match src/lib/rbac.js.
+const DELEGATED_RULE_CAPS = ['attendance', 'marketing'];
 
 const CAPS = [
   'pos', 'refund',
@@ -79,4 +82,4 @@ function roleExists(role, overlay) {
   return !!(overlay && Array.isArray(overlay.roles) && overlay.roles.some(r => r && r.key === raw));
 }
 
-module.exports = { CAPS, OWNER_ONLY, ROLES, ALIASES, ROLE_CAPS, normalizeRole, roleCan, sanitizeCaps, resolveRoleCaps, roleExists };
+module.exports = { CAPS, OWNER_ONLY, DELEGATED_RULE_CAPS, ROLES, ALIASES, ROLE_CAPS, normalizeRole, roleCan, sanitizeCaps, resolveRoleCaps, roleExists };

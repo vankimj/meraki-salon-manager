@@ -68,6 +68,15 @@ export const CAPS = [
 
 export const OWNER_ONLY = ['hr', 'settings', 'users', 'billing'];
 
+// Capabilities that gate a Firestore-rules collection by CAPABILITY (not just
+// owner). These are projected into data/users.capEmails and read by the rules'
+// hasCap(). Owner is always isTenantAdmin (short-circuits hasCap), so this is
+// only the set the owner may DELEGATE to a manager/custom role for server-side
+// access to that collection. Adding a cap here + the matching firestore.rules
+// block + collection delegates it. Kept tiny on purpose: money/PII collections
+// (memberships, gift cards, intake) stay Owner-only by product decision.
+export const DELEGATED_RULE_CAPS = ['attendance', 'marketing'];
+
 // Role → the capabilities it has. Owner is the full set; manager is everything
 // minus the owner-only group; the rest are explicit allow-lists.
 export const ROLE_CAPS = {

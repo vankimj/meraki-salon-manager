@@ -170,7 +170,8 @@ function buildPreviewHtml(bodyText, promoCode, promoLabel, ctaText, ctaUrl, bran
 
 // ── Main view ──────────────────────────────────────────
 export default function MarketingAdmin() {
-  const { showToast, isAdmin, settings, updateSettings } = useApp();
+  const { showToast, isAdmin, can, settings, updateSettings } = useApp();
+  const canMarketing = can('marketing');
   const [campaigns, setCampaigns] = useState(null);
   const [modal,     setModal]     = useState(false);  // false | true | campaign-object (clone)
   const [tab,       setTab]       = useState('campaigns');
@@ -311,7 +312,7 @@ export default function MarketingAdmin() {
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', marginBottom: 14 }}>
             <TrashButton collections={['campaigns']} scope="Marketing" />
-            {isAdmin && (
+            {canMarketing && (
               <button onClick={() => setModal(true)}
                 style={{ padding: '7px 16px', borderRadius: 8, border: 'none', background: '#2D7A5F', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                 + New Campaign

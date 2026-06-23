@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
+import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails, buildCapEmails } from './userProjections';
+import { DELEGATED_RULE_CAPS, CAPS } from './rbac';
 
 const USERS = [
   { email: 'Owner@Meraki.com',  role: 'admin' },
@@ -40,6 +41,48 @@ describe('manager role (RBAC)', () => {
     const withKiosk = [...USERS, { email: 'kiosk@meraki.com', role: 'kiosk' }];
     expect(buildStaffEmails(withKiosk)).not.toContain('kiosk@meraki.com');
     expect(buildAdminEmails(withKiosk)).not.toContain('kiosk@meraki.com');
+  });
+});
+
+describe('buildCapEmails (capability delegation — rules hasCap())', () => {
+  const WITH_MGR = [...USERS, { email: 'mgr@meraki.com', role: 'manager' }];
+
+  it('DELEGATED_RULE_CAPS are all real capabilities', () => {
+    for (const cap of DELEGATED_RULE_CAPS) expect(CAPS).toContain(cap);
+  });
+
+  it('emits an array for every delegated cap (so a revoke clears it)', () => {
+    const out = buildCapEmails(USERS);
+    expect(Object.keys(out).sort()).toEqual([...DELEGATED_RULE_CAPS].sort());
+    for (const cap of DELEGATED_RULE_CAPS) expect(Array.isArray(out[cap])).toBe(true);
+  });
+
+  it('manager (has attendance + marketing) lands in both lists; owner too', () => {
+    const out = buildCapEmails(WITH_MGR);
+    expect(out.attendance).toContain('mgr@meraki.com');
+    expect(out.marketing).toContain('mgr@meraki.com');
+    expect(out.attendance).toContain('owner@meraki.com');   // owner ⊇ all caps
+  });
+
+  it('tech / scheduler / readonly / kiosk are NOT delegated attendance or marketing', () => {
+    const out = buildCapEmails(USERS);
+    for (const e of ['tess@meraki.com', 'desk@meraki.com', 'view@meraki.com']) {
+      expect(out.attendance).not.toContain(e);
+      expect(out.marketing).not.toContain(e);
+    }
+  });
+
+  it('honors a custom-role overlay (attendance granted to a custom key)', () => {
+    const users = [{ email: 'lead@x.com', role: 'custom_lead' }];
+    const overlay = { roles: [{ key: 'custom_lead', caps: ['attendance', 'clients'] }] };
+    const out = buildCapEmails(users, overlay);
+    expect(out.attendance).toEqual(['lead@x.com']);
+    expect(out.marketing).toEqual([]);
+  });
+
+  it('handles empty/missing input', () => {
+    const out = buildCapEmails(undefined);
+    for (const cap of DELEGATED_RULE_CAPS) expect(out[cap]).toEqual([]);
   });
 });
 

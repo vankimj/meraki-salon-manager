@@ -23,7 +23,7 @@ export default function MembershipsAdmin() {
   const [editMember, setEditMember] = useState(null);   // member obj or 'new'
 
   if (!isAdmin) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Admin only.</div>;
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Memberships are managed by the salon owner.</div>;
   }
 
   useEffect(() => subscribeMembershipPlans(setPlans), []);

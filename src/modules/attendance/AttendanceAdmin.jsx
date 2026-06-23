@@ -57,7 +57,8 @@ function hoursWorked(clockIn, clockOut) {
 }
 
 export default function AttendanceAdmin() {
-  const { isAdmin, isReadOnly, isTech, isScheduler, showToast } = useApp();
+  const { can, isReadOnly, isTech, isScheduler, showToast } = useApp();
+  const canAttend = can('attendance');
   const [date, setDate] = useState(todayStr());
   const [employees, setEmployees] = useState([]);
   const [attendance, setAttendance] = useState({ entries: [] });
@@ -96,8 +97,8 @@ export default function AttendanceAdmin() {
   const sortedEmps = [...employees];
 
   async function saveEntry({ employeeId, employeeName, clockInAt, clockOutAt }) {
-    if (!isAdmin) {
-      showToast('Only admins can edit clock-in / clock-out times.', 3500);
+    if (!canAttend) {
+      showToast('You don’t have permission to edit clock-in / clock-out times.', 3500);
       return;
     }
     const next = (attendance.entries || []).filter(e => e.employeeId !== employeeId);
@@ -113,8 +114,8 @@ export default function AttendanceAdmin() {
   }
 
   async function clearEntry(employeeId) {
-    if (!isAdmin) {
-      showToast('Only admins can edit clock-in / clock-out times.', 3500);
+    if (!canAttend) {
+      showToast('You don’t have permission to edit clock-in / clock-out times.', 3500);
       return;
     }
     const next = (attendance.entries || []).filter(e => e.employeeId !== employeeId);
@@ -166,7 +167,7 @@ export default function AttendanceAdmin() {
         <LiveNowGrid
           employees={sortedEmps}
           entryByEmpId={entryByEmpId}
-          isAdmin={isAdmin}
+          isAdmin={canAttend}
           showToast={showToast}
         />
       )}
@@ -211,12 +212,12 @@ export default function AttendanceAdmin() {
                 <div style={{ textAlign: 'right', color: hrs > 0 ? '#2D7A5F' : 'var(--pn-text-faint)', fontWeight: hrs > 0 ? 700 : 400 }}>{hrs > 0 ? `${hrs.toFixed(2)} hr` : '—'}</div>
                 <div style={{ textAlign: 'right', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
                   <button onClick={() => setEditing({ employeeId: emp.id, employeeName: emp.name, clockInAt: e?.clockInAt || '', clockOutAt: e?.clockOutAt || '' })}
-                    disabled={!isAdmin}
-                    title={isAdmin ? 'Edit clock-in / out' : 'Admin only'}
-                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: !isAdmin ? 'var(--pn-surface-alt)' : 'var(--pn-surface)', color: !isAdmin ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)', cursor: isAdmin ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
+                    disabled={!canAttend}
+                    title={canAttend ? 'Edit clock-in / out' : 'No permission to edit'}
+                    style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: !canAttend ? 'var(--pn-surface-alt)' : 'var(--pn-surface)', color: !canAttend ? 'var(--pn-text-faint)' : 'var(--pn-text-muted)', cursor: canAttend ? 'pointer' : 'not-allowed', fontFamily: 'inherit' }}>
                     {e?.clockInAt ? 'Edit' : 'Set'}
                   </button>
-                  {e && isAdmin && (
+                  {e && canAttend && (
                     <button onClick={() => { if (window.confirm(`Clear ${emp.name}'s entry for ${date}?`)) clearEntry(emp.id); }}
                       style={{ fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: 'var(--pn-danger-bg)', color: 'var(--pn-danger)', cursor: 'pointer', fontFamily: 'inherit' }}>
                       ✕
@@ -229,9 +230,9 @@ export default function AttendanceAdmin() {
         </div>
       )}
 
-      {!isAdmin && (
+      {!canAttend && (
         <div style={{ marginTop: 14, fontSize: 11, color: 'var(--pn-text-muted)', fontStyle: 'italic' }}>
-          🔒 Read-only view. Only admins can edit clock-in / clock-out times.
+          🔒 Read-only view. You don’t have permission to edit clock-in / clock-out times.
         </div>
       )}
 

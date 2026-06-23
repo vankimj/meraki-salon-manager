@@ -4,7 +4,7 @@
 // only) is unit-testable in isolation. firestore.js re-exports these and writes
 // them on every saveUsers / backfill so role + permission changes take effect at
 // the rules layer immediately.
-import { resolveRoleCaps, normalizeRole } from './rbac';
+import { resolveRoleCaps, normalizeRole, DELEGATED_RULE_CAPS } from './rbac';
 
 // Legacy built-in staff role names — kept for reference/tests. The live
 // predicate below is capability-based so custom roles are covered too.
@@ -36,6 +36,20 @@ export function buildStaffEmails(users, overlay) {
 // `overlay` is accepted for signature symmetry but intentionally unused.
 export function buildAdminEmails(users, overlay) { // eslint-disable-line no-unused-vars
   return emailsByRole(users, u => normalizeRole(u.role) === 'owner');
+}
+
+// Per-capability email allow-lists the Firestore rules' hasCap() reads. For each
+// DELEGATED_RULE_CAP, the lowercased emails of users whose RESOLVED caps include
+// it (overlay-aware, so custom roles project too). Owner is always isTenantAdmin
+// and short-circuits hasCap(), so it need not appear here — but harmless if it
+// does. With no overlay this is the static role matrix. Empty arrays are written
+// for caps no one holds so a revoke takes effect at the rules layer immediately.
+export function buildCapEmails(users, overlay) {
+  const out = {};
+  for (const cap of DELEGATED_RULE_CAPS) {
+    out[cap] = emailsByRole(users, u => resolveRoleCaps(u.role, overlay).includes(cap));
+  }
+  return out;
 }
 
 // Techs explicitly set to view-only schedule access. The rules' canEditSchedule()

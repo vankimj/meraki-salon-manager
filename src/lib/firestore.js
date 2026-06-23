@@ -6,7 +6,7 @@ import {
 } from 'firebase/firestore';
 import { db, callFn } from './firebase';
 import { TENANT_ID } from './tenant';
-import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
+import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails, buildCapEmails } from './userProjections';
 import { getCustomRoles } from './customRoles';
 import { rosterDocId, appointmentInLocation } from './locations';
 
@@ -310,6 +310,7 @@ export async function ensureStaffEmailsBackfill(users) {
       staffEmails: buildStaffEmails(users, overlay),
       adminEmails: buildAdminEmails(users, overlay),
       scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
+      capEmails:   buildCapEmails(users, overlay),
     }, { merge: true });
     batch.set(USERS_FULL_REF, { users }, { merge: true });
     await batch.commit();
@@ -329,7 +330,7 @@ export const saveSlides   = (slides, def, cur) => setDoc(SLIDES_REF, { slides, d
 // Pure projection builders live in userProjections.js (no Firebase import)
 // so the security-critical role→allow-list mapping stays unit-testable.
 // Re-exported here to preserve the existing firestore.js public surface.
-export { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails };
+export { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails, buildCapEmails };
 // (Removed) The `byEmail` projection map was a security regression —
 // staff-readable so any tech could enumerate every coworker's
 // (email, role) tuple from the JS console. Self-lookup now goes
@@ -359,6 +360,7 @@ export const saveUsers = async (users) => {
     staffEmails: buildStaffEmails(users, overlay),
     adminEmails: buildAdminEmails(users, overlay),
     scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
+    capEmails:   buildCapEmails(users, overlay),
   }, { merge: true });
   batch.set(USERS_FULL_REF, { users }, { merge: true });
   await batch.commit();
