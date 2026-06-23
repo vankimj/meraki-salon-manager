@@ -84,6 +84,9 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     if (va.role === 'scheduler') return 'Front desk';
     if (va.role === 'manager') return 'Manager';
     if (va.role === 'kiosk') return 'Kiosk';
+    if (String(va.role || '').startsWith('custom_')) {
+      return (customRoles?.roles || []).find(r => r.key === va.role)?.label || 'Custom role';
+    }
     return 'View only';
   }
 
@@ -94,6 +97,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     if (val === 'manager') return { role: 'manager' };
     if (val === 'kiosk') return { role: 'kiosk' };
     if (val.startsWith('tech:')) return { role: 'tech', techName: val.slice(5) };
+    if (val.startsWith('custom:')) return { role: val.slice(7) };  // custom_* key resolves via overlay
     return null;
   }
 
@@ -167,6 +171,9 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
               <option value="scheduler">📅 Scheduler</option>
               <option value="readonly">👁 Read-only</option>
               <option value="kiosk">🔒 Kiosk</option>
+              {(customRoles?.roles || []).map(r => (
+                <option key={r.key} value={`custom:${r.key}`}>⭐ {r.label}</option>
+              ))}
             </select>
           )}
           <button onClick={() => setShowFeedback(true)} title="Report a bug or idea" className="ms-action-btn"
