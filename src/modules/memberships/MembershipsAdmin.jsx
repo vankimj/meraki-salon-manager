@@ -22,13 +22,12 @@ export default function MembershipsAdmin() {
   const [editPlan,   setEditPlan]   = useState(null);   // plan obj or 'new'
   const [editMember, setEditMember] = useState(null);   // member obj or 'new'
 
-  if (!isAdmin) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Memberships are managed by the salon owner.</div>;
-  }
-
-  useEffect(() => subscribeMembershipPlans(setPlans), []);
-  useEffect(() => subscribeMemberships(setMembers), []);
-  useEffect(() => { fetchClients().then(setClients).catch(() => {}); }, []);
+  // Hooks must run unconditionally (Rules of Hooks) — gate the bodies on isAdmin
+  // so a non-admin render (e.g. an owner's "Preview as") doesn't fire denied
+  // reads, and the early return below can flip without changing the hook count.
+  useEffect(() => { if (!isAdmin) return; return subscribeMembershipPlans(setPlans); }, [isAdmin]);
+  useEffect(() => { if (!isAdmin) return; return subscribeMemberships(setMembers); }, [isAdmin]);
+  useEffect(() => { if (!isAdmin) return; fetchClients().then(setClients).catch(() => {}); }, [isAdmin]);
 
   const stats = useMemo(() => {
     const active = members.filter(m => m.status === 'active');
@@ -40,6 +39,10 @@ export default function MembershipsAdmin() {
       arr:         mrr * 12,
     };
   }, [members, plans]);
+
+  if (!isAdmin) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Memberships are managed by the salon owner.</div>;
+  }
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto', paddingBottom: 32 }}>
