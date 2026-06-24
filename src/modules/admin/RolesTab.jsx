@@ -254,7 +254,7 @@ function Editor({ editing, setEditing, toggleCap, onSave, saving, capLabel, onNe
     <Modal onClose={() => setEditing(null)} title={editing.mode === 'new' ? 'New role' : `Edit ${editing.label || 'role'}`} wide>
       {isBuiltIn ? (
         <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', marginBottom: 12 }}>
-          Choose what the built-in <strong>{editing.label}</strong> role can do. This only changes this salon.
+          Choose what the built-in <strong>{editing.label}</strong> role can do.
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 8, marginBottom: 14 }}>

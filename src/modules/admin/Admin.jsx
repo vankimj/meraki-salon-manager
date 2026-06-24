@@ -114,11 +114,10 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [reviewsData,  setReviewsData]  = useState(null);
   const isSuperAdmin = gUser?.email === 'jvankim@gmail.com';
   const TABS = [
-    { id: 'users',    label: 'Users'    },
+    { id: 'users',    label: isAdmin ? 'Users & Roles' : 'Users' },
     { id: 'notifs',   label: 'Notifs'   },
     { id: 'reviews',  label: 'Reviews'  },
     { id: 'settings', label: 'Settings' },
-    ...(isAdmin ? [{ id: 'roles', label: 'Roles' }] : []),
     ...(isAdmin ? [{ id: 'locations', label: 'Locations' }] : []),
     { id: 'webfront', label: 'Webfront' },
     { id: 'sms',      label: 'SMS'      },
@@ -295,6 +294,11 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </UserRow>
               )) : <Empty>No users yet</Empty>}
             </Section>
+            {isAdmin && (
+              <Section title="🛡 Roles & permissions">
+                <RolesTab />
+              </Section>
+            )}
             <Section title="📲 Invite a teammate by text">
               <StaffSmsInvite employees={employees} />
             </Section>
@@ -312,7 +316,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
           }} />
         )}
 
-        {tab === 'roles' && isAdmin && <RolesTab />}
         {tab === 'locations' && <LocationsTab />}
         {tab === 'templates' && <MessageTemplatesTab />}
 
