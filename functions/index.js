@@ -907,6 +907,15 @@ async function sendSms({
   const phone = normalizePhone(to);
   if (!phone) return { ok: false, error: 'invalid_phone' };
 
+  // Marketing SMS is illegal without verified opt-in, and opt-in lives on the
+  // client doc — so a marketing send with NO clientId can't be verified. Fail
+  // closed: a crafted campaign recipient with a raw phone and no clientId must
+  // not be texted. (Only processSMSCampaign sends kind:'marketing'; every other
+  // caller is transactional, so staff/ad-hoc alerts are unaffected.)
+  if (kind === 'marketing' && !clientId) {
+    return { ok: false, error: 'no_marketing_opt_in', optedOut: true };
+  }
+
   // Opt-in / opt-out enforcement (if clientId known).
   // - For transactional: any explicit opt-out blocks the send.
   // - For marketing: requires explicit smsOptIn=true (CAN-SPAM-equivalent
@@ -1692,6 +1701,22 @@ async function processEmailCampaign(tenantId, docRef, data) {
   for (const recipient of recipients) {
     const at = new Date().toISOString();
     const { name, email, clientId } = recipient;
+    // Server-side marketing opt-out enforcement. The audience is resolved
+    // client-side; re-check here so a crafted recipient list (now that
+    // marketing is delegable to non-owner roles) can't email a client who
+    // opted out. Email opt-IN isn't legally required (CAN-SPAM = opt-out +
+    // unsubscribe, both present), so we honor only an explicit opt-out.
+    if (email && clientId) {
+      let optedOut = false;
+      try {
+        const cSnap = await db.doc(`tenants/${tenantId}/clients/${clientId}`).get();
+        if (cSnap.exists && cSnap.data()?.marketingOptOut === true) optedOut = true;
+      } catch (e) { console.warn(`[processEmailCampaign] opt-out lookup failed for ${clientId}:`, e?.message); }
+      if (optedOut) {
+        attempts.push({ name: name || '(unknown)', email, status: 'failed', code: 'OPT_OUT', reason: 'Client has opted out of marketing email', at });
+        continue;
+      }
+    }
     if (!email) {
       attempts.push({ name: name || '(unknown)', email: '', status: 'failed', code: 'NO_EMAIL', reason: 'Recipient has no email address on file', at });
     } else {
