@@ -1728,6 +1728,7 @@ function LogRow({ log }) {
 // with Google/Apple, and claimStaffInvite links them to this tenant with the
 // chosen role — no need to be pre-added by email or to sign in on the web first.
 function StaffSmsInvite() {
+  const { customRoles } = useApp();
   const [phone,   setPhone]   = useState('');
   const [name,    setName]    = useState('');
   const [role,    setRole]    = useState('tech');
@@ -1788,6 +1789,11 @@ function StaffSmsInvite() {
           <option value="manager">Manager</option>
           <option value="readonly">View only</option>
           <option value="admin">Owner / admin</option>
+          {(customRoles?.roles || []).length > 0 && (
+            <optgroup label="Custom roles">
+              {customRoles.roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </optgroup>
+          )}
         </select>
         <button onClick={send} disabled={sending || !phone.trim()}
           style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sending || !phone.trim() ? 'var(--pn-border-strong)' : '#2D7A5F', color: '#fff', fontSize: 13, fontWeight: 700, cursor: sending || !phone.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
@@ -3925,14 +3931,23 @@ function WalkinTurnModeSection({ settings, updateSettings, nested = false }) {
 }
 
 function NotificationRoutingSection({ settings, updateSettings, users = [], nested = false }) {
+  const { customRoles } = useApp();
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
 
+  // Role axis = built-in NOTIF_ROLES + the tenant's custom roles (from the
+  // overlay), so the grid can route alerts to custom-role staff too.
+  const customRoleList = (customRoles && Array.isArray(customRoles.roles)) ? customRoles.roles : [];
+  const customRoleKeys = customRoleList.map(r => r.key);
+  const roles = [...NOTIF_ROLES, ...customRoleKeys];
+  const roleLabelShort = (r) => ROLE_LABELS_SHORT[r] || (customRoleList.find(c => c.key === r)?.label) || r;
+
   // How many active staff sit in each role (so the admin knows who a row reaches).
   const roleCounts = {};
-  NOTIF_ROLES.forEach(r => { roleCounts[r] = 0; });
+  roles.forEach(r => { roleCounts[r] = 0; });
   (users || []).forEach(u => {
-    const r = normalizeRole(u && u.role);
+    const raw = String((u && u.role) || '').trim().toLowerCase();
+    const r = normalizeRole(raw) || raw;   // custom_* keys pass through
     if (r && roleCounts[r] !== undefined) roleCounts[r] += 1;
   });
 
@@ -3946,9 +3961,9 @@ function NotificationRoutingSection({ settings, updateSettings, users = [], nest
   }
 
   function toggleInternal(eventKey, role, channel) {
-    const current = resolveInternalRouting(settings, eventKey);
+    const current = resolveInternalRouting(settings, eventKey, customRoleKeys);
     const nextEvent = {};
-    NOTIF_ROLES.forEach(r => { nextEvent[r] = { ...current[r] }; });
+    roles.forEach(r => { nextEvent[r] = { ...current[r] }; });
     nextEvent[role][channel] = !nextEvent[role][channel];
     const routing = settings.notificationRouting || {};
     persist({ ...routing, internal: { ...(routing.internal || {}), [eventKey]: nextEvent } });
@@ -3977,16 +3992,16 @@ function NotificationRoutingSection({ settings, updateSettings, users = [], nest
 
         {/* Role legend */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          {NOTIF_ROLES.map(r => (
+          {roles.map(r => (
             <span key={r} style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 999, padding: '3px 10px' }}>
-              {ROLE_LABELS_SHORT[r]} · {roleCounts[r]}
+              {roleLabelShort(r)} · {roleCounts[r]}
             </span>
           ))}
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto', fontWeight: 600 }}>✓ Saved</span>}
         </div>
 
         {INTERNAL_EVENTS.map(ev => {
-          const routing = resolveInternalRouting(settings, ev.key);
+          const routing = resolveInternalRouting(settings, ev.key, customRoleKeys);
           return (
             <div key={ev.key} style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 10, background: 'var(--pn-bg)' }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--pn-text)' }}>{ev.label}</div>
@@ -4002,16 +4017,16 @@ function NotificationRoutingSection({ settings, updateSettings, users = [], nest
                     </tr>
                   </thead>
                   <tbody>
-                    {NOTIF_ROLES.map(role => (
+                    {roles.map(role => (
                       <tr key={role}>
                         <td style={{ padding: '3px 10px 3px 0', color: 'var(--pn-text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {ROLE_LABELS_SHORT[role]} <span style={{ color: 'var(--pn-text-faint)', fontWeight: 500 }}>· {roleCounts[role]}</span>
+                          {roleLabelShort(role)} <span style={{ color: 'var(--pn-text-faint)', fontWeight: 500 }}>· {roleCounts[role]}</span>
                         </td>
                         {NOTIF_CHANNELS.map(ch => (
                           <td key={ch} style={{ padding: '3px 8px', textAlign: 'center' }}>
                             <button type="button" disabled={saving}
                               onClick={() => toggleInternal(ev.key, role, ch)}
-                              title={`${ROLE_LABELS_SHORT[role]} · ${CHANNEL_LABELS[ch]}`}
+                              title={`${roleLabelShort(role)} · ${CHANNEL_LABELS[ch]}`}
                               style={cellBtn(routing[role][ch])}>
                               {routing[role][ch] ? '✓' : ''}
                             </button>
