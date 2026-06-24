@@ -2968,15 +2968,12 @@ exports.resendReceiptSms = onCall({ cors: true }, async (request) => {
   const tenantId = String(tid || TENANT_ID);
   if (!receiptId && !viewToken) throw new HttpsError('invalid-argument', 'receiptId or viewToken required');
 
-  // Reuse the staff-membership check — admin or techs can re-send their own.
+  // Resending a receipt is a checkout-desk action: require the `pos` capability
+  // (owner/manager/staff/scheduler — overlay-aware), not just admin. callerEmail
+  // is still derived for the per-user rate limit below.
   const callerEmail = String(request.auth.token?.email || '').toLowerCase();
   if (!callerEmail) throw new HttpsError('permission-denied', 'No email on token');
-  const usersSnap = await getFirestore().doc(`tenants/${tenantId}/data/usersFull`).get();
-  const list = (usersSnap.exists ? usersSnap.data()?.users : []) || [];
-  const me = list.find(u => String(u.email || '').toLowerCase() === callerEmail);
-  if (!me || (me.role !== 'admin' && me.role !== 'tech')) {
-    throw new HttpsError('permission-denied', 'Staff access required');
-  }
+  await requireCap(getFirestore(), tenantId, request, 'pos');
 
   // Cheap in-process per-user rate limit: 5/min.
   if (!checkRate(`resendReceiptSms:${callerEmail}`, Date.now(), 60 * 1000, 5)) {
@@ -3050,15 +3047,12 @@ exports.resendReceiptEmail = onCall({ cors: true }, async (request) => {
     throw new HttpsError('invalid-argument', 'Invalid email address');
   }
 
-  // Reuse the staff-membership check — admin or techs can re-send their own.
+  // Resending a receipt is a checkout-desk action: require the `pos` capability
+  // (owner/manager/staff/scheduler — overlay-aware), not just admin. callerEmail
+  // is still derived for the per-user rate limit below.
   const callerEmail = String(request.auth.token?.email || '').toLowerCase();
   if (!callerEmail) throw new HttpsError('permission-denied', 'No email on token');
-  const usersSnap = await getFirestore().doc(`tenants/${tenantId}/data/usersFull`).get();
-  const list = (usersSnap.exists ? usersSnap.data()?.users : []) || [];
-  const me = list.find(u => String(u.email || '').toLowerCase() === callerEmail);
-  if (!me || (me.role !== 'admin' && me.role !== 'tech')) {
-    throw new HttpsError('permission-denied', 'Staff access required');
-  }
+  await requireCap(getFirestore(), tenantId, request, 'pos');
 
   if (!checkRate(`resendReceiptEmail:${callerEmail}`, Date.now(), 60 * 1000, 5)) {
     throw new HttpsError('resource-exhausted', 'Too many resends. Try again in a minute.');
@@ -3784,7 +3778,6 @@ const STAFF_INVITE_ROLES = {
   admin:     { store: 'admin',     label: 'an owner/admin' },
   readonly:  { store: 'readonly',  label: 'read-only' },
 };
-const STAFF_PROJ_ROLES = ['admin', 'manager', 'readonly', 'tech', 'scheduler'];
 
 exports.createStaffInvite = onCall({ cors: true }, async (request) => {
   const d = request.data || {};
@@ -3795,7 +3788,17 @@ exports.createStaffInvite = onCall({ cors: true }, async (request) => {
 
   const phone = normalizePhone(d.phone);
   if (!phone) throw new HttpsError('invalid-argument', 'Enter a valid mobile number (e.g. (614) 555-0123).');
-  const roleDef = STAFF_INVITE_ROLES[String(d.role || '').trim().toLowerCase()];
+  // Accept a built-in role OR a custom_* role that exists in THIS tenant's
+  // overlay (the owner is choosing — requireTenantAdmin already ran). The
+  // custom key is stored verbatim and projects correctly on claim via
+  // buildStaffProjection. Never accepts a free-form/foreign role.
+  const reqRole = String(d.role || '').trim().toLowerCase();
+  let roleDef = STAFF_INVITE_ROLES[reqRole];
+  if (!roleDef) {
+    const overlay = await loadCustomRoles(db, tenantId);
+    const custom = overlay && Array.isArray(overlay.roles) && overlay.roles.find(r => r && r.key === reqRole);
+    if (custom) roleDef = { store: reqRole, label: custom.label || 'your team' };
+  }
   if (!roleDef) throw new HttpsError('invalid-argument', 'Pick a valid role.');
   const name = String(d.name || '').trim().slice(0, 80);
 
@@ -3870,7 +3873,6 @@ exports.claimStaffInvite = onCall({ cors: true }, async (request) => {
       throw new HttpsError('failed-precondition', 'This invite has expired — ask your manager for a new one.');
     }
     const tenantId = inv.tenantId;
-    const role = STAFF_PROJ_ROLES.includes(inv.role) ? inv.role : 'tech';
 
     // Rich users[] + reprojected allow-lists must move together (the 2026-05-10
     // split-write incident) — do both in this transaction.
@@ -3881,6 +3883,11 @@ exports.claimStaffInvite = onCall({ cors: true }, async (request) => {
     // the projection here can't drop a custom-role member from staffEmails.
     const ovSnap  = await tx.get(db.doc(`tenants/${tenantId}/data/customRoles`));
     const overlay = ovSnap.exists ? ovSnap.data() : null;
+    // Honor the admin-minted invite role: a built-in role OR a custom_* role
+    // that still exists in the overlay (roleExists is overlay-aware). A deleted/
+    // unknown role falls back to 'tech' (fail-safe). The claimer never picks
+    // their own role — inv.role was set by the owner in createStaffInvite.
+    const role = roleExists(inv.role, overlay) ? inv.role : 'tech';
     const users = (fullSnap.exists ? (fullSnap.data().users || []) : []).slice();
     const idx = users.findIndex(u => String(u.email || '').toLowerCase() === email);
     const prior = idx >= 0 ? users[idx] : {};
@@ -5228,12 +5235,11 @@ exports.notifyAppointmentCancelled = onCall({ cors: true }, async (request) => {
   if (!apptId) throw new HttpsError('invalid-argument', 'apptId required');
   if (!request?.auth) throw new HttpsError('unauthenticated', 'Sign in required');
   const db = getFirestore();
-  if (!(await isBootstrapAdmin(request))) {
-    const role = await callerRole(db, tenantId, request);
-    if (role !== 'admin' && role !== 'scheduler') {
-      throw new HttpsError('permission-denied', 'admin or scheduler role required');
-    }
-  }
+  // Sending a customer cancellation notice = managing the calendar. Require the
+  // `schedule_all` capability (owner/manager/scheduler — overlay-aware), which
+  // preserves the prior admin/scheduler scope and, unlike plain `schedule`,
+  // does NOT admit readonly (who must never trigger an outbound customer msg).
+  await requireCap(db, tenantId, request, 'schedule_all');
   const snap = await db.doc(`tenants/${tenantId}/appointments/${apptId}`).get();
   if (!snap.exists) throw new HttpsError('not-found', 'Appointment not found');
   const result = await sendCancelNoticeForAppt(db, tenantId, snap.data() || {}, { selfService: false });
@@ -8668,7 +8674,11 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
 async function notifyByRouting(db, tenantId, event, { title, line, data = {} }) {
   const setSnap  = await db.doc(`tenants/${tenantId}/data/settings`).get().catch(() => null);
   const settings = setSnap && setSnap.exists ? setSnap.data() : {};
-  const routing  = resolveInternalRouting(settings, event);   // { role: {push,email,sms} }
+  // Custom-role overlay so the routing map + role resolution cover custom roles
+  // (else a custom-role staffer is silently dropped and never alerted).
+  const overlay  = await loadCustomRoles(db, tenantId);
+  const customRoleKeys = (overlay && Array.isArray(overlay.roles)) ? overlay.roles.map(r => r && r.key).filter(Boolean) : [];
+  const routing  = resolveInternalRouting(settings, event, customRoleKeys);   // { role: {push,email,sms} }
 
   // Resolve every staff member's role. usersFull carries the rich users[]; the
   // tenant owner is always 'owner' even if not listed.
@@ -8679,8 +8689,11 @@ async function notifyByRouting(db, tenantId, event, { title, line, data = {} }) 
 
   const roleByEmail = {};
   usersArr.forEach(u => {
-    const em = String((u && u.email) || '').toLowerCase();
-    const r  = normalizeRole(u && u.role);
+    const em  = String((u && u.email) || '').toLowerCase();
+    const raw = String((u && u.role) || '').trim().toLowerCase();
+    // Built-in → canonical key (matches routing); custom_* → its own key (in
+    // routing via customRoleKeys). normalizeRole returns null for custom keys.
+    const r   = normalizeRole(raw) || (roleExists(raw, overlay) ? raw : null);
     if (em && r) roleByEmail[em] = r;
   });
   if (ownerEmail) roleByEmail[ownerEmail] = 'owner';
