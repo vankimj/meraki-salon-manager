@@ -100,13 +100,13 @@ const twilioToken     = defineSecret('TWILIO_AUTH_TOKEN');
 const twilioApiKeySid = defineString('TWILIO_API_KEY_SID', { default: '' }); // optional: SKxxx for API Key auth
 const twilioFrom      = defineString('TWILIO_FROM',        { default: '' });
 // ── AWS End User Messaging SMS (provider migration off Twilio) ────────────────
-// SMS_PROVIDER selects the dispatch path in sendSms(): 'twilio' (default) keeps
-// the existing path untouched; 'aws' sends via AWS End User Messaging from the
-// shared platform origination number. A tenant overrides per-tenant via
+// SMS_PROVIDER selects the dispatch path in sendSms(): 'aws' (default, post-
+// cutover) sends via AWS End User Messaging from the shared platform 10DLC
+// number; 'twilio' restores the legacy path. A tenant overrides per-tenant via
 // settings.smsProvider. Reuses the SES IAM creds (awsAccessKey/awsSecretKey) —
-// same key/account; only the IAM policy needs sms-voice added. NOT active until
-// AWS_SMS_ORIGINATION is set + the sms-voice IAM grant lands; default stays twilio.
-const smsProvider       = defineString('SMS_PROVIDER',        { default: 'twilio' });
+// same key/account. Cutover completed 2026-06-26: default flipped twilio→aws so
+// no redeploy from a stale .env can silently revert SMS to Twilio.
+const smsProvider       = defineString('SMS_PROVIDER',        { default: 'aws' });
 const awsSmsRegion      = defineString('AWS_SMS_REGION',      { default: '' }); // falls back to AWS_SES_REGION
 const awsSmsOrigination = defineString('AWS_SMS_ORIGINATION', { default: '' }); // shared #/pool, filled after provisioning
 const { sendViaAwsSms } = require('./lib/awsSms');
