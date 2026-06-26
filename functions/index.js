@@ -15226,6 +15226,72 @@ exports.setTenantSandboxMode = onCall(
   }
 );
 
+// Generalized per-tenant service controls — the platform-admin surface for the
+// three independent sandbox kill-switches (SMS / email / Stripe) + the
+// configurable caps. Pass only what you're changing. Platform-admin only,
+// rate-limited, audited. (setTenantSandboxMode above stays for back-compat SMS.)
+exports.setTenantServiceControls = onCall(
+  { cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in.');
+    const callerEmail = String(request.auth.token?.email || '').toLowerCase();
+    if (!await isPlatformAdmin(callerEmail)) {
+      throw new HttpsError('permission-denied', 'Platform admin only.');
+    }
+    const tenantId = String(request.data?.tenantId || '').trim();
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId.');
+    }
+    const rate = checkAdminActionRate(callerEmail, 'tenant.controls.set', 40, 60 * 60 * 1000);
+    if (!rate.allowed) {
+      throw new HttpsError('resource-exhausted',
+        `Rate limit: 40 changes per hour. Retry in ~${Math.ceil(rate.retryAfterMs / 60000)} min.`);
+    }
+
+    const sandboxIn = (request.data?.sandbox && typeof request.data.sandbox === 'object') ? request.data.sandbox : {};
+    const capsIn    = (request.data?.caps    && typeof request.data.caps    === 'object') ? request.data.caps    : {};
+
+    const now = new Date().toISOString();
+    const update = { updatedAt: now };
+    // Sandbox flags — service → registry field. Only included when a boolean was
+    // passed, so one service can change without touching the others.
+    const FIELD = { sms: 'sandboxMode', email: 'emailSandboxMode', stripe: 'stripeSandboxMode' };
+    for (const svc of ['sms', 'email', 'stripe']) {
+      if (typeof sandboxIn[svc] === 'boolean') update[FIELD[svc]] = sandboxIn[svc];
+    }
+    // Caps — clamp to sane non-negative integers; only set provided keys.
+    const clampInt = (v, max) => Math.max(0, Math.min(max, Math.round(Number(v))));
+    const capUpdate = {};
+    if (Number.isFinite(Number(capsIn.smsPerDay)))      capUpdate.smsPerDay      = clampInt(capsIn.smsPerDay, 1000000);
+    if (Number.isFinite(Number(capsIn.emailPerDay)))    capUpdate.emailPerDay    = clampInt(capsIn.emailPerDay, 1000000);
+    if (Number.isFinite(Number(capsIn.maxChargeCents))) capUpdate.maxChargeCents = clampInt(capsIn.maxChargeCents, 100000000);
+
+    if (Object.keys(update).length === 1 && Object.keys(capUpdate).length === 0) {
+      throw new HttpsError('invalid-argument', 'Nothing to update (pass sandbox and/or caps).');
+    }
+
+    const db = getFirestore();
+    const tenantRef = db.doc(`tenants/${tenantId}`);
+    const tSnap = await tenantRef.get();
+    if (!tSnap.exists) throw new HttpsError('not-found', `tenants/${tenantId} not found.`);
+
+    if (Object.keys(capUpdate).length) {
+      const existing = (tSnap.data()?.caps && typeof tSnap.data().caps === 'object') ? tSnap.data().caps : {};
+      update.caps = { ...existing, ...capUpdate };   // partial update keeps the rest
+    }
+    if (Object.prototype.hasOwnProperty.call(update, 'sandboxMode')) {
+      update.sandboxModeChangedAt = now; update.sandboxModeChangedBy = callerEmail;
+    }
+    await tenantRef.update(update);
+
+    await logAdminAction(db, request, 'tenant.controls.set', {
+      tenantId, sandbox: { ...sandboxIn }, caps: capUpdate, slug: tSnap.data()?.subdomain || null,
+    });
+
+    return { ok: true, tenantId };
+  }
+);
+
 exports.purgeOldTombstones = onSchedule(
   { schedule: 'every day 03:00', timeZone: 'America/New_York', timeoutSeconds: 540 },
   async () => {
