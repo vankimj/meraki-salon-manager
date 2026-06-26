@@ -19,6 +19,7 @@ const { resolveTurnMode, buildTurnValueMap, turnValueForLineName } = require('./
 const { normalizeVertical, membershipPlansForVertical } = require('./lib/verticals');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
+const { DEFAULT_TENANT_CAPS, effectiveSandbox, effectiveCaps } = require('./lib/serviceSandbox');
 const { renderTemplate, getTemplatePhrases } = require('./lib/messageTemplates');
 
 initializeApp();
@@ -603,9 +604,11 @@ const SEND_QUOTA_CAPS = {
   smsTransactional: 500,
 };
 
-async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1) {
+async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1, capOverride) {
   if (!tenantId) return { ok: true, current: 0, cap: Infinity };
-  const cap = SEND_QUOTA_CAPS[channel] || SEND_QUOTA_CAPS.transactional;
+  // capOverride = the per-tenant configurable cap (caps.smsPerDay / emailPerDay)
+  // when provided; otherwise the platform default for this channel.
+  const cap = Number.isFinite(capOverride) ? capOverride : (SEND_QUOTA_CAPS[channel] || SEND_QUOTA_CAPS.transactional);
   const today = new Date().toISOString().slice(0, 10);
   const ref = db.doc(`tenants/${tenantId}/data/sendStats`);
   try {
@@ -617,15 +620,17 @@ async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1) {
       if (currentDay + count > cap) {
         return { ok: false, current: currentDay, cap, channel };
       }
-      // On date roll, reset BOTH channels (not just the one being incremented).
       const updates = isToday
         ? { [channel]: currentDay + count, updatedAt: new Date().toISOString() }
-        : {
-            date: today,
-            marketing:     channel === 'marketing'     ? count : 0,
-            transactional: channel === 'transactional' ? count : 0,
-            updatedAt:     new Date().toISOString(),
-          };
+        : { date: today, [channel]: count, updatedAt: new Date().toISOString() };
+      // On date roll, zero every OTHER known bucket so a stale count can't carry
+      // over (the old code reset only marketing+transactional and dropped the
+      // incrementing channel's count entirely).
+      if (!isToday) {
+        for (const b of ['marketing', 'transactional', 'smsMarketing', 'smsTransactional', 'email']) {
+          if (b !== channel) updates[b] = 0;
+        }
+      }
       tx.set(ref, updates, { merge: true });
       return { ok: true, current: currentDay + count, cap, channel };
     });
@@ -766,6 +771,26 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
   if (await isEmailSuppressed(db, to, tenantId)) {
     console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)} tenant=${tenantId || 'n/a'}`);
     return { data: null, error: { message: 'address_suppressed', suppressed: true } };
+  }
+  // Per-tenant EMAIL sandbox (platform-admin kill-switch). When sandboxed, log
+  // the message that WOULD have been sent and return success WITHOUT touching
+  // SES — mirrors the SMS sandbox so a not-yet-live tenant can't email real
+  // customers. Body (html) is not stored; subject + recipient are enough to
+  // inspect.
+  if (tenantId && await isEmailSandboxTenant(db, tenantId)) {
+    const kindTag = Array.isArray(tags) ? tags.find(t => t && t.name === 'kind') : null;
+    await writeSandboxEmailLog(db, tenantId, { kind: kindTag?.value || 'transactional', to: normalizeEmailAddr(to), subject });
+    console.log(`[sendEmail] SANDBOX (no SES): ${normalizeEmailAddr(to)} tenant=${tenantId}`);
+    return { data: { id: 'SANDBOX' }, error: null };
+  }
+  // Per-tenant daily email cap (configurable; platform default 1000/day).
+  if (tenantId) {
+    const { emailPerDay } = await getTenantCaps(db, tenantId);
+    const eq = await checkAndIncrementSendQuota(db, tenantId, 'email', 1, emailPerDay);
+    if (!eq.ok) {
+      console.warn(`[sendEmail] daily email cap hit for ${tenantId} (${eq.current}/${eq.cap})`);
+      return { data: null, error: { message: 'email_daily_cap', capped: true } };
+    }
   }
   const logUsage = (id) => {
     if (!tenantId) return;
@@ -947,7 +972,9 @@ async function sendSms({
   // can't both squeak past the cap).
   if (!skipQuota) {
     const quotaBucket = kind === 'marketing' ? 'smsMarketing' : 'smsTransactional';
-    const quota = await checkAndIncrementSendQuota(db, tenantId, quotaBucket, 1);
+    // Per-tenant configurable SMS/day cap (caps.smsPerDay) applied per bucket.
+    const { smsPerDay } = await getTenantCaps(db, tenantId);
+    const quota = await checkAndIncrementSendQuota(db, tenantId, quotaBucket, 1, smsPerDay);
     if (!quota.ok) {
       return { ok: false, error: 'rate_limited', quotaBlocked: true, quota };
     }
@@ -4551,7 +4578,11 @@ exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (re
 
   // 3. Card: the PaymentIntent must have actually captured the recomputed total
   //    for THIS tenant. This is what stops a kiosk recording an unpaid/short sale.
-  if (method === 'card') {
+  //    Stripe-sandbox tenants carry a simulated `pi_sandbox_` id (no real charge);
+  //    skip the Stripe verification and tag the receipt sandbox so the ledger
+  //    trigger + reports exclude it from real revenue.
+  const isSandboxSale = method === 'card' && /^pi_sandbox_[a-z0-9-]+_[a-z0-9]+$/i.test(piId || '');
+  if (method === 'card' && !isSandboxSale) {
     if (!/^pi_[A-Za-z0-9]+$/.test(piId)) throw new HttpsError('invalid-argument', 'Valid stripePaymentIntentId required');
     const key = stripeKey.value();
     if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured');
@@ -4641,6 +4672,9 @@ exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (re
     payment,
     apptIds,
     createdAt:   new Date().toISOString(),
+    // Simulated (Stripe-sandbox) sale — flagged so the ledger trigger skips it
+    // and revenue reports exclude it. No real money moved.
+    ...(isSandboxSale ? { sandbox: true } : {}),
   }, { merge: true });
 
   // 8. Mark the session paid so the tech's device + the kiosk both settle.
@@ -7375,7 +7409,9 @@ exports.chatWithReports = onCall(
         .where('date', '>=', startDate)
         .where('date', '<=', endDate)
         .get();
-      const rows = snap.docs.map(d => d.data());
+      const rows = snap.docs.map(d => d.data())
+        // Exclude simulated (Stripe-sandbox) sales — they aren't real revenue.
+        .filter(r => r.sandbox !== true);
       // Revenue lives under r.payment, not at the top level. Refunds, voids,
       // and cancellations are negative receipts that should net against sales.
       const isNegative = (r) => r.transactionType === 'refund'
@@ -8431,6 +8467,27 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   const tenSnap = await getFirestore().doc(`tenants/${tenantId}`).get();
   const ten = tenSnap.exists ? tenSnap.data() : {};
   const salonName = ten.name || tenantId;
+
+  // Per-tenant STRIPE sandbox (demo mode): return a SIMULATED successful PI
+  // before touching Stripe (or even requiring Connect onboarding). The POS
+  // front-end detects `sandbox:true` and skips card entry; recordKioskSale
+  // detects the `pi_sandbox_` id and records a sandbox-tagged receipt that the
+  // ledger trigger + reports exclude from real revenue. No real money moves.
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
+    writeSandboxChargeLog(getFirestore(), tenantId, {
+      kind: 'pos_payment_intent', amountCents: Math.round(Number(amountCents) || 0), description: description || salonName,
+    }).catch(() => {});
+    return { sandbox: true, simulated: true, clientSecret: null, paymentIntentId: simId, status: 'succeeded' };
+  }
+
+  // Per-tenant max single-charge cap (configurable; platform default $5,000).
+  const maxChargeCents = effectiveCaps(ten).maxChargeCents;
+  if (Math.round(amountCents) > maxChargeCents) {
+    throw new HttpsError('failed-precondition',
+      `Charge $${(Math.round(amountCents) / 100).toFixed(2)} exceeds this salon's per-charge limit of $${(maxChargeCents / 100).toFixed(2)}.`);
+  }
+
   // Route funds to the salon's connected account — same Connect model the
   // off-session (stored-card) path uses. Refuse to charge to the platform
   // account: that would have the client's money land in Plume's balance, not
@@ -8540,7 +8597,10 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   }
 
   const piId   = payment.stripePaymentIntentId || null;
-  const isCard = payment.method === 'card' && !!piId;
+  // Sandbox (simulated) sale → no real money was taken, so a refund is record-
+  // only: skip the Stripe refund call (the pi_sandbox_ id isn't a real charge).
+  const isSandboxReceipt = rec.sandbox === true;
+  const isCard = payment.method === 'card' && !!piId && !isSandboxReceipt;
 
   // Per-tech commission treatment for this refund. Default per tech =
   // settings.refundCommissionDefault ('withhold'|'goodwill', default withhold);
@@ -8913,6 +8973,8 @@ exports.updateRefundCommission = onCall({ cors: true }, async (request) => {
 exports.ledgerOnReceiptCreated = onDocumentCreated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {
   const r = event.data?.data();
   if (!r) return;
+  // Simulated (Stripe-sandbox) sales never enter the real-money ledger.
+  if (r.sandbox === true) return;
   const { tenantId, receiptId } = event.params;
   try {
     await ledger.appendLedger(getFirestore(), tenantId, `sale_${receiptId}`, ledger.buildSaleEntry(receiptId, r));
@@ -8929,6 +8991,8 @@ exports.ledgerOnReceiptCreated = onDocumentCreated('tenants/{tenantId}/receipts/
 exports.ledgerOnReceiptUpdated = onDocumentUpdated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {
   const before = event.data?.before?.data() || {};
   const after  = event.data?.after?.data()  || {};
+  // Simulated (Stripe-sandbox) sales never enter the real-money ledger.
+  if (after.sandbox === true) return;
   const { tenantId, receiptId } = event.params;
   const db = getFirestore();
   // New refunds (compare by idempotency key).
@@ -10530,6 +10594,13 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
 
   const tenSnap = await db.doc(`tenants/${tenantId}`).get();
   const ten = tenSnap.exists ? tenSnap.data() : {};
+  // Stripe sandbox: a sandboxed/demo tenant takes no real deposit hold. Skip it
+  // (reuses the existing skipped path) so the booking still completes, with no
+  // money held and no settlement lifecycle to manage.
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    writeSandboxChargeLog(db, tenantId, { kind: 'booking_deposit', amountCents: amount, clientId: caller.id }).catch(() => {});
+    return { skipped: true, reason: 'sandbox' };
+  }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition', 'Salon has not finished payment setup — deposits can\'t be taken yet.');
   }
@@ -10670,6 +10741,13 @@ exports.createGiftCardPurchaseIntent = onCall({ cors: true, secrets: [stripeKey]
     throw new HttpsError('resource-exhausted', 'Too many gift-card purchases right now. Try again shortly.');
   }
   const ten = (await db.doc(`tenants/${tenantId}`).get()).data() || {};
+  // Stripe sandbox: simulate a successful gift-card purchase (no real charge).
+  // The front-end detects `sandbox` and finalizes with the simulated PI.
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
+    writeSandboxChargeLog(db, tenantId, { kind: 'gift_card_purchase', amountCents, recipientEmail }).catch(() => {});
+    return { sandbox: true, simulated: true, clientSecret: null, paymentIntentId: simId };
+  }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition', 'This salon hasn\'t finished payment setup, so gift cards can\'t be purchased online yet.');
   }
@@ -10703,6 +10781,9 @@ exports.finalizeGiftCardPurchase = onCall({ cors: true, secrets: [stripeKey] }, 
   const tenantId = String(d.tenantId || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
   const piId = String(d.paymentIntentId || '');
+  // Stripe sandbox: a simulated gift-card purchase finalizes without minting a
+  // real (spendable) card or touching Stripe — money-safe demo.
+  if (/^pi_sandbox_/.test(piId)) return { ok: true, sandbox: true, created: false };
   if (!/^pi_[A-Za-z0-9]+$/.test(piId)) throw new HttpsError('invalid-argument', 'Invalid payment reference.');
   const key = stripeKey.value();
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
@@ -10781,6 +10862,17 @@ exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (r
 
   const tenSnap = await db.doc(`tenants/${tenantId}`).get();
   const ten = tenSnap.exists ? tenSnap.data() : {};
+  // Stripe sandbox: simulate a successful stored-card charge (no real money).
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
+    writeSandboxChargeLog(db, tenantId, { kind: 'stored_card_charge', amountCents: Math.round(Number(amount) || 0), clientId }).catch(() => {});
+    return { ok: true, sandbox: true, simulated: true, paymentIntentId: simId, status: 'succeeded' };
+  }
+  const maxChargeCents = effectiveCaps(ten).maxChargeCents;
+  if (Math.round(Number(amount)) > maxChargeCents) {
+    throw new HttpsError('failed-precondition',
+      `Charge exceeds this salon's per-charge limit of $${(maxChargeCents / 100).toFixed(2)}.`);
+  }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition',
       'Salon has not completed Stripe Connect onboarding — cards cannot be charged until that\'s done.');
@@ -11745,6 +11837,15 @@ exports.createMembershipCheckout = onCall({ cors: true, secrets: [stripeKey] }, 
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
   const stripe = require('stripe')(key);
   const db     = dbAuth;
+
+  // Stripe sandbox: don't create a real Stripe subscription/checkout for a
+  // sandboxed tenant. Return a sandbox marker (no money, no Stripe resources);
+  // the front-end shows the simulated state.
+  const tenSb = (await db.doc(`tenants/${tenantId}`).get()).data() || {};
+  if (effectiveSandbox(tenSb, 'stripeSandboxMode')) {
+    writeSandboxChargeLog(db, tenantId, { kind: 'membership_checkout', membershipId }).catch(() => {});
+    return { sandbox: true, simulated: true, url: null };
+  }
 
   const memRef = db.doc(`tenants/${tenantId}/memberships/${membershipId}`);
   const memSnap = await memRef.get();
@@ -13422,10 +13523,15 @@ exports.getTenantMetadata = onCall(
       // hasn't connected one. Populated post-signup via the custom-domain
       // wizard (not yet built — Sprint D).
       customDomain:     registry.customDomain     || null,
-      // Sandbox flag: when true, SMS provisioning + sending are mocked
-      // (no Twilio, no charges). Defaults to true for new self-serve
-      // signups so test traffic can't trigger real $2/mo TFN purchases.
-      sandboxMode:      registry.sandboxMode !== false,
+      // Service sandbox flags (SMS / email / Stripe): true = sandboxed (mocked,
+      // no real send/charge). Default true for new tenants. Toggled by the
+      // platform-admin TenantDetail cards via setTenantServiceControls.
+      sandboxMode:       registry.sandboxMode !== false,
+      // Effective email/Stripe sandbox state: explicit flag wins; unset inherits
+      // the master sandboxMode (see effectiveSandbox — migration-safe).
+      emailSandboxMode:  effectiveSandbox(registry, 'emailSandboxMode'),
+      stripeSandboxMode: effectiveSandbox(registry, 'stripeSandboxMode'),
+      caps:              registry.caps || null,
       provisioned:      usersSnap.exists,
       // staffEmails projection is the canonical count post-split
       // (rich users[] now lives in data/usersFull, not read here).
@@ -14292,6 +14398,58 @@ async function writeSandboxSmsLog(db, tenantId, entry) {
   }
 }
 
+// ── Per-tenant service sandbox + caps (generalizes the SMS sandbox above) ─────
+// Three independent platform-admin kill-switches on the tenant registry doc
+// (tenants/{id}): sandboxMode (SMS), emailSandboxMode, stripeSandboxMode. Each
+// defaults to sandbox=true — a brand-new tenant can't touch ANY production
+// service until an admin flips it live (setTenantServiceControls). Fail-safe:
+// a read error returns sandboxed=true (recoverable miss > real money/send).
+// effectiveSandbox / effectiveCaps / DEFAULT_TENANT_CAPS are imported from
+// ./lib/serviceSandbox (pure + unit-tested). tenantSandboxFlag / getTenantCaps
+// wrap them with the tenant-registry-doc read.
+async function tenantSandboxFlag(db, tenantId, field) {
+  try {
+    const tSnap = await db.doc(`tenants/${tenantId}`).get();
+    return effectiveSandbox(tSnap.exists ? tSnap.data() : null, field);
+  } catch (e) {
+    console.error(`[tenantSandboxFlag] ${field} read failed for ${tenantId}:`, e?.message);
+    return true;
+  }
+}
+const isEmailSandboxTenant  = (db, tenantId) => tenantSandboxFlag(db, tenantId, 'emailSandboxMode');
+const isStripeSandboxTenant = (db, tenantId) => tenantSandboxFlag(db, tenantId, 'stripeSandboxMode');
+
+// Sandbox log writers — mirror writeSandboxSmsLog. Email-in-sandbox logs the
+// message that WOULD have been sent (no SES); Stripe-in-sandbox logs the
+// simulated charge (no real money) so it's inspectable + never counts as revenue.
+async function writeSandboxEmailLog(db, tenantId, entry) {
+  try {
+    await db.collection(`tenants/${tenantId}/sandboxEmailLog`).add({
+      ...entry, sandbox: true, at: entry.at || new Date().toISOString(),
+    });
+  } catch (e) { console.error(`[writeSandboxEmailLog] failed for ${tenantId}:`, e?.message); }
+}
+async function writeSandboxChargeLog(db, tenantId, entry) {
+  try {
+    await db.collection(`tenants/${tenantId}/sandboxChargeLog`).add({
+      ...entry, sandbox: true, at: entry.at || new Date().toISOString(),
+    });
+  } catch (e) { console.error(`[writeSandboxChargeLog] failed for ${tenantId}:`, e?.message); }
+}
+
+// Per-tenant configurable caps. Stored on the registry doc as
+// tenants/{id}.caps = { smsPerDay, emailPerDay, maxChargeCents }; the defaults +
+// merge live in ./lib/serviceSandbox (effectiveCaps / DEFAULT_TENANT_CAPS).
+async function getTenantCaps(db, tenantId) {
+  try {
+    const tSnap = await db.doc(`tenants/${tenantId}`).get();
+    return effectiveCaps(tSnap.exists ? tSnap.data() : null);
+  } catch (e) {
+    console.error(`[getTenantCaps] read failed for ${tenantId}:`, e?.message);
+    return { ...DEFAULT_TENANT_CAPS };
+  }
+}
+
 // Provisions a TFN + submits Toll-Free Verification for the given
 // tenant. Idempotent: if a TFN was already bought (state stored in
 // data/sms) we skip the purchase and resubmit verification only.
@@ -14766,12 +14924,13 @@ exports.provisionTenant = onCall(
           aliases:              [],
           subdomainChangedAt:   null,
           subdomainChangeCount: 0,
-          // Sandbox mode: SMS provisioning + sending are fully mocked
-          // (no Twilio calls, no real money). Platform admin flips this
-          // to false via setTenantSandboxMode to put the tenant on real
-          // Twilio. Default true so test signups can't accidentally
-          // trigger $2/mo TFN purchases.
+          // Service sandboxes: all three default ON so a fresh tenant can't
+          // touch ANY production service (SMS, SES email, Stripe charges) until
+          // an admin flips it live via setTenantServiceControls. Stops test
+          // signups from spending real money or messaging real people.
           sandboxMode:          true,
+          emailSandboxMode:     true,
+          stripeSandboxMode:    true,
           createdAt:            now,
           updatedAt:            now,
           provisionedBy:        request.auth.uid,
@@ -15078,6 +15237,72 @@ exports.setTenantSandboxMode = onCall(
     });
 
     return { tenantId, sandboxMode: sandbox };
+  }
+);
+
+// Generalized per-tenant service controls — the platform-admin surface for the
+// three independent sandbox kill-switches (SMS / email / Stripe) + the
+// configurable caps. Pass only what you're changing. Platform-admin only,
+// rate-limited, audited. (setTenantSandboxMode above stays for back-compat SMS.)
+exports.setTenantServiceControls = onCall(
+  { cors: true, timeoutSeconds: 30 },
+  async (request) => {
+    if (!request.auth) throw new HttpsError('unauthenticated', 'Sign in.');
+    const callerEmail = String(request.auth.token?.email || '').toLowerCase();
+    if (!await isPlatformAdmin(callerEmail)) {
+      throw new HttpsError('permission-denied', 'Platform admin only.');
+    }
+    const tenantId = String(request.data?.tenantId || '').trim();
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(tenantId)) {
+      throw new HttpsError('invalid-argument', 'Invalid tenantId.');
+    }
+    const rate = checkAdminActionRate(callerEmail, 'tenant.controls.set', 40, 60 * 60 * 1000);
+    if (!rate.allowed) {
+      throw new HttpsError('resource-exhausted',
+        `Rate limit: 40 changes per hour. Retry in ~${Math.ceil(rate.retryAfterMs / 60000)} min.`);
+    }
+
+    const sandboxIn = (request.data?.sandbox && typeof request.data.sandbox === 'object') ? request.data.sandbox : {};
+    const capsIn    = (request.data?.caps    && typeof request.data.caps    === 'object') ? request.data.caps    : {};
+
+    const now = new Date().toISOString();
+    const update = { updatedAt: now };
+    // Sandbox flags — service → registry field. Only included when a boolean was
+    // passed, so one service can change without touching the others.
+    const FIELD = { sms: 'sandboxMode', email: 'emailSandboxMode', stripe: 'stripeSandboxMode' };
+    for (const svc of ['sms', 'email', 'stripe']) {
+      if (typeof sandboxIn[svc] === 'boolean') update[FIELD[svc]] = sandboxIn[svc];
+    }
+    // Caps — clamp to sane non-negative integers; only set provided keys.
+    const clampInt = (v, max) => Math.max(0, Math.min(max, Math.round(Number(v))));
+    const capUpdate = {};
+    if (Number.isFinite(Number(capsIn.smsPerDay)))      capUpdate.smsPerDay      = clampInt(capsIn.smsPerDay, 1000000);
+    if (Number.isFinite(Number(capsIn.emailPerDay)))    capUpdate.emailPerDay    = clampInt(capsIn.emailPerDay, 1000000);
+    if (Number.isFinite(Number(capsIn.maxChargeCents))) capUpdate.maxChargeCents = clampInt(capsIn.maxChargeCents, 100000000);
+
+    if (Object.keys(update).length === 1 && Object.keys(capUpdate).length === 0) {
+      throw new HttpsError('invalid-argument', 'Nothing to update (pass sandbox and/or caps).');
+    }
+
+    const db = getFirestore();
+    const tenantRef = db.doc(`tenants/${tenantId}`);
+    const tSnap = await tenantRef.get();
+    if (!tSnap.exists) throw new HttpsError('not-found', `tenants/${tenantId} not found.`);
+
+    if (Object.keys(capUpdate).length) {
+      const existing = (tSnap.data()?.caps && typeof tSnap.data().caps === 'object') ? tSnap.data().caps : {};
+      update.caps = { ...existing, ...capUpdate };   // partial update keeps the rest
+    }
+    if (Object.prototype.hasOwnProperty.call(update, 'sandboxMode')) {
+      update.sandboxModeChangedAt = now; update.sandboxModeChangedBy = callerEmail;
+    }
+    await tenantRef.update(update);
+
+    await logAdminAction(db, request, 'tenant.controls.set', {
+      tenantId, sandbox: { ...sandboxIn }, caps: capUpdate, slug: tSnap.data()?.subdomain || null,
+    });
+
+    return { ok: true, tenantId };
   }
 );
 

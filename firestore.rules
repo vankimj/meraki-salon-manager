@@ -791,6 +791,16 @@ service cloud.firestore {
         allow read, delete: if isTenantAdmin(tenantId);
         allow write:        if false;
       }
+      // Email + Stripe sandbox logs — same shape: admin-readable, system-written
+      // (Cloud Functions via Admin SDK bypass these rules).
+      match /sandboxEmailLog/{logId} {
+        allow read, delete: if isTenantAdmin(tenantId);
+        allow write:        if false;
+      }
+      match /sandboxChargeLog/{logId} {
+        allow read, delete: if isTenantAdmin(tenantId);
+        allow write:        if false;
+      }
 
       // ── Per-tenant cost/usage logs ──────────────────────
       // Three raw collections (usageSms, usageEmail, usageAi) are written

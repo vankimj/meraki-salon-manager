@@ -9,6 +9,7 @@ const _listTenants          = httpsCallable(fns, 'listTenants');
 const _getTenantMetadata    = httpsCallable(fns, 'getTenantMetadata');
 const _deleteTenant         = httpsCallable(fns, 'deleteTenant');
 const _setTenantSandboxMode = httpsCallable(fns, 'setTenantSandboxMode');
+const _setTenantServiceControls = httpsCallable(fns, 'setTenantServiceControls');
 
 // Flip a tenant's sandboxMode flag. When true, SMS provisioning + sending
 // are fully mocked (no Twilio calls, no real charges). New tenants default
@@ -16,6 +17,15 @@ const _setTenantSandboxMode = httpsCallable(fns, 'setTenantSandboxMode');
 // real Twilio. Audit-logged + rate-limited server-side.
 export async function setTenantSandboxMode(tenantId, sandbox) {
   const res = await _setTenantSandboxMode({ tenantId, sandbox: Boolean(sandbox) });
+  return res.data;
+}
+
+// Generalized per-tenant service controls. Pass only what you're changing:
+//   sandbox: { sms?, email?, stripe? }  (booleans — true = sandboxed)
+//   caps:    { smsPerDay?, emailPerDay?, maxChargeCents? }
+// Platform-admin only, audit-logged + rate-limited server-side.
+export async function setTenantServiceControls(tenantId, { sandbox, caps } = {}) {
+  const res = await _setTenantServiceControls({ tenantId, sandbox, caps });
   return res.data;
 }
 
