@@ -492,16 +492,24 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
           amountCents: Math.round(total * 100),
           description: combinedClientLabel,
         });
-        const { error: stripeErr, paymentIntent } = await stripe.confirmCardPayment(
-          res.data.clientSecret,
-          { payment_method: { card: elements.getElement(CardElement) } }
-        );
-        if (stripeErr) {
-          setCardError(stripeErr.message || 'Card declined.');
-          setSaving(false);
-          return;
+        if (res.data?.sandbox) {
+          // Stripe sandbox (demo): the backend returned a SIMULATED success — no
+          // real charge. Skip the card confirmation and use the simulated PI id;
+          // recordKioskSale recognizes pi_sandbox_ and tags the receipt sandbox
+          // (excluded from revenue). The entered card, if any, is never charged.
+          stripePaymentIntentId = res.data.paymentIntentId;
+        } else {
+          const { error: stripeErr, paymentIntent } = await stripe.confirmCardPayment(
+            res.data.clientSecret,
+            { payment_method: { card: elements.getElement(CardElement) } }
+          );
+          if (stripeErr) {
+            setCardError(stripeErr.message || 'Card declined.');
+            setSaving(false);
+            return;
+          }
+          stripePaymentIntentId = paymentIntent.id;
         }
-        stripePaymentIntentId = paymentIntent.id;
       } catch (e) {
         setCardError(e?.message || 'Card processing failed.');
         setSaving(false);

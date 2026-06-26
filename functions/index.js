@@ -603,9 +603,11 @@ const SEND_QUOTA_CAPS = {
   smsTransactional: 500,
 };
 
-async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1) {
+async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1, capOverride) {
   if (!tenantId) return { ok: true, current: 0, cap: Infinity };
-  const cap = SEND_QUOTA_CAPS[channel] || SEND_QUOTA_CAPS.transactional;
+  // capOverride = the per-tenant configurable cap (caps.smsPerDay / emailPerDay)
+  // when provided; otherwise the platform default for this channel.
+  const cap = Number.isFinite(capOverride) ? capOverride : (SEND_QUOTA_CAPS[channel] || SEND_QUOTA_CAPS.transactional);
   const today = new Date().toISOString().slice(0, 10);
   const ref = db.doc(`tenants/${tenantId}/data/sendStats`);
   try {
@@ -617,15 +619,17 @@ async function checkAndIncrementSendQuota(db, tenantId, channel, count = 1) {
       if (currentDay + count > cap) {
         return { ok: false, current: currentDay, cap, channel };
       }
-      // On date roll, reset BOTH channels (not just the one being incremented).
       const updates = isToday
         ? { [channel]: currentDay + count, updatedAt: new Date().toISOString() }
-        : {
-            date: today,
-            marketing:     channel === 'marketing'     ? count : 0,
-            transactional: channel === 'transactional' ? count : 0,
-            updatedAt:     new Date().toISOString(),
-          };
+        : { date: today, [channel]: count, updatedAt: new Date().toISOString() };
+      // On date roll, zero every OTHER known bucket so a stale count can't carry
+      // over (the old code reset only marketing+transactional and dropped the
+      // incrementing channel's count entirely).
+      if (!isToday) {
+        for (const b of ['marketing', 'transactional', 'smsMarketing', 'smsTransactional', 'email']) {
+          if (b !== channel) updates[b] = 0;
+        }
+      }
       tx.set(ref, updates, { merge: true });
       return { ok: true, current: currentDay + count, cap, channel };
     });
@@ -777,6 +781,15 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
     await writeSandboxEmailLog(db, tenantId, { kind: kindTag?.value || 'transactional', to: normalizeEmailAddr(to), subject });
     console.log(`[sendEmail] SANDBOX (no SES): ${normalizeEmailAddr(to)} tenant=${tenantId}`);
     return { data: { id: 'SANDBOX' }, error: null };
+  }
+  // Per-tenant daily email cap (configurable; platform default 1000/day).
+  if (tenantId) {
+    const { emailPerDay } = await getTenantCaps(db, tenantId);
+    const eq = await checkAndIncrementSendQuota(db, tenantId, 'email', 1, emailPerDay);
+    if (!eq.ok) {
+      console.warn(`[sendEmail] daily email cap hit for ${tenantId} (${eq.current}/${eq.cap})`);
+      return { data: null, error: { message: 'email_daily_cap', capped: true } };
+    }
   }
   const logUsage = (id) => {
     if (!tenantId) return;
@@ -958,7 +971,9 @@ async function sendSms({
   // can't both squeak past the cap).
   if (!skipQuota) {
     const quotaBucket = kind === 'marketing' ? 'smsMarketing' : 'smsTransactional';
-    const quota = await checkAndIncrementSendQuota(db, tenantId, quotaBucket, 1);
+    // Per-tenant configurable SMS/day cap (caps.smsPerDay) applied per bucket.
+    const { smsPerDay } = await getTenantCaps(db, tenantId);
+    const quota = await checkAndIncrementSendQuota(db, tenantId, quotaBucket, 1, smsPerDay);
     if (!quota.ok) {
       return { ok: false, error: 'rate_limited', quotaBlocked: true, quota };
     }
@@ -8465,6 +8480,13 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
     return { sandbox: true, simulated: true, clientSecret: null, paymentIntentId: simId, status: 'succeeded' };
   }
 
+  // Per-tenant max single-charge cap (configurable; platform default $5,000).
+  const maxChargeCents = effectiveCaps(ten).maxChargeCents;
+  if (Math.round(amountCents) > maxChargeCents) {
+    throw new HttpsError('failed-precondition',
+      `Charge $${(Math.round(amountCents) / 100).toFixed(2)} exceeds this salon's per-charge limit of $${(maxChargeCents / 100).toFixed(2)}.`);
+  }
+
   // Route funds to the salon's connected account — same Connect model the
   // off-session (stored-card) path uses. Refuse to charge to the platform
   // account: that would have the client's money land in Plume's balance, not
@@ -10844,6 +10866,11 @@ exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (r
     const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
     writeSandboxChargeLog(db, tenantId, { kind: 'stored_card_charge', amountCents: Math.round(Number(amount) || 0), clientId }).catch(() => {});
     return { ok: true, sandbox: true, simulated: true, paymentIntentId: simId, status: 'succeeded' };
+  }
+  const maxChargeCents = effectiveCaps(ten).maxChargeCents;
+  if (Math.round(Number(amount)) > maxChargeCents) {
+    throw new HttpsError('failed-precondition',
+      `Charge exceeds this salon's per-charge limit of $${(maxChargeCents / 100).toFixed(2)}.`);
   }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition',
@@ -14421,15 +14448,19 @@ async function writeSandboxChargeLog(db, tenantId, entry) {
 // registry doc as tenants/{id}.caps = { smsPerDay, emailPerDay, maxChargeCents };
 // any missing/invalid field falls back to the default below.
 const DEFAULT_TENANT_CAPS = Object.freeze({ smsPerDay: 500, emailPerDay: 1000, maxChargeCents: 500000 });
+// Merge a tenant's caps over the platform defaults (sync — from loaded data).
+function effectiveCaps(t) {
+  const c = (t && typeof t.caps === 'object' && t.caps) || {};
+  return {
+    smsPerDay:      Number.isFinite(c.smsPerDay)      ? c.smsPerDay      : DEFAULT_TENANT_CAPS.smsPerDay,
+    emailPerDay:    Number.isFinite(c.emailPerDay)    ? c.emailPerDay    : DEFAULT_TENANT_CAPS.emailPerDay,
+    maxChargeCents: Number.isFinite(c.maxChargeCents) ? c.maxChargeCents : DEFAULT_TENANT_CAPS.maxChargeCents,
+  };
+}
 async function getTenantCaps(db, tenantId) {
   try {
     const tSnap = await db.doc(`tenants/${tenantId}`).get();
-    const c = (tSnap.exists && tSnap.data()?.caps) || {};
-    return {
-      smsPerDay:      Number.isFinite(c.smsPerDay)      ? c.smsPerDay      : DEFAULT_TENANT_CAPS.smsPerDay,
-      emailPerDay:    Number.isFinite(c.emailPerDay)    ? c.emailPerDay    : DEFAULT_TENANT_CAPS.emailPerDay,
-      maxChargeCents: Number.isFinite(c.maxChargeCents) ? c.maxChargeCents : DEFAULT_TENANT_CAPS.maxChargeCents,
-    };
+    return effectiveCaps(tSnap.exists ? tSnap.data() : null);
   } catch (e) {
     console.error(`[getTenantCaps] read failed for ${tenantId}:`, e?.message);
     return { ...DEFAULT_TENANT_CAPS };
