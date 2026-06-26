@@ -767,6 +767,17 @@ async function sendEmail({ from, to, subject, html, replyTo, tags, tenantId, uns
     console.log(`[sendEmail] skipped (suppressed): ${normalizeEmailAddr(to)} tenant=${tenantId || 'n/a'}`);
     return { data: null, error: { message: 'address_suppressed', suppressed: true } };
   }
+  // Per-tenant EMAIL sandbox (platform-admin kill-switch). When sandboxed, log
+  // the message that WOULD have been sent and return success WITHOUT touching
+  // SES — mirrors the SMS sandbox so a not-yet-live tenant can't email real
+  // customers. Body (html) is not stored; subject + recipient are enough to
+  // inspect.
+  if (tenantId && await isEmailSandboxTenant(db, tenantId)) {
+    const kindTag = Array.isArray(tags) ? tags.find(t => t && t.name === 'kind') : null;
+    await writeSandboxEmailLog(db, tenantId, { kind: kindTag?.value || 'transactional', to: normalizeEmailAddr(to), subject });
+    console.log(`[sendEmail] SANDBOX (no SES): ${normalizeEmailAddr(to)} tenant=${tenantId}`);
+    return { data: { id: 'SANDBOX' }, error: null };
+  }
   const logUsage = (id) => {
     if (!tenantId) return;
     const kindTag = Array.isArray(tags) ? tags.find(t => t && t.name === 'kind') : null;
@@ -4551,7 +4562,11 @@ exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (re
 
   // 3. Card: the PaymentIntent must have actually captured the recomputed total
   //    for THIS tenant. This is what stops a kiosk recording an unpaid/short sale.
-  if (method === 'card') {
+  //    Stripe-sandbox tenants carry a simulated `pi_sandbox_` id (no real charge);
+  //    skip the Stripe verification and tag the receipt sandbox so the ledger
+  //    trigger + reports exclude it from real revenue.
+  const isSandboxSale = method === 'card' && /^pi_sandbox_[a-z0-9-]+_[a-z0-9]+$/i.test(piId || '');
+  if (method === 'card' && !isSandboxSale) {
     if (!/^pi_[A-Za-z0-9]+$/.test(piId)) throw new HttpsError('invalid-argument', 'Valid stripePaymentIntentId required');
     const key = stripeKey.value();
     if (!key) throw new HttpsError('failed-precondition', 'Stripe is not configured');
@@ -4641,6 +4656,9 @@ exports.recordKioskSale = onCall({ secrets: [stripeKey], cors: true }, async (re
     payment,
     apptIds,
     createdAt:   new Date().toISOString(),
+    // Simulated (Stripe-sandbox) sale — flagged so the ledger trigger skips it
+    // and revenue reports exclude it. No real money moved.
+    ...(isSandboxSale ? { sandbox: true } : {}),
   }, { merge: true });
 
   // 8. Mark the session paid so the tech's device + the kiosk both settle.
@@ -8431,6 +8449,20 @@ exports.createPaymentIntent = onCall({ secrets: [stripeKey] }, async (request) =
   const tenSnap = await getFirestore().doc(`tenants/${tenantId}`).get();
   const ten = tenSnap.exists ? tenSnap.data() : {};
   const salonName = ten.name || tenantId;
+
+  // Per-tenant STRIPE sandbox (demo mode): return a SIMULATED successful PI
+  // before touching Stripe (or even requiring Connect onboarding). The POS
+  // front-end detects `sandbox:true` and skips card entry; recordKioskSale
+  // detects the `pi_sandbox_` id and records a sandbox-tagged receipt that the
+  // ledger trigger + reports exclude from real revenue. No real money moves.
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
+    writeSandboxChargeLog(getFirestore(), tenantId, {
+      kind: 'pos_payment_intent', amountCents: Math.round(Number(amountCents) || 0), description: description || salonName,
+    }).catch(() => {});
+    return { sandbox: true, simulated: true, clientSecret: null, paymentIntentId: simId, status: 'succeeded' };
+  }
+
   // Route funds to the salon's connected account — same Connect model the
   // off-session (stored-card) path uses. Refuse to charge to the platform
   // account: that would have the client's money land in Plume's balance, not
@@ -8913,6 +8945,8 @@ exports.updateRefundCommission = onCall({ cors: true }, async (request) => {
 exports.ledgerOnReceiptCreated = onDocumentCreated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {
   const r = event.data?.data();
   if (!r) return;
+  // Simulated (Stripe-sandbox) sales never enter the real-money ledger.
+  if (r.sandbox === true) return;
   const { tenantId, receiptId } = event.params;
   try {
     await ledger.appendLedger(getFirestore(), tenantId, `sale_${receiptId}`, ledger.buildSaleEntry(receiptId, r));
@@ -8929,6 +8963,8 @@ exports.ledgerOnReceiptCreated = onDocumentCreated('tenants/{tenantId}/receipts/
 exports.ledgerOnReceiptUpdated = onDocumentUpdated('tenants/{tenantId}/receipts/{receiptId}', async (event) => {
   const before = event.data?.before?.data() || {};
   const after  = event.data?.after?.data()  || {};
+  // Simulated (Stripe-sandbox) sales never enter the real-money ledger.
+  if (after.sandbox === true) return;
   const { tenantId, receiptId } = event.params;
   const db = getFirestore();
   // New refunds (compare by idempotency key).
@@ -13422,10 +13458,15 @@ exports.getTenantMetadata = onCall(
       // hasn't connected one. Populated post-signup via the custom-domain
       // wizard (not yet built — Sprint D).
       customDomain:     registry.customDomain     || null,
-      // Sandbox flag: when true, SMS provisioning + sending are mocked
-      // (no Twilio, no charges). Defaults to true for new self-serve
-      // signups so test traffic can't trigger real $2/mo TFN purchases.
-      sandboxMode:      registry.sandboxMode !== false,
+      // Service sandbox flags (SMS / email / Stripe): true = sandboxed (mocked,
+      // no real send/charge). Default true for new tenants. Toggled by the
+      // platform-admin TenantDetail cards via setTenantServiceControls.
+      sandboxMode:       registry.sandboxMode !== false,
+      // Effective email/Stripe sandbox state: explicit flag wins; unset inherits
+      // the master sandboxMode (see effectiveSandbox — migration-safe).
+      emailSandboxMode:  effectiveSandbox(registry, 'emailSandboxMode'),
+      stripeSandboxMode: effectiveSandbox(registry, 'stripeSandboxMode'),
+      caps:              registry.caps || null,
       provisioned:      usersSnap.exists,
       // staffEmails projection is the canonical count post-split
       // (rich users[] now lives in data/usersFull, not read here).
@@ -14292,6 +14333,72 @@ async function writeSandboxSmsLog(db, tenantId, entry) {
   }
 }
 
+// ── Per-tenant service sandbox + caps (generalizes the SMS sandbox above) ─────
+// Three independent platform-admin kill-switches on the tenant registry doc
+// (tenants/{id}): sandboxMode (SMS), emailSandboxMode, stripeSandboxMode. Each
+// defaults to sandbox=true — a brand-new tenant can't touch ANY production
+// service until an admin flips it live (setTenantServiceControls). Fail-safe:
+// a read error returns sandboxed=true (recoverable miss > real money/send).
+// Effective per-service sandbox state from already-loaded tenant data (sync).
+// Explicit per-service flag wins; unset → inherit the master SMS sandboxMode.
+// MIGRATION-SAFE: existing live tenants (sandboxMode:false, no per-service field
+// yet) stay live for email + Stripe on deploy instead of being silently
+// sandboxed. Once an admin sets the per-service flag, it's fully independent.
+function effectiveSandbox(t, field) {
+  if (!t) return true;
+  if (t[field] === false) return false;
+  if (t[field] === true)  return true;
+  return t.sandboxMode !== false;
+}
+async function tenantSandboxFlag(db, tenantId, field) {
+  try {
+    const tSnap = await db.doc(`tenants/${tenantId}`).get();
+    return effectiveSandbox(tSnap.exists ? tSnap.data() : null, field);
+  } catch (e) {
+    console.error(`[tenantSandboxFlag] ${field} read failed for ${tenantId}:`, e?.message);
+    return true;
+  }
+}
+const isEmailSandboxTenant  = (db, tenantId) => tenantSandboxFlag(db, tenantId, 'emailSandboxMode');
+const isStripeSandboxTenant = (db, tenantId) => tenantSandboxFlag(db, tenantId, 'stripeSandboxMode');
+
+// Sandbox log writers — mirror writeSandboxSmsLog. Email-in-sandbox logs the
+// message that WOULD have been sent (no SES); Stripe-in-sandbox logs the
+// simulated charge (no real money) so it's inspectable + never counts as revenue.
+async function writeSandboxEmailLog(db, tenantId, entry) {
+  try {
+    await db.collection(`tenants/${tenantId}/sandboxEmailLog`).add({
+      ...entry, sandbox: true, at: entry.at || new Date().toISOString(),
+    });
+  } catch (e) { console.error(`[writeSandboxEmailLog] failed for ${tenantId}:`, e?.message); }
+}
+async function writeSandboxChargeLog(db, tenantId, entry) {
+  try {
+    await db.collection(`tenants/${tenantId}/sandboxChargeLog`).add({
+      ...entry, sandbox: true, at: entry.at || new Date().toISOString(),
+    });
+  } catch (e) { console.error(`[writeSandboxChargeLog] failed for ${tenantId}:`, e?.message); }
+}
+
+// Per-tenant configurable caps with reasonable platform defaults. Stored on the
+// registry doc as tenants/{id}.caps = { smsPerDay, emailPerDay, maxChargeCents };
+// any missing/invalid field falls back to the default below.
+const DEFAULT_TENANT_CAPS = Object.freeze({ smsPerDay: 500, emailPerDay: 1000, maxChargeCents: 500000 });
+async function getTenantCaps(db, tenantId) {
+  try {
+    const tSnap = await db.doc(`tenants/${tenantId}`).get();
+    const c = (tSnap.exists && tSnap.data()?.caps) || {};
+    return {
+      smsPerDay:      Number.isFinite(c.smsPerDay)      ? c.smsPerDay      : DEFAULT_TENANT_CAPS.smsPerDay,
+      emailPerDay:    Number.isFinite(c.emailPerDay)    ? c.emailPerDay    : DEFAULT_TENANT_CAPS.emailPerDay,
+      maxChargeCents: Number.isFinite(c.maxChargeCents) ? c.maxChargeCents : DEFAULT_TENANT_CAPS.maxChargeCents,
+    };
+  } catch (e) {
+    console.error(`[getTenantCaps] read failed for ${tenantId}:`, e?.message);
+    return { ...DEFAULT_TENANT_CAPS };
+  }
+}
+
 // Provisions a TFN + submits Toll-Free Verification for the given
 // tenant. Idempotent: if a TFN was already bought (state stored in
 // data/sms) we skip the purchase and resubmit verification only.
@@ -14766,12 +14873,13 @@ exports.provisionTenant = onCall(
           aliases:              [],
           subdomainChangedAt:   null,
           subdomainChangeCount: 0,
-          // Sandbox mode: SMS provisioning + sending are fully mocked
-          // (no Twilio calls, no real money). Platform admin flips this
-          // to false via setTenantSandboxMode to put the tenant on real
-          // Twilio. Default true so test signups can't accidentally
-          // trigger $2/mo TFN purchases.
+          // Service sandboxes: all three default ON so a fresh tenant can't
+          // touch ANY production service (SMS, SES email, Stripe charges) until
+          // an admin flips it live via setTenantServiceControls. Stops test
+          // signups from spending real money or messaging real people.
           sandboxMode:          true,
+          emailSandboxMode:     true,
+          stripeSandboxMode:    true,
           createdAt:            now,
           updatedAt:            now,
           provisionedBy:        request.auth.uid,
