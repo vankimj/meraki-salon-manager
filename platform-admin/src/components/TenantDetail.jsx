@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant, setTenantSandboxMode } from '../lib/tenants.js';
+import { fetchTenantMetadata, updateTenantRecord, provisionTenantDocs, hardDeleteTenant, setTenantSandboxMode, setTenantServiceControls } from '../lib/tenants.js';
 import { fetchTenantDailies, fetchTenantMonthly } from '../lib/cost.js';
 import { listTicketsForTenant } from '../lib/tickets.js';
 import { reauthGoogle } from '../lib/firebase.js';
@@ -97,6 +97,25 @@ export default function TenantDetail({ tenantId }) {
     setBusy(true);
     try {
       await setTenantSandboxMode(meta.id, newSandbox);
+      await load();
+    } catch (e) {
+      alert('Toggle failed: ' + (e?.message || String(e)));
+    } finally { setBusy(false); }
+  }
+
+  // Email / Stripe sandbox toggles (SMS keeps the dedicated handler above for
+  // its Twilio-cost warning copy). field = emailSandboxMode | stripeSandboxMode.
+  async function handleToggleService(service, label) {
+    if (!meta) return;
+    const field = service === 'email' ? 'emailSandboxMode' : 'stripeSandboxMode';
+    const newSandbox = !(meta[field] !== false);   // meta carries the EFFECTIVE flag
+    const detail = service === 'email'
+      ? (newSandbox ? 'Outbound email will be MOCKED — logged, not sent (no SES).' : 'REAL email will be sent via AWS SES.')
+      : (newSandbox ? 'Card charges will be SIMULATED — no real money; sales tagged sandbox + excluded from revenue.' : 'REAL Stripe charges will be taken from this salon\'s customers.');
+    if (!confirm(`Set ${label} to ${newSandbox ? 'SANDBOX' : 'PRODUCTION'} for ${meta.name || meta.id}?\n\n${detail}`)) return;
+    setBusy(true);
+    try {
+      await setTenantServiceControls(meta.id, { sandbox: { [service]: newSandbox } });
       await load();
     } catch (e) {
       alert('Toggle failed: ' + (e?.message || String(e)));
@@ -251,7 +270,43 @@ export default function TenantDetail({ tenantId }) {
             {meta.sandboxMode ? 'Switch to Production →' : '← Back to Sandbox'}
           </button>
         </Card>
+
+        <Card title="Email mode">
+          <div style={{ fontSize: 18, fontWeight: 700, color: meta.emailSandboxMode !== false ? '#92400e' : C.success }}>
+            {meta.emailSandboxMode !== false ? '🧪 Sandbox' : '✓ Production'}
+          </div>
+          <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 4, lineHeight: 1.4 }}>
+            {meta.emailSandboxMode !== false ? 'Emails logged, not sent (no SES).' : 'Real email via AWS SES.'}
+          </div>
+          <button onClick={() => handleToggleService('email', 'Email')} disabled={busy} style={{
+            marginTop: 8, padding: '5px 11px', fontSize: 11, fontWeight: 600, background: 'transparent',
+            color: meta.emailSandboxMode !== false ? C.success : '#92400e',
+            border: `1px solid ${meta.emailSandboxMode !== false ? C.success : '#92400e'}40`,
+            borderRadius: 6, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>
+            {meta.emailSandboxMode !== false ? 'Switch to Production →' : '← Back to Sandbox'}
+          </button>
+        </Card>
+
+        <Card title="Payments (Stripe) mode">
+          <div style={{ fontSize: 18, fontWeight: 700, color: meta.stripeSandboxMode !== false ? '#92400e' : C.success }}>
+            {meta.stripeSandboxMode !== false ? '🧪 Sandbox' : '✓ Production'}
+          </div>
+          <div style={{ fontSize: 10, color: C.mutedSoft, marginTop: 4, lineHeight: 1.4 }}>
+            {meta.stripeSandboxMode !== false ? 'Charges simulated; sales excluded from revenue.' : 'Real Stripe charges to customers.'}
+          </div>
+          <button onClick={() => handleToggleService('stripe', 'Payments')} disabled={busy} style={{
+            marginTop: 8, padding: '5px 11px', fontSize: 11, fontWeight: 600, background: 'transparent',
+            color: meta.stripeSandboxMode !== false ? C.success : '#92400e',
+            border: `1px solid ${meta.stripeSandboxMode !== false ? C.success : '#92400e'}40`,
+            borderRadius: 6, cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>
+            {meta.stripeSandboxMode !== false ? 'Switch to Production →' : '← Back to Sandbox'}
+          </button>
+        </Card>
       </div>
+
+      <ServiceCaps meta={meta} busy={busy} setBusy={setBusy} onSaved={load} />
 
       {/* URLs panel — every public + staff entry point for this tenant. */}
       <TenantUrls slug={meta.subdomain || meta.id} aliases={meta.aliases || []} customDomain={meta.customDomain} />
@@ -943,6 +998,55 @@ function Card({ title, children }) {
     }}>
       <div style={{ fontSize: 11, fontWeight: 600, color: C.mutedSoft, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>{title}</div>
       {children}
+    </div>
+  );
+}
+
+// Per-tenant configurable caps — SMS/email per-day + max single charge. A blank
+// field leaves that cap at the platform default (shown as the placeholder).
+function ServiceCaps({ meta, busy, setBusy, onSaved }) {
+  const caps = meta?.caps || {};
+  const [sms, setSms]       = useState(caps.smsPerDay      != null ? String(caps.smsPerDay)            : '');
+  const [email, setEmail]   = useState(caps.emailPerDay    != null ? String(caps.emailPerDay)          : '');
+  const [maxC, setMaxC]     = useState(caps.maxChargeCents != null ? String(caps.maxChargeCents / 100) : '');
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const out = {};
+    if (String(sms).trim()   !== '') out.smsPerDay      = Math.max(0, Math.round(Number(sms)));
+    if (String(email).trim() !== '') out.emailPerDay    = Math.max(0, Math.round(Number(email)));
+    if (String(maxC).trim()  !== '') out.maxChargeCents = Math.max(0, Math.round(Number(maxC) * 100));
+    if (Object.keys(out).length === 0) { alert('Enter at least one cap.'); return; }
+    setSaving(true); if (setBusy) setBusy(true);
+    try { await setTenantServiceControls(meta.id, { caps: out }); if (onSaved) await onSaved(); }
+    catch (e) { alert('Save failed: ' + (e?.message || String(e))); }
+    finally { setSaving(false); if (setBusy) setBusy(false); }
+  }
+
+  const field = (label, val, set, ph, prefix) => (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 11, color: C.mutedSoft, flex: 1, minWidth: 120 }}>
+      {label}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        {prefix && <span style={{ fontSize: 12, color: C.muted }}>{prefix}</span>}
+        <input type="number" min="0" value={val} onChange={e => set(e.target.value)} placeholder={ph}
+          style={{ width: '100%', padding: '5px 8px', fontSize: 13, fontFamily: 'inherit', background: C.bgCode, color: C.text, border: `1px solid ${C.rule}`, borderRadius: 6 }} />
+      </span>
+    </label>
+  );
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Card title="Per-tenant caps (blank = platform default)">
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          {field('Max SMS / day', sms, setSms, '500')}
+          {field('Max emails / day', email, setEmail, '1000')}
+          {field('Max single charge', maxC, setMaxC, '5000', '$')}
+          <button onClick={save} disabled={busy || saving} style={{
+            padding: '7px 16px', fontSize: 12, fontWeight: 700, background: C.plum, color: '#fff',
+            border: 'none', borderRadius: 6, cursor: (busy || saving) ? 'default' : 'pointer', fontFamily: 'inherit',
+          }}>{saving ? 'Saving…' : 'Save caps'}</button>
+        </div>
+      </Card>
     </div>
   );
 }
