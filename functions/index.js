@@ -7393,7 +7393,9 @@ exports.chatWithReports = onCall(
         .where('date', '>=', startDate)
         .where('date', '<=', endDate)
         .get();
-      const rows = snap.docs.map(d => d.data());
+      const rows = snap.docs.map(d => d.data())
+        // Exclude simulated (Stripe-sandbox) sales — they aren't real revenue.
+        .filter(r => r.sandbox !== true);
       // Revenue lives under r.payment, not at the top level. Refunds, voids,
       // and cancellations are negative receipts that should net against sales.
       const isNegative = (r) => r.transactionType === 'refund'
@@ -8572,7 +8574,10 @@ exports.refundSale = onCall({ secrets: [stripeKey] }, async (request) => {
   }
 
   const piId   = payment.stripePaymentIntentId || null;
-  const isCard = payment.method === 'card' && !!piId;
+  // Sandbox (simulated) sale → no real money was taken, so a refund is record-
+  // only: skip the Stripe refund call (the pi_sandbox_ id isn't a real charge).
+  const isSandboxReceipt = rec.sandbox === true;
+  const isCard = payment.method === 'card' && !!piId && !isSandboxReceipt;
 
   // Per-tech commission treatment for this refund. Default per tech =
   // settings.refundCommissionDefault ('withhold'|'goodwill', default withhold);
@@ -10566,6 +10571,13 @@ exports.chargeBookingDeposit = onCall({ cors: true, secrets: [stripeKey] }, asyn
 
   const tenSnap = await db.doc(`tenants/${tenantId}`).get();
   const ten = tenSnap.exists ? tenSnap.data() : {};
+  // Stripe sandbox: a sandboxed/demo tenant takes no real deposit hold. Skip it
+  // (reuses the existing skipped path) so the booking still completes, with no
+  // money held and no settlement lifecycle to manage.
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    writeSandboxChargeLog(db, tenantId, { kind: 'booking_deposit', amountCents: amount, clientId: caller.id }).catch(() => {});
+    return { skipped: true, reason: 'sandbox' };
+  }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition', 'Salon has not finished payment setup — deposits can\'t be taken yet.');
   }
@@ -10706,6 +10718,13 @@ exports.createGiftCardPurchaseIntent = onCall({ cors: true, secrets: [stripeKey]
     throw new HttpsError('resource-exhausted', 'Too many gift-card purchases right now. Try again shortly.');
   }
   const ten = (await db.doc(`tenants/${tenantId}`).get()).data() || {};
+  // Stripe sandbox: simulate a successful gift-card purchase (no real charge).
+  // The front-end detects `sandbox` and finalizes with the simulated PI.
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
+    writeSandboxChargeLog(db, tenantId, { kind: 'gift_card_purchase', amountCents, recipientEmail }).catch(() => {});
+    return { sandbox: true, simulated: true, clientSecret: null, paymentIntentId: simId };
+  }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition', 'This salon hasn\'t finished payment setup, so gift cards can\'t be purchased online yet.');
   }
@@ -10739,6 +10758,9 @@ exports.finalizeGiftCardPurchase = onCall({ cors: true, secrets: [stripeKey] }, 
   const tenantId = String(d.tenantId || TENANT_ID).slice(0, 64);
   if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
   const piId = String(d.paymentIntentId || '');
+  // Stripe sandbox: a simulated gift-card purchase finalizes without minting a
+  // real (spendable) card or touching Stripe — money-safe demo.
+  if (/^pi_sandbox_/.test(piId)) return { ok: true, sandbox: true, created: false };
   if (!/^pi_[A-Za-z0-9]+$/.test(piId)) throw new HttpsError('invalid-argument', 'Invalid payment reference.');
   const key = stripeKey.value();
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
@@ -10817,6 +10839,12 @@ exports.chargeStoredCard = onCall({ cors: true, secrets: [stripeKey] }, async (r
 
   const tenSnap = await db.doc(`tenants/${tenantId}`).get();
   const ten = tenSnap.exists ? tenSnap.data() : {};
+  // Stripe sandbox: simulate a successful stored-card charge (no real money).
+  if (effectiveSandbox(ten, 'stripeSandboxMode')) {
+    const simId = `pi_sandbox_${tenantId}_${Date.now().toString(36)}`;
+    writeSandboxChargeLog(db, tenantId, { kind: 'stored_card_charge', amountCents: Math.round(Number(amount) || 0), clientId }).catch(() => {});
+    return { ok: true, sandbox: true, simulated: true, paymentIntentId: simId, status: 'succeeded' };
+  }
   if (!ten.stripeConnectAccountId) {
     throw new HttpsError('failed-precondition',
       'Salon has not completed Stripe Connect onboarding — cards cannot be charged until that\'s done.');
@@ -11781,6 +11809,15 @@ exports.createMembershipCheckout = onCall({ cors: true, secrets: [stripeKey] }, 
   if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
   const stripe = require('stripe')(key);
   const db     = dbAuth;
+
+  // Stripe sandbox: don't create a real Stripe subscription/checkout for a
+  // sandboxed tenant. Return a sandbox marker (no money, no Stripe resources);
+  // the front-end shows the simulated state.
+  const tenSb = (await db.doc(`tenants/${tenantId}`).get()).data() || {};
+  if (effectiveSandbox(tenSb, 'stripeSandboxMode')) {
+    writeSandboxChargeLog(db, tenantId, { kind: 'membership_checkout', membershipId }).catch(() => {});
+    return { sandbox: true, simulated: true, url: null };
+  }
 
   const memRef = db.doc(`tenants/${tenantId}/memberships/${membershipId}`);
   const memSnap = await memRef.get();
