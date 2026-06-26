@@ -19,6 +19,7 @@ const { resolveTurnMode, buildTurnValueMap, turnValueForLineName } = require('./
 const { normalizeVertical, membershipPlansForVertical } = require('./lib/verticals');
 const kioskSaleLib         = require('./lib/kioskSale');
 const ledger               = require('./lib/ledger');
+const { DEFAULT_TENANT_CAPS, effectiveSandbox, effectiveCaps } = require('./lib/serviceSandbox');
 const { renderTemplate, getTemplatePhrases } = require('./lib/messageTemplates');
 
 initializeApp();
@@ -14403,17 +14404,9 @@ async function writeSandboxSmsLog(db, tenantId, entry) {
 // defaults to sandbox=true — a brand-new tenant can't touch ANY production
 // service until an admin flips it live (setTenantServiceControls). Fail-safe:
 // a read error returns sandboxed=true (recoverable miss > real money/send).
-// Effective per-service sandbox state from already-loaded tenant data (sync).
-// Explicit per-service flag wins; unset → inherit the master SMS sandboxMode.
-// MIGRATION-SAFE: existing live tenants (sandboxMode:false, no per-service field
-// yet) stay live for email + Stripe on deploy instead of being silently
-// sandboxed. Once an admin sets the per-service flag, it's fully independent.
-function effectiveSandbox(t, field) {
-  if (!t) return true;
-  if (t[field] === false) return false;
-  if (t[field] === true)  return true;
-  return t.sandboxMode !== false;
-}
+// effectiveSandbox / effectiveCaps / DEFAULT_TENANT_CAPS are imported from
+// ./lib/serviceSandbox (pure + unit-tested). tenantSandboxFlag / getTenantCaps
+// wrap them with the tenant-registry-doc read.
 async function tenantSandboxFlag(db, tenantId, field) {
   try {
     const tSnap = await db.doc(`tenants/${tenantId}`).get();
@@ -14444,19 +14437,9 @@ async function writeSandboxChargeLog(db, tenantId, entry) {
   } catch (e) { console.error(`[writeSandboxChargeLog] failed for ${tenantId}:`, e?.message); }
 }
 
-// Per-tenant configurable caps with reasonable platform defaults. Stored on the
-// registry doc as tenants/{id}.caps = { smsPerDay, emailPerDay, maxChargeCents };
-// any missing/invalid field falls back to the default below.
-const DEFAULT_TENANT_CAPS = Object.freeze({ smsPerDay: 500, emailPerDay: 1000, maxChargeCents: 500000 });
-// Merge a tenant's caps over the platform defaults (sync — from loaded data).
-function effectiveCaps(t) {
-  const c = (t && typeof t.caps === 'object' && t.caps) || {};
-  return {
-    smsPerDay:      Number.isFinite(c.smsPerDay)      ? c.smsPerDay      : DEFAULT_TENANT_CAPS.smsPerDay,
-    emailPerDay:    Number.isFinite(c.emailPerDay)    ? c.emailPerDay    : DEFAULT_TENANT_CAPS.emailPerDay,
-    maxChargeCents: Number.isFinite(c.maxChargeCents) ? c.maxChargeCents : DEFAULT_TENANT_CAPS.maxChargeCents,
-  };
-}
+// Per-tenant configurable caps. Stored on the registry doc as
+// tenants/{id}.caps = { smsPerDay, emailPerDay, maxChargeCents }; the defaults +
+// merge live in ./lib/serviceSandbox (effectiveCaps / DEFAULT_TENANT_CAPS).
 async function getTenantCaps(db, tenantId) {
   try {
     const tSnap = await db.doc(`tenants/${tenantId}`).get();
