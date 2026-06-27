@@ -33,8 +33,8 @@ Really enjoyed the call. A few specifics from our conversation:
     online booking page. You're live by close of business.
   · First week: I'm on call (literally) for any front-desk question.
 
-- Your team size puts you on Studio ($79/mo). With Comms Pack + AI Pack you mentioned
-  wanting, you're at $79+$19+$19 = $117/mo total. (You're paying [estimated current
+- Your team size puts you on Studio ($49/mo). With Comms Pack + AI Pack you mentioned
+  wanting, you're at $49+$19+$19 = $87/mo total. (You're paying [estimated current
   cost] today across [their tools].)
 
 Three options for next steps:

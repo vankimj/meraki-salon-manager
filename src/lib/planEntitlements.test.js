@@ -14,8 +14,8 @@ describe('PLAN_RANK / PLAN_IDS / PLAN_META', () => {
     expect(PLAN_IDS).toEqual(['solo', 'studio', 'salonPro']);
   });
   it('carries the published prices (must match the marketing pricing page)', () => {
-    expect(PLAN_META.solo.monthly).toBe(49);
-    expect(PLAN_META.studio.monthly).toBe(79);
+    expect(PLAN_META.solo.monthly).toBe(19);
+    expect(PLAN_META.studio.monthly).toBe(49);
     expect(PLAN_META.salonPro.monthly).toBe(149);
   });
 });

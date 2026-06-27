@@ -8,14 +8,14 @@ const PLANS = [
   {
     id: 'solo',
     label: 'Solo',
-    price: '$49 / month',
+    price: '$19 / month',
     features: ['Scheduling & online booking', 'POS, gift cards & promos', 'AI-powered reports', 'Clients & services'],
     color: '#2D7A5F',
   },
   {
     id: 'studio',
     label: 'Studio',
-    price: '$79 / month',
+    price: '$49 / month',
     features: ['Everything in Solo', 'SMS + 2-way comms', 'Attendance & meetings', 'Retail inventory'],
     color: '#3D9E8A',
   },

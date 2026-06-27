@@ -10,7 +10,7 @@ import ComparisonTable from './ComparisonTable.jsx';
 const TIERS = [
   {
     name: 'Solo',
-    price: 49, annual: 42,
+    price: 19, annual: 16,
     blurb: 'Perfect for the single-chair stylist.',
     foundersFree: true,
     features: [
@@ -26,7 +26,7 @@ const TIERS = [
   },
   {
     name: 'Studio',
-    price: 79, annual: 68,
+    price: 49, annual: 42,
     featured: true,
     blurb: 'For growing salons with a full team. Includes the Comms Pack.',
     features: [

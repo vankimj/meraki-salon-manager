@@ -8,8 +8,8 @@ import { C, FONT, radius, shadow } from '../theme.js';
 //   'pack' → available as a Power Pack add-on on this tier
 //   string → a literal value (staff counts, support SLA)
 const PLANS = [
-  { id: 'solo',     name: 'Solo',      note: '$49/mo' },
-  { id: 'studio',   name: 'Studio',    note: '$79/mo', featured: true },
+  { id: 'solo',     name: 'Solo',      note: '$19/mo' },
+  { id: 'studio',   name: 'Studio',    note: '$49/mo', featured: true },
   { id: 'salonPro', name: 'Salon Pro', note: '$149/mo' },
 ];
 
