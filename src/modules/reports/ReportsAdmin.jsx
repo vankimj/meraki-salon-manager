@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange, fetchLedgerByRange, fetchExpensesByRange, createExpense, deleteExpense, fetchPayrollRuns, fetchBonuses, fetchProducts, EXPENSE_CATEGORIES } from '../../lib/firestore';
+import { fetchAppointmentsByRange, fetchClients, fetchReceiptsByRange, fetchEmployees, fetchClientVisits, fetchHistoricalClientIds, fetchServiceRatingsByRange, fetchFraudBlocksByRange, fetchLedgerByRange, fetchExpensesByRange, createExpense, deleteExpense, fetchPayrollRuns, fetchBonuses, fetchProducts, fetchMemberships, fetchSessionPacks, EXPENSE_CATEGORIES } from '../../lib/firestore';
+import { computeMembershipStats, computeSessionPackStats, computeClientValue } from './recurringReports';
 import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { isMultiLocation, activeLocations, appointmentInLocation, subscribeLocations } from '../../lib/locations';
@@ -156,6 +157,8 @@ const PERIODS = [
 const TABS = [
   { id: 'overview',      label: 'Overview' },
   { id: 'transactions',  label: 'Transactions' },
+  { id: 'recurring',     label: 'Memberships & Packs' },
+  { id: 'clients',       label: 'Client Value' },
   { id: 'pnl',           label: 'P&L' },
   { id: 'ledger',        label: 'Ledger' },
   { id: 'cancellations', label: 'Cancellations & No-Shows' },
@@ -338,6 +341,10 @@ export default function ReportsAdmin() {
           customStart={customStart} setCustomStart={setCustomStart}
           customEnd={customEnd}     setCustomEnd={setCustomEnd}
         />
+      ) : activeTab === 'recurring' ? (
+        <MembershipsReport />
+      ) : activeTab === 'clients' ? (
+        <ClientValueReport />
       ) : activeTab === 'cancellations' ? (
         <CancellationsReport
           startDate={isCustom ? customStart : startOf(periodDays)}
@@ -3420,6 +3427,145 @@ function Td({ children, bold, green, muted }) {
     <td style={{ padding: '8px 4px', textAlign: 'right', fontSize: 12, fontWeight: bold ? 700 : 400, color: green ? '#2D7A5F' : muted ? 'var(--pn-text-faint)' : 'var(--pn-text)' }}>
       {children}
     </td>
+  );
+}
+
+// ── Memberships & Packs (recurring revenue) — canned report ──
+function MembershipsReport() {
+  const { terms } = useApp();
+  const [memberships, setMemberships] = useState(null);
+  const [packs, setPacks] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
+  const sessLabel = terms?.servicePlural || 'sessions';
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([fetchMemberships().catch(() => []), fetchSessionPacks().catch(() => [])])
+      .then(([m, p]) => { setMemberships(m); setPacks(p); })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const mem = useMemo(() => computeMembershipStats(memberships || []), [memberships]);
+  const pk  = useMemo(() => computeSessionPackStats(packs || []), [packs]);
+  const hasPacks = (packs || []).length > 0;
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 48, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>;
+
+  return (
+    <>
+      <div style={{ fontSize: 13, color: 'var(--pn-text-muted)', marginBottom: 16 }}>
+        A live snapshot of recurring membership revenue{hasPacks ? ` and prepaid ${sessLabel} packs` : ''}.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
+        <KPICard label="Monthly recurring (MRR)" value={money(mem.mrr)} accent="#2D7A5F" sub={`${mem.active} active member${mem.active === 1 ? '' : 's'}`} />
+        <KPICard label="Annual run-rate (ARR)" value={money(mem.arr)} accent="#3D95CE" />
+        <KPICard label="Avg / member" value={money(mem.avgValue)} sub="per month" />
+        <KPICard label="Paused · cancelled" value={`${mem.paused} · ${mem.cancelled}`} accent="var(--pn-text-muted)" sub={(mem.active + mem.cancelled) ? `${Math.round(mem.churnRate * 100)}% churned` : ''} />
+      </div>
+
+      <Card title="Membership plans" style={{ marginBottom: 16 }}>
+        {mem.plans.length === 0 ? <Empty>No active memberships yet. Create plans + enroll clients in the Memberships module.</Empty> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><Th left>Plan</Th><Th>Members</Th><Th>MRR</Th><Th>% of MRR</Th></tr></thead>
+            <tbody>
+              {mem.plans.map(p => (
+                <tr key={p.name} style={{ borderTop: '1px solid var(--pn-border)' }}>
+                  <td style={{ padding: '8px 4px', fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{p.name}</td>
+                  <Td>{p.count}</Td>
+                  <Td bold green>{money(p.mrr)}</Td>
+                  <Td muted>{mem.mrr ? Math.round(p.mrr / mem.mrr * 100) : 0}%</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      <Card title={`${cap(sessLabel)} packs`}>
+        {!hasPacks ? <Empty>No {sessLabel} packs sold yet. Grant a pack from the Programs → Session Packs tab.</Empty> : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10 }}>
+            <KpiTile label="Active packs" big={pk.active} sub={`${pk.depleted} used up`} />
+            <KpiTile label={`${cap(sessLabel)} sold`} big={pk.sessionsSold} />
+            <KpiTile label="Delivered" big={pk.sessionsUsed} sub={`${Math.round(pk.utilization * 100)}% utilization`} color="#2D7A5F" />
+            <KpiTile label="Outstanding" big={pk.sessionsRemaining} sub={`${sessLabel} owed to clients`} color="#b45309" />
+          </div>
+        )}
+      </Card>
+    </>
+  );
+}
+
+// ── Client Value (lifetime value) — canned report ──
+function ClientValueReport() {
+  const { terms } = useApp();
+  const [list, setList] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
+  const clientLabel = terms?.clientPlural || 'clients';
+
+  useEffect(() => {
+    setLoading(true);
+    const start = startOf(3650), end = todayStr();
+    Promise.all([fetchReceiptsByRange(start, end).catch(() => []), fetchAppointmentsByRange(start, end).catch(() => [])])
+      .then(([rs, as]) => {
+        const m = computeMetrics(buildTransactions(rs, as));
+        setList(computeClientValue(m.byClient));
+      })
+      .catch(() => setList([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const totals = useMemo(() => {
+    const l = list || [];
+    const rev = l.reduce((s, c) => s + c.revenue, 0);
+    return { count: l.length, rev, avg: l.length ? rev / l.length : 0, top: l[0] };
+  }, [list]);
+
+  function exportCsv() {
+    const rows = [['Rank', 'Client', 'Visits', 'Avg ticket', 'Lifetime value']];
+    (list || []).forEach((c, i) => rows.push([i + 1, c.name, c.visits, c.avgTicket.toFixed(2), c.revenue.toFixed(2)]));
+    dlCSV(`client-value_${todayStr()}.csv`, rows);
+  }
+
+  if (loading) return <div style={{ textAlign: 'center', padding: 48, color: 'var(--pn-text-faint)', fontSize: 13 }}>Loading…</div>;
+
+  const top = (list || []).slice(0, 50);
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ fontSize: 13, color: 'var(--pn-text-muted)' }}>Lifetime spend per {terms?.client || 'client'}, all-time — your most valuable {clientLabel}.</div>
+        <button onClick={exportCsv} disabled={!top.length}
+          style={{ fontSize: 12, padding: '6px 12px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-bg)', cursor: top.length ? 'pointer' : 'default', fontFamily: 'inherit', color: 'var(--pn-text-muted)' }}>
+          ⤓ Export CSV
+        </button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 18 }}>
+        <KPICard label={`Paying ${clientLabel}`} value={totals.count.toLocaleString()} />
+        <KPICard label="Lifetime revenue" value={money(totals.rev)} accent="#2D7A5F" />
+        <KPICard label="Avg lifetime value" value={money(totals.avg)} accent="#3D95CE" />
+        <KPICard label="Top client" value={totals.top ? money(totals.top.revenue) : '—'} sub={totals.top?.name} />
+      </div>
+      <Card title={`Top ${clientLabel} by lifetime value`}>
+        {top.length === 0 ? <Empty>No completed sales yet.</Empty> : (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead><tr><Th left>#</Th><Th left>Client</Th><Th>Visits</Th><Th>Avg ticket</Th><Th>Lifetime value</Th></tr></thead>
+            <tbody>
+              {top.map((c, i) => (
+                <tr key={c.clientId || i} style={{ borderTop: '1px solid var(--pn-border)' }}>
+                  <td style={{ padding: '8px 4px', fontSize: 12, color: 'var(--pn-text-faint)' }}>{i + 1}</td>
+                  <td style={{ padding: '8px 4px', fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{c.name}</td>
+                  <Td>{c.visits}</Td>
+                  <Td muted>{money(c.avgTicket)}</Td>
+                  <Td bold green>{money(c.revenue)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+    </>
   );
 }
 

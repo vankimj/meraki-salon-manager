@@ -1279,6 +1279,10 @@ export async function deleteProgressEntry(clientId, entryId) {
 }
 
 // ── Session-credit packs ───────────────────────────────
+export async function fetchSessionPacks() {
+  const snap = await getDocs(SESSION_PACKS_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
 export function subscribeSessionPacks(cb) {
   return onSnapshot(SESSION_PACKS_COL, snap => {
     cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)
