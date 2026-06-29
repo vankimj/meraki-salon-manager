@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../lib/firebase';
+import { TENANT_ID } from '../lib/tenant';
 
 // Public "Recommended Gear" storefront. Reached at `/?gear` (optionally
 // `&tid=`). Reads safe product fields via getRecommendedGear; each "Shop"
@@ -14,7 +15,9 @@ const C = {
 
 export default function GearStorefront() {
   const params = new URLSearchParams(window.location.search);
-  const tid = params.get('tid') || undefined;
+  // Default to the subdomain-resolved tenant so {trainer}.plumenexus.com/?gear
+  // shows THAT trainer's gear, not the platform default. ?tid= still overrides.
+  const tid = params.get('tid') || TENANT_ID;
   const [data, setData]   = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
