@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useApp } from '../../context/AppContext';
 
 // Phase 0 — Welcome. Pick:
 //   - Branch: migrate (have existing data from GG / Vagaro / etc.) vs fresh
@@ -15,8 +16,12 @@ const INDUSTRIES = [
 ];
 
 export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
+  const { vertical } = useApp();
+  // Default the industry to the tenant's actual vertical (e.g. a personal-
+  // training tenant pre-selects "Personal training"), falling back to nails
+  // only when neither a saved choice nor a known vertical exists.
   const [branch,   setBranch]   = useState(onboarding?.branch   || 'fresh');
-  const [industry, setIndustry] = useState(onboarding?.industry || 'nails');
+  const [industry, setIndustry] = useState(onboarding?.industry || vertical || 'nails');
 
   function save() {
     onAdvance({ branch, industry });
@@ -25,7 +30,7 @@ export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
   return (
     <div>
       <div style={{ fontSize: 14, color: 'var(--pn-text-muted)', lineHeight: 1.55, marginBottom: 18 }}>
-        Welcome to Plume Nexus 👋 — let's get your salon set up. This takes ~20 minutes
+        Welcome to Plume Nexus 👋 — let's get your business set up. This takes ~20 minutes
         and you can skip any step. Your progress saves automatically as you go.
       </div>
 
@@ -46,7 +51,7 @@ export default function Phase0Welcome({ onboarding, onAdvance, saving }) {
         />
       </Section>
 
-      <Section title="What kind of salon?">
+      <Section title="What kind of business?">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {INDUSTRIES.map(i => (
             <Card
@@ -105,8 +110,11 @@ function Card({ selected, onClick, icon, title, desc, compact }) {
       }}>
       {icon && <span style={{ fontSize: 22, lineHeight: 1, marginTop: 2 }}>{icon}</span>}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--pn-text)', marginBottom: 3 }}>{title}</div>
-        <div style={{ fontSize: 12, color: 'var(--pn-text-muted)', lineHeight: 1.5 }}>{desc}</div>
+        {/* When selected, the card background is a fixed light lavender, so the
+            text must use dark ink — not the theme's --pn-text (near-white in
+            dark mode), which was rendering the selected card unreadable. */}
+        <div style={{ fontSize: 13, fontWeight: 700, color: selected ? '#3f2767' : 'var(--pn-text)', marginBottom: 3 }}>{title}</div>
+        <div style={{ fontSize: 12, color: selected ? '#6b5b8a' : 'var(--pn-text-muted)', lineHeight: 1.5 }}>{desc}</div>
       </div>
       {selected && <span style={{ fontSize: 16, color: '#6a4fa0', marginTop: 2 }}>✓</span>}
     </button>
