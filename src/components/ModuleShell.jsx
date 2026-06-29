@@ -11,10 +11,10 @@ import { MODULES, getVisibleModules, isModuleAvailableForPlan, effectivePlan } f
 import { isManagementRole } from '../lib/rbac';
 
 export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, children }) {
-  const { isAdmin, isReadOnly, isTech, isScheduler, role, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
+  const { isAdmin, isReadOnly, isTech, isScheduler, role, rawRole, customRoles, settings, totalChatUnread, realIsAdmin, viewAs, setViewAs, syncState, isOnline, activeTheme: t, users, requirePin, hasFeature } = useApp();
   const guardedNavigate = (id) => requirePin(id, () => onNavigate?.(id));
   const plan = effectivePlan(settings);
-  const canManage = isAdmin || isReadOnly || isManagementRole(role);
+  const canManage = isAdmin || isReadOnly || isManagementRole(rawRole, customRoles);
 
   // Build the per-role sidebar list. Single catalog (src/lib/modules.js) is
   // the source of truth for plan gating + admin-only flags + per-tile hide
@@ -32,7 +32,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
         .filter(m => isModuleAvailableForPlan(m, plan));
     }
     if (canManage) {
-      return getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
+      return getVisibleModules(settings, { role: rawRole, customRoles, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
     }
     return [];
   })();
@@ -44,6 +44,9 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
     if (va.role === 'scheduler') return 'Front desk';
     if (va.role === 'manager') return 'Manager';
     if (va.role === 'kiosk') return 'Kiosk';
+    if (String(va.role || '').startsWith('custom_')) {
+      return (customRoles?.roles || []).find(r => r.key === va.role)?.label || 'Custom role';
+    }
     return 'View only';
   }
 
@@ -54,6 +57,7 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
     if (val === 'manager') return { role: 'manager' };
     if (val === 'kiosk') return { role: 'kiosk' };
     if (val.startsWith('tech:')) return { role: 'tech', techName: val.slice(5) };
+    if (val.startsWith('custom:')) return { role: val.slice(7) };
     return null;
   }
   const [showFeedback, setShowFeedback] = useState(false);
@@ -195,6 +199,9 @@ export default function ModuleShell({ view, title, onHome, onAdmin, onNavigate, 
               <option value="scheduler">📅 Scheduler</option>
               <option value="readonly">👁 Read-only</option>
               <option value="kiosk">🔒 Kiosk</option>
+              {(customRoles?.roles || []).map(r => (
+                <option key={r.key} value={`custom:${r.key}`}>⭐ {r.label}</option>
+              ))}
             </select>
           )}
           <button onClick={() => setShowFeedback(true)} title="Report a bug or idea" className="ms-action-btn"

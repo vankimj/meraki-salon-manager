@@ -27,9 +27,6 @@ export const FLOW_DEFAULTS = {
   // Group booking: let 2–6 people book together (distinct techs, ±15 min).
   allowGroupBooking:      false,
 
-  // Removal modal cadence.
-  removalPromptMode:      'always',         // 'always' | 'first-only' | 'never'
-
   // Time-window constraints.
   minLeadTimeMinutes:     0,                // 0 = bookable now; e.g. 120 = +2h
   maxLeadDays:            30,               // furthest day visible in calendar
@@ -61,7 +58,6 @@ export const FLOW_TEMPLATES = {
       requireSignIn:      false,
       allowGuestCheckout: true,
       multiLaneShape:     'back-to-back',
-      removalPromptMode:  'always',
       showNotesField:     true,
     },
   },
@@ -75,7 +71,6 @@ export const FLOW_TEMPLATES = {
       requireSignIn:      true,
       allowGuestCheckout: false,
       multiLaneShape:     'back-to-back',
-      removalPromptMode:  'never',
       showNotesField:     true,
       stepLabels:         { confirm: 'Review & confirm', info: 'Your information' },
     },
@@ -90,7 +85,6 @@ export const FLOW_TEMPLATES = {
       requireSignIn:      false,
       allowGuestCheckout: true,
       multiLaneShape:     'back-to-back',
-      removalPromptMode:  'never',
       showNotesField:     false,
       minLeadTimeMinutes: 30,
       maxLeadDays:        14,
@@ -107,7 +101,6 @@ export const FLOW_TEMPLATES = {
       requireSignIn:      false,
       allowGuestCheckout: true,
       multiLaneShape:     'simultaneous',
-      removalPromptMode:  'always',
       showNotesField:     true,
       stepLabels:         { stylists: 'Your providers', cart: 'Choose your treatments' },
     },

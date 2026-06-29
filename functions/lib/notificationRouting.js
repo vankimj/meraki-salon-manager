@@ -19,10 +19,10 @@ const CUSTOMER_EVENTS = [
 
 const emptyRoleChannels = () => ({ push: false, email: false, sms: false });
 
-function defaultInternalRouting(eventKey) {
+function defaultInternalRouting(eventKey, extraRoles = []) {
   const ev = INTERNAL_EVENTS.find(e => e.key === eventKey);
   const out = {};
-  NOTIF_ROLES.forEach(r => { out[r] = emptyRoleChannels(); });
+  [...NOTIF_ROLES, ...extraRoles].forEach(r => { out[r] = emptyRoleChannels(); });
   if (ev && ev.defaults) {
     Object.keys(ev.defaults).forEach(r => {
       const ch = ev.defaults[r];
@@ -32,13 +32,13 @@ function defaultInternalRouting(eventKey) {
   return out;
 }
 
-function resolveInternalRouting(settings, eventKey) {
-  const base = defaultInternalRouting(eventKey);
+function resolveInternalRouting(settings, eventKey, extraRoles = []) {
+  const base = defaultInternalRouting(eventKey, extraRoles);
   const stored = settings && settings.notificationRouting
     && settings.notificationRouting.internal
     && settings.notificationRouting.internal[eventKey];
   if (!stored || typeof stored !== 'object') return base;
-  NOTIF_ROLES.forEach(r => {
+  [...NOTIF_ROLES, ...extraRoles].forEach(r => {
     const s = stored[r];
     if (s && typeof s === 'object') {
       base[r] = { push: s.push === true, email: s.email === true, sms: s.sms === true };

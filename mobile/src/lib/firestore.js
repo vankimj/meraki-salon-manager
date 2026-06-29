@@ -4,7 +4,8 @@ import {
 } from 'firebase/firestore';
 import { db, callFn, auth } from './firebase';
 import { getCurrentTenant } from './currentTenant';
-import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails } from './userProjections';
+import { buildStaffEmails, buildAdminEmails, buildScheduleViewOnlyEmails, buildCapEmails } from './userProjections';
+import { getCustomRoles } from './customRoles';
 
 // tenantCol/tenantDoc read getCurrentTenant() at CALL time so a tenant
 // switch in Profile re-routes subsequent queries without rebinding any
@@ -1288,13 +1289,19 @@ export async function sendCampaignNow({ name, channel, smsBody, subject, body, r
 // in ONE batch — identical to web src/lib/firestore.js saveUsers. This is
 // the fix that prevents the usersFull-missing incident, not the cause.
 async function saveUsers(users) {
+  // Load the custom-role overlay so a custom-role member projects into
+  // staffEmails/capEmails correctly (a static role list would drop them and
+  // lock them out at the rules layer, and would wipe delegated caps). Mirrors
+  // web src/lib/firestore.js saveUsers — keep these in sync.
+  const overlay = await getCustomRoles();
   const batch = writeBatch(db);
   batch.set(tenantDoc('users'), {
     users:       deleteField(),
     byEmail:     deleteField(),
-    staffEmails: buildStaffEmails(users),
-    adminEmails: buildAdminEmails(users),
+    staffEmails: buildStaffEmails(users, overlay),
+    adminEmails: buildAdminEmails(users, overlay),
     scheduleViewOnlyEmails: buildScheduleViewOnlyEmails(users),
+    capEmails:   buildCapEmails(users, overlay),
   }, { merge: true });
   batch.set(tenantDoc('usersFull'), { users }, { merge: true });
   await batch.commit();

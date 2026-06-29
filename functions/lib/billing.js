@@ -209,11 +209,16 @@ function disputeDashboardUrl(disputeId) {
 }
 
 // Format the due-by date in a human-readable way. Returns null if no date.
+// Pinned to UTC with an explicit label: this is a hard Stripe dispute deadline,
+// and Cloud Functions render in the server's timezone — an UNLABELED local time
+// (e.g. "10:00 AM") could be misread as the salon's own zone and cause a missed
+// deadline. (timeZoneName can't be combined with dateStyle/timeStyle — it throws
+// — so the "UTC" label is appended explicitly.)
 function formatDueBy(isoDate) {
   if (!isoDate) return null;
   const d = new Date(isoDate);
   if (isNaN(d.getTime())) return null;
-  return d.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' });
+  return d.toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC';
 }
 
 function buildPlatformDisputeAlertHtml({ tenantName, tenantOwnerEmail, amountDollars, currency, reason, dueByLabel, disputeId, isMembership, clientName }) {
@@ -619,11 +624,13 @@ async function handleInvoicePaymentFailedSaas(invoice, db, stripe, sendEmail) {
   const portalUrl = await _mintPortalUrl(stripe, tenant.customerId, returnUrl);
   const amountDollars = ((invoice.amount_due || 0) / 100).toFixed(2);
   // Stripe sends `next_payment_attempt` as a unix seconds value when Smart
-  // Retries are enabled. Render in a human form if present.
+  // Retries are enabled. Render in a human form if present. Pinned to UTC so the
+  // calendar day is deterministic regardless of the server's timezone (a local
+  // render could land on the wrong day for attempts near midnight UTC).
   let nextAttemptLabel = '';
   if (invoice.next_payment_attempt) {
     const d = new Date(invoice.next_payment_attempt * 1000);
-    nextAttemptLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    nextAttemptLabel = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
   }
   const html = buildPaymentFailedEmailHtml({
     salonName:        tenant.name,

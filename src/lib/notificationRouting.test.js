@@ -42,6 +42,30 @@ describe('resolveInternalRouting', () => {
   });
 });
 
+describe('overlay: custom roles in the routing axis (extraRoles)', () => {
+  const CUSTOM = ['custom_lead', 'custom_frontdesk'];
+  it('defaultInternalRouting seeds custom roles all-off', () => {
+    const r = defaultInternalRouting('clock_in_out', CUSTOM);
+    expect(r.owner).toEqual({ push: true, email: true, sms: true });   // built-in default unchanged
+    expect(r.custom_lead).toEqual({ push: false, email: false, sms: false });
+    expect(r.custom_frontdesk).toEqual({ push: false, email: false, sms: false });
+  });
+  it('resolveInternalRouting merges stored custom-role overrides', () => {
+    const settings = { notificationRouting: { internal: {
+      low_rating: { custom_lead: { push: true, email: false, sms: true } },
+    } } };
+    const r = resolveInternalRouting(settings, 'low_rating', CUSTOM);
+    expect(r.custom_lead).toEqual({ push: true, email: false, sms: true });
+    expect(r.custom_frontdesk).toEqual({ push: false, email: false, sms: false });
+    expect(r.owner).toEqual({ push: true, email: true, sms: true });   // built-in still defaulted
+  });
+  it('no extraRoles = original behavior (custom keys absent)', () => {
+    const r = resolveInternalRouting({}, 'refund');
+    expect(r.custom_lead).toBeUndefined();
+    expect(Object.keys(r).sort()).toEqual([...NOTIF_ROLES].sort());
+  });
+});
+
 describe('isCustomerNotifEnabled', () => {
   it('defaults to enabled', () => {
     expect(isCustomerNotifEnabled({}, 'receipt')).toBe(true);

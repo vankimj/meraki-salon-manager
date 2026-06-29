@@ -56,7 +56,6 @@ export const CAPS = [
   'meetings',        // internal meetings
   'marketing',       // campaigns
   'memberships',     // recurring plans
-  'store',           // product marketplace (Stripe Connect storefront)
   'intake',          // intake & waiver forms
   'programs',        // personalized training programs
   'chat',            // communications

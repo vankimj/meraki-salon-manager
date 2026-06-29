@@ -346,6 +346,7 @@ export default function ServicesAdmin() {
       {editing && (
         <ServiceModal
           svc={editing}
+          allServices={services}
           errors={errors}
           saving={saving}
           onChange={patch => setEditing(e => ({ ...e, ...patch }))}
@@ -384,7 +385,7 @@ function ServiceThumb({ image, name }) {
   );
 }
 
-function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
+function ServiceModal({ svc, allServices = [], errors, saving, onChange, onSave, onClose }) {
   const isNew = !svc.id;
   const fileRef = useRef(null);
   const [imgErr, setImgErr] = useState(false);
@@ -402,14 +403,15 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, padding: 24, width: '92%', maxWidth: 440, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, padding: 24, width: '94%', maxWidth: 820, maxHeight: '92vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
           <span style={{ fontSize: 15, fontWeight: 600 }}>{isNew ? 'Add Service' : 'Edit Service'}</span>
           <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>×</button>
         </div>
 
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', columnGap: 18, alignItems: 'start' }}>
         {/* Image preview + controls */}
-        <div style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 14, gridColumn: '1 / -1' }}>
           <label style={{ fontSize: 11, color: 'var(--pn-text-muted)', display: 'block', marginBottom: 6 }}>Service photo</label>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <div style={{ width: 80, height: 80, borderRadius: 10, overflow: 'hidden', background: 'var(--pn-surface-alt)', flexShrink: 0, border: '1px solid var(--pn-border)' }}>
@@ -447,7 +449,7 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           )}
         </Field>
 
-        <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 10, marginBottom: 12, gridColumn: '1 / -1' }}>
           <Field label="Base price ($)" error={errors.basePrice} style={{ flex: 1 }}>
             <input type="number" min={0} value={svc.basePrice} onChange={e => onChange({ basePrice: Number(e.target.value) })} style={inputStyle} />
           </Field>
@@ -459,11 +461,11 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
               onChange={e => onChange({ turnValue: e.target.value === '' ? null : Number(e.target.value) })} style={inputStyle} />
           </Field>
         </div>
-        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: -6, marginBottom: 12 }}>
+        <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: -6, marginBottom: 12, gridColumn: '1 / -1' }}>
           Turn value is only used when the walk-in rotation is set to “by value of work” (Admin → Settings). Blank = counts as 1 turn. e.g. polish change 0.5, full set 2.
         </div>
 
-        <div style={{ display: 'flex', gap: 20, marginBottom: 12 }}>
+        <div style={{ display: 'flex', gap: 20, marginBottom: 12, gridColumn: '1 / -1' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--pn-text-muted)', cursor: 'pointer' }}>
             <input type="checkbox" checked={svc.priceFrom} onChange={e => onChange({ priceFrom: e.target.checked })} />
             Price is "starting from" ($X+)
@@ -474,23 +476,23 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
           </label>
         </div>
 
-        <Field label="Description">
+        <Field label="Description" style={{ gridColumn: '1 / -1' }}>
           <textarea value={svc.description || ''} onChange={e => onChange({ description: e.target.value })} rows={3}
             style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.5 }} placeholder="Brief description of what's included…" />
         </Field>
 
-        <Field label="Options / Variants (optional)">
+        <Field label="Options / Variants (optional)" style={{ gridColumn: '1 / -1' }}>
           <ServiceOptionsEditor
             options={svc.options || []}
             onChange={opts => onChange({ options: opts })}
           />
         </Field>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10, gridColumn: '1 / -1' }}>
           <input type="checkbox" checked={svc.active} onChange={e => onChange({ active: e.target.checked })} />
           Active (visible to clients)
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 10, gridColumn: '1 / -1' }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={svc.taxable !== false} onChange={e => onChange({ taxable: e.target.checked })} />
           <span>
             Subject to sales tax
@@ -499,16 +501,7 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             </div>
           </span>
         </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14 }}>
-          <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.canRequireRemoval} onChange={e => onChange({ canRequireRemoval: e.target.checked })} />
-          <span>
-            Can require removal
-            <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 2, lineHeight: 1.45 }}>
-              When booking online, customers will be asked if they need an existing set removed first. The fee is set in <strong>Admin → 💰 Financial</strong>.
-            </div>
-          </span>
-        </label>
-        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14 }}>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', marginBottom: 14, gridColumn: '1 / -1' }}>
           <input type="checkbox" style={{ marginTop: 3 }} checked={!!svc.categoryExclusive} onChange={e => onChange({ categoryExclusive: e.target.checked })} />
           <span>
             Exclusive in category
@@ -517,6 +510,10 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
             </div>
           </span>
         </label>
+
+        <Field label="Add-ons offered" style={{ gridColumn: '1 / -1' }} hint="Optional services a customer (or staff) can add when booking this one. Each keeps its own price + time and stacks on top — e.g. offer Removal and a Manicure upgrade on Gel-X. Pick from your other services below.">
+          <AddOnPicker svc={svc} allServices={allServices} onChange={onChange} />
+        </Field>
 
         <Field label="Max in cart per booking" hint="How many copies of this service a customer can add to one booking. Default 1. Set to 2 for Removal so customers can book one removal for hands and one for feet. Higher values only make sense for repeatable add-ons (e.g. extra nail art).">
           <input type="number" min={1} max={10} value={svc.maxInCart ?? 1}
@@ -533,7 +530,7 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
         {/* Tier 7: per-service flow overrides. These override the
             corresponding global Booking Flow settings (Admin → Settings →
             🧭 Booking Flow) ONLY when this service is in the cart. */}
-        <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+        <div style={{ background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 14, gridColumn: '1 / -1' }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--pn-text-muted)', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 8 }}>
             Booking-flow overrides for this service
           </div>
@@ -573,13 +570,55 @@ function ServiceModal({ svc, errors, saving, onChange, onSave, onClose }) {
               style={{ ...inputStyle, width: '100%' }} />
           </Field>
         </div>
+        </div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
           <button onClick={onClose} style={{ flex: 1, ...btnBase }}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={{ flex: 2, ...btnBase, background: '#3D95CE', color: '#fff', borderColor: '#3D95CE', opacity: saving ? .6 : 1 }}>
             {saving ? 'Saving…' : (isNew ? 'Add Service' : 'Save Changes')}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Multi-select picker: which OTHER active services are offered as optional
+// add-ons when this base service is booked. Stores their ids in
+// svc.addOnServiceIds; each add-on is a real catalog service that stacks its
+// own price + time as a separate line (generalizes the Removal pattern).
+function AddOnPicker({ svc, allServices = [], onChange }) {
+  const selected = svc.addOnServiceIds || [];
+  const candidates = (allServices || []).filter(s => s.id && s.id !== svc.id && s.active !== false);
+  const groups = groupByCategory(candidates);
+
+  function toggle(id) {
+    const next = selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id];
+    onChange({ addOnServiceIds: next });
+  }
+
+  if (!candidates.length) {
+    return <div style={{ fontSize: 12, color: 'var(--pn-text-muted)' }}>Add more services first — then you can offer them as add-ons here.</div>;
+  }
+
+  return (
+    <div>
+      <div style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid var(--pn-border)', borderRadius: 8, padding: '6px 10px', background: 'var(--pn-surface)' }}>
+        {groups.map(g => (
+          <div key={g.category} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--pn-text-faint)', margin: '4px 0 2px' }}>{g.category}</div>
+            {g.services.map(s => (
+              <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--pn-text)', cursor: 'pointer', padding: '3px 0' }}>
+                <input type="checkbox" checked={selected.includes(s.id)} onChange={() => toggle(s.id)} />
+                <span style={{ flex: 1 }}>{s.name}</span>
+                <span style={{ fontSize: 11, color: 'var(--pn-text-muted)', whiteSpace: 'nowrap' }}>{formatPrice(s)} · {formatDuration(s.duration, s.durationMin)}</span>
+              </label>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginTop: 4 }}>
+        {selected.length ? `${selected.length} add-on${selected.length === 1 ? '' : 's'} offered on this service.` : 'No add-ons selected — this service books on its own.'}
       </div>
     </div>
   );

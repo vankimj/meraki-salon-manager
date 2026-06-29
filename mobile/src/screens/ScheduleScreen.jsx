@@ -1343,6 +1343,7 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
         : null);
       setPickedServices((editAppt.services || []).map(s => ({
         id: s.id, name: s.name, duration: Number(s.duration) || 30, price: Number(s.price) || 0,
+        ...(s.addOnOf ? { addOnOf: s.addOnOf } : {}),
       })));
       setStartStr(editAppt.startTime || '');
       setEndStr('');
@@ -1393,9 +1394,25 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
 
   function toggleService(svc) {
     const { price, duration } = resolveTechSvc(svc, apptTech);
-    setPickedServices(prev => prev.some(s => s.id === svc.id)
-      ? prev.filter(s => s.id !== svc.id)
-      : [...prev, { id: svc.id, name: svc.name, duration, price }]);
+    setPickedServices(prev => {
+      const isBaseOn = prev.some(s => s.id === svc.id && !s.addOnOf);
+      // Removing a base also drops any add-ons attached to it.
+      if (isBaseOn) return prev.filter(s => !(s.id === svc.id && !s.addOnOf) && s.addOnOf !== svc.id);
+      return [...prev, { id: svc.id, name: svc.name, duration, price }];
+    });
+  }
+
+  // Toggle an add-on (a reference to another catalog service) for a base. Adds
+  // / removes a separate line tagged addOnOf:<base id> that stacks its own
+  // price + time. Mirrors the web booking + staff-schedule add-on path.
+  function toggleAddOn(base, addOnSvc) {
+    const isOn = pickedServices.some(s => s.addOnOf === base.id && (s.id === addOnSvc.id || s.name === addOnSvc.name));
+    if (isOn) {
+      setPickedServices(prev => prev.filter(s => !(s.addOnOf === base.id && (s.id === addOnSvc.id || s.name === addOnSvc.name))));
+      return;
+    }
+    const { price, duration } = resolveTechSvc(addOnSvc, apptTech);
+    setPickedServices(prev => [...prev, { id: addOnSvc.id, name: addOnSvc.name, duration, price, addOnOf: base.id }]);
   }
 
   // Inline client creation. Phone is required so every appt has a way
@@ -1738,11 +1755,11 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
               >
-                {sortedServices.map(svc => {
-                  const active = pickedServices.some(s => s.id === svc.id);
+                {sortedServices.flatMap(svc => {
+                  const active = pickedServices.some(s => s.id === svc.id && !s.addOnOf);
                   const performs = assignedIds.has(svc.id);
                   const eff = resolveTechSvc(svc, apptTech);
-                  return (
+                  const chips = [
                     <TouchableOpacity
                       key={svc.id}
                       onPress={() => toggleService(svc)}
@@ -1754,8 +1771,29 @@ function CreateApptModal({ prefill, editAppt, gateBlocked, onClose, onCreated })
                       <Text style={[styles.serviceChipMeta, active && styles.serviceChipMetaActive]}>
                         {eff.duration}m · ${eff.price}
                       </Text>
-                    </TouchableOpacity>
-                  );
+                    </TouchableOpacity>,
+                  ];
+                  // Add-on sub-chips appear right after their base once it's selected.
+                  if (active && (svc.addOnServiceIds || []).length) {
+                    (svc.addOnServiceIds || [])
+                      .map(id => services.find(s => s.id === id))
+                      .filter(a => a && a.active !== false)
+                      .forEach(a => {
+                        const on = pickedServices.some(s => s.addOnOf === svc.id && (s.id === a.id || s.name === a.name));
+                        const r = resolveTechSvc(a, apptTech);
+                        chips.push(
+                          <TouchableOpacity
+                            key={`${svc.id}__addon__${a.id}`}
+                            onPress={() => toggleAddOn(svc, a)}
+                            style={[styles.serviceChip, { borderStyle: 'dashed' }, on && styles.serviceChipActive]}
+                          >
+                            <Text style={[styles.serviceChipName, on && styles.serviceChipNameActive]}>＋ {a.name}</Text>
+                            <Text style={[styles.serviceChipMeta, on && styles.serviceChipMetaActive]}>+{r.duration}m · ${r.price}</Text>
+                          </TouchableOpacity>
+                        );
+                      });
+                  }
+                  return chips;
                 })}
               </ScrollView>
 

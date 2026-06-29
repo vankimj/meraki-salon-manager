@@ -798,7 +798,7 @@ function CheckoutInner({ appts: apptsProp, appt, walkInClient = null, initialPro
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300 }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 480, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 560, maxHeight: '92vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Header */}
         <div style={{ padding: '14px 18px', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg,#2D7A5F 0%,#3D95CE 100%)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>

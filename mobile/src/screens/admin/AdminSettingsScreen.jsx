@@ -21,7 +21,6 @@ const FIELDS = [
   { key: 'taxRate',        label: 'Sales tax rate (%)',      type: 'number', def: 0 },
   { key: 'ccFeePct',       label: 'Card fee (%)',            type: 'number', def: 0 },
   { key: 'ccFeeFlat',      label: 'Card fee (flat $)',       type: 'number', def: 0 },
-  { key: 'removalPrice',   label: 'Removal service price ($)', type: 'number', def: 0 },
   { key: 'noCardTips',     label: 'Disable tips on card',    type: 'bool' },
   { key: 'walkinPartialTurns',  label: 'Walk-in: partial turns (full / half / none)', type: 'bool' },
   { key: 'walkinRequestNoTurn', label: "Walk-in: requested tech doesn't take a turn",  type: 'bool' },
