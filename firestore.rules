@@ -619,6 +619,24 @@ service cloud.firestore {
                    .hasOnly(['stock', 'updatedAt', 'lastSoldAt']));
       }
 
+      // ── Store: trainer product marketplace ──────────────────────────────
+      // Catalog: staff read; admin manages. The public ?store page reads via
+      // the getPublicStore Cloud Function (Admin SDK, safe-field projection),
+      // so no public read here. The server also lazily writes stripe*Id back.
+      match /storeProducts/{productId} {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if isTenantAdmin(tenantId);
+      }
+      // Orders: server-written money/audit records. The portal client whose
+      // email matches `clientEmail` can READ their own purchases (same pattern
+      // as clientPrograms); admin reads all. NO client writes — a forged
+      // "paid" must be impossible, so only stripeWebhook (Admin SDK) writes.
+      match /storeOrders/{orderId} {
+        allow read:  if isTenantAdmin(tenantId) ||
+                        (isAuthenticated() && resource.data.clientEmail == request.auth.token.email);
+        allow write: if false;
+      }
+
       // ── Personal-training vertical ──────────────────────────────────────
       // Intake / waiver form templates: admin manages. No client PII, but the
       // public fill page reads the form through the getPublicIntakeForm Cloud
