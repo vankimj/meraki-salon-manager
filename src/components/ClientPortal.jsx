@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { httpsCallable } from 'firebase/functions';
+import { functions } from '../lib/firebase';
 import { useApp } from '../context/AppContext';
-import { fetchClient, saveClient, fetchClientAppointments, subscribeToChat, sendChatMessage, fetchMyProgramsByEmail, fetchMyProgress } from '../lib/firestore';
+import { fetchClient, saveClient, fetchClientAppointments, subscribeToChat, sendChatMessage, fetchMyProgramsByEmail, fetchMyProgress, fetchClientStoreOrders } from '../lib/firestore';
 import { resizeImg } from '../utils/helpers';
 import { programStats } from '../lib/programs';
 import TrendChart from './TrendChart';
@@ -30,6 +32,8 @@ export default function ClientPortal() {
   const [chat,     setChat]     = useState(null);
   const [programs, setPrograms] = useState(null);
   const [progress, setProgress] = useState(null);
+  const [store,    setStore]    = useState(null);   // { storeEnabled, items }
+  const [orders,   setOrders]   = useState(null);   // my purchases
   const fileRef = useRef(null);
   const today = new Date().toISOString().slice(0, 10);
 
@@ -44,7 +48,13 @@ export default function ClientPortal() {
     if (!isPT) return;
     fetchMyProgramsByEmail(gUser?.email).then(setPrograms).catch(() => setPrograms([]));
     fetchMyProgress().then(setProgress).catch(() => setProgress([]));
+    httpsCallable(functions, 'getPublicStore')({})
+      .then(res => setStore(res?.data || { storeEnabled: false, items: [] }))
+      .catch(() => setStore({ storeEnabled: false, items: [] }));
+    if (gUser?.email) fetchClientStoreOrders(gUser.email).then(setOrders).catch(() => setOrders([]));
   }, [isPT, gUser?.email]);
+
+  const storeOpen = isPT && store?.storeEnabled && (store?.items?.length || (orders?.length));
 
   const upcoming = (appts || []).filter(a => a.date >= today && a.status !== 'done').sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''));
   const past     = (appts || []).filter(a => a.date < today || a.status === 'done').sort((a, b) => b.date.localeCompare(a.date));
@@ -122,6 +132,7 @@ export default function ClientPortal() {
             { id: 'program',  label: 'My Plan' },
             { id: 'progress', label: 'Progress' },
           ] : []),
+          ...(storeOpen ? [{ id: 'shop', label: 'Shop' }] : []),
           { id: 'history',  label: `History${past.length ? ` (${past.length})` : ''}` },
           { id: 'messages', label: 'Messages' },
           { id: 'profile',  label: 'Profile' },
@@ -171,6 +182,16 @@ export default function ClientPortal() {
           progress === null ? <Loading />
             : progress.length === 0 ? <Empty>No progress logged yet. Your {terms.staff} will add measurements as you go.</Empty>
             : <PortalProgress entries={progress} />
+        )}
+
+        {/* Shop (personal-training, Connect-enabled) */}
+        {tab === 'shop' && (
+          <PortalShop
+            store={store}
+            orders={orders}
+            email={client?.email || gUser?.email || ''}
+            showToast={showToast}
+          />
         )}
 
         {/* Messages */}
@@ -353,6 +374,78 @@ function Loading() {
 
 function Empty({ children }) {
   return <div style={{ textAlign: 'center', padding: 48, color: '#bbb', fontSize: 13 }}>{children}</div>;
+}
+
+function PortalShop({ store, orders, email, showToast }) {
+  const [busy, setBusy] = useState(null); // product id being purchased
+  const items = store?.items || [];
+  const myOrders = (orders || []).filter(o => o.status === 'paid' || o.status === 'active' || o.status === 'past_due');
+  const money = (cents) => `$${((Number(cents) || 0) / 100).toFixed(2)}`;
+  const priceLabel = (p) => p.billingType === 'recurring' ? `$${p.price}/${p.interval === 'year' ? 'yr' : 'mo'}` : `$${p.price}`;
+
+  async function buy(p) {
+    if (!email) { showToast('No email on file', 3000); return; }
+    setBusy(p.id);
+    try {
+      const res = await httpsCallable(functions, 'createStoreCheckoutForClient')({ productId: p.id, email });
+      const url = res?.data?.url;
+      if (!url) throw new Error('No checkout URL');
+      window.location.href = url; // hand off to Stripe Checkout
+    } catch (e) {
+      showToast(e?.message || 'Could not start checkout', 4000);
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 560, margin: '0 auto' }}>
+      {items.length === 0 ? (
+        <Empty>No products available right now.</Empty>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 12, marginBottom: 24 }}>
+          {items.map(p => (
+            <div key={p.id} style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              {p.image
+                ? <img src={p.image} alt={p.name} style={{ width: '100%', height: 110, objectFit: 'cover', background: '#f5f5f5' }} />
+                : <div style={{ width: '100%', height: 110, background: 'linear-gradient(135deg,#eef0fb,#eaf5fb)', display: 'grid', placeItems: 'center', fontSize: 26 }}>🛍️</div>}
+              <div style={{ padding: 12, display: 'flex', flexDirection: 'column', flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{p.name}</div>
+                {p.description && <div style={{ fontSize: 11, color: '#888', margin: '2px 0 6px', lineHeight: 1.4 }}>{p.description}</div>}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: 8, gap: 8 }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{priceLabel(p)}</span>
+                  {p.soldOut ? (
+                    <span style={{ fontSize: 11, color: '#aaa', fontWeight: 600 }}>Sold out</span>
+                  ) : (
+                    <button onClick={() => buy(p)} disabled={busy === p.id}
+                      style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: '#6a4fa0', border: 'none', borderRadius: 999, padding: '6px 14px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      {busy === p.id ? '…' : (p.billingType === 'recurring' ? 'Subscribe' : 'Buy')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {myOrders.length > 0 && (
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Your purchases</div>
+          <div style={{ background: '#fff', border: '1px solid #ececec', borderRadius: 12, overflow: 'hidden' }}>
+            {myOrders.map((o, i) => (
+              <div key={o.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 14px', borderBottom: i < myOrders.length - 1 ? '1px solid #f2f2f2' : 'none' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1a1a1a' }}>{o.name}</div>
+                  <div style={{ fontSize: 11, color: '#aaa' }}>{o.createdAt ? new Date(o.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : ''}{o.recurring ? ' · subscription' : ''}</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{money(o.amount)}{o.recurring && <span style={{ fontSize: 11, color: '#aaa' }}>/{o.interval === 'year' ? 'yr' : 'mo'}</span>}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function fmtMsgTime(iso) {

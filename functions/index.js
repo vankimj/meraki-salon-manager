@@ -9733,6 +9733,11 @@ const {
 } = require('./lib/billing');
 
 const {
+  buildStoreCheckoutSessionParams, computeApplicationFeeCents,
+  clampFeePercent, storeOrderStatusForSub,
+} = require('./lib/store');
+
+const {
   evaluateCancellationPolicy,
   evaluateBookingCardRequirement,
   resolveBookingCardPolicy,
@@ -11467,6 +11472,43 @@ exports.stripeWebhook = onRequest(
             }
           }
         }
+      } else if (obj.metadata?.type === 'store_product') {
+        // Store purchase settled. Flip the pre-created order to paid/active.
+        // Read-first so the inventory decrement (NOT idempotent) only fires
+        // on the first settling, even if Stripe redelivers the event.
+        const tid = obj.metadata.tenantId || TENANT_ID;
+        const storeOrderId = obj.metadata.storeOrderId;
+        if (storeOrderId) {
+          const orderRef = db.doc(`tenants/${tid}/storeOrders/${storeOrderId}`);
+          const before   = await orderRef.get();
+          if (before.exists) {
+            const order = before.data() || {};
+            const alreadySettled = order.status && order.status !== 'pending';
+            const isSub = obj.mode === 'subscription' || !!obj.subscription;
+            const patch = {
+              status:    isSub ? 'active' : 'paid',
+              paidAt:    new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            if (obj.subscription)   patch.stripeSubscriptionId = obj.subscription;
+            if (obj.customer)       patch.stripeCustomerId     = obj.customer;
+            if (obj.payment_intent) patch.paymentIntentId      = obj.payment_intent;
+            await orderRef.set(patch, { merge: true });
+
+            if (obj.customer && order.clientId) {
+              await db.doc(`tenants/${tid}/clients/${order.clientId}`)
+                .set({ stripeCustomerId: obj.customer }, { merge: true }).catch(() => {});
+            }
+            if (!alreadySettled && order.productId) {
+              const prodRef  = db.doc(`tenants/${tid}/storeProducts/${order.productId}`);
+              const prodSnap = await prodRef.get();
+              if (prodSnap.exists && prodSnap.data().inventory != null) {
+                const { FieldValue } = require('firebase-admin/firestore');
+                await prodRef.set({ inventory: FieldValue.increment(-1), updatedAt: new Date().toISOString() }, { merge: true }).catch(() => {});
+              }
+            }
+          }
+        }
       } else {
         // SaaS subscription
         const tenantId = obj.metadata?.tenantId;
@@ -11514,7 +11556,17 @@ exports.stripeWebhook = onRequest(
     //      so the Admin UI can show "Cancels on {date}" / past-due banners.
     if (event.type === 'customer.subscription.updated') {
       const membershipId = obj.metadata?.membershipId;
-      if (membershipId) {
+      if (obj.metadata?.type === 'store_product' && obj.metadata?.storeOrderId) {
+        // Store subscription status sync (active / past_due / cancelled / paused).
+        const tid = obj.metadata.tenantId || TENANT_ID;
+        await db.doc(`tenants/${tid}/storeOrders/${obj.metadata.storeOrderId}`).set({
+          status:               storeOrderStatusForSub(obj.status),
+          stripeSubscriptionId: obj.id,
+          cancelAtPeriodEnd:    !!obj.cancel_at_period_end,
+          currentPeriodEnd:     obj.current_period_end ? new Date(obj.current_period_end * 1000).toISOString() : null,
+          updatedAt:            new Date().toISOString(),
+        }, { merge: true });
+      } else if (membershipId) {
         const tid = obj.metadata?.tenantId || TENANT_ID;
         const status = obj.status === 'active' ? 'active'
                      : obj.status === 'past_due' ? 'past_due'
@@ -11574,7 +11626,13 @@ exports.stripeWebhook = onRequest(
       // Membership branch: stamp cancelled
       const tid = obj.metadata?.tenantId || TENANT_ID;
       const membershipId = obj.metadata?.membershipId;
-      if (membershipId) {
+      if (obj.metadata?.type === 'store_product' && obj.metadata?.storeOrderId) {
+        await db.doc(`tenants/${tid}/storeOrders/${obj.metadata.storeOrderId}`).set({
+          status:      'cancelled',
+          cancelledAt: new Date().toISOString(),
+          updatedAt:   new Date().toISOString(),
+        }, { merge: true });
+      } else if (membershipId) {
         await db.doc(`tenants/${tid}/memberships/${membershipId}`).set({
           status:      'cancelled',
           cancelledAt: new Date().toISOString(),
@@ -11851,6 +11909,292 @@ exports.createMembershipPortal = onCall({ cors: true, secrets: [stripeKey] }, as
     return_url: baseUrl,
   });
 
+  return { url: session.url };
+});
+
+// ─── Store: trainer product marketplace (destination charges) ──────────────
+// Sells a tenant's own products (one-time or recurring) through Stripe
+// Checkout, routing funds to the TENANT's connected account. Plume's optional
+// cut (settings.platformFeePercent, default 0) rides as the application fee.
+// Money-shaping lives in functions/lib/store.js (pure + unit-tested).
+
+// Resolve the tenant's Connect routing + platform-fee posture for the store.
+// Stricter than the POS readiness check: we require chargesEnabled === true
+// before settling real product money (the account.updated webhook keeps the
+// summary fresh, so this is reliable).
+async function loadStoreConnect(db, tenantId) {
+  const [tenSnap, setSnap] = await Promise.all([
+    db.doc(`tenants/${tenantId}`).get(),
+    db.doc(`tenants/${tenantId}/data/settings`).get(),
+  ]);
+  const ten = tenSnap.exists ? (tenSnap.data() || {}) : {};
+  const s   = setSnap.exists ? (setSnap.data() || {}) : {};
+  // SECURITY: the connect account + chargesEnabled gate the destination of
+  // real money, so read them ONLY from the server-written tenant ROOT doc
+  // (tenants/{id}, write: isBootstrapAdmin) — NEVER from data/settings, which
+  // is tenant-admin-writable. The settings.stripeConnect mirror is display-
+  // only; trusting it would let a tenant admin set chargesEnabled=true (bypass
+  // KYC) or point transfer_data.destination at an arbitrary account.
+  const connectAccountId   = ten.stripeConnectAccountId || ten.stripeConnect?.accountId || '';
+  const chargesEnabled     = !!connectAccountId && ten.stripeConnect?.chargesEnabled === true;
+  // platformFeePercent is Plume's OWN cut (default 0). A tenant zeroing it can
+  // only reduce the platform's fee — it can never redirect the trainer's funds
+  // — so reading it from the admin-writable settings doc is fail-safe for now.
+  // Move it to the server-only doc if Plume ever charges a non-zero store fee.
+  const platformFeePercent = clampFeePercent(s.platformFeePercent);
+  return { connectAccountId, chargesEnabled, platformFeePercent };
+}
+
+// Lazily create (and cache) a Stripe Product + Price for a store product on
+// the PLATFORM account — destination charges live on the platform and route
+// funds to the connected account, so Product/Price belong here (same as
+// createMembershipCheckout). Stripe Prices are immutable; firestore.js clears
+// stripePriceId when a product's price/billing changes so a fresh Price is
+// minted on the next checkout.
+async function ensureStoreProductPrice(stripe, db, tenantId, product) {
+  if (product.stripePriceId) return product.stripePriceId;
+  const existing = product.stripeProductId
+    ? await stripe.products.retrieve(product.stripeProductId).catch(() => null)
+    : null;
+  const sp = existing || await stripe.products.create({
+    name:     String(product.name || 'Product').slice(0, 250),
+    metadata: { tenantId, productId: product.id, kind: 'store_product' },
+  });
+  const recurring = product.billingType === 'recurring';
+  const price = await stripe.prices.create({
+    product:     sp.id,
+    unit_amount: Math.round((Number(product.price) || 0) * 100),
+    currency:    (product.currency || 'usd').toLowerCase(),
+    ...(recurring ? { recurring: { interval: product.interval === 'year' ? 'year' : 'month' } } : {}),
+    metadata:    { tenantId, productId: product.id },
+  });
+  await db.doc(`tenants/${tenantId}/storeProducts/${product.id}`).set({
+    stripeProductId: sp.id, stripePriceId: price.id, updatedAt: new Date().toISOString(),
+  }, { merge: true });
+  return price.id;
+}
+
+// Shared checkout-session creator used by BOTH the admin and public buy
+// paths so the destination-charge shape + order audit doc are identical.
+// Pre-creates a `pending` storeOrders doc and echoes its id in metadata so
+// the webhook can flip exactly this order to paid/active.
+async function createStoreCheckoutSession({ db, stripe, tenantId, product, customerId, clientId, clientName, clientEmail }) {
+  const { connectAccountId, chargesEnabled, platformFeePercent } = await loadStoreConnect(db, tenantId);
+  if (!connectAccountId) throw new HttpsError('failed-precondition', 'This store isn’t accepting payments yet — connect a Stripe account first.');
+  if (!chargesEnabled)   throw new HttpsError('failed-precondition', 'Stripe is still verifying this account — payments aren’t enabled yet.');
+
+  const priceId     = await ensureStoreProductPrice(stripe, db, tenantId, product);
+  const amountCents = Math.round((Number(product.price) || 0) * 100);
+  const recurring   = product.billingType === 'recurring';
+  const nowIso      = new Date().toISOString();
+
+  const orderRef = db.collection(`tenants/${tenantId}/storeOrders`).doc();
+  await orderRef.set({
+    productId:          product.id,
+    name:               String(product.name || ''),
+    mode:               recurring ? 'subscription' : 'payment',
+    billingType:        product.billingType || 'one_time',
+    recurring,
+    interval:           recurring ? (product.interval === 'year' ? 'year' : 'month') : null,
+    fulfillment:        product.fulfillment || 'shipped',
+    clientId:           clientId || '',
+    clientName:         String(clientName || ''),
+    clientEmail:        String(clientEmail || '').toLowerCase(),
+    stripeCustomerId:   customerId,
+    amount:             amountCents,
+    currency:           (product.currency || 'usd').toLowerCase(),
+    applicationFee:     computeApplicationFeeCents(amountCents, platformFeePercent),
+    platformFeePercent,
+    ownerTrainerId:     product.ownerTrainerId || null,
+    status:             'pending',
+    createdAt:          nowIso,
+    updatedAt:          nowIso,
+  });
+
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  const params  = buildStoreCheckoutSessionParams({
+    product, priceId, customerId, connectAccountId,
+    platformFeePercent, tenantId, storeOrderId: orderRef.id, clientId,
+    successUrl: `${baseUrl}/?store=success`,
+    cancelUrl:  `${baseUrl}/?store=cancel`,
+  });
+  const session = await stripe.checkout.sessions.create(params);
+  await orderRef.set({ checkoutSessionId: session.id, updatedAt: new Date().toISOString() }, { merge: true });
+  return { url: session.url, orderId: orderRef.id };
+}
+
+// Admin-initiated checkout for a known salon client (e.g. trainer rings up a
+// supplement at the counter). Admin gate required — mints a payment link +
+// reuses the client's Stripe customer.
+exports.createStoreCheckout = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  const { productId, clientId, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+  if (!productId) throw new HttpsError('invalid-argument', 'productId required');
+  if (!clientId)  throw new HttpsError('invalid-argument', 'clientId required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+
+  const prodSnap = await db.doc(`tenants/${tenantId}/storeProducts/${productId}`).get();
+  if (!prodSnap.exists) throw new HttpsError('not-found', 'Product not found');
+  const product = { id: prodSnap.id, ...prodSnap.data() };
+  if (product._deleted || product.active === false) throw new HttpsError('failed-precondition', 'Product is not available');
+
+  const { customerId, client } = await ensureClientStripeCustomer(stripe, db, tenantId, clientId);
+  const { url } = await createStoreCheckoutSession({
+    db, stripe, tenantId, product, customerId, clientId,
+    clientName: client.name || '', clientEmail: client.email || '',
+  });
+  return { url };
+});
+
+// Public / portal direct-buy. Rate-limited + Connect-gated. Identifies the
+// buyer by a VERIFIED token email (portal/logged-in) when present, else by a
+// typed email from the public ?store page. Never trusts a caller-supplied
+// redirect URL. PUBLIC → needs run.invoker=allUsers.
+exports.createStoreCheckoutForClient = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(`storebuy:${ip}`, Date.now(), 60 * 60 * 1000, 30)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+  const tenantId  = String(request.data?.tenantId || request.data?.tid || TENANT_ID);
+  const productId = String(request.data?.productId || '');
+  if (!/^[a-z0-9-]{1,64}$/.test(tenantId)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  if (!productId) throw new HttpsError('invalid-argument', 'productId required');
+
+  const tokenEmail = String(request.auth?.token?.email || '').toLowerCase();
+  const typedEmail = String(request.data?.email || '').trim().toLowerCase();
+  const email = tokenEmail || typedEmail;
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new HttpsError('invalid-argument', 'A valid email is required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+  const db = getFirestore();
+
+  const prodSnap = await db.doc(`tenants/${tenantId}/storeProducts/${productId}`).get();
+  if (!prodSnap.exists) throw new HttpsError('not-found', 'Product not found');
+  const product = { id: prodSnap.id, ...prodSnap.data() };
+  if (product._deleted || product.active === false) throw new HttpsError('failed-precondition', 'Product is not available');
+
+  // Reuse an existing salon client's Stripe customer when the verified email
+  // matches one; otherwise dedupe a Stripe customer by email.
+  let customerId = null, clientId = '', clientName = '';
+  if (tokenEmail) {
+    const cSnap = await db.collection(`tenants/${tenantId}/clients`).where('email', '==', tokenEmail).limit(1).get().catch(() => null);
+    if (cSnap && !cSnap.empty) {
+      clientId = cSnap.docs[0].id;
+      const r = await ensureClientStripeCustomer(stripe, db, tenantId, clientId);
+      customerId = r.customerId;
+      clientName = r.client.name || '';
+    }
+  }
+  if (!customerId) {
+    const found = await stripe.customers.list({ email, limit: 1 }).catch(() => null);
+    customerId = (found && found.data && found.data[0])
+      ? found.data[0].id
+      : (await stripe.customers.create({ email, metadata: { tenantId, source: 'store_public' } })).id;
+  }
+
+  const { url } = await createStoreCheckoutSession({
+    db, stripe, tenantId, product, customerId, clientId, clientName, clientEmail: email,
+  });
+  return { url };
+});
+
+// Public storefront projection — SAFE fields only (never stripe*Id / cost).
+// Modeled on getRecommendedGear. PUBLIC → needs run.invoker=allUsers.
+exports.getPublicStore = onCall({ cors: true }, async (request) => {
+  const ip = request.rawRequest?.ip || '';
+  if (!checkRate(`store:${ip}`, Date.now(), 60 * 60 * 1000, 120)) {
+    throw new HttpsError('resource-exhausted', 'Too many requests. Try again later.');
+  }
+  const tid = String(request.data?.tid || request.data?.tenantId || TENANT_ID);
+  if (!/^[a-z0-9-]{1,64}$/.test(tid)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
+  const db = getFirestore();
+  const [snap, brand, conn] = await Promise.all([
+    db.collection(`tenants/${tid}/storeProducts`).get(),
+    tenantBranding(db, tid),
+    loadStoreConnect(db, tid),
+  ]);
+  const items = snap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(p => p.active !== false && !p._deleted)
+    .map(p => ({
+      id:          p.id,
+      name:        String(p.name || '').slice(0, 200),
+      description: p.description ? String(p.description).slice(0, 600) : null,
+      // Images are stored either as https URLs or base64 data URIs.
+      image:       safeUrl(p.image) ? p.image
+                 : (typeof p.image === 'string' && p.image.startsWith('data:image/')) ? p.image
+                 : null,
+      price:       Number(p.price) || 0,
+      currency:    (p.currency || 'usd').toLowerCase(),
+      billingType: p.billingType === 'recurring' ? 'recurring' : 'one_time',
+      interval:    p.billingType === 'recurring' ? (p.interval === 'year' ? 'year' : 'month') : null,
+      fulfillment: p.fulfillment || 'shipped',
+      soldOut:     p.inventory != null && Number(p.inventory) <= 0,
+    }))
+    .filter(p => p.price > 0);
+  return { salonName: brand.salonName, storeEnabled: conn.chargesEnabled, items };
+});
+
+// Cancel a recurring store subscription. Admin gate. Idempotent on
+// already-gone Stripe subs (mirrors cancelMembership).
+exports.cancelStoreSubscription = onCall({ cors: true, secrets: [stripeKey], timeoutSeconds: 30 }, async (request) => {
+  const { orderId, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!orderId) throw new HttpsError('invalid-argument', 'orderId required');
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const ref  = db.doc(`tenants/${tenantId}/storeOrders/${orderId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Order not found');
+  const o = snap.data();
+  if (o.stripeSubscriptionId) {
+    const stripe = require('stripe')(stripeKey.value());
+    try {
+      await stripe.subscriptions.cancel(o.stripeSubscriptionId);
+    } catch (e) {
+      if (!/No such subscription|already been canceled|resource_missing/i.test(e?.message || '')) {
+        throw new HttpsError('internal', e?.message || 'Stripe cancel failed');
+      }
+    }
+  }
+  await ref.set({
+    status: 'cancelled', cancelledAt: new Date().toISOString(),
+    cancelAtPeriodEnd: false, updatedAt: new Date().toISOString(),
+  }, { merge: true });
+  return { ok: true };
+});
+
+// Mint a Stripe Billing Portal session for a store subscriber. Admin gate;
+// never accepts a caller-supplied returnUrl (open-redirect guard).
+exports.createStorePortal = onCall({ cors: true, secrets: [stripeKey] }, async (request) => {
+  const { orderId, tenantId: tid } = request.data || {};
+  const tenantId = tid || TENANT_ID;
+  if (!orderId) throw new HttpsError('invalid-argument', 'orderId required');
+
+  const key = stripeKey.value();
+  if (!key) throw new HttpsError('unavailable', 'Stripe not configured');
+  const stripe = require('stripe')(key);
+  const db = getFirestore();
+  await requireTenantAdmin(db, tenantId, request);
+
+  const snap = await db.doc(`tenants/${tenantId}/storeOrders/${orderId}`).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Order not found');
+  const o = snap.data();
+  if (!o.stripeCustomerId) throw new HttpsError('failed-precondition', 'No Stripe customer for this order yet');
+
+  const baseUrl = (publicAppUrl.value() || 'https://plumenexus-prod.web.app').replace(/\/+$/, '');
+  const session = await stripe.billingPortal.sessions.create({
+    customer:   o.stripeCustomerId,
+    return_url: baseUrl,
+  });
   return { url: session.url };
 });
 

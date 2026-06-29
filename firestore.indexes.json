@@ -28,6 +28,7 @@
     {"collectionGroup": "programTemplates", "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
     {"collectionGroup": "clientPrograms",   "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
     {"collectionGroup": "sessionPacks",     "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
+    {"collectionGroup": "storeProducts",    "queryScope": "COLLECTION", "fields": [{"fieldPath": "_deleted", "order": "ASCENDING"}, {"fieldPath": "_deletedAt", "order": "ASCENDING"}]},
 
     {
       "//": "subscribeQueue / fetchTodayQueue — walk-in waitlist filtered by date and ordered by addedAt. Required for the Schedule's queue panel + ModuleShell badge. Missing this caused the first crash on the test tenant subdomain (which had never had a waitlist doc to seed the auto-index).",

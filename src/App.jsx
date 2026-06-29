@@ -31,6 +31,7 @@ const WalkinKiosk      = lazy(() => import('./modules/walkin/WalkinKiosk'));
 const MembershipsAdmin = lazy(() => import('./modules/memberships/MembershipsAdmin'));
 const IntakeAdmin      = lazy(() => import('./modules/intake/IntakeAdmin'));
 const ProgramsAdmin    = lazy(() => import('./modules/programs/ProgramsAdmin'));
+const StoreAdmin       = lazy(() => import('./modules/store/StoreAdmin'));
 const AttendanceAdmin  = lazy(() => import('./modules/attendance/AttendanceAdmin'));
 const GiftCardsAdmin   = lazy(() => import('./modules/giftcards/GiftCardsAdmin'));
 const MeetingsAdmin    = lazy(() => import('./modules/meetings/MeetingsAdmin'));
@@ -53,6 +54,7 @@ const UnsubscribeScreen = lazy(() => import('./components/UnsubscribeScreen'));
 const ManageAppointmentScreen = lazy(() => import('./components/ManageAppointmentScreen'));
 const IntakeFormScreen = lazy(() => import('./components/IntakeFormScreen'));
 const GearStorefront   = lazy(() => import('./components/GearStorefront'));
+const ProductShop      = lazy(() => import('./components/ProductShop'));
 const ReceiptViewPage  = lazy(() => import('./components/ReceiptViewPage'));
 const StaffInviteScreen = lazy(() => import('./components/StaffInviteScreen'));
 const GiftCardPurchaseScreen = lazy(() => import('./components/GiftCardPurchaseScreen'));
@@ -82,6 +84,7 @@ const MODULE_TITLES = {
   memberships: 'Memberships',
   intake:      'Intake & Waivers',
   programs:    'Programs',
+  store:       'Store',
   grow:        'Launch & Grow',
 };
 
@@ -351,6 +354,7 @@ function AppShell({ initialView = 'home' }) {
           {id === 'memberships' && <MembershipsAdmin />}
           {id === 'intake'     && <IntakeAdmin />}
           {id === 'programs'   && <ProgramsAdmin />}
+          {id === 'store'      && <StoreAdmin />}
           {id === 'grow' && (
             <GrowGuide
               onOpenWizard={(phaseKey) => { setWizardInitialPhase(phaseKey || null); setShowWizard(true); setDismissedThisSession(false); }}
@@ -510,9 +514,12 @@ export default function App() {
     const isIntake   = params.has('intake');
     // `?gear` (optionally &tid=) — public "Recommended Gear" affiliate storefront.
     const isGear     = params.has('gear');
+    // `?store` (optionally &tid=) — public product shop (Stripe Connect checkout).
+    const isStore    = params.has('store');
     if      (isManageToken) content = <ManageAppointmentScreen />;
     else if (isIntake)  content = <IntakeFormScreen />;
     else if (isGear)    content = <GearStorefront />;
+    else if (isStore)   content = <ProductShop />;
     else if (isUnsub)   content = <UnsubscribeScreen />;
     else if (isTerms)      content = <TermsScreen />;
     else if (isPrivacy)    content = <PrivacyScreen />;

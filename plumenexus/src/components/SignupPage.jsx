@@ -31,12 +31,12 @@ const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])$/;
 // marketing page + signup page never show different numbers.
 // Annual = 14% discount off monthly (matches GG's annual-vs-monthly delta
 // so prospects comparing pricing pages see comparable structures). Math:
-//   $49 mo → $42 annual ($504/yr); $79 mo → $68; $149 mo → $128.
+//   $19 mo → $16 annual ($192/yr); $49 mo → $42; $149 mo → $128.
 const PLANS = [
-  { id: 'solo',     name: 'Solo',      monthly: 49,  annual: 42,
+  { id: 'solo',     name: 'Solo',      monthly: 19,  annual: 16,
     foundersFree: true,
     blurb: 'Single tech, single chair. Everything you need to run solo.' },
-  { id: 'studio',   name: 'Studio',    monthly: 79,  annual: 68,
+  { id: 'studio',   name: 'Studio',    monthly: 49,  annual: 42,
     blurb: 'Up to 8 staff. Multi-tech splits, walk-in management, custom domain.' },
   { id: 'salonPro', name: 'Salon Pro', monthly: 149, annual: 128,
     blurb: 'Unlimited staff. Founder-direct support + dedicated onboarding.' },

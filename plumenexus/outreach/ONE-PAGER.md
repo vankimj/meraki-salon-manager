@@ -51,10 +51,10 @@ The AI does it for you. It auto-covers what it can, drafts apology texts for wha
 
 **Sign up before June 30, 2027 → Solo plan FREE for life.**
 
-After that, Solo is $49/mo for new signups. Founders' Members keep free access forever.
+After that, Solo is $19/mo for new signups. Founders' Members keep free access forever.
 
 Other tiers (any time):
-- **Studio · $79/mo** — up to 8 staff, multi-tech splits, smart walk-in management
+- **Studio · $49/mo** — up to 8 staff, multi-tech splits, smart walk-in management
 - **Salon Pro · $149/mo** — unlimited staff, multi-location, founder-direct support
 
 Stack any of these add-ons on any plan: Comms Pack ($19/mo · two-way SMS), Marketing Pack ($19/mo · loyalty + auto-rebook), AI Pack ($19/mo · voice commands + AI-drafted copy).

@@ -21,6 +21,7 @@ const CAPS = [
   'meetings',
   'marketing',
   'memberships',
+  'store',
   'intake',
   'programs',
   'chat',

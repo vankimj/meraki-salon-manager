@@ -4667,14 +4667,14 @@ const PLAN_TIERS = [
   {
     id:      'solo',
     label:   'Solo',
-    price:   '$49/mo',
+    price:   '$19/mo',
     color:   '#2D7A5F',
     features:['Scheduling & online booking', 'POS, gift cards & promo codes', 'AI-powered reports', 'Clients & services', 'Walk-in manager'],
   },
   {
     id:      'studio',
     label:   'Studio',
-    price:   '$79/mo',
+    price:   '$49/mo',
     color:   '#3D9E8A',
     features:['Everything in Solo', 'SMS + 2-way comms (Comms Pack)', 'Attendance & meetings', 'Retail inventory', 'Up to 8 staff'],
   },

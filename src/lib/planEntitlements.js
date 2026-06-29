@@ -26,8 +26,8 @@ export const PLAN_IDS = ['solo', 'studio', 'salonPro'];
 // app shows; the amount Stripe actually charges comes from the price IDs in
 // functions/.env and must be kept in sync at go-live.
 export const PLAN_META = {
-  solo:       { label: 'Solo',      monthly: 49,  annual: 42,  color: '#2D7A5F' },
-  studio:     { label: 'Studio',    monthly: 79,  annual: 68,  color: '#3D9E8A' },
+  solo:       { label: 'Solo',      monthly: 19,  annual: 16,  color: '#2D7A5F' },
+  studio:     { label: 'Studio',    monthly: 49,  annual: 42,  color: '#3D9E8A' },
   salonPro:   { label: 'Salon Pro', monthly: 149, annual: 128, color: '#3D95CE' },
   enterprise: { label: 'Enterprise', monthly: null, annual: null, color: '#6A4FA0' },
 };

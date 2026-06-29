@@ -39,7 +39,7 @@ const PLANS = [
   {
     id: 'solo',
     name: 'Solo',
-    price: '$49',
+    price: '$19',
     sub: 'per month · Founders’ Year free',
     color: '#2D7A5F',
     features: [
@@ -55,7 +55,7 @@ const PLANS = [
   {
     id: 'studio',
     name: 'Studio',
-    price: '$79',
+    price: '$49',
     sub: 'per month, cancel any time',
     color: '#3D9E8A',
     features: [

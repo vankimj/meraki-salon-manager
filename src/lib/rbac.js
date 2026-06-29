@@ -56,6 +56,7 @@ export const CAPS = [
   'meetings',        // internal meetings
   'marketing',       // campaigns
   'memberships',     // recurring plans
+  'store',           // product marketplace (Stripe Connect storefront)
   'intake',          // intake & waiver forms
   'programs',        // personalized training programs
   'chat',            // communications
@@ -189,6 +190,7 @@ export const CAP_GROUPS = [
     { cap: 'earnings_all',     label: "See everyone's earnings" },
     { cap: 'giftcards_manage', label: 'Manage gift cards & promo codes' },
     { cap: 'memberships',      label: 'Manage memberships' },
+    { cap: 'store',            label: 'Manage the product store' },
   ] },
   { title: 'Team & communication', caps: [
     { cap: 'chat',       label: 'Send messages (SMS / email / in-app)' },

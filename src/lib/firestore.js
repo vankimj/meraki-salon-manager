@@ -83,6 +83,7 @@ const SOFT_DELETED_COLLECTIONS = [
   { key: 'programTemplates',col: () => PROGRAM_TEMPLATES_COL,restorable: false },
   { key: 'clientPrograms',  col: () => CLIENT_PROGRAMS_COL,  restorable: false },
   { key: 'sessionPacks',    col: () => SESSION_PACKS_COL,    restorable: false },
+  { key: 'storeProducts',   col: () => STORE_PRODUCTS_COL,   restorable: false },
 ];
 export async function fetchRecentlyDeleted({ maxPerCollection = 50, collections = null } = {}) {
   // `collections` (optional) scopes the scan to specific collection keys —
@@ -1166,6 +1167,80 @@ export async function purgeMembership(id) {
   await deleteDoc(doc(MEMBERSHIPS_COL, id));
 }
 
+// ── Store: trainer product marketplace ─────────────────
+// storeProducts is the admin-managed catalog (soft-deleted). storeOrders is
+// server-written money/audit data (NOT soft-deleted; rules forbid client
+// writes) — read-only from the app via subscribeStoreOrders.
+const STORE_PRODUCTS_COL = tenantCol('storeProducts');
+const STORE_ORDERS_COL   = tenantCol('storeOrders');
+
+export function subscribeStoreProducts(cb) {
+  return onSnapshot(STORE_PRODUCTS_COL, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(notTombstoned)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    cb(list);
+  });
+}
+export async function fetchStoreProducts() {
+  const snap = await getDocs(STORE_PRODUCTS_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .filter(notTombstoned)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+}
+export async function createStoreProduct(data) {
+  const ref = await addDoc(STORE_PRODUCTS_COL, {
+    ...data,
+    active: data.active !== false,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return ref.id;
+}
+// Stripe Prices are immutable. If the price/billing shape changes, drop the
+// cached stripePriceId so the Cloud Function mints a fresh Price on the next
+// checkout (read-before-write so a no-op edit doesn't churn Stripe objects).
+export async function saveStoreProduct(id, data) {
+  const ref = doc(STORE_PRODUCTS_COL, id);
+  let clearPrice = {};
+  try {
+    const cur = await getDoc(ref);
+    if (cur.exists()) {
+      const c = cur.data();
+      const changed = Number(c.price) !== Number(data.price)
+        || (c.billingType || 'one_time') !== (data.billingType || 'one_time')
+        || (c.interval || null) !== (data.interval || null)
+        || (c.currency || 'usd') !== (data.currency || 'usd');
+      if (changed && c.stripePriceId) clearPrice = { stripePriceId: null };
+    }
+  } catch { /* best-effort: a failed read just means we don't clear */ }
+  await setDoc(ref, { ...data, ...clearPrice, updatedAt: new Date().toISOString() }, { merge: true });
+}
+export async function deleteStoreProduct(id, deletedBy) {
+  await softDelete(doc(STORE_PRODUCTS_COL, id), deletedBy);
+}
+export async function purgeStoreProduct(id) {
+  await deleteDoc(doc(STORE_PRODUCTS_COL, id));
+}
+
+// Orders are read-only in the app (the webhook writes them via Admin SDK).
+export function subscribeStoreOrders(cb) {
+  return onSnapshot(STORE_ORDERS_COL, snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    cb(list);
+  });
+}
+// Portal read-back: a signed-in client's own purchases (rules enforce the
+// clientEmail == token.email match). Sorted newest-first client-side.
+export async function fetchClientStoreOrders(email) {
+  const e = String(email || '').toLowerCase();
+  if (!e) return [];
+  const snap = await getDocs(query(STORE_ORDERS_COL, where('clientEmail', '==', e)));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
 // ── Personal-training vertical collections ─────────────
 // Defined together so the SOFT_DELETED_COLLECTIONS arrows above resolve even
 // before each wave's CRUD is wired. Programs CRUD = Wave 2, session packs =
@@ -1287,6 +1362,10 @@ export async function deleteProgressEntry(clientId, entryId) {
 }
 
 // ── Session-credit packs ───────────────────────────────
+export async function fetchSessionPacks() {
+  const snap = await getDocs(SESSION_PACKS_COL);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned);
+}
 export function subscribeSessionPacks(cb) {
   return onSnapshot(SESSION_PACKS_COL, snap => {
     cb(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(notTombstoned)

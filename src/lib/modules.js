@@ -69,6 +69,7 @@ export const MODULES = [
   // personalTraining vertical via showForVerticals.
   { id: 'intake',      label: 'Intake & Waivers', desc: 'Forms, health history & e-signatures', plan: 'solo',  adminOnly: true,  cap: 'intake',          group: 'grow'  },
   { id: 'programs',    label: 'Programs',         desc: 'Personalized training plans',          plan: 'solo',  adminOnly: false, cap: 'programs',        group: 'core', showForVerticals: ['personalTraining'] },
+  { id: 'store',       label: 'Store',            desc: 'Sell products & supplements (Stripe payouts to you)', plan: 'solo', adminOnly: true, cap: 'store',     group: 'grow', showForVerticals: ['personalTraining'] },
 
   // Launch & Grow — guided business setup + growth (Phase 2). Owner-only and
   // gated behind the `launchGrow` feature flag so it ships dark until rolled out.
