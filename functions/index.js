@@ -2507,10 +2507,11 @@ exports.kioskWalkinOptions = onCall({ cors: true }, async (request) => {
   const settings = sSnap.exists ? (sSnap.data() || {}) : {};
   const storeDay = settings.storeHours?.[dow] || null;
   if (storeDay && storeDay.closed) return { options: [], noPrefEarliest: null, anyAvailable: false, salonClosed: true };
-  const apptOpen  = strToMins(settings.apptHours?.open  || '09:00') ?? 540;
-  const apptClose = strToMins(settings.apptHours?.close || '20:00') ?? 1200;
-  const storeOpen  = storeDay && storeDay.open  ? (strToMins(storeDay.open)  ?? apptOpen)  : apptOpen;
-  const storeClose = storeDay && storeDay.close ? (strToMins(storeDay.close) ?? apptClose) : apptClose;
+  // Walk-ins are seated during STORE hours (the per-tech appointment-only
+  // extended window is for booked appointments, not walk-ins). Default 9am-6pm
+  // when a day's store hours aren't set.
+  const storeOpen  = storeDay && storeDay.open  ? (strToMins(storeDay.open)  ?? 540)  : 540;
+  const storeClose = storeDay && storeDay.close ? (strToMins(storeDay.close) ?? 1080) : 1080;
 
   const svcSnap = await db.doc(`tenants/${tenantId}/services/${serviceId}`).get();
   if (!svcSnap.exists) throw new HttpsError('invalid-argument', 'Unknown service.');
@@ -4844,12 +4845,23 @@ exports.manageAppointment = onCall({ cors: true, secrets: [apptManageSecret] }, 
       const dow = target.toLocaleDateString('en-US', { weekday: 'short' });
       const sh = settings.storeHours?.[dow] || {};
       if (sh.closed) continue;
-      const open  = strToMins(sh.open  || settings.apptHours?.open  || '09:00');
-      const close = strToMins(sh.close || settings.apptHours?.close || '18:00');
       // Check tech is on that day-of-week
       const empSnap = await db.collection(`tenants/${tid}/employees`).where('name', '==', appt.techName).limit(1).get();
       const emp = empSnap.empty ? null : empSnap.docs[0].data();
       if (emp?.workDays && emp.workDays[dow]?.on === false) continue;
+      // Per-tech appointment window: store hours, widened to the tech's own
+      // appointment-only hours when extendedHoursAllowed (mirrors techApptWindow
+      // in src/lib/apptHours.js). Appointment-only hours are per-tech now, not
+      // the retired salon-wide settings.apptHours.
+      const storeOpenM  = strToMins(sh.open  || '09:00');
+      const storeCloseM = strToMins(sh.close || '18:00');
+      let open = storeOpenM, close = storeCloseM;
+      if (emp?.extendedHoursAllowed && emp.apptHours) {
+        const ao = emp.apptHours.open  ? strToMins(emp.apptHours.open)  : storeOpenM;
+        const ac = emp.apptHours.close ? strToMins(emp.apptHours.close) : storeCloseM;
+        open  = Math.min(open, ao);
+        close = Math.max(close, ac);
+      }
       // Check tech time-off
       const toSnap = await db.collection(`tenants/${tid}/timeOff`).get();
       const onTimeOff = toSnap.docs.map(x => x.data()).some(t =>

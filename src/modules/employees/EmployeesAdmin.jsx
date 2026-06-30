@@ -19,6 +19,7 @@ function blankEmployee() {
   return {
     name: '', photo: '', active: true, sortOrder: 0, notes: '',
     extendedHoursAllowed: false,
+    apptHours: { open: '', close: '' },   // per-tech appointment-only window; blank = match store hours
     phone: '', email: '', hireDate: '',
     address: '', city: '', state: '', zip: '',
     tin: '',
@@ -381,8 +382,23 @@ function EmployeeModal({ emp, services, isAdmin, onChange, onSave, onClose, view
               </label>
               <label style={{ fontSize: 12, color: 'var(--pn-text-muted)', display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', marginTop: 8 }}>
                 <input type="checkbox" checked={!!emp.extendedHoursAllowed} onChange={e => onChange({ extendedHoursAllowed: e.target.checked })} />
-                Available during appointment-only hours
+                Can be booked outside store hours (appointment-only)
               </label>
+              {emp.extendedHoursAllowed && (
+                <div style={{ marginTop: 8, marginLeft: 22, padding: '10px 12px', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 8 }}>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-muted)', marginBottom: 8, lineHeight: 1.5 }}>
+                    This tech's appointment-only window. Leave blank to match store hours (no extension). Can only widen store hours, not narrow them.
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', width: 38 }}>Open</span>
+                    <input type="time" value={emp.apptHours?.open || ''} onChange={e => onChange({ apptHours: { ...(emp.apptHours || {}), open: e.target.value } })}
+                      style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+                    <span style={{ fontSize: 12, color: 'var(--pn-text-muted)', width: 38, marginLeft: 8 }}>Close</span>
+                    <input type="time" value={emp.apptHours?.close || ''} onChange={e => onChange({ apptHours: { ...(emp.apptHours || {}), close: e.target.value } })}
+                      style={{ fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 6, padding: '4px 6px', fontSize: 12 }} />
+                  </div>
+                </div>
+              )}
 
               {/* ── Locations (multi-location tenants only) ──────────────
                   An employee with NO locations selected works at EVERY
