@@ -123,3 +123,18 @@ describe('computeSeatStart (seated-walk-in default time)', () => {
     expect(computeSeatStart({ ...base(now), settings: settingsFor(now, { closed: true }) })).toBe(M(14));
   });
 });
+
+describe('computeNextOpening — per-tech apptWindow (helper store hours = 10:00-20:00)', () => {
+  it('without a window, an 8:30pm request is past store close → null', () => {
+    const now = new Date(2026, 5, 15, 20, 30);
+    expect(computeNextOpening(base(now))).toBeNull();
+  });
+  it('an extended window (close 22:00) lets the tech be booked after store close', () => {
+    const now = new Date(2026, 5, 15, 20, 30);
+    expect(computeNextOpening({ ...base(now), apptWindow: { open: M(9), close: M(22) } })).toBe(M(20, 30));
+  });
+  it('an extended window can also open before store (8:30am)', () => {
+    const now = new Date(2026, 5, 15, 8, 30);
+    expect(computeNextOpening({ ...base(now), apptWindow: { open: M(8), close: M(22) } })).toBe(M(8, 30));
+  });
+});

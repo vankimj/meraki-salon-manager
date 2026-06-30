@@ -20,18 +20,22 @@ function dowOf(now) {
 // storefront opens — e.g. 9am vs 10am). Returns null when the tech is off, the
 // salon is closed today, or nothing fits before close.
 export function computeNextOpening({
-  settings = {}, empWorkDays = {}, appts = [], now, techName = '', durationMins = 60, today,
+  settings = {}, empWorkDays = {}, appts = [], now, techName = '', durationMins = 60, today, apptWindow = null,
 }) {
   const dow = dowOf(now);
   const wd = techName ? empWorkDays?.[techName]?.[dow] : null;
   if (wd && wd.on === false) return null;
   const store = settings.storeHours?.[dow] || {};
   if (store.closed) return null;                       // salon closed today → no in-hours slot
-  const apptOpen  = strToMins(settings.apptHours?.open  || '09:00');
-  const apptClose = strToMins(settings.apptHours?.close || '20:00');
-  const dayFloor  = store.open ? Math.max(apptOpen, strToMins(store.open)) : apptOpen;
-  const techOpen  = Math.max(dayFloor, wd?.start ? strToMins(wd.start) : dayFloor);
-  const techClose = Math.min(apptClose, wd?.end   ? strToMins(wd.end)   : apptClose);
+  // Bookable window = the tech's per-tech appointment window when supplied (it
+  // already accounts for extendedHoursAllowed + store hours); otherwise store
+  // hours. The old salon-wide settings.apptHours is no longer consulted here.
+  const storeOpen  = store.open  ? strToMins(store.open)  : 540;
+  const storeClose = store.close ? strToMins(store.close) : 1080;
+  const winOpen   = apptWindow ? apptWindow.open  : storeOpen;
+  const winClose  = apptWindow ? apptWindow.close : storeClose;
+  const techOpen  = Math.max(winOpen, wd?.start ? strToMins(wd.start) : winOpen);
+  const techClose = Math.min(winClose, wd?.end   ? strToMins(wd.end)   : winClose);
   const nowMins = now.getHours() * 60 + now.getMinutes();
   const norm = s => String(s || '').trim().toLowerCase();
   const busy = (techName ? appts.filter(a => a.date === today && norm(a.techName) === norm(techName)
@@ -62,9 +66,9 @@ export function computeNextOpening({
 // is in the PAST (e.g. 10:00 AM when it's 11:43 PM). And never the bare 9am
 // grid fallback blankAppt uses when startMins is null.
 export function computeSeatStart({
-  settings = {}, empWorkDays = {}, appts = [], now, techName = '', durationMins = 60, today,
+  settings = {}, empWorkDays = {}, appts = [], now, techName = '', durationMins = 60, today, apptWindow = null,
 }) {
-  const m = computeNextOpening({ settings, empWorkDays, appts, now, techName, durationMins, today });
+  const m = computeNextOpening({ settings, empWorkDays, appts, now, techName, durationMins, today, apptWindow });
   if (m != null) return m;
   const STEP = 15;
   let nowMins = now.getHours() * 60 + now.getMinutes();
