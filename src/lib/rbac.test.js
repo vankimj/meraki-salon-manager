@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeRole, roleCan, roleCaps, roleLabel, isManagementRole, isOwner, ROLE_CAPS } from './rbac';
+import { normalizeRole, roleCan, roleCaps, roleLabel, isManagementRole, isOwner, ROLE_CAPS, CAPS, resolveRoleCaps, sanitizeCaps, roleExists, CAP_GROUPS, DELEGATED_RULE_CAPS, OWNER_ONLY } from './rbac';
 
 describe('normalizeRole', () => {
   it('maps legacy aliases to canonical roles', () => {
@@ -121,5 +121,84 @@ describe('server matrix is in sync (functions/lib/rbac.js)', () => {
     for (const r of Object.keys(ROLE_CAPS)) {
       expect(server.ROLE_CAPS[r].slice().sort()).toEqual(ROLE_CAPS[r].slice().sort());
     }
+  });
+  it('overlay resolution matches across copies (custom role + override)', async () => {
+    const server = await import('../../functions/lib/rbac.js');
+    const overlay = { roles: [{ key: 'custom_x', caps: ['pos', 'clients'] }], overrides: { manager: { caps: ['reports'] } } };
+    for (const role of ['owner', 'admin', 'manager', 'staff', 'custom_x', 'kiosk', 'nope']) {
+      for (const cap of ['pos', 'reports', 'hr', 'clients']) {
+        expect(server.roleCan(role, cap, overlay)).toBe(roleCan(role, cap, overlay));
+      }
+    }
+  });
+  it('DELEGATED_RULE_CAPS in sync across copies, all real + none owner-only', async () => {
+    const server = await import('../../functions/lib/rbac.js');
+    expect(server.DELEGATED_RULE_CAPS.slice().sort()).toEqual(DELEGATED_RULE_CAPS.slice().sort());
+    for (const cap of DELEGATED_RULE_CAPS) {
+      expect(CAPS).toContain(cap);
+      // A delegated cap must NOT be owner-only — else the rules would hand an
+      // owner-only collection to a non-owner via capEmails.
+      expect(OWNER_ONLY).not.toContain(cap);
+    }
+  });
+});
+
+// ── Custom-roles overlay (new) ───────────────────────────────────────────────
+describe('overlay: no overlay = original static behavior (fast path)', () => {
+  it('built-ins resolve identically with overlay undefined', () => {
+    expect(roleCan('manager', 'marketing')).toBe(true);
+    expect(roleCan('manager', 'hr')).toBe(false);
+    expect(roleCan('admin', 'billing')).toBe(true);  // alias → owner
+    expect(roleCan('custom_x', 'pos')).toBe(false);  // unknown custom w/o overlay → no access (fail closed)
+    expect(resolveRoleCaps('custom_x', undefined)).toEqual([]);
+  });
+});
+
+describe('overlay: overriding a built-in role', () => {
+  const overlay = { overrides: { manager: { caps: ['reports', 'clients'] } } };
+  it('override REPLACES the role caps', () => {
+    expect(roleCan('manager', 'reports', overlay)).toBe(true);
+    expect(roleCan('manager', 'marketing', overlay)).toBe(false);
+  });
+  it('owner can NEVER be weakened by an overlay', () => {
+    const evil = { overrides: { owner: { caps: [] }, admin: { caps: [] } } };
+    expect(resolveRoleCaps('owner', evil)).toEqual([...CAPS]);
+    expect(roleCan('owner', 'billing', evil)).toBe(true);
+    expect(roleCan('admin', 'users', evil)).toBe(true);
+  });
+});
+
+describe('overlay: custom roles', () => {
+  const overlay = { roles: [{ key: 'custom_seniortech', label: 'Senior Tech', caps: ['clients', 'pos', 'reports'] }] };
+  it('resolves to its own caps', () => {
+    expect(roleCan('custom_seniortech', 'reports', overlay)).toBe(true);
+    expect(roleCan('custom_seniortech', 'hr', overlay)).toBe(false);
+    expect(resolveRoleCaps('custom_seniortech', overlay)).toEqual(['clients', 'pos', 'reports']);
+  });
+  it('roleExists / isManagementRole recognize custom keys', () => {
+    expect(roleExists('custom_seniortech', overlay)).toBe(true);
+    expect(roleExists('custom_unknown', overlay)).toBe(false);
+    expect(roleExists('manager')).toBe(true);
+    expect(isManagementRole('custom_seniortech', overlay)).toBe(true);
+    expect(isManagementRole('kiosk', overlay)).toBe(false);
+    expect(isManagementRole('custom_empty', { roles: [{ key: 'custom_empty', caps: [] }] })).toBe(false);
+  });
+});
+
+describe('overlay: cap-injection defense', () => {
+  it('sanitizeCaps drops anything not in CAPS', () => {
+    expect(sanitizeCaps(['clients', '__hack__', 'billing', 42, null])).toEqual(['clients', 'billing']);
+  });
+  it('a custom role smuggling a bogus cap only resolves real ones', () => {
+    const overlay = { roles: [{ key: 'custom_x', caps: ['__superuser__', 'clients'] }] };
+    expect(resolveRoleCaps('custom_x', overlay)).toEqual(['clients']);
+  });
+});
+
+describe('CAP_GROUPS metadata covers every capability exactly once', () => {
+  it('union of grouped caps === CAPS, no dupes', () => {
+    const grouped = CAP_GROUPS.flatMap(g => g.caps.map(c => c.cap));
+    expect([...grouped].sort()).toEqual([...CAPS].sort());
+    expect(new Set(grouped).size).toBe(grouped.length);
   });
 });

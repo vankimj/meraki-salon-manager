@@ -67,7 +67,32 @@ describe('blankService', () => {
     expect(s.active).toBe(true);
     expect(typeof s.basePrice).toBe('number');
     expect(typeof s.duration).toBe('number');
+    expect(s.options).toEqual([]);
+    expect(s.addOnServiceIds).toEqual([]); // base services offer no add-ons by default
   });
+});
+
+describe('add-ons resolve as independent service lines', () => {
+  // An add-on is a reference to another catalog service; it resolves and stacks
+  // exactly like a standalone service line (its own price/duration, optionally
+  // a per-tech override). This guards the "add-ons are just extra services[]
+  // lines that sum additively" invariant the whole feature relies on.
+  const base    = { id: 'gelx', basePrice: 70, duration: 60 };
+  const removal = { id: 'removal', basePrice: 15, duration: 15 };
+  const mani    = { id: 'mani', basePrice: 20, duration: 20 };
+
+  it('base + add-ons sum additively to the visit total', () => {
+    const total = [base, removal, mani]
+      .reduce((acc, svc) => {
+        const r = resolveServicePricing(svc, null, null);
+        return { price: acc.price + r.price, duration: acc.duration + r.duration };
+      }, { price: 0, duration: 0 });
+    expect(total.price).toBe(105);   // 70 + 15 + 20
+    expect(total.duration).toBe(95); // 60 + 15 + 20
+  });
+
+  it('an add-on still honors a per-tech price override', () =>
+    expect(resolveServicePricing(removal, null, { servicePrices: { removal: 25 } }).price).toBe(25));
 });
 
 describe('techServiceDuration', () => {

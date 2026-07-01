@@ -36,7 +36,7 @@ function splitBrandName(name) {
 const WELCOME_STYLES = ['centered', 'hairlineSplit', 'stacked', 'photo', 'photoSplit', 'merakiSite'];
 
 export default function HomeScreen({ onNavigate, onAdmin }) {
-  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, role, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
+  const { gUser, isAdmin, isReadOnly, isTech, isScheduler, role, rawRole, customRoles, settings, totalChatUnread, activeTheme: t, showToast, realIsAdmin, viewAs, setViewAs, users, requirePin, hasFeature } = useApp();
   const [showAuth,     setShowAuth]     = useState(false);
   const [showFeedback, setShowFeedback] = useState(false);
   const [webCfg,       setWebCfg]       = useState(null);
@@ -62,7 +62,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     }).catch(() => setTechNameFromEmployee(null));
   }, [gUser?.email, realIsAdmin, techNameFromUserRec]);
   const myTechEmpName = techNameFromUserRec || techNameFromEmployee;
-  const canManage = isAdmin || isReadOnly || isManagementRole(role);
+  const canManage = isAdmin || isReadOnly || isManagementRole(rawRole, customRoles);
   const plan = effectivePlan(settings);
 
   // Pre-login, settings is rules-blocked (staff-only). Fall back to the
@@ -84,6 +84,9 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     if (va.role === 'scheduler') return 'Front desk';
     if (va.role === 'manager') return 'Manager';
     if (va.role === 'kiosk') return 'Kiosk';
+    if (String(va.role || '').startsWith('custom_')) {
+      return (customRoles?.roles || []).find(r => r.key === va.role)?.label || 'Custom role';
+    }
     return 'View only';
   }
 
@@ -94,6 +97,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
     if (val === 'manager') return { role: 'manager' };
     if (val === 'kiosk') return { role: 'kiosk' };
     if (val.startsWith('tech:')) return { role: 'tech', techName: val.slice(5) };
+    if (val.startsWith('custom:')) return { role: val.slice(7) };  // custom_* key resolves via overlay
     return null;
   }
 
@@ -167,6 +171,9 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
               <option value="scheduler">📅 Scheduler</option>
               <option value="readonly">👁 Read-only</option>
               <option value="kiosk">🔒 Kiosk</option>
+              {(customRoles?.roles || []).map(r => (
+                <option key={r.key} value={`custom:${r.key}`}>⭐ {r.label}</option>
+              ))}
             </select>
           )}
           <button onClick={() => setShowFeedback(true)} title="Report a bug or idea" className="ms-action-btn"
@@ -238,7 +245,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
         ) : canManage ? (
           hasFeature?.('curatedHome') ? (
             <CuratedManageGrid
-              settings={settings} role={role} isAdmin={isAdmin} hasFeature={hasFeature}
+              settings={settings} role={rawRole} customRoles={customRoles} isAdmin={isAdmin} hasFeature={hasFeature}
               navigate={navigate} totalChatUnread={totalChatUnread}
               density={prefs.density} homeExpanded={prefs.homeExpanded}
               onToggleExpanded={(v) => setPrefs({ homeExpanded: v })}
@@ -247,7 +254,7 @@ export default function HomeScreen({ onNavigate, onAdmin }) {
             <>
               <SectionLabel>Manage</SectionLabel>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
-                {getVisibleModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature }).map(m => (
+                {getVisibleModules(settings, { role: rawRole, customRoles, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature }).map(m => (
                   <ModuleTile key={m.id} {...m} onClick={() => navigate(m.id)} badge={m.id === 'chat' ? totalChatUnread : 0} />
                 ))}
               </div>
@@ -302,8 +309,8 @@ function SectionLabel({ children }) {
 // "Show more" toggle (per-user `homeExpanded` remembers the choice). Density
 // 'everything' expands all groups; 'simple'/'standard' collapse the advanced
 // ones. Gated by the `curatedHome` feature flag so it ships dark.
-function CuratedManageGrid({ settings, role, isAdmin, hasFeature, navigate, totalChatUnread, density, homeExpanded, onToggleExpanded }) {
-  const groups   = getGroupedModules(settings, { role, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
+function CuratedManageGrid({ settings, role, customRoles, isAdmin, hasFeature, navigate, totalChatUnread, density, homeExpanded, onToggleExpanded }) {
+  const groups   = getGroupedModules(settings, { role, customRoles, isAdmin, hiddenTiles: settings?.hiddenTiles, hasFeature });
   const showAll  = density === 'everything';
   const [expanded, setExpanded] = useState(density === 'simple' ? false : !!homeExpanded);
   const advanced = [...groups.grow, ...groups.admin];
@@ -506,8 +513,8 @@ function BoutiqueLink({ onClick, label = 'Sign in' }) {
         fontFamily: '"Cinzel", Georgia, serif',
         fontSize: 13,
         fontWeight: 600,
-        color: hover ? '#fff' : '#1a1a1a',
-        background: hover ? '#c19a4a' : 'rgba(193, 154, 74, 0.07)',
+        color: hover ? '#fff' : '#c19a4a',
+        background: hover ? '#c19a4a' : 'rgba(193, 154, 74, 0.10)',
         border: '1.5px solid #c19a4a',
         borderRadius: 30,
         padding: '13px 36px',

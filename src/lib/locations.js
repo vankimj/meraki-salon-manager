@@ -61,6 +61,18 @@ export function isMultiLocation(state) {
   return Array.isArray(state?.list) && state.list.filter(l => l.active !== false).length > 1;
 }
 
+// The location id to use as a doc KEY (turnRoster, per-location queue scoping).
+// Single-location tenants must collapse to the bare/default key: their sole
+// location may carry a custom id (e.g. Meraki's 'meraki-nail-studio') that the
+// switcher snaps the current location to, but server-side fallbacks key the
+// default location as DEFAULT_LOCATION_ID — so a real id here reads an empty
+// `${date}_${id}` doc while the data lives in the bare `${date}` doc. Only scope
+// by the live current location once there are ≥2 active locations. Returns
+// undefined for single-location so rosterDocId()/subscribeQueue() use bare keys.
+export function effectiveLocationId(state, curLoc) {
+  return isMultiLocation(state) ? curLoc : undefined;
+}
+
 // Active locations, primary first then by name — the order the switcher shows.
 export function activeLocations(state) {
   return (state?.list || [])

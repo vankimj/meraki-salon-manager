@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { parsePhoneNumberFromString as lpnParse, AsYouType as AsYouTypeFormatter } from 'libphonenumber-js';
-import { currentLocationId, isMultiLocation, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
-import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, fetchReceiptByApptId } from '../../lib/firestore';
-import { isSalonOpenNow, clockedInNameSet, attendanceKey } from '../../lib/shiftGate';
+import { currentLocationId, isMultiLocation, effectiveLocationId, appointmentInLocation, employeeInLocation, subscribeLocations, subscribeCurrentLocation } from '../../lib/locations';
+import { fetchAppointments, fetchAppointmentsByRange, fetchAppointmentById, subscribeToAppointments, subscribeToAppointmentsByRange, createAppointment, saveAppointment, deleteAppointment, deleteRecurringGroup, fetchRecurringGroup, fetchClients, createClient, fetchServices, fetchEmployees, fetchUserPrefs, saveUserPrefs, subscribeQueue, updateWaitlistEntry, removeWaitlistEntry, subscribeTurnRoster, saveTurnRoster, subscribeTimeOff, createTimeOff, updateTimeOff, deleteTimeOff, fetchClientVisits, patchWebfrontConfig, storeHoursToWebfrontHours, fetchAttendance, subscribeAttendance, fetchReceiptByApptId } from '../../lib/firestore';
+import { isSalonOpenNow, clockedInNameSet, clockedInTodayNameSet, techWorkStatus, isScheduledOnDay, attendanceKey } from '../../lib/shiftGate';
 import { computeNextOpening, computeSeatStart } from './seatTime';
 import ClientSearch from './ClientSearch';
 import { callFn, startTrace } from '../../lib/firebase';
@@ -13,7 +13,7 @@ import TrashButton from '../../components/TrashButton';
 import { useApp } from '../../context/AppContext';
 import { logActivity } from '../../lib/logger';
 import { applyTurnCredit, recomputeTodayTurns } from '../../lib/turnCredit';
-import { resolveTurnMode } from '../../lib/turnValue';
+import { resolveTurnMode, buildTurnValueMap, turnValueForLineName } from '../../lib/turnValue';
 import { fetchTurnRoster } from '../../lib/firestore';
 import DayReplayModal from '../../components/DayReplayModal';
 import { notifyAffectedTechs } from '../../lib/notifications';
@@ -270,6 +270,9 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
     () => (isMultiLocation(locState) ? appts.filter(a => appointmentInLocation(a, curLoc)) : appts),
     [appts, locState, curLoc],
   );
+  // Location key for per-location docs (turnRoster, queue scoping). Collapses
+  // to the bare/default key for single-location tenants — see effectiveLocationId.
+  const effLoc = useMemo(() => effectiveLocationId(locState, curLoc), [locState, curLoc]);
   const [modal,        setModal]       = useState(null);
   const [checkout,     setCheckout]    = useState(null);
   const [refund,       setRefund]      = useState(null);
@@ -280,6 +283,10 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   const [showAll,          setShowAll]          = useState(false);
   const [showHours,        setShowHours]        = useState(false);
   const [showTimeOff,      setShowTimeOff]      = useState(false);
+  // When the Time Off modal is opened from the New Appointment modal's
+  // "🌴 Block time", this prefills the add-form with the tapped slot
+  // (tech + date + start/end). Null = opened blank.
+  const [blockPrefill,     setBlockPrefill]     = useState(null);
   // Toolbar overflow menu — collapses infrequent controls (Hours,
   // Time Off, future settings) under a single ⚙ button so the daily
   // toolbar stays uncluttered for non-tech-savvy salon owners.
@@ -302,7 +309,8 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   const [viewMode,         setViewMode]         = useState('day');
   const [weekAppts,        setWeekAppts]        = useState([]);
   const [weekLoading,      setWeekLoading]      = useState(false);
-  const [showQueue,        setShowQueue]        = useState(false);
+  // The walk-in queue + turn roster are always shown on today's day view (the
+  // old "Queue" toggle was removed — they default open).
   const [showReplay,       setShowReplay]       = useState(false);
   const [queueEntries,     setQueueEntries]     = useState([]);
   const [turnRoster,       setTurnRoster]       = useState({ date: '', roster: [] });
@@ -386,9 +394,9 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   // Real-time queue listener — always on so badge stays current. Re-subscribes
   // when the location switches so the queue/badge reflect the current site.
   useEffect(() => {
-    const unsub = subscribeQueue(todayStr(), setQueueEntries, curLoc);
+    const unsub = subscribeQueue(todayStr(), setQueueEntries, effLoc);
     return unsub;
-  }, [curLoc]);
+  }, [effLoc]);
 
   // Live time-off subscription so blocked-out periods render on the day grid
   // and slot interactions can respect them.
@@ -400,9 +408,17 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
   // Real-time turn roster (today only) for the walk-in rotation panel.
   // Re-subscribes on location switch so each site shows its own rotation.
   useEffect(() => {
-    const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, curLoc);
+    const unsub = subscribeTurnRoster(todayStr(), setTurnRoster, effLoc);
     return unsub;
-  }, [curLoc]);
+  }, [effLoc]);
+
+  // Today's attendance (time clock) so "Working today / right now" + the
+  // working/off split reflect who's actually clocked in (union with profile hrs).
+  const [attendanceToday, setAttendanceToday] = useState({ entries: [] });
+  useEffect(() => {
+    const unsub = subscribeAttendance(todayStr(), setAttendanceToday);
+    return unsub;
+  }, []);
 
   useEffect(() => {
     fetchClients().then(setClients).catch(() => {});
@@ -649,7 +665,7 @@ export default function ScheduleAdmin({ onOpenClient } = {}) {
           const credited = (turnRoster.roster || []).map(r =>
             r.techName === full.techName ? { ...r, turnsTaken: (Number(r.turnsTaken) || 0) + 1 } : r
           );
-          await saveTurnRoster(todayStr(), credited, curLoc).catch(() => {});
+          await saveTurnRoster(todayStr(), credited, effLoc).catch(() => {});
         }
         await updateWaitlistEntry(pendingSeat.entryId, { status: 'seated' }).catch(() => {});
         logActivity('walkin_seated', `${full.clientName || 'walk-in'} → ${full.techName || '—'}`);
@@ -884,6 +900,66 @@ function openNew(techName, slotMins) {
     : displayTechs0;
 
   const personalView   = isTech && !showAll;
+
+  // Per-tech "working today / right now" — based on each tech's PROFILE working
+  // hours (configured shift), not the time clock (who's clocked in is shown in
+  // the turn roster). Drives the quick filters and the working/off column split.
+  const isToday         = date === todayStr();
+  const nowMinsForWork  = new Date().getHours() * 60 + new Date().getMinutes();
+  const clockedInNowSet   = clockedInNameSet(attendanceToday);
+  const clockedInTodaySet = clockedInTodayNameSet(attendanceToday);
+  const normName = (s) => String(s || '').trim().toLowerCase();
+  const techStatusFor = (t) => {
+    const wd = empWorkDays[t]?.[dow];
+    const hasShift = !!empWorkDays[t] && Object.keys(empWorkDays[t]).length > 0;
+    const blocks = timeOffOnDate(timeOff, t, date);
+    const start = wd?.start ? strToMins(wd.start) : strToMins(settings.apptHours?.open  || '09:00');
+    const end   = wd?.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
+    return techWorkStatus({
+      isToday,
+      // Clocked in today/now (union with profile hours) so the buttons reflect
+      // who's actually here even on a day their profile marks off.
+      clockedInToday: isToday && clockedInTodaySet.has(normName(t)),
+      clockedInNow:   isToday && clockedInNowSet.has(normName(t)),
+      hasShift,
+      // An absent weekday defaults to ON when the tech has any hours configured
+      // (the editor only writes the days you toggle off) — see isScheduledOnDay.
+      shiftOnToday:   isScheduledOnDay(empWorkDays[t], dow),
+      withinShiftNow: nowMinsForWork >= start && nowMinsForWork < end,
+      allDayOff:      blocks.some(b => b.allDay !== false),
+      blockedNow:     isToday && isSlotBlocked(timeOff, t, date, nowMinsForWork),
+    });
+  };
+  // "Off today" only applies once at least one tech is known to be working
+  // (has profile hours covering today); with nobody working, no one is greyed out.
+  // Per-tech breakdown of today's COMPLETED (done) services + each service's
+  // turn value, for the roster chip detail. Mirrors recomputeTodayTurns: a done
+  // appt's services each contribute their configured turnValue (value mode) /
+  // the visit counts as 1 (count mode).
+  const turnMode      = resolveTurnMode(settings);
+  const turnValueMap  = buildTurnValueMap(services);
+  const turnDetailFor = (techName) => {
+    const items = [];
+    (appts || []).forEach(a => {
+      if (a.techName !== techName || a.status !== 'done' || a.date !== todayStr()) return;
+      (Array.isArray(a.services) ? a.services : []).forEach(sv => {
+        const name = (sv && (sv.name || sv.customName)) || 'Service';
+        items.push({ name, tv: turnValueForLineName(name, turnValueMap), time: a.startTime, client: a.clientName });
+      });
+    });
+    return items.sort((x, y) => String(x.time || '').localeCompare(String(y.time || '')));
+  };
+  const someWorking  = displayTechs.some(t => techStatusFor(t).today);
+  const offTodaySet  = new Set(someWorking ? displayTechs.filter(t => !techStatusFor(t).today) : []);
+  const hasWorkingShown = displayTechs.some(t => !offTodaySet.has(t));
+  // Split working-left / off-right (with a divider) whenever the shown columns
+  // mix working + off — i.e. "All techs". A narrowing filter (Working today/now)
+  // shows only working techs, so there's nothing to split.
+  const splitWorkingOff = !personalView && !focusedTech && offTodaySet.size > 0 && hasWorkingShown;
+  const orderedTechs = splitWorkingOff
+    ? [...displayTechs.filter(t => !offTodaySet.has(t)), ...displayTechs.filter(t => offTodaySet.has(t))]
+    : displayTechs;
+  const firstOffTech = splitWorkingOff ? orderedTechs.find(t => offTodaySet.has(t)) : null;
   // Focused (single-tech zoom) mode gets a wide column so overlapping
   // appointments split into readable lanes even at 4–5 deep. On a phone
   // (≤480px) the single-tech view shrinks to fit the viewport so a tech
@@ -948,38 +1024,11 @@ function openNew(techName, slotMins) {
           ))}
         </div>
 
-        {/* Queue button with waiting-count badge */}
-        {(() => {
-          const waiting = queueEntries.filter(e => e.status === 'waiting').length;
-          return (
-            <button onClick={() => setShowQueue(v => !v)} style={{
-              position: 'relative', fontSize: 12, padding: '5px 10px', borderRadius: 6, flexShrink: 0,
-              border: `1px solid ${showQueue ? '#2D7A5F' : 'var(--pn-border-strong)'}`,
-              background: showQueue ? 'var(--pn-success-bg)' : 'var(--pn-surface)',
-              color: showQueue ? 'var(--pn-success)' : 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: showQueue ? 600 : 400,
-            }}>
-              📋 Queue
-              {waiting > 0 && (
-                <span style={{ position: 'absolute', top: -5, right: -5, width: 17, height: 17, borderRadius: '50%', background: '#ef4444', color: '#fff', fontSize: 10, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {waiting}
-                </span>
-              )}
-            </button>
-          );
-        })()}
-
         <TrashButton collections={['appointments', 'timeOff']} scope="Schedule" />
 
-        {/* Block time — promoted to a visible toolbar button (was buried in
-            the ⚙ overflow) so blocking vacation / sick / personal time is
-            discoverable. Anyone who can manage the schedule sees it. */}
-        {(isAdmin || isScheduler || isTech) && (
-          <button onClick={() => setShowTimeOff(true)}
-            title="Block personal time — vacation, sick, breaks"
-            style={{ fontSize: 12, padding: '5px 10px', borderRadius: 6, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, whiteSpace: 'nowrap' }}>
-            🌴 Block time
-          </button>
-        )}
+        {/* "Block time" moved into the New Appointment modal (tap an empty slot
+            → 🌴 Block time) so blocking a tech's time is part of the same flow
+            and prefills the tapped slot. */}
 
         {/* Overflow menu — keeps the toolbar focused on daily controls
             (date nav, view toggle, queue) and tucks infrequent admin ones
@@ -1032,27 +1081,35 @@ function openNew(techName, slotMins) {
           isTech={isTech}
           myTechName={myTechName}
           gUser={gUser}
-          onClose={() => setShowTimeOff(false)}
+          prefill={blockPrefill}
+          onClose={() => { setShowTimeOff(false); setBlockPrefill(null); }}
         />
       )}
 
       {/* Turn roster — walk-in rotation (visible whenever the queue is open or when there's a roster) */}
-      {(showQueue || (turnRoster.roster && turnRoster.roster.length > 0)) && date === todayStr() && (
+      {date === todayStr() && (
         <TurnRosterPanel
           roster={turnRoster.roster || []}
           allTechs={(employees && employees.length > 0) ? employees : techs.map(n => ({ id: n, name: n }))}
           onAddTech={async tech => {
             const next = [...(turnRoster.roster || []), { techId: tech.id, techName: tech.name, clockInAt: new Date().toISOString(), turnsTaken: 0 }];
-            await saveTurnRoster(todayStr(), next, curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
             logActivity('turn_clockin', tech.name);
           }}
           onRemoveTech={async techId => {
             const next = (turnRoster.roster || []).filter(r => r.techId !== techId);
-            await saveTurnRoster(todayStr(), next, curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+          }}
+          onAdjustTurns={async (techId, delta) => {
+            const next = (turnRoster.roster || []).map(r =>
+              r.techId === techId
+                ? { ...r, turnsTaken: Math.max(0, Math.round(((Number(r.turnsTaken) || 0) + delta) * 2) / 2) }
+                : r);
+            await saveTurnRoster(todayStr(), next, effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onResetDay={async () => {
             if (!window.confirm('Clear today\'s turn roster? Everyone will need to clock back in.')) return;
-            await saveTurnRoster(todayStr(), [], curLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
+            await saveTurnRoster(todayStr(), [], effLoc).catch(e => showToast('Save failed: ' + e.message, 3000));
           }}
           onRecount={async () => {
             try {
@@ -1064,6 +1121,8 @@ function openNew(techName, slotMins) {
             }
           }}
           onReplay={() => setShowReplay(true)}
+          turnMode={turnMode}
+          turnDetailFor={turnDetailFor}
         />
       )}
       {showReplay && (
@@ -1077,7 +1136,7 @@ function openNew(techName, slotMins) {
       )}
 
       {/* Queue panel */}
-      {showQueue && (
+      {date === todayStr() && (
         <QueuePanel
           entries={queueEntries}
           turnRoster={turnRoster.roster || []}
@@ -1087,7 +1146,6 @@ function openNew(techName, slotMins) {
               showToast('No techs in turn rotation. Clock someone in first.', 3500);
               return;
             }
-            setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
             // Default the start time to the up-next tech's next opening today.
@@ -1112,7 +1170,6 @@ function openNew(techName, slotMins) {
             });
           }}
           onSeat={entry => {
-            setShowQueue(false);
             setDate(todayStr());
             setViewMode('day');
             // Default the start time to this tech's next opening today (or, for an
@@ -1148,37 +1205,19 @@ function openNew(techName, slotMins) {
       {/* Tech overlay filter pills — day view only, hidden when there are
           no techs (the empty state below carries the call-to-action). */}
       {viewMode === 'day' && (!isTech || showAll) && visibleTechNames && techs.length > 0 && (() => {
-        // Quick-filter helpers. "Working today" = the tech's per-day shift
-        // (empWorkDays) is not explicitly off AND no all-day time-off block
-        // covers today. "Working now" tightens that to: current clock time
-        // falls inside the shift window AND no partial-day time-off covers
-        // it. We derive on every render — no extra state — so the buttons
-        // stay accurate as the day rolls forward.
-        const nowMins = new Date().getHours() * 60 + new Date().getMinutes();
-        const techIsWorkingToday = (t) => {
-          const wd = empWorkDays[t]?.[dow];
-          if (wd && wd.on === false) return false;
-          // All-day time off blocks count the tech as off today.
-          const blocks = timeOffOnDate(timeOff, t, date);
-          if (blocks.some(b => b.allDay !== false)) return false;
-          return true;
-        };
-        const techIsWorkingNow = (t) => {
-          if (!techIsWorkingToday(t)) return false;
-          const wd = empWorkDays[t]?.[dow] || {};
-          const start = wd.start ? strToMins(wd.start) : strToMins(settings.apptHours?.open  || '09:00');
-          const end   = wd.end   ? strToMins(wd.end)   : strToMins(settings.apptHours?.close || '20:00');
-          if (nowMins < start || nowMins >= end) return false;
-          if (isSlotBlocked(timeOff, t, date, nowMins)) return false;
-          return true;
-        };
+        // "Working today" = clocked in today (time clock) OR scheduled on a
+        // configured shift; "Working right now" = currently clocked in OR within
+        // today's shift window. Unified in techStatusFor (clock + shift), so the
+        // filters work for clock-based salons like Meraki that set no shift hours.
+        const techIsWorkingToday = (t) => techStatusFor(t).today;
+        const techIsWorkingNow   = (t) => techStatusFor(t).now;
         const applyFilter = (predicate) => {
           const next = techs.filter(predicate);
+          if (!next.length) showToast('No techs match that filter right now — showing all.');
           setVisibleTechNames(next.length ? next : techs);
           localStorage.setItem(OVERLAY_KEY, JSON.stringify(next.length ? next : techs));
         };
         const showAllTechs = () => { setVisibleTechNames(techs); localStorage.setItem(OVERLAY_KEY, JSON.stringify(techs)); };
-        const isToday = date === todayStr();
         const Btn = ({ label, onClick, hint }) => (
           <button onClick={onClick} title={hint}
             style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, border: '1.5px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
@@ -1304,7 +1343,9 @@ function openNew(techName, slotMins) {
               date={date}
               appts={visibleAppts}
               timeOff={timeOff}
-              techs={displayTechs}
+              techs={orderedTechs}
+              offToday={offTodaySet}
+              dividerTech={firstOffTech}
               allTechs={techs}
               clients={clients}
               techExtended={techExtended}
@@ -1349,6 +1390,14 @@ function openNew(techName, slotMins) {
           onSave={() => handleSave(modal.appt, modal.original, modal.pendingSeat)}
           onDelete={() => handleDelete(modal.appt)}
           onClose={() => setModal(null)}
+          onBlockTime={(techName, dateStr, startTime) => {
+            const sMin = startTime ? strToMins(startTime) : 9 * 60;
+            const eMin = Math.min(sMin + 60, 23 * 60 + 59);
+            const to24 = (m) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+            setBlockPrefill({ techName: techName || '', date: dateStr || todayStr(), start: startTime || '09:00', end: to24(eMin) });
+            setModal(null);
+            setShowTimeOff(true);
+          }}
           onCheckout={appt => { setModal(null); setCheckout({ appts: [appt], walkInClient: null }); }}
           onAddToTicket={appt => { setModal(null); addApptToTicket(appt); showToast(`Added ${appt.clientName || 'walk-in'} to ticket`); }}
           onRefund={appt => requestRefund(appt)}
@@ -1443,8 +1492,114 @@ function fmtClockIn(iso) {
   return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
+function fmtTurns(n) {
+  const t = Number(n) || 0;
+  const v = t % 1 === 0 ? t : t.toFixed(1);
+  return `${v} turn${t === 1 ? '' : 's'}`;
+}
+
+// Plain-language reason a tech sits where they do in the walk-in rotation —
+// mirrors the sort in nextUpInRotation: on a ticket sinks → fewest turns →
+// earliest clock-in breaks ties. `sorted` is the already-ordered roster.
+// Shown as the hover tooltip on each tech chip.
+function rotationReason(r, i, sorted) {
+  const turns = Number(r.turnsTaken) || 0;
+  const clock = fmtClockIn(r.clockInAt);
+  if (r.serving) {
+    return `On a ticket right now — drops to the back of the rotation until checkout. ${fmtTurns(turns)} today${clock ? `, clocked in ${clock}` : ''}.`;
+  }
+  if (i === 0) {
+    return `Next up — the rotation seats whoever has the fewest turns today (${fmtTurns(turns)})${clock ? `, clocked in ${clock}` : ''}. Earliest clock-in breaks ties.`;
+  }
+  const ahead = sorted[i - 1];
+  const aheadTurns = Number(ahead.turnsTaken) || 0;
+  let because;
+  if (turns > aheadTurns) {
+    because = `more turns so far than ${ahead.techName} (${fmtTurns(turns)} vs ${fmtTurns(aheadTurns)})`;
+  } else if (turns === aheadTurns) {
+    because = `tied with ${ahead.techName} on ${fmtTurns(turns)}, but clocked in later${clock ? ` (${clock})` : ''}`;
+  } else {
+    because = `behind ${ahead.techName} in the rotation`;
+  }
+  return `#${i + 1} of ${sorted.length} — ${because}. Moves up as the techs ahead take walk-ins.`;
+}
+
+// One tech pill in the walk-in rotation, with a styled hover/tap tooltip that
+// explains why they're in this slot. Uses a real popover (not the native
+// title=) because native tooltips don't appear on the iPad kiosk's touch and
+// lag on desktop. Hover shows it; tapping the chip toggles it (touch); the
+// clock-out × stops propagation so it doesn't toggle the tip.
+function RotationChip({ r, i, sorted, onRemove, onAdjust, turnMode, detail }) {
+  const [show, setShow] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const t = Number(r.turnsTaken) || 0;
+  const turns = t % 1 === 0 ? t : t.toFixed(1);
+  const fmtTv = (v) => { const n = Number(v) || 0; return `${n % 1 === 0 ? n : n.toFixed(1)} turn${n === 1 ? '' : 's'}`; };
+  const stepBtn = (delta, label) => (
+    <button onClick={(e) => { e.stopPropagation(); onAdjust(r.techId, delta); }}
+      title={`${delta > 0 ? 'Add' : 'Remove'} half a turn`} disabled={delta < 0 && t <= 0}
+      style={{ width: 17, height: 17, borderRadius: 5, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: (delta < 0 && t <= 0) ? 'default' : 'pointer', opacity: (delta < 0 && t <= 0) ? .4 : 1, fontSize: 12, lineHeight: 1, padding: 0, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</button>
+  );
+  return (
+    <div
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onClick={() => setPinned(p => !p)}
+      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}`, cursor: 'pointer' }}>
+      <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
+      <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)}</span>
+      {onAdjust && (
+        <span onClick={e => e.stopPropagation()} title="Adjust this tech's turn count by half a turn"
+          style={{ display: 'flex', alignItems: 'center', gap: 3, cursor: 'default' }}>
+          {stepBtn(-0.5, '−')}
+          <span style={{ fontSize: 10, color: 'var(--pn-text-faint)', minWidth: 40, textAlign: 'center' }}>{turns} turn{t === 1 ? '' : 's'}</span>
+          {stepBtn(0.5, '+')}
+        </span>
+      )}
+      <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Remove ${r.techName} from the walk-in rotation?\n\nYou can add them back with "+ Clock in", but their turn count resets to 0.`)) onRemove(r.techId); }} title="Remove from rotation"
+        style={{ background: 'none', border: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, marginLeft: 2, fontFamily: 'inherit' }}>×</button>
+      {(show || pinned) && (
+        <div role="tooltip" style={{
+          position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, zIndex: 60,
+          width: 270, maxWidth: '80vw', maxHeight: 260, overflowY: 'auto', background: 'var(--pn-text)', color: 'var(--pn-surface)',
+          fontSize: 11.5, lineHeight: 1.5, fontWeight: 500, textAlign: 'left',
+          padding: '8px 10px', borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.28)', pointerEvents: pinned ? 'auto' : 'none',
+        }}>
+          {rotationReason(r, i, sorted)}
+          <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px solid rgba(255,255,255,.18)' }}>
+            <div style={{ fontWeight: 700, opacity: .85, marginBottom: 4 }}>
+              Completed today · {turns} turn{t === 1 ? '' : 's'}
+            </div>
+            {(!detail || detail.length === 0) ? (
+              <div style={{ opacity: .7 }}>No completed services yet today.</div>
+            ) : (
+              <>
+                {detail.map((it, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, padding: '1px 0' }}>
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {it.time ? minsToStr(strToMins(it.time)) + ' · ' : ''}{it.name}
+                    </span>
+                    <span style={{ flexShrink: 0, opacity: .85 }}>{fmtTv(it.tv)}</span>
+                  </div>
+                ))}
+                {turnMode !== 'value' && (
+                  <div style={{ marginTop: 5, opacity: .7, fontStyle: 'italic' }}>
+                    Turns are counted 1 per visit (turn-value mode is off, so the per-service values above are informational).
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {pinned && <div style={{ marginTop: 6, opacity: .55, fontSize: 10 }}>Tap the chip again to close.</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Turn roster panel — today's walk-in rotation ──────
-function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay, onRecount, onReplay }) {
+function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onAdjustTurns, onResetDay, onRecount, onReplay, turnMode, turnDetailFor }) {
   const [showPicker, setShowPicker] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const inRoster = new Set(roster.map(r => r.techId));
@@ -1513,13 +1668,7 @@ function TurnRosterPanel({ roster, allTechs, onAddTech, onRemoveTech, onResetDay
       ) : (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, padding: 10 }}>
           {sorted.map((r, i) => (
-            <div key={r.techId} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', borderRadius: 20, background: i === 0 ? 'var(--pn-success-bg)' : 'var(--pn-bg)', border: `1px solid ${i === 0 ? '#c6e8d5' : 'var(--pn-border)'}` }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: i === 0 ? 'var(--pn-success)' : 'var(--pn-text-muted)' }}>#{i + 1}</span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--pn-text)' }}>{r.techName}</span>
-              <span style={{ fontSize: 10, color: 'var(--pn-text-faint)' }}>{fmtClockIn(r.clockInAt)} · {(r.turnsTaken || 0) % 1 === 0 ? (r.turnsTaken || 0) : (r.turnsTaken || 0).toFixed(1)} turn{(r.turnsTaken || 0) === 1 ? '' : 's'}</span>
-              <button onClick={() => onRemoveTech(r.techId)} title="Clock out"
-                style={{ background: 'none', border: 'none', color: 'var(--pn-text-faint)', cursor: 'pointer', fontSize: 14, padding: 0, lineHeight: 1, marginLeft: 2, fontFamily: 'inherit' }}>×</button>
-            </div>
+            <RotationChip key={r.techId} r={r} i={i} sorted={sorted} onRemove={onRemoveTech} onAdjust={onAdjustTurns} turnMode={turnMode} detail={turnDetailFor ? turnDetailFor(r.techName) : null} />
           ))}
         </div>
       )}
@@ -1744,7 +1893,7 @@ function WeekGrid({ weekStart, appts, clients, employees, allTechs, onApptClick,
 }
 
 // ── Day grid ──────────────────────────────────────────
-function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, focusedTech, onToggleFocusTech, onSlotClick, onApptClick, onApptReschedule }) {
+function DayGrid({ date, appts, timeOff = [], techs, offToday, dividerTech, allTechs, clients = [], techExtended, empWorkDays, slots, dayStart, walkInOpen, walkInClose, techColWidth, focusedTech, onToggleFocusTech, onSlotClick, onApptClick, onApptReschedule }) {
   // Pointer-event drag-to-reschedule. Works on both mouse and touch
   // (iPad/iPhone) — HTML5 D&D doesn't work on touch devices natively.
   // Dragging happens in two phases:
@@ -1878,7 +2027,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
       <div style={{ display: 'flex', position: 'sticky', top: 0, zIndex: 10, background: 'var(--pn-bg)', borderBottom: '2px solid var(--pn-border)' }}>
         <div style={{ width: TIME_COL, flexShrink: 0 }} />
         {techs.map(tech => {
-          const isOff = empWorkDays[tech]?.[dow]?.on === false;
+          const isOff = offToday ? offToday.has(tech) : (empWorkDays[tech]?.[dow]?.on === false);
           const col   = getTechColor(tech, allTechs || techs);
           const todayTimeOff = timeOffOnDate(timeOff, tech, date);
           const hasTimeOff = todayTimeOff.length > 0;
@@ -1894,7 +2043,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
               key={tech}
               onClick={canFocus ? () => onToggleFocusTech(tech) : undefined}
               title={canFocus ? (isFocused ? 'Click to back out and show all techs' : `Click to zoom into ${tech}'s schedule only`) : undefined}
-              style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? 'var(--pn-text-faint)' : col.text, textAlign: 'center', borderLeft: '1px solid var(--pn-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? 'var(--pn-bg)' : col.bg, paddingBottom: 6, cursor: canFocus ? 'pointer' : 'default', userSelect: 'none' }}>
+              style={{ width: TECH_COL, flexShrink: 0, fontSize: 11, fontWeight: 600, color: isOff ? 'var(--pn-text-faint)' : col.text, textAlign: 'center', borderLeft: tech === dividerTech ? '2px solid var(--pn-border-strong)' : '1px solid var(--pn-border)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', background: isOff ? 'var(--pn-bg)' : col.bg, paddingBottom: 6, cursor: canFocus ? 'pointer' : 'default', userSelect: 'none' }}>
               <div style={{ height: 3, background: isOff ? 'var(--pn-border-strong)' : col.solid, marginBottom: 6 }} />
               <div style={{ padding: '0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: canFocus ? 'underline dotted' : 'none', textUnderlineOffset: 3, textDecorationColor: 'var(--pn-text-faint)' }}>
                 {isFocused ? `← ${tech}` : tech}
@@ -1957,7 +2106,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
 
             {/* Tech cells */}
             {techs.map(tech => {
-              const isOff  = empWorkDays[tech]?.[dow]?.on === false;
+              const isOff  = offToday ? offToday.has(tech) : (empWorkDays[tech]?.[dow]?.on === false);
               const blockedBy = isSlotBlocked(timeOff, tech, date, slotMins);
               // `interactive` controls drag-drop reschedule (drop targets are
               // limited to slots where the tech is actually working).
@@ -1997,7 +2146,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
                     onSlotClick(tech, slotMins);
                   }}
                   style={{
-                    width: TECH_COL, flexShrink: 0, borderLeft: '1px solid var(--pn-border)',
+                    width: TECH_COL, flexShrink: 0, borderLeft: tech === dividerTech ? '2px solid var(--pn-border-strong)' : '1px solid var(--pn-border)',
                     cursor: clickable ? 'pointer' : 'default',
                     position: 'relative',
                     background: isDropHover
@@ -2203,7 +2352,7 @@ function DayGrid({ date, appts, timeOff = [], techs, allTechs, clients = [], tec
 }
 
 // ── Appointment modal ─────────────────────────────────
-function ApptModal({ appt, mode, clients, services, techs, employees = [], onChange, onSwitchEdit, onSave, onDelete, onClose, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
+function ApptModal({ appt, mode, clients, services, techs, employees = [], onChange, onSwitchEdit, onSave, onDelete, onClose, onBlockTime, onCheckout, onAddToTicket, onRefund, onOpenClient, onClientCreated, viewOnly, isAdmin, onReload }) {
   const [restoreOpen, setRestoreOpen] = useState(false);
   const { gUser, settings } = useApp();
   const [saving,    setSaving]    = useState(false);
@@ -2417,6 +2566,26 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
     });
   }
 
+  // Toggle an optional add-on (a reference to another catalog service) for the
+  // base service at line i. Adds/removes a separate service line tagged
+  // addOnOf: <base service id> so it stacks its own price + time, resolved
+  // against the performing tech. Mirrors the customer-booking add-on path.
+  function toggleAddOn(baseDoc, addOnSvc) {
+    const isOn = (appt.services || []).some(s => s.addOnOf === baseDoc.id && (s.id === addOnSvc.id || s.name === addOnSvc.name));
+    if (isOn) {
+      onChange({ services: (appt.services || []).filter(s => !(s.addOnOf === baseDoc.id && (s.id === addOnSvc.id || s.name === addOnSvc.name))) });
+      return;
+    }
+    const opt = addOnSvc.options?.[0] || null;
+    const r = resolveServicePricing(addOnSvc, opt, apptTech);
+    onChange({ services: [...(appt.services || []), {
+      id: addOnSvc.id, name: addOnSvc.name,
+      optionId: opt?.id || null, optionName: opt?.name || null,
+      duration: r.duration || 30, price: r.price ?? '',
+      taxable: addOnSvc.taxable !== false, addOnOf: baseDoc.id,
+    }] });
+  }
+
   // Re-resolve every service's duration for the newly-assigned tech so their
   // per-service times take effect. Items carrying an explicit option override
   // (e.g. created via online booking) keep their resolved duration.
@@ -2567,7 +2736,7 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200 }}
          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 440, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+      <div style={{ background: 'var(--pn-surface)', borderRadius: 16, width: '94%', maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
 
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--pn-border)', flexShrink: 0 }}>
@@ -2577,7 +2746,16 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
             </span>
             {isView && !isNew && <ViewBadge />}
           </div>
-          <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isNew && !viewOnly && onBlockTime && (
+              <button onClick={() => onBlockTime(appt.techName, appt.date, appt.startTime)}
+                title="Block this time off instead — vacation, sick, a break"
+                style={{ fontSize: 12, fontWeight: 600, padding: '5px 10px', borderRadius: 8, border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', color: 'var(--pn-text-muted)', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
+                🌴 Block time
+              </button>
+            )}
+            <button onClick={onClose} style={{ width: 28, height: 28, borderRadius: '50%', border: '1px solid var(--pn-border-strong)', background: 'var(--pn-surface)', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+          </div>
         </div>
 
         {/* Body */}
@@ -2970,6 +3148,32 @@ function ApptModal({ appt, mode, clients, services, techs, employees = [], onCha
                         placeholder="price" style={{ ...inp, width: 70 }} />
                       <span style={{ fontSize: 12, color: 'var(--pn-text-faint)', alignSelf: 'center' }}>$</span>
                     </div>
+                    {/* Add-on toggles — only on base lines (not on an add-on's
+                        own line). Each toggle adds/removes a linked service line. */}
+                    {!svc.addOnOf && (() => {
+                      const svcDoc = services.find(s => s.name === svc.name);
+                      const addOns = (svcDoc?.addOnServiceIds || []).map(id => services.find(s => s.id === id)).filter(a => a && a.active !== false);
+                      if (!svcDoc || !addOns.length) return null;
+                      return (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: '1px dashed var(--pn-border)' }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 5 }}>Add-ons</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {addOns.map(a => {
+                              const on = (appt.services || []).some(s => s.addOnOf === svcDoc.id && (s.id === a.id || s.name === a.name));
+                              const r = resolveServicePricing(a, a.options?.[0] || null, apptTech);
+                              return (
+                                <button key={a.id} type="button" onClick={() => toggleAddOn(svcDoc, a)}
+                                  style={{ fontSize: 12, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                                    border: `1.5px solid ${on ? '#2D7A5F' : 'var(--pn-border)'}`, background: on ? 'var(--pn-success-bg, #eaf5ef)' : 'var(--pn-surface)',
+                                    color: on ? '#2D7A5F' : 'var(--pn-text)', borderRadius: 999, padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                                  <span>{on ? '✓' : '+'}</span><span>{a.name}</span><span style={{ opacity: 0.7, whiteSpace: 'nowrap' }}>+${r.price} · {r.duration}m</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -3599,7 +3803,7 @@ const inp     = { fontFamily: 'inherit', width: '100%', border: '1px solid var(-
 const btnBase = { fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: 'pointer', background: 'var(--pn-surface)', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 14px', color: 'var(--pn-text)' };
 
 // ── Time Off modal (vacation / sick / personal) ────────
-function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdmin, isScheduler, isTech, myTechName, gUser, onClose }) {
+function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdmin, isScheduler, isTech, myTechName, gUser, prefill, onClose }) {
   // Admins/schedulers see and manage everyone's time off; techs see only their own.
   const canManageOthers = isAdmin || isScheduler;
   const visible = canManageOthers
@@ -3613,7 +3817,7 @@ function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdm
     .sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''))
     .slice(0, 10);
 
-  const [showAdd, setShowAdd] = useState(false);
+  const [showAdd, setShowAdd] = useState(!!prefill);
   const canAdd = canManageOthers || (isTech && !!myTechName);
 
   function fmtDate(d) {
@@ -3659,8 +3863,9 @@ function TimeOffModal({ timeOff, techs, employees, services, clients = [], isAdm
               isTech={isTech}
               myTechName={myTechName}
               gUser={gUser}
-              onCancel={() => setShowAdd(false)}
-              onSaved={() => setShowAdd(false)}
+              prefill={prefill}
+              onCancel={() => (prefill ? onClose() : setShowAdd(false))}
+              onSaved={() => (prefill ? onClose() : setShowAdd(false))}
             />
           ) : (
             <>
@@ -3724,17 +3929,19 @@ function TimeOffRow({ t, typeLabel, fmtRange, canEdit, onDelete, muted }) {
   );
 }
 
-function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmin, isScheduler, isTech, myTechName, gUser, onCancel, onSaved }) {
+function TimeOffForm({ techs, employees, services, clients = [], timeOff, isAdmin, isScheduler, isTech, myTechName, gUser, prefill, onCancel, onSaved }) {
   const canManageOthers = isAdmin || isScheduler;
   const defaultTech = canManageOthers ? '' : (myTechName || '');
-  const [techName, setTechName] = useState(defaultTech);
-  const [type, setType] = useState('vacation');
   const today = todayStr();
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(today);
-  const [allDay, setAllDay] = useState(true);
-  const [startTime, setStartTime] = useState('09:00');
-  const [endTime, setEndTime] = useState('17:00');
+  // When opened from a tapped schedule slot (New Appointment → 🌴 Block time),
+  // prefill the tech + date + a partial-day window starting at that slot.
+  const [techName, setTechName] = useState(prefill?.techName || defaultTech);
+  const [type, setType] = useState('vacation');
+  const [startDate, setStartDate] = useState(prefill?.date || today);
+  const [endDate, setEndDate] = useState(prefill?.date || today);
+  const [allDay, setAllDay] = useState(prefill ? false : true);
+  const [startTime, setStartTime] = useState(prefill?.start || '09:00');
+  const [endTime, setEndTime] = useState(prefill?.end || '17:00');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState('');

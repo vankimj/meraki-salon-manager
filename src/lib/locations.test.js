@@ -6,10 +6,14 @@ vi.mock('./tenant', () => ({ TENANT_ID: 'test-tenant' }));
 import {
   isMultiLocation, activeLocations, resolveLocation, locationTaxRate,
   setCurrentLocationId, subscribeCurrentLocation, DEFAULT_LOCATION_ID,
-  appointmentInLocation, employeeInLocation, rosterDocId,
+  appointmentInLocation, employeeInLocation, rosterDocId, effectiveLocationId,
 } from './locations';
 
 const single = { list: [{ id: 'main', name: 'Main', isPrimary: true, active: true, taxRate: 7.5 }], defaultLocationId: 'main' };
+// A single-location tenant whose sole location carries a CUSTOM id (the real
+// Meraki shape) — the switcher snaps curLoc to this id, but doc keys must still
+// collapse to the bare date so they match the server's default-keyed writes.
+const singleCustomId = { list: [{ id: 'meraki-nail-studio', name: 'Meraki', isPrimary: true, active: true }], defaultLocationId: 'meraki-nail-studio' };
 const multi = {
   list: [
     { id: 'main', name: 'Downtown', isPrimary: true, active: true, taxRate: 7.5 },
@@ -102,5 +106,23 @@ describe('current-location subscribers', () => {
     setCurrentLocationId('');
     off();
     expect(last).toBe(DEFAULT_LOCATION_ID);
+  });
+});
+
+describe('effectiveLocationId (doc-key collapse)', () => {
+  it('returns undefined for single-location tenants → bare roster/queue keys', () => {
+    expect(effectiveLocationId(single, 'main')).toBeUndefined();
+  });
+  it('collapses even when the sole location has a custom id (the Meraki bug)', () => {
+    // The switcher snaps curLoc to 'meraki-nail-studio', but the key must stay bare.
+    expect(effectiveLocationId(singleCustomId, 'meraki-nail-studio')).toBeUndefined();
+    expect(rosterDocId('2026-06-21', effectiveLocationId(singleCustomId, 'meraki-nail-studio'))).toBe('2026-06-21');
+  });
+  it('scopes by the current location once there are ≥2 active locations', () => {
+    expect(effectiveLocationId(multi, 'north')).toBe('north');
+    expect(rosterDocId('2026-06-21', effectiveLocationId(multi, 'north'))).toBe('2026-06-21_north');
+  });
+  it('null/loading state → undefined (safe default to bare keys)', () => {
+    expect(effectiveLocationId(null, 'main')).toBeUndefined();
   });
 });

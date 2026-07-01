@@ -122,8 +122,11 @@ export default function RootNav() {
           options={{ headerShown: false /* the inner stack provides its own header */ }}
         />
         <Tab.Screen name="Profile"  component={ProfileScreen} />
-        {/* Help is reachable from the Dashboard header "?" — hidden from the tab bar. */}
-        <Tab.Screen name="Help" component={HelpScreen} options={{ title: 'Help & Support', tabBarButton: () => null }} />
+        {/* Help is reachable from the Dashboard header "?" — hidden from the tab
+            bar. tabBarItemStyle:{display:'none'} (not tabBarButton:()=>null,
+            which still reserves the flex slot in RN v7 and left the 5 real tabs
+            shoved left with dead space on the right). */}
+        <Tab.Screen name="Help" component={HelpScreen} options={{ title: 'Help & Support', tabBarItemStyle: { display: 'none' } }} />
       </Tab.Navigator>
     </NavigationContainer>
   );

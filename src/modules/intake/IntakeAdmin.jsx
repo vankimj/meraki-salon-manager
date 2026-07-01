@@ -27,13 +27,16 @@ export default function IntakeAdmin() {
   const [viewResp,   setViewResp]   = useState(null);    // response obj
   const [sendFor,    setSendFor]    = useState(null);    // form obj to send
 
-  if (!isAdmin) {
-    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Admin only.</div>;
-  }
+  // Hooks must run unconditionally (Rules of Hooks) — gate the bodies on isAdmin
+  // so a non-admin render (e.g. an owner's "Preview as") doesn't fire denied
+  // reads, and the early return below can flip without changing the hook count.
+  useEffect(() => { if (!isAdmin) return; return subscribeIntakeForms(setForms); }, [isAdmin]);
+  useEffect(() => { if (!isAdmin) return; return subscribeIntakeResponses(setResponses); }, [isAdmin]);
+  useEffect(() => { if (!isAdmin) return; fetchClients().then(setClients).catch(() => {}); }, [isAdmin]);
 
-  useEffect(() => subscribeIntakeForms(setForms), []);
-  useEffect(() => subscribeIntakeResponses(setResponses), []);
-  useEffect(() => { fetchClients().then(setClients).catch(() => {}); }, []);
+  if (!isAdmin) {
+    return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Intake forms are managed by the salon owner.</div>;
+  }
 
   async function importDefaults() {
     const seeds = intakeTemplatesForVertical(vertical);

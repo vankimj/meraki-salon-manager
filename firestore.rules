@@ -76,6 +76,21 @@ service cloud.firestore {
     function canEditSchedule(tenantId) {
       return isTenantStaff(tenantId) && !isScheduleViewOnly(tenantId);
     }
+    // Capability delegation: caller's email is in this tenant's data/users
+    // `capEmails[cap]` projection (maintained by saveUsers / buildCapEmails). Lets
+    // the owner delegate specific admin collections (currently attendance +
+    // marketing campaigns) to a manager/custom role WITHOUT making them a tenant
+    // admin. Owner/admin already pass via the isTenantAdmin branch at each call
+    // site, so they need not appear in capEmails. A pre-migration tenant (no
+    // capEmails field) or an unknown cap resolves to [] → false → owner-only,
+    // i.e. the historical behavior, so this is a safe additive change.
+    function hasCap(tenantId, cap) {
+      return isAuthenticated() &&
+        request.auth.token.email is string &&
+        request.auth.token.email.lower() in
+          get(/databases/$(database)/documents/tenants/$(tenantId)/data/users)
+            .data.get('capEmails', {}).get(cap, []);
+    }
 
     // ── Legacy path (read-only for migration) ────────────
     match /salon/{document} {
@@ -234,6 +249,14 @@ service cloud.firestore {
       match /data/settings {
         allow read:  if isTenantStaff(tenantId) || isKiosk(tenantId);  // kiosk needs taxRate/ccFee/terminal cfg
         allow write: if isTenantAdmin(tenantId);
+      }
+      // Custom role definitions (owner-defined roles + built-in cap overrides).
+      // Staff read so the client can resolve its own capabilities; writes are
+      // callable-only (saveCustomRoles) which validates caps + protects Owner —
+      // never a direct client write, so a staffer can't grant themselves caps.
+      match /data/customRoles {
+        allow read:  if isTenantStaff(tenantId);
+        allow write: if false;
       }
       // Sensitive credentials (OAuth tokens, third-party API keys cached
       // at runtime, anything that grants out-of-band access). Admin-only
@@ -718,7 +741,11 @@ service cloud.firestore {
 
       // Marketing campaigns: admin creates/reads; Cloud Function updates status via admin SDK
       match /campaigns/{campaignId} {
-        allow read, write: if isTenantAdmin(tenantId);
+        // Owner OR a role granted the `marketing` capability (Marketing →
+        // campaigns delegation). Creating a campaign doc triggers
+        // sendMarketingCampaign (Admin SDK), so this write IS the send
+        // authorization. Automations live in data/settings (owner-only).
+        allow read, write: if isTenantAdmin(tenantId) || hasCap(tenantId, 'marketing');
       }
 
       // Blocked booking attempts (honeypot / bot signals). Written server-only by
@@ -866,12 +893,13 @@ service cloud.firestore {
       // match: a tech reading attendance from the console would expose
       // every coworker's clock-in/clock-out times across every day.
       match /attendance/{date} {
-        // Admin reads the full board (AttendanceAdmin). The locked clock-in
-        // kiosk (isKiosk token) also reads it to render the in/out grid — that
-        // display IS the kiosk's purpose. Writes stay admin-only; the kiosk
-        // clocks in via the clockEvent callable (Admin SDK, bypasses rules).
-        allow read:  if isTenantAdmin(tenantId) || isKiosk(tenantId);
-        allow write: if isTenantAdmin(tenantId);
+        // Owner, the locked clock-in kiosk (isKiosk — that display IS its
+        // purpose), OR a role granted the `attendance` capability (Attendance
+        // delegation). A tech WITHOUT the cap can't read the board from the
+        // console — that would expose every coworker's clock times. Kiosk
+        // clock-ins still go through the clockEvent callable (Admin SDK).
+        allow read:  if isTenantAdmin(tenantId) || isKiosk(tenantId) || hasCap(tenantId, 'attendance');
+        allow write: if isTenantAdmin(tenantId) || hasCap(tenantId, 'attendance');
       }
 
       // AI assistant audit log — every write tool the in-app chatbot

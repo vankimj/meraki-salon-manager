@@ -19,7 +19,7 @@ import { fetchLogs, fetchEmployees, createEmployee, saveEmployee,
 import { ASSIGNMENT_METHODS, ASSIGNMENT_METHOD_LABELS, ASSIGNMENT_METHOD_DESCRIPTIONS, DEFAULT_ASSIGNMENT_METHOD } from '../../lib/techAssignment';
 import { FLOW_TEMPLATES, FLOW_DEFAULTS, getEffectiveFlow } from '../../lib/bookingFlow';
 import { INTERNAL_EVENTS, CUSTOMER_EVENTS, NOTIF_ROLES, NOTIF_CHANNELS, ROLE_LABELS_SHORT, CHANNEL_LABELS, resolveInternalRouting, isCustomerNotifEnabled } from '../../lib/notificationRouting';
-import { normalizeRole } from '../../lib/rbac';
+import { normalizeRole, resolveRoleCaps } from '../../lib/rbac';
 import { MODULES, effectivePlan, isModuleAvailableForPlan, isModuleEnabled, modulesLostOnDowngrade, PLAN_RANK, isInTrial, trialDaysRemaining } from '../../lib/modules';
 import { normalizePlan, PACKS, ATOMS } from '../../lib/planEntitlements';
 import { fetchMemberships } from '../../lib/firestore';
@@ -36,6 +36,7 @@ import CsvImportSection from '../../components/CsvImportSection';
 import AddressAutocomplete from '../../components/AddressAutocomplete';
 import LocationsTab from './LocationsTab';
 import MessageTemplatesTab from './MessageTemplatesTab';
+import RolesTab from './RolesTab';
 import SlideModal from '../tipflow/SlideModal';
 
 // Live filter query for the Settings tab. Default '' = no filter, so any
@@ -44,7 +45,7 @@ import SlideModal from '../tipflow/SlideModal';
 const SettingsSearchCtx = createContext('');
 
 export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
-  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast, hasFeature } = useApp();
+  const { gUser, users, settings, grantAccess, grantPendingAccess, addTechUsersForEmployees, loadPendingRequests, updateSettings, signOut, isAdmin, syncState, showToast, hasFeature, customRoles } = useApp();
   const [timeout,        setTimeoutVal]    = useState(settings.timeoutMin || 5);
   const [pin,            setPin]           = useState(settings.adminPin || '');
   const [reviewUrl,      setReviewUrl]     = useState(settings.googleReviewUrl || '');
@@ -94,7 +95,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [taxRate,        setTaxRate]       = useState(settings.taxRate ?? 7.5);
   const [ccFeePct,       setCcFeePct]      = useState(settings.ccFeePct ?? 2.9);
   const [ccFeeFlat,      setCcFeeFlat]     = useState(settings.ccFeeFlat ?? 0.30);
-  const [removalPrice,   setRemovalPrice]  = useState(settings.removalPrice ?? 15);
   const [noCardTips,     setNoCardTips]    = useState(!!settings.noCardTips);
   const [refundCommDefault, setRefundCommDefault] = useState(settings.refundCommissionDefault === 'goodwill' ? 'goodwill' : 'withhold');
   const [finSaving,      setFinSaving]     = useState(false);
@@ -114,7 +114,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
   const [reviewsData,  setReviewsData]  = useState(null);
   const isSuperAdmin = gUser?.email === 'jvankim@gmail.com';
   const TABS = [
-    { id: 'users',    label: 'Users'    },
+    { id: 'users',    label: isAdmin ? 'Users & Roles' : 'Users' },
     { id: 'notifs',   label: 'Notifs'   },
     { id: 'reviews',  label: 'Reviews'  },
     { id: 'settings', label: 'Settings' },
@@ -254,13 +254,18 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                       <option value="tech">Staff (tech)</option>
                       <option value="scheduler">Front desk</option>
                       <option value="readonly">View only</option>
+                      {(customRoles?.roles || []).length > 0 && (
+                        <optgroup label="Custom roles">
+                          {customRoles.roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+                        </optgroup>
+                      )}
                       <option value="denied">Denied</option>
                     </select>
-                    {/* Tech-name picker — required for 'tech' role, optional for
-                        owner/manager/scheduler/readonly so someone who's also a
-                        working tech can flip into their own tech view. Hidden for
-                        kiosk (not a person-role) and denied. */}
-                    {(u.role === 'tech' || u.role === 'admin' || u.role === 'manager' || u.role === 'scheduler' || u.role === 'readonly') && (
+                    {/* Tech-name picker — shown for any role that can use the
+                        schedule (built-ins + custom roles with the 'schedule'
+                        cap) so a working tech can flip into their own view.
+                        Hidden for kiosk/denied (no schedule cap). */}
+                    {resolveRoleCaps(u.role, customRoles).includes('schedule') && (
                       <select value={u.techName || ''} onChange={async e => {
                         const newTechName = e.target.value || null;
                         grantAccess(u.email, u.role, newTechName);
@@ -289,6 +294,11 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </UserRow>
               )) : <Empty>No users yet</Empty>}
             </Section>
+            {isAdmin && (
+              <Section title="🛡 Roles & permissions">
+                <RolesTab />
+              </Section>
+            )}
             <Section title="📲 Invite a teammate by text">
               <StaffSmsInvite employees={employees} />
             </Section>
@@ -513,6 +523,17 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
 
             {/* ══ GROUP 2 · General ══ */}
             <Section title="⚙ General" keywords="app settings auto logout timeout idle modules tiles visibility notes pin admin reminders birthday lapsed timezone review url google ein pause">
+            <Section title="🚦 Environment" keywords="production live pre-prod preproduction environment banner deploy gate go-live launch staging test" nested>
+              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>This salon is LIVE (production)</div>
+                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2, lineHeight: 1.45 }}>
+                    <strong>Off</strong> = pre-production: shows the amber “PRE-PRODUCTION” banner and lets engineers deploy freely. <strong>On</strong> = live: hides the banner and <strong>gates production deploys</strong> (must ship from a clean <code>main</code>). Turn on only when the salon is truly serving real customers.
+                  </div>
+                </div>
+                <ProductionToggle settings={settings} showToast={showToast} />
+              </div>
+            </Section>
             <Section title="⚙ App Settings" keywords="auto logout timeout idle admin pin reminders birthday lapsed timezone review url google ein" nested>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
                 <div>
@@ -866,18 +887,6 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
                 </div>
               </div>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
-                <div>
-                  <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Removal service price</div>
-                  <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Charged when a customer says "yes" to the removal question on a service that allows it.</div>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <span style={{ fontSize: 12, color: 'var(--pn-text-faint)' }}>$</span>
-                  <input type="number" value={removalPrice} step="1" min={0} max={200}
-                    onChange={e => setRemovalPrice(Number(e.target.value))}
-                    style={{ width: 90, textAlign: 'right', fontFamily: 'inherit', border: '1px solid var(--pn-border-strong)', borderRadius: 8, padding: '8px 10px', fontSize: 13 }} />
-                </div>
-              </div>
-              <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, borderTop: '1px solid var(--pn-border)' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, color: 'var(--pn-text)' }}>Disable tips on credit card</div>
                   <div style={{ fontSize: 11, color: 'var(--pn-text-faint)', marginTop: 2 }}>Hide the tip selector during checkout when payment method is card. Cash, Venmo, and other methods still prompt for a tip.</div>
@@ -911,14 +920,7 @@ export default function Admin({ onClose, onOpenWizard, initialTab, scrollTo }) {
               <div style={{ padding: '0 16px 12px', display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--pn-border)', paddingTop: 12 }}>
                 <Btn color="#2D7A5F" onClick={async () => {
                   setFinSaving(true);
-                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, removalPrice, noCardTips, refundCommissionDefault: refundCommDefault });
-                  // Mirror removalPrice onto bookingConfig so the public-facing
-                  // booking page can read it without admin permissions.
-                  if (bookingCfg) {
-                    const next = { ...bookingCfg, removalPrice };
-                    setBookingCfg(next);
-                    try { await saveBookingConfig(next); } catch (e) { console.warn('[bookingCfg removalPrice mirror]', e); }
-                  }
+                  await updateSettings({ ...settings, taxRate, ccFeePct, ccFeeFlat, noCardTips, refundCommissionDefault: refundCommDefault });
                   setFinSaving(false);
                 }}>{finSaving ? 'Saving…' : 'Save Financial Settings'}</Btn>
               </div>
@@ -1255,6 +1257,29 @@ function Toggle({ active, onChange, disabled }) {
   );
 }
 
+// Live/production flag for this tenant. Writes through setTenantProduction
+// (stamps the public slug doc + mirrors to settings) so the env banner + the
+// deploy guard both see it. Confirmed because going live gates prod deploys.
+function ProductionToggle({ settings, showToast }) {
+  const [busy, setBusy] = useState(false);
+  const isProd = settings?.isProduction === true;
+  async function flip() {
+    const next = !isProd;
+    const msg = next
+      ? 'Mark this salon LIVE (production)?\n\nHides the pre-production banner and GATES production deploys (engineers must ship from a clean main). Do this only when real customers are being served.'
+      : 'Mark this salon PRE-PRODUCTION?\n\nShows the pre-production banner and lets engineers deploy freely.';
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      await callFn('setTenantProduction', { tenantId: TENANT_ID, isProduction: next });
+      showToast(next ? 'Marked LIVE (production)' : 'Marked pre-production');
+    } catch (e) {
+      showToast('Failed: ' + (e?.message || 'unknown error'));
+    } finally { setBusy(false); }
+  }
+  return <Toggle active={isProd} onChange={flip} disabled={busy} />;
+}
+
 function AutoAssignSection({ method, onChange, saving }) {
   return (
     <div style={{ padding: '12px 16px' }}>
@@ -1396,16 +1421,6 @@ function BookingFlowSection({ bookingCfg, setBookingCfg, save, saving }) {
               <option value="back-to-back">Back-to-back</option>
               <option value="simultaneous">Simultaneous</option>
               <option value="ask">Ask the customer</option>
-            </select>
-          } />
-        <FlowRow label="Removal prompt cadence"
-          desc="When to ask 'are you wearing a previous gel/dip set?'. Always = every qualifying service. First-only = once per booking."
-          control={
-            <select value={eff.removalPromptMode} onChange={e => patchFlow({ removalPromptMode: e.target.value })}
-              style={{ fontFamily: 'inherit', fontSize: 13, padding: '6px 10px', border: '1px solid var(--pn-border-strong)', borderRadius: 6, background: 'var(--pn-surface)', cursor: 'pointer' }}>
-              <option value="always">Always</option>
-              <option value="first-only">First-only</option>
-              <option value="never">Never</option>
             </select>
           } />
       </FlowSubGroup>
@@ -1716,6 +1731,7 @@ function LogRow({ log }) {
 // with Google/Apple, and claimStaffInvite links them to this tenant with the
 // chosen role — no need to be pre-added by email or to sign in on the web first.
 function StaffSmsInvite() {
+  const { customRoles } = useApp();
   const [phone,   setPhone]   = useState('');
   const [name,    setName]    = useState('');
   const [role,    setRole]    = useState('tech');
@@ -1776,6 +1792,11 @@ function StaffSmsInvite() {
           <option value="manager">Manager</option>
           <option value="readonly">View only</option>
           <option value="admin">Owner / admin</option>
+          {(customRoles?.roles || []).length > 0 && (
+            <optgroup label="Custom roles">
+              {customRoles.roles.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
+            </optgroup>
+          )}
         </select>
         <button onClick={send} disabled={sending || !phone.trim()}
           style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: sending || !phone.trim() ? 'var(--pn-border-strong)' : '#2D7A5F', color: '#fff', fontSize: 13, fontWeight: 700, cursor: sending || !phone.trim() ? 'default' : 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>
@@ -3913,14 +3934,23 @@ function WalkinTurnModeSection({ settings, updateSettings, nested = false }) {
 }
 
 function NotificationRoutingSection({ settings, updateSettings, users = [], nested = false }) {
+  const { customRoles } = useApp();
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState(null);
 
+  // Role axis = built-in NOTIF_ROLES + the tenant's custom roles (from the
+  // overlay), so the grid can route alerts to custom-role staff too.
+  const customRoleList = (customRoles && Array.isArray(customRoles.roles)) ? customRoles.roles : [];
+  const customRoleKeys = customRoleList.map(r => r.key);
+  const roles = [...NOTIF_ROLES, ...customRoleKeys];
+  const roleLabelShort = (r) => ROLE_LABELS_SHORT[r] || (customRoleList.find(c => c.key === r)?.label) || r;
+
   // How many active staff sit in each role (so the admin knows who a row reaches).
   const roleCounts = {};
-  NOTIF_ROLES.forEach(r => { roleCounts[r] = 0; });
+  roles.forEach(r => { roleCounts[r] = 0; });
   (users || []).forEach(u => {
-    const r = normalizeRole(u && u.role);
+    const raw = String((u && u.role) || '').trim().toLowerCase();
+    const r = normalizeRole(raw) || raw;   // custom_* keys pass through
     if (r && roleCounts[r] !== undefined) roleCounts[r] += 1;
   });
 
@@ -3934,9 +3964,9 @@ function NotificationRoutingSection({ settings, updateSettings, users = [], nest
   }
 
   function toggleInternal(eventKey, role, channel) {
-    const current = resolveInternalRouting(settings, eventKey);
+    const current = resolveInternalRouting(settings, eventKey, customRoleKeys);
     const nextEvent = {};
-    NOTIF_ROLES.forEach(r => { nextEvent[r] = { ...current[r] }; });
+    roles.forEach(r => { nextEvent[r] = { ...current[r] }; });
     nextEvent[role][channel] = !nextEvent[role][channel];
     const routing = settings.notificationRouting || {};
     persist({ ...routing, internal: { ...(routing.internal || {}), [eventKey]: nextEvent } });
@@ -3965,16 +3995,16 @@ function NotificationRoutingSection({ settings, updateSettings, users = [], nest
 
         {/* Role legend */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-          {NOTIF_ROLES.map(r => (
+          {roles.map(r => (
             <span key={r} style={{ fontSize: 11, fontWeight: 600, color: 'var(--pn-text-muted)', background: 'var(--pn-bg)', border: '1px solid var(--pn-border)', borderRadius: 999, padding: '3px 10px' }}>
-              {ROLE_LABELS_SHORT[r]} · {roleCounts[r]}
+              {roleLabelShort(r)} · {roleCounts[r]}
             </span>
           ))}
           {savedAt && <span style={{ fontSize: 12, color: '#22c55e', marginLeft: 'auto', fontWeight: 600 }}>✓ Saved</span>}
         </div>
 
         {INTERNAL_EVENTS.map(ev => {
-          const routing = resolveInternalRouting(settings, ev.key);
+          const routing = resolveInternalRouting(settings, ev.key, customRoleKeys);
           return (
             <div key={ev.key} style={{ border: '1px solid var(--pn-border)', borderRadius: 10, padding: '12px 14px', marginBottom: 10, background: 'var(--pn-bg)' }}>
               <div style={{ fontSize: 13.5, fontWeight: 700, color: 'var(--pn-text)' }}>{ev.label}</div>
@@ -3990,16 +4020,16 @@ function NotificationRoutingSection({ settings, updateSettings, users = [], nest
                     </tr>
                   </thead>
                   <tbody>
-                    {NOTIF_ROLES.map(role => (
+                    {roles.map(role => (
                       <tr key={role}>
                         <td style={{ padding: '3px 10px 3px 0', color: 'var(--pn-text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {ROLE_LABELS_SHORT[role]} <span style={{ color: 'var(--pn-text-faint)', fontWeight: 500 }}>· {roleCounts[role]}</span>
+                          {roleLabelShort(role)} <span style={{ color: 'var(--pn-text-faint)', fontWeight: 500 }}>· {roleCounts[role]}</span>
                         </td>
                         {NOTIF_CHANNELS.map(ch => (
                           <td key={ch} style={{ padding: '3px 8px', textAlign: 'center' }}>
                             <button type="button" disabled={saving}
                               onClick={() => toggleInternal(ev.key, role, ch)}
-                              title={`${ROLE_LABELS_SHORT[role]} · ${CHANNEL_LABELS[ch]}`}
+                              title={`${roleLabelShort(role)} · ${CHANNEL_LABELS[ch]}`}
                               style={cellBtn(routing[role][ch])}>
                               {routing[role][ch] ? '✓' : ''}
                             </button>

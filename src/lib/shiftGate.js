@@ -79,3 +79,48 @@ export function offClockTechNames(techNames, attendance) {
 export function attendanceKey(now = new Date()) {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
+
+// Set of lowercased names with ANY attendance entry today — i.e. clocked in at
+// some point, even if since clocked out. Feeds the "working today" union.
+export function clockedInTodayNameSet(attendance) {
+  const set = new Set();
+  ((attendance && attendance.entries) || []).forEach(e => {
+    if (e && e.employeeName) set.add(norm(e.employeeName));
+  });
+  return set;
+}
+
+// Is a tech scheduled to work `dayKey` per their profile workDays? A day that's
+// PRESENT uses its `on` flag; a day that's ABSENT defaults to ON *if the tech
+// has any workDays configured at all* — because the profile editor shows
+// untouched days as "On" (DEFAULT_WORK_DAY) and only writes the days you toggle
+// OFF. With NO workDays at all the tech is "unknown" → off, so the schedule
+// filters/split can still narrow. (Treating an absent day as off was the bug
+// that made techs who'd only marked their days-off disappear entirely.)
+export function isScheduledOnDay(workDays, dayKey) {
+  const hasAny = !!workDays && Object.keys(workDays).length > 0;
+  const d = workDays && workDays[dayKey];
+  return d ? d.on !== false : hasAny;
+}
+
+// Decide a tech's "working today / working right now" status for the schedule's
+// quick filters + working/off column split. UNION of the time clock and the
+// profile schedule, so the buttons reflect who's actually here today AND respect
+// set schedules on days nobody's clocked in. Pure — signals pre-computed by caller:
+//   clockedInToday / clockedInNow — from today's attendance doc (today only).
+//   hasShift       — the tech has any configured work-day hours.
+//   shiftOnToday   — the profile schedules the viewed day (see isScheduledOnDay).
+//   withinShiftNow — current time falls inside today's shift window.
+//   allDayOff      — an all-day time-off block covers the date.
+//   blockedNow     — a time-off block covers the current moment.
+//   isToday        — the viewed date is today (clock + "now" only apply then).
+// Clocked in ⇒ working (they're physically here), even on a day the profile
+// marks off. Otherwise fall back to the profile schedule (minus time off). With
+// neither signal the tech is "unknown" (off) so the filter/split can narrow.
+export function techWorkStatus(s = {}) {
+  const scheduledToday = !s.allDayOff && !!s.hasShift && !!s.shiftOnToday;
+  const today = (!!s.isToday && !!s.clockedInToday) || scheduledToday;
+  const now = (!!s.isToday && !!s.clockedInNow)
+    || (!!s.isToday && scheduledToday && !!s.withinShiftNow && !s.blockedNow);
+  return { today, now };
+}
