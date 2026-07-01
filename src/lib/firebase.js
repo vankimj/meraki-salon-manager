@@ -75,11 +75,16 @@ const skipPersist = isPhoneUA || forceNoPersist || USE_EMULATORS;
 
 let _db;
 if (skipPersist) {
-  _db = getFirestore(app);
+  // No persistence, but still auto-detect long-polling so the Firestore stream
+  // falls back when Safari/ITP or a proxy blocks the WebChannel — otherwise
+  // onSnapshot never fires and pages hang on "Loading…" / render empty. (Phone
+  // UAs land here, and mobile Safari is the most exposed.)
+  _db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
 } else {
   try {
     _db = initializeFirestore(app, {
       localCache: persistentLocalCache({}),
+      experimentalAutoDetectLongPolling: true,
     });
   } catch (e) {
     console.warn('[Firestore] persistent cache init failed, falling back to memory:', e?.message);
