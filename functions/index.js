@@ -12030,7 +12030,10 @@ exports.getPublicStore = onCall({ cors: true }, async (request) => {
   if (!/^[a-z0-9-]{1,64}$/.test(tid)) throw new HttpsError('invalid-argument', 'Invalid tenantId');
   const db = getFirestore();
   const [snap, brand, conn] = await Promise.all([
-    db.collection(`tenants/${tid}/storeProducts`).get(),
+    // Bounded — this payload carries inline base64 images and is fetched on
+    // every public storefront/portal view; a catalog never legitimately needs
+    // hundreds of live products.
+    db.collection(`tenants/${tid}/storeProducts`).limit(200).get(),
     tenantBranding(db, tid),
     loadStoreConnect(db, tid),
   ]);

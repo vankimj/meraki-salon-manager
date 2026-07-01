@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../lib/firebase';
 import { useApp } from '../context/AppContext';
-import { fetchClient, saveClient, fetchClientAppointments, subscribeToChat, sendChatMessage, fetchMyProgramsByEmail, fetchMyProgress, fetchClientStoreOrders } from '../lib/firestore';
+import { fetchClient, saveClient, fetchClientAppointments, subscribeToChat, sendChatMessage, fetchMyProgramsByEmail, fetchMyProgress, fetchClientStoreOrders, fetchPublicStore } from '../lib/firestore';
 import { resizeImg } from '../utils/helpers';
 import { programStats } from '../lib/programs';
 import TrendChart from './TrendChart';
@@ -44,13 +44,19 @@ export default function ClientPortal() {
     return unsub;
   }, [portalClientId]); // eslint-disable-line
 
+  // The store catalog is identical for every client and doesn't depend on
+  // email — fetch it once per PT portal (cached in-memory), NOT coupled to the
+  // email dep below where it would re-download the multi-MB catalog whenever
+  // gUser?.email resolves late or changes.
+  useEffect(() => {
+    if (!isPT) return;
+    fetchPublicStore().then(setStore).catch(() => setStore({ storeEnabled: false, items: [] }));
+  }, [isPT]);
+
   useEffect(() => {
     if (!isPT) return;
     fetchMyProgramsByEmail(gUser?.email).then(setPrograms).catch(() => setPrograms([]));
     fetchMyProgress().then(setProgress).catch(() => setProgress([]));
-    httpsCallable(functions, 'getPublicStore')({})
-      .then(res => setStore(res?.data || { storeEnabled: false, items: [] }))
-      .catch(() => setStore({ storeEnabled: false, items: [] }));
     if (gUser?.email) fetchClientStoreOrders(gUser.email).then(setOrders).catch(() => setOrders([]));
   }, [isPT, gUser?.email]);
 

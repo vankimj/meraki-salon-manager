@@ -1216,10 +1216,14 @@ export async function purgeStoreProduct(id) {
 }
 
 // Orders are read-only in the app (the webhook writes them via Admin SDK).
-export function subscribeStoreOrders(cb) {
-  return onSnapshot(STORE_ORDERS_COL, snap => {
-    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+// Bounded to the most recent ORDERS_PAGE so the admin Orders tab can't fan out
+// to an unbounded read + non-virtualized table as a store accumulates orders
+// over years. A solo trainer's product store won't approach this for a long
+// time; if one ever does, move the headline rollup to a server-side aggregate.
+const ORDERS_PAGE = 1000;
+export function subscribeStoreOrders(cb, max = ORDERS_PAGE) {
+  return onSnapshot(query(STORE_ORDERS_COL, orderBy('createdAt', 'desc'), limit(max)), snap => {
+    const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     cb(list);
   });
 }
@@ -1231,6 +1235,24 @@ export async function fetchClientStoreOrders(email) {
   const snap = await getDocs(query(STORE_ORDERS_COL, where('clientEmail', '==', e)));
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+// Public storefront catalog (getPublicStore). The response carries inline
+// base64 product images, so it can run to several MB — cache it in-memory per
+// tenant for a short TTL so repeated portal/storefront mounts in one session
+// don't re-download the whole catalog. Shared by ClientPortal + ProductShop.
+const _publicStoreCache = {}; // tid -> { at, promise }
+export function fetchPublicStore(tid = TENANT_ID, { ttlMs = 120000, force = false } = {}) {
+  const key = String(tid || TENANT_ID);
+  const hit = _publicStoreCache[key];
+  if (!force && hit && (Date.now() - hit.at) < ttlMs) return hit.promise;
+  const call = callFn('getPublicStore');
+  const promise = (call ? call({ tid: key }) : Promise.resolve({ data: { storeEnabled: false, items: [] } }))
+    .then(res => res?.data || { storeEnabled: false, items: [] });
+  // Drop the entry on failure so the next caller retries instead of caching a reject.
+  promise.catch(() => { if (_publicStoreCache[key]?.promise === promise) delete _publicStoreCache[key]; });
+  _publicStoreCache[key] = { at: Date.now(), promise };
+  return promise;
 }
 
 // ── Personal-training vertical collections ─────────────
@@ -2790,6 +2812,13 @@ export async function fetchBookingConfig() {
 
 export async function saveBookingConfig(data) {
   await setDoc(BOOKING_CONFIG_REF, { ...data, updatedAt: new Date().toISOString() });
+}
+
+// Merge-safe partial update of the booking config — only touches the given
+// fields (e.g. { categoryDisplay }) so a targeted write from ServicesAdmin
+// can't clobber the rest of the config (enabled / flow / removalPrice / …).
+export async function updateBookingConfig(patch) {
+  await setDoc(BOOKING_CONFIG_REF, { ...patch, updatedAt: new Date().toISOString() }, { merge: true });
 }
 
 // ── Client chat ────────────────────────────────────────

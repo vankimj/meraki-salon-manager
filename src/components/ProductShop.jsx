@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../lib/firebase';
+import { fetchPublicStore } from '../lib/firestore';
 
 // Public product shop. Reached at `/?store` (optionally `&tid=`). Reads safe
 // product fields via getPublicStore; "Buy" collects an email and mints a
@@ -28,8 +29,8 @@ export default function ProductShop() {
   const [buying, setBuying]   = useState(null); // product being purchased
 
   useEffect(() => {
-    httpsCallable(functions, 'getPublicStore')({ tid })
-      .then(res => setData(res?.data || { items: [], storeEnabled: false }))
+    fetchPublicStore(tid)
+      .then(setData)
       .catch(e => setError(e?.message || 'Could not load the shop.'))
       .finally(() => setLoading(false));
   }, [tid]);

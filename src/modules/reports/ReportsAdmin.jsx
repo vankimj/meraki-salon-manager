@@ -3498,20 +3498,31 @@ function MembershipsReport() {
 }
 
 // ── Client Value (lifetime value) — canned report ──
+// This report pulls a wide (10-year) window of receipts + appointments — a
+// genuinely large read. Cache the computed list in-module for a short TTL so
+// flipping into the Clients tab repeatedly doesn't refetch all history each
+// time; the first open per session still does the one full read.
+let _clientValueCache = null; // { at, list }
+const CLIENT_VALUE_TTL = 5 * 60 * 1000;
 function ClientValueReport() {
   const { terms } = useApp();
-  const [list, setList] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [list, setList] = useState(() => _clientValueCache?.list ?? null);
+  const [loading, setLoading] = useState(() => !_clientValueCache);
   const money = (n) => `$${Math.round(Number(n) || 0).toLocaleString()}`;
   const clientLabel = terms?.clientPlural || 'clients';
 
   useEffect(() => {
+    // Fresh cache → the lazy initializers above already seeded list + loading
+    // from it; nothing to fetch or set.
+    if (_clientValueCache && (Date.now() - _clientValueCache.at) < CLIENT_VALUE_TTL) return;
     setLoading(true);
     const start = startOf(3650), end = todayStr();
     Promise.all([fetchReceiptsByRange(start, end).catch(() => []), fetchAppointmentsByRange(start, end).catch(() => [])])
       .then(([rs, as]) => {
         const m = computeMetrics(buildTransactions(rs, as));
-        setList(computeClientValue(m.byClient));
+        const l = computeClientValue(m.byClient);
+        _clientValueCache = { at: Date.now(), list: l };
+        setList(l);
       })
       .catch(() => setList([]))
       .finally(() => setLoading(false));

@@ -29,12 +29,16 @@ export default function StoreAdmin() {
   const [edit,     setEdit]     = useState(null);   // product obj or 'new'
   const [sell,     setSell]     = useState(null);   // product to ring up
 
+  // Hooks must run on every render — the "Preview as" role flip toggles isAdmin
+  // without a remount, so an early return ABOVE these effects throws "rendered
+  // fewer hooks than expected" (the #458 bug class). Gate AFTER the hooks; the
+  // effects no-op (and tear down their listeners) when isAdmin is false.
+  useEffect(() => { if (!isAdmin) return undefined; return subscribeStoreProducts(setProducts); }, [isAdmin]);
+  useEffect(() => { if (!isAdmin) return undefined; return subscribeStoreOrders(setOrders); }, [isAdmin]);
+
   if (!isAdmin) {
     return <div style={{ padding: 40, textAlign: 'center', color: 'var(--pn-text-muted)' }}>Admin only.</div>;
   }
-
-  useEffect(() => subscribeStoreProducts(setProducts), []);
-  useEffect(() => subscribeStoreOrders(setOrders), []);
 
   const connectReady = settings?.stripeConnect?.chargesEnabled === true;
   const feePct = Math.min(100, Math.max(0, Number(settings?.platformFeePercent) || 0));
@@ -293,7 +297,9 @@ function ProductEditor({ product, onSave, onClose }) {
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const dataUrl = await resizeImg(file, 800, 800, 0.82);
+      // Product images ride inline (base64) in the catalog payload that
+      // getPublicStore ships on every storefront/portal view — keep them small.
+      const dataUrl = await resizeImg(file, 600, 600, 0.72);
       setImage(dataUrl);
     } catch {
       setErr('Could not process that image');
