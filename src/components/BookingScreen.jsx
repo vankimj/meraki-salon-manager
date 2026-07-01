@@ -1234,6 +1234,7 @@ export default function BookingScreen() {
             onAddGuest={addGuest} onRemoveGuest={removeGuest} onUpdateGuest={updateGuest}
             onProceed={() => setStep(2)}
             onBack={() => { setStep(0); setFlow(null); setGroupGuests([]); }}
+            categoryDisplay={cfg?.categoryDisplay}
           />
         )}
         {step === 2 && flow === 'group' && (
@@ -1256,6 +1257,7 @@ export default function BookingScreen() {
             onProceed={() => setStep(2)}
             onSwitchFlow={() => { setStep(0); setCart([]); setCartTech(undefined); setCartDate(''); setCartSlot(null); }}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
+            categoryDisplay={cfg?.categoryDisplay}
           />
         )}
         {step === 1 && flow === 'tech-first' && (
@@ -1292,6 +1294,7 @@ export default function BookingScreen() {
             onProceed={() => setStep(3)}
             techFirstNote={pickedTech ? `Booking with ${pickedTech.name}. Showing only the services they offer.` : null}
             removalPrice={Number(cfg?.removalPrice ?? 15)}
+            categoryDisplay={cfg?.categoryDisplay}
           />
         )}
         {step === 3 && (
@@ -1538,7 +1541,7 @@ function GChip({ active, onClick, children }) {
 // guest flow uses (photos / descriptions / prices), plus that guest's name,
 // contact, and stylist. A roster bar across the top shows everyone and lets
 // the organizer jump between pages or add/remove guests.
-function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, removalPrice = 15, removalPromptMode, editorial, form, onFormChange, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack }) {
+function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, removalPrice = 15, removalPromptMode, editorial, form, onFormChange, onAddGuest, onRemoveGuest, onUpdateGuest, onProceed, onBack, categoryDisplay }) {
   const idx  = Math.max(0, Math.min(guestIdx, guests.length - 1));
   const g    = guests[idx];
   const isOrg = idx === 0;
@@ -1691,7 +1694,7 @@ function GroupGuestsStep({ services, allTechs, guests, guestIdx, setGuestIdx, re
           ))}
         </div>
       )}
-      <ServiceCatalog key={g.id} services={services} cart={g.cart} onAdd={onAddService} onRemove={(svc) => rmService(svc.id)} />
+      <ServiceCatalog key={g.id} services={services} cart={g.cart} onAdd={onAddService} onRemove={(svc) => rmService(svc.id)} categoryDisplay={categoryDisplay} />
 
       {/* Stylist */}
       <div style={SECTION}>Stylist{extraLanes.length > 0 ? ' (for the main service)' : ''}</div>
@@ -1930,7 +1933,7 @@ function Step1PickStylist({ techs, picked, onPick, onProceed, onSwitchFlow }) {
 }
 
 // ── Step 1: Cart (browse + add) ────────────────────────
-function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, techFirstNote, removalPrice = 15 }) {
+function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, techFirstNote, removalPrice = 15, categoryDisplay }) {
   // Cart total includes the per-item removal charge for services that
   // canRequireRemoval AND have the customer-confirmed `removal` flag set.
   // Same formula Step 5 uses; we mirror it here so the sticky bar's price
@@ -1956,7 +1959,7 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
         </button>
       )}
       <div style={{ marginBottom: 12 }} />
-      <ServiceCatalog services={services} cart={cart} onAdd={onAdd}
+      <ServiceCatalog services={services} cart={cart} onAdd={onAdd} categoryDisplay={categoryDisplay}
         onRemove={(svc) => { const item = cart.find(i => i.service.id === svc.id); if (item) onRemove(item.id); }} />
 
       {/* Sticky cart strip */}
@@ -1992,42 +1995,34 @@ function Step1Cart({ services, cart, onAdd, onRemove, onProceed, onSwitchFlow, t
   );
 }
 
-function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd, onRemove, blockedReason }) {
-  // Display state for the Add button:
-  //   • null              → enabled "+ Add"
-  //   • 'duplicate'       → "✓ Added" (already chosen) — tap again to remove
-  //   • 'category-exclusive' → greyed "+ Add" (another exclusive service in the same category is in cart)
-  const isBlocked = !!blockedReason;
-  const isInCart  = blockedReason === 'duplicate';
+function ServiceRow({ svc, color, divider, inCart, blockedReason, onOpen }) {
+  // Clickable tile — tapping opens the service detail modal (photo, variants,
+  // add). inCart → "✓ Added". 'category-exclusive' → another exclusive service
+  // in the same category is in cart, so this is greyed + non-interactive (only
+  // happens when the category ISN'T configured to hide siblings).
+  const isExclBlocked = blockedReason === 'category-exclusive';
   const [hover,  setHover]  = useState(false);
   const [imgErr, setImgErr] = useState(false);
   const hasImg = svc.image && !imgErr;
   const opts   = svc.options || [];
   const hasOptions = opts.length > 0;
-
   const minOptPrice = hasOptions
-    ? opts.reduce((m, o) => {
-        const { price } = resolveServicePricing(svc, o);
-        return m == null || price < m ? price : m;
-      }, null)
+    ? opts.reduce((m, o) => { const { price } = resolveServicePricing(svc, o); return m == null || price < m ? price : m; }, null)
     : null;
-
-  function handleAddClick(e) {
-    e.stopPropagation();
-    if (isInCart) { onRemove?.(); return; }   // tap an added service to remove it
-    const opt = hasOptions ? (selectedOption || opts[0]) : null;
-    onAdd(opt);
-  }
 
   return (
     <div
+      onClick={() => { if (!isExclBlocked) onOpen(svc); }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      title={isExclBlocked ? `Already chose a service in ${svc.category}` : undefined}
       style={{
         display: 'flex', alignItems: 'flex-start', gap: 16,
         textAlign: 'left', fontFamily: 'inherit', width: '100%',
-        background: hover ? '#fafafa' : '#fff',
+        background: (hover && !isExclBlocked) ? '#fafafa' : '#fff',
         borderBottom: divider ? '1px solid #f1f1f1' : 'none',
         padding: '18px 20px',
+        cursor: isExclBlocked ? 'not-allowed' : 'pointer',
+        opacity: isExclBlocked ? 0.5 : 1,
         transition: 'background .15s',
       }}>
       {/* Thumbnail */}
@@ -2040,66 +2035,89 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 15, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px', marginBottom: svc.description ? 6 : 0 }}>{svc.name}</div>
         {svc.description && (
-          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-line' }}>
-            {svc.description}
-          </div>
+          <div style={{ fontSize: 13, color: '#666', lineHeight: 1.55, whiteSpace: 'pre-line' }}>{svc.description}</div>
         )}
-
-        {hasOptions && (
-          <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 8 }}>
-            {opts.map(opt => {
-              const isOptSel = selectedOption?.id === opt.id;
-              const { price, duration } = resolveServicePricing(svc, opt);
-              return (
-                <button key={opt.id} onClick={e => { e.stopPropagation(); onSelectOption(opt); }}
-                  style={{
-                    background: isOptSel ? color : '#fff',
-                    border: `1.5px solid ${isOptSel ? color : '#e0e0e0'}`,
-                    borderRadius: 12, padding: '10px 12px',
-                    fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left',
-                    color: isOptSel ? '#fff' : '#1a1a1a',
-                    transition: 'background .15s, border-color .15s',
-                  }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 5 }}>
-                    {isOptSel && <span style={{ fontSize: 11 }}>✓</span>}
-                    {opt.name || 'Option'}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: isOptSel ? 0.95 : 0.65, fontWeight: 500 }}>
-                    ${price}{opt.priceFrom ? '+' : ''} · {duration} min
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {!hasOptions && (
-          <div style={{ marginTop: 8, fontSize: 12, color: '#999', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
-          </div>
-        )}
+        <div style={{ marginTop: 8, fontSize: 12, color: '#999', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>⏱ {formatDuration(svc.duration, svc.durationMin)}</span>
+          {hasOptions && <span style={{ color: '#bbb' }}>· {opts.length} options</span>}
+        </div>
       </div>
 
       <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 10, paddingTop: 2 }}>
         <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.2px', whiteSpace: 'nowrap' }}>
           {hasOptions ? `from $${minOptPrice}` : formatPrice(svc)}
         </span>
-        <button onClick={handleAddClick} disabled={isBlocked && !isInCart}
-          title={blockedReason === 'category-exclusive' ? `Already chose a service in ${svc.category}` : (isInCart ? 'Tap to remove' : undefined)}
-          style={{
-            fontSize: 12, fontWeight: 700,
-            color: isInCart ? 'var(--tm-primary, #2D7A5F)' : (isBlocked ? '#aaa' : '#fff'),
-            border: isInCart ? '1.5px solid var(--tm-primary, #2D7A5F)' : (isBlocked ? '1px solid #e5e5e5' : 'none'),
-            background: isInCart ? (hover ? '#fdecec' : '#eaf5ef') : (isBlocked ? '#f4f4f4' : 'var(--tm-primary, #2D7A5F)'),
-            padding: '7px 16px', borderRadius: 999,
-            letterSpacing: '.04em', whiteSpace: 'nowrap',
-            boxShadow: (isBlocked || isInCart) ? 'none' : '0 2px 6px rgba(0,0,0,.10)',
-            cursor: (isBlocked && !isInCart) ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-            opacity: blockedReason === 'category-exclusive' ? 0.55 : 1,
-            transition: 'background .15s, color .15s',
-          }}>
-          {isInCart ? (hover ? 'Remove ✕' : '✓ Added') : '+ Add'}
-        </button>
+        <span style={{
+          fontSize: 12, fontWeight: 700, letterSpacing: '.04em', whiteSpace: 'nowrap',
+          padding: '7px 16px', borderRadius: 999,
+          color: inCart ? 'var(--tm-primary, #2D7A5F)' : (isExclBlocked ? '#aaa' : '#fff'),
+          border: inCart ? '1.5px solid var(--tm-primary, #2D7A5F)' : (isExclBlocked ? '1px solid #e5e5e5' : 'none'),
+          background: inCart ? '#eaf5ef' : (isExclBlocked ? '#f4f4f4' : 'var(--tm-primary, #2D7A5F)'),
+          boxShadow: (inCart || isExclBlocked) ? 'none' : '0 2px 6px rgba(0,0,0,.10)',
+        }}>
+          {inCart ? '✓ Added' : '+ Add'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Service detail modal — opens when a customer taps a service. Shows the photo,
+// description, the pick-one option-variants, and Add/Remove. (Variants only;
+// add-on service stacking is a deferred follow-up.)
+function ServiceDetailModal({ svc, color, inCart, cartOption, onAdd, onRemove, onClose }) {
+  const opts = svc.options || [];
+  const hasOptions = opts.length > 0;
+  const [sel, setSel] = useState(cartOption || (hasOptions ? opts[0] : null));
+  const [imgErr, setImgErr] = useState(false);
+  const hasImg = svc.image && !imgErr;
+  const { price, duration } = resolveServicePricing(svc, sel);
+  const showFrom = sel ? !!sel.priceFrom : !!svc.priceFrom;
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', fontFamily: 'inherit', boxShadow: '0 20px 60px rgba(0,0,0,.3)' }}>
+        <div style={{ position: 'relative', height: 220, background: hasImg ? '#f0f0f0' : `${color}14`, display: 'flex', alignItems: 'center', justifyContent: 'center', borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden' }}>
+          {hasImg
+            ? <img src={svc.image} alt={svc.name} onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <span style={{ fontSize: 96 }}>{CATEGORY_ICONS[svc.category] || '💅'}</span>}
+          <button onClick={onClose} aria-label="Close" style={{ position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'inherit' }}>×</button>
+        </div>
+        <div style={{ padding: '22px 24px 24px' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.12em', textTransform: 'uppercase', color, marginBottom: 6 }}>{svc.category}</div>
+          <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', letterSpacing: '-.3px' }}>{svc.name}</div>
+          {svc.description && <div style={{ fontSize: 14, color: '#666', lineHeight: 1.6, marginTop: 8, whiteSpace: 'pre-line' }}>{svc.description}</div>}
+
+          {hasOptions && (
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#888', letterSpacing: '.06em', textTransform: 'uppercase', marginBottom: 10 }}>Choose an option</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: 8 }}>
+                {opts.map(opt => {
+                  const isSel = sel?.id === opt.id;
+                  const p = resolveServicePricing(svc, opt);
+                  return (
+                    <button key={opt.id} onClick={() => setSel(opt)} style={{
+                      background: isSel ? color : '#fff', border: `1.5px solid ${isSel ? color : '#e0e0e0'}`, borderRadius: 12,
+                      padding: '11px 13px', fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left',
+                      color: isSel ? '#fff' : '#1a1a1a', transition: 'background .15s, border-color .15s' }}>
+                      <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 5 }}>{isSel && <span style={{ fontSize: 11 }}>✓</span>}{opt.name || 'Option'}</div>
+                      <div style={{ fontSize: 11, opacity: isSel ? 0.95 : 0.65, fontWeight: 500 }}>${p.price}{opt.priceFrom ? '+' : ''} · {p.duration} min</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a' }}>${price}{showFrom ? '+' : ''}</div>
+              <div style={{ fontSize: 12, color: '#999' }}>⏱ {duration} min</div>
+            </div>
+            {inCart
+              ? <button onClick={() => { onRemove(); onClose(); }} style={{ padding: '13px 24px', borderRadius: 999, border: '1.5px solid #d33', background: '#fff', color: '#d33', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Remove from booking</button>
+              : <button onClick={() => { onAdd(sel); onClose(); }} style={{ padding: '13px 28px', borderRadius: 999, border: 'none', background: 'var(--tm-primary, #2D7A5F)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', boxShadow: '0 2px 8px rgba(0,0,0,.15)' }}>Add to booking</button>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2108,36 +2126,49 @@ function ServiceRow({ svc, color, selectedOption, divider, onSelectOption, onAdd
 // Shared rich service picker (photos / descriptions / prices) used by both the
 // single-guest flow (Step1Cart) and each group-guest page. `cart` is the
 // person's current selection (used to show ✓ Added / block duplicates).
-function ServiceCatalog({ services, cart, onAdd, onRemove }) {
+function ServiceCatalog({ services, cart, onAdd, onRemove, categoryDisplay }) {
   const groups = useMemo(() => groupByCategory(services || []), [services]);
-  const [pendingOptions, setPendingOptions] = useState({});
+  const [detailSvc, setDetailSvc] = useState(null);
+  const cdConfig = categoryDisplay || {};
+  const detailInCart = detailSvc ? cart.find(i => i.service.id === detailSvc.id) : null;
   return (
     <div>
       {groups.map(({ category, services: svcs }) => {
         const color = CATEGORY_COLORS[category] || '#1a1a1a';
+        // Per-category "hide others when picked": once an exclusive service in
+        // this category is in the cart, drop the now-blocked siblings instead of
+        // greying them. Default (no config) = show all → grey-out as before.
+        const hideOthers = !!cdConfig[category]?.hideOthersOnSelect;
+        const visible = hideOthers ? svcs.filter(s => whyCantAddService(s, cart) !== 'category-exclusive') : svcs;
+        if (!visible.length) return null;
         return (
           <div key={category} style={{ marginBottom: 28 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, paddingBottom: 10, borderBottom: '1px solid #ececec' }}>
               <span style={{ fontSize: 16, fontWeight: 700, color: '#1a1a1a', letterSpacing: '-.1px' }}>{category}</span>
-              <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
+              <span style={{ fontSize: 11, color: '#bbb', fontWeight: 500 }}>{visible.length} {visible.length === 1 ? 'service' : 'services'}</span>
             </div>
             <div style={{ background: '#fff', borderRadius: 14, border: '1px solid #ececec', overflow: 'hidden' }}>
-              {svcs.map((s, i) => (
+              {visible.map((s, i) => (
                 <ServiceRow key={s.id} svc={s} color={color}
-                  selectedOption={pendingOptions[s.id] || null}
-                  divider={i < svcs.length - 1}
+                  divider={i < visible.length - 1}
+                  inCart={cart.some(it => it.service.id === s.id)}
                   blockedReason={whyCantAddService(s, cart)}
-                  onSelectOption={(opt) => setPendingOptions(p => ({ ...p, [s.id]: opt }))}
-                  onRemove={onRemove ? () => onRemove(s) : undefined}
-                  onAdd={(opt) => {
-                    onAdd(s, opt || pendingOptions[s.id] || (s.options?.[0] ?? null));
-                    setPendingOptions(p => ({ ...p, [s.id]: null }));
-                  }} />
+                  onOpen={setDetailSvc} />
               ))}
             </div>
           </div>
         );
       })}
+      {detailSvc && (
+        <ServiceDetailModal
+          svc={detailSvc}
+          color={CATEGORY_COLORS[detailSvc.category] || '#1a1a1a'}
+          inCart={!!detailInCart}
+          cartOption={detailInCart?.option || null}
+          onAdd={(opt) => onAdd(detailSvc, opt || detailSvc.options?.[0] || null)}
+          onRemove={() => onRemove && onRemove(detailSvc)}
+          onClose={() => setDetailSvc(null)} />
+      )}
     </div>
   );
 }

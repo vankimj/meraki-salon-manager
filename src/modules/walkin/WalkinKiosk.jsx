@@ -297,6 +297,7 @@ export default function WalkinKiosk() {
         <div style={{ minWidth: 320 }}>
           <WaitlistPanel
             waiting={waiting}
+            clients={clients}
             now={now}
             onAdd={() => setShowAdd(true)}
             onSeat={(entry) => setSeatPrompt({ entry, techName: next?.techName })}
@@ -420,7 +421,31 @@ function NextUpHero({ next, hasWalkIn, onSeatNext, fullscreen }) {
   );
 }
 
-function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
+// Photo-on-file at check-in: shows the client's stored profile photo so staff
+// recognize who's waiting. Staff-only surface (clients are staff-readable);
+// no biometrics, no matching — just the picture the client already provided.
+// Walk-ins with no clientId fall back to coloured initials.
+function ClientAvatar({ clientId, name, clients = [], size = 36, fullscreen }) {
+  const [err, setErr] = useState(false);
+  const client = clientId ? clients.find(c => c.id === clientId) : null;
+  const photo = client?.picture || '';
+  const border = fullscreen ? '1.5px solid rgba(255,255,255,.25)' : '1.5px solid var(--pn-border)';
+  if (photo && !err) {
+    return <img src={photo} alt="" onError={() => setErr(true)}
+      style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0, display: 'block', border }} />;
+  }
+  const nm = (client?.name || name || 'Walk-in').trim();
+  const initials = nm.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const colors = ['#4A7DB5', '#2D7A5F', '#B57A4A', '#7A4AB5', '#B54A7A', '#3D95CE', '#22C55E', '#F59E0B', '#EF4444', '#8B5CF6'];
+  const bg = colors[(nm.charCodeAt(0) || 0) % colors.length] || '#888';
+  return (
+    <div style={{ width: size, height: size, borderRadius: '50%', background: bg, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: size * 0.36, fontWeight: 600, color: '#fff', border }}>
+      {initials}
+    </div>
+  );
+}
+
+function WaitlistPanel({ waiting, clients = [], now, onAdd, onSeat, onRemove, fullscreen }) {
   return (
     <div style={{
       background: fullscreen ? 'rgba(255,255,255,.06)' : 'var(--pn-surface)',
@@ -454,15 +479,18 @@ function WaitlistPanel({ waiting, now, onAdd, onSeat, onRemove, fullscreen }) {
                 border: fullscreen ? '1px solid rgba(255,255,255,.1)' : `1px solid ${urgent ? '#fca5a5' : 'var(--pn-border)'}`,
                 borderRadius: 10,
               }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>{i === 0 ? '👉 ' : ''}{q.clientName || 'Walk-in'}</span>
-                    {q.techName && q.techName !== 'Any' && (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-danger)' }}>★ {q.techName}</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)' }}>
-                    {q.serviceName || 'service'} · waiting {wait} min
+                <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <ClientAvatar clientId={q.clientId} name={q.clientName} clients={clients} size={36} fullscreen={fullscreen} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: fullscreen ? '#fff' : 'var(--pn-text)' }}>{i === 0 ? '👉 ' : ''}{q.clientName || 'Walk-in'}</span>
+                      {q.techName && q.techName !== 'Any' && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--pn-danger)' }}>★ {q.techName}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: fullscreen ? '#a99cc9' : 'var(--pn-text-muted)' }}>
+                      {q.serviceName || 'service'} · waiting {wait} min
+                    </div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import Button from '../../components/Button';
-import { fetchServices, createService, saveService, deleteService, servicesExist, clearServices } from '../../lib/firestore';
+import { fetchServices, createService, saveService, deleteService, servicesExist, clearServices, fetchBookingConfig, updateBookingConfig } from '../../lib/firestore';
 import { groupByCategory, formatPrice, formatDuration, validateService, blankService } from '../../utils/serviceHelpers';
 import TrashButton from '../../components/TrashButton';
 import { SEED_SERVICES, CATEGORY_ORDER } from '../../data/seedServices';
@@ -17,6 +17,7 @@ import { fetchOnboarding } from '../../lib/onboarding';
 export default function ServicesAdmin() {
   const { isTech, showToast, settings } = useApp();
   const [services,   setServices]   = useState([]);
+  const [categoryDisplay, setCategoryDisplay] = useState({}); // bookingConfig.categoryDisplay — per-category { hideOthersOnSelect }
   const [loading,    setLoading]    = useState(true);
   const [editing,    setEditing]    = useState(null);
   const [saving,     setSaving]     = useState(false);
@@ -47,10 +48,27 @@ export default function ServicesAdmin() {
         svcs = await fetchServices();
       }
       setServices(svcs);
+      try { const c = await fetchBookingConfig(); setCategoryDisplay(c?.categoryDisplay || {}); } catch { /* config optional */ }
     } catch (e) {
       console.error('[ServicesAdmin] load failed:', e);
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Per-category booking-display toggle: hide the other options in a pick-one
+  // category once one is chosen (vs. the default grey-out). Merge-safe write so
+  // it never clobbers the rest of the booking config.
+  async function toggleCategoryHide(category) {
+    const cur  = !!categoryDisplay[category]?.hideOthersOnSelect;
+    const next = { ...categoryDisplay, [category]: { ...(categoryDisplay[category] || {}), hideOthersOnSelect: !cur } };
+    setCategoryDisplay(next);
+    try {
+      await updateBookingConfig({ categoryDisplay: next });
+      showToast(!cur ? `${category}: other options will hide when one is picked` : `${category}: other options will gray out`);
+    } catch {
+      setCategoryDisplay(categoryDisplay); // revert on failure
+      showToast('Could not save — try again');
     }
   }
 
@@ -311,9 +329,19 @@ export default function ServicesAdmin() {
       <style>{`@keyframes svcFade{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}`}</style>
       {groups.map(({ category, services: svcs }) => (
         <div key={category} style={{ background: 'var(--pn-surface)', borderRadius: 12, border: '1px solid var(--pn-border)', marginBottom: 14, overflow: 'hidden' }}>
-          <div style={{ padding: '12px 18px 10px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+          <div style={{ padding: '12px 18px 10px', borderBottom: '1px solid var(--pn-border)', background: 'var(--pn-bg)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
             <span style={{ fontFamily: "'Cinzel', serif", fontSize: 12, fontWeight: 600, color: '#2D7A5F', letterSpacing: '.16em', textTransform: 'uppercase' }}>{category}</span>
-            <span style={{ fontFamily: "'Cinzel', serif", fontSize: 10, fontWeight: 500, color: 'var(--pn-text-faint)', letterSpacing: '.12em' }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              {!isTech && svcs.some(s => s.categoryExclusive) && (
+                <label onClick={e => e.stopPropagation()}
+                  title="Pick-one category: when a client picks one option while booking, hide the other options here instead of graying them out."
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 10.5, color: 'var(--pn-text-muted)', letterSpacing: '.04em', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  <span>Hide others when picked</span>
+                  <Toggle active={!!categoryDisplay[category]?.hideOthersOnSelect} onChange={() => toggleCategoryHide(category)} />
+                </label>
+              )}
+              <span style={{ fontFamily: "'Cinzel', serif", fontSize: 10, fontWeight: 500, color: 'var(--pn-text-faint)', letterSpacing: '.12em', whiteSpace: 'nowrap' }}>{svcs.length} {svcs.length === 1 ? 'service' : 'services'}</span>
+            </div>
           </div>
           {svcs.map((svc, i) => (
             <div key={svc.id}

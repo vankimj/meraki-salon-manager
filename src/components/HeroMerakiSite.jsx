@@ -146,8 +146,6 @@ export default function HeroMerakiSite({ webCfg, onSignIn }) {
     || 'Each of our techs brings their own hand and their own specialty. Browse the team and book the one whose work you love.';
   const visitIntro = webCfg?.visitIntro
     || 'Two blocks north of the Olentangy Trail. Parking out front and around back.';
-  const meaningDef = webCfg?.meaningDef
-    || 'When you do something with all of your soul — your creativity, your love, your full self — and leave a piece of it in your work.';
   const fbHandle   = webCfg?.facebookHandle  || 'merakicolumbus';
   const hours      = webCfg?.hours           || DEFAULT_HOURS;
   const portfolio  = (webCfg?.portfolio      && webCfg.portfolio.length      ? webCfg.portfolio      : DEFAULT_PORTFOLIO);
@@ -201,8 +199,6 @@ export default function HeroMerakiSite({ webCfg, onSignIn }) {
         walkInLine={webCfg?.walkInLine || 'Walk‑ins every day'}
       />
 
-      <Meaning definition={meaningDef} />
-
       <Services narrow={narrow} veryNarrow={veryNarrow} services={services} intro={servicesIntro} />
 
       <Portfolio narrow={narrow} portfolio={portfolio} intro={portfolioIntro} />
@@ -244,7 +240,7 @@ function Eyebrow({ children, light, style }) {
 
 function SectionHead({ eyebrow, title, sub, light }) {
   return (
-    <div style={{ textAlign: 'center', marginBottom: 80 }}>
+    <div style={{ textAlign: 'center', marginBottom: 52 }}>
       <Eyebrow light={light} style={{ display: 'block', marginBottom: 18 }}>{eyebrow}</Eyebrow>
       <h2 style={{
         fontFamily: FONT_SERIF,
@@ -384,7 +380,7 @@ function NavLink({ href, children }) {
 
 function Hero({ narrow, salonName, heroPhoto, heroCredit, established, rating, reviewCount, teamCount, heroCopy, walkInLine }) {
   return (
-    <section id="top" style={{ position: 'relative', padding: narrow ? '120px 0 60px' : '160px 0 80px', overflow: 'hidden', background: CREAM }}>
+    <section id="top" style={{ position: 'relative', padding: narrow ? '108px 0 48px' : '140px 0 56px', overflow: 'hidden', background: CREAM }}>
       <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 70% 50% at 50% 20%, rgba(193,154,74,.12), transparent 60%)', pointerEvents: 'none' }} />
       <Container style={{ display: 'grid', gridTemplateColumns: narrow ? '1fr' : '1.05fr 1fr', gap: narrow ? 48 : 64, alignItems: 'center', position: 'relative' }}>
         <div style={{ position: 'relative', zIndex: 1, order: narrow ? 1 : 0 }}>
@@ -423,7 +419,7 @@ function Hero({ narrow, salonName, heroPhoto, heroCredit, established, rating, r
           )}
         </div>
       </Container>
-      <Container style={{ marginTop: 96 }}>
+      <Container style={{ marginTop: 56 }}>
         <div style={{
           padding: '18px 0', borderTop: `1px solid ${RULE}`, borderBottom: `1px solid ${RULE}`,
           display: 'flex', justifyContent: 'space-between', gap: narrow ? 24 : 48,
@@ -456,41 +452,11 @@ function HeroSecondary({ href, children }) {
   );
 }
 
-/* ─────────────────────── meaning ────────────────────────────────── */
-
-function Meaning({ definition }) {
-  return (
-    <section style={{ padding: '120px 0', background: IVORY, textAlign: 'center' }}>
-      <Container>
-        <Eyebrow style={{ marginBottom: 32 }}>The Word</Eyebrow>
-        <div style={{
-          fontFamily: FONT_SERIF, fontStyle: 'italic', fontWeight: 300,
-          fontSize: 'clamp(54px,7vw,96px)', lineHeight: 1, color: INK, marginBottom: 24,
-        }}>
-          meraki
-        </div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 11, letterSpacing: '.32em', color: INK_FAINT, marginBottom: 38 }}>
-          / meh · rah · kee /
-        </div>
-        <p style={{
-          fontFamily: FONT_SERIF, fontStyle: 'italic', fontSize: 'clamp(22px,2.4vw,30px)',
-          fontWeight: 300, lineHeight: 1.55, color: INK_SOFT, maxWidth: 680, margin: '0 auto',
-        }}>
-          {definition}
-        </p>
-        <div style={{ margin: '48px auto 0', maxWidth: 340, opacity: .9 }}>
-          <img src={`${BRAND}/script-stacked.svg`} alt="soul · creativity · love" style={{ width: '100%', height: 'auto' }} />
-        </div>
-      </Container>
-    </section>
-  );
-}
-
 /* ─────────────────────── services ───────────────────────────────── */
 
 function Services({ veryNarrow, services, intro }) {
   return (
-    <section id="services" style={{ padding: '120px 0', background: CREAM }}>
+    <section id="services" style={{ padding: '76px 0', background: CREAM }}>
       <Container>
         <SectionHead
           eyebrow="The Menu"
@@ -550,7 +516,7 @@ function ServiceCard({ name, priceFrom, durationMin, meta, desc }) {
 
 function Portfolio({ narrow, portfolio, intro }) {
   return (
-    <section id="portfolio" style={{ padding: '120px 0', background: IVORY }}>
+    <section id="portfolio" style={{ padding: '76px 0', background: IVORY }}>
       <Container>
         <SectionHead
           eyebrow="Recent Work"
@@ -603,7 +569,7 @@ function PortfolioTile({ src, cls, narrow }) {
 
 function Reviews({ narrow, reviews, rating, reviewCount }) {
   return (
-    <section style={{ padding: '120px 0', background: INK, color: IVORY }}>
+    <section style={{ padding: '76px 0', background: INK, color: IVORY }}>
       <Container>
         <SectionHead light eyebrow="Said about us" title="What our guests carry home." />
         <div style={{
@@ -668,7 +634,7 @@ function GoogleG() {
 function Team({ veryNarrow, team, intro, webCfg }) {
   const cols = veryNarrow ? 2 : team.length > 6 ? 5 : team.length;
   return (
-    <section id="team" style={{ padding: '120px 0', background: CREAM }}>
+    <section id="team" style={{ padding: '76px 0', background: CREAM }}>
       <Container>
         <SectionHead
           eyebrow="The Studio"
@@ -750,7 +716,7 @@ function TechCard({ name, handle, photo, shape = 'rectangle', idx = 0 }) {
 
 function Instagram({ veryNarrow, igGrid, handle }) {
   return (
-    <section style={{ padding: '120px 0', background: IVORY }}>
+    <section style={{ padding: '76px 0', background: IVORY }}>
       <Container>
         <div style={{ textAlign: 'center', marginBottom: 0 }}>
           <Eyebrow style={{ display: 'block', marginBottom: 18 }}>Follow us</Eyebrow>
@@ -803,7 +769,7 @@ function IgTile({ src, handle }) {
 function Visit({ narrow, address1, address2, hours, phone, phoneHref, email, intro, mapsUrl }) {
   const directionsUrl = mapsUrl || `https://maps.google.com/?q=${encodeURIComponent(`${address1} ${address2}`)}`;
   return (
-    <section id="visit" style={{ padding: '120px 0', background: CREAM_DEEP }}>
+    <section id="visit" style={{ padding: '76px 0', background: CREAM_DEEP }}>
       <Container style={{
         display: 'grid',
         gridTemplateColumns: narrow ? '1fr' : '1fr 1fr',

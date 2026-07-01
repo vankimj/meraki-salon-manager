@@ -226,7 +226,7 @@ function SubmitForm({ onSubmitted }) {
         onChange={e => setSubject(e.target.value)}
         maxLength={200}
         placeholder="One-line summary"
-        style={input}
+        style={inputStyle}
       />
 
       <label style={lbl}>How urgent is this?</label>
@@ -247,7 +247,7 @@ function SubmitForm({ onSubmitted }) {
         maxLength={8000}
         rows={6}
         placeholder="What's going on? Recent activity, browser errors, and the screen you're on are auto-attached."
-        style={{ ...input, resize: 'vertical', minHeight: 110 }}
+        style={{ ...inputStyle, resize: 'vertical', minHeight: 110 }}
       />
 
       {err && <div style={{ fontSize: 12, color: C.danger, marginBottom: 10 }}>{err}</div>}
@@ -365,7 +365,7 @@ function TicketThread({ ticketId, onBack }) {
             maxLength={8000}
             rows={3}
             placeholder="Reply…"
-            style={{ ...input, marginBottom: 8, resize: 'vertical' }}
+            style={{ ...inputStyle, marginBottom: 8, resize: 'vertical' }}
           />
           {err && <div style={{ fontSize: 11, color: C.danger, marginBottom: 8 }}>{err}</div>}
           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -481,7 +481,7 @@ function AskAiChat({ onClose }) {
           maxLength={4000}
           rows={4}
           placeholder='Try: "Change Monday hours to 10–7", "Add a gel mani for $45", "Take me to marketing"'
-          style={{ ...input, resize: 'vertical', minHeight: 110, maxHeight: '40vh', overflowY: 'auto', marginBottom: 8 }}
+          style={{ ...inputStyle, resize: 'vertical', minHeight: 110, maxHeight: '40vh', overflowY: 'auto', marginBottom: 8 }}
           disabled={sending}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -637,7 +637,7 @@ function timeAgo(iso) {
 }
 
 const lbl   = { display: 'block', fontSize: 11, fontWeight: 700, color: C.muted, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 6 };
-const input = {
+const inputStyle = {
   width: '100%', boxSizing: 'border-box', padding: '9px 12px', fontSize: 13,
   border: `1px solid ${C.rule}`, borderRadius: 8, marginBottom: 14,
   background: 'var(--pn-surface)', fontFamily: 'inherit', outline: 'none', color: C.text,
